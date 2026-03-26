@@ -1,0 +1,36 @@
+# Uploads
+backend/uploads/*.pdf
+
+# Python / Poetry
+backend/__pycache__/
+backend/**/__pycache__/
+backend/**/*.pyc
+backend/.env
+backend/instance/
+backend/*.egg-info/
+backend/dist/
+backend/.pytest_cache/
+
+# Node
+frontend/node_modules/
+
+# Build outputs
+frontend/dist/
+
+# Docker
+docker-compose.override.yml
+
+# Env files
+.env
+.env.local
+.env.*.local
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
