@@ -36,6 +36,8 @@ const ARTIFACT_COLORS: Record<ArtifactType, string> = {
   link: "#94a3b8",
   text: "#94a3b8",
   file: "#94a3b8",
+  feed: "#10b981",
+  post: "#94a3b8",
 };
 
 const ARTIFACT_ICONS: Record<ArtifactType, string> = {
@@ -43,12 +45,13 @@ const ARTIFACT_ICONS: Record<ArtifactType, string> = {
   link: "🔗",
   text: "📋",
   file: "📎",
+  feed: "📡",
+  post: "💬",
 };
 
 const BASE_RADIUS = 4;
 const BG_COLOR = "#ffffff";
 const EDGE_COLOR = "rgba(0,0,0,0.1)";
-const EDGE_ACTIVE = "rgba(0,0,0,0.1)";
 const LABEL_COLOR = "#9ca3af";
 const LABEL_FOCUS = "#6b7280";
 const TAU = Math.PI * 2;

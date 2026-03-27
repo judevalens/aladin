@@ -5,7 +5,7 @@ export interface PaneData {
   type: PaneType
 }
 
-export type ArtifactType = 'audio' | 'link' | 'text' | 'file'
+export type ArtifactType = 'audio' | 'link' | 'text' | 'file' | 'feed' | 'post'
 
 export interface ArtifactEnrichment {
   summary: string
@@ -21,5 +21,7 @@ export interface Artifact {
   content: string
   sourceUrl?: string
   enrichment?: ArtifactEnrichment
+  metadata?: Record<string, unknown>
+  childCount?: number
   createdAt: Date
 }

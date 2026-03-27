@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useForceLayout } from "../../hooks/useForceLayout";
 import {
   ReactFlow,
@@ -19,14 +19,17 @@ import {
 
 import "reactflow/dist/style.css";
 import type { Artifact, ArtifactType } from "../../types";
-import { fetchGraph, saveGraphNode, saveGraphEdge, updateNodePosition, ingestUrl, deleteGraphNode } from "../../lib/api";
+import { fetchGraph, saveGraphNode, saveGraphEdge, updateNodePosition, deleteGraphNode } from "../../lib/api";
 import AudioRecorder from "../AudioRecorder";
+import AddArtifactMenu from "../AddArtifactMenu";
 
 const ARTIFACT_NODE_COLORS: Record<ArtifactType, string> = {
   audio: "#f43f5e",
   link: "#3b82f6",
   text: "#f59e0b",
   file: "#10b981",
+  feed: "#10b981",
+  post: "#94a3b8",
 };
 
 const ARTIFACT_ICONS: Record<ArtifactType, string> = {
@@ -34,6 +37,8 @@ const ARTIFACT_ICONS: Record<ArtifactType, string> = {
   link: "🔗",
   text: "📋",
   file: "📎",
+  feed: "📡",
+  post: "💬",
 };
 
 // ── Custom artifact node ──────────────────────────────────────────────────────
@@ -58,74 +63,14 @@ interface CanvasContextMenuProps {
 }
 
 function CanvasContextMenu({ menu, onClose, onAddArtifact, onMic }: CanvasContextMenuProps) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const handleMic = () => {
-    onMic();
-    onClose();
-  };
-
-  const handleLink = async () => {
-    const url = prompt("Paste a URL:");
-    if (!url) { onClose(); return; }
-    onClose();
-    try {
-      const result = await ingestUrl(url);
-      if (result.post) {
-        const { authorName, authorHandle, content, platform } = result.post;
-        const label = `${authorName} (@${authorHandle}) · ${platform}`;
-        onAddArtifact("link", label, content, url);
-        return;
-      }
-    } catch {
-      // not a supported URL — fall back to raw
-    }
-    const label = url.replace(/^https?:\/\//, "").split("/")[0];
-    onAddArtifact("link", label, url, url);
-  };
-
-  const handlePaste = async () => {
-    const text = await navigator.clipboard.readText();
-    if (text) {
-      onAddArtifact("text", text.slice(0, 40) + (text.length > 40 ? "…" : ""), text);
-    }
-    onClose();
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      onAddArtifact("file", file.name, file.name);
-    }
-    onClose();
-  };
-
-  const items = [
-    { icon: "🎙️", label: "Record audio", onClick: handleMic },
-    { icon: "🔗", label: "Add link", onClick: handleLink },
-    { icon: "📋", label: "Paste text", onClick: handlePaste },
-    { icon: "📎", label: "Upload file", onClick: () => fileInputRef.current?.click() },
-  ];
-
   return (
-    <>
-      <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileChange} />
-      <div
-        className="fixed z-50 min-w-[160px] rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
-        style={{ top: menu.screenY, left: menu.screenX }}
-      >
-        {items.map((item) => (
-          <button
-            key={item.label}
-            onClick={item.onClick}
-            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-          >
-            <span>{item.icon}</span>
-            {item.label}
-          </button>
-        ))}
-      </div>
-    </>
+    <div className="fixed" style={{ top: menu.screenY, left: menu.screenX }}>
+      <AddArtifactMenu
+        onAdd={onAddArtifact}
+        onMic={onMic}
+        onClose={onClose}
+      />
+    </div>
   );
 }
 

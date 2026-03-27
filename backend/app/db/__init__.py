@@ -1,4 +1,5 @@
 import os
+from contextlib import contextmanager
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
@@ -27,8 +28,22 @@ def get_session_factory():
 
 
 def get_db():
+    """FastAPI / Flask dependency — yields a session."""
     db = get_session_factory()()
     try:
         yield db
     finally:
         db.close()
+
+
+@contextmanager
+def get_session():
+    """Context manager for use outside of request context (workers, scheduler)."""
+    session = get_session_factory()()
+    try:
+        yield session
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()

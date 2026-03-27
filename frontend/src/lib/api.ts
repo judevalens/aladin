@@ -89,10 +89,29 @@ export async function fetchArtifacts(): Promise<import('../types').Artifact[]> {
   const res = await fetch('/api/artifacts/')
   if (!res.ok) throw new Error(`Failed to load artifacts (${res.status})`)
   const data = await res.json()
-  return data.map((a: { id: string; type: string; label: string; content: string; sourceUrl?: string; createdAt: string }) => ({
+  return data.map((a: import('../types').Artifact & { createdAt: string }) => ({
     ...a,
     createdAt: new Date(a.createdAt),
   }))
+}
+
+export async function fetchChildren(
+  parentId: string,
+  opts: { limit?: number; offset?: number } = {},
+): Promise<{ items: import('../types').Artifact[]; total: number }> {
+  const params = new URLSearchParams()
+  if (opts.limit)  params.set('limit',  String(opts.limit))
+  if (opts.offset) params.set('offset', String(opts.offset))
+  const res = await fetch(`/api/artifacts/${parentId}/children?${params}`)
+  if (!res.ok) throw new Error(`Failed to load children (${res.status})`)
+  const data = await res.json()
+  return {
+    items: data.items.map((a: import('../types').Artifact & { createdAt: string }) => ({
+      ...a,
+      createdAt: new Date(a.createdAt),
+    })),
+    total: data.total,
+  }
 }
 
 export async function persistArtifact(artifact: import('../types').Artifact): Promise<void> {

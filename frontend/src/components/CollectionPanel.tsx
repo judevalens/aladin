@@ -6,6 +6,8 @@ const ARTIFACT_ICONS: Record<ArtifactType, string> = {
   link: '🔗',
   text: '📋',
   file: '📎',
+  feed: '📡',
+  post: '💬',
 }
 
 const ARTIFACT_COLORS: Record<ArtifactType, string> = {
@@ -13,6 +15,8 @@ const ARTIFACT_COLORS: Record<ArtifactType, string> = {
   link: 'bg-blue-50 border-blue-200 text-blue-700',
   text: 'bg-amber-50 border-amber-200 text-amber-700',
   file: 'bg-emerald-50 border-emerald-200 text-emerald-700',
+  feed: 'bg-emerald-50 border-emerald-200 text-emerald-700',
+  post: 'bg-gray-50 border-gray-200 text-gray-700',
 }
 
 const ARTIFACT_HEX: Record<ArtifactType, string> = {
@@ -20,6 +24,8 @@ const ARTIFACT_HEX: Record<ArtifactType, string> = {
   link: '#3b82f6',
   text: '#f59e0b',
   file: '#10b981',
+  feed: '#10b981',
+  post: '#94a3b8',
 }
 
 interface Props {
