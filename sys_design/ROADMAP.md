@@ -23,128 +23,165 @@ Core frontend workspace and basic artifact pipeline.
 
 ---
 
-## Phase 1 — Schema & Queue Infrastructure 🔨
+## Phase 1 — Schema & Queue Infrastructure ✅
 
-Lay the foundation everything else depends on.
-
-- 📋 DB migration: `sources` table
-- 📋 DB migration: `snapshots` table (with `expected_jobs` / `completed_jobs`)
-- 📋 DB migration: `sync_jobs` table + dequeue index
-- 📋 DB migration: update `artifacts` (add `source_id`, `snapshot_id`, `external_id`, `version`, `superseded_by`, `relevance_score`, `status`)
-- 📋 SQLAlchemy models for Source, Snapshot, SyncJob
-- 📋 `SourceSyncer` ABC
-- 📋 `SyncResult` + `SyncJob` dataclasses
-- 📋 `SyncRouter`
-- 📋 `JobQueue` with builder pattern (`JobQueue.builder().add(syncer).build()`)
-- 📋 Worker loop (dequeue → route → handle result → snapshot completion check)
-- 📋 Scheduler loop (find due sources → plan → enqueue)
+- ✅ DB migration: `sources`, `snapshots`, `sync_jobs` tables
+- ✅ DB migration: `artifacts` updated (source_id, snapshot_id, external_id, version, superseded_by, relevance_score, status)
+- ✅ DB migration: `parent_id` on artifacts (tree structure)
+- ✅ SQLAlchemy models: Source, Snapshot, SyncJob, Artifact (with tree relationships)
+- ✅ `SourceSyncer` ABC (plan + execute)
+- ✅ `SyncResult` + `SyncJob` dataclasses
+- ✅ `SyncRouter`
+- ✅ `JobQueue` with builder pattern
+- ✅ Worker loop (SKIP LOCKED dequeue → route → handle result → snapshot completion)
+- ✅ Scheduler loop (find due sources → plan → enqueue)
+- ✅ Stuck snapshot cleanup (>2h in processing → failed + dead-letter jobs)
 
 ---
 
-## Phase 2 — Reddit Live Source 📋
+## Phase 2 — Reddit Live Source ✅
 
-First live source end-to-end.
-
-- 📋 `RedditSyncer` — `plan()` + `execute()`
-- 📋 `fetch_listing` job: GET /new.json, cursor management, stop_at_id, min_score gate
-- 📋 `fetch_thread` job: re-fetch active threads, diff detection, supersede logic
-- 📋 Score-bracket re-fetch scheduling
-- 📋 Source config UI (subreddit, min_score, include_comments)
-- 📋 Wire into job queue: `JobQueue.builder().add(RedditSyncer()).build()`
+- ✅ `RedditSyncer` — plan() + execute()
+- ✅ `ensure_feed` job: upserts top-level feed artifact (no HTTP)
+- ✅ `fetch_listing` job: GET /new.json, cursor pagination, stop_at_id, min_score gate
+- ✅ `fetch_thread` job: re-fetch active threads, diff detection, supersede logic
+- ✅ Score-bracket re-fetch scheduling (≥500 → 30min, ≥100 → 1hr, ≥20 → 2hr)
+- ✅ Rate limiting: 10 req/min in-process token bucket
+- ✅ Artifact tree: feed → posts (parent_id linking)
+- ✅ Seed script: `scripts/seed_reddit_source.py`
 
 ---
 
-## Phase 3 — Embedding & Enrichment Pipeline 📋
+## Phase 2b — Twitter/X Live Source ✅
 
-Wire the existing enrichment into the new artifact model.
+- ✅ `TwitterSyncer` — user timeline mode + search/hashtag mode
+- ✅ `ensure_feed` job: builds feed artifact for both modes
+- ✅ `fetch_timeline` job: user timeline with pagination, user_id resolution
+- ✅ `fetch_search` job: recent search with auto-retweet/reply filtering
+- ✅ Rate limiting: 100s interval (conservative for Basic tier)
+- ✅ Metadata: like_count, retweet_count, reply_count mapped to common score field
+- ✅ Seed script: `scripts/seed_twitter_source.py --mode user/search`
+- 📋 Wire Twitter Bearer Token credentials and test end-to-end
 
-- 📋 Embedding worker: picks up `status='pending'` artifacts, generates vector, sets `status='embedded'`
-- 📋 Enrichment worker: picks up `status='embedded'`, runs LLM enrichment, sets `status='enriched'`
+---
+
+## Phase 2c — Dashboard: Feed Drill-Down ✅
+
+- ✅ `GET /api/artifacts/` returns top-level only (parent_id IS NULL) with childCount
+- ✅ `GET /api/artifacts/<id>/children` — paginated, sorted by score
+- ✅ ArtifactType extended: `feed`, `post`
+- ✅ Feed cards: Live badge, post count
+- ✅ Feed drill-down view: ranked post list (score, author, flair, comment count)
+- ✅ Three-tier navigation: grid → feed → post focus/chat
+
+---
+
+## Phase 3 — Enrichment Pipeline 📋
+
+Wire enrichment into the artifact lifecycle. Posts stay raw text until this runs.
+
+- 📋 Embedding worker: picks up `status='pending'` artifacts, generates vector (OpenAI text-embedding-3-small), sets `status='embedded'`
+- 📋 Enrichment worker: picks up `status='embedded'`, runs LLM (summary, entities, topics, key_claims), sets `status='enriched'`
+- 📋 Both workers run as background threads alongside the sync worker
 - 📋 Cold start rule: skip relevance filtering when KG has < 10 nodes
-- 📋 Relevance scoring against existing KG artifact embeddings (ANN search)
+- 📋 Relevance scoring against existing KG artifact embeddings (ANN search via pgvector)
 - 📋 Threshold filtering: below `suggest_threshold` → `dismissed`
-- 📋 Snapshot completion detection → enqueue `insight_batch` job
+- 📋 Focus view: summaries, topics, key claims populated from enrichment
 
 ---
 
-## Phase 4 — Insight Pipeline (MVP types) 📋
+## Phase 4 — Note-Taking Improvements 📋
 
-Batch insight generation for live sources. Immediate for manual input.
+Make note creation a first-class experience — the primary manual input path.
 
-- 📋 `InsightPipeline` class: takes snapshot artifacts + KG state
-- 📋 `reinforcement` detection: embedding similarity + shared entities → add evidence to edge
-- 📋 `extension` detection: similarity + new entities not in existing node → enrich node
-- 📋 `bridge` detection: ANN candidates from two disconnected clusters → new edge proposal
-- 📋 `convergence` detection: N artifacts from different sources → same node in one batch
-- 📋 `proposed_changes` generation per insight type
-- 📋 Apply based on `pipeline_autonomy`: auto-promote or ghost + insight record
-- 📋 Immediate insight path for `one_shot` sources
-
----
-
-## Phase 5 — Bluesky Live Source 📋
-
-Second live source. Reuses queue infrastructure from Phase 1-2.
-
-- 📋 `BlueskySyncer` — `plan()` + `execute()`
-- 📋 `fetch_feed` job: getFeed polling, opaque cursor
-- 📋 `fetch_thread` job: reply detection, deletion handling (NotFound → supersede)
-- 📋 Engagement-bracket re-fetch scheduling (like + repost weighting)
-- 📋 Source config UI (feed URIs, actor DIDs)
+- 📋 **Note composer modal**: proper title + body editor (not just clipboard paste)
+- 📋 **Markdown rendering** in focus view content panel
+- 📋 **Capture-from-context**: "Take note" button on post/feed focus view — opens composer pre-filled with source reference
+- 📋 **Selection → note**: highlight text in focus view → "Quote & annotate" creates note with quoted block + annotation
+- 📋 **Note-to-artifact linking**: notes can reference other artifacts (stored in metadata)
+- 📋 **Voice → note**: audio recordings run through Whisper transcription → text note
+- 📋 Note status: `scratch` (quick dump) vs `note` (curated) — grid can filter by status
 
 ---
 
-## Phase 6 — UI: Insight Feed & Node Neighborhood 📋
+## Phase 5 — Insight Pipeline (MVP types) 📋
+
+Batch insight generation per snapshot. Immediate for manual input.
+
+- 📋 `InsightSyncer` fully implemented (replaces stub)
+- 📋 `reinforcement`: embedding similarity + shared entities → add evidence to existing edge
+- 📋 `extension`: similarity + new entities → enrich existing node
+- 📋 `bridge`: ANN candidates from two disconnected clusters → new edge proposal
+- 📋 `convergence`: N artifacts from different sources pointing to same node in one batch
+- 📋 `proposed_changes` per insight with confidence score
+- 📋 Apply based on `pipeline_autonomy`: `auto_promote` (≥threshold) or `suggest` (ghost node + insight record)
+- 📋 Immediate insight path for `one_shot` / manual sources
+
+---
+
+## Phase 6 — UI: Insight Feed & Graph Neighborhood 📋
 
 Bring the intelligence into the frontend.
 
-- 📋 Insight feed on dashboard: pending insights, accept / dismiss actions
-- 📋 Node detail view: evidence trail, confidence over time, connected insights
-- 📋 Graph workspace rework: render neighborhood subgraph (10-20 nodes) not full KG
-  - "Explore from this node" replaces "view entire graph"
-  - Hop depth control (1, 2, 3 hops)
+- 📋 Insight feed on dashboard: pending insights shown as cards — accept / dismiss actions
+- 📋 Node detail view: evidence trail, confidence over time, source breakdown
+- 📋 Graph workspace rework: render neighborhood subgraph (10–20 nodes), not full KG
+  - "Explore from node" → expand 1/2/3 hops
+  - Hop depth slider
+  - Highlight path between two selected nodes
 - 📋 Timeline scrubber: scrub KG state by snapshot version
-- 📋 Source management UI: add/pause/delete sources, view sync state
+- 📋 Source management UI: add / pause / delete sources, view sync health
 
 ---
 
-## Phase 7 — Slack Live Source 💭
+## Phase 7 — Bluesky Live Source 📋
 
-Push-based source. Different architecture from poll sources.
+- 📋 `BlueskySyncer` — plan() + execute()
+- 📋 `fetch_feed` job: AT Protocol getFeed, opaque cursor
+- 📋 `fetch_thread` job: reply detection, NotFound → supersede
+- 📋 Engagement-bracket re-fetch (like + repost weighting)
+- 📋 Seed script: `scripts/seed_bluesky_source.py`
+
+---
+
+## Phase 8 — Slack Live Source 💭
+
+Push-based source — different architecture from poll.
 
 - 💭 Slack Events API webhook endpoint
-- 💭 Message event handler → artifact creation (bypasses queue)
-- 💭 Thread reply fetching on-demand
+- 💭 Message/thread event handler → artifact creation (bypasses queue)
 - 💭 Signing secret verification
+- 💭 Thread reply fetching on-demand
 
 ---
 
-## Phase 8 — Advanced Insight Types 💭
+## Phase 9 — Advanced Insight Types 💭
 
-The expensive reasoning pass. Build after MVP insight types are validated.
+Expensive reasoning pass. Build after MVP insight types are validated.
 
-- 💭 `contradiction` detection: high similarity + LLM key_claims comparison
-- 💭 `obsolescence` detection: temporal language + LLM reasoning
-- 💭 Community detection (Leiden algorithm) on KG
-- 💭 Community re-summarization on structural graph changes (GraphRAG-inspired)
-- 💭 Global query support against community summaries
+- 💭 `contradiction`: high similarity + LLM key_claims comparison
+- 💭 `obsolescence`: temporal language + LLM reasoning
+- 💭 Community detection (Leiden) on KG
+- 💭 Community re-summarization on structural changes (GraphRAG-inspired)
+- 💭 Global query against community summaries
 
 ---
 
-## Phase 9 — Intelligence Feedback Loop 💭
+## Phase 10 — Intelligence Feedback Loop 💭
 
 System learns from user behavior.
 
-- 💭 Track accept/dismiss rates per insight type per user
-- 💭 Track which dismissed insights were later proven correct (edge invalidated anyway)
-- 💭 Adjust insight confidence weights based on user calibration
+- 💭 Track accept/dismiss rates per insight type
+- 💭 Track dismissed insights later proven correct
+- 💭 Adjust confidence weights per user calibration
 - 💭 Personalized threshold tuning per source type
 
 ---
 
 ## Open Design Questions
 
-- **Multi-KG sources**: source feeds multiple KGs — relevance score per KG, autonomy per KG. Deferred to post-MVP (current: one source → one KG).
-- **Auth / multi-user**: currently single-user seeded. Needs proper auth before any sharing features.
-- **Graph namespace isolation**: each KG is isolated in Neo4j by `kg_id` filter. No cross-KG queries for now.
-- **Embedding model**: currently OpenAI `text-embedding-3-small`. Consider local model (nomic-embed) for cost at scale.
+- **Multi-KG sources**: one source → one KG for MVP. Post-MVP: source feeds multiple KGs with per-KG relevance + autonomy.
+- **Auth / multi-user**: currently single-user seeded. Needs proper auth before sharing.
+- **Graph namespace isolation**: each KG isolated by `kg_id` filter. No cross-KG queries for now.
+- **Embedding model**: OpenAI `text-embedding-3-small`. Consider local model (nomic-embed) for cost at scale.
+- **Note-to-KG path**: notes should be first-class KG citizens — how does a "scratch" note become a node? Manual promote? Auto on enrichment?
