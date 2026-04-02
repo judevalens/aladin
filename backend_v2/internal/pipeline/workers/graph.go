@@ -2,98 +2,86 @@ package workers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
 
-	"github.com/hibiken/asynq"
-
 	"aladin/backend_v2/internal/db"
-	"aladin/backend_v2/internal/pipeline/blackboard"
+	"aladin/backend_v2/internal/pipeline"
 )
 
-const TaskGraph = "pipeline:graph"
-
+// GraphPromoter writes an enriched artifact into Neo4j.
 type GraphPromoter interface {
 	Promote(ctx context.Context, artifact *db.EmbeddedArtifact) error
 }
 
-type GraphResult struct{}
-
 type GraphWorker struct {
-	board    *blackboard.Blackboard
 	promoter GraphPromoter
 }
 
-func NewGraphWorker(
-	board *blackboard.Blackboard,
-	promoter GraphPromoter,
-) *GraphWorker {
-	return &GraphWorker{
-		board:    board,
-		promoter: promoter,
-	}
+func NewGraphWorker(promoter GraphPromoter) *GraphWorker {
+	return &GraphWorker{promoter: promoter}
 }
 
-func (w *GraphWorker) Register(mux *asynq.ServeMux, onDone func(context.Context, string, *GraphResult, error) error) {
-	mux.HandleFunc(TaskGraph, func(ctx context.Context, t *asynq.Task) error {
-		id := parseArtifactID(t.Payload())
-		result, err := w.Run(ctx, id)
-		return onDone(ctx, id, result, err)
-	})
-}
+func (w *GraphWorker) TaskType()    string { return pipeline.TaskGraph }
+func (w *GraphWorker) Concurrency() int    { return 5 }
 
-func (w *GraphWorker) Run(ctx context.Context, artifactID string) (*GraphResult, error) {
-	entry, err := w.board.Get(ctx, artifactID)
-	if err != nil {
-		return nil, ErrTransient{Cause: err}
-	}
-	if entry == nil {
-		return nil, ErrPermanent{Cause: fmt.Errorf("entry not found: %s", artifactID)}
+func (w *GraphWorker) Run(ctx context.Context, raw []byte) pipeline.Result {
+	var p pipeline.ArtifactPayload
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return pipeline.Result{
+			TaskType: pipeline.TaskGraph,
+			Err:      pipeline.ErrPermanent{Cause: fmt.Errorf("unmarshal payload: %w", err)},
+		}
 	}
 
 	log := slog.With(
 		"component", "pipeline",
 		"stage", "graph",
-		"artifact_id", entry.ArtifactID,
-		"kg_id", entry.KgID,
+		"artifact_id", p.ArtifactID,
+		"kg_id", p.KgID,
 	)
 	start := time.Now()
 
-	if entry.Raw == nil {
-		return nil, ErrPermanent{Cause: fmt.Errorf("missing raw artifact")}
-	}
-
-	enrichment := map[string]any{}
-	if entry.FirstPass != nil {
-		enrichment["summary"] = entry.FirstPass.Summary
-		enrichment["entities"] = entry.FirstPass.Entities
-		enrichment["topics"] = entry.FirstPass.Topics
-		enrichment["key_claims"] = entry.FirstPass.KeyClaims
-	}
-	if entry.Search != nil {
-		enrichment["search_context"] = entry.Search.Resolved
-	}
-
-	artifact := &db.EmbeddedArtifact{
-		ID:         entry.ArtifactID,
-		Type:       entry.Raw.Type,
-		Label:      entry.Raw.Label,
-		SourceURL:  entry.Raw.SourceURL,
-		Enrichment: enrichment,
-		CreatedAt:  time.Now(),
-	}
-
 	if w.promoter != nil {
+		enrichment := map[string]any{
+			"summary":    p.Summary,
+			"entities":   p.Entities,
+			"topics":     p.Topics,
+			"key_claims": p.KeyClaims,
+		}
+		if p.SearchResolved != nil {
+			enrichment["search_context"] = p.SearchResolved
+		}
+
+		artifact := &db.EmbeddedArtifact{
+			ID:         p.ArtifactID,
+			Type:       p.Type,
+			Label:      p.Label,
+			SourceURL:  p.SourceURL,
+			Enrichment: enrichment,
+			CreatedAt:  time.Now(),
+		}
+
 		if err := w.promoter.Promote(ctx, artifact); err != nil {
 			log.Error("graph: promote failed", "err", err)
-			return nil, ErrTransient{Cause: fmt.Errorf("graph promote: %w", err)}
+			return errResult(pipeline.TaskGraph, p, pipeline.ErrTransient{Cause: fmt.Errorf("promote: %w", err)})
 		}
 	}
 
-	log.Info("graph: complete",
-		"duration_ms", time.Since(start).Milliseconds(),
-	)
+	log.Info("graph: complete", "duration_ms", time.Since(start).Milliseconds())
 
-	return &GraphResult{}, nil
+	payload, err := json.Marshal(p)
+	if err != nil {
+		return errResult(pipeline.TaskGraph, p, pipeline.ErrPermanent{Cause: err})
+	}
+
+	return pipeline.Result{
+		Type:       pipeline.ResultGraphDone,
+		TaskType:   pipeline.TaskGraph,
+		Payload:    payload,
+		ArtifactID: p.ArtifactID,
+		KgID:       p.KgID,
+	}
 }

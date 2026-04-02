@@ -7,28 +7,25 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 
 	"aladin/backend_v2/internal/db"
-	"aladin/backend_v2/internal/pipeline/blackboard"
+	"aladin/backend_v2/internal/pipeline"
 )
 
-const (
-	QueueCritical = "critical"
-	QueueDefault  = "default"
-	QueueLow      = "low"
-)
+const QueueSync = "sync"
 
 // Queue manages sync handler registration, job execution, and scheduler startup.
 type Queue struct {
-	client    *asynq.Client
+	enqueuer  Enqueuer
 	sources   db.SourceRepository
 	artifacts db.ArtifactRepository
 	syncers   map[string]Syncer
 }
 
 func NewQueue(
-	client *asynq.Client,
+	enqueuer Enqueuer,
 	sources db.SourceRepository,
 	artifacts db.ArtifactRepository,
 	syncers ...Syncer,
@@ -38,7 +35,7 @@ func NewQueue(
 		m[s.SourceType()] = s
 	}
 	return &Queue{
-		client:    client,
+		enqueuer:  enqueuer,
 		sources:   sources,
 		artifacts: artifacts,
 		syncers:   m,
@@ -47,7 +44,7 @@ func NewQueue(
 
 // Start launches the scheduler — polls for due sources and dispatches them.
 func (q *Queue) Start(ctx context.Context) {
-	dispatcher := &asynqDispatcher{client: q.client}
+	dispatcher := &asynqDispatcher{enqueuer: q.enqueuer}
 	scheduler  := NewScheduler(q, dispatcher, defaultBatchSize)
 	go scheduler.Start(ctx)
 }
@@ -112,16 +109,11 @@ func (q *Queue) RegisterHandlers(mux *asynq.ServeMux) {
 
 // asynqDispatcher implements JobDispatcher using asynq.
 type asynqDispatcher struct {
-	client *asynq.Client
+	enqueuer Enqueuer
 }
 
 func (d *asynqDispatcher) Dispatch(ctx context.Context, job *db.ScheduledJob) error {
-	task := asynq.NewTask(job.Type, job.Payload)
-	_, err := d.client.EnqueueContext(ctx, task,
-		asynq.Queue(priorityQueue(job.Priority)),
-		asynq.MaxRetry(job.MaxRetry),
-		asynq.Timeout(job.Timeout),
-	)
+	err := d.enqueuer.EnqueueSync(ctx, job.Type, job.Payload, job.MaxRetry, job.Timeout)
 	if err != nil {
 		return fmt.Errorf("asynq dispatch: %w", err)
 	}
@@ -189,33 +181,31 @@ func (q *Queue) makeHandler(syncer Syncer) asynq.HandlerFunc {
 		// Any enqueue failure is a data loss — fail the whole handler so asynq retries.
 		queued := 0
 		for _, a := range result.Artifacts {
-			payload, err := json.Marshal(blackboard.IngestPayload{
-				KgID:     job.KgID,
-				SourceID: job.SourceID,
-				Artifact: &blackboard.SyncedArtifact{
-					ExternalID: a.ExternalID,
-					SourceID:   job.SourceID,
-					Type:       a.Type,
-					Label:      a.Label,
-					Content:    a.Content,
-					SourceURL:  a.SourceURL,
-					Metadata:   a.Metadata,
-				},
+			artifactID := uuid.NewSHA1(uuid.NameSpaceOID, []byte(job.SourceID+":"+a.ExternalID)).String()
+			payload, err := json.Marshal(pipeline.ArtifactPayload{
+				ArtifactID: artifactID,
+				KgID:       job.KgID,
+				SourceID:   job.SourceID,
+				ExternalID: a.ExternalID,
+				Type:       a.Type,
+				Label:      a.Label,
+				Content:    a.Content,
+				SourceURL:  a.SourceURL,
+				Metadata:   a.Metadata,
 			})
 			if err != nil {
 				// Marshal failure is a programming error — fail fast
 				if job.SnapshotID == "" {
 					_ = q.sources.MarkSyncFailed(ctx, job.SourceID)
 				}
-				return fmt.Errorf("sync: marshal ingest payload: %w", err)
+				return fmt.Errorf("sync: marshal artifact payload: %w", err)
 			}
-			task := asynq.NewTask(blackboard.TaskIngestArtifact, payload)
-			if _, err := q.client.EnqueueContext(ctx, task, asynq.Queue(QueueDefault)); err != nil {
+			if err := q.enqueuer.EnqueueFirstPass(ctx, artifactID, payload); err != nil {
 				// Enqueue failure — fail the handler so asynq retries the whole page
 				if job.SnapshotID == "" {
 					_ = q.sources.MarkSyncFailed(ctx, job.SourceID)
 				}
-				return fmt.Errorf("sync: enqueue ingest task %s: %w", a.ExternalID, err)
+				return fmt.Errorf("sync: enqueue artifact %s: %w", a.ExternalID, err)
 			}
 			queued++
 		}
@@ -255,24 +245,7 @@ func (q *Queue) enqueue(ctx context.Context, job *db.SyncJob) error {
 	if err != nil {
 		return fmt.Errorf("marshal job: %w", err)
 	}
-	task := asynq.NewTask(taskType(job.SourceType), payload)
-	_, err = q.client.EnqueueContext(ctx, task,
-		asynq.Queue(priorityQueue(job.Priority)),
-		asynq.MaxRetry(job.MaxAttempts),
-		asynq.Timeout(2*time.Minute),
-	)
-	return err
+	return q.enqueuer.EnqueueSync(ctx, taskType(job.SourceType), payload, job.MaxAttempts, 2*time.Minute)
 }
 
 func taskType(sourceType string) string { return "sync:" + sourceType }
-
-func priorityQueue(priority int) string {
-	switch {
-	case priority >= 8:
-		return QueueCritical
-	case priority >= 4:
-		return QueueDefault
-	default:
-		return QueueLow
-	}
-}

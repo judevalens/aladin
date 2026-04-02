@@ -9,6 +9,19 @@ import (
 	"time"
 )
 
+// ErrHTTP is returned for non-200 responses so callers can classify by status code.
+type ErrHTTP struct {
+	StatusCode int
+}
+
+func (e *ErrHTTP) Error() string {
+	return fmt.Sprintf("tavily status %d", e.StatusCode)
+}
+
+func (e *ErrHTTP) IsRateLimit() bool  { return e.StatusCode == http.StatusTooManyRequests }
+func (e *ErrHTTP) IsPermanent() bool  { return e.StatusCode == http.StatusUnauthorized || e.StatusCode == http.StatusForbidden }
+func (e *ErrHTTP) IsTransient() bool  { return !e.IsRateLimit() && !e.IsPermanent() }
+
 const tavilyEndpoint = "https://api.tavily.com/search"
 
 type TavilyClient struct {
@@ -51,7 +64,7 @@ func (c *TavilyClient) Search(ctx context.Context, query string, maxResults int)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("tavily status %d", resp.StatusCode)
+		return nil, &ErrHTTP{StatusCode: resp.StatusCode}
 	}
 
 	var result struct {

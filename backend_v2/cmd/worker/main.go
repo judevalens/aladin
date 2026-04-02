@@ -18,7 +18,6 @@ import (
 	"aladin/backend_v2/internal/insights"
 	"aladin/backend_v2/internal/llm"
 	"aladin/backend_v2/internal/pipeline"
-	"aladin/backend_v2/internal/pipeline/blackboard"
 	"aladin/backend_v2/internal/pipeline/workers"
 	"aladin/backend_v2/internal/ratelimit"
 	"aladin/backend_v2/internal/search"
@@ -59,7 +58,7 @@ func main() {
 	redisClient := redis.NewClient(redisOpts)
 	defer redisClient.Close()
 
-	// asynq client + server (shared across sync queue and pipeline handlers)
+	// asynq client + server
 	redisOpt, err := asynq.ParseRedisURI(cfg.RedisURL)
 	if err != nil {
 		slog.Error("worker: parse asynq redis url", "component", "worker", "err", err)
@@ -70,9 +69,11 @@ func main() {
 
 	asynqServer := asynq.NewServer(redisOpt, asynq.Config{
 		Queues: map[string]int{
-			"critical": 6,
-			"default":  3,
-			"low":      1,
+			pipeline.TaskFirstPass: 10,
+			pipeline.TaskSearch:    5,
+			pipeline.TaskEmbed:     3,
+			pipeline.TaskGraph:     5,
+			"sync":                 2,
 		},
 		ErrorHandler: asynq.ErrorHandlerFunc(func(ctx context.Context, task *asynq.Task, err error) {
 			slog.Error("asynq task failed", "component", "worker", "task_type", task.Type(), "err", err)
@@ -92,13 +93,7 @@ func main() {
 	tavilyClient   := search.NewTavilyClient(cfg.TavilyAPIKey)
 	cachedSearcher := search.NewCachedSearcher(tavilyClient, redisClient, tavilyLimiter)
 
-	// Blackboard
-	board := blackboard.New(redisClient)
-
-	// Insight channel
-	insightCh := make(chan string, 256)
-
-	// Neo4j promoter (optional — skipped if NEO4J_URI is not set)
+	// Neo4j promoter (optional)
 	var graphPromoter workers.GraphPromoter
 	if cfg.Neo4jURI != "" {
 		p, err := graph.NewPromoter(cfg.Neo4jURI, cfg.Neo4jUser, cfg.Neo4jPass)
@@ -117,35 +112,28 @@ func main() {
 	enricher := llm.NewOpenAIEnricher(cfg.OpenAIAPIKey)
 	embedder := llm.NewOpenAIEmbedder(cfg.OpenAIAPIKey)
 
-	// Workers
-	firstPassWorker := workers.NewFirstPassWorker(board, enricher, openaiLimiter)
-	searchWorker    := workers.NewSearchWorker(board, cachedSearcher)
-	embedWorker     := workers.NewEmbedWorker(board, embedder, openaiLimiter)
-	graphWorker     := workers.NewGraphWorker(board, graphPromoter)
-
-	// Orchestrator
-	orchestrator := pipeline.NewOrchestrator(
-		board, artifactRepo, insightCh, asynqClient,
-		firstPassWorker, searchWorker, embedWorker, graphWorker,
-	)
-	if err := orchestrator.Recover(ctx); err != nil {
-		slog.Warn("orchestrator: recover error", "err", err)
-	}
-
 	// Insight worker
+	insightCh     := make(chan string, 256)
 	gen           := insights.NewGenerator(insightRepo, pool)
 	insightWorker := insights.NewWorker(gen, insightCh)
 	insightWorker.Start(ctx)
 
-	// asynq mux — ingest handler kicks off pipeline; workers self-register their own queues.
-	mux := asynq.NewServeMux()
-	mux.HandleFunc(blackboard.TaskIngestArtifact, func(ctx context.Context, t *asynq.Task) error {
-		return board.IngestHandler(orchestrator.EnqueueFirstPass)(ctx, t)
-	})
-	orchestrator.Start(mux)
+	// Pipeline
+	pipelineEnqueuer := pipeline.NewAsynqEnqueuer(asynqClient)
+	handler := pipeline.NewFullPipelineHandler(pipelineEnqueuer, artifactRepo, insightCh)
+	orch    := pipeline.NewOrchestrator(asynqClient, handler)
+	orch.Add(workers.NewFirstPassWorker(enricher, openaiLimiter))
+	orch.Add(workers.NewSearchWorker(cachedSearcher))
+	orch.Add(workers.NewEmbedWorker(embedder, openaiLimiter))
+	orch.Add(workers.NewGraphWorker(graphPromoter))
 
-	// Sync sourceQueue — registers handlers and starts the scheduler internally
-	sourceQueue := isync.NewQueue(asynqClient, sourceRepo, artifactRepo,
+	// Mux
+	mux := asynq.NewServeMux()
+	orch.Register(mux)
+
+	// Sync queue
+	syncEnqueuer := isync.NewAsynqEnqueuer(asynqClient)
+	sourceQueue := isync.NewQueue(syncEnqueuer, sourceRepo, artifactRepo,
 		syncers.NewRedditSyncer(),
 	)
 	sourceQueue.RegisterHandlers(mux)

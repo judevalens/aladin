@@ -52,6 +52,16 @@ type fakeSyncer struct {
 	executeFn  func(ctx context.Context, job *db.SyncJob) (*Result, error)
 }
 
+type fakeEnqueuer struct{}
+
+func (f *fakeEnqueuer) EnqueueSync(ctx context.Context, taskType string, payload []byte, maxRetry int, timeout time.Duration) error {
+	return nil
+}
+
+func (f *fakeEnqueuer) EnqueueFirstPass(ctx context.Context, artifactID string, payload []byte) error {
+	return nil
+}
+
 func (f *fakeSyncer) SourceType() string { return f.sourceType }
 
 func (f *fakeSyncer) BuildJob(source db.Source) (*db.ScheduledJob, error) {
@@ -98,7 +108,7 @@ func TestQueueClaimBatchBuildsJobsFromSyncer(t *testing.T) {
 		},
 	}
 
-	q := NewQueue(nil, repo, syncer)
+	q := NewQueue(&fakeEnqueuer{}, repo, nil, syncer)
 
 	jobs, err := q.ClaimBatch(context.Background(), 10)
 	if err != nil {
@@ -124,7 +134,7 @@ func TestQueueClaimBatchMarksUnsupportedSourcesFailed(t *testing.T) {
 			Type: "hackernews",
 		}},
 	}
-	q := NewQueue(nil, repo)
+	q := NewQueue(&fakeEnqueuer{}, repo, nil)
 
 	jobs, err := q.ClaimBatch(context.Background(), 10)
 	if err != nil {
@@ -153,7 +163,7 @@ func TestQueueClaimBatchMarksBuildJobFailuresFailed(t *testing.T) {
 			return nil, errors.New("bad config")
 		},
 	}
-	q := NewQueue(nil, repo, syncer)
+	q := NewQueue(&fakeEnqueuer{}, repo, nil, syncer)
 
 	jobs, err := q.ClaimBatch(context.Background(), 10)
 	if err != nil {

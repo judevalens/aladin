@@ -1,4 +1,4 @@
-package workers
+package pipeline
 
 import (
 	"fmt"
@@ -6,7 +6,7 @@ import (
 )
 
 // ErrRateLimit is returned when an external API rate limits the worker.
-// RetryAfter tells the controller when to re-feed the entry.
+// The handler re-enqueues the task after RetryAfter has elapsed.
 type ErrRateLimit struct {
 	RetryAfter time.Duration
 }
@@ -15,7 +15,7 @@ func (e ErrRateLimit) Error() string {
 	return fmt.Sprintf("rate limited, retry after %s", e.RetryAfter)
 }
 
-// ErrTransient is a temporary failure that should be retried with backoff.
+// ErrTransient is a temporary failure — the task should be retried with backoff.
 type ErrTransient struct {
 	Cause error
 }
@@ -26,7 +26,7 @@ func (e ErrTransient) Error() string {
 
 func (e ErrTransient) Unwrap() error { return e.Cause }
 
-// ErrPermanent is an unrecoverable failure — entry should be dropped.
+// ErrPermanent is an unrecoverable failure — the task should be dropped.
 type ErrPermanent struct {
 	Cause error
 }

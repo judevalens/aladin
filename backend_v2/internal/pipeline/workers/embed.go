@@ -2,88 +2,75 @@ package workers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
 
-	"github.com/hibiken/asynq"
-
 	"aladin/backend_v2/internal/llm"
-	"aladin/backend_v2/internal/pipeline/blackboard"
+	"aladin/backend_v2/internal/pipeline"
 	"aladin/backend_v2/internal/ratelimit"
 )
 
-const TaskEmbed = "pipeline:embed"
-
-type EmbedResult struct {
-	Embedding []float32
-}
-
 type EmbedWorker struct {
-	board    *blackboard.Blackboard
 	embedder llm.Embedder
 	limiter  *ratelimit.Limiter
 }
 
-func NewEmbedWorker(
-	board *blackboard.Blackboard,
-	embedder llm.Embedder,
-	limiter *ratelimit.Limiter,
-) *EmbedWorker {
-	return &EmbedWorker{board: board, embedder: embedder, limiter: limiter}
+func NewEmbedWorker(embedder llm.Embedder, limiter *ratelimit.Limiter) *EmbedWorker {
+	return &EmbedWorker{embedder: embedder, limiter: limiter}
 }
 
-func (w *EmbedWorker) Register(mux *asynq.ServeMux, onDone func(context.Context, string, *EmbedResult, error) error) {
-	mux.HandleFunc(TaskEmbed, func(ctx context.Context, t *asynq.Task) error {
-		id := parseArtifactID(t.Payload())
-		result, err := w.Run(ctx, id)
-		return onDone(ctx, id, result, err)
-	})
-}
+func (w *EmbedWorker) TaskType()    string { return pipeline.TaskEmbed }
+func (w *EmbedWorker) Concurrency() int    { return 3 }
 
-func (w *EmbedWorker) Run(ctx context.Context, artifactID string) (*EmbedResult, error) {
-	entry, err := w.board.Get(ctx, artifactID)
-	if err != nil {
-		return nil, ErrTransient{Cause: err}
-	}
-	if entry == nil {
-		return nil, ErrPermanent{Cause: fmt.Errorf("entry not found: %s", artifactID)}
+func (w *EmbedWorker) Run(ctx context.Context, raw []byte) pipeline.Result {
+	var p pipeline.ArtifactPayload
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return pipeline.Result{
+			TaskType: pipeline.TaskEmbed,
+			Err:      pipeline.ErrPermanent{Cause: fmt.Errorf("unmarshal payload: %w", err)},
+		}
 	}
 
 	log := slog.With(
 		"component", "pipeline",
 		"stage", "embed",
-		"artifact_id", entry.ArtifactID,
-		"kg_id", entry.KgID,
+		"artifact_id", p.ArtifactID,
+		"kg_id", p.KgID,
 	)
 	start := time.Now()
 
-	if entry.Raw == nil {
-		return nil, ErrPermanent{Cause: fmt.Errorf("missing raw artifact")}
-	}
-
 	if err := w.limiter.Wait(ctx); err != nil {
-		return nil, ErrTransient{Cause: err}
+		return errResult(pipeline.TaskEmbed, p, pipeline.ErrTransient{Cause: err})
 	}
 
-	summary := ""
-	if entry.FirstPass != nil {
-		summary = entry.FirstPass.Summary
-	}
-	text := entry.Raw.Label + "\n" + summary + "\n" + entry.Raw.Content
-
+	text := p.Label + "\n" + p.Summary + "\n" + p.Content
 	log.Debug("embed: calling embedder", "text_len", len(text))
 
 	vector, err := w.embedder.Embed(ctx, text)
 	if err != nil {
 		log.Error("embed: failed", "err", err)
-		return nil, ErrTransient{Cause: fmt.Errorf("embed: %w", err)}
+		return errResult(pipeline.TaskEmbed, p, pipeline.ErrTransient{Cause: fmt.Errorf("embed: %w", err)})
 	}
+
+	p.Embedding = vector
 
 	log.Info("embed: complete",
 		"vector_dim", len(vector),
 		"duration_ms", time.Since(start).Milliseconds(),
 	)
 
-	return &EmbedResult{Embedding: vector}, nil
+	payload, err := json.Marshal(p)
+	if err != nil {
+		return errResult(pipeline.TaskEmbed, p, pipeline.ErrPermanent{Cause: err})
+	}
+
+	return pipeline.Result{
+		Type:       pipeline.ResultEmbedDone,
+		TaskType:   pipeline.TaskEmbed,
+		Payload:    payload,
+		ArtifactID: p.ArtifactID,
+		KgID:       p.KgID,
+	}
 }
