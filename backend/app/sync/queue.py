@@ -46,15 +46,25 @@ class JobQueue:
         return JobQueueBuilder()
 
     def run(self):
-        """Start scheduler and worker in separate threads. Blocks until interrupted."""
+        """Start scheduler + one worker thread per syncer. Blocks until interrupted."""
         scheduler_thread = threading.Thread(
             target=self._run_scheduler, name="sync-scheduler", daemon=True
         )
         scheduler_thread.start()
         logger.info("Scheduler started")
 
-        logger.info("Worker started")
-        self._run_worker()  # runs in main thread
+        for source_type in self.router.syncers:
+            t = threading.Thread(
+                target=self._run_worker,
+                args=(source_type,),
+                name=f"worker-{source_type}",
+                daemon=True,
+            )
+            t.start()
+            logger.info("Worker started for source_type=%s", source_type)
+
+        # Block main thread until interrupted
+        threading.Event().wait()
 
     # ── Scheduler ────────────────────────────────────────────────────────────
 
@@ -160,27 +170,28 @@ class JobQueue:
 
     # ── Worker ───────────────────────────────────────────────────────────────
 
-    def _run_worker(self):
+    def _run_worker(self, source_type: str):
         while True:
             try:
-                processed = self._worker_tick()
+                processed = self._worker_tick(source_type)
                 if not processed:
                     time.sleep(WORKER_IDLE_SLEEP)
             except Exception:
-                logger.exception("Worker error")
+                logger.exception("Worker error (source_type=%s)", source_type)
                 time.sleep(WORKER_IDLE_SLEEP)
 
-    def _worker_tick(self) -> bool:
-        """Dequeue and process one job. Returns True if a job was processed."""
+    def _worker_tick(self, source_type: str) -> bool:
+        """Dequeue and process one job for the given source type. Returns True if a job was processed."""
         with get_session() as session:
             row = session.execute(text("""
                 SELECT * FROM sync_jobs
                 WHERE status = 'pending'
+                  AND source_type = :source_type
                   AND scheduled_at <= now()
                 ORDER BY priority DESC, scheduled_at ASC, created_at ASC
                 FOR UPDATE SKIP LOCKED
                 LIMIT 1
-            """)).fetchone()
+            """), {"source_type": source_type}).fetchone()
 
             if row is None:
                 return False

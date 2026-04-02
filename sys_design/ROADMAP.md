@@ -76,17 +76,27 @@ Core frontend workspace and basic artifact pipeline.
 
 ---
 
-## Phase 3 — Enrichment Pipeline 📋
+## Phase 3 — Enrichment Pipeline ✅
 
-Wire enrichment into the artifact lifecycle. Posts stay raw text until this runs.
+Full rewrite of the enrichment pipeline in Go (`backend_v2`). Event-driven blackboard
+architecture replaces the old Python polling worker. Postgres is written once at completion.
 
-- 📋 Embedding worker: picks up `status='pending'` artifacts, generates vector (OpenAI text-embedding-3-small), sets `status='embedded'`
-- 📋 Enrichment worker: picks up `status='embedded'`, runs LLM (summary, entities, topics, key_claims), sets `status='enriched'`
-- 📋 Both workers run as background threads alongside the sync worker
-- 📋 Cold start rule: skip relevance filtering when KG has < 10 nodes
-- 📋 Relevance scoring against existing KG artifact embeddings (ANN search via pgvector)
-- 📋 Threshold filtering: below `suggest_threshold` → `dismissed`
-- 📋 Focus view: summaries, topics, key claims populated from enrichment
+- ✅ Go worker binary (`backend_v2/cmd/worker/main.go`) owns asynq server, pipeline controller, insight worker
+- ✅ Blackboard FSM: Redis holds full artifact state + intermediate data for in-flight entries
+- ✅ `pipeline:ingest` asynq task — handoff between syncers and blackboard (unbounded buffer)
+- ✅ Event-driven controller: `ready` channel + per-stage channels + one goroutine per stage
+- ✅ **FirstPassWorker**: GPT-4o-mini → summary, entities, topics, key_claims, low_confidence_entities
+- ✅ **SearchWorker**: resolve low-confidence entities via Tavily (Redis-cached, 7-day TTL)
+- ✅ **EmbedWorker**: OpenAI text-embedding-3-small → vector stored in blackboard entry
+- ✅ **GraphWorker**: Neo4j promoter — MERGE Artifact/Entity/Topic nodes and MENTIONS/TAGGED_WITH edges
+- ✅ Single PG write at `StateComplete` — full artifact (content + enrichment + embedding) in one INSERT
+- ✅ `ON CONFLICT (source_id, external_id) DO NOTHING` — dedup via unique partial index
+- ✅ Typed error handling: `ErrRateLimit` → asynq retry-after, `ErrTransient` → exponential backoff, `ErrPermanent` → drop
+- ✅ Crash recovery: on startup, drain Redis blackboard back into ready channel
+- ✅ Signal-based scheduler: `Trigger(sourceID)` for immediate sync on source creation
+- ✅ Structured JSON logging with trace IDs (artifact_id, kg_id, source_id, stage) throughout
+- ✅ Grafana + Loki + Promtail observability stack in docker-compose
+- ✅ Migration: `uq_artifacts_source_external` unique partial index on `(source_id, external_id)`
 
 ---
 
@@ -185,3 +195,5 @@ System learns from user behavior.
 - **Graph namespace isolation**: each KG isolated by `kg_id` filter. No cross-KG queries for now.
 - **Embedding model**: OpenAI `text-embedding-3-small`. Consider local model (nomic-embed) for cost at scale.
 - **Note-to-KG path**: notes should be first-class KG citizens — how does a "scratch" note become a node? Manual promote? Auto on enrichment?
+- **Real-time UI**: frontend currently polls. Plan is WebSocket full-duplex — push artifact/insight signals to UI on state change. Pattern: signal-on-write (like outbox but best-effort publish to Redis pub/sub → WS fan-out).
+- **Pipeline scaling**: current design is single-process. To scale: replace in-process `ready` channel with asynq queues per stage → stateless workers. At higher scale: Kafka transport, Flink/Spark for stream processing. Syncer and worker interfaces unchanged.

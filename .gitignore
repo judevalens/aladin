@@ -1,5 +1,10 @@
+# Logs
+logs/
+*.log
+
 # Uploads
 backend/uploads/*.pdf
+backend/audio/
 
 # Python / Poetry
 backend/__pycache__/

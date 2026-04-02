@@ -10,7 +10,7 @@ import {
   type SimulationNodeDatum,
   type SimulationLinkDatum,
 } from "d3-force";
-import { fetchGraph, updateNodePosition, saveGraphNode, deleteGraphNode, saveGraphEdge } from "../../lib/api";
+import { fetchFullGraph, updateNodePosition, saveGraphNode, deleteGraphNode, saveGraphEdge } from "../../lib/api";
 import type { Artifact, ArtifactType } from "../../types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -22,7 +22,8 @@ interface GraphNode extends SimulationNodeDatum {
   content?: string;
   sourceUrl?: string;
   color: string;
-  radius: number; // computed from degree
+  radius: number;
+  pipeline?: boolean;  // true = promoted by pipeline (not user-placed)
 }
 
 interface GraphLink extends SimulationLinkDatum<GraphNode> {
@@ -139,19 +140,38 @@ export default function D3GraphCanvas({ onNodeSelect, artifactToAdd, onArtifactN
     for (const n of nodes) {
       if (n.x == null || n.y == null) continue;
       const isSelected = n.id === selected;
+      const baseColor  = n.color ?? "#94a3b8";
+
+      ctx.globalAlpha = n.pipeline ? 0.75 : 1.0;
 
       ctx.beginPath();
       ctx.arc(n.x, n.y, n.radius, 0, TAU);
-      ctx.fillStyle = isSelected ? "#475569" : "#94a3b8";
+      ctx.fillStyle = isSelected ? "#1e293b" : baseColor;
       ctx.fill();
+
+      // Pipeline entity/topic nodes: hollow ring style
+      if (n.pipeline && !isSelected) {
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, n.radius, 0, TAU);
+        ctx.strokeStyle = baseColor;
+        ctx.lineWidth   = 1.5 / t.k;
+        ctx.globalAlpha = 0.4;
+        ctx.fillStyle   = baseColor + "33";  // 20% opacity fill
+        ctx.fill();
+        ctx.stroke();
+        ctx.globalAlpha = 0.75;
+      }
 
       if (isSelected) {
         ctx.beginPath();
-        ctx.arc(n.x, n.y, n.radius + 2.5 / t.k, 0, TAU);
-        ctx.strokeStyle = "#475569";
-        ctx.lineWidth = 1 / t.k;
+        ctx.arc(n.x, n.y, n.radius + 3 / t.k, 0, TAU);
+        ctx.strokeStyle = baseColor;
+        ctx.lineWidth   = 1.5 / t.k;
+        ctx.globalAlpha = 0.8;
         ctx.stroke();
       }
+
+      ctx.globalAlpha = 1.0;
     }
 
     ctx.restore();
@@ -216,8 +236,8 @@ export default function D3GraphCanvas({ onNodeSelect, artifactToAdd, onArtifactN
       }) ?? null;
     }
 
-    // Load data
-    fetchGraph().then(({ nodes: apiNodes, edges: apiEdges }) => {
+    // Load data — full graph (manual + pipeline-promoted nodes)
+    fetchFullGraph().then(({ nodes: apiNodes, edges: apiEdges }) => {
       // Deduplicate nodes by id
       const seenIds = new Set<string>();
       const uniqueNodes = apiNodes.filter((n) => {
@@ -234,15 +254,16 @@ export default function D3GraphCanvas({ onNodeSelect, artifactToAdd, onArtifactN
       }
 
       nodesRef.current = uniqueNodes.map((n) => ({
-        id: n.id,
-        label: n.label,
-        type: n.type,
-        content: n.content,
+        id:        n.id,
+        label:     n.label,
+        type:      n.type,
+        content:   n.content,
         sourceUrl: n.sourceUrl,
-        color: n.color,
-        radius: BASE_RADIUS + Math.sqrt(degree[n.id] ?? 0) * 2,
-        x: n.x || Math.random() * 800,
-        y: n.y || Math.random() * 600,
+        color:     n.color ?? "#94a3b8",
+        pipeline:  !!(n as { pipeline?: boolean }).pipeline,
+        radius:    BASE_RADIUS + Math.sqrt(degree[n.id] ?? 0) * 2,
+        x:         n.x || Math.random() * 800,
+        y:         n.y || Math.random() * 600,
       }));
 
       const nodeMap = new Map(nodesRef.current.map((n) => [n.id, n]));
@@ -360,7 +381,10 @@ export default function D3GraphCanvas({ onNodeSelect, artifactToAdd, onArtifactN
       // Finish drag
       if (!dragNode || !simRef.current) { dragNode = null; return; }
       simRef.current.alphaTarget(0);
-      updateNodePosition(dragNode.id, dragNode.fx!, dragNode.fy!).catch(console.error);
+      // Only persist position for user-placed (non-pipeline) nodes
+      if (!dragNode.pipeline) {
+        updateNodePosition(dragNode.id, dragNode.fx!, dragNode.fy!).catch(console.error);
+      }
       dragNode.fx = null;
       dragNode.fy = null;
       dragNode = null;
@@ -490,6 +514,12 @@ export default function D3GraphCanvas({ onNodeSelect, artifactToAdd, onArtifactN
           style={{ top: menu.y, left: menu.x }}
           onClick={(e) => e.stopPropagation()}
         >
+          {/* Node type label */}
+          <div className="px-3 py-1.5 border-b border-gray-100">
+            <p className="text-[10px] text-gray-400 uppercase tracking-wide">{menu.node.type}</p>
+            <p className="text-xs font-medium text-gray-700 truncate max-w-[180px]">{menu.node.label}</p>
+          </div>
+
           {menu.node.sourceUrl && (
             <button
               onClick={() => { window.open(menu.node.sourceUrl, "_blank", "noopener,noreferrer"); setMenu(null); }}
@@ -498,12 +528,15 @@ export default function D3GraphCanvas({ onNodeSelect, artifactToAdd, onArtifactN
               <span>↗</span> Go to source
             </button>
           )}
-          <button
-            onClick={() => handleDeleteNode(menu.node.id)}
-            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-500 hover:bg-gray-50"
-          >
-            <span>✕</span> Delete node
-          </button>
+          {/* Only allow deleting user-placed nodes */}
+          {!menu.node.pipeline && (
+            <button
+              onClick={() => handleDeleteNode(menu.node.id)}
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-500 hover:bg-gray-50"
+            >
+              <span>✕</span> Delete node
+            </button>
+          )}
         </div>
       )}
     </div>

@@ -18,6 +18,36 @@ def health():
     return jsonify({"status": "ok"})
 
 
+@bp.get("/worker/status")
+def worker_status():
+    """Pipeline worker stats + sync queue depth."""
+    from app.pipeline.worker import get_stats
+    from app.db import get_session
+    from sqlalchemy import text
+
+    stats = get_stats()
+
+    with get_session() as session:
+        queue_depth = session.execute(text(
+            "SELECT COUNT(*) FROM sync_jobs WHERE status = 'pending'"
+        )).scalar()
+        pending_pipeline = session.execute(text(
+            "SELECT COUNT(*) FROM artifacts WHERE status IN ('pending','enriched','embedded')"
+        )).scalar()
+        dead_jobs = session.execute(text(
+            "SELECT COUNT(*) FROM sync_jobs WHERE status = 'dead'"
+        )).scalar()
+
+    return jsonify({
+        "pipeline": stats,
+        "queue": {
+            "pending":         queue_depth,
+            "pendingPipeline": pending_pipeline,
+            "deadJobs":        dead_jobs,
+        },
+    })
+
+
 @bp.get("/quote")
 def get_quote():
     return jsonify(random.choice(QUOTES))
@@ -25,7 +55,10 @@ def get_quote():
 
 @bp.get("/graph")
 def get_graph():
-    return jsonify(graph_service.get_graph())
+    try:
+        return jsonify(graph_service.get_graph())
+    except RuntimeError:
+        return jsonify({"nodes": [], "edges": []})
 
 
 @bp.post("/graph/nodes")

@@ -5,7 +5,7 @@ export interface PaneData {
   type: PaneType
 }
 
-export type ArtifactType = 'audio' | 'link' | 'text' | 'file' | 'feed' | 'post'
+export type ArtifactType = 'audio' | 'link' | 'text' | 'file' | 'feed' | 'post' | 'note' | 'comment' | 'chunk' | 'webpage'
 
 export interface ArtifactEnrichment {
   summary: string
@@ -23,5 +23,32 @@ export interface Artifact {
   enrichment?: ArtifactEnrichment
   metadata?: Record<string, unknown>
   childCount?: number
+  userStatus?: 'saved' | 'dismissed' | null
+  status?: string
   createdAt: Date
+}
+
+export type InsightType = 'bridge' | 'convergence' | 'trend' | 'contradiction'
+
+export interface Insight {
+  id: string
+  type: InsightType
+  title: string
+  body: string
+  entity?: string
+  topic?: string
+  artifactIds: string[]
+  confidence: number
+  userStatus: 'pending' | 'accepted' | 'dismissed'
+  createdAt: Date
+}
+
+export interface FeedItem extends Artifact {
+  sourceType?: string
+  sourceName?: string
+  signalScore?: number
+}
+
+export interface SearchResult extends Artifact {
+  similarity: number
 }

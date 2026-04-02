@@ -1,4 +1,4 @@
-.PHONY: dev backend frontend install db-up db-down db-migrate db-revision
+.PHONY: dev backend frontend install db-up db-down db-migrate db-revision worker sync-reddit sync-twitter sync-insights worker-go
 
 dev:
 	@$(MAKE) -j2 backend frontend
@@ -24,3 +24,18 @@ db-migrate:
 
 db-revision:
 	cd backend && poetry run alembic revision --autogenerate -m "$(msg)"
+
+worker:
+	cd backend && poetry run python run_worker.py
+
+sync-reddit:
+	cd backend && poetry run python run_sync.py reddit
+
+sync-twitter:
+	cd backend && poetry run python run_sync.py twitter
+
+sync-insights:
+	cd backend && poetry run python -c "from dotenv import load_dotenv; load_dotenv(); from app.pipeline.insight_worker import InsightWorker; InsightWorker().run_once()"
+
+worker-go:
+	cd backend_v2 && go run ./cmd/worker

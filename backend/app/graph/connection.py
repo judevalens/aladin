@@ -1,18 +1,27 @@
 import os
+import logging
 from contextlib import contextmanager
 from neo4j import GraphDatabase, Driver
+
+logger = logging.getLogger(__name__)
 
 
 class GraphDB:
     _driver: Driver | None = None
 
     @classmethod
+    def is_configured(cls) -> bool:
+        return bool(os.environ.get("NEO4J_URI"))
+
+    @classmethod
     def driver(cls) -> Driver:
         if cls._driver is None:
-            cls._driver = GraphDatabase.driver(
-                os.environ["NEO4J_URI"],
-                auth=(os.environ["NEO4J_USER"], os.environ["NEO4J_PASSWORD"]),
-            )
+            uri  = os.environ.get("NEO4J_URI")
+            user = os.environ.get("NEO4J_USER", "neo4j")
+            pw   = os.environ.get("NEO4J_PASSWORD", "")
+            if not uri:
+                raise RuntimeError("NEO4J_URI is not set — graph features unavailable")
+            cls._driver = GraphDatabase.driver(uri, auth=(user, pw))
         return cls._driver
 
     @classmethod

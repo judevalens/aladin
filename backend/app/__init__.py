@@ -31,6 +31,21 @@ def create_app() -> Flask:
     from .api.pipeline import bp as pipeline_bp
     app.register_blueprint(pipeline_bp, url_prefix="/api/pipeline")
 
+    from .api.feed import bp as feed_bp
+    app.register_blueprint(feed_bp, url_prefix="/api/feed")
+
+    from .api.search import bp as search_bp
+    app.register_blueprint(search_bp, url_prefix="/api/search")
+
+    from .api.notes import bp as notes_bp
+    app.register_blueprint(notes_bp, url_prefix="/api/notes")
+
+    from .api.insights import bp as insights_bp
+    app.register_blueprint(insights_bp, url_prefix="/api/insights")
+
+    from .api.graph_explore import bp as graph_explore_bp
+    app.register_blueprint(graph_explore_bp, url_prefix="/api/graph-explore")
+
     _seed()
 
     return app

@@ -174,12 +174,13 @@ class Artifact(Base):
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
     enrichment: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     relevance_score: Mapped[float | None] = mapped_column(Float, nullable=True)
-    status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")  # pending | embedded | enriched | in_graph | dismissed | superseded
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")  # pending | enriched | embedded | in_graph | superseded
+    user_status: Mapped[str | None] = mapped_column(Text, nullable=True)  # saved | dismissed | null
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
-    source: Mapped["Source | None"] = relationship(back_populates=None)
+    source: Mapped["Source | None"] = relationship(foreign_keys=[source_id])
     snapshot: Mapped["Snapshot | None"] = relationship(back_populates="artifacts")
     children: Mapped[list["Artifact"]] = relationship(
         "Artifact", foreign_keys="Artifact.parent_id", back_populates="parent"
@@ -187,3 +188,23 @@ class Artifact(Base):
     parent: Mapped["Artifact | None"] = relationship(
         "Artifact", foreign_keys="Artifact.parent_id", back_populates="children", remote_side="Artifact.id"
     )
+
+
+class Insight(Base):
+    __tablename__ = "insights"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    kg_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("knowledge_graphs.id", ondelete="CASCADE"), nullable=False)
+    type: Mapped[str] = mapped_column(Text, nullable=False)  # bridge | convergence | contradiction | trend
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    artifact_ids: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    entity: Mapped[str | None] = mapped_column(Text, nullable=True)   # for bridge insights
+    topic: Mapped[str | None] = mapped_column(Text, nullable=True)    # for convergence insights
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.8)
+    user_status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")  # pending | accepted | dismissed
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    kg: Mapped["KnowledgeGraph"] = relationship(foreign_keys=[kg_id])

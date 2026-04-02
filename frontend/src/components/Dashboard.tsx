@@ -1,15 +1,18 @@
 import { useState, useEffect, useRef } from "react";
 import type { Artifact, ArtifactType } from "../types";
 import AudioRecorder from "./AudioRecorder";
-import { ingestUrl, streamChat, fetchChildren } from "../lib/api";
+import { ingestUrl, streamChat, fetchChildren, semanticSearch } from "../lib/api";
+import type { SearchResult } from "../types";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const TYPE_ICON: Record<ArtifactType, string> = {
   audio: "🎙", link: "🔗", text: "📋", file: "📎", feed: "📡", post: "💬",
+  note: "📝", comment: "💭", chunk: "◻", webpage: "🌐",
 };
 const TYPE_LABEL: Record<ArtifactType, string> = {
   audio: "Audio", link: "Link", text: "Note", file: "File", feed: "Feed", post: "Post",
+  note: "Note", comment: "Comment", chunk: "Chunk", webpage: "Page",
 };
 
 interface Message { id: number; role: "user" | "assistant"; content: string }
@@ -17,6 +20,8 @@ let msgId = 1;
 
 interface Props {
   artifacts: Artifact[];
+  focusedArtifact?: Artifact;
+  onClearFocus?: () => void;
   onAddArtifact: (type: ArtifactType, label: string, content: string, sourceUrl?: string) => void;
   onAddToGraph: (artifact: Artifact) => void;
   onOpenWorkspace: () => void;
@@ -26,22 +31,61 @@ type View = "grid" | "feed" | "focus";
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 
-export default function Dashboard({ artifacts, onAddArtifact, onAddToGraph, onOpenWorkspace }: Props) {
+export default function Dashboard({ artifacts, focusedArtifact, onClearFocus, onAddArtifact, onAddToGraph, onOpenWorkspace }: Props) {
   const [view, setView]                 = useState<View>("grid");
   const [focused, setFocused]           = useState<Artifact | null>(null);
   const [feedArtifact, setFeedArtifact] = useState<Artifact | null>(null);
   const [filter, setFilter]             = useState<ArtifactType | "all">("all");
   const [search, setSearch]             = useState("");
-  const [showRecorder, setShowRecorder] = useState(false);
+  const [showRecorder,    setShowRecorder]    = useState(false);
+  const [semanticResults, setSemanticResults] = useState<SearchResult[]>([]);
+  const [searchLoading,   setSearchLoading]   = useState(false);
+  const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // When a feed item is passed in externally (from UnifiedFeed), open focus view
+  useEffect(() => {
+    if (focusedArtifact) {
+      setFocused(focusedArtifact);
+      setView("focus");
+    }
+  }, [focusedArtifact]);
 
   const openFocus = (a: Artifact) => { setFocused(a); setView("focus"); };
   const openFeed  = (a: Artifact) => { setFeedArtifact(a); setView("feed"); };
 
-  const visible = artifacts.filter((a) => {
-    if (filter !== "all" && a.type !== filter) return false;
-    if (search && !a.label.toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
-  });
+  const handleBackFromFocus = () => {
+    if (focusedArtifact && onClearFocus) {
+      onClearFocus();
+    }
+    if (focused?.type === "post" && feedArtifact) {
+      setView("feed");
+    } else {
+      setView("grid");
+    }
+  };
+
+  // Trigger semantic search after typing 3+ chars; fall back to local filter
+  useEffect(() => {
+    if (searchDebounce.current) clearTimeout(searchDebounce.current);
+    if (search.length < 3) { setSemanticResults([]); return; }
+    searchDebounce.current = setTimeout(async () => {
+      setSearchLoading(true);
+      try {
+        const { results } = await semanticSearch(search, { limit: 30 });
+        setSemanticResults(results);
+      } catch { setSemanticResults([]); }
+      finally { setSearchLoading(false); }
+    }, 500);
+  }, [search]);
+
+  // Use semantic results when search is active and they are available
+  const visible = (search.length >= 3 && semanticResults.length > 0)
+    ? semanticResults.filter((a) => filter === "all" || a.type === filter)
+    : artifacts.filter((a) => {
+        if (filter !== "all" && a.type !== filter) return false;
+        if (search && !a.label.toLowerCase().includes(search.toLowerCase())) return false;
+        return true;
+      });
 
   const handleLink = async () => {
     const url = prompt("Paste a URL:");
@@ -84,7 +128,7 @@ export default function Dashboard({ artifacts, onAddArtifact, onAddToGraph, onOp
       <FocusView
         artifact={focused}
         artifacts={artifacts}
-        onBack={() => focused.type === "post" && feedArtifact ? setView("feed") : setView("grid")}
+        onBack={handleBackFromFocus}
         onNavigate={openFocus}
         onAddToGraph={() => { onAddToGraph(focused); onOpenWorkspace(); }}
         onOpenWorkspace={onOpenWorkspace}
@@ -111,11 +155,19 @@ export default function Dashboard({ artifacts, onAddArtifact, onAddToGraph, onOp
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">⌕</span>
           <input
             type="text"
-            placeholder="Search artifacts..."
+            placeholder="Search artifacts… (semantic search activates at 3+ chars)"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-8 pr-4 py-2.5 rounded-lg border border-gray-200 bg-gray-50 text-sm outline-none focus:border-gray-400 focus:bg-white transition-colors"
+            className="w-full pl-8 pr-10 py-2.5 rounded-lg border border-gray-200 bg-gray-50 text-sm outline-none focus:border-gray-400 focus:bg-white transition-colors"
           />
+          {searchLoading && (
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 text-xs animate-pulse">⟳</span>
+          )}
+          {search.length >= 3 && semanticResults.length > 0 && !searchLoading && (
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-400 text-[10px]">
+              {semanticResults.length} semantic
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
@@ -127,7 +179,7 @@ export default function Dashboard({ artifacts, onAddArtifact, onAddToGraph, onOp
             📎 File <input type="file" className="hidden" onChange={handleFile} />
           </label>
           <div className="ml-auto flex gap-1">
-            {(["all", "feed", "file", "link", "text", "audio"] as const).map((t) => (
+            {(["all", "feed", "note", "file", "link", "text", "audio"] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => setFilter(t)}
@@ -327,8 +379,8 @@ function FocusView({ artifact, artifacts, onBack, onAddToGraph }: {
 
   const related = artifacts.filter((a) => {
     if (a.id === preview.id || !preview.enrichment || !a.enrichment) return false;
-    const myTopics = new Set(preview.enrichment.topics);
-    return a.enrichment.topics.some((t) => myTopics.has(t));
+    const myTopics = new Set(preview.enrichment.topics ?? []);
+    return (a.enrichment.topics ?? []).some((t) => myTopics.has(t));
   }).slice(0, 6);
 
   const toggleContext = (a: Artifact) => {
