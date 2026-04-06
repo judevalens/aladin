@@ -7,38 +7,57 @@ import (
 // ScheduledJob is a generic unit of work returned by ClaimBatch.
 // The scheduler only sees this — no domain knowledge required.
 type ScheduledJob struct {
-	ID       string
-	Type     string
-	Payload  []byte
-	Priority int
-	MaxRetry int
-	Timeout  time.Duration
+	ID            string
+	CorrelationID string
+	Type          string
+	Payload       []byte
+	Priority      int
+	MaxRetry      int
+	Timeout       time.Duration
 }
 
 // Source is a configured data source.
 type Source struct {
+	ID            string
+	KgID          string
+	Name          string
+	Type          string
+	Config        map[string]any
+	SyncStatus    string     // idle | queued | syncing
+	SyncInterval  int        // seconds between syncs
+	LastPickedAt  *time.Time // scheduler last gave this source a turn
+	LastRefreshAt *time.Time // last completed refresh/sync cycle
+}
+
+// SyncCycle tracks one traversal over a source feed.
+// Source scheduling decides which cycle gets the next turn.
+type SyncCycle struct {
 	ID           string
-	KgID         string
-	Name         string
-	Type         string
-	Config       map[string]any
-	SyncStatus   string // idle | queued | syncing
-	SyncInterval int    // seconds between syncs
+	SourceID     string
+	Kind         string         // refresh | backfill
+	Status       string         // active | running | complete | closed
+	Cursor       map[string]any // pagination continuation state
+	CoveredUntil map[string]any // oldest covered frontier for overlap checks
+	LastPickedAt *time.Time
+	CreatedAt    time.Time
+	CompletedAt  *time.Time
 }
 
 // SyncJob is one unit of work in the sync queue.
 type SyncJob struct {
-	ID          string
-	SourceID    string
-	KgID        string
-	SnapshotID  string
-	SourceType  string
-	JobType     string
-	Payload     map[string]any
-	Priority    int
-	Attempts    int
-	MaxAttempts int
-	LastError   string
+	ID            string
+	CorrelationID string
+	CycleID       string
+	SourceID      string
+	KgID          string
+	SnapshotID    string
+	SourceType    string
+	JobType       string
+	Payload       map[string]any
+	Priority      int
+	Attempts      int
+	MaxAttempts   int
+	LastError     string
 }
 
 // Snapshot tracks one sync cycle for a source.

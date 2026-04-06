@@ -19,17 +19,18 @@ type RawArtifact struct {
 
 // Result is what a syncer returns after executing a job.
 type Result struct {
-	Artifacts  []*RawArtifact
-	NextJob    *db.SyncJob // pagination follow-up
-	RequeueJob *db.SyncJob // retry with backoff
+	Artifacts     []*RawArtifact
+	HasMore       bool           // more pages remain — scheduler will re-claim and continue
+	SourceUpdates map[string]any // merged into source config
+	CursorUpdates map[string]any // merged into cycle cursor for follow-up fetch_page
 }
 
 // Syncer is implemented once per source type.
 type Syncer interface {
 	SourceType() string
-	// BuildJob constructs the initial sync job for a source.
-	// Owns job type, payload shape, retry policy, and timeout.
-	// Returns an error if the source config is invalid or missing required fields.
-	BuildJob(source db.Source) (*db.ScheduledJob, error)
+	HeadQueue() string // queue for all dispatch (initial + resumed pages)
+	// BuildJob constructs the next sync job for a source turn.
+	// The cycle carries pagination state for queued fetch_page work.
+	BuildJob(source db.Source, cycle *db.SyncCycle) (*db.ScheduledJob, error)
 	Execute(ctx context.Context, job *db.SyncJob) (*Result, error)
 }

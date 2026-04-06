@@ -18,8 +18,12 @@ func (r *pgSourceRepo) GetByID(ctx context.Context, id string) (*Source, error) 
 	s := &Source{}
 	var configJSON []byte
 	err := r.pool.QueryRow(ctx,
-		`SELECT id::text, kg_id::text, name, type, config FROM sources WHERE id = $1::uuid`, id,
-	).Scan(&s.ID, &s.KgID, &s.Name, &s.Type, &configJSON)
+		`SELECT id::text, kg_id::text, name, type, config, sync_status,
+		        COALESCE((config->>'sync_interval_seconds')::int, 3600) AS sync_interval,
+		        last_picked_at, last_refresh_at
+		   FROM sources
+		  WHERE id = $1::uuid`, id,
+	).Scan(&s.ID, &s.KgID, &s.Name, &s.Type, &configJSON, &s.SyncStatus, &s.SyncInterval, &s.LastPickedAt, &s.LastRefreshAt)
 	if err != nil {
 		return nil, fmt.Errorf("GetByID: %w", err)
 	}
@@ -33,7 +37,8 @@ func (r *pgSourceRepo) GetByID(ctx context.Context, id string) (*Source, error) 
 func (r *pgSourceRepo) ClaimBatch(ctx context.Context, limit int) ([]*Source, error) {
 	rows, err := r.pool.Query(ctx, `
 		UPDATE sources
-		SET sync_status = 'queued'
+		SET sync_status    = 'queued',
+		    last_picked_at = now()
 		WHERE id IN (
 			SELECT id FROM sources
 			WHERE sync_mode   = 'poll'
@@ -46,12 +51,15 @@ func (r *pgSourceRepo) ClaimBatch(ctx context.Context, limit int) ([]*Source, er
 			             * interval '1 second'
 			         ) <= now()
 			  )
-			ORDER BY last_synced_at ASC NULLS FIRST
+			ORDER BY COALESCE(last_picked_at, to_timestamp(0)) ASC,
+			         COALESCE(last_synced_at, to_timestamp(0)) ASC,
+			         created_at ASC
 			FOR UPDATE SKIP LOCKED
 			LIMIT $1
 		)
 		RETURNING id::text, kg_id::text, name, type, config, sync_status,
-		          COALESCE((config->>'sync_interval_seconds')::int, 3600) AS sync_interval
+		          COALESCE((config->>'sync_interval_seconds')::int, 3600) AS sync_interval,
+		          last_picked_at, last_refresh_at
 	`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("ClaimBatch: %w", err)
@@ -64,7 +72,7 @@ func (r *pgSourceRepo) ClaimBatch(ctx context.Context, limit int) ([]*Source, er
 		var configJSON []byte
 		if err := rows.Scan(
 			&s.ID, &s.KgID, &s.Name, &s.Type, &configJSON,
-			&s.SyncStatus, &s.SyncInterval,
+			&s.SyncStatus, &s.SyncInterval, &s.LastPickedAt, &s.LastRefreshAt,
 		); err != nil {
 			return nil, fmt.Errorf("ClaimBatch scan: %w", err)
 		}
@@ -88,15 +96,46 @@ func (r *pgSourceRepo) MarkSyncStarted(ctx context.Context, id string) error {
 	return nil
 }
 
-// MarkSynced resets a source to idle and stamps last_synced_at = now.
-// Called by the sync handler after a full sync cycle completes.
-func (r *pgSourceRepo) MarkSynced(ctx context.Context, id string) error {
-	_, err := r.pool.Exec(ctx, `
+// MarkSyncPage resets a source to idle after one page without updating last_synced_at,
+// making it immediately re-claimable for the next page.
+func (r *pgSourceRepo) MarkSyncPage(ctx context.Context, id string, configUpdates map[string]any) error {
+	if configUpdates == nil {
+		configUpdates = map[string]any{}
+	}
+	patch, err := json.Marshal(configUpdates)
+	if err != nil {
+		return fmt.Errorf("MarkSyncPage marshal config updates: %w", err)
+	}
+	_, err = r.pool.Exec(ctx, `
+		UPDATE sources
+		SET sync_status = 'idle',
+		    config      = COALESCE(config, '{}'::jsonb) || $2::jsonb
+		WHERE id = $1::uuid
+	`, id, patch)
+	if err != nil {
+		return fmt.Errorf("MarkSyncPage: %w", err)
+	}
+	return nil
+}
+
+// MarkSynced resets a source to idle, stamps last_synced_at = now, and
+// optionally merges top-level config updates into the source config.
+func (r *pgSourceRepo) MarkSynced(ctx context.Context, id string, configUpdates map[string]any) error {
+	if configUpdates == nil {
+		configUpdates = map[string]any{}
+	}
+	patch, err := json.Marshal(configUpdates)
+	if err != nil {
+		return fmt.Errorf("MarkSynced marshal config updates: %w", err)
+	}
+	_, err = r.pool.Exec(ctx, `
 		UPDATE sources
 		SET sync_status    = 'idle',
-		    last_synced_at = now()
+		    last_synced_at = now(),
+		    last_refresh_at = now(),
+		    config         = COALESCE(config, '{}'::jsonb) || $2::jsonb
 		WHERE id = $1::uuid
-	`, id)
+	`, id, patch)
 	if err != nil {
 		return fmt.Errorf("MarkSynced: %w", err)
 	}
@@ -113,6 +152,18 @@ func (r *pgSourceRepo) MarkSyncFailed(ctx context.Context, id string) error {
 	`, id)
 	if err != nil {
 		return fmt.Errorf("MarkSyncFailed: %w", err)
+	}
+	return nil
+}
+
+func (r *pgSourceRepo) Release(ctx context.Context, id string) error {
+	_, err := r.pool.Exec(ctx, `
+		UPDATE sources
+		SET sync_status = 'idle'
+		WHERE id = $1::uuid
+	`, id)
+	if err != nil {
+		return fmt.Errorf("Release: %w", err)
 	}
 	return nil
 }

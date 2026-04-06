@@ -49,6 +49,11 @@ func main() {
 	pool := db.Connect(ctx, cfg.DatabaseURL)
 	defer pool.Close()
 
+	if err := db.Migrate(ctx, pool); err != nil {
+		slog.Error("worker: migrations failed", "component", "worker", "err", err)
+		os.Exit(1)
+	}
+
 	// Redis
 	redisOpts, err := redis.ParseURL(cfg.RedisURL)
 	if err != nil {
@@ -67,30 +72,18 @@ func main() {
 	asynqClient := asynq.NewClient(redisOpt)
 	defer asynqClient.Close()
 
-	asynqServer := asynq.NewServer(redisOpt, asynq.Config{
-		Queues: map[string]int{
-			pipeline.TaskFirstPass: 10,
-			pipeline.TaskSearch:    5,
-			pipeline.TaskEmbed:     3,
-			pipeline.TaskGraph:     5,
-			"sync":                 2,
-		},
-		ErrorHandler: asynq.ErrorHandlerFunc(func(ctx context.Context, task *asynq.Task, err error) {
-			slog.Error("asynq task failed", "component", "worker", "task_type", task.Type(), "err", err)
-		}),
-	})
-
 	// Repositories
 	artifactRepo := db.NewArtifactRepository(pool)
-	sourceRepo   := db.NewSourceRepository(pool)
-	insightRepo  := db.NewInsightRepository(pool)
+	sourceRepo := db.NewSourceRepository(pool)
+	cycleRepo := db.NewSyncCycleRepository(pool)
+	insightRepo := db.NewInsightRepository(pool)
 
 	// Rate limiters
 	openaiLimiter := ratelimit.New(60)
 	tavilyLimiter := ratelimit.New(20)
 
 	// Search
-	tavilyClient   := search.NewTavilyClient(cfg.TavilyAPIKey)
+	tavilyClient := search.NewTavilyClient(cfg.TavilyAPIKey)
 	cachedSearcher := search.NewCachedSearcher(tavilyClient, redisClient, tavilyLimiter)
 
 	// Neo4j promoter (optional)
@@ -113,15 +106,15 @@ func main() {
 	embedder := llm.NewOpenAIEmbedder(cfg.OpenAIAPIKey)
 
 	// Insight worker
-	insightCh     := make(chan string, 256)
-	gen           := insights.NewGenerator(insightRepo, pool)
+	insightCh := make(chan string, 256)
+	gen := insights.NewGenerator(insightRepo, pool)
 	insightWorker := insights.NewWorker(gen, insightCh)
 	insightWorker.Start(ctx)
 
 	// Pipeline
 	pipelineEnqueuer := pipeline.NewAsynqEnqueuer(asynqClient)
 	handler := pipeline.NewFullPipelineHandler(pipelineEnqueuer, artifactRepo, insightCh)
-	orch    := pipeline.NewOrchestrator(asynqClient, handler)
+	orch := pipeline.NewOrchestrator(handler)
 	orch.Add(workers.NewFirstPassWorker(enricher, openaiLimiter))
 	orch.Add(workers.NewSearchWorker(cachedSearcher))
 	orch.Add(workers.NewEmbedWorker(embedder, openaiLimiter))
@@ -133,9 +126,30 @@ func main() {
 
 	// Sync queue
 	syncEnqueuer := isync.NewAsynqEnqueuer(asynqClient)
-	sourceQueue := isync.NewQueue(syncEnqueuer, sourceRepo, artifactRepo,
+	sourceQueue := isync.NewQueue(syncEnqueuer, sourceRepo, cycleRepo,
+		syncers.NewBlueskySyncer(),
 		syncers.NewRedditSyncer(),
 	)
+
+	// asynq server — built after sourceQueue so we can pull queue names from syncers
+	queues := map[string]int{
+		pipeline.TaskFirstPass: 10,
+		pipeline.TaskSearch:    5,
+		pipeline.TaskEmbed:     3,
+		pipeline.TaskGraph:     5,
+	}
+	for name, weight := range sourceQueue.Queues() {
+		queues[name] = weight
+	}
+	asynqServer := asynq.NewServer(redisOpt, asynq.Config{
+		Queues:         queues,
+		RetryDelayFunc: pipeline.RetryDelay,
+		IsFailure:      pipeline.IsFailure,
+		ErrorHandler: asynq.ErrorHandlerFunc(func(ctx context.Context, task *asynq.Task, err error) {
+			slog.Error("asynq task failed", "component", "worker", "task_type", task.Type(), "err", err)
+		}),
+	})
+
 	sourceQueue.RegisterHandlers(mux)
 	sourceQueue.Start(ctx)
 

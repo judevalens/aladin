@@ -10,14 +10,15 @@ import (
 )
 
 type fakeSourceRepo struct {
-	claimed          []*db.Source
-	claimErr         error
-	markFailedIDs    []string
-	markStartedIDs   []string
-	markSyncedIDs    []string
-	markFailedErr    error
-	markStartedErr   error
-	markSyncedErr    error
+	claimed        []*db.Source
+	claimErr       error
+	markFailedIDs  []string
+	markStartedIDs []string
+	markSyncedIDs  []string
+	releasedIDs    []string
+	markFailedErr  error
+	markStartedErr error
+	markSyncedErr  error
 }
 
 func (f *fakeSourceRepo) GetByID(ctx context.Context, id string) (*db.Source, error) {
@@ -36,7 +37,11 @@ func (f *fakeSourceRepo) MarkSyncStarted(ctx context.Context, id string) error {
 	return f.markStartedErr
 }
 
-func (f *fakeSourceRepo) MarkSynced(ctx context.Context, id string) error {
+func (f *fakeSourceRepo) MarkSyncPage(ctx context.Context, id string, configUpdates map[string]any) error {
+	return nil
+}
+
+func (f *fakeSourceRepo) MarkSynced(ctx context.Context, id string, configUpdates map[string]any) error {
 	f.markSyncedIDs = append(f.markSyncedIDs, id)
 	return f.markSyncedErr
 }
@@ -46,15 +51,59 @@ func (f *fakeSourceRepo) MarkSyncFailed(ctx context.Context, id string) error {
 	return f.markFailedErr
 }
 
+func (f *fakeSourceRepo) Release(ctx context.Context, id string) error {
+	f.releasedIDs = append(f.releasedIDs, id)
+	return nil
+}
+
+type fakeCycleRepo struct {
+	cyclesBySource map[string][]*db.SyncCycle
+	created        []*db.SyncCycle
+	runningIDs     []string
+	updatedIDs     []string
+	completedIDs   []string
+}
+
+func (f *fakeCycleRepo) ListActiveBySource(ctx context.Context, sourceID string) ([]*db.SyncCycle, error) {
+	if f.cyclesBySource == nil {
+		return nil, nil
+	}
+	return f.cyclesBySource[sourceID], nil
+}
+
+func (f *fakeCycleRepo) Create(ctx context.Context, cycle *db.SyncCycle) error {
+	f.created = append(f.created, cycle)
+	return nil
+}
+
+func (f *fakeCycleRepo) MarkRunning(ctx context.Context, id string) error {
+	f.runningIDs = append(f.runningIDs, id)
+	return nil
+}
+
+func (f *fakeCycleRepo) UpdateCursor(ctx context.Context, id string, cursor map[string]any) error {
+	f.updatedIDs = append(f.updatedIDs, id)
+	return nil
+}
+
+func (f *fakeCycleRepo) MarkActive(ctx context.Context, id string) error {
+	return nil
+}
+
+func (f *fakeCycleRepo) Complete(ctx context.Context, id string) error {
+	f.completedIDs = append(f.completedIDs, id)
+	return nil
+}
+
 type fakeSyncer struct {
 	sourceType string
-	buildJobFn func(source db.Source) (*db.ScheduledJob, error)
+	buildJobFn func(source db.Source, cycle *db.SyncCycle) (*db.ScheduledJob, error)
 	executeFn  func(ctx context.Context, job *db.SyncJob) (*Result, error)
 }
 
 type fakeEnqueuer struct{}
 
-func (f *fakeEnqueuer) EnqueueSync(ctx context.Context, taskType string, payload []byte, maxRetry int, timeout time.Duration) error {
+func (f *fakeEnqueuer) EnqueueSync(ctx context.Context, queueName, taskType string, payload []byte, maxRetry int, timeout time.Duration) error {
 	return nil
 }
 
@@ -63,10 +112,12 @@ func (f *fakeEnqueuer) EnqueueFirstPass(ctx context.Context, artifactID string, 
 }
 
 func (f *fakeSyncer) SourceType() string { return f.sourceType }
+func (f *fakeSyncer) HeadQueue() string  { return "sync_head:" + f.sourceType }
+func (f *fakeSyncer) PageQueue() string  { return "sync:" + f.sourceType }
 
-func (f *fakeSyncer) BuildJob(source db.Source) (*db.ScheduledJob, error) {
+func (f *fakeSyncer) BuildJob(source db.Source, cycle *db.SyncCycle) (*db.ScheduledJob, error) {
 	if f.buildJobFn != nil {
-		return f.buildJobFn(source)
+		return f.buildJobFn(source, cycle)
 	}
 	return nil, errors.New("not implemented")
 }
@@ -100,15 +151,18 @@ func TestQueueClaimBatchBuildsJobsFromSyncer(t *testing.T) {
 	}
 	syncer := &fakeSyncer{
 		sourceType: "reddit",
-		buildJobFn: func(source db.Source) (*db.ScheduledJob, error) {
+		buildJobFn: func(source db.Source, cycle *db.SyncCycle) (*db.ScheduledJob, error) {
 			if source.ID != "source-1" {
 				t.Fatalf("BuildJob got source ID %q, want source-1", source.ID)
+			}
+			if cycle == nil || cycle.Kind != CycleKindRefresh {
+				t.Fatalf("cycle = %#v, want refresh cycle", cycle)
 			}
 			return wantJob, nil
 		},
 	}
 
-	q := NewQueue(&fakeEnqueuer{}, repo, nil, syncer)
+	q := NewQueue(&fakeEnqueuer{}, repo, &fakeCycleRepo{}, syncer)
 
 	jobs, err := q.ClaimBatch(context.Background(), 10)
 	if err != nil {
@@ -134,7 +188,7 @@ func TestQueueClaimBatchMarksUnsupportedSourcesFailed(t *testing.T) {
 			Type: "hackernews",
 		}},
 	}
-	q := NewQueue(&fakeEnqueuer{}, repo, nil)
+	q := NewQueue(&fakeEnqueuer{}, repo, &fakeCycleRepo{})
 
 	jobs, err := q.ClaimBatch(context.Background(), 10)
 	if err != nil {
@@ -159,11 +213,11 @@ func TestQueueClaimBatchMarksBuildJobFailuresFailed(t *testing.T) {
 	}
 	syncer := &fakeSyncer{
 		sourceType: "reddit",
-		buildJobFn: func(source db.Source) (*db.ScheduledJob, error) {
+		buildJobFn: func(source db.Source, cycle *db.SyncCycle) (*db.ScheduledJob, error) {
 			return nil, errors.New("bad config")
 		},
 	}
-	q := NewQueue(&fakeEnqueuer{}, repo, nil, syncer)
+	q := NewQueue(&fakeEnqueuer{}, repo, &fakeCycleRepo{}, syncer)
 
 	jobs, err := q.ClaimBatch(context.Background(), 10)
 	if err != nil {

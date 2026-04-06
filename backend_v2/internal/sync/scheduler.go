@@ -10,7 +10,7 @@ import (
 
 const (
 	defaultBatchSize = 50
-	defaultBackoff   = 5 * time.Second
+	defaultBackoff   = 2 * time.Second
 )
 
 // JobPoller claims a batch of ready jobs from a backing store.
@@ -75,12 +75,17 @@ func (s *Scheduler) Start(ctx context.Context) {
 			if err := s.dispatcher.Dispatch(ctx, job); err != nil {
 				log.Error("scheduler: dispatch failed",
 					"job_id", job.ID,
+					"correlation_id", job.CorrelationID,
 					"job_type", job.Type,
 					"err", err,
 				)
 				continue
 			}
-			log.Info("scheduler: dispatched job", "job_id", job.ID, "job_type", job.Type)
+			log.Info("scheduler: dispatched job",
+				"job_id", job.ID,
+				"correlation_id", job.CorrelationID,
+				"job_type", job.Type,
+			)
 		}
 
 		// Full batch — loop immediately, more may be waiting

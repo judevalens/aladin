@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,20 +15,18 @@ import (
 	"aladin/backend_v2/internal/pipeline"
 )
 
-const QueueSync = "sync"
-
 // Queue manages sync handler registration, job execution, and scheduler startup.
 type Queue struct {
-	enqueuer  Enqueuer
-	sources   db.SourceRepository
-	artifacts db.ArtifactRepository
-	syncers   map[string]Syncer
+	enqueuer Enqueuer
+	sources  db.SourceRepository
+	cycles   db.SyncCycleRepository
+	syncers  map[string]Syncer
 }
 
 func NewQueue(
 	enqueuer Enqueuer,
 	sources db.SourceRepository,
-	artifacts db.ArtifactRepository,
+	cycles db.SyncCycleRepository,
 	syncers ...Syncer,
 ) *Queue {
 	m := make(map[string]Syncer, len(syncers))
@@ -35,18 +34,16 @@ func NewQueue(
 		m[s.SourceType()] = s
 	}
 	return &Queue{
-		enqueuer:  enqueuer,
-		sources:   sources,
-		artifacts: artifacts,
-		syncers:   m,
+		enqueuer: enqueuer,
+		sources:  sources,
+		cycles:   cycles,
+		syncers:  m,
 	}
 }
 
 // Start launches the scheduler — polls for due sources and dispatches them.
 func (q *Queue) Start(ctx context.Context) {
-	dispatcher := &asynqDispatcher{enqueuer: q.enqueuer}
-	scheduler  := NewScheduler(q, dispatcher, defaultBatchSize)
-	go scheduler.Start(ctx)
+	go NewScheduler(q, q, defaultBatchSize).Start(ctx)
 }
 
 // ClaimBatch implements JobPoller — claims due sources and builds jobs using syncer policy.
@@ -58,6 +55,7 @@ func (q *Queue) ClaimBatch(ctx context.Context, limit int) ([]*db.ScheduledJob, 
 		return nil, err
 	}
 	jobs := make([]*db.ScheduledJob, 0, len(sources))
+	now := time.Now().UTC()
 	for _, src := range sources {
 		syncer, ok := q.syncers[src.Type]
 		if !ok {
@@ -75,7 +73,53 @@ func (q *Queue) ClaimBatch(ctx context.Context, limit int) ([]*db.ScheduledJob, 
 			}
 			continue
 		}
-		job, err := syncer.BuildJob(*src)
+
+		cycles, err := q.cycles.ListActiveBySource(ctx, src.ID)
+		if err != nil {
+			if rErr := q.sources.Release(ctx, src.ID); rErr != nil {
+				slog.Error("sync: release source after cycle list failure",
+					"component", "sync_queue",
+					"source_id", src.ID,
+					"err", rErr,
+				)
+			}
+			return nil, fmt.Errorf("claim cycles for source %s: %w", src.ID, err)
+		}
+
+		decision := ChooseCycle(src, cycles, now)
+		if decision.Action == DecisionSkip {
+			if err := q.sources.Release(ctx, src.ID); err != nil {
+				slog.Error("sync: release skipped source failed",
+					"component", "sync_queue",
+					"source_id", src.ID,
+					"reason", decision.Reason,
+					"err", err,
+				)
+			}
+			continue
+		}
+
+		cycle := decision.Cycle
+		if decision.Action == DecisionCreateRefresh {
+			cycle = &db.SyncCycle{
+				ID:       uuid.NewString(),
+				SourceID: src.ID,
+				Kind:     CycleKindRefresh,
+				Status:   CycleStatusActive,
+			}
+			if err := q.cycles.Create(ctx, cycle); err != nil {
+				if rErr := q.sources.Release(ctx, src.ID); rErr != nil {
+					slog.Error("sync: release source after create cycle failure",
+						"component", "sync_queue",
+						"source_id", src.ID,
+						"err", rErr,
+					)
+				}
+				return nil, fmt.Errorf("create refresh cycle for source %s: %w", src.ID, err)
+			}
+		}
+
+		job, err := syncer.BuildJob(*src, cycle)
 		if err != nil {
 			slog.Error("sync: build job failed, marking source failed",
 				"component", "sync_queue",
@@ -105,19 +149,25 @@ func (q *Queue) RegisterHandlers(mux *asynq.ServeMux) {
 	}
 }
 
-// ── AsynqDispatcher ───────────────────────────────────────────────────────────
-
-// asynqDispatcher implements JobDispatcher using asynq.
-type asynqDispatcher struct {
-	enqueuer Enqueuer
-}
-
-func (d *asynqDispatcher) Dispatch(ctx context.Context, job *db.ScheduledJob) error {
-	err := d.enqueuer.EnqueueSync(ctx, job.Type, job.Payload, job.MaxRetry, job.Timeout)
-	if err != nil {
+// Dispatch implements JobDispatcher — enqueues a claimed job to its syncer's queue.
+func (q *Queue) Dispatch(ctx context.Context, job *db.ScheduledJob) error {
+	syncer, ok := q.syncers[sourceTypeFromTaskType(job.Type)]
+	if !ok {
+		return fmt.Errorf("dispatch: no syncer for task type %q", job.Type)
+	}
+	if err := q.enqueuer.EnqueueSync(ctx, syncer.HeadQueue(), job.Type, job.Payload, job.MaxRetry, job.Timeout); err != nil {
 		return fmt.Errorf("asynq dispatch: %w", err)
 	}
 	return nil
+}
+
+// Queues returns all queue names with their default weights for asynq server config.
+func (q *Queue) Queues() map[string]int {
+	m := make(map[string]int, len(q.syncers))
+	for _, s := range q.syncers {
+		m[s.HeadQueue()] = 6
+	}
+	return m
 }
 
 // ── Handler ───────────────────────────────────────────────────────────────────
@@ -131,6 +181,8 @@ func (q *Queue) makeHandler(syncer Syncer) asynq.HandlerFunc {
 
 		log := slog.With(
 			"component", "sync_queue",
+			"correlation_id", job.CorrelationID,
+			"cycle_id", job.CycleID,
 			"source_type", job.SourceType,
 			"job_type", job.JobType,
 			"source_id", job.SourceID,
@@ -142,6 +194,11 @@ func (q *Queue) makeHandler(syncer Syncer) asynq.HandlerFunc {
 		if job.SnapshotID == "" {
 			if err := q.sources.MarkSyncStarted(ctx, job.SourceID); err != nil {
 				log.Warn("sync: mark started failed — source will appear queued during execution", "err", err)
+			}
+		}
+		if job.CycleID != "" {
+			if err := q.cycles.MarkRunning(ctx, job.CycleID); err != nil {
+				log.Warn("sync: mark cycle running failed", "err", err)
 			}
 		}
 
@@ -158,40 +215,22 @@ func (q *Queue) makeHandler(syncer Syncer) asynq.HandlerFunc {
 
 		log.Info("sync: complete", "artifact_count", len(result.Artifacts))
 
-		// Stop-on-known-post: if any artifact on this page already exists in the DB,
-		// we've caught up to previously-synced content — stop pagination.
-		if result.NextJob != nil && len(result.Artifacts) > 0 {
-			ids := make([]string, len(result.Artifacts))
-			for i, a := range result.Artifacts {
-				ids[i] = a.ExternalID
-			}
-			known, err := q.artifacts.ExistsExternal(ctx, job.SourceID, ids)
-			if err != nil {
-				log.Warn("sync: exists check failed, continuing pagination", "err", err)
-			} else if len(known) > 0 {
-				log.Info("sync: hit known posts, stopping pagination",
-					"known_count", len(known),
-					"page_size", len(result.Artifacts),
-				)
-				result.NextJob = nil
-			}
-		}
-
 		// Enqueue artifacts into the pipeline.
 		// Any enqueue failure is a data loss — fail the whole handler so asynq retries.
 		queued := 0
 		for _, a := range result.Artifacts {
-			artifactID := uuid.NewSHA1(uuid.NameSpaceOID, []byte(job.SourceID+":"+a.ExternalID)).String()
+			artifactID := uuid.NewSHA1(uuid.NameSpaceURL, []byte(job.SourceID+":"+a.ExternalID)).String()
 			payload, err := json.Marshal(pipeline.ArtifactPayload{
-				ArtifactID: artifactID,
-				KgID:       job.KgID,
-				SourceID:   job.SourceID,
-				ExternalID: a.ExternalID,
-				Type:       a.Type,
-				Label:      a.Label,
-				Content:    a.Content,
-				SourceURL:  a.SourceURL,
-				Metadata:   a.Metadata,
+				ArtifactID:    artifactID,
+				CorrelationID: job.CorrelationID,
+				KgID:          job.KgID,
+				SourceID:      job.SourceID,
+				ExternalID:    a.ExternalID,
+				Type:          a.Type,
+				Label:         a.Label,
+				Content:       a.Content,
+				SourceURL:     a.SourceURL,
+				Metadata:      a.Metadata,
 			})
 			if err != nil {
 				// Marshal failure is a programming error — fail fast
@@ -211,27 +250,35 @@ func (q *Queue) makeHandler(syncer Syncer) asynq.HandlerFunc {
 		}
 		log.Info("sync: artifacts enqueued for ingestion", "queued", queued, "total", len(result.Artifacts))
 
-		// Paginate — enqueue next page if available
-		if result.NextJob != nil {
-			result.NextJob.SnapshotID = job.SnapshotID
-			result.NextJob.KgID = job.KgID
-			if err := q.enqueue(ctx, result.NextJob); err != nil {
-				log.Error("sync: enqueue next page failed, marking source failed", "err", err)
-				if mErr := q.sources.MarkSyncFailed(ctx, job.SourceID); mErr != nil {
-					log.Error("sync: mark failed error", "err", mErr)
+		// After each page, return the source to the scheduler.
+		// HasMore=true → MarkSyncPage (idle, no last_synced_at update, cursor persisted)
+		//              → scheduler re-claims immediately alongside other sources (fairness)
+		// HasMore=false → MarkSynced (idle, last_synced_at stamped, cycle complete)
+		if result.HasMore {
+			if job.CycleID != "" {
+				cursor := mergeState(job.Payload, result.CursorUpdates)
+				if err := q.cycles.UpdateCursor(ctx, job.CycleID, cursor); err != nil {
+					log.Error("sync: update cycle cursor failed", "err", err)
+					return fmt.Errorf("sync: update cycle cursor: %w", err)
 				}
-				return err
 			}
-			log.Info("sync: enqueued next page")
+			if err := q.sources.MarkSyncPage(ctx, job.SourceID, result.SourceUpdates); err != nil {
+				log.Error("sync: mark sync page failed", "err", err)
+				return fmt.Errorf("sync: mark sync page: %w", err)
+			}
+			log.Info("sync: page complete, returning source to scheduler")
 		} else {
-			// No next page — sync cycle complete, mark source available.
-			// Return the error so asynq retries — source remains in syncing
-			// and will be recovered by the watchdog (future work).
-			if err := q.sources.MarkSynced(ctx, job.SourceID); err != nil {
+			if job.CycleID != "" {
+				if err := q.cycles.Complete(ctx, job.CycleID); err != nil {
+					log.Error("sync: complete cycle failed", "err", err)
+					return fmt.Errorf("sync: complete cycle: %w", err)
+				}
+			}
+			if err := q.sources.MarkSynced(ctx, job.SourceID, result.SourceUpdates); err != nil {
 				log.Error("sync: mark synced failed", "err", err)
 				return fmt.Errorf("sync: mark synced: %w", err)
 			}
-			log.Info("sync: source marked synced", "source_id", job.SourceID)
+			log.Info("sync: cycle complete", "source_id", job.SourceID)
 		}
 
 		return nil
@@ -240,12 +287,16 @@ func (q *Queue) makeHandler(syncer Syncer) asynq.HandlerFunc {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-func (q *Queue) enqueue(ctx context.Context, job *db.SyncJob) error {
-	payload, err := json.Marshal(job)
-	if err != nil {
-		return fmt.Errorf("marshal job: %w", err)
-	}
-	return q.enqueuer.EnqueueSync(ctx, taskType(job.SourceType), payload, job.MaxAttempts, 2*time.Minute)
-}
+func taskType(sourceType string) string      { return "sync:" + sourceType }
+func sourceTypeFromTaskType(t string) string { return strings.TrimPrefix(t, "sync:") }
 
-func taskType(sourceType string) string { return "sync:" + sourceType }
+func mergeState(base map[string]any, updates map[string]any) map[string]any {
+	merged := make(map[string]any, len(base)+len(updates))
+	for k, v := range base {
+		merged[k] = v
+	}
+	for k, v := range updates {
+		merged[k] = v
+	}
+	return merged
+}
