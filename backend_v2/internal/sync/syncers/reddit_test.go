@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"aladin/backend_v2/internal/db"
+	"aladin/backend_v2/internal/sync"
 )
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
@@ -17,10 +18,28 @@ func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
 
+type fakeSeenStore struct {
+	known map[string]bool
+}
+
+func (f fakeSeenStore) Seen(ctx context.Context, sourceID string, externalIDs []string) (map[string]bool, error) {
+	out := make(map[string]bool, len(externalIDs))
+	for _, id := range externalIDs {
+		if f.known[id] {
+			out[id] = true
+		}
+	}
+	return out, nil
+}
+
+func (f fakeSeenStore) MarkSeen(ctx context.Context, sourceID string, externalIDs []string) error {
+	return nil
+}
+
 func TestRedditBuildJobBootstrapForNewSource(t *testing.T) {
 	t.Parallel()
 
-	s := NewRedditSyncer()
+	s := NewRedditSyncer(sync.NewNoopSeenStore())
 	job, err := s.BuildJob(db.Source{
 		ID:   "source-1",
 		KgID: "kg-1",
@@ -49,7 +68,7 @@ func TestRedditBuildJobBootstrapForNewSource(t *testing.T) {
 func TestRedditBuildJobCarriesLastSeenBoundary(t *testing.T) {
 	t.Parallel()
 
-	s := NewRedditSyncer()
+	s := NewRedditSyncer(sync.NewNoopSeenStore())
 	job, err := s.BuildJob(db.Source{
 		ID:   "source-1",
 		KgID: "kg-1",
@@ -69,21 +88,18 @@ func TestRedditBuildJobCarriesLastSeenBoundary(t *testing.T) {
 	if err := json.Unmarshal(job.Payload, &payload); err != nil {
 		t.Fatalf("unmarshal payload: %v", err)
 	}
-	if got := payload.Payload["stop_before_id"]; got != "seen-123" {
-		t.Fatalf("stop_before_id = %v, want seen-123", got)
-	}
-	if got := floatFromAny(payload.Payload["stop_before_created_utc"]); got != 1234 {
-		t.Fatalf("stop_before_created_utc = %v, want 1234", got)
+	if _, ok := payload.Payload["stop_before_id"]; ok {
+		t.Fatal("stop_before_id should not be present")
 	}
 	if _, ok := payload.Payload["bootstrap"]; ok {
 		t.Fatal("bootstrap should not be present")
 	}
 }
 
-func TestRedditExecuteStopsAtStoredBoundary(t *testing.T) {
+func TestRedditExecuteStopsAtSeenID(t *testing.T) {
 	t.Parallel()
 
-	s := NewRedditSyncer()
+	s := NewRedditSyncer(fakeSeenStore{known: map[string]bool{"seen-1": true}})
 	s.client.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 		body := `{"data":{"after":"t3_next","children":[
 			{"data":{"id":"new-3","title":"newest","selftext":"","permalink":"/r/golang/comments/new3/x","score":10,"created_utc":300}},
@@ -103,8 +119,6 @@ func TestRedditExecuteStopsAtStoredBoundary(t *testing.T) {
 		Payload: map[string]any{
 			"subreddit":                  "golang",
 			"after":                      "",
-			"stop_before_id":             "seen-1",
-			"stop_before_created_utc":    float64(100),
 			"next_last_seen_id":          "",
 			"next_last_seen_created_utc": float64(0),
 		},
@@ -117,6 +131,9 @@ func TestRedditExecuteStopsAtStoredBoundary(t *testing.T) {
 	if result.HasMore {
 		t.Fatal("HasMore = true, want false after hitting boundary")
 	}
+	if result.CompletionReason != sync.CompletionReasonSeenOverlap {
+		t.Fatalf("CompletionReason = %q, want %q", result.CompletionReason, sync.CompletionReasonSeenOverlap)
+	}
 	if len(result.Artifacts) != 2 {
 		t.Fatalf("artifact count = %d, want 2", len(result.Artifacts))
 	}
@@ -126,12 +143,18 @@ func TestRedditExecuteStopsAtStoredBoundary(t *testing.T) {
 	if got := floatFromAny(result.SourceUpdates["last_seen_created_utc"]); got != 300 {
 		t.Fatalf("last_seen_created_utc = %v, want 300", got)
 	}
+	if got := result.HeadBoundary["id"]; got != "new-3" {
+		t.Fatalf("head_boundary.id = %v, want new-3", got)
+	}
+	if got := floatFromAny(result.HeadBoundary["created_utc"]); got != 300 {
+		t.Fatalf("head_boundary.created_utc = %v, want 300", got)
+	}
 }
 
 func TestRedditExecuteCarriesNextBoundaryAcrossPagination(t *testing.T) {
 	t.Parallel()
 
-	s := NewRedditSyncer()
+	s := NewRedditSyncer(sync.NewNoopSeenStore())
 	s.client.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 		body := `{"data":{"after":"t3_next","children":[
 			{"data":{"id":"new-3","title":"newest","selftext":"","permalink":"/r/golang/comments/new3/x","score":10,"created_utc":300}},
@@ -153,8 +176,6 @@ func TestRedditExecuteCarriesNextBoundaryAcrossPagination(t *testing.T) {
 		Payload: map[string]any{
 			"subreddit":                  "golang",
 			"after":                      "",
-			"stop_before_id":             "seen-1",
-			"stop_before_created_utc":    float64(100),
 			"next_last_seen_id":          "",
 			"next_last_seen_created_utc": float64(0),
 		},
@@ -167,18 +188,24 @@ func TestRedditExecuteCarriesNextBoundaryAcrossPagination(t *testing.T) {
 	if !result.HasMore {
 		t.Fatal("HasMore = false, want true for pagination follow-up")
 	}
+	if result.CompletionReason != "" {
+		t.Fatalf("CompletionReason = %q, want empty for continued pagination", result.CompletionReason)
+	}
 	if got := result.CursorUpdates["after"]; got != "t3_next" {
 		t.Fatalf("after = %v, want t3_next", got)
 	}
 	if got := result.SourceUpdates["last_seen_id"]; got != "new-3" {
 		t.Fatalf("last_seen_id = %v, want new-3", got)
 	}
+	if got := result.HeadBoundary["id"]; got != "new-3" {
+		t.Fatalf("head_boundary.id = %v, want new-3", got)
+	}
 }
 
-func TestRedditExecuteDoesNotAdvanceHighWaterMarkWhenBoundaryIsFirstPost(t *testing.T) {
+func TestRedditExecuteDoesNotAdvanceHighWaterMarkWhenFirstPostIsSeen(t *testing.T) {
 	t.Parallel()
 
-	s := NewRedditSyncer()
+	s := NewRedditSyncer(fakeSeenStore{known: map[string]bool{"seen-1": true}})
 	s.client.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 		body := `{"data":{"after":"t3_next","children":[
 			{"data":{"id":"seen-1","title":"seen","selftext":"","permalink":"/r/golang/comments/seen1/x","score":8,"created_utc":100}}
@@ -196,8 +223,6 @@ func TestRedditExecuteDoesNotAdvanceHighWaterMarkWhenBoundaryIsFirstPost(t *test
 		Payload: map[string]any{
 			"subreddit":                  "golang",
 			"after":                      "",
-			"stop_before_id":             "seen-1",
-			"stop_before_created_utc":    float64(100),
 			"next_last_seen_id":          "",
 			"next_last_seen_created_utc": float64(0),
 		},
@@ -210,7 +235,13 @@ func TestRedditExecuteDoesNotAdvanceHighWaterMarkWhenBoundaryIsFirstPost(t *test
 	if len(result.Artifacts) != 0 {
 		t.Fatalf("artifact count = %d, want 0", len(result.Artifacts))
 	}
+	if result.CompletionReason != sync.CompletionReasonSeenOverlap {
+		t.Fatalf("CompletionReason = %q, want %q", result.CompletionReason, sync.CompletionReasonSeenOverlap)
+	}
 	if _, ok := result.SourceUpdates["last_seen_id"]; ok {
 		t.Fatal("last_seen_id should not advance when boundary is first post")
+	}
+	if len(result.HeadBoundary) != 0 {
+		t.Fatalf("head_boundary = %v, want empty", result.HeadBoundary)
 	}
 }

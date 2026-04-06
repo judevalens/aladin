@@ -20,6 +20,7 @@ type Queue struct {
 	enqueuer Enqueuer
 	sources  db.SourceRepository
 	cycles   db.SyncCycleRepository
+	seen     SeenStore
 	syncers  map[string]Syncer
 }
 
@@ -27,16 +28,21 @@ func NewQueue(
 	enqueuer Enqueuer,
 	sources db.SourceRepository,
 	cycles db.SyncCycleRepository,
+	seen SeenStore,
 	syncers ...Syncer,
 ) *Queue {
 	m := make(map[string]Syncer, len(syncers))
 	for _, s := range syncers {
 		m[s.SourceType()] = s
 	}
+	if seen == nil {
+		seen = NewNoopSeenStore()
+	}
 	return &Queue{
 		enqueuer: enqueuer,
 		sources:  sources,
 		cycles:   cycles,
+		seen:     seen,
 		syncers:  m,
 	}
 }
@@ -218,6 +224,7 @@ func (q *Queue) makeHandler(syncer Syncer) asynq.HandlerFunc {
 		// Enqueue artifacts into the pipeline.
 		// Any enqueue failure is a data loss — fail the whole handler so asynq retries.
 		queued := 0
+		seenIDs := make([]string, 0, len(result.Artifacts))
 		for _, a := range result.Artifacts {
 			artifactID := uuid.NewSHA1(uuid.NameSpaceURL, []byte(job.SourceID+":"+a.ExternalID)).String()
 			payload, err := json.Marshal(pipeline.ArtifactPayload{
@@ -247,6 +254,10 @@ func (q *Queue) makeHandler(syncer Syncer) asynq.HandlerFunc {
 				return fmt.Errorf("sync: enqueue artifact %s: %w", a.ExternalID, err)
 			}
 			queued++
+			seenIDs = append(seenIDs, a.ExternalID)
+		}
+		if err := q.seen.MarkSeen(ctx, job.SourceID, seenIDs); err != nil {
+			return fmt.Errorf("sync: mark seen: %w", err)
 		}
 		log.Info("sync: artifacts enqueued for ingestion", "queued", queued, "total", len(result.Artifacts))
 
@@ -257,9 +268,9 @@ func (q *Queue) makeHandler(syncer Syncer) asynq.HandlerFunc {
 		if result.HasMore {
 			if job.CycleID != "" {
 				cursor := mergeState(job.Payload, result.CursorUpdates)
-				if err := q.cycles.UpdateCursor(ctx, job.CycleID, cursor); err != nil {
-					log.Error("sync: update cycle cursor failed", "err", err)
-					return fmt.Errorf("sync: update cycle cursor: %w", err)
+				if err := q.cycles.UpdateProgress(ctx, job.CycleID, cursor, result.HeadBoundary); err != nil {
+					log.Error("sync: update cycle progress failed", "err", err)
+					return fmt.Errorf("sync: update cycle progress: %w", err)
 				}
 			}
 			if err := q.sources.MarkSyncPage(ctx, job.SourceID, result.SourceUpdates); err != nil {
@@ -269,7 +280,11 @@ func (q *Queue) makeHandler(syncer Syncer) asynq.HandlerFunc {
 			log.Info("sync: page complete, returning source to scheduler")
 		} else {
 			if job.CycleID != "" {
-				if err := q.cycles.Complete(ctx, job.CycleID); err != nil {
+				reason := result.CompletionReason
+				if reason == "" {
+					reason = CompletionReasonExhausted
+				}
+				if err := q.cycles.Complete(ctx, job.CycleID, result.HeadBoundary, reason); err != nil {
 					log.Error("sync: complete cycle failed", "err", err)
 					return fmt.Errorf("sync: complete cycle: %w", err)
 				}

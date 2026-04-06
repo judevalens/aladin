@@ -8,8 +8,7 @@ import (
 )
 
 const (
-	CycleKindRefresh  = "refresh"
-	CycleKindBackfill = "backfill"
+	CycleKindRefresh = "refresh"
 
 	CycleStatusActive   = "active"
 	CycleStatusRunning  = "running"
@@ -35,7 +34,7 @@ type Decision struct {
 // Policy:
 // - one running cycle blocks new work for the source
 // - if refresh is due and no active refresh exists, create a refresh cycle
-// - otherwise continue the oldest active cycle first
+// - otherwise continue the newest active cycle first
 func ChooseCycle(source *db.Source, cycles []*db.SyncCycle, now time.Time) Decision {
 	if source == nil {
 		return Decision{Action: DecisionSkip, Reason: "nil_source"}
@@ -45,7 +44,7 @@ func ChooseCycle(source *db.Source, cycles []*db.SyncCycle, now time.Time) Decis
 	if hasRunningCycle(active) {
 		return Decision{Action: DecisionSkip, Reason: "cycle_running"}
 	}
-	if refreshDue(source, now) && !hasActiveKind(active, CycleKindRefresh) {
+	if refreshDue(source, now) && shouldCreateRefresh(source, active) {
 		return Decision{Action: DecisionCreateRefresh, Reason: "refresh_due"}
 	}
 	if len(active) == 0 {
@@ -53,9 +52,9 @@ func ChooseCycle(source *db.Source, cycles []*db.SyncCycle, now time.Time) Decis
 	}
 
 	sort.SliceStable(active, func(i, j int) bool {
-		return active[i].CreatedAt.Before(active[j].CreatedAt)
+		return active[i].CreatedAt.After(active[j].CreatedAt)
 	})
-	return Decision{Action: DecisionRunCycle, Cycle: active[0], Reason: "oldest_active_cycle"}
+	return Decision{Action: DecisionRunCycle, Cycle: active[0], Reason: "newest_active_cycle"}
 }
 
 func refreshDue(source *db.Source, now time.Time) bool {
@@ -98,4 +97,24 @@ func hasActiveKind(cycles []*db.SyncCycle, kind string) bool {
 		}
 	}
 	return false
+}
+
+func shouldCreateRefresh(source *db.Source, cycles []*db.SyncCycle) bool {
+	if len(cycles) == 0 {
+		return true
+	}
+	if source == nil || source.LastRefreshAt == nil || source.SyncInterval <= 0 {
+		return !hasActiveKind(cycles, CycleKindRefresh)
+	}
+
+	windowStart := source.LastRefreshAt.Add(time.Duration(source.SyncInterval) * time.Second)
+	for _, cycle := range cycles {
+		if cycle == nil || cycle.Kind != CycleKindRefresh {
+			continue
+		}
+		if !cycle.CreatedAt.Before(windowStart) {
+			return false
+		}
+	}
+	return true
 }

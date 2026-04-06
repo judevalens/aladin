@@ -125,10 +125,11 @@ func main() {
 	orch.Register(mux)
 
 	// Sync queue
+	seenStore := isync.NewRedisSeenStore(redisClient)
 	syncEnqueuer := isync.NewAsynqEnqueuer(asynqClient)
-	sourceQueue := isync.NewQueue(syncEnqueuer, sourceRepo, cycleRepo,
-		syncers.NewBlueskySyncer(),
-		syncers.NewRedditSyncer(),
+	sourceQueue := isync.NewQueue(syncEnqueuer, sourceRepo, cycleRepo, seenStore,
+		syncers.NewBlueskySyncer(seenStore),
+		syncers.NewRedditSyncer(seenStore),
 	)
 
 	// asynq server — built after sourceQueue so we can pull queue names from syncers

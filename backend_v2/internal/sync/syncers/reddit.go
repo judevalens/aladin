@@ -28,8 +28,6 @@ const (
 type redditCycleState struct {
 	Subreddit           string
 	After               string
-	StopBeforeID        string
-	StopBeforeCreated   float64
 	NextLastSeenID      string
 	NextLastSeenCreated float64
 }
@@ -53,12 +51,17 @@ type redditListingResponse struct {
 type RedditSyncer struct {
 	client  *http.Client
 	limiter *ratelimit.Limiter
+	seen    sync.SeenStore
 }
 
-func NewRedditSyncer() *RedditSyncer {
+func NewRedditSyncer(seen sync.SeenStore) *RedditSyncer {
+	if seen == nil {
+		seen = sync.NewNoopSeenStore()
+	}
 	return &RedditSyncer{
 		client:  &http.Client{Timeout: 10 * time.Second},
 		limiter: ratelimit.New(rateLimit),
+		seen:    seen,
 	}
 }
 
@@ -72,10 +75,14 @@ func (r *RedditSyncer) BuildJob(source db.Source, cycle *db.SyncCycle) (*db.Sche
 	}
 
 	state := newRedditCycleState(source, cycle, subreddit)
+	cycleID := ""
+	if cycle != nil {
+		cycleID = cycle.ID
+	}
 	correlationID := uuid.NewString()
 	payload, err := json.Marshal(db.SyncJob{
 		CorrelationID: correlationID,
-		CycleID:       cycle.ID,
+		CycleID:       cycleID,
 		SourceID:      source.ID,
 		KgID:          source.KgID,
 		SourceType:    "reddit",
@@ -113,17 +120,34 @@ func (r *RedditSyncer) Execute(ctx context.Context, job *db.SyncJob) (*sync.Resu
 		SourceUpdates: map[string]any{},
 		CursorUpdates: map[string]any{},
 	}
+	externalIDs := make([]string, 0, len(body.Data.Children))
+	for _, child := range body.Data.Children {
+		if child.Data.ID != "" {
+			externalIDs = append(externalIDs, child.Data.ID)
+		}
+	}
+	known, err := r.seen.Seen(ctx, job.SourceID, externalIDs)
+	if err != nil {
+		return nil, fmt.Errorf("reddit seen lookup: %w", err)
+	}
 	hitBoundary := false
+	var newestAcceptedID string
+	var newestAcceptedCreated float64
 	for _, child := range body.Data.Children {
 		post := child.Data
-		if reachedBoundary(state, post.ID, post.CreatedUTC) {
+		if known[post.ID] {
 			hitBoundary = true
+			result.CompletionReason = sync.CompletionReasonSeenOverlap
 			break
 		}
 
 		if state.NextLastSeenID == "" {
 			state.NextLastSeenID = post.ID
 			state.NextLastSeenCreated = post.CreatedUTC
+		}
+		if newestAcceptedID == "" {
+			newestAcceptedID = post.ID
+			newestAcceptedCreated = post.CreatedUTC
 		}
 
 		content := post.Title
@@ -140,6 +164,13 @@ func (r *RedditSyncer) Execute(ctx context.Context, job *db.SyncJob) (*sync.Resu
 		})
 	}
 
+	if newestAcceptedID != "" {
+		result.HeadBoundary = map[string]any{
+			"id":          newestAcceptedID,
+			"created_utc": newestAcceptedCreated,
+		}
+	}
+
 	if state.NextLastSeenID != "" {
 		result.SourceUpdates["last_seen_id"] = state.NextLastSeenID
 		result.SourceUpdates["last_seen_created_utc"] = state.NextLastSeenCreated
@@ -149,6 +180,9 @@ func (r *RedditSyncer) Execute(ctx context.Context, job *db.SyncJob) (*sync.Resu
 		result.HasMore = true
 		result.CursorUpdates["after"] = body.Data.After
 	} else {
+		if result.CompletionReason == "" {
+			result.CompletionReason = sync.CompletionReasonExhausted
+		}
 		result.CursorUpdates["after"] = ""
 	}
 
@@ -181,21 +215,13 @@ func (r *RedditSyncer) fetchListing(ctx context.Context, state redditCycleState)
 }
 
 func newRedditCycleState(source db.Source, cycle *db.SyncCycle, subreddit string) redditCycleState {
-	lastSeenID, _ := source.Config["last_seen_id"].(string)
-	lastSeenCreated := floatFromAny(source.Config["last_seen_created_utc"])
 	state := redditCycleState{
-		Subreddit:         subreddit,
-		StopBeforeID:      lastSeenID,
-		StopBeforeCreated: lastSeenCreated,
+		Subreddit: subreddit,
 	}
 	if cycle != nil && len(cycle.Cursor) > 0 {
 		state = redditCycleStateFromPayload(cycle.Cursor)
 		if state.Subreddit == "" {
 			state.Subreddit = subreddit
-		}
-		if state.StopBeforeID == "" {
-			state.StopBeforeID = lastSeenID
-			state.StopBeforeCreated = lastSeenCreated
 		}
 		return state
 	}
@@ -209,8 +235,6 @@ func redditCycleStateFromPayload(payload map[string]any) redditCycleState {
 	}
 	state.Subreddit, _ = payload["subreddit"].(string)
 	state.After, _ = payload["after"].(string)
-	state.StopBeforeID, _ = payload["stop_before_id"].(string)
-	state.StopBeforeCreated = floatFromAny(payload["stop_before_created_utc"])
 	state.NextLastSeenID, _ = payload["next_last_seen_id"].(string)
 	state.NextLastSeenCreated = floatFromAny(payload["next_last_seen_created_utc"])
 	return state
@@ -220,21 +244,9 @@ func (s redditCycleState) payload() map[string]any {
 	return map[string]any{
 		"subreddit":                  s.Subreddit,
 		"after":                      s.After,
-		"stop_before_id":             s.StopBeforeID,
-		"stop_before_created_utc":    s.StopBeforeCreated,
 		"next_last_seen_id":          s.NextLastSeenID,
 		"next_last_seen_created_utc": s.NextLastSeenCreated,
 	}
-}
-
-func reachedBoundary(state redditCycleState, id string, createdUTC float64) bool {
-	if state.StopBeforeID == "" && state.StopBeforeCreated == 0 {
-		return false
-	}
-	if state.StopBeforeID != "" && id == state.StopBeforeID {
-		return true
-	}
-	return state.StopBeforeCreated > 0 && createdUTC <= state.StopBeforeCreated
 }
 
 func floatFromAny(v any) float64 {

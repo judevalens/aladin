@@ -35,7 +35,7 @@ func TestChooseCyclePrefersOldestActiveCycleWhenRefreshNotDue(t *testing.T) {
 
 	older := &db.SyncCycle{
 		ID:        "cycle-old",
-		Kind:      CycleKindBackfill,
+		Kind:      CycleKindRefresh,
 		Status:    CycleStatusActive,
 		CreatedAt: time.Date(2026, 4, 5, 11, 0, 0, 0, time.UTC),
 	}
@@ -50,8 +50,8 @@ func TestChooseCyclePrefersOldestActiveCycleWhenRefreshNotDue(t *testing.T) {
 	if decision.Action != DecisionRunCycle {
 		t.Fatalf("action = %q, want %q", decision.Action, DecisionRunCycle)
 	}
-	if decision.Cycle == nil || decision.Cycle.ID != "cycle-old" {
-		t.Fatalf("cycle = %#v, want cycle-old", decision.Cycle)
+	if decision.Cycle == nil || decision.Cycle.ID != "cycle-new" {
+		t.Fatalf("cycle = %#v, want cycle-new", decision.Cycle)
 	}
 }
 
@@ -65,7 +65,7 @@ func TestChooseCycleSkipsWhenSourceAlreadyRunning(t *testing.T) {
 	}
 	running := &db.SyncCycle{
 		ID:        "cycle-1",
-		Kind:      CycleKindBackfill,
+		Kind:      CycleKindRefresh,
 		Status:    CycleStatusRunning,
 		CreatedAt: time.Date(2026, 4, 5, 11, 0, 0, 0, time.UTC),
 	}
@@ -79,7 +79,7 @@ func TestChooseCycleSkipsWhenSourceAlreadyRunning(t *testing.T) {
 	}
 }
 
-func TestChooseCycleCreatesRefreshWhenDueAlongsideBackfill(t *testing.T) {
+func TestChooseCycleCreatesRefreshWhenDueAlongsideOlderActiveCycle(t *testing.T) {
 	t.Parallel()
 
 	lastRefresh := time.Date(2026, 4, 5, 11, 0, 0, 0, time.UTC)
@@ -89,15 +89,47 @@ func TestChooseCycleCreatesRefreshWhenDueAlongsideBackfill(t *testing.T) {
 		SyncInterval:  300,
 		LastRefreshAt: &lastRefresh,
 	}
-	backfill := &db.SyncCycle{
-		ID:        "cycle-backfill",
-		Kind:      CycleKindBackfill,
+	older := &db.SyncCycle{
+		ID:        "cycle-old",
+		Kind:      CycleKindRefresh,
 		Status:    CycleStatusActive,
-		CreatedAt: time.Date(2026, 4, 5, 11, 10, 0, 0, time.UTC),
+		CreatedAt: time.Date(2026, 4, 5, 11, 1, 0, 0, time.UTC),
 	}
 
-	decision := ChooseCycle(source, []*db.SyncCycle{backfill}, now)
+	decision := ChooseCycle(source, []*db.SyncCycle{older}, now)
 	if decision.Action != DecisionCreateRefresh {
 		t.Fatalf("action = %q, want %q", decision.Action, DecisionCreateRefresh)
+	}
+}
+
+func TestChooseCycleContinuesNewestActiveCycleWhenRefreshNotDue(t *testing.T) {
+	t.Parallel()
+
+	lastRefresh := time.Date(2026, 4, 5, 11, 58, 0, 0, time.UTC)
+	now := time.Date(2026, 4, 5, 12, 0, 0, 0, time.UTC)
+	source := &db.Source{
+		ID:            "source-1",
+		SyncInterval:  300,
+		LastRefreshAt: &lastRefresh,
+	}
+	older := &db.SyncCycle{
+		ID:        "cycle-old",
+		Kind:      CycleKindRefresh,
+		Status:    CycleStatusActive,
+		CreatedAt: time.Date(2026, 4, 5, 11, 0, 0, 0, time.UTC),
+	}
+	newer := &db.SyncCycle{
+		ID:        "cycle-new",
+		Kind:      CycleKindRefresh,
+		Status:    CycleStatusActive,
+		CreatedAt: time.Date(2026, 4, 5, 11, 30, 0, 0, time.UTC),
+	}
+
+	decision := ChooseCycle(source, []*db.SyncCycle{newer, older}, now)
+	if decision.Action != DecisionRunCycle {
+		t.Fatalf("action = %q, want %q", decision.Action, DecisionRunCycle)
+	}
+	if decision.Cycle == nil || decision.Cycle.ID != "cycle-new" {
+		t.Fatalf("cycle = %#v, want cycle-new", decision.Cycle)
 	}
 }

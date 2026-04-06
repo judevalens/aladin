@@ -27,8 +27,6 @@ const (
 type blueskyCycleState struct {
 	Query                 string
 	Cursor                string
-	StopBeforeURI         string
-	StopBeforeCreatedAt   string
 	NextLastSeenURI       string
 	NextLastSeenCreatedAt string
 }
@@ -65,12 +63,17 @@ type blueskyPostView struct {
 type BlueskySyncer struct {
 	client  *http.Client
 	limiter *ratelimit.Limiter
+	seen    sync.SeenStore
 }
 
-func NewBlueskySyncer() *BlueskySyncer {
+func NewBlueskySyncer(seen sync.SeenStore) *BlueskySyncer {
+	if seen == nil {
+		seen = sync.NewNoopSeenStore()
+	}
 	return &BlueskySyncer{
 		client:  &http.Client{Timeout: 10 * time.Second},
 		limiter: ratelimit.New(blueskyRate),
+		seen:    seen,
 	}
 }
 
@@ -85,10 +88,14 @@ func (b *BlueskySyncer) BuildJob(source db.Source, cycle *db.SyncCycle) (*db.Sch
 	}
 
 	state := newBlueskyCycleState(source, cycle, query)
+	cycleID := ""
+	if cycle != nil {
+		cycleID = cycle.ID
+	}
 	correlationID := uuid.NewString()
 	payload, err := json.Marshal(db.SyncJob{
 		CorrelationID: correlationID,
-		CycleID:       cycle.ID,
+		CycleID:       cycleID,
 		SourceID:      source.ID,
 		KgID:          source.KgID,
 		SourceType:    "bluesky",
@@ -127,20 +134,37 @@ func (b *BlueskySyncer) Execute(ctx context.Context, job *db.SyncJob) (*sync.Res
 		SourceUpdates: map[string]any{},
 		CursorUpdates: map[string]any{},
 	}
+	externalIDs := make([]string, 0, len(body.Posts))
+	for _, post := range body.Posts {
+		if post.URI != "" {
+			externalIDs = append(externalIDs, post.URI)
+		}
+	}
+	known, err := b.seen.Seen(ctx, job.SourceID, externalIDs)
+	if err != nil {
+		return nil, fmt.Errorf("bluesky seen lookup: %w", err)
+	}
 	hitBoundary := false
+	var newestAcceptedURI string
+	var newestAcceptedCreatedAt string
 	for _, post := range body.Posts {
 		if post.URI == "" {
 			continue
 		}
 
-		if blueskyReachedBoundary(state, post.URI, post.Record.CreatedAt) {
+		if known[post.URI] {
 			hitBoundary = true
+			result.CompletionReason = sync.CompletionReasonSeenOverlap
 			break
 		}
 
 		if state.NextLastSeenURI == "" {
 			state.NextLastSeenURI = post.URI
 			state.NextLastSeenCreatedAt = post.Record.CreatedAt
+		}
+		if newestAcceptedURI == "" {
+			newestAcceptedURI = post.URI
+			newestAcceptedCreatedAt = post.Record.CreatedAt
 		}
 
 		result.Artifacts = append(result.Artifacts, &sync.RawArtifact{
@@ -169,6 +193,13 @@ func (b *BlueskySyncer) Execute(ctx context.Context, job *db.SyncJob) (*sync.Res
 		})
 	}
 
+	if newestAcceptedURI != "" {
+		result.HeadBoundary = map[string]any{
+			"uri":        newestAcceptedURI,
+			"created_at": newestAcceptedCreatedAt,
+		}
+	}
+
 	if state.NextLastSeenURI != "" {
 		result.SourceUpdates["last_seen_post_uri"] = state.NextLastSeenURI
 		result.SourceUpdates["last_seen_post_created_at"] = state.NextLastSeenCreatedAt
@@ -178,6 +209,9 @@ func (b *BlueskySyncer) Execute(ctx context.Context, job *db.SyncJob) (*sync.Res
 		result.HasMore = true
 		result.CursorUpdates["cursor"] = body.Cursor
 	} else {
+		if result.CompletionReason == "" {
+			result.CompletionReason = sync.CompletionReasonExhausted
+		}
 		result.CursorUpdates["cursor"] = ""
 	}
 
@@ -217,21 +251,13 @@ func (b *BlueskySyncer) searchPosts(ctx context.Context, state blueskyCycleState
 }
 
 func newBlueskyCycleState(source db.Source, cycle *db.SyncCycle, query string) blueskyCycleState {
-	lastSeenURI, _ := source.Config["last_seen_post_uri"].(string)
-	lastSeenCreatedAt, _ := source.Config["last_seen_post_created_at"].(string)
 	state := blueskyCycleState{
-		Query:               query,
-		StopBeforeURI:       lastSeenURI,
-		StopBeforeCreatedAt: lastSeenCreatedAt,
+		Query: query,
 	}
 	if cycle != nil && len(cycle.Cursor) > 0 {
 		state = blueskyCycleStateFromPayload(cycle.Cursor)
 		if state.Query == "" {
 			state.Query = query
-		}
-		if state.StopBeforeURI == "" {
-			state.StopBeforeURI = lastSeenURI
-			state.StopBeforeCreatedAt = lastSeenCreatedAt
 		}
 		return state
 	}
@@ -245,8 +271,6 @@ func blueskyCycleStateFromPayload(payload map[string]any) blueskyCycleState {
 	}
 	state.Query, _ = payload["query"].(string)
 	state.Cursor, _ = payload["cursor"].(string)
-	state.StopBeforeURI, _ = payload["stop_before_uri"].(string)
-	state.StopBeforeCreatedAt, _ = payload["stop_before_created_at"].(string)
 	state.NextLastSeenURI, _ = payload["next_last_seen_uri"].(string)
 	state.NextLastSeenCreatedAt, _ = payload["next_last_seen_created_at"].(string)
 	return state
@@ -256,33 +280,9 @@ func (s blueskyCycleState) payload() map[string]any {
 	return map[string]any{
 		"query":                     s.Query,
 		"cursor":                    s.Cursor,
-		"stop_before_uri":           s.StopBeforeURI,
-		"stop_before_created_at":    s.StopBeforeCreatedAt,
 		"next_last_seen_uri":        s.NextLastSeenURI,
 		"next_last_seen_created_at": s.NextLastSeenCreatedAt,
 	}
-}
-
-func blueskyReachedBoundary(state blueskyCycleState, uri, createdAt string) bool {
-	if state.StopBeforeURI == "" && state.StopBeforeCreatedAt == "" {
-		return false
-	}
-	if state.StopBeforeURI != "" && uri == state.StopBeforeURI {
-		return true
-	}
-	if state.StopBeforeCreatedAt == "" || createdAt == "" {
-		return false
-	}
-
-	created, err := time.Parse(time.RFC3339, createdAt)
-	if err != nil {
-		return false
-	}
-	stop, err := time.Parse(time.RFC3339, state.StopBeforeCreatedAt)
-	if err != nil {
-		return false
-	}
-	return !created.After(stop)
 }
 
 func blueskyLabel(post blueskyPostView) string {

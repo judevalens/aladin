@@ -33,6 +33,9 @@ func (r *pgSourceRepo) GetByID(ctx context.Context, id string) (*Source, error) 
 
 // ClaimBatch atomically marks up to limit due sources as 'queued' and returns them.
 // Pure persistence — callers decide what jobs to build from the claimed sources.
+// A source is eligible if either:
+// - a new refresh is due, or
+// - it already has an active (paused) cycle that needs another turn.
 // FOR UPDATE SKIP LOCKED ensures N concurrent schedulers never claim the same source.
 func (r *pgSourceRepo) ClaimBatch(ctx context.Context, limit int) ([]*Source, error) {
 	rows, err := r.pool.Query(ctx, `
@@ -45,7 +48,13 @@ func (r *pgSourceRepo) ClaimBatch(ctx context.Context, limit int) ([]*Source, er
 			  AND sync_state  = 'active'
 			  AND sync_status = 'idle'
 			  AND (
-			      last_synced_at IS NULL
+			      EXISTS (
+			          SELECT 1
+			            FROM sync_cycles
+			           WHERE source_id = sources.id
+			             AND status = 'active'
+			      )
+			      OR last_synced_at IS NULL
 			      OR last_synced_at + (
 			             COALESCE((config->>'sync_interval_seconds')::int, 3600)
 			             * interval '1 second'

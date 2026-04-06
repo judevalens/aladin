@@ -39,9 +39,9 @@ type SyncCycleRepository interface {
 	// Create inserts a new cycle. Caller provides ID and source linkage.
 	Create(ctx context.Context, cycle *SyncCycle) error
 	MarkRunning(ctx context.Context, id string) error
-	UpdateCursor(ctx context.Context, id string, cursor map[string]any) error
+	UpdateProgress(ctx context.Context, id string, cursor map[string]any, headBoundary map[string]any) error
 	MarkActive(ctx context.Context, id string) error
-	Complete(ctx context.Context, id string) error
+	Complete(ctx context.Context, id string, headBoundary map[string]any, completionReason string) error
 }
 
 type SyncJobRepository interface {

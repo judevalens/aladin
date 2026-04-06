@@ -32,15 +32,16 @@ type Source struct {
 // SyncCycle tracks one traversal over a source feed.
 // Source scheduling decides which cycle gets the next turn.
 type SyncCycle struct {
-	ID           string
-	SourceID     string
-	Kind         string         // refresh | backfill
-	Status       string         // active | running | complete | closed
-	Cursor       map[string]any // pagination continuation state
-	CoveredUntil map[string]any // oldest covered frontier for overlap checks
-	LastPickedAt *time.Time
-	CreatedAt    time.Time
-	CompletedAt  *time.Time
+	ID               string
+	SourceID         string
+	Kind             string         // refresh | backfill
+	Status           string         // active | running | complete | closed
+	Cursor           map[string]any // pagination continuation state
+	HeadBoundary     map[string]any // newest claimed boundary for this cycle
+	CompletionReason string
+	LastPickedAt     *time.Time
+	CreatedAt        time.Time
+	CompletedAt      *time.Time
 }
 
 // SyncJob is one unit of work in the sync queue.
