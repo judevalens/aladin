@@ -38,6 +38,7 @@ func (w *SearchWorker) Run(ctx context.Context, raw []byte) pipeline.Result {
 		"component", "pipeline",
 		"stage", "search",
 		"artifact_id", p.ArtifactID,
+		"correlation_id", p.CorrelationID,
 		"kg_id", p.KgID,
 	)
 	start := time.Now()
@@ -53,12 +54,9 @@ func (w *SearchWorker) Run(ctx context.Context, raw []byte) pipeline.Result {
 	log.Debug("search: resolving entities", "pending_count", len(p.LowConfidenceEntities))
 
 	for _, entity := range p.LowConfidenceEntities {
-		if _, done := p.SearchResolved[entity]; done {
-			continue // already resolved in a previous attempt
-		}
+
 		results, err := w.searcher.Search(ctx, entity, 3)
 		if err != nil {
-			payload, _ := json.Marshal(p)
 			var httpErr *search.ErrHTTP
 			if errors.As(err, &httpErr) {
 				switch {
@@ -66,9 +64,9 @@ func (w *SearchWorker) Run(ctx context.Context, raw []byte) pipeline.Result {
 					log.Warn("search: rate limited", "entity", entity, "retry_after", searchBackoff)
 					return pipeline.Result{
 						TaskType:   pipeline.TaskSearch,
-						Payload:    payload,
 						Err:        pipeline.ErrRateLimit{RetryAfter: searchBackoff},
 						ArtifactID: p.ArtifactID,
+						CorrelationID: p.CorrelationID,
 						KgID:       p.KgID,
 					}
 				case httpErr.IsPermanent():
@@ -77,6 +75,7 @@ func (w *SearchWorker) Run(ctx context.Context, raw []byte) pipeline.Result {
 						TaskType:   pipeline.TaskSearch,
 						Err:        pipeline.ErrPermanent{Cause: err},
 						ArtifactID: p.ArtifactID,
+						CorrelationID: p.CorrelationID,
 						KgID:       p.KgID,
 					}
 				}
@@ -85,9 +84,9 @@ func (w *SearchWorker) Run(ctx context.Context, raw []byte) pipeline.Result {
 			log.Warn("search: transient error", "entity", entity, "err", err)
 			return pipeline.Result{
 				TaskType:   pipeline.TaskSearch,
-				Payload:    payload,
 				Err:        pipeline.ErrTransient{Cause: err},
 				ArtifactID: p.ArtifactID,
+				CorrelationID: p.CorrelationID,
 				KgID:       p.KgID,
 			}
 		}
@@ -110,6 +109,7 @@ func (w *SearchWorker) Run(ctx context.Context, raw []byte) pipeline.Result {
 		TaskType:   pipeline.TaskSearch,
 		Payload:    payload,
 		ArtifactID: p.ArtifactID,
+		CorrelationID: p.CorrelationID,
 		KgID:       p.KgID,
 	}
 }

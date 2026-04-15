@@ -19,7 +19,7 @@ func (r *pgSourceRepo) GetByID(ctx context.Context, id string) (*Source, error) 
 	var configJSON []byte
 	err := r.pool.QueryRow(ctx,
 		`SELECT id::text, kg_id::text, name, type, config, sync_status,
-		        COALESCE((config->>'sync_interval_seconds')::int, 3600) AS sync_interval,
+		        COALESCE((config->>'sync_interval_seconds')::int, 10) AS sync_interval,
 		        last_picked_at, last_refresh_at
 		   FROM sources
 		  WHERE id = $1::uuid`, id,
@@ -54,20 +54,20 @@ func (r *pgSourceRepo) ClaimBatch(ctx context.Context, limit int) ([]*Source, er
 			           WHERE source_id = sources.id
 			             AND status = 'active'
 			      )
-			      OR last_synced_at IS NULL
-			      OR last_synced_at + (
-			             COALESCE((config->>'sync_interval_seconds')::int, 3600)
+			      OR last_refresh_at IS NULL
+			      OR last_refresh_at + (
+			             COALESCE((config->>'sync_interval_seconds')::int, 10)
 			             * interval '1 second'
 			         ) <= now()
 			  )
 			ORDER BY COALESCE(last_picked_at, to_timestamp(0)) ASC,
-			         COALESCE(last_synced_at, to_timestamp(0)) ASC,
+			         COALESCE(last_refresh_at, to_timestamp(0)) ASC,
 			         created_at ASC
 			FOR UPDATE SKIP LOCKED
 			LIMIT $1
 		)
 		RETURNING id::text, kg_id::text, name, type, config, sync_status,
-		          COALESCE((config->>'sync_interval_seconds')::int, 3600) AS sync_interval,
+		          COALESCE((config->>'sync_interval_seconds')::int, 10) AS sync_interval,
 		          last_picked_at, last_refresh_at
 	`, limit)
 	if err != nil {

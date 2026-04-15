@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { FeedItem } from '../types'
+import type { FeedItem, SourceRecord, CreateSourceInput } from '../types'
 import {
-  fetchFeed, fetchFeedTopics, fetchFeedSources,
+  createSource, deleteSource, fetchFeed, fetchFeedTopics, fetchFeedSources, fetchSources,
   saveFeedItem, dismissFeedItem, unsaveFeedItem,
 } from '../lib/api'
+import SourceManager from './SourceManager'
 
 const SOURCE_ICON: Record<string, string> = {
   reddit:  'r/',
@@ -27,6 +28,7 @@ export default function UnifiedFeed({ onOpenArtifact }: Props) {
   const [loadingMore, setLoadingMore] = useState(false)
   const [topics,      setTopics]      = useState<string[]>([])
   const [sources,     setSources]     = useState<{ id: string; name: string; type: string }[]>([])
+  const [sourceRecords, setSourceRecords] = useState<SourceRecord[]>([])
 
   // Filters
   const [sort,       setSort]       = useState<'recent' | 'signal'>('recent')
@@ -76,7 +78,27 @@ export default function UnifiedFeed({ onOpenArtifact }: Props) {
   useEffect(() => {
     fetchFeedTopics().then(setTopics).catch(() => {})
     fetchFeedSources().then(setSources).catch(() => {})
+    fetchSources().then(setSourceRecords).catch(() => {})
   }, [])
+
+  const refreshSources = useCallback(async () => {
+    const [feedSources, fullSources] = await Promise.all([
+      fetchFeedSources(),
+      fetchSources(),
+    ])
+    setSources(feedSources)
+    setSourceRecords(fullSources)
+  }, [])
+
+  const handleCreateSource = useCallback(async (payload: CreateSourceInput) => {
+    await createSource(payload)
+    await refreshSources()
+  }, [refreshSources])
+
+  const handleDeleteSource = useCallback(async (id: string) => {
+    await deleteSource(id)
+    await refreshSources()
+  }, [refreshSources])
 
   const handleSave = async (e: React.MouseEvent, item: FeedItem) => {
     e.stopPropagation()
@@ -98,115 +120,121 @@ export default function UnifiedFeed({ onOpenArtifact }: Props) {
   const hasMore = items.length < total
 
   return (
-    <div className="flex flex-col h-full w-full bg-gray-50">
+    <div className="flex h-full w-full bg-gray-50">
+      <div className="flex min-w-0 flex-1 flex-col">
 
-      {/* Header */}
-      <div className="bg-white border-b border-gray-100 px-8 py-5 shrink-0">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-base font-semibold text-gray-900">Unified Feed</h2>
-            <p className="text-xs text-gray-400 mt-0.5">{total} items across all sources</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setSavedOnly(v => !v)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                savedOnly
-                  ? 'bg-amber-50 border-amber-200 text-amber-700'
-                  : 'border-gray-200 text-gray-500 hover:bg-gray-50'
-              }`}
-            >
-              ★ Saved
-            </button>
-            <div className="flex rounded-lg border border-gray-200 overflow-hidden">
-              {(['recent', 'signal'] as const).map(s => (
-                <button
-                  key={s}
-                  onClick={() => setSort(s)}
-                  className={`px-3 py-1.5 text-xs font-medium transition-colors capitalize ${
-                    sort === s ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-50'
-                  }`}
-                >
-                  {s === 'recent' ? 'Recent' : 'Top'}
-                </button>
-              ))}
+        {/* Header */}
+        <div className="bg-white border-b border-gray-100 px-8 py-5 shrink-0">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-base font-semibold text-gray-900">Unified Feed</h2>
+              <p className="text-xs text-gray-400 mt-0.5">{total} items across all sources</p>
             </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setSavedOnly(v => !v)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                  savedOnly
+                    ? 'bg-amber-50 border-amber-200 text-amber-700'
+                    : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+                }`}
+              >
+                ★ Saved
+              </button>
+              <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+                {(['recent', 'signal'] as const).map(s => (
+                  <button
+                    key={s}
+                    onClick={() => setSort(s)}
+                    className={`px-3 py-1.5 text-xs font-medium transition-colors capitalize ${
+                      sort === s ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-50'
+                    }`}
+                  >
+                    {s === 'recent' ? 'Recent' : 'Top'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Filter row */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <select
+              value={sourceFilter}
+              onChange={e => setSourceFilter(e.target.value)}
+              className="px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs bg-white text-gray-600 outline-none focus:border-gray-400"
+            >
+              <option value="">All sources</option>
+              {sources.map(s => (
+                <option key={s.id} value={s.type}>{s.name}</option>
+              ))}
+            </select>
+
+            <select
+              value={topicFilter}
+              onChange={e => setTopicFilter(e.target.value)}
+              className="px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs bg-white text-gray-600 outline-none focus:border-gray-400"
+            >
+              <option value="">All topics</option>
+              {topics.map(t => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+
+            {(sourceFilter || topicFilter || savedOnly) && (
+              <button
+                onClick={() => { setSourceFilter(''); setTopicFilter(''); setSavedOnly(false) }}
+                className="px-2.5 py-1.5 rounded-lg text-xs text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+              >
+                × Clear filters
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Filter row */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Source filter */}
-          <select
-            value={sourceFilter}
-            onChange={e => setSourceFilter(e.target.value)}
-            className="px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs bg-white text-gray-600 outline-none focus:border-gray-400"
-          >
-            <option value="">All sources</option>
-            {sources.map(s => (
-              <option key={s.id} value={s.type}>{s.name}</option>
-            ))}
-          </select>
-
-          {/* Topic filter */}
-          <select
-            value={topicFilter}
-            onChange={e => setTopicFilter(e.target.value)}
-            className="px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs bg-white text-gray-600 outline-none focus:border-gray-400"
-          >
-            <option value="">All topics</option>
-            {topics.map(t => (
-              <option key={t} value={t}>{t}</option>
-            ))}
-          </select>
-
-          {(sourceFilter || topicFilter || savedOnly) && (
-            <button
-              onClick={() => { setSourceFilter(''); setTopicFilter(''); setSavedOnly(false) }}
-              className="px-2.5 py-1.5 rounded-lg text-xs text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
-            >
-              × Clear filters
-            </button>
+        {/* Feed list */}
+        <div className="flex-1 overflow-y-auto">
+          {loading ? (
+            <div className="flex items-center justify-center h-32 text-gray-300 text-sm">Loading…</div>
+          ) : items.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-gray-300 gap-3">
+              <span className="text-4xl">◻</span>
+              <p className="text-sm">No items match your filters</p>
+            </div>
+          ) : (
+            <>
+              <div className="divide-y divide-gray-100">
+                {items.map(item => (
+                  <FeedRow
+                    key={item.id}
+                    item={item}
+                    onClick={() => onOpenArtifact(item)}
+                    onSave={e => handleSave(e, item)}
+                    onDismiss={e => handleDismiss(e, item)}
+                  />
+                ))}
+              </div>
+              {hasMore && (
+                <div className="flex justify-center py-6">
+                  <button
+                    onClick={() => load(false)}
+                    disabled={loadingMore}
+                    className="px-6 py-2 rounded-lg border border-gray-200 text-xs text-gray-500 hover:bg-gray-50 disabled:opacity-40 transition-colors"
+                  >
+                    {loadingMore ? 'Loading…' : `Load more (${total - items.length} remaining)`}
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
 
-      {/* Feed list */}
-      <div className="flex-1 overflow-y-auto">
-        {loading ? (
-          <div className="flex items-center justify-center h-32 text-gray-300 text-sm">Loading…</div>
-        ) : items.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-gray-300 gap-3">
-            <span className="text-4xl">◻</span>
-            <p className="text-sm">No items match your filters</p>
-          </div>
-        ) : (
-          <>
-            <div className="divide-y divide-gray-100">
-              {items.map(item => (
-                <FeedRow
-                  key={item.id}
-                  item={item}
-                  onClick={() => onOpenArtifact(item)}
-                  onSave={e => handleSave(e, item)}
-                  onDismiss={e => handleDismiss(e, item)}
-                />
-              ))}
-            </div>
-            {hasMore && (
-              <div className="flex justify-center py-6">
-                <button
-                  onClick={() => load(false)}
-                  disabled={loadingMore}
-                  className="px-6 py-2 rounded-lg border border-gray-200 text-xs text-gray-500 hover:bg-gray-50 disabled:opacity-40 transition-colors"
-                >
-                  {loadingMore ? 'Loading…' : `Load more (${total - items.length} remaining)`}
-                </button>
-              </div>
-            )}
-          </>
-        )}
-      </div>
+      <SourceManager
+        sources={sourceRecords}
+        onCreateSource={handleCreateSource}
+        onDeleteSource={handleDeleteSource}
+      />
     </div>
   )
 }
@@ -301,4 +329,3 @@ function FeedRow({
     </div>
   )
 }
-

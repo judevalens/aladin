@@ -30,12 +30,27 @@ type Decision struct {
 	Reason string
 }
 
-// ChooseCycle decides what turn a source should get next.
+type Arbiter interface {
+	Decide(source *db.Source, cycles []*db.SyncCycle, now time.Time) Decision
+}
+
+type FreshnessFirstArbiter struct{}
+
+func NewFreshnessFirstArbiter() Arbiter {
+	return FreshnessFirstArbiter{}
+}
+
+// ChooseCycle is the compatibility wrapper for the current default arbitration policy.
+func ChooseCycle(source *db.Source, cycles []*db.SyncCycle, now time.Time) Decision {
+	return FreshnessFirstArbiter{}.Decide(source, cycles, now)
+}
+
+// Decide chooses what turn a source should get next.
 // Policy:
 // - one running cycle blocks new work for the source
-// - if refresh is due and no active refresh exists, create a refresh cycle
+// - if refresh is due and no active refresh exists for the current refresh window, create a refresh cycle
 // - otherwise continue the newest active cycle first
-func ChooseCycle(source *db.Source, cycles []*db.SyncCycle, now time.Time) Decision {
+func (FreshnessFirstArbiter) Decide(source *db.Source, cycles []*db.SyncCycle, now time.Time) Decision {
 	if source == nil {
 		return Decision{Action: DecisionSkip, Reason: "nil_source"}
 	}

@@ -41,7 +41,7 @@ func main() {
 	w := io.MultiWriter(os.Stdout, logFile)
 	slog.SetDefault(slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{Level: level})))
 
-	cfg := config.Load()
+	cfg := config.LoadWorker()
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
@@ -124,22 +124,22 @@ func main() {
 	mux := asynq.NewServeMux()
 	orch.Register(mux)
 
-	// Sync queue
+	// Sync orchestrator
 	seenStore := isync.NewRedisSeenStore(redisClient)
 	syncEnqueuer := isync.NewAsynqEnqueuer(asynqClient)
-	sourceQueue := isync.NewQueue(syncEnqueuer, sourceRepo, cycleRepo, seenStore,
+	syncOrchestrator := isync.NewOrchestrator(syncEnqueuer, sourceRepo, cycleRepo, seenStore, isync.NewFreshnessFirstArbiter(),
 		syncers.NewBlueskySyncer(seenStore),
 		syncers.NewRedditSyncer(seenStore),
 	)
 
-	// asynq server — built after sourceQueue so we can pull queue names from syncers
+	// asynq server — built after syncOrchestrator so we can pull queue names from syncers
 	queues := map[string]int{
-		pipeline.TaskFirstPass: 10,
-		pipeline.TaskSearch:    5,
-		pipeline.TaskEmbed:     3,
-		pipeline.TaskGraph:     5,
+		// pipeline.TaskFirstPass: 10,
+		// pipeline.TaskSearch:    5,
+		// pipeline.TaskEmbed:     3,
+		// pipeline.TaskGraph:     5,
 	}
-	for name, weight := range sourceQueue.Queues() {
+	for name, weight := range syncOrchestrator.Queues() {
 		queues[name] = weight
 	}
 	asynqServer := asynq.NewServer(redisOpt, asynq.Config{
@@ -151,8 +151,8 @@ func main() {
 		}),
 	})
 
-	sourceQueue.RegisterHandlers(mux)
-	sourceQueue.Start(ctx)
+	syncOrchestrator.RegisterHandlers(mux)
+	syncOrchestrator.Start(ctx)
 
 	// Start asynq server
 	go func() {

@@ -34,6 +34,9 @@ def create_app() -> Flask:
     from .api.feed import bp as feed_bp
     app.register_blueprint(feed_bp, url_prefix="/api/feed")
 
+    from .api.sources import bp as sources_bp
+    app.register_blueprint(sources_bp, url_prefix="/api/sources")
+
     from .api.search import bp as search_bp
     app.register_blueprint(search_bp, url_prefix="/api/search")
 

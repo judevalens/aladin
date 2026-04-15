@@ -37,6 +37,7 @@ func (w *FirstPassWorker) Run(ctx context.Context, raw []byte) pipeline.Result {
 		"component", "pipeline",
 		"stage", "first_pass",
 		"artifact_id", p.ArtifactID,
+		"correlation_id", p.CorrelationID,
 		"kg_id", p.KgID,
 	)
 	start := time.Now()
@@ -84,6 +85,7 @@ func (w *FirstPassWorker) Run(ctx context.Context, raw []byte) pipeline.Result {
 		TaskType:   pipeline.TaskFirstPass,
 		Payload:    payload,
 		ArtifactID: p.ArtifactID,
+		CorrelationID: p.CorrelationID,
 		KgID:       p.KgID,
 	}
 }
@@ -93,6 +95,7 @@ func errResult(taskType string, p pipeline.ArtifactPayload, err error) pipeline.
 		TaskType:   taskType,
 		Err:        err,
 		ArtifactID: p.ArtifactID,
+		CorrelationID: p.CorrelationID,
 		KgID:       p.KgID,
 	}
 }

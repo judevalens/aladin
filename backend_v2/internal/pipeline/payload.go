@@ -7,10 +7,11 @@ import "aladin/backend_v2/internal/search"
 // The full payload is written to PG once when the pipeline completes.
 type ArtifactPayload struct {
 	// Identity
-	ArtifactID string `json:"artifact_id"`
-	KgID       string `json:"kg_id"`
-	SourceID   string `json:"source_id"`
-	ExternalID string `json:"external_id"`
+	ArtifactID     string `json:"artifact_id"`
+	CorrelationID  string `json:"correlation_id"`
+	KgID           string `json:"kg_id"`
+	SourceID       string `json:"source_id"`
+	ExternalID     string `json:"external_id"`
 
 	// Raw content — set at ingest, never modified
 	Type      string         `json:"type"`
@@ -32,4 +33,3 @@ type ArtifactPayload struct {
 	// Embedding
 	Embedding []float32 `json:"embedding,omitempty"`
 }
-

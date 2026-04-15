@@ -15,22 +15,24 @@ import (
 	"aladin/backend_v2/internal/pipeline"
 )
 
-// Queue manages sync handler registration, job execution, and scheduler startup.
-type Queue struct {
+// Orchestrator manages sync handler registration, job execution, and scheduler startup.
+type Orchestrator struct {
 	enqueuer Enqueuer
 	sources  db.SourceRepository
 	cycles   db.SyncCycleRepository
 	seen     SeenStore
+	arbiter  Arbiter
 	syncers  map[string]Syncer
 }
 
-func NewQueue(
+func NewOrchestrator(
 	enqueuer Enqueuer,
 	sources db.SourceRepository,
 	cycles db.SyncCycleRepository,
 	seen SeenStore,
+	arbiter Arbiter,
 	syncers ...Syncer,
-) *Queue {
+) *Orchestrator {
 	m := make(map[string]Syncer, len(syncers))
 	for _, s := range syncers {
 		m[s.SourceType()] = s
@@ -38,24 +40,28 @@ func NewQueue(
 	if seen == nil {
 		seen = NewNoopSeenStore()
 	}
-	return &Queue{
+	if arbiter == nil {
+		arbiter = NewFreshnessFirstArbiter()
+	}
+	return &Orchestrator{
 		enqueuer: enqueuer,
 		sources:  sources,
 		cycles:   cycles,
 		seen:     seen,
+		arbiter:  arbiter,
 		syncers:  m,
 	}
 }
 
 // Start launches the scheduler — polls for due sources and dispatches them.
-func (q *Queue) Start(ctx context.Context) {
+func (q *Orchestrator) Start(ctx context.Context) {
 	go NewScheduler(q, q, defaultBatchSize).Start(ctx)
 }
 
 // ClaimBatch implements JobPoller — claims due sources and builds jobs using syncer policy.
 // This is where source data meets execution policy: the repo claims rows,
 // the syncer decides job shape.
-func (q *Queue) ClaimBatch(ctx context.Context, limit int) ([]*db.ScheduledJob, error) {
+func (q *Orchestrator) ClaimBatch(ctx context.Context, limit int) ([]*db.ScheduledJob, error) {
 	sources, err := q.sources.ClaimBatch(ctx, limit)
 	if err != nil {
 		return nil, err
@@ -92,7 +98,7 @@ func (q *Queue) ClaimBatch(ctx context.Context, limit int) ([]*db.ScheduledJob, 
 			return nil, fmt.Errorf("claim cycles for source %s: %w", src.ID, err)
 		}
 
-		decision := ChooseCycle(src, cycles, now)
+		decision := q.arbiter.Decide(src, cycles, now)
 		if decision.Action == DecisionSkip {
 			if err := q.sources.Release(ctx, src.ID); err != nil {
 				slog.Error("sync: release skipped source failed",
@@ -148,7 +154,7 @@ func (q *Queue) ClaimBatch(ctx context.Context, limit int) ([]*db.ScheduledJob, 
 }
 
 // RegisterHandlers registers a sync handler for each source type on the mux.
-func (q *Queue) RegisterHandlers(mux *asynq.ServeMux) {
+func (q *Orchestrator) RegisterHandlers(mux *asynq.ServeMux) {
 	for sourceType, syncer := range q.syncers {
 		mux.HandleFunc(taskType(sourceType), q.makeHandler(syncer))
 		slog.Info("sync: registered handler", "component", "sync_queue", "source_type", sourceType)
@@ -156,7 +162,7 @@ func (q *Queue) RegisterHandlers(mux *asynq.ServeMux) {
 }
 
 // Dispatch implements JobDispatcher — enqueues a claimed job to its syncer's queue.
-func (q *Queue) Dispatch(ctx context.Context, job *db.ScheduledJob) error {
+func (q *Orchestrator) Dispatch(ctx context.Context, job *db.ScheduledJob) error {
 	syncer, ok := q.syncers[sourceTypeFromTaskType(job.Type)]
 	if !ok {
 		return fmt.Errorf("dispatch: no syncer for task type %q", job.Type)
@@ -168,7 +174,7 @@ func (q *Queue) Dispatch(ctx context.Context, job *db.ScheduledJob) error {
 }
 
 // Queues returns all queue names with their default weights for asynq server config.
-func (q *Queue) Queues() map[string]int {
+func (q *Orchestrator) Queues() map[string]int {
 	m := make(map[string]int, len(q.syncers))
 	for _, s := range q.syncers {
 		m[s.HeadQueue()] = 6
@@ -178,7 +184,7 @@ func (q *Queue) Queues() map[string]int {
 
 // ── Handler ───────────────────────────────────────────────────────────────────
 
-func (q *Queue) makeHandler(syncer Syncer) asynq.HandlerFunc {
+func (q *Orchestrator) makeHandler(syncer Syncer) asynq.HandlerFunc {
 	return func(ctx context.Context, t *asynq.Task) error {
 		var job db.SyncJob
 		if err := json.Unmarshal(t.Payload(), &job); err != nil {

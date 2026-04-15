@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"strconv"
 	"time"
 
@@ -49,17 +48,24 @@ type redditListingResponse struct {
 }
 
 type RedditSyncer struct {
-	client  *http.Client
+	client  RedditClient
 	limiter *ratelimit.Limiter
 	seen    sync.SeenStore
 }
 
 func NewRedditSyncer(seen sync.SeenStore) *RedditSyncer {
+	return NewRedditSyncerWithClient(newRedditHTTPClient(), seen)
+}
+
+func NewRedditSyncerWithClient(client RedditClient, seen sync.SeenStore) *RedditSyncer {
 	if seen == nil {
 		seen = sync.NewNoopSeenStore()
 	}
+	if client == nil {
+		client = newRedditHTTPClient()
+	}
 	return &RedditSyncer{
-		client:  &http.Client{Timeout: 10 * time.Second},
+		client:  client,
 		limiter: ratelimit.New(rateLimit),
 		seen:    seen,
 	}
@@ -111,7 +117,7 @@ func (r *RedditSyncer) Execute(ctx context.Context, job *db.SyncJob) (*sync.Resu
 	}
 
 	state := redditCycleStateFromPayload(job.Payload)
-	body, err := r.fetchListing(ctx, state)
+	body, err := r.client.FetchListing(ctx, state)
 	if err != nil {
 		return nil, err
 	}
@@ -187,31 +193,6 @@ func (r *RedditSyncer) Execute(ctx context.Context, job *db.SyncJob) (*sync.Resu
 	}
 
 	return result, nil
-}
-
-func (r *RedditSyncer) fetchListing(ctx context.Context, state redditCycleState) (*redditListingResponse, error) {
-	url := fmt.Sprintf("%s/r/%s/new.json?limit=%d&after=%s", redditAPI, state.Subreddit, redditLimit, state.After)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("reddit request: %w", err)
-	}
-	req.Header.Set("User-Agent", userAgent)
-
-	resp, err := r.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("reddit fetch: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("reddit status %d", resp.StatusCode)
-	}
-
-	var body redditListingResponse
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return nil, fmt.Errorf("reddit decode: %w", err)
-	}
-	return &body, nil
 }
 
 func newRedditCycleState(source db.Source, cycle *db.SyncCycle, subreddit string) redditCycleState {

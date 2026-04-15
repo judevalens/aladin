@@ -5,7 +5,12 @@ import (
 	"os"
 )
 
-type Config struct {
+type APIConfig struct {
+	DatabaseURL string
+	HTTPAddr    string
+}
+
+type WorkerConfig struct {
 	DatabaseURL  string
 	RedisURL     string
 	OpenAIAPIKey string
@@ -15,8 +20,15 @@ type Config struct {
 	Neo4jPass    string
 }
 
-func Load() Config {
-	return Config{
+func LoadAPI() APIConfig {
+	return APIConfig{
+		DatabaseURL: require("DATABASE_URL"),
+		HTTPAddr:    optional("API_ADDR", ":8080"),
+	}
+}
+
+func LoadWorker() WorkerConfig {
+	return WorkerConfig{
 		DatabaseURL:  require("DATABASE_URL"),
 		RedisURL:     require("REDIS_URL"),
 		OpenAIAPIKey: require("OPENAI_API_KEY"),
@@ -31,6 +43,14 @@ func require(key string) string {
 	v := os.Getenv(key)
 	if v == "" {
 		log.Fatalf("missing required env var: %s", key)
+	}
+	return v
+}
+
+func optional(key, fallback string) string {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
 	}
 	return v
 }

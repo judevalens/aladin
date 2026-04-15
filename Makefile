@@ -1,10 +1,10 @@
-.PHONY: dev backend frontend install db-up db-down db-migrate db-revision worker sync-reddit sync-twitter sync-insights worker-go
+.PHONY: dev backend frontend install db-up db-down db-migrate db-revision worker sync-reddit sync-twitter sync-insights worker-go api-go
 
 dev:
 	@$(MAKE) -j2 backend frontend
 
 backend:
-	cd backend && poetry run flask --app app run --debug --port 8000
+	cd backend_v2 && API_ADDR=:8000 go run ./cmd/api
 
 frontend:
 	cd frontend && npm run dev
@@ -39,3 +39,6 @@ sync-insights:
 
 worker-go:
 	cd backend_v2 && go run ./cmd/worker
+
+api-go:
+	cd backend_v2 && go run ./cmd/api

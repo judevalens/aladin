@@ -14,14 +14,12 @@ import (
 type Orchestrator struct {
 	workers map[string]Worker
 	handler ResultHandler
-	client  *asynq.Client
 }
 
-func NewOrchestrator(client *asynq.Client, handler ResultHandler) *Orchestrator {
+func NewOrchestrator(handler ResultHandler) *Orchestrator {
 	return &Orchestrator{
 		workers: make(map[string]Worker),
 		handler: handler,
-		client:  client,
 	}
 }
 

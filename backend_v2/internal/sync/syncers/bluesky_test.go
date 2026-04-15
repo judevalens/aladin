@@ -3,14 +3,48 @@ package syncers
 import (
 	"context"
 	"encoding/json"
-	"io"
-	"net/http"
-	"strings"
 	"testing"
 
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/sync"
 )
+
+type fakeBlueskyClient struct {
+	resp *blueskySearchPostsResponse
+	err  error
+}
+
+type blueskyFixturePost struct {
+	uri       string
+	cid       string
+	indexedAt string
+	text      string
+	createdAt string
+}
+
+func (f fakeBlueskyClient) SearchPosts(ctx context.Context, state blueskyCycleState) (*blueskySearchPostsResponse, error) {
+	return f.resp, f.err
+}
+
+func blueskyResponse(posts ...blueskyFixturePost) *blueskySearchPostsResponse {
+	resp := &blueskySearchPostsResponse{}
+	for _, p := range posts {
+		post := blueskyPostView{
+			URI:       p.uri,
+			CID:       p.cid,
+			IndexedAt: p.indexedAt,
+		}
+		post.Author.DID = "did:plc:alice"
+		post.Author.Handle = "alice.bsky.social"
+		post.Author.DisplayName = "Alice"
+		post.Record.Type = "app.bsky.feed.post"
+		post.Record.Text = p.text
+		post.Record.CreatedAt = p.createdAt
+		post.Record.Langs = []string{"en"}
+		resp.Posts = append(resp.Posts, post)
+	}
+	return resp
+}
 
 func TestBlueskyBuildJobBootstrapForNewSource(t *testing.T) {
 	t.Parallel()
@@ -75,19 +109,15 @@ func TestBlueskyBuildJobCarriesLastSeenBoundary(t *testing.T) {
 func TestBlueskyExecuteStopsAtSeenID(t *testing.T) {
 	t.Parallel()
 
-	s := NewBlueskySyncer(fakeSeenStore{known: map[string]bool{"at://did:plc:alice/app.bsky.feed.post/seen": true}})
-	s.client.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
-		body := `{"cursor":"next-cursor","posts":[
-			{"uri":"at://did:plc:alice/app.bsky.feed.post/new3","cid":"cid-3","indexedAt":"2026-04-03T12:00:00Z","author":{"did":"did:plc:alice","handle":"alice.bsky.social","displayName":"Alice"},"record":{"$type":"app.bsky.feed.post","text":"newest","createdAt":"2026-04-03T12:00:00Z","langs":["en"]},"replyCount":1,"repostCount":2,"likeCount":3,"quoteCount":4},
-			{"uri":"at://did:plc:alice/app.bsky.feed.post/new2","cid":"cid-2","indexedAt":"2026-04-02T12:00:00Z","author":{"did":"did:plc:alice","handle":"alice.bsky.social","displayName":"Alice"},"record":{"$type":"app.bsky.feed.post","text":"newer","createdAt":"2026-04-02T12:00:00Z","langs":["en"]},"replyCount":0,"repostCount":1,"likeCount":2,"quoteCount":0},
-			{"uri":"at://did:plc:alice/app.bsky.feed.post/seen","cid":"cid-1","indexedAt":"2026-04-01T12:00:00Z","author":{"did":"did:plc:alice","handle":"alice.bsky.social","displayName":"Alice"},"record":{"$type":"app.bsky.feed.post","text":"seen","createdAt":"2026-04-01T12:00:00Z","langs":["en"]},"replyCount":0,"repostCount":0,"likeCount":1,"quoteCount":0}
-		]}`
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(body)),
-			Header:     make(http.Header),
-		}, nil
-	})
+	s := NewBlueskySyncerWithClient(fakeBlueskyClient{resp: func() *blueskySearchPostsResponse {
+		resp := blueskyResponse(
+			blueskyFixturePost{"at://did:plc:alice/app.bsky.feed.post/new3", "cid-3", "2026-04-03T12:00:00Z", "newest", "2026-04-03T12:00:00Z"},
+			blueskyFixturePost{"at://did:plc:alice/app.bsky.feed.post/new2", "cid-2", "2026-04-02T12:00:00Z", "newer", "2026-04-02T12:00:00Z"},
+			blueskyFixturePost{"at://did:plc:alice/app.bsky.feed.post/seen", "cid-1", "2026-04-01T12:00:00Z", "seen", "2026-04-01T12:00:00Z"},
+		)
+		resp.Cursor = "next-cursor"
+		return resp
+	}()}, fakeSeenStore{known: map[string]bool{"at://did:plc:alice/app.bsky.feed.post/seen": true}})
 
 	job := &db.SyncJob{
 		SourceID:   "source-1",
@@ -127,18 +157,14 @@ func TestBlueskyExecuteStopsAtSeenID(t *testing.T) {
 func TestBlueskyExecuteCarriesNextBoundaryAcrossPagination(t *testing.T) {
 	t.Parallel()
 
-	s := NewBlueskySyncer(sync.NewNoopSeenStore())
-	s.client.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
-		body := `{"cursor":"next-cursor","posts":[
-			{"uri":"at://did:plc:alice/app.bsky.feed.post/new3","cid":"cid-3","indexedAt":"2026-04-03T12:00:00Z","author":{"did":"did:plc:alice","handle":"alice.bsky.social","displayName":"Alice"},"record":{"$type":"app.bsky.feed.post","text":"newest","createdAt":"2026-04-03T12:00:00Z","langs":["en"]},"replyCount":1,"repostCount":2,"likeCount":3,"quoteCount":4},
-			{"uri":"at://did:plc:alice/app.bsky.feed.post/new2","cid":"cid-2","indexedAt":"2026-04-02T12:00:00Z","author":{"did":"did:plc:alice","handle":"alice.bsky.social","displayName":"Alice"},"record":{"$type":"app.bsky.feed.post","text":"newer","createdAt":"2026-04-02T12:00:00Z","langs":["en"]},"replyCount":0,"repostCount":1,"likeCount":2,"quoteCount":0}
-		]}`
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(body)),
-			Header:     make(http.Header),
-		}, nil
-	})
+	s := NewBlueskySyncerWithClient(fakeBlueskyClient{resp: func() *blueskySearchPostsResponse {
+		resp := blueskyResponse(
+			blueskyFixturePost{"at://did:plc:alice/app.bsky.feed.post/new3", "cid-3", "2026-04-03T12:00:00Z", "newest", "2026-04-03T12:00:00Z"},
+			blueskyFixturePost{"at://did:plc:alice/app.bsky.feed.post/new2", "cid-2", "2026-04-02T12:00:00Z", "newer", "2026-04-02T12:00:00Z"},
+		)
+		resp.Cursor = "next-cursor"
+		return resp
+	}()}, sync.NewNoopSeenStore())
 
 	job := &db.SyncJob{
 		CorrelationID: "corr-1",
@@ -178,17 +204,13 @@ func TestBlueskyExecuteCarriesNextBoundaryAcrossPagination(t *testing.T) {
 func TestBlueskyExecuteDoesNotAdvanceHighWaterMarkWhenFirstPostIsSeen(t *testing.T) {
 	t.Parallel()
 
-	s := NewBlueskySyncer(fakeSeenStore{known: map[string]bool{"at://did:plc:alice/app.bsky.feed.post/seen": true}})
-	s.client.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
-		body := `{"cursor":"next-cursor","posts":[
-			{"uri":"at://did:plc:alice/app.bsky.feed.post/seen","cid":"cid-1","indexedAt":"2026-04-01T12:00:00Z","author":{"did":"did:plc:alice","handle":"alice.bsky.social","displayName":"Alice"},"record":{"$type":"app.bsky.feed.post","text":"seen","createdAt":"2026-04-01T12:00:00Z","langs":["en"]},"replyCount":0,"repostCount":0,"likeCount":1,"quoteCount":0}
-		]}`
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(body)),
-			Header:     make(http.Header),
-		}, nil
-	})
+	s := NewBlueskySyncerWithClient(fakeBlueskyClient{resp: func() *blueskySearchPostsResponse {
+		resp := blueskyResponse(
+			blueskyFixturePost{"at://did:plc:alice/app.bsky.feed.post/seen", "cid-1", "2026-04-01T12:00:00Z", "seen", "2026-04-01T12:00:00Z"},
+		)
+		resp.Cursor = "next-cursor"
+		return resp
+	}()}, fakeSeenStore{known: map[string]bool{"at://did:plc:alice/app.bsky.feed.post/seen": true}})
 
 	job := &db.SyncJob{
 		SourceID:   "source-1",

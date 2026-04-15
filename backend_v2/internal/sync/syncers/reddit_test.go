@@ -3,23 +3,56 @@ package syncers
 import (
 	"context"
 	"encoding/json"
-	"io"
-	"net/http"
-	"strings"
 	"testing"
 
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/sync"
 )
 
-type roundTripperFunc func(*http.Request) (*http.Response, error)
-
-func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
-	return f(req)
-}
-
 type fakeSeenStore struct {
 	known map[string]bool
+}
+
+type fakeRedditClient struct {
+	resp *redditListingResponse
+	err  error
+}
+
+type redditFixturePost struct {
+	id         string
+	title      string
+	selftext   string
+	permalink  string
+	score      int
+	createdUTC float64
+}
+
+func (f fakeRedditClient) FetchListing(ctx context.Context, state redditCycleState) (*redditListingResponse, error) {
+	return f.resp, f.err
+}
+
+func redditResponse(children ...redditFixturePost) *redditListingResponse {
+	resp := &redditListingResponse{}
+	for _, child := range children {
+		var item struct {
+			Data struct {
+				ID         string  `json:"id"`
+				Title      string  `json:"title"`
+				Selftext   string  `json:"selftext"`
+				Permalink  string  `json:"permalink"`
+				Score      int     `json:"score"`
+				CreatedUTC float64 `json:"created_utc"`
+			} `json:"data"`
+		}
+		item.Data.ID = child.id
+		item.Data.Title = child.title
+		item.Data.Selftext = child.selftext
+		item.Data.Permalink = child.permalink
+		item.Data.Score = child.score
+		item.Data.CreatedUTC = child.createdUTC
+		resp.Data.Children = append(resp.Data.Children, item)
+	}
+	return resp
 }
 
 func (f fakeSeenStore) Seen(ctx context.Context, sourceID string, externalIDs []string) (map[string]bool, error) {
@@ -99,19 +132,15 @@ func TestRedditBuildJobCarriesLastSeenBoundary(t *testing.T) {
 func TestRedditExecuteStopsAtSeenID(t *testing.T) {
 	t.Parallel()
 
-	s := NewRedditSyncer(fakeSeenStore{known: map[string]bool{"seen-1": true}})
-	s.client.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
-		body := `{"data":{"after":"t3_next","children":[
-			{"data":{"id":"new-3","title":"newest","selftext":"","permalink":"/r/golang/comments/new3/x","score":10,"created_utc":300}},
-			{"data":{"id":"new-2","title":"newer","selftext":"","permalink":"/r/golang/comments/new2/x","score":9,"created_utc":200}},
-			{"data":{"id":"seen-1","title":"seen","selftext":"","permalink":"/r/golang/comments/seen1/x","score":8,"created_utc":100}}
-		]}}`
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(body)),
-			Header:     make(http.Header),
-		}, nil
-	})
+	s := NewRedditSyncerWithClient(fakeRedditClient{resp: func() *redditListingResponse {
+		resp := redditResponse(
+			redditFixturePost{"new-3", "newest", "", "/r/golang/comments/new3/x", 10, 300},
+			redditFixturePost{"new-2", "newer", "", "/r/golang/comments/new2/x", 9, 200},
+			redditFixturePost{"seen-1", "seen", "", "/r/golang/comments/seen1/x", 8, 100},
+		)
+		resp.Data.After = "t3_next"
+		return resp
+	}()}, fakeSeenStore{known: map[string]bool{"seen-1": true}})
 
 	job := &db.SyncJob{
 		SourceID:   "source-1",
@@ -154,18 +183,14 @@ func TestRedditExecuteStopsAtSeenID(t *testing.T) {
 func TestRedditExecuteCarriesNextBoundaryAcrossPagination(t *testing.T) {
 	t.Parallel()
 
-	s := NewRedditSyncer(sync.NewNoopSeenStore())
-	s.client.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
-		body := `{"data":{"after":"t3_next","children":[
-			{"data":{"id":"new-3","title":"newest","selftext":"","permalink":"/r/golang/comments/new3/x","score":10,"created_utc":300}},
-			{"data":{"id":"new-2","title":"newer","selftext":"","permalink":"/r/golang/comments/new2/x","score":9,"created_utc":200}}
-		]}}`
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(body)),
-			Header:     make(http.Header),
-		}, nil
-	})
+	s := NewRedditSyncerWithClient(fakeRedditClient{resp: func() *redditListingResponse {
+		resp := redditResponse(
+			redditFixturePost{"new-3", "newest", "", "/r/golang/comments/new3/x", 10, 300},
+			redditFixturePost{"new-2", "newer", "", "/r/golang/comments/new2/x", 9, 200},
+		)
+		resp.Data.After = "t3_next"
+		return resp
+	}()}, sync.NewNoopSeenStore())
 
 	job := &db.SyncJob{
 		CorrelationID: "corr-1",
@@ -206,16 +231,20 @@ func TestRedditExecuteDoesNotAdvanceHighWaterMarkWhenFirstPostIsSeen(t *testing.
 	t.Parallel()
 
 	s := NewRedditSyncer(fakeSeenStore{known: map[string]bool{"seen-1": true}})
-	s.client.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
-		body := `{"data":{"after":"t3_next","children":[
-			{"data":{"id":"seen-1","title":"seen","selftext":"","permalink":"/r/golang/comments/seen1/x","score":8,"created_utc":100}}
-		]}}`
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(body)),
-			Header:     make(http.Header),
-		}, nil
-	})
+	s.client = fakeRedditClient{resp: func() *redditListingResponse {
+		resp := redditResponse(
+			struct {
+				id         string
+				title      string
+				selftext   string
+				permalink  string
+				score      int
+				createdUTC float64
+			}{"seen-1", "seen", "", "/r/golang/comments/seen1/x", 8, 100},
+		)
+		resp.Data.After = "t3_next"
+		return resp
+	}()}
 
 	job := &db.SyncJob{
 		SourceID:   "source-1",

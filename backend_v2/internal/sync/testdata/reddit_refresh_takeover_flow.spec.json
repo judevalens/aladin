@@ -1,0 +1,58 @@
+{
+  "platform": "reddit",
+  "pages": [
+    {
+      "cursor": "",
+      "next_cursor": "page-2",
+      "children": [
+        {
+          "id": "new-3",
+          "title": "newest",
+          "permalink": "/r/golang/comments/new3/x",
+          "score": 10,
+          "created_utc": 300
+        },
+        {
+          "id": "new-2",
+          "title": "newer",
+          "permalink": "/r/golang/comments/new2/x",
+          "score": 9,
+          "created_utc": 200
+        }
+      ]
+    },
+    {
+      "cursor": "page-2",
+      "next_cursor": "",
+      "children": [
+        {
+          "id": "new-1",
+          "title": "newer-still",
+          "permalink": "/r/golang/comments/new1/x",
+          "score": 8,
+          "created_utc": 150
+        },
+        {
+          "id": "seen-1",
+          "title": "seen",
+          "permalink": "/r/golang/comments/seen1/x",
+          "score": 7,
+          "created_utc": 100
+        }
+      ]
+    },
+    {
+      "cursor": "old-page-1",
+      "next_cursor": "",
+      "children": [
+        {
+          "id": "old-1",
+          "title": "older",
+          "permalink": "/r/golang/comments/old1/x",
+          "score": 6,
+          "created_utc": 50
+        }
+      ]
+    }
+  ]
+}

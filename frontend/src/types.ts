@@ -52,3 +52,37 @@ export interface FeedItem extends Artifact {
 export interface SearchResult extends Artifact {
   similarity: number
 }
+
+export type SourceKind =
+  | 'reddit_subreddit'
+  | 'bluesky_search'
+  | 'bluesky_account'
+  | 'twitter_search'
+
+export interface SourceRecord {
+  id: string
+  name: string
+  type: string
+  syncMode: string
+  syncState: string
+  config: Record<string, unknown>
+  autoPromoteThreshold: number
+  suggestThreshold: number
+  createdAt: string
+  lastSyncedAt?: string | null
+}
+
+export interface CreateSourceInput {
+  kind: SourceKind
+  name?: string
+  subreddit?: string
+  minScore?: number
+  includeComments?: boolean
+  topComments?: number
+  sort?: 'new' | 'hot' | 'top'
+  query?: string
+  handle?: string
+  limit?: number
+  minLikes?: number
+  maxResults?: number
+}

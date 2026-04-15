@@ -1,4 +1,12 @@
-import type { Artifact, ArtifactEnrichment, FeedItem, SearchResult, Insight } from '../types'
+import type {
+  Artifact,
+  ArtifactEnrichment,
+  CreateSourceInput,
+  FeedItem,
+  Insight,
+  SearchResult,
+  SourceRecord,
+} from '../types'
 
 // ── Graph ──────────────────────────────────────────────────────────────────
 
@@ -239,6 +247,35 @@ export async function fetchFeedSources(): Promise<{ id: string; name: string; ty
   const res = await fetch('/api/feed/sources')
   if (!res.ok) return []
   return res.json()
+}
+
+// ── Sources ────────────────────────────────────────────────────────────────
+
+export async function fetchSources(): Promise<SourceRecord[]> {
+  const res = await fetch('/api/sources/')
+  if (!res.ok) throw new Error(`Failed to load sources (${res.status})`)
+  return res.json()
+}
+
+export async function createSource(payload: CreateSourceInput): Promise<SourceRecord> {
+  const res = await fetch('/api/sources/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error ?? `Failed to create source (${res.status})`)
+  }
+  return res.json()
+}
+
+export async function deleteSource(id: string): Promise<void> {
+  const res = await fetch(`/api/sources/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error ?? `Failed to delete source (${res.status})`)
+  }
 }
 
 // ── Search ─────────────────────────────────────────────────────────────────

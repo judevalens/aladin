@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS sync_cycles (
     kind           TEXT NOT NULL,
     status         TEXT NOT NULL DEFAULT 'active',
     cursor         JSONB NOT NULL DEFAULT '{}',
+    head_boundary  JSONB NOT NULL DEFAULT '{}',
     covered_until  JSONB NOT NULL DEFAULT '{}',
     last_picked_at TIMESTAMPTZ,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),

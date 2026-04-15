@@ -30,6 +30,7 @@ type Result struct {
 	Payload    []byte
 	Err        error
 	ArtifactID string
+	CorrelationID string
 	KgID       string
 }
 

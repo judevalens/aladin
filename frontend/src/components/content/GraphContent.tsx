@@ -30,6 +30,10 @@ const ARTIFACT_NODE_COLORS: Record<ArtifactType, string> = {
   file: "#10b981",
   feed: "#10b981",
   post: "#94a3b8",
+  note: "#8b5cf6",
+  comment: "#64748b",
+  chunk: "#06b6d4",
+  webpage: "#0ea5e9",
 };
 
 const ARTIFACT_ICONS: Record<ArtifactType, string> = {
@@ -39,6 +43,10 @@ const ARTIFACT_ICONS: Record<ArtifactType, string> = {
   file: "📎",
   feed: "📡",
   post: "💬",
+  note: "📝",
+  comment: "💭",
+  chunk: "🧩",
+  webpage: "🌐",
 };
 
 // ── Custom artifact node ──────────────────────────────────────────────────────

@@ -39,6 +39,10 @@ const ARTIFACT_COLORS: Record<ArtifactType, string> = {
   file: "#94a3b8",
   feed: "#10b981",
   post: "#94a3b8",
+  note: "#8b5cf6",
+  comment: "#64748b",
+  chunk: "#06b6d4",
+  webpage: "#0ea5e9",
 };
 
 const ARTIFACT_ICONS: Record<ArtifactType, string> = {
@@ -48,6 +52,10 @@ const ARTIFACT_ICONS: Record<ArtifactType, string> = {
   file: "📎",
   feed: "📡",
   post: "💬",
+  note: "📝",
+  comment: "💭",
+  chunk: "🧩",
+  webpage: "🌐",
 };
 
 const BASE_RADIUS = 4;
@@ -542,4 +550,3 @@ export default function D3GraphCanvas({ onNodeSelect, artifactToAdd, onArtifactN
     </div>
   );
 }
-

@@ -153,7 +153,7 @@ func TestSearchWorkerClassifiesHTTPErrors(t *testing.T) {
 	}
 }
 
-func TestSearchWorkerCarriesPartialProgressOnRetryableError(t *testing.T) {
+func TestSearchWorkerTransientErrorCarriesNoPayload(t *testing.T) {
 	t.Parallel()
 
 	w := NewSearchWorker(&fakeSearcher{
@@ -176,13 +176,8 @@ func TestSearchWorkerCarriesPartialProgressOnRetryableError(t *testing.T) {
 	if !errors.As(result.Err, &got) {
 		t.Fatalf("error = %T, want ErrTransient", result.Err)
 	}
-
-	var payload pipeline.ArtifactPayload
-	if err := json.Unmarshal(result.Payload, &payload); err != nil {
-		t.Fatalf("unmarshal payload: %v", err)
-	}
-	if _, ok := payload.SearchResolved["done"]; !ok {
-		t.Fatalf("partial progress missing from payload: %+v", payload.SearchResolved)
+	if result.Payload != nil {
+		t.Fatalf("expected no payload on transient error, got %d bytes", len(result.Payload))
 	}
 }
 

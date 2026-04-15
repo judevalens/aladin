@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
 
@@ -61,17 +60,24 @@ type blueskyPostView struct {
 }
 
 type BlueskySyncer struct {
-	client  *http.Client
+	client  BlueskyClient
 	limiter *ratelimit.Limiter
 	seen    sync.SeenStore
 }
 
 func NewBlueskySyncer(seen sync.SeenStore) *BlueskySyncer {
+	return NewBlueskySyncerWithClient(newBlueskyHTTPClient(), seen)
+}
+
+func NewBlueskySyncerWithClient(client BlueskyClient, seen sync.SeenStore) *BlueskySyncer {
 	if seen == nil {
 		seen = sync.NewNoopSeenStore()
 	}
+	if client == nil {
+		client = newBlueskyHTTPClient()
+	}
 	return &BlueskySyncer{
-		client:  &http.Client{Timeout: 10 * time.Second},
+		client:  client,
 		limiter: ratelimit.New(blueskyRate),
 		seen:    seen,
 	}
@@ -125,7 +131,7 @@ func (b *BlueskySyncer) Execute(ctx context.Context, job *db.SyncJob) (*sync.Res
 	}
 
 	state := blueskyCycleStateFromPayload(job.Payload)
-	body, err := b.searchPosts(ctx, state)
+	body, err := b.client.SearchPosts(ctx, state)
 	if err != nil {
 		return nil, err
 	}
@@ -216,38 +222,6 @@ func (b *BlueskySyncer) Execute(ctx context.Context, job *db.SyncJob) (*sync.Res
 	}
 
 	return result, nil
-}
-
-func (b *BlueskySyncer) searchPosts(ctx context.Context, state blueskyCycleState) (*blueskySearchPostsResponse, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, blueskyAPI+"/app.bsky.feed.searchPosts", nil)
-	if err != nil {
-		return nil, fmt.Errorf("bluesky request: %w", err)
-	}
-
-	q := req.URL.Query()
-	q.Set("q", state.Query)
-	q.Set("sort", "latest")
-	q.Set("limit", fmt.Sprintf("%d", blueskyPageSize))
-	if state.Cursor != "" {
-		q.Set("cursor", state.Cursor)
-	}
-	req.URL.RawQuery = q.Encode()
-
-	resp, err := b.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("bluesky fetch: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("bluesky status %d", resp.StatusCode)
-	}
-
-	var body blueskySearchPostsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return nil, fmt.Errorf("bluesky decode: %w", err)
-	}
-	return &body, nil
 }
 
 func newBlueskyCycleState(source db.Source, cycle *db.SyncCycle, query string) blueskyCycleState {

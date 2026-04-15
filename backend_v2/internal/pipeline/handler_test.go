@@ -11,10 +11,10 @@ import (
 )
 
 type fakeEnqueuer struct {
-	stageCalls        []stageCall
+	stageCalls []stageCall
+	stageErr   error
+	// delayedStageCalls tracks calls made outside the interface for test assertions.
 	delayedStageCalls []delayedStageCall
-	stageErr          error
-	delayedErr        error
 }
 
 type stageCall struct {
@@ -33,11 +33,6 @@ type delayedStageCall struct {
 func (f *fakeEnqueuer) EnqueueStage(ctx context.Context, taskType, artifactID string, payload []byte) error {
 	f.stageCalls = append(f.stageCalls, stageCall{taskType: taskType, artifactID: artifactID, payload: payload})
 	return f.stageErr
-}
-
-func (f *fakeEnqueuer) EnqueueStageDelayed(ctx context.Context, taskType, artifactID string, payload []byte, delay time.Duration) error {
-	f.delayedStageCalls = append(f.delayedStageCalls, delayedStageCall{taskType: taskType, artifactID: artifactID, payload: payload, delay: delay})
-	return f.delayedErr
 }
 
 type fakeArtifactRepo struct {
@@ -77,27 +72,28 @@ func TestFullPipelineHandlerRoutesFirstPassSearchNeeded(t *testing.T) {
 	}
 }
 
-func TestFullPipelineHandlerRateLimitReenqueue(t *testing.T) {
+func TestFullPipelineHandlerRateLimitBubblesError(t *testing.T) {
 	t.Parallel()
 
 	enq := &fakeEnqueuer{}
 	h := NewFullPipelineHandler(enq, &fakeArtifactRepo{}, make(chan string, 1))
 
+	rlErr := ErrRateLimit{RetryAfter: 45 * time.Second}
 	err := h.OnDone(context.Background(), Result{
 		TaskType:   TaskSearch,
 		ArtifactID: "artifact-2",
 		Payload:    []byte(`{"artifact_id":"artifact-2"}`),
-		Err:        ErrRateLimit{RetryAfter: 45 * time.Second},
+		Err:        rlErr,
 	})
-	if err != nil {
-		t.Fatalf("OnDone returned error: %v", err)
+	if err == nil {
+		t.Fatal("OnDone returned nil, want rate limit error")
 	}
-	if len(enq.delayedStageCalls) != 1 {
-		t.Fatalf("EnqueueStageDelayed calls = %d, want 1", len(enq.delayedStageCalls))
+	var got ErrRateLimit
+	if !errors.As(err, &got) || got.RetryAfter != 45*time.Second {
+		t.Fatalf("OnDone error = %v, want ErrRateLimit{RetryAfter: 45s}", err)
 	}
-	call := enq.delayedStageCalls[0]
-	if call.taskType != TaskSearch || call.artifactID != "artifact-2" || call.delay != 45*time.Second {
-		t.Fatalf("EnqueueStageDelayed call = %+v", call)
+	if len(enq.stageCalls) != 0 || len(enq.delayedStageCalls) != 0 {
+		t.Fatalf("unexpected enqueue calls on rate limit: %+v %+v", enq.stageCalls, enq.delayedStageCalls)
 	}
 }
 

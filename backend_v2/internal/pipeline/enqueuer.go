@@ -13,7 +13,6 @@ const defaultStageMaxRetry = 3
 // Enqueuer hides asynq-specific task construction and queue policy from handlers.
 type Enqueuer interface {
 	EnqueueStage(ctx context.Context, taskType, artifactID string, payload []byte) error
-	EnqueueStageDelayed(ctx context.Context, taskType, artifactID string, payload []byte, delay time.Duration) error
 }
 
 type asynqEnqueuer struct {
@@ -37,20 +36,24 @@ func (e *asynqEnqueuer) EnqueueStage(ctx context.Context, taskType, artifactID s
 	return err
 }
 
-func (e *asynqEnqueuer) EnqueueStageDelayed(ctx context.Context, taskType, artifactID string, payload []byte, delay time.Duration) error {
-	task := asynq.NewTask(taskType, payload)
-	_, err := e.client.EnqueueContext(ctx, task,
-		asynq.Queue(taskType),
-		asynq.ProcessIn(delay),
-		asynq.MaxRetry(defaultStageMaxRetry),
-		asynq.TaskID(stageTaskID(artifactID, taskType)),
-	)
-	if errors.Is(err, asynq.ErrTaskIDConflict) {
-		return nil
-	}
-	return err
-}
-
 func stageTaskID(artifactID, taskType string) string {
 	return artifactID + ":" + taskType
+}
+
+// RetryDelay is the asynq RetryDelayFunc for pipeline tasks.
+// It honours ErrRateLimit.RetryAfter when set, and falls back to asynq's
+// default exponential backoff for all other errors.
+func RetryDelay(n int, err error, t *asynq.Task) time.Duration {
+	var rl ErrRateLimit
+	if errors.As(err, &rl) && rl.RetryAfter > 0 {
+		return rl.RetryAfter
+	}
+	return asynq.DefaultRetryDelayFunc(n, err, t)
+}
+
+// IsFailure reports whether an error should consume asynq retry budget.
+// Rate limits should be delayed and retried, but should not count as failures.
+func IsFailure(err error) bool {
+	var rl ErrRateLimit
+	return !errors.As(err, &rl)
 }

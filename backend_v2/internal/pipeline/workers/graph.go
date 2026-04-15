@@ -40,6 +40,7 @@ func (w *GraphWorker) Run(ctx context.Context, raw []byte) pipeline.Result {
 		"component", "pipeline",
 		"stage", "graph",
 		"artifact_id", p.ArtifactID,
+		"correlation_id", p.CorrelationID,
 		"kg_id", p.KgID,
 	)
 	start := time.Now()
@@ -82,6 +83,7 @@ func (w *GraphWorker) Run(ctx context.Context, raw []byte) pipeline.Result {
 		TaskType:   pipeline.TaskGraph,
 		Payload:    payload,
 		ArtifactID: p.ArtifactID,
+		CorrelationID: p.CorrelationID,
 		KgID:       p.KgID,
 	}
 }
