@@ -32,6 +32,16 @@ struct ArtifactsPanel: View {
         activeTab.kind == .noteDraft ? activeTab.id : nil
     }
 
+    private var activeFilterName: String? {
+        if case .artifactFilter(let name) = activeTab.kind { return name }
+        return nil
+    }
+
+    private var activeDocument: ArtifactSummary? {
+        if case .document(let artifact) = activeTab.kind { return artifact }
+        return nil
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             ArtifactTabBar(
@@ -63,7 +73,45 @@ struct ArtifactsPanel: View {
                     .opacity(activeTab.kind == .noteDraft ? 1 : 0)
                     .allowsHitTesting(activeTab.kind == .noteDraft)
                 }
+
+                if let name = activeFilterName {
+                    FilterPlaceholderView(filterName: name)
+                }
+
+                if let artifact = activeDocument {
+                    DocumentView(artifact: artifact)
+                }
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .aladinOpenArtifactFilter)) { notification in
+            guard let name = notification.object as? String else { return }
+            openFilterTab(name: name)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .aladinOpenDocument)) { notification in
+            guard let id = notification.object as? String,
+                  let artifact = model.artifacts.first(where: { $0.id == id })
+            else { return }
+            openDocumentTab(artifact: artifact)
+        }
+    }
+
+    private func openDocumentTab(artifact: ArtifactSummary) {
+        let tab = ArtifactTab.document(artifact)
+        if let existing = tabs.first(where: { $0.id == tab.id }) {
+            activeTabID = existing.id
+        } else {
+            tabs.append(tab)
+            activeTabID = tab.id
+        }
+    }
+
+    private func openFilterTab(name: String) {
+        let tab = ArtifactTab.filter(name: name)
+        if let existing = tabs.first(where: { $0.id == tab.id }) {
+            activeTabID = existing.id
+        } else {
+            tabs.append(tab)
+            activeTabID = tab.id
         }
     }
 
@@ -217,30 +265,35 @@ private struct ArtifactTabButton: View {
     @State private var isHovering = false
 
     var body: some View {
-        HStack(spacing: 8) {
-            Button(action: onSelect) {
+        Button(action: onSelect) {
+            HStack(spacing: 8) {
                 HStack(spacing: 7) {
-                    Image(systemName: tab.kind == .home ? "house" : "square.and.pencil")
+                    Image(systemName: tab.tabSystemImage)
                     Text(tab.displayTitle)
                         .lineLimit(1)
                 }
                 .frame(maxWidth: 190, alignment: .leading)
-            }
-            .buttonStyle(.plain)
 
-            Button(action: onClose) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .semibold))
+                // Close button — intercepts its own taps without bubbling to the select button
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .semibold))
+                        .frame(width: 16, height: 16)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .opacity(tab.isClosable && (isHovering || isActive) ? 1 : 0)
+                .disabled(!tab.isClosable)
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .opacity(tab.isClosable && (isHovering || isActive) ? 1 : 0)
-            .disabled(!tab.isClosable)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(isActive ? .primary : .secondary)
+            .padding(.horizontal, 10)
+            .frame(height: 30)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
         }
-        .font(.caption.weight(.medium))
-        .foregroundStyle(isActive ? .primary : .secondary)
-        .padding(.horizontal, 10)
-        .frame(height: 30)
+        .buttonStyle(.plain)
         .background(
             RoundedRectangle(cornerRadius: 8)
                 .fill(isActive ? Color.primary.opacity(0.08) : (isHovering ? Color.primary.opacity(0.05) : Color.clear))
@@ -347,6 +400,8 @@ private struct HeroCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(24)
         .background(.background, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.primary.opacity(0.07), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
     }
 }
 
@@ -356,9 +411,11 @@ private struct Badge: View {
     var body: some View {
         Text(text)
             .font(.caption.weight(.medium))
+            .foregroundStyle(Color.accentColor)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(Color.accentColor.opacity(0.12), in: Capsule())
+            .background(Color.accentColor.opacity(0.10), in: Capsule())
+            .overlay(Capsule().stroke(Color.accentColor.opacity(0.25), lineWidth: 0.5))
     }
 }
 
@@ -381,11 +438,14 @@ struct MetricCard: View {
         .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
         .padding(18)
         .background(.background, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.primary.opacity(0.07), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
     }
 }
 
 private struct ArtifactRow: View {
     let artifact: ArtifactSummary
+    @State private var isHovering = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -428,6 +488,10 @@ private struct ArtifactRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .background(.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.primary.opacity(0.07), lineWidth: 0.5))
+        .shadow(color: .black.opacity(isHovering ? 0.08 : 0.04), radius: isHovering ? 12 : 6, y: isHovering ? 3 : 1)
+        .animation(.easeOut(duration: 0.15), value: isHovering)
+        .onHover { isHovering = $0 }
     }
 }
 
@@ -444,6 +508,76 @@ private struct ErrorBanner: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
         .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.orange.opacity(0.25), lineWidth: 0.5))
+        .shadow(color: .orange.opacity(0.10), radius: 8, y: 2)
+    }
+}
+
+private struct DocumentView: View {
+    let artifact: ArtifactSummary
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(artifact.label)
+                        .font(.title2.weight(.semibold))
+
+                    Text(artifact.createdAt)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Divider()
+
+                if artifact.content.isEmpty {
+                    Text("No content yet.")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(artifact.content)
+                        .font(.body)
+                        .lineSpacing(5)
+                }
+            }
+            .padding(48)
+            .frame(maxWidth: 720, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(Color(nsColor: .controlBackgroundColor))
+    }
+}
+
+private struct FilterPlaceholderView: View {
+    let filterName: String
+
+    private var systemImage: String {
+        switch filterName {
+        case "Inbox":   return "tray"
+        case "Writing": return "square.and.pencil"
+        case "Links":   return "link"
+        case "Audio":   return "waveform"
+        default:        return "folder"
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: systemImage)
+                .font(.system(size: 36, weight: .light))
+                .foregroundStyle(.secondary)
+
+            VStack(spacing: 6) {
+                Text(filterName)
+                    .font(.title3.weight(.semibold))
+
+                Text("This filter view is coming soon.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(nsColor: .controlBackgroundColor))
     }
 }
 
@@ -462,5 +596,7 @@ private struct EmptyStateCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
         .background(.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.primary.opacity(0.07), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.04), radius: 6, y: 1)
     }
 }

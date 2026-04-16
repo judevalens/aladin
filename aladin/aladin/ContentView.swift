@@ -9,6 +9,8 @@ import SwiftUI
 
 extension Notification.Name {
     static let aladinOpenNewNoteTab = Notification.Name("aladinOpenNewNoteTab")
+    static let aladinOpenArtifactFilter = Notification.Name("aladinOpenArtifactFilter")
+    static let aladinOpenDocument = Notification.Name("aladinOpenDocument")
 }
 
 struct ContentView: View {
@@ -27,6 +29,14 @@ struct ContentView: View {
                 onNewNote: {
                     selectedSection = .artifacts
                     NotificationCenter.default.post(name: .aladinOpenNewNoteTab, object: nil)
+                },
+                onSelectFilter: { filterName in
+                    selectedSection = .artifacts
+                    NotificationCenter.default.post(name: .aladinOpenArtifactFilter, object: filterName)
+                },
+                onOpenDocument: { artifact in
+                    selectedSection = .artifacts
+                    NotificationCenter.default.post(name: .aladinOpenDocument, object: artifact.id)
                 }
             )
             .navigationSplitViewColumnWidth(min: 250, ideal: 320, max: 380)

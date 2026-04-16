@@ -5,6 +5,8 @@ struct ArtifactTab: Identifiable, Equatable {
         case home
         case noteDraft
         case artifactPreview
+        case artifactFilter(String)
+        case document(ArtifactSummary)
     }
 
     let id: String
@@ -23,11 +25,42 @@ struct ArtifactTab: Identifiable, Equatable {
         ArtifactTab(id: UUID().uuidString, kind: .noteDraft)
     }
 
+    static func filter(name: String) -> ArtifactTab {
+        ArtifactTab(id: "filter-\(name)", kind: .artifactFilter(name), title: name)
+    }
+
+    static func document(_ artifact: ArtifactSummary) -> ArtifactTab {
+        // Stable ID so re-opening the same doc switches to the existing tab
+        ArtifactTab(id: "doc-\(artifact.id)", kind: .document(artifact), title: artifact.label)
+    }
+
     var displayTitle: String {
-        if kind == .home { return "Home" }
-        if let artifact { return artifact.label }
-        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmedTitle.isEmpty ? "Untitled note" : trimmedTitle
+        switch kind {
+        case .home:                     return "Home"
+        case .artifactFilter(let name): return name
+        case .document(let artifact):   return artifact.label
+        default:
+            if let artifact { return artifact.label }
+            let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? "Untitled note" : trimmed
+        }
+    }
+
+    var tabSystemImage: String {
+        switch kind {
+        case .home:             return "house"
+        case .noteDraft:        return "square.and.pencil"
+        case .artifactPreview:  return "doc"
+        case .document:         return "doc.text"
+        case .artifactFilter(let name):
+            switch name {
+            case "Inbox":   return "tray"
+            case "Writing": return "square.and.pencil"
+            case "Links":   return "link"
+            case "Audio":   return "waveform"
+            default:        return "folder"
+            }
+        }
     }
 
     var isClosable: Bool {

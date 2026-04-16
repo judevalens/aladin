@@ -15,7 +15,9 @@ struct LinkCaptureSheet: View {
                 .font(.title3.weight(.semibold))
 
             TextField("URL", text: $url)
+                .textFieldStyle(.roundedBorder)
             TextField("Title", text: $title)
+                .textFieldStyle(.roundedBorder)
             TextEditor(text: $note)
                 .frame(height: 140)
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(.quaternary))
