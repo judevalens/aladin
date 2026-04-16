@@ -71,7 +71,7 @@ struct ArtifactTab: Identifiable, Equatable {
 struct MainPanel: View {
     let selectedSection: HomeSection
     let searchText: String
-    @ObservedObject var model: AppModel
+    @ObservedObject var viewModel: DetailViewModel
     @Binding var artifactTabs: [ArtifactTab]
     @Binding var activeArtifactTabID: ArtifactTab.ID
 
@@ -81,7 +81,7 @@ struct MainPanel: View {
             case .artifacts:
                 ArtifactsPanel(
                     searchText: searchText,
-                    model: model,
+                    viewModel: viewModel,
                     tabs: $artifactTabs,
                     activeTabID: $activeArtifactTabID
                 )

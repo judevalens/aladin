@@ -4,7 +4,7 @@ import WebKit
 
 struct LinkCaptureSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @ObservedObject var model: AppModel
+    @ObservedObject var viewModel: DetailViewModel
     @State private var title = ""
     @State private var url = ""
     @State private var note = ""
@@ -31,7 +31,7 @@ struct LinkCaptureSheet: View {
 
                 Button("Save") {
                     Task {
-                        let created = await model.createLink(title: title, url: url, note: note)
+                        let created = await viewModel.createLink(title: title, url: url, note: note)
                         if created {
                             dismiss()
                         }
@@ -48,11 +48,11 @@ struct LinkCaptureSheet: View {
 
 struct WritingNodeCaptureSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @ObservedObject var model: AppModel
+    @ObservedObject var viewModel: DetailViewModel
 
     var body: some View {
         WritingNodeComposerView(
-            model: model,
+            viewModel: viewModel,
             onCancel: { dismiss() },
             onSaved: { dismiss() }
         )
@@ -61,7 +61,7 @@ struct WritingNodeCaptureSheet: View {
 }
 
 struct WritingNodeComposerView: View {
-    @ObservedObject var model: AppModel
+    @ObservedObject var viewModel: DetailViewModel
     let onCancel: () -> Void
     let onSaved: () -> Void
     @State private var title = ""
@@ -69,7 +69,7 @@ struct WritingNodeComposerView: View {
 
     var body: some View {
         WritingNodeEditorView(
-            model: model,
+            viewModel: viewModel,
             title: $title,
             content: $content,
             onCancel: onCancel,
@@ -79,7 +79,7 @@ struct WritingNodeComposerView: View {
 }
 
 struct WritingNodeEditorView: View {
-    @ObservedObject var model: AppModel
+    @ObservedObject var viewModel: DetailViewModel
     @Binding var title: String
     @Binding var content: String
     let onCancel: () -> Void
@@ -125,7 +125,7 @@ struct WritingNodeEditorView: View {
     private func save() {
         Task {
             isSaving = true
-            let created = await model.createWritingNode(title: normalizedTitle, content: content)
+            let created = await viewModel.createWritingNode(title: normalizedTitle, content: content)
             isSaving = false
             if created {
                 onSaved()
@@ -580,7 +580,7 @@ struct SharedNoteEditorWebView: NSViewRepresentable {
 
 struct VoiceNoteCaptureSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @ObservedObject var model: AppModel
+    @ObservedObject var viewModel: DetailViewModel
     @StateObject private var recorder = VoiceRecorder()
     @State private var title = ""
     @State private var transcript = ""
@@ -709,7 +709,7 @@ struct VoiceNoteCaptureSheet: View {
                     Task {
                         guard let fileURL = recorder.recordedFileURL else { return }
                         isSaving = true
-                        let created = await model.createVoiceNote(fileURL: fileURL, title: title, transcript: transcript)
+                        let created = await viewModel.createVoiceNote(fileURL: fileURL, title: title, transcript: transcript)
                         isSaving = false
                         if created {
                             recorder.discardRecording()

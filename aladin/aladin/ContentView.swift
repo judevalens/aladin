@@ -7,49 +7,66 @@
 
 import SwiftUI
 
-extension Notification.Name {
-    static let aladinOpenNewNoteTab = Notification.Name("aladinOpenNewNoteTab")
-    static let aladinOpenArtifactFilter = Notification.Name("aladinOpenArtifactFilter")
-    static let aladinOpenDocument = Notification.Name("aladinOpenDocument")
-}
-
 struct ContentView: View {
-    @StateObject private var model = AppModel()
-    @State private var selectedSection: HomeSection? = .artifacts
-    @State private var searchText = ""
+    @StateObject private var sidebarVM: SidebarViewModel
+    @StateObject private var detailVM: DetailViewModel
+
+    init() {
+        let artifactRepo = RemoteArtifactRepository()
+        let sourceRepo = RemoteSourceRepository()
+        let workerStatusRepo = RemoteWorkerStatusRepository()
+        let captureRepo = RemoteCaptureRepository()
+
+        let artifactService = ArtifactService(repository: artifactRepo)
+        let sourceService = SourceService(repository: sourceRepo)
+        let workerStatusService = WorkerStatusService(repository: workerStatusRepo)
+        let captureService = CaptureService(repository: captureRepo, artifactService: artifactService)
+
+        _sidebarVM = StateObject(wrappedValue: SidebarViewModel(
+            artifactService: artifactService,
+            sourceService: sourceService,
+            workerStatusService: workerStatusService
+        ))
+
+        _detailVM = StateObject(wrappedValue: DetailViewModel(
+            artifactService: artifactService,
+            sourceService: sourceService,
+            workerStatusService: workerStatusService,
+            captureService: captureService
+        ))
+    }
 
     var body: some View {
         NavigationSplitView {
             Sidebar(
-                selectedSection: $selectedSection,
-                artifacts: model.artifacts,
-                sources: model.sources,
-                workerStatus: model.workerStatus,
-                isLoading: model.isLoading,
+                selectedSection: $sidebarVM.selectedSection,
+                artifacts: sidebarVM.artifacts,
+                sources: sidebarVM.sources,
+                workerStatus: sidebarVM.workerStatus,
+                isLoading: detailVM.isLoading,
                 onNewNote: {
-                    selectedSection = .artifacts
-                    NotificationCenter.default.post(name: .aladinOpenNewNoteTab, object: nil)
+                    sidebarVM.selectedSection = .artifacts
+                    detailVM.openNewNoteTab()
                 },
                 onSelectFilter: { filterName in
-                    selectedSection = .artifacts
-                    NotificationCenter.default.post(name: .aladinOpenArtifactFilter, object: filterName)
+                    sidebarVM.selectedSection = .artifacts
+                    detailVM.openFilterTab(name: filterName)
                 },
                 onOpenDocument: { artifact in
-                    selectedSection = .artifacts
-                    NotificationCenter.default.post(name: .aladinOpenDocument, object: artifact.id)
+                    sidebarVM.selectedSection = .artifacts
+                    detailVM.openDocumentTab(artifactID: artifact.id)
                 }
             )
             .navigationSplitViewColumnWidth(min: 250, ideal: 320, max: 380)
         } detail: {
             DetailView(
-                selectedSection: $selectedSection,
-                searchText: $searchText,
-                model: model
+                selectedSection: $sidebarVM.selectedSection,
+                viewModel: detailVM
             )
         }
         .navigationSplitViewStyle(.balanced)
         .task {
-            await model.refresh()
+            await detailVM.refresh()
         }
     }
 }

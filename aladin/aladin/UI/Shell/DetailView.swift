@@ -2,11 +2,7 @@ import SwiftUI
 
 struct DetailView: View {
     @Binding var selectedSection: HomeSection?
-    @Binding var searchText: String
-    @ObservedObject var model: AppModel
-    @State private var activeCaptureSheet: CaptureSheet?
-    @State private var artifactTabs: [ArtifactTab] = [.home]
-    @State private var activeArtifactTabID: ArtifactTab.ID = ArtifactTab.homeID
+    @ObservedObject var viewModel: DetailViewModel
 
     private var currentSection: HomeSection {
         selectedSection ?? .artifacts
@@ -16,21 +12,22 @@ struct DetailView: View {
         VStack(spacing: 0) {
             DetailHeader(
                 selectedSection: currentSection,
-                searchText: $searchText,
-                isLoading: model.isLoading,
+                searchText: $viewModel.searchText,
+                isLoading: viewModel.isLoading,
                 onRefresh: {
                     Task {
-                        await model.refresh()
+                        await viewModel.refresh()
                     }
                 },
                 onCaptureSelection: { option in
                     switch option {
                     case .link:
-                        activeCaptureSheet = .link
+                        viewModel.activeCaptureSheet = .link
                     case .voiceNote:
-                        activeCaptureSheet = .voiceNote
+                        viewModel.activeCaptureSheet = .voiceNote
                     case .writingNode:
-                        openNewNoteTab()
+                        selectedSection = .artifacts
+                        viewModel.openNewNoteTab()
                     }
                 }
             )
@@ -39,33 +36,23 @@ struct DetailView: View {
 
             MainPanel(
                 selectedSection: currentSection,
-                searchText: searchText,
-                model: model,
-                artifactTabs: $artifactTabs,
-                activeArtifactTabID: $activeArtifactTabID
+                searchText: viewModel.searchText,
+                viewModel: viewModel,
+                artifactTabs: $viewModel.artifactTabs,
+                activeArtifactTabID: $viewModel.activeArtifactTabID
             )
         }
         .background(Color(nsColor: .controlBackgroundColor))
-        .onReceive(NotificationCenter.default.publisher(for: .aladinOpenNewNoteTab)) { _ in
-            openNewNoteTab()
-        }
-        .sheet(item: $activeCaptureSheet) { sheet in
+        .sheet(item: $viewModel.activeCaptureSheet) { sheet in
             switch sheet {
             case .link:
-                LinkCaptureSheet(model: model)
+                LinkCaptureSheet(viewModel: viewModel)
             case .writingNode:
-                WritingNodeCaptureSheet(model: model)
+                WritingNodeCaptureSheet(viewModel: viewModel)
             case .voiceNote:
-                VoiceNoteCaptureSheet(model: model)
+                VoiceNoteCaptureSheet(viewModel: viewModel)
             }
         }
-    }
-
-    private func openNewNoteTab() {
-        selectedSection = .artifacts
-        let tab = ArtifactTab.noteDraft()
-        artifactTabs.append(tab)
-        activeArtifactTabID = tab.id
     }
 }
 

@@ -2,19 +2,13 @@ import SwiftUI
 
 struct ArtifactsPanel: View {
     let searchText: String
-    @ObservedObject var model: AppModel
+    @ObservedObject var viewModel: DetailViewModel
     @Binding var tabs: [ArtifactTab]
     @Binding var activeTabID: ArtifactTab.ID
     @State private var editorCommand: SharedNoteEditorCommand?
 
     private var filteredArtifacts: [ArtifactSummary] {
-        let needle = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !needle.isEmpty else { return model.artifacts }
-        return model.artifacts.filter { artifact in
-            artifact.label.localizedCaseInsensitiveContains(needle)
-            || artifact.type.localizedCaseInsensitiveContains(needle)
-            || artifact.content.localizedCaseInsensitiveContains(needle)
-        }
+        viewModel.artifactService.filtered(by: searchText)
     }
 
     private var activeTab: ArtifactTab {
@@ -60,7 +54,7 @@ struct ArtifactsPanel: View {
 
                 if !noteDocuments.isEmpty {
                     SharedNoteEditorChrome(
-                        model: model,
+                        viewModel: viewModel,
                         title: activeNoteTitleBinding,
                         content: activeNoteContentBinding,
                         documents: noteDocuments,
@@ -83,36 +77,6 @@ struct ArtifactsPanel: View {
                 }
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .aladinOpenArtifactFilter)) { notification in
-            guard let name = notification.object as? String else { return }
-            openFilterTab(name: name)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .aladinOpenDocument)) { notification in
-            guard let id = notification.object as? String,
-                  let artifact = model.artifacts.first(where: { $0.id == id })
-            else { return }
-            openDocumentTab(artifact: artifact)
-        }
-    }
-
-    private func openDocumentTab(artifact: ArtifactSummary) {
-        let tab = ArtifactTab.document(artifact)
-        if let existing = tabs.first(where: { $0.id == tab.id }) {
-            activeTabID = existing.id
-        } else {
-            tabs.append(tab)
-            activeTabID = tab.id
-        }
-    }
-
-    private func openFilterTab(name: String) {
-        let tab = ArtifactTab.filter(name: name)
-        if let existing = tabs.first(where: { $0.id == tab.id }) {
-            activeTabID = existing.id
-        } else {
-            tabs.append(tab)
-            activeTabID = tab.id
-        }
     }
 
     private var activeNoteTitleBinding: Binding<String> {
@@ -133,13 +97,13 @@ struct ArtifactsPanel: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 HeroCard(
-                    artifactCount: model.artifacts.count,
-                    sourceCount: model.sources.count,
-                    queueCount: model.workerStatus?.queue.pending ?? 0,
-                    lastUpdated: model.lastUpdated
+                    artifactCount: viewModel.artifacts.count,
+                    sourceCount: viewModel.sources.count,
+                    queueCount: viewModel.workerStatus?.queue.pending ?? 0,
+                    lastUpdated: viewModel.lastUpdated
                 )
 
-                if let errorMessage = model.errorMessage {
+                if let errorMessage = viewModel.errorMessage {
                     ErrorBanner(message: errorMessage)
                 }
 
@@ -153,17 +117,17 @@ struct ArtifactsPanel: View {
                 ) {
                     MetricCard(
                         title: "Artifacts",
-                        value: "\(model.artifacts.count)",
+                        value: "\(viewModel.artifacts.count)",
                         note: "Current top-level artifact inventory from the Go API."
                     )
                     MetricCard(
                         title: "Sources",
-                        value: "\(model.sources.count)",
+                        value: "\(viewModel.sources.count)",
                         note: "Active source inventory visible in the workspace shell."
                     )
                     MetricCard(
                         title: "Queue",
-                        value: "\(model.workerStatus?.queue.pendingPipeline ?? 0)",
+                        value: "\(viewModel.workerStatus?.queue.pendingPipeline ?? 0)",
                         note: "Pending pipeline backlog reported by the worker status endpoint."
                     )
                 }
@@ -303,7 +267,7 @@ private struct ArtifactTabButton: View {
 }
 
 private struct SharedNoteEditorChrome: View {
-    @ObservedObject var model: AppModel
+    @ObservedObject var viewModel: DetailViewModel
     @Binding var title: String
     @Binding var content: String
     let documents: [SharedNoteDocument]
@@ -362,7 +326,7 @@ private struct SharedNoteEditorChrome: View {
     private func save() {
         Task {
             isSaving = true
-            let created = await model.createWritingNode(title: normalizedTitle, content: content)
+            let created = await viewModel.createWritingNode(title: normalizedTitle, content: content)
             isSaving = false
             if created {
                 onSaved()
