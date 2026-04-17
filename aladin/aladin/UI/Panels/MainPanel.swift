@@ -86,30 +86,146 @@ struct MainPanel: View {
                     activeTabID: $activeArtifactTabID
                 )
             case .graph:
-                PlaceholderPanel(
-                    title: "Graph Canvas",
-                    message: "Keep this surface native around the edges and embed the D3 scene inside a focused WKWebView when you are ready.",
-                    cardTitle: "Next step",
-                    cardBody: "Bridge the graph with a narrow message interface instead of turning the whole client into a web shell."
-                )
+                GraphPanel()
             case .feed:
-                PlaceholderPanel(
-                    title: "Artifact Feed",
-                    message: "This surface can become a native timeline over `/api/feed/` once you want the review stream online.",
-                    cardTitle: "Current posture",
-                    cardBody: "Keep feed separate from artifacts so the workspace shell stays legible."
-                )
+                FeedPanel()
             case .insights:
-                PlaceholderPanel(
-                    title: "Insight Review",
-                    message: "Use this area for accept and dismiss review flows over `/api/insights/` once you are ready to expose the moderation loop.",
-                    cardTitle: "Current posture",
-                    cardBody: "Keep the review surface narrow and decisive rather than folding it into the graph."
-                )
+                InsightsPanel()
             }
         }
     }
 }
+
+// MARK: – Graph
+
+private struct GraphPanel: View {
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Color.appBackground
+                .ignoresSafeArea()
+
+            // Placeholder canvas
+            Text("Canvas")
+                .font(.system(size: 120, weight: .black))
+                .foregroundStyle(.white.opacity(0.03))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            // Minimal top-left title
+            VStack(alignment: .leading, spacing: 4) {
+                Image(systemName: HomeSection.graph.systemImage)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                Text(HomeSection.graph.title)
+                    .font(.title3.weight(.semibold))
+            }
+            .padding(24)
+        }
+    }
+}
+
+// MARK: – Feed
+
+private struct FeedPanel: View {
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(HomeSection.feed.title)
+                        .font(.title3.weight(.semibold))
+                    Text(HomeSection.feed.subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Button {
+                    // TODO: refresh
+                } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .appGlassCapsule()
+                .buttonStyle(.plain)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+            .background(Color.appBackground)
+
+            Divider().opacity(0.15)
+
+            ScrollView {
+                VStack(spacing: 12) {
+                    ForEach(0..<5) { _ in
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color.appSurface)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 72)
+                            .opacity(0.5)
+                    }
+                }
+                .padding(20)
+            }
+            .background(Color.appBackground)
+        }
+    }
+}
+
+// MARK: – Insights
+
+private struct InsightsPanel: View {
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(HomeSection.insights.title)
+                        .font(.title3.weight(.semibold))
+                    Text(HomeSection.insights.subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                // Pending badge
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(Color.yellow.opacity(0.85))
+                        .frame(width: 7, height: 7)
+                    Text("0 pending")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .appGlassCapsule()
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+            .background(Color.appBackground)
+
+            Divider().opacity(0.15)
+
+            ScrollView {
+                VStack(spacing: 12) {
+                    Text("No insights yet")
+                        .font(.system(size: 14))
+                        .foregroundStyle(.tertiary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding(.top, 60)
+                }
+                .padding(20)
+            }
+            .background(Color.appBackground)
+        }
+    }
+}
+
+// MARK: – Legacy placeholder
 
 private struct PlaceholderPanel: View {
     let title: String
@@ -128,11 +244,12 @@ private struct PlaceholderPanel: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(24)
-                .background(.background, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .appGlassSurface(cornerRadius: 16)
 
                 MetricCard(title: cardTitle, value: title, note: cardBody)
             }
             .padding(20)
         }
+        .background(Color.appBackground)
     }
 }

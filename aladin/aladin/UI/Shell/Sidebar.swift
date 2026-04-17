@@ -13,10 +13,6 @@ struct Sidebar: View {
     var body: some View {
         VStack(spacing: 0) {
             SidebarHeader()
-
-            Divider()
-                .opacity(0.5)
-
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     SidebarSectionLabel("Workspace")
@@ -428,7 +424,7 @@ private struct SidebarHeader: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16)
         .padding(.top, 16)
-        .padding(.bottom, 12)
+        .padding(.bottom, 16)
     }
 }
 
@@ -459,7 +455,7 @@ private struct StatusFooter: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .appGlassSurface(cornerRadius: 10)
     }
 }
 

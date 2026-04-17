@@ -110,7 +110,7 @@ struct WritingNodeEditorView: View {
         .padding(.top, 38)
         .padding(.bottom, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(Color.appBackground)
     }
 
     private var canSave: Bool {
@@ -276,10 +276,10 @@ private struct NoteComposeBarControlLabel: View {
 
     private var backgroundColor: Color {
         if configuration.isPressed {
-            return Color.primary.opacity(0.11)
+            return Color.appElevatedSurface
         }
         if isHovering && isEnabled {
-            return Color.primary.opacity(0.07)
+            return Color.appSurface
         }
         return Color.clear
     }

@@ -38,14 +38,12 @@ struct ArtifactsPanel: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ArtifactTabBar(
+            ArtifactWorkspaceHeader(
                 tabs: tabs,
                 activeTabID: activeTabID,
                 onSelect: { activeTabID = $0 },
                 onClose: closeTab
             )
-
-            Divider()
 
             ZStack {
                 artifactOverview
@@ -77,6 +75,7 @@ struct ArtifactsPanel: View {
                 }
             }
         }
+        .background(Color.appBackground)
     }
 
     private var activeNoteTitleBinding: Binding<String> {
@@ -195,6 +194,34 @@ struct ArtifactsPanel: View {
     }
 }
 
+private struct ArtifactWorkspaceHeader: View {
+    let tabs: [ArtifactTab]
+    let activeTabID: ArtifactTab.ID
+    let onSelect: (ArtifactTab.ID) -> Void
+    let onClose: (ArtifactTab.ID) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Artifacts")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+
+            ArtifactTabBar(
+                tabs: tabs,
+                activeTabID: activeTabID,
+                onSelect: onSelect,
+                onClose: onClose
+            )
+        }
+        .padding(8)
+        .appGlassSurface(cornerRadius: 14)
+        .padding(.horizontal, 20)
+        .padding(.top, 14)
+        .padding(.bottom, 8)
+    }
+}
+
 private struct ArtifactTabBar: View {
     let tabs: [ArtifactTab]
     let activeTabID: ArtifactTab.ID
@@ -213,11 +240,10 @@ private struct ArtifactTabBar: View {
                     )
                 }
             }
-            .padding(.horizontal, 14)
+            .padding(.horizontal, 7)
             .padding(.vertical, 7)
         }
         .frame(height: 44)
-        .background(.bar)
     }
 }
 
@@ -260,7 +286,7 @@ private struct ArtifactTabButton: View {
         .buttonStyle(.plain)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(isActive ? Color.primary.opacity(0.08) : (isHovering ? Color.primary.opacity(0.05) : Color.clear))
+                .fill(isActive ? Color.appElevatedSurface.opacity(0.72) : (isHovering ? Color.appSurface.opacity(0.62) : Color.clear))
         )
         .onHover { isHovering = $0 }
     }
@@ -306,7 +332,7 @@ private struct SharedNoteEditorChrome: View {
         .padding(.top, 38)
         .padding(.bottom, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(Color.appBackground)
     }
 
     private var canSave: Bool {
@@ -363,9 +389,7 @@ private struct HeroCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(24)
-        .background(.background, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.primary.opacity(0.07), lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
+        .appGlassSurface(cornerRadius: 16, elevated: true)
     }
 }
 
@@ -378,8 +402,7 @@ private struct Badge: View {
             .foregroundStyle(Color.accentColor)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(Color.accentColor.opacity(0.10), in: Capsule())
-            .overlay(Capsule().stroke(Color.accentColor.opacity(0.25), lineWidth: 0.5))
+            .appGlassCapsule()
     }
 }
 
@@ -401,9 +424,7 @@ struct MetricCard: View {
         }
         .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
         .padding(18)
-        .background(.background, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.primary.opacity(0.07), lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
+        .appGlassSurface(cornerRadius: 16)
     }
 }
 
@@ -451,8 +472,7 @@ private struct ArtifactRow: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .background(.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.primary.opacity(0.07), lineWidth: 0.5))
+        .appGlassSurface(cornerRadius: 14)
         .shadow(color: .black.opacity(isHovering ? 0.08 : 0.04), radius: isHovering ? 12 : 6, y: isHovering ? 3 : 1)
         .animation(.easeOut(duration: 0.15), value: isHovering)
         .onHover { isHovering = $0 }
@@ -471,7 +491,7 @@ private struct ErrorBanner: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .appGlassSurface(cornerRadius: 12)
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.orange.opacity(0.25), lineWidth: 0.5))
         .shadow(color: .orange.opacity(0.10), radius: 8, y: 2)
     }
@@ -508,7 +528,7 @@ private struct DocumentView: View {
             .frame(maxWidth: 720, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(Color.appBackground)
     }
 }
 
@@ -541,7 +561,7 @@ private struct FilterPlaceholderView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(Color.appBackground)
     }
 }
 
@@ -559,8 +579,6 @@ private struct EmptyStateCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
-        .background(.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.primary.opacity(0.07), lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.04), radius: 6, y: 1)
+        .appGlassSurface(cornerRadius: 14)
     }
 }
