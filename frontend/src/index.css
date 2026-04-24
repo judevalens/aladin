@@ -1,7 +1,0 @@
-@import "tailwindcss";
-
-@layer components {
-  .quick-add-btn {
-    @apply flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-gray-200 bg-white text-xs text-gray-600 hover:border-gray-300 hover:bg-gray-50 transition-colors;
-  }
-}

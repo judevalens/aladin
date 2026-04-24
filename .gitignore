@@ -1,41 +1,19 @@
-# Logs
-logs/
-*.log
-
-# Uploads
-backend/uploads/*.pdf
-backend/audio/
-
-# Python / Poetry
-backend/__pycache__/
-backend/**/__pycache__/
-backend/**/*.pyc
-backend/.env
-backend/instance/
-backend/*.egg-info/
-backend/dist/
-backend/.pytest_cache/
-
-# Node
-frontend/node_modules/
-
-# Build outputs
-frontend/dist/
-
-# Docker
-docker-compose.override.yml
-
-# Env files
-.env
-.env.local
-.env.*.local
-
-# Editor
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS
+*.iml
+.kotlin
+.gradle
+**/build/
+xcuserdata
+!src/**/build/
+local.properties
+.idea
 .DS_Store
-Thumbs.db
+captures
+.externalNativeBuild
+.cxx
+*.xcodeproj/*
+!*.xcodeproj/project.pbxproj
+!*.xcodeproj/xcshareddata/
+!*.xcodeproj/project.xcworkspace/
+!*.xcworkspace/contents.xcworkspacedata
+**/xcshareddata/WorkspaceSettings.xcsettings
+node_modules/
