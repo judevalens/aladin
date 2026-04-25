@@ -46,6 +46,13 @@ import com.jvp.aladin_compose.ui_lib.aladinClickable
 
 private val SharpRadius = 4.dp
 private val ControlRadius = 6.dp
+private val BrowserRowHorizontalPadding = 8.dp
+private val BrowserRowVerticalPadding = 6.dp
+private val BrowserGlyphSize = 24.dp
+private val BrowserIconSize = 16.dp
+private val BrowserChevronSize = 16.dp
+private val BrowserMarkerHeight = 22.dp
+private val BrowserIndent = 16.dp
 
 @Composable
 fun DocumentBrowser(state: AppState) {
@@ -173,8 +180,8 @@ private fun BrowserArtifactRow(
                         ),
                     onClick = onClick,
                 )
-                .padding(horizontal = 10.dp, vertical = 9.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(horizontal = BrowserRowHorizontalPadding, vertical = BrowserRowVerticalPadding),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.Top,
     ) {
         RowSelectionMarker(selected = selected)
@@ -304,9 +311,9 @@ private fun BrowserFolderRow(
                         ),
                     onClick = onClick,
                 )
-                .padding(horizontal = 10.dp, vertical = 9.dp),
+                .padding(horizontal = BrowserRowHorizontalPadding, vertical = BrowserRowVerticalPadding),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         RowSelectionMarker(selected = selected)
         ExpandToggle(
@@ -316,7 +323,7 @@ private fun BrowserFolderRow(
         )
         Box(
             modifier =
-                Modifier.size(30.dp)
+                Modifier.size(BrowserGlyphSize)
                     .background(
                         if (selected) AladinColor.Panel else AladinColor.ControlHover,
                         RoundedCornerShape(SharpRadius),
@@ -332,7 +339,7 @@ private fun BrowserFolderRow(
                 imageVector = Icons.Outlined.Folder,
                 contentDescription = null,
                 tint = AladinColor.InkSecondary,
-                modifier = Modifier.size(19.dp),
+                modifier = Modifier.size(BrowserIconSize),
             )
         }
         Column(verticalArrangement = Arrangement.spacedBy(1.dp), modifier = Modifier.weight(1f)) {
@@ -372,9 +379,9 @@ private fun BrowserGenericRow(
                         ),
                     onClick = onClick,
                 )
-                .padding(horizontal = 10.dp, vertical = 9.dp),
+                .padding(horizontal = BrowserRowHorizontalPadding, vertical = BrowserRowVerticalPadding),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         RowSelectionMarker(selected = selected)
         ExpandToggle(
@@ -386,7 +393,7 @@ private fun BrowserGenericRow(
             imageVector = Icons.AutoMirrored.Outlined.InsertDriveFile,
             contentDescription = null,
             tint = AladinColor.InkSecondary,
-            modifier = Modifier.size(19.dp),
+            modifier = Modifier.size(BrowserIconSize),
         )
         Text(
             item.title,
@@ -405,13 +412,13 @@ private fun ExpandToggle(
     onClick: () -> Unit,
 ) {
     if (!expandable) {
-        Spacer(modifier = Modifier.size(18.dp))
+        Spacer(modifier = Modifier.size(BrowserChevronSize))
         return
     }
 
     Box(
         modifier =
-            Modifier.size(18.dp)
+            Modifier.size(BrowserChevronSize)
                 .aladinClickable(shape = RoundedCornerShape(SharpRadius), onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -419,7 +426,7 @@ private fun ExpandToggle(
             imageVector = if (expanded) Icons.Outlined.KeyboardArrowDown else Icons.AutoMirrored.Outlined.KeyboardArrowRight,
             contentDescription = if (expanded) "Collapse" else "Expand",
             tint = AladinColor.InkMuted,
-            modifier = Modifier.size(16.dp),
+            modifier = Modifier.size(14.dp),
         )
     }
 }
@@ -429,7 +436,7 @@ private fun RowSelectionMarker(selected: Boolean) {
     Box(
         modifier =
             Modifier.width(2.dp)
-                .height(30.dp)
+                .height(BrowserMarkerHeight)
                 .background(
                     if (selected) AladinColor.Ink.copy(alpha = 0.35f)
                     else androidx.compose.ui.graphics.Color.Transparent,
@@ -438,13 +445,13 @@ private fun RowSelectionMarker(selected: Boolean) {
     )
 }
 
-private fun treeIndent(depth: Int) = (depth * 18).dp
+private fun treeIndent(depth: Int) = BrowserIndent * depth
 
 @Composable
 fun ArtifactGlyph(kind: ArtifactKind) {
     Box(
         modifier =
-            Modifier.size(30.dp).background(AladinColor.ControlHover, RoundedCornerShape(SharpRadius)),
+            Modifier.size(BrowserGlyphSize).background(AladinColor.ControlHover, RoundedCornerShape(SharpRadius)),
         contentAlignment = Alignment.Center,
     ) {
         Text(
