@@ -17,7 +17,10 @@ import androidx.compose.ui.unit.dp
 import com.jvp.aladin_compose.api.ApiClient
 import com.jvp.aladin_compose.api.Source
 import com.jvp.aladin_compose.api.SourceCreateRequest
-import com.jvp.aladin_compose.ui.*
+import com.jvp.aladin_compose.ui_lib.AladinDark
+import com.jvp.aladin_compose.ui_lib.EmptyState
+import com.jvp.aladin_compose.ui_lib.ErrorState
+import com.jvp.aladin_compose.ui_lib.LoadingState
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.yield
 

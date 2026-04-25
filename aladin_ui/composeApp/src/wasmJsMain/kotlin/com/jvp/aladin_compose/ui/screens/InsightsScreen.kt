@@ -18,7 +18,10 @@ import androidx.compose.ui.unit.dp
 import com.jvp.aladin_compose.api.ApiClient
 import com.jvp.aladin_compose.api.Insight
 import com.jvp.aladin_compose.api.InsightStats
-import com.jvp.aladin_compose.ui.*
+import com.jvp.aladin_compose.ui_lib.AladinDark
+import com.jvp.aladin_compose.ui_lib.EmptyState
+import com.jvp.aladin_compose.ui_lib.ErrorState
+import com.jvp.aladin_compose.ui_lib.LoadingState
 import kotlinx.coroutines.launch
 
 private val INSIGHT_TYPES = listOf(

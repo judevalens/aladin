@@ -1,4 +1,4 @@
-package com.jvp.aladin_compose.ui
+package com.jvp.aladin_compose.ui_lib
 
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable

@@ -20,7 +20,10 @@ import androidx.compose.ui.unit.sp
 import com.jvp.aladin_compose.api.ApiClient
 import com.jvp.aladin_compose.api.FeedItem
 import com.jvp.aladin_compose.openUrl
-import com.jvp.aladin_compose.ui.*
+import com.jvp.aladin_compose.ui_lib.AladinDark
+import com.jvp.aladin_compose.ui_lib.EmptyState
+import com.jvp.aladin_compose.ui_lib.ErrorState
+import com.jvp.aladin_compose.ui_lib.LoadingState
 import kotlinx.coroutines.launch
 
 private val SOURCE_TYPE_FILTERS = listOf(
