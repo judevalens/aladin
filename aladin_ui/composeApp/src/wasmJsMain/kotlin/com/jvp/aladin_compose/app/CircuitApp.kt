@@ -6,8 +6,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import com.jvp.aladin_compose.features.app.AppPresenter
 import com.jvp.aladin_compose.features.app.AppScreen
 import com.jvp.aladin_compose.features.app.AppUiFactory
-import com.jvp.aladin_compose.repo.FakeFolderRepository
-import com.jvp.aladin_compose.service.FolderService
+import com.jvp.aladin_compose.repo.FakeItemRepository
+import com.jvp.aladin_compose.service.ItemService
 import com.slack.circuit.foundation.Circuit
 import com.slack.circuit.foundation.CircuitCompositionLocals
 import com.slack.circuit.foundation.CircuitContent
@@ -16,9 +16,9 @@ import com.slack.circuit.foundation.CircuitContent
 fun CircuitApp() {
     val scope = rememberCoroutineScope()
     val circuit = remember {
-        val folderService = FolderService(FakeFolderRepository())
+        val itemService = ItemService(FakeItemRepository())
         Circuit.Builder()
-            .addPresenterFactory(AppPresenter.Factory(folderService, scope))
+            .addPresenterFactory(AppPresenter.Factory(itemService, scope))
             .addUiFactory(AppUiFactory())
             .build()
     }

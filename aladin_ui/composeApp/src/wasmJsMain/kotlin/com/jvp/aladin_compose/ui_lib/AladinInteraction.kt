@@ -26,10 +26,10 @@ data class AladinInteractionState(
 
 data class AladinInteractionColors(
     val rest: Color = Color.Transparent,
-    val hovered: Color = AladinLight.Surface,
-    val pressed: Color = AladinLight.SurfaceRaised,
-    val selected: Color = AladinLight.SurfaceRaised,
-    val selectedHovered: Color = AladinLight.Border.copy(alpha = 0.45f),
+    val hovered: Color = AladinColor.ControlHover,
+    val pressed: Color = AladinColor.ControlPressed,
+    val selected: Color = AladinColor.RowSelected,
+    val selectedHovered: Color = AladinColor.ControlPressed,
     val disabled: Color = Color.Transparent,
 ) {
   fun colorFor(state: AladinInteractionState): Color {
@@ -45,15 +45,15 @@ data class AladinInteractionColors(
 }
 
 object AladinInteractionDefaults {
-  val Shape = RoundedCornerShape(8.dp)
+  val Shape = RoundedCornerShape(6.dp)
 
   @Composable
   fun colors(
       rest: Color = Color.Transparent,
-      hovered: Color = AladinLight.Surface,
-      pressed: Color = AladinLight.SurfaceRaised,
-      selected: Color = AladinLight.SurfaceRaised,
-      selectedHovered: Color = AladinLight.Border.copy(alpha = 0.45f),
+      hovered: Color = AladinColor.ControlHover,
+      pressed: Color = AladinColor.ControlPressed,
+      selected: Color = AladinColor.RowSelected,
+      selectedHovered: Color = AladinColor.ControlPressed,
       disabled: Color = Color.Transparent,
   ): AladinInteractionColors {
     return AladinInteractionColors(

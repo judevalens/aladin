@@ -18,15 +18,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.jvp.aladin_compose.model.*
-import com.jvp.aladin_compose.ui_lib.AladinLight
 import com.jvp.aladin_compose.ui.screens.SourcesScreen
+import com.jvp.aladin_compose.ui_lib.AladinColor
 import com.jvp.aladin_compose.ui_lib.AladinInteractionDefaults
 import com.jvp.aladin_compose.ui_lib.aladinClickable
 import com.slack.circuit.runtime.CircuitContext
 import com.slack.circuit.runtime.screen.Screen
 import com.slack.circuit.runtime.ui.Ui
 
-private val DividerThickness = 0.3.dp
+private val DividerThickness = 0.5.dp
+private val SharpRadius = 4.dp
+private val ControlRadius = 6.dp
 
 class AppUiFactory : Ui.Factory {
   override fun create(screen: Screen, context: CircuitContext): Ui<*>? {
@@ -41,19 +43,19 @@ private class AppUi : Ui<AppState> {
   @Composable
   override fun Content(state: AppState, modifier: Modifier) {
 
-    Row(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    Row(modifier = modifier.fillMaxSize().background(AladinColor.Canvas)) {
       AppRail(
           selected = state.destination,
           onSelect = { state.eventSink(AppEvent.NavigateDestination(it)) },
-          modifier = Modifier.background(AladinLight.Background),
+          modifier = Modifier.background(AladinColor.Canvas),
       )
       VerticalDivider(
-          color = AladinLight.Border,
+          color = AladinColor.Divider,
           thickness = DividerThickness,
       )
       PaneTwo(state = state)
       VerticalDivider(
-          color = AladinLight.Border,
+          color = AladinColor.Divider,
           thickness = DividerThickness,
       )
       Column(modifier = Modifier.weight(1f)) {
@@ -63,7 +65,7 @@ private class AppUi : Ui<AppState> {
             onCreateArtifact = { state.eventSink(AppEvent.CreateArtifact) },
         )
         HorizontalDivider(
-            color = MaterialTheme.colorScheme.outlineVariant,
+            color = AladinColor.Divider,
             thickness = DividerThickness,
         )
         Row(modifier = Modifier.weight(1f)) { PaneThree(state = state) }
@@ -88,7 +90,7 @@ private fun AppRail(
       )
 
   Column(
-      modifier = modifier.width(72.dp).fillMaxHeight().padding(vertical = 16.dp),
+      modifier = modifier.width(72.dp).fillMaxHeight().padding(vertical = 14.dp),
       horizontalAlignment = Alignment.CenterHorizontally,
       verticalArrangement = Arrangement.spacedBy(10.dp),
   ) {
@@ -96,14 +98,14 @@ private fun AppRail(
         modifier =
             Modifier.size(36.dp)
                 .border(
-                    DividerThickness,
-                    MaterialTheme.colorScheme.outlineVariant,
-                    RoundedCornerShape(10.dp),
+                    1.dp,
+                    AladinColor.Divider,
+                    RoundedCornerShape(ControlRadius),
                 )
-                .background(MaterialTheme.colorScheme.background, RoundedCornerShape(10.dp)),
+                .background(AladinColor.Panel, RoundedCornerShape(ControlRadius)),
         contentAlignment = Alignment.Center,
     ) {
-      Text("A", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+      Text("A", color = AladinColor.Ink, fontWeight = FontWeight.Bold)
     }
 
     Spacer(Modifier.height(8.dp))
@@ -115,12 +117,7 @@ private fun AppRail(
           modifier =
               Modifier.size(42.dp).aladinClickable(
                   selected = active,
-                  shape = RoundedCornerShape(8.dp),
-                  colors =
-                      AladinInteractionDefaults.colors(
-                          selected = AladinLight.Surface,
-                          selectedHovered = AladinLight.SurfaceRaised,
-                      ),
+                  shape = RoundedCornerShape(SharpRadius),
               ) {
                 onSelect(destination)
               },
@@ -130,8 +127,7 @@ private fun AppRail(
             imageVector = icon,
             contentDescription = destination.name,
             tint =
-                if (active) MaterialTheme.colorScheme.onPrimaryContainer
-                else MaterialTheme.colorScheme.onSurfaceVariant,
+                if (active) AladinColor.Ink else AladinColor.InkSecondary,
         )
       }
     }
@@ -148,7 +144,7 @@ private fun TopBar(
       modifier =
           Modifier.fillMaxWidth()
               .height(60.dp)
-              .background(MaterialTheme.colorScheme.background)
+              .background(AladinColor.Canvas)
               .padding(horizontal = 18.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -156,7 +152,7 @@ private fun TopBar(
     Spacer(Modifier.weight(1f))
 
     AladinToolbarField(
-        modifier = Modifier.width(260.dp).aladinClickable(shape = RoundedCornerShape(10.dp)) {},
+        modifier = Modifier.width(260.dp).aladinClickable(shape = RoundedCornerShape(ControlRadius)) {},
         text = "Search or jump...",
     )
 
@@ -169,7 +165,7 @@ private fun TopBar(
     AladinGhostAction(
         label = "+ Artifact",
         onClick = onCreateArtifact,
-        enabled = state.selectedFolderId != null,
+        enabled = state.selectedItemId != null,
     )
   }
 }
@@ -178,7 +174,7 @@ private fun TopBar(
 private fun PaneTwo(state: AppState) {
   Box(
       modifier =
-          Modifier.width(300.dp).fillMaxHeight().background(MaterialTheme.colorScheme.background)
+          Modifier.width(300.dp).fillMaxHeight().background(AladinColor.Canvas)
   ) {
     when (state.destination) {
       NavDestination.Home,
@@ -188,21 +184,21 @@ private fun PaneTwo(state: AppState) {
           PlaceholderPane(
               "Signals",
               "Signal stream is coming after folder and artifact flows.",
-              MaterialTheme.colorScheme.surface,
+              AladinColor.Panel,
           )
 
       NavDestination.Sources ->
           PlaceholderPane(
               "Sources",
               "Sources stay available while the shell is being refactored.",
-              MaterialTheme.colorScheme.surface,
+              AladinColor.Panel,
           )
 
       NavDestination.Graph ->
           PlaceholderPane(
               "Graph",
               "Graph will remain a workspace-wide context view.",
-              MaterialTheme.colorScheme.surface,
+              AladinColor.Panel,
           )
     }
   }
@@ -210,21 +206,20 @@ private fun PaneTwo(state: AppState) {
 
 @Composable
 private fun RowScope.PaneThree(state: AppState) {
-  Box(modifier = Modifier.weight(1f).fillMaxHeight().background(AladinLight.Background)) {
+  Box(modifier = Modifier.weight(1f).fillMaxHeight().background(AladinColor.Canvas)) {
     when (state.destination) {
       NavDestination.Home,
       NavDestination.Folders -> {
-        val workspace = state.workspace
         val artifact = state.selectedArtifact
         if (artifact != null) {
           ArtifactWorkspaceView(artifact = artifact)
-        } else if (workspace == null) {
+        } else if (state.selectedItem == null) {
           PlaceholderPane(
-              "Select a folder",
-              "Choose a folder from the middle pane to open its workspace.",
+              "Select an item",
+              "Choose an item from the browser to open its workspace.",
           )
         } else {
-          FolderWorkspaceView(workspace = workspace)
+          ItemWorkspaceView(item = state.selectedItem)
         }
       }
 
@@ -245,42 +240,43 @@ private fun RowScope.PaneThree(state: AppState) {
 
 
 @Composable
-private fun FolderWorkspaceView(workspace: FolderWorkspace) {
+private fun ItemWorkspaceView(item: Item) {
   Box(
-      modifier = Modifier.fillMaxSize().padding(24.dp),
-      contentAlignment = Alignment.TopCenter,
+      modifier = Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 24.dp),
+      contentAlignment = Alignment.TopStart,
   ) {
-    AladinPanel(
-        modifier = Modifier.fillMaxWidth().widthIn(max = 920.dp),
+    Column(
+        modifier = Modifier.fillMaxWidth().widthIn(max = 980.dp),
+        verticalArrangement = Arrangement.spacedBy(28.dp),
     ) {
-      Column(
-          modifier = Modifier.padding(24.dp),
-          verticalArrangement = Arrangement.spacedBy(22.dp),
-      ) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-          Text(
-              workspace.folder.title,
-              style = MaterialTheme.typography.headlineMedium,
-              color = AladinLight.TextPrimary,
-              fontWeight = FontWeight.SemiBold,
-          )
-          Text(
-              "${workspace.artifacts.size} artifacts · ${workspace.signalCount} relevant signals",
-              style = MaterialTheme.typography.bodyMedium,
-              color = AladinLight.TextSecondary,
-          )
-        }
+      Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            item.title,
+            style = MaterialTheme.typography.headlineLarge,
+            color = AladinColor.Ink,
+            fontWeight = FontWeight.Bold,
+        )
+        Text(
+            "${item.kind.name.lowercase()} · 0 relevant signals",
+            style = MaterialTheme.typography.bodyMedium,
+            color = AladinColor.InkSecondary,
+        )
+      }
 
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+      AladinPanel(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(22.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
           Text(
               "Signals",
               style = MaterialTheme.typography.titleMedium,
-              color = AladinLight.TextPrimary,
+              color = AladinColor.Ink,
               fontWeight = FontWeight.SemiBold,
           )
           Text(
               "Relevant signals will surface here once the first signal endpoints are wired.",
-              color = AladinLight.TextSecondary,
+              color = AladinColor.InkSecondary,
               style = MaterialTheme.typography.bodyMedium,
           )
         }
@@ -292,39 +288,35 @@ private fun FolderWorkspaceView(workspace: FolderWorkspace) {
 @Composable
 private fun ArtifactWorkspaceView(artifact: Artifact) {
   Box(
-      modifier = Modifier.fillMaxSize().padding(24.dp),
-      contentAlignment = Alignment.TopCenter,
+      modifier = Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 24.dp),
+      contentAlignment = Alignment.TopStart,
   ) {
-    AladinPanel(
-        modifier = Modifier.fillMaxWidth().widthIn(max = 920.dp),
+    Column(
+        modifier = Modifier.fillMaxWidth().widthIn(max = 980.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-      Column(
-          modifier = Modifier.padding(24.dp),
-          verticalArrangement = Arrangement.spacedBy(16.dp),
+      Row(
+          horizontalArrangement = Arrangement.spacedBy(10.dp),
+          verticalAlignment = Alignment.CenterVertically,
       ) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-          ArtifactGlyph(artifact.kind)
-          Text(
-              artifact.title,
-              color = AladinLight.TextPrimary,
-              style = MaterialTheme.typography.headlineMedium,
-              fontWeight = FontWeight.SemiBold,
-          )
-        }
+        ArtifactGlyph(artifact.kind)
         Text(
-            artifact.summary,
-            color = AladinLight.TextSecondary,
-            style = MaterialTheme.typography.bodyLarge,
-        )
-        Text(
-            artifact.updatedLabel,
-            color = AladinLight.TextMuted,
-            style = MaterialTheme.typography.labelMedium,
+            artifact.title,
+            color = AladinColor.Ink,
+            style = MaterialTheme.typography.headlineLarge,
+            fontWeight = FontWeight.Bold,
         )
       }
+      Text(
+          artifact.summary,
+          color = AladinColor.InkSecondary,
+          style = MaterialTheme.typography.bodyLarge,
+      )
+      Text(
+          artifact.updatedLabel,
+          color = AladinColor.InkMuted,
+          style = MaterialTheme.typography.labelMedium,
+      )
     }
   }
 }
@@ -341,15 +333,15 @@ private fun AladinToolbarField(
           modifier
               .border(
                   DividerThickness,
-                  MaterialTheme.colorScheme.outlineVariant,
-                  RoundedCornerShape(10.dp),
+                  AladinColor.Divider,
+                  RoundedCornerShape(ControlRadius),
               )
               .padding(horizontal = 14.dp, vertical = 10.dp),
       contentAlignment = Alignment.CenterStart,
   ) {
     Text(
         text,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color = AladinColor.InkSecondary,
         style = MaterialTheme.typography.bodyMedium,
     )
   }
@@ -366,10 +358,11 @@ private fun AladinGhostAction(
           Modifier.wrapContentWidth()
               .aladinClickable(
                   enabled = enabled,
-                  shape = RoundedCornerShape(10.dp),
+                  shape = RoundedCornerShape(ControlRadius),
                   colors =
                       AladinInteractionDefaults.colors(
-                          disabled = AladinLight.SurfaceRaised.copy(alpha = 0.7f),
+                          hovered = AladinColor.ControlHover,
+                          disabled = AladinColor.ControlHover.copy(alpha = 0.7f),
                       ),
                   onClick = onClick,
               )
@@ -378,7 +371,7 @@ private fun AladinGhostAction(
   ) {
     Text(
         label,
-        color = if (enabled) AladinLight.TextPrimary else AladinLight.TextMuted,
+        color = if (enabled) AladinColor.Ink else AladinColor.InkMuted,
         style = MaterialTheme.typography.labelLarge,
         fontWeight = FontWeight.Medium,
     )
@@ -395,10 +388,10 @@ private fun AladinPanel(
           modifier
               .border(
                   DividerThickness,
-                  AladinLight.Border,
-                  RoundedCornerShape(8.dp),
+                  AladinColor.Divider,
+                  RoundedCornerShape(SharpRadius),
               )
-              .background(AladinLight.Surface, RoundedCornerShape(8.dp)),
+              .background(AladinColor.Panel, RoundedCornerShape(SharpRadius)),
       content = content,
   )
 }
@@ -407,13 +400,18 @@ private fun AladinPanel(
 private fun PlaceholderPane(
     title: String,
     body: String,
-    background: Color = MaterialTheme.colorScheme.background,
+    background: Color = AladinColor.Canvas,
 ) {
   Column(
       modifier = Modifier.fillMaxSize().background(background).padding(24.dp),
       verticalArrangement = Arrangement.spacedBy(8.dp),
   ) {
-    Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-    Text(body, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Text(
+        title,
+        color = AladinColor.Ink,
+        style = MaterialTheme.typography.headlineSmall,
+        fontWeight = FontWeight.Bold,
+    )
+    Text(body, color = AladinColor.InkSecondary)
   }
 }

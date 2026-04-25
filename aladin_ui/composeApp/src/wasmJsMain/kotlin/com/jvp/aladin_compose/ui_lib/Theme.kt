@@ -1,44 +1,59 @@
 package com.jvp.aladin_compose.ui_lib
 
-import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Typography
 
-// ─── Anchor values ───────────────────────────────────────────────────────────
-// Background : #0D0D0D
-// Surface    : #262626
-// Text       : #BFBDB8
-
-// ─── Dark ────────────────────────────────────────────────────────────────────
 object AladinDark {
-    val Background    = Color(0xFF111111)  // anchor
-    val Surface       = Color(0xFF121212)  // midpoint between bg and raised
-    val SurfaceRaised = Color(0xFF262626)  // anchor
-    val Border        = Color(0xFF303030)
-    val BorderStrong  = Color(0xFF3D3D3D)
-    val TextMuted     = Color(0xFFA3A3A3)  // warm muted
-    val TextSecondary = Color(0xFFCCCBCB)  // warm mid
-    val TextPrimary   = Color(0xFFEEEEEE)  // anchor
-    val TextInverse   = Color(0xFF0D0D0D)
+    val Background = Color(0xFF050505)
+    val Surface = Color(0xFF0D0D0D)
+    val SurfaceRaised = Color(0xFF181818)
+    val Border = Color(0xFF2A2A2A)
+    val BorderStrong = Color(0xFFFFFFFF)
+    val TextMuted = Color(0xFF7A7A7A)
+    val TextSecondary = Color(0xFFBDBDBD)
+    val TextPrimary = Color(0xFFFFFFFF)
+    val TextInverse = Color(0xFF050505)
 }
 
-// ─── Light ───────────────────────────────────────────────────────────────────
-// Derived from the same warm temperature, inverted
 object AladinLight {
-    val Background    = Color(0xFFF8F9FA)  // warm white
-    val Surface       = Color(0xFFE9ECEF)
-    val SurfaceRaised = Color(0xFFDEE2E6)  // warm off-white
-    val Border        = Color(0xFFD8D5CE)
-    val BorderStrong  = Color(0xFFB9B4A9)
-    val TextMuted     = Color(0xFF8F8A82)
-    val TextSecondary = Color(0xFF343A40)  // shared mid
-    val TextPrimary   = Color(0xFF212529)  // warm near-black
-    val TextInverse   = Color(0xFFE9ECEF)
+    val Background = Color(0xFFFAFAFA)
+    val Surface = Color(0xFFFFFFFF)
+    val SurfaceRaised = Color(0xFFF1F1F1)
+    val Border = Color(0xFFE2E2E2)
+    val BorderStrong = Color(0xFF111111)
+    val TextMuted = Color(0xFF8A8A8A)
+    val TextSecondary = Color(0xFF555555)
+    val TextPrimary = Color(0xFF090909)
+    val TextInverse = Color(0xFFFFFFFF)
 }
 
-// ─── Material3 Dark ──────────────────────────────────────────────────────────
+object AladinColor {
+    val Canvas = Color(0xFFFAFAFA)
+    val Panel = Color(0xFFFFFFFF)
+    val PanelMuted = Color(0xFFF7F7F7)
+
+    val RowHover = Color(0xFFF3F3F3)
+    val RowSelected = Color(0xFFEDEDED)
+    val ControlHover = Color(0xFFF1F1F1)
+    val ControlPressed = Color(0xFFE7E7E7)
+
+    val Divider = Color(0xFFE8E8E8)
+    val Border = Color(0xFFDADADA)
+
+    val Ink = Color(0xFF0B0B0B)
+    val InkSecondary = Color(0xFF555555)
+    val InkMuted = Color(0xFF8A8A8A)
+    val InkDisabled = Color(0xFFB8B8B8)
+
+    val InkSurface = Color(0xFF111111)
+    val InkSurfaceHover = Color(0xFF1A1A1A)
+    val OnInkSurface = Color(0xFFFFFFFF)
+}
+
 val AladinDarkColorScheme = darkColorScheme(
     primary              = AladinDark.TextPrimary,
     onPrimary            = AladinDark.TextInverse,
@@ -55,10 +70,10 @@ val AladinDarkColorScheme = darkColorScheme(
     tertiaryContainer    = AladinDark.SurfaceRaised,
     onTertiaryContainer  = AladinDark.TextPrimary,
 
-    error                = Color(0xFFFF6B6B),
+    error                = AladinDark.TextPrimary,
     onError              = AladinDark.TextInverse,
-    errorContainer       = Color(0xFF2E1111),
-    onErrorContainer     = Color(0xFFFFAAAA),
+    errorContainer       = AladinDark.SurfaceRaised,
+    onErrorContainer     = AladinDark.TextPrimary,
 
     background           = AladinDark.Background,
     onBackground         = AladinDark.TextPrimary,
@@ -79,36 +94,36 @@ val AladinDarkColorScheme = darkColorScheme(
 
 // ─── Material3 Light ─────────────────────────────────────────────────────────
 val AladinLightColorScheme = lightColorScheme(
-    primary              = AladinLight.TextPrimary,
-    onPrimary            = AladinLight.TextInverse,
-    primaryContainer     = AladinLight.SurfaceRaised,
-    onPrimaryContainer   = AladinLight.TextPrimary,
+    primary              = AladinColor.Ink,
+    onPrimary            = AladinColor.OnInkSurface,
+    primaryContainer     = AladinColor.RowSelected,
+    onPrimaryContainer   = AladinColor.Ink,
 
-    secondary            = AladinLight.TextSecondary,
-    onSecondary          = AladinLight.TextInverse,
-    secondaryContainer   = AladinLight.Border,
-    onSecondaryContainer = AladinLight.TextPrimary,
+    secondary            = AladinColor.InkSecondary,
+    onSecondary          = AladinColor.OnInkSurface,
+    secondaryContainer   = AladinColor.ControlHover,
+    onSecondaryContainer = AladinColor.Ink,
 
-    tertiary             = AladinLight.TextSecondary,
-    onTertiary           = AladinLight.TextInverse,
-    tertiaryContainer    = AladinLight.SurfaceRaised,
-    onTertiaryContainer  = AladinLight.TextPrimary,
+    tertiary             = AladinColor.InkSecondary,
+    onTertiary           = AladinColor.OnInkSurface,
+    tertiaryContainer    = AladinColor.ControlHover,
+    onTertiaryContainer  = AladinColor.Ink,
 
-    error                = Color(0xFFBB1111),
-    onError              = AladinLight.TextInverse,
-    errorContainer       = Color(0xFFFFEAEA),
-    onErrorContainer     = Color(0xFF6E0000),
+    error                = AladinColor.Ink,
+    onError              = AladinColor.OnInkSurface,
+    errorContainer       = AladinColor.ControlHover,
+    onErrorContainer     = AladinColor.Ink,
 
-    background           = AladinLight.Background,
-    onBackground         = AladinLight.TextPrimary,
+    background           = AladinColor.Canvas,
+    onBackground         = AladinColor.Ink,
 
-    surface              = AladinLight.Surface,
-    onSurface            = AladinLight.TextPrimary,
-    surfaceVariant       = AladinLight.SurfaceRaised,
-    onSurfaceVariant     = AladinLight.TextSecondary,
+    surface              = AladinColor.Panel,
+    onSurface            = AladinColor.Ink,
+    surfaceVariant       = AladinColor.ControlHover,
+    onSurfaceVariant     = AladinColor.InkSecondary,
 
-    outline              = AladinLight.Border,
-    outlineVariant       = AladinLight.BorderStrong,
+    outline              = AladinColor.Border,
+    outlineVariant       = AladinColor.Divider,
 
     scrim                = Color(0x80000000),
     inverseSurface       = AladinDark.Surface,

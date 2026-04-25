@@ -1,6 +1,7 @@
 package com.jvp.aladin_compose.features.app
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -8,13 +9,18 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -33,17 +39,20 @@ import androidx.compose.ui.unit.dp
 import com.jvp.aladin_compose.model.Artifact
 import com.jvp.aladin_compose.model.ArtifactKind
 import com.jvp.aladin_compose.model.BreadcrumbItem
-import com.jvp.aladin_compose.model.FolderNode
-import com.jvp.aladin_compose.ui_lib.AladinLight
+import com.jvp.aladin_compose.model.Item
+import com.jvp.aladin_compose.ui_lib.AladinColor
 import com.jvp.aladin_compose.ui_lib.AladinInteractionDefaults
 import com.jvp.aladin_compose.ui_lib.aladinClickable
+
+private val SharpRadius = 4.dp
+private val ControlRadius = 6.dp
 
 @Composable
 fun DocumentBrowser(state: AppState) {
 
-    Column(modifier = Modifier.fillMaxSize().padding(4.dp)) {
+    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 10.dp)) {
         BrowserBreadcrumbRow(state)
-        Spacer(modifier = Modifier.size(8.dp))
+        Spacer(modifier = Modifier.size(10.dp))
         BrowserFilterBar(
             selected = state.browserFilter,
             onSelect = { state.eventSink(AppEvent.ChangeBrowserFilter(it)) },
@@ -53,26 +62,37 @@ fun DocumentBrowser(state: AppState) {
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            if (state.browserFilter != BrowserFilter.Artifacts) {
-                items(state.nodes, key = { it.id }) { node ->
-                    BrowserFolderRow(
-                        node = node,
-                        selected =
-                            node.id == state.selectedFolderId && state.selectedArtifact == null,
-                    ) {
-                        state.eventSink(AppEvent.OpenNode(node.id))
+            items(state.browserRows, key = { it.key }) { row ->
+                when (row) {
+                    is BrowserTreeRow.Folder ->
+                        BrowserFolderRow(
+                            item = row.item,
+                            depth = row.depth,
+                            expanded = row.expanded,
+                            expandable = row.expandable,
+                            selected = row.selected,
+                            onToggleExpanded = { state.eventSink(AppEvent.ToggleItemExpanded(row.item.id)) },
+                            onClick = { state.eventSink(AppEvent.SelectItem(row.item.id)) },
+                        )
+                    is BrowserTreeRow.Artifact ->
+                        BrowserArtifactRow(
+                            item = row.item,
+                            artifact = row.artifact,
+                            depth = row.depth,
+                            selected = row.selected,
+                            onClick = { state.eventSink(AppEvent.SelectItem(row.item.id)) },
+                        )
+                    is BrowserTreeRow.Generic ->
+                        BrowserGenericRow(
+                            item = row.item,
+                            depth = row.depth,
+                            expanded = row.expanded,
+                            expandable = row.expandable,
+                            selected = row.selected,
+                            onToggleExpanded = { state.eventSink(AppEvent.ToggleItemExpanded(row.item.id)) },
+                            onClick = { state.eventSink(AppEvent.SelectItem(row.item.id)) },
+                        )
                     }
-                }
-            }
-            val workspace = state.workspace
-            if (workspace != null && state.browserFilter != BrowserFilter.Folders) {
-                items(workspace.artifacts, key = { it.id }) { artifact ->
-                    BrowserArtifactRow(
-                        artifact = artifact,
-                        selected = artifact.id == state.selectedArtifact?.id,
-                        onClick = { state.eventSink(AppEvent.OpenArtifact(artifact.id)) },
-                    )
-                }
             }
         }
     }
@@ -105,7 +125,17 @@ private fun FilterChip(
     val active = filter == selected
     Box(
         modifier =
-            Modifier.aladinClickable(selected = active, shape = RoundedCornerShape(999.dp)) {
+            Modifier.aladinClickable(
+                    selected = active,
+                    shape = RoundedCornerShape(999.dp),
+                    colors =
+                        AladinInteractionDefaults.colors(
+                            hovered = AladinColor.ControlHover,
+                            pressed = AladinColor.ControlHover,
+                            selected = AladinColor.RowSelected,
+                            selectedHovered = AladinColor.ControlHover,
+                        ),
+                ) {
                     onSelect(filter)
                 }
                 .padding(horizontal = 10.dp, vertical = 5.dp),
@@ -113,7 +143,7 @@ private fun FilterChip(
     ) {
         Text(
             label,
-            color = if (active) AladinLight.TextPrimary else AladinLight.TextSecondary,
+            color = if (active) AladinColor.Ink else AladinColor.InkSecondary,
             style = MaterialTheme.typography.labelSmall,
             fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
         )
@@ -121,33 +151,53 @@ private fun FilterChip(
 }
 
 @Composable
-private fun BrowserArtifactRow(artifact: Artifact, selected: Boolean, onClick: () -> Unit) {
+private fun BrowserArtifactRow(
+    item: Item,
+    artifact: Artifact?,
+    depth: Int,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
     Row(
         modifier =
             Modifier.fillMaxWidth()
+                .padding(start = treeIndent(depth))
                 .aladinClickable(
                     selected = selected,
-                    shape = RoundedCornerShape(8.dp),
+                    shape = RoundedCornerShape(ControlRadius),
+                    colors =
+                        AladinInteractionDefaults.colors(
+                            hovered = AladinColor.ControlHover,
+                            selected = AladinColor.RowSelected,
+                            selectedHovered = AladinColor.ControlHover,
+                        ),
                     onClick = onClick,
                 )
                 .padding(horizontal = 10.dp, vertical = 9.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        ArtifactGlyph(artifact.kind)
+        RowSelectionMarker(selected = selected)
+        ArtifactGlyph(artifact?.kind ?: ArtifactKind.Note)
         Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.weight(1f)) {
-            Text(artifact.title, color = AladinLight.TextPrimary, fontWeight = FontWeight.Medium)
             Text(
-                artifact.summary,
-                style = MaterialTheme.typography.bodySmall,
-                color = AladinLight.TextSecondary,
+                item.title,
+                color = AladinColor.Ink,
+                fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                artifact.updatedLabel,
+                artifact?.summary ?: "Artifact",
+                style = MaterialTheme.typography.bodySmall,
+                color = AladinColor.InkSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                artifact?.updatedLabel ?: "Linked item",
                 style = MaterialTheme.typography.labelSmall,
-                color = AladinLight.TextMuted,
+                color = AladinColor.InkMuted,
             )
         }
     }
@@ -192,7 +242,7 @@ private fun BrowserBreadcrumbRow(state: AppState, modifier: Modifier = Modifier)
                 if (index > 0) {
                     Text(
                         "/",
-                        color = AladinLight.TextMuted,
+                        color = AladinColor.InkMuted,
                         style = MaterialTheme.typography.labelMedium,
                     )
                 }
@@ -203,12 +253,12 @@ private fun BrowserBreadcrumbRow(state: AppState, modifier: Modifier = Modifier)
                             segment.item.label,
                             style = MaterialTheme.typography.bodySmall,
                             color =
-                                if (isLast) AladinLight.TextPrimary else AladinLight.TextSecondary,
+                                if (isLast) AladinColor.Ink else AladinColor.InkSecondary,
                             fontWeight = if (isLast) FontWeight.Medium else FontWeight.Normal,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier =
-                                Modifier.aladinClickable(shape = RoundedCornerShape(4.dp)) {
+                                Modifier.aladinClickable(shape = RoundedCornerShape(SharpRadius)) {
                                         state.eventSink(
                                             AppEvent.NavigateBreadcrumb(segment.item.id)
                                         )
@@ -219,7 +269,7 @@ private fun BrowserBreadcrumbRow(state: AppState, modifier: Modifier = Modifier)
                     BreadcrumbSegment.Ellipsis -> {
                         Text(
                             "...",
-                            color = AladinLight.TextMuted,
+                            color = AladinColor.InkMuted,
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
@@ -230,45 +280,66 @@ private fun BrowserBreadcrumbRow(state: AppState, modifier: Modifier = Modifier)
 }
 
 @Composable
-private fun BrowserFolderRow(node: FolderNode, selected: Boolean, onClick: () -> Unit) {
+private fun BrowserFolderRow(
+    item: Item,
+    depth: Int,
+    expanded: Boolean,
+    expandable: Boolean,
+    selected: Boolean,
+    onToggleExpanded: () -> Unit,
+    onClick: () -> Unit,
+) {
     Row(
         modifier =
             Modifier.fillMaxWidth()
+                .padding(start = treeIndent(depth))
                 .aladinClickable(
                     selected = selected,
-                    shape = RoundedCornerShape(8.dp),
+                    shape = RoundedCornerShape(ControlRadius),
                     colors =
                         AladinInteractionDefaults.colors(
-                            selected = AladinLight.Border.copy(alpha = 0.55f),
-                            selectedHovered = AladinLight.Border.copy(alpha = 0.7f),
+                            hovered = AladinColor.ControlHover,
+                            selected = AladinColor.RowSelected,
+                            selectedHovered = AladinColor.ControlHover,
                         ),
                     onClick = onClick,
                 )
                 .padding(horizontal = 10.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(11.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        RowSelectionMarker(selected = selected)
+        ExpandToggle(
+            expanded = expanded,
+            expandable = expandable,
+            onClick = onToggleExpanded,
+        )
         Box(
             modifier =
                 Modifier.size(30.dp)
                     .background(
-                        if (selected) AladinLight.Surface else AladinLight.SurfaceRaised,
-                        RoundedCornerShape(7.dp),
+                        if (selected) AladinColor.Panel else AladinColor.ControlHover,
+                        RoundedCornerShape(SharpRadius),
+                    )
+                    .border(
+                        0.3.dp,
+                        if (selected) AladinColor.Border else AladinColor.Divider,
+                        RoundedCornerShape(SharpRadius),
                     ),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = Icons.Outlined.Folder,
                 contentDescription = null,
-                tint = AladinLight.TextSecondary,
+                tint = AladinColor.InkSecondary,
                 modifier = Modifier.size(19.dp),
             )
         }
         Column(verticalArrangement = Arrangement.spacedBy(1.dp), modifier = Modifier.weight(1f)) {
             Text(
-                node.title,
-                color = AladinLight.TextPrimary,
-                fontWeight = FontWeight.Medium,
+                item.title,
+                color = AladinColor.Ink,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -277,10 +348,103 @@ private fun BrowserFolderRow(node: FolderNode, selected: Boolean, onClick: () ->
 }
 
 @Composable
+private fun BrowserGenericRow(
+    item: Item,
+    depth: Int,
+    expanded: Boolean,
+    expandable: Boolean,
+    selected: Boolean,
+    onToggleExpanded: () -> Unit,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier =
+            Modifier.fillMaxWidth()
+                .padding(start = treeIndent(depth))
+                .aladinClickable(
+                    selected = selected,
+                    shape = RoundedCornerShape(ControlRadius),
+                    colors =
+                        AladinInteractionDefaults.colors(
+                            hovered = AladinColor.ControlHover,
+                            selected = AladinColor.RowSelected,
+                            selectedHovered = AladinColor.ControlHover,
+                        ),
+                    onClick = onClick,
+                )
+                .padding(horizontal = 10.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        RowSelectionMarker(selected = selected)
+        ExpandToggle(
+            expanded = expanded,
+            expandable = expandable,
+            onClick = onToggleExpanded,
+        )
+        Icon(
+            imageVector = Icons.AutoMirrored.Outlined.InsertDriveFile,
+            contentDescription = null,
+            tint = AladinColor.InkSecondary,
+            modifier = Modifier.size(19.dp),
+        )
+        Text(
+            item.title,
+            color = AladinColor.Ink,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun ExpandToggle(
+    expanded: Boolean,
+    expandable: Boolean,
+    onClick: () -> Unit,
+) {
+    if (!expandable) {
+        Spacer(modifier = Modifier.size(18.dp))
+        return
+    }
+
+    Box(
+        modifier =
+            Modifier.size(18.dp)
+                .aladinClickable(shape = RoundedCornerShape(SharpRadius), onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = if (expanded) Icons.Outlined.KeyboardArrowDown else Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+            contentDescription = if (expanded) "Collapse" else "Expand",
+            tint = AladinColor.InkMuted,
+            modifier = Modifier.size(16.dp),
+        )
+    }
+}
+
+@Composable
+private fun RowSelectionMarker(selected: Boolean) {
+    Box(
+        modifier =
+            Modifier.width(2.dp)
+                .height(30.dp)
+                .background(
+                    if (selected) AladinColor.Ink.copy(alpha = 0.35f)
+                    else androidx.compose.ui.graphics.Color.Transparent,
+                    RoundedCornerShape(999.dp),
+                )
+    )
+}
+
+private fun treeIndent(depth: Int) = (depth * 18).dp
+
+@Composable
 fun ArtifactGlyph(kind: ArtifactKind) {
     Box(
         modifier =
-            Modifier.size(30.dp).background(AladinLight.SurfaceRaised, RoundedCornerShape(7.dp)),
+            Modifier.size(30.dp).background(AladinColor.ControlHover, RoundedCornerShape(SharpRadius)),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -289,7 +453,7 @@ fun ArtifactGlyph(kind: ArtifactKind) {
                 ArtifactKind.Link -> "L"
                 ArtifactKind.Voice -> "V"
             },
-            color = AladinLight.TextSecondary,
+            color = AladinColor.InkSecondary,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.SemiBold,
         )

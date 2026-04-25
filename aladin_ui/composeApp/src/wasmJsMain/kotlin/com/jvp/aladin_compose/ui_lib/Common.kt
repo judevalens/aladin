@@ -11,7 +11,7 @@ import androidx.compose.ui.unit.dp
 fun LoadingState() {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         CircularProgressIndicator(
-            color = MaterialTheme.colorScheme.primary,
+            color = AladinColor.Ink,
             modifier = Modifier.size(32.dp)
         )
     }
@@ -24,9 +24,9 @@ fun ErrorState(message: String, onRetry: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+            Text(message, color = AladinColor.Ink, style = MaterialTheme.typography.bodyMedium)
             TextButton(onClick = onRetry) {
-                Text("Retry", color = MaterialTheme.colorScheme.primary)
+                Text("Retry", color = AladinColor.Ink)
             }
         }
     }
@@ -35,6 +35,6 @@ fun ErrorState(message: String, onRetry: () -> Unit) {
 @Composable
 fun EmptyState(message: String) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(message, color = AladinDark.TextMuted, style = MaterialTheme.typography.bodyMedium)
+        Text(message, color = AladinColor.InkMuted, style = MaterialTheme.typography.bodyMedium)
     }
 }
