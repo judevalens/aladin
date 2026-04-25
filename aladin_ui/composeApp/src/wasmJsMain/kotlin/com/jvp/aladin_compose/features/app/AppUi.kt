@@ -29,6 +29,8 @@ import com.slack.circuit.runtime.ui.Ui
 private val DividerThickness = 0.5.dp
 private val SharpRadius = 4.dp
 private val ControlRadius = 6.dp
+private val RailItemSize = 38.dp
+private val RailIconSize = 20.dp
 
 class AppUiFactory : Ui.Factory {
   override fun create(screen: Screen, context: CircuitContext): Ui<*>? {
@@ -61,8 +63,8 @@ private class AppUi : Ui<AppState> {
       Column(modifier = Modifier.weight(1f)) {
         TopBar(
             state = state,
-            onCreateFolder = { state.eventSink(AppEvent.CreateFolder) },
-            onCreateArtifact = { state.eventSink(AppEvent.CreateArtifact) },
+            onCreateFolder = { state.browser.eventSink(DocumentBrowserEvent.CreateFolder) },
+            onCreateArtifact = { state.browser.eventSink(DocumentBrowserEvent.CreateArtifact) },
         )
         HorizontalDivider(
             color = AladinColor.Divider,
@@ -96,16 +98,16 @@ private fun AppRail(
   ) {
     Box(
         modifier =
-            Modifier.size(36.dp)
+            Modifier.size(34.dp)
                 .border(
                     1.dp,
-                    AladinColor.Divider,
+                    AladinColor.InkSurface,
                     RoundedCornerShape(ControlRadius),
                 )
-                .background(AladinColor.Panel, RoundedCornerShape(ControlRadius)),
+                .background(AladinColor.InkSurface, RoundedCornerShape(ControlRadius)),
         contentAlignment = Alignment.Center,
     ) {
-      Text("A", color = AladinColor.Ink, fontWeight = FontWeight.Bold)
+      Text("A", color = AladinColor.OnInkSurface, fontWeight = FontWeight.Bold)
     }
 
     Spacer(Modifier.height(8.dp))
@@ -115,9 +117,16 @@ private fun AppRail(
 
       Box(
           modifier =
-              Modifier.size(42.dp).aladinClickable(
+              Modifier.size(RailItemSize).aladinClickable(
                   selected = active,
                   shape = RoundedCornerShape(SharpRadius),
+                  colors =
+                      AladinInteractionDefaults.colors(
+                          hovered = AladinColor.ControlHover,
+                          pressed = AladinColor.ControlPressed,
+                          selected = AladinColor.InkSurface,
+                          selectedHovered = AladinColor.InkSurfaceHover,
+                      ),
               ) {
                 onSelect(destination)
               },
@@ -127,7 +136,8 @@ private fun AppRail(
             imageVector = icon,
             contentDescription = destination.name,
             tint =
-                if (active) AladinColor.Ink else AladinColor.InkSecondary,
+                if (active) AladinColor.OnInkSurface else AladinColor.InkMuted,
+            modifier = Modifier.size(RailIconSize),
         )
       }
     }
@@ -165,7 +175,7 @@ private fun TopBar(
     AladinGhostAction(
         label = "+ Artifact",
         onClick = onCreateArtifact,
-        enabled = state.selectedItemId != null,
+        enabled = state.canCreateArtifact,
     )
   }
 }
@@ -178,7 +188,7 @@ private fun PaneTwo(state: AppState) {
   ) {
     when (state.destination) {
       NavDestination.Home,
-      NavDestination.Folders -> DocumentBrowser(state = state)
+      NavDestination.Folders -> DocumentBrowser(state = state.browser)
 
       NavDestination.Signals ->
           PlaceholderPane(

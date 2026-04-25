@@ -21,19 +21,19 @@ object AladinDark {
 
 object AladinLight {
     val Background = Color(0xFFFAFAFA)
-    val Surface = Color(0xFFFFFFFF)
+    val Surface = Color(0xFFFDFDFD)
     val SurfaceRaised = Color(0xFFF1F1F1)
     val Border = Color(0xFFE2E2E2)
-    val BorderStrong = Color(0xFF111111)
+    val BorderStrong = Color(0xFF000000)
     val TextMuted = Color(0xFF8A8A8A)
     val TextSecondary = Color(0xFF555555)
-    val TextPrimary = Color(0xFF090909)
-    val TextInverse = Color(0xFFFFFFFF)
+    val TextPrimary = Color(0xFF000000)
+    val TextInverse = Color(0xFFF7F7F7)
 }
 
 object AladinColor {
     val Canvas = Color(0xFFFAFAFA)
-    val Panel = Color(0xFFFFFFFF)
+    val Panel = Color(0xFFFDFDFD)
     val PanelMuted = Color(0xFFF7F7F7)
 
     val RowHover = Color(0xFFF3F3F3)
@@ -44,14 +44,14 @@ object AladinColor {
     val Divider = Color(0xFFE8E8E8)
     val Border = Color(0xFFDADADA)
 
-    val Ink = Color(0xFF0B0B0B)
+    val Ink = Color(0xFF000000)
     val InkSecondary = Color(0xFF555555)
     val InkMuted = Color(0xFF8A8A8A)
     val InkDisabled = Color(0xFFB8B8B8)
 
-    val InkSurface = Color(0xFF111111)
-    val InkSurfaceHover = Color(0xFF1A1A1A)
-    val OnInkSurface = Color(0xFFFFFFFF)
+    val InkSurface = Color(0xFF333333)
+    val InkSurfaceHover = Color(0xFF242424)
+    val OnInkSurface = Color(0xFFF7F7F7)
 }
 
 val AladinDarkColorScheme = darkColorScheme(

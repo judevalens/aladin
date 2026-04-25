@@ -35,6 +35,7 @@ data class AladinInteractionColors(
   fun colorFor(state: AladinInteractionState): Color {
     return when {
       !state.enabled -> disabled
+      state.selected && state.pressed -> selectedHovered
       state.pressed -> pressed
       state.selected && state.hovered -> selectedHovered
       state.selected -> selected
