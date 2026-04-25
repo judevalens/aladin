@@ -4,7 +4,7 @@
 
 Aladin is a terminal for signals and thoughts.
 
-It ingests live data from generic sources, turns that data into structured signals, and connects those signals back to a user's evolving ideas over time. Instead of letting information disappear into feeds or notes go stale in archives, Aladin keeps thought alive by continuously relating new incoming evidence to prior artifacts.
+It ingests live data from generic sources, turns that data into structured signals, and connects those signals back to the user's ongoing areas of work. Instead of letting information disappear into feeds or notes go stale in archives, Aladin keeps thought alive by continuously relating new incoming evidence to prior user-organized sections and artifacts.
 
 Aladin is designed for people whose work depends on maintaining continuity of interpretation across ongoing streams of information.
 
@@ -18,28 +18,67 @@ Aladin handles the interaction between them.
 
 The core promise is:
 
-**New signals do not just arrive. They update what you were already thinking.**
+**New signals do not just arrive. They update what you were already working on.**
 
 ## 3. Product Vision
 
-Aladin is a living knowledge and idea workspace where:
+Aladin is a living knowledge and thought workspace where:
 - sources continuously bring in new information
 - the system transforms incoming artifacts into signals
-- users capture and evolve their own ideas over time
-- the graph/context layer improves how the system retrieves and reasons
+- users organize work into sections
+- users capture concrete artifacts inside those sections
+- the graph/context layer improves retrieval and reasoning across the whole workspace
 - outputs compound into a durable system of thought
 
 Aladin should feel like an always-on workspace for:
 - monitoring
 - synthesis
-- reactivation of prior thought
-- progressive refinement of ideas
+- reactivation of prior work
+- progressive refinement of sections over time
 
 ## 4. Primary Product Concepts
 
+### Section
+
+A section is a user-created organizational container.
+
+Examples:
+- Rivian
+- AI Supply Chain
+- GTM Research
+- Student Cohort Issues
+
+A section exists for the user’s own organizational needs. It is how they group work, revisit topics, and maintain focus.
+
+### Artifact
+
+An artifact is a concrete captured or stored item.
+
+Examples:
+- markdown note
+- link + summary
+- voice note
+- later: imported document, generated output, clip
+
+Artifacts live inside sections from the user’s point of view.
+
+### Signal
+
+A signal is a processed, meaningful event or surfaced unit derived from one or more artifacts.
+
+Signals are what the system decides are worth surfacing. They may:
+- support a section’s working thesis
+- contradict a section’s assumptions
+- update a section
+- reveal a trend
+- expose a new relationship
+- indicate a change worth attention
+
+A user may consider some signals to be “insights,” but `signal` is the core product term.
+
 ### Source
 
-A configured live input stream that brings new information into a workspace.
+A configured live input stream that brings new information into the workspace.
 
 Examples:
 - Reddit subreddit
@@ -48,64 +87,20 @@ Examples:
 - stock ticker feed
 - internal chat stream
 
-### Artifact
-
-A raw or normalized ingested unit from a source.
-
-Examples:
-- one post
-- one article
-- one message
-- one document
-- one transcript
-
-### Signal
-
-A processed, meaningful event or surfaced unit derived from one or more artifacts.
-
-Signals are what the system decides are worth surfacing. They may:
-- support an idea
-- contradict an idea
-- update an idea
-- reveal a trend
-- expose a new relationship
-- indicate a change worth attention
-
-A user may consider some signals to be "insights," but `signal` is the core product term.
-
-### Idea
-
-A living user artifact that evolves over time.
-
-An idea may contain:
-- markdown content
-- linked evidence
-- linked entities/topics
-- custom prompts for future analysis
-- a thesis, question, hypothesis, or line of thought
-
-An idea is not static. New signals can affect it over time.
-
-### Capture
-
-A lightweight input that seeds future ideas or evidence.
-
-Capture modes in current scope:
-- light markdown note
-- quick link + description
-- voice note
-
 ### Graph / Context Layer
 
-A structured context layer that links artifacts, signals, ideas, entities, and themes. Its main purpose is to improve retrieval, context assembly, and future reasoning quality.
+A structured global workspace context layer that links artifacts, signals, entities, and relationships.
+
+The graph is not scoped to a section. Sections are for user organization; the graph is for what the system understands across the whole workspace.
 
 ## 5. Primary User Jobs
 
 Aladin helps a user:
-- capture ideas before they disappear
+- create sections to organize ongoing work
+- capture thoughts before they disappear
 - monitor live sources without losing context
-- connect incoming signals to existing lines of thought
-- preserve and evolve hypotheses over time
+- connect incoming signals to existing sections
+- preserve and evolve lines of thought over time
 - surface what changed and why it matters
 - ask the system to further analyze relevant incoming signals
 - build a durable body of structured thought instead of isolated notes and chats
@@ -113,7 +108,7 @@ Aladin helps a user:
 ## 6. Initial Use Cases
 
 Aladin should support these patterns, even if product language stays generic:
-- hobbyist trader or analyst tracking company/sector theses
+- hobbyist trader or analyst tracking company or sector theses
 - founder doing market and competitor research
 - educator or operator managing many ongoing conversations and signals
 - researcher maintaining evolving domain knowledge
@@ -151,13 +146,17 @@ Future examples:
 
 System-generated meaningful surfaced units derived from new source data.
 
-### Ideas
+### Sections
 
-User-created living artifacts that evolve over time and may include custom prompts for future analysis.
+User-created containers for organizing work. Sections are the primary user-facing unit of organization.
+
+### Artifacts
+
+Concrete captured or stored items within sections.
 
 ### Graph / Context
 
-A graph-backed context layer that improves retrieval, linking, and future LLM pipelines.
+A global graph-backed context layer that improves retrieval, linking, and future LLM pipelines across all sections.
 
 ### Specialist UI Surfaces
 
@@ -170,13 +169,14 @@ Examples:
 
 ## 8. Core User Loop
 
-1. User configures sources and creates captures/ideas.
-2. Sources ingest new artifacts continuously.
-3. Backend processes artifacts and generates signals.
-4. Signals are linked to relevant ideas and context.
-5. User sees what changed and what prior thought it affects.
-6. User updates ideas manually or lets the system analyze relevant signals through custom prompts.
-7. Updated ideas and outputs become part of the ongoing context for future signals.
+1. User creates folders and sections to organize work.
+2. User captures artifacts into sections.
+3. Sources ingest new artifacts continuously.
+4. Backend processes incoming artifacts and generates signals.
+5. Signals are linked to relevant sections and surrounding context.
+6. User sees what changed and what section it affects.
+7. User updates section contents manually or lets the system analyze relevant signals further.
+8. Updated sections and outputs become part of the ongoing context for future signals.
 
 ## 9. Product Behavior Principles
 
@@ -184,13 +184,13 @@ Examples:
 
 Users should not have to sift raw streams unless they want to. The system should surface meaningful changes.
 
-### 2. Thoughts stay alive
+### 2. Sections stay alive
 
-Ideas should remain revisitable and evolvable over time.
+Sections should remain revisitable and evolvable over time.
 
-### 3. New information should reactivate old context
+### 3. New information should reactivate existing work
 
-Incoming data should be evaluated against what the user already cares about.
+Incoming data should be evaluated against what the user already organized and cares about.
 
 ### 4. The system should support partial thought
 
@@ -204,98 +204,203 @@ The graph should improve context and reasoning, not merely visualize data.
 
 Frontend JS surfaces exist for rendering and specialist interactivity, not for core business logic.
 
-## 10. Information Architecture
+## 10. UX and Information Architecture
 
-The likely primary product surfaces are:
-- **Capture**: quick note, link capture, voice note
-- **Sources**: configure and manage live inputs
-- **Signals**: surfaced meaningful incoming changes
-- **Ideas**: living user artifacts, theses, notes, hypotheses, questions
-- **Knowledge / Graph**: structured context and exploration layer
+The shell should use a 3-pane layout:
 
-Optional later surface:
-- **Outputs**: generated summaries, reports, analyses, decks, etc.
+- **Pane 1**: app-wide navigation
+- **Pane 2**: hierarchy and child resources for the selected top-level area
+- **Pane 3**: active workspace or detail surface
 
-## 11. Idea Model
+### Primary navigation
 
-An idea is a first-class living artifact.
+Pane 1 should provide stable product navigation:
+- Home
+- Sections
+- Signals
+- Sources
+- Graph
 
-An idea may include:
+Optional later:
+- Outputs
+
+### Pane 2 behavior
+
+Pane 2 is the hierarchy/index pane for the selected top-level area.
+
+It should support:
+- folders
+- sections
+- child resources within the selected area
+
+Navigation inside pane 2 should work like a container browser:
+- opening a folder replaces pane contents with that folder’s children
+- breadcrumbs at the top show the current path
+- clicking breadcrumbs navigates upward
+
+### Pane 3 behavior
+
+Pane 3 is the active workspace/detail surface.
+
+It should show:
+- selected section workspace
+- selected signal detail
+- selected source detail
+- graph exploration
+- specialist editor/graph surfaces when needed
+
+Top-level folder navigation should not live in pane 3 by default.
+
+## 11. Home Experience
+
+Home should act as the operational overview of the workspace.
+
+### Pane 2 on Home
+Show:
+- **Active Sections**
+- most recently updated or most relevant sections
+
+### Pane 3 on Home
+Default to a **Daily Brief**:
+- important recent signals
+- which sections were affected
+- suggested next actions
+- calm summary rather than raw stream overload
+
+The Home surface should communicate:
+- what changed
+- where it matters
+- where the user might want to go next
+
+## 12. Section Experience
+
+Sections are the primary user workspace.
+
+### Pane 2
+Show:
+- folders and sections
+- hierarchical organization through folders
+- breadcrumbs for navigation
+
+### Pane 3
+Show the selected section workspace:
+- artifacts in the section
+- signals relevant to the section
+- graph-derived related context from the global KG
+- later: prompts/lenses, summaries, outputs
+
+This should feel like a living workspace, not a static folder.
+
+## 13. Signals Experience
+
+Signals are the system’s surfaced updates.
+
+### Pane 2
+Show:
+- signal lists grouped by freshness, source, or section relevance
+
+### Pane 3
+Show selected signal detail:
 - title
-- content/body
-- status
-- linked entities/topics
-- linked artifacts/signals
-- optional custom analysis prompt
-- timestamps/history
-- future derived metadata
+- concise explanation of why it matters
+- linked evidence/artifacts
+- relevant sections
+- later: actions such as attach, save, dismiss, summarize
 
-The key capability is that an idea can be used as an analytical lens for future incoming signals.
+Signals should default to a **curated update card** style rather than raw evidence first.
 
-## 12. Signal Model
+## 14. Sources Experience
 
-A signal is a surfaced meaningful event.
+Sources remain a dedicated operational area.
 
-Signals may include:
-- supporting evidence
-- contradictory evidence
-- linked artifacts
-- linked ideas
-- linked entities/topics
-- confidence
-- freshness
-- type/category
+### Pane 2
+Show:
+- configured source list
 
-Examples of signal types:
-- trend
-- contradiction
-- update
-- support
-- emerging theme
-- anomaly
-- opportunity
-- risk
+### Pane 3
+Show:
+- selected source detail
+- source configuration
+- health/status
+- recent activity
 
-The exact generation sophistication is intentionally deferred.
+Language should emphasize “live inputs” more than technical sync internals.
 
-## 13. Out of Scope for Now
+## 15. Graph Experience
 
-These are not core scope right now:
-- final advanced signal-generation methodology
-- full GraphRAG implementation details
-- collaborative multi-user workflows
-- deep permissions/teams model
-- broad connector expansion
-- polished desktop-native app path
-- over-optimized graph ontology
+Graph is a secondary analysis surface.
 
-These can be refined later after UX and backend architecture are stabilized.
+It is:
+- workspace-wide
+- cross-section
+- contextual
+- used for exploration and relationship discovery
 
-## 14. Product Positioning
+It is not the default daily workflow surface.
 
-Aladin is best described as:
+The graph should help users discover:
+- entities
+- relationships
+- cross-section overlaps
+- contextual clusters
 
-**A terminal for signals and thoughts.**
+## 16. Capture UX
 
-Alternative longer positioning:
+Capture should remain globally reachable.
 
-**Aladin is a living workspace where incoming signals continuously interact with your evolving ideas, helping you keep context, detect change, and build durable understanding over time.**
+Default capture modes:
+- markdown note
+- link + description
+- voice note
 
-## 15. Success Criteria for V1 Direction
+Recommended shell pattern:
+- **small always-visible capture control**
+- **command palette for power users**
 
-The product direction is validated if a user can:
-- connect a live source
-- capture or create an idea
-- receive new signals from that source
-- see which signals matter to an existing idea
-- ask for deeper analysis on that relationship
-- keep evolving the idea over time
+Captured artifacts should be easy to place into a section at creation time.
 
-That is the core loop Aladin must prove.
+## 17. Visual Direction
 
-## Next Step
+Target:
+- **calm intelligence**
+- Linear / Notion-like clarity
+- serious, editorial, legible, low-noise
 
-The next step should be the technical spec:
-- what exists already in `backend_v2`
-- what maps to this product model
-- what must be added or renamed next
+Avoid:
+- dashboard clutter
+- loud terminal styling
+- feed-reader visual identity
+- excessive graph-first presentation
+
+The interface should privilege:
+- hierarchy
+- focus
+- continuity
+- reading
+- progressive discovery
+
+## 18. Acceptance Criteria
+
+The redesign is correct if a user can:
+
+1. Create folders and sections to organize work.
+2. Add artifacts into a section using note, link, or voice capture.
+3. Navigate section hierarchy through the middle pane with breadcrumbs.
+4. Open a section and view its artifacts and relevant signals in the right pane.
+5. Inspect signals separately in a dedicated Signals area.
+6. Understand that graph context is global across the workspace, not local to one section.
+7. Use the product without needing to understand graph internals or backend concepts.
+
+## 19. Assumptions and Defaults
+
+- Primary v1 audience: **founder / analyst**
+- Primary UX container: **Section**
+- Primary concrete content unit: **Artifact**
+- Primary system surfaced object: **Signal**
+- KG scope: **workspace-wide global context**
+- Shell layout: **3 panes**
+- Folder navigation: **middle pane + breadcrumbs**
+- Home emphasis: **Active Sections + Daily Brief**
+- Signal presentation: **curated update card first**
+- Capture pattern: **visible control + command palette**
+- Graph role: **secondary analysis surface**

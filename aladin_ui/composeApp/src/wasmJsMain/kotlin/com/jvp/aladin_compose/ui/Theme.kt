@@ -27,15 +27,15 @@ object AladinDark {
 // ─── Light ───────────────────────────────────────────────────────────────────
 // Derived from the same warm temperature, inverted
 object AladinLight {
-    val Background    = Color(0xFFFAF9F7)  // warm white
-    val Surface       = Color(0xFFFFFFFF)
-    val SurfaceRaised = Color(0xFFF2F1EE)  // warm off-white
-    val Border        = Color(0xFFE4E2DE)
-    val BorderStrong  = Color(0xFFCCCAC5)
-    val TextMuted     = Color(0xFFB8B6B0)
-    val TextSecondary = Color(0xFF7A7874)  // shared mid
-    val TextPrimary   = Color(0xFF1A1917)  // warm near-black
-    val TextInverse   = Color(0xFFFFFFFF)
+    val Background    = Color(0xFFF8F9FA)  // warm white
+    val Surface       = Color(0xFFE9ECEF)
+    val SurfaceRaised = Color(0xFFDEE2E6)  // warm off-white
+    val Border        = Color(0xFFD8D5CE)
+    val BorderStrong  = Color(0xFFB9B4A9)
+    val TextMuted     = Color(0xFF8F8A82)
+    val TextSecondary = Color(0xFF343A40)  // shared mid
+    val TextPrimary   = Color(0xFF212529)  // warm near-black
+    val TextInverse   = Color(0xFFE9ECEF)
 }
 
 // ─── Material3 Dark ──────────────────────────────────────────────────────────
@@ -119,7 +119,7 @@ val AladinLightColorScheme = lightColorScheme(
 @Composable
 fun AladinTheme(content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = AladinDarkColorScheme,
+        colorScheme = AladinLightColorScheme,
         typography  = Typography(),
         content     = content
     )

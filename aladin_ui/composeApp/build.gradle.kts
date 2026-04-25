@@ -16,6 +16,8 @@ kotlin {
 
     sourceSets {
         wasmJsMain.dependencies {
+            implementation(libs.circuit.foundation)
+            implementation(libs.compose.unstyled)
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.material3)
