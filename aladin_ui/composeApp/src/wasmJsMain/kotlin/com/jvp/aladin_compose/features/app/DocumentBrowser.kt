@@ -1,8 +1,6 @@
 package com.jvp.aladin_compose.features.app
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,13 +14,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.sharp.NavigateBefore
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.sharp.NavigateBefore
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -35,7 +34,6 @@ import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -56,69 +54,101 @@ private val BrowserIconSize = 15.dp
 private val BrowserChevronSize = 16.dp
 private val BrowserMarkerHeight = 20.dp
 private val BrowserIndent = 16.dp
-private val BrowserVisibleContentWidth = 284.dp
-private val BrowserScrollGutter = 4.dp
 
 @Composable
 fun DocumentBrowser(state: DocumentBrowserState) {
-    val maxVisibleDepth = state.rows.maxOfOrNull { it.depth } ?: 0
-    val treeContentWidth = BrowserVisibleContentWidth + (BrowserIndent * maxVisibleDepth) + (BrowserScrollGutter * 2)
-
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 10.dp)) {
         BrowserBreadcrumbRow(state)
         Spacer(modifier = Modifier.size(12.dp))
-        Box(modifier = Modifier.fillMaxSize()) {
-            LazyColumn(
-                modifier =
-                    Modifier.width(treeContentWidth)
-                        .fillMaxSize()
-                ,
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                items(state.rows, key = { it.key }) { row ->
-                    when (row) {
-                        is BrowserTreeRow.Folder ->
-                            BrowserFolderRow(
-                                item = row.item,
-                                depth = row.depth,
-                                expanded = row.expanded,
-                                expandable = row.expandable,
-                                selected = row.selected,
-                                onToggleExpanded = { state.eventSink(DocumentBrowserEvent.ToggleItemExpanded(row.item.id)) },
-                                onClick = {
-                                    state.eventSink(DocumentBrowserEvent.SelectItem(row.item.id))
-                                    if (row.expandable) {
-                                        state.eventSink(DocumentBrowserEvent.ToggleItemExpanded(row.item.id))
-                                    }
-                                },
-                            )
-                        is BrowserTreeRow.Artifact ->
-                            BrowserArtifactRow(
-                                item = row.item,
-                                artifact = row.artifact,
-                                depth = row.depth,
-                                selected = row.selected,
-                                onClick = { state.eventSink(DocumentBrowserEvent.SelectItem(row.item.id)) },
-                            )
-                        is BrowserTreeRow.Generic ->
-                            BrowserGenericRow(
-                                item = row.item,
-                                depth = row.depth,
-                                expanded = row.expanded,
-                                expandable = row.expandable,
-                                selected = row.selected,
-                                onToggleExpanded = { state.eventSink(DocumentBrowserEvent.ToggleItemExpanded(row.item.id)) },
-                                onClick = {
-                                    state.eventSink(DocumentBrowserEvent.SelectItem(row.item.id))
-                                    if (row.expandable) {
-                                        state.eventSink(DocumentBrowserEvent.ToggleItemExpanded(row.item.id))
-                                    }
-                                },
-                            )
-                    }
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            items(state.rows, key = { it.key }) { row ->
+                when (row) {
+                    is BrowserTreeRow.ScopeBack ->
+                        BrowserScopeBackRow(
+                            label = row.label,
+                            onClick = { state.eventSink(DocumentBrowserEvent.NavigateScope(row.targetScopeId)) },
+                        )
+                    is BrowserTreeRow.Folder ->
+                        BrowserFolderRow(
+                            item = row.item,
+                            depth = row.depth,
+                            expanded = row.expanded,
+                            expandable = row.expandable,
+                            selected = row.selected,
+                            onToggleExpanded = { state.eventSink(DocumentBrowserEvent.ToggleItemExpanded(row.item.id, row.depth)) },
+                            onClick = {
+                                state.eventSink(DocumentBrowserEvent.SelectItem(row.item.id))
+                                if (row.expandable) {
+                                    state.eventSink(DocumentBrowserEvent.ToggleItemExpanded(row.item.id, row.depth))
+                                }
+                            },
+                        )
+                    is BrowserTreeRow.Artifact ->
+                        BrowserArtifactRow(
+                            item = row.item,
+                            artifact = row.artifact,
+                            depth = row.depth,
+                            selected = row.selected,
+                            onClick = { state.eventSink(DocumentBrowserEvent.SelectItem(row.item.id)) },
+                        )
+                    is BrowserTreeRow.Generic ->
+                        BrowserGenericRow(
+                            item = row.item,
+                            depth = row.depth,
+                            expanded = row.expanded,
+                            expandable = row.expandable,
+                            selected = row.selected,
+                            onToggleExpanded = { state.eventSink(DocumentBrowserEvent.ToggleItemExpanded(row.item.id, row.depth)) },
+                            onClick = {
+                                state.eventSink(DocumentBrowserEvent.SelectItem(row.item.id))
+                                if (row.expandable) {
+                                    state.eventSink(DocumentBrowserEvent.ToggleItemExpanded(row.item.id, row.depth))
+                                }
+                            },
+                        )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun BrowserScopeBackRow(
+    label: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier =
+            Modifier.fillMaxWidth()
+                .aladinClickable(
+                    shape = RoundedCornerShape(ControlRadius),
+                    colors =
+                        AladinInteractionDefaults.colors(
+                            hovered = AladinColor.ControlHover,
+                            pressed = AladinColor.ControlPressed,
+                        ),
+                    onClick = onClick,
+                )
+                .padding(horizontal = BrowserRowHorizontalPadding, vertical = BrowserRowVerticalPadding),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(
+            imageVector = Icons.AutoMirrored.Sharp.NavigateBefore,
+            contentDescription = null,
+            tint = AladinColor.InkMuted,
+            modifier = Modifier.size(BrowserIconSize),
+        )
+        Text(
+            label,
+            color = AladinColor.InkMuted,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
