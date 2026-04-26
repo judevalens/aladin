@@ -31,6 +31,7 @@ private val SharpRadius = 4.dp
 private val ControlRadius = 6.dp
 private val RailItemSize = 38.dp
 private val RailIconSize = 20.dp
+private val WorkspaceMaxWidth = 980.dp
 
 class AppUiFactory : Ui.Factory {
   override fun create(screen: Screen, context: CircuitContext): Ui<*>? {
@@ -153,7 +154,7 @@ private fun TopBar(
   Row(
       modifier =
           Modifier.fillMaxWidth()
-              .height(60.dp)
+              .height(58.dp)
               .background(AladinColor.Canvas)
               .padding(horizontal = 18.dp),
       verticalAlignment = Alignment.CenterVertically,
@@ -162,7 +163,7 @@ private fun TopBar(
     Spacer(Modifier.weight(1f))
 
     AladinToolbarField(
-        modifier = Modifier.width(260.dp).aladinClickable(shape = RoundedCornerShape(ControlRadius)) {},
+        modifier = Modifier.width(250.dp).aladinClickable(shape = RoundedCornerShape(ControlRadius)) {},
         text = "Search or jump...",
     )
 
@@ -184,7 +185,7 @@ private fun TopBar(
 private fun PaneTwo(state: AppState) {
   Box(
       modifier =
-          Modifier.width(300.dp).fillMaxHeight().background(AladinColor.Canvas)
+          Modifier.width(300.dp).fillMaxHeight().background(AladinColor.PanelMuted)
   ) {
     when (state.destination) {
       NavDestination.Home,
@@ -252,14 +253,14 @@ private fun RowScope.PaneThree(state: AppState) {
 @Composable
 private fun ItemWorkspaceView(item: Item) {
   Box(
-      modifier = Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 24.dp),
+      modifier = Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 28.dp),
       contentAlignment = Alignment.TopStart,
   ) {
     Column(
-        modifier = Modifier.fillMaxWidth().widthIn(max = 980.dp),
-        verticalArrangement = Arrangement.spacedBy(28.dp),
+        modifier = Modifier.fillMaxWidth().widthIn(max = WorkspaceMaxWidth),
+        verticalArrangement = Arrangement.spacedBy(26.dp),
     ) {
-      Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+      Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Text(
             item.title,
             style = MaterialTheme.typography.headlineLarge,
@@ -273,24 +274,10 @@ private fun ItemWorkspaceView(item: Item) {
         )
       }
 
-      AladinPanel(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(22.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-          Text(
-              "Signals",
-              style = MaterialTheme.typography.titleMedium,
-              color = AladinColor.Ink,
-              fontWeight = FontWeight.SemiBold,
-          )
-          Text(
-              "Relevant signals will surface here once the first signal endpoints are wired.",
-              color = AladinColor.InkSecondary,
-              style = MaterialTheme.typography.bodyMedium,
-          )
-        }
-      }
+      WorkspaceSection(
+          title = "Signals",
+          body = "Relevant signals will surface here once the first signal endpoints are wired.",
+      )
     }
   }
 }
@@ -298,11 +285,11 @@ private fun ItemWorkspaceView(item: Item) {
 @Composable
 private fun ArtifactWorkspaceView(artifact: Artifact) {
   Box(
-      modifier = Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 24.dp),
+      modifier = Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 28.dp),
       contentAlignment = Alignment.TopStart,
   ) {
     Column(
-        modifier = Modifier.fillMaxWidth().widthIn(max = 980.dp),
+        modifier = Modifier.fillMaxWidth().widthIn(max = WorkspaceMaxWidth),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
       Row(
@@ -331,6 +318,38 @@ private fun ArtifactWorkspaceView(artifact: Artifact) {
   }
 }
 
+@Composable
+private fun WorkspaceSection(
+    title: String,
+    body: String,
+) {
+  Column(
+      modifier = Modifier.fillMaxWidth(),
+      verticalArrangement = Arrangement.spacedBy(12.dp),
+  ) {
+    HorizontalDivider(
+        color = AladinColor.Divider,
+        thickness = DividerThickness,
+    )
+    Column(
+        modifier = Modifier.padding(top = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+      Text(
+          title.uppercase(),
+          style = MaterialTheme.typography.labelMedium,
+          color = AladinColor.Ink,
+          fontWeight = FontWeight.Bold,
+      )
+      Text(
+          body,
+          color = AladinColor.InkSecondary,
+          style = MaterialTheme.typography.bodyMedium,
+      )
+    }
+  }
+}
+
 
 
 @Composable
@@ -343,9 +362,10 @@ private fun AladinToolbarField(
           modifier
               .border(
                   DividerThickness,
-                  AladinColor.Divider,
+                  AladinColor.Border,
                   RoundedCornerShape(ControlRadius),
               )
+              .background(AladinColor.Panel, RoundedCornerShape(ControlRadius))
               .padding(horizontal = 14.dp, vertical = 10.dp),
       contentAlignment = Alignment.CenterStart,
   ) {

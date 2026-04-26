@@ -49,6 +49,7 @@ private val ControlRadius = 6.dp
 private val BrowserRowHorizontalPadding = 8.dp
 private val BrowserRowVerticalPadding = 5.dp
 private val BrowserRowContentGap = 6.dp
+private val BrowserScopeHeaderVerticalPadding = 7.dp
 private val BrowserGlyphSize = 22.dp
 private val BrowserIconSize = 15.dp
 private val BrowserChevronSize = 16.dp
@@ -57,12 +58,12 @@ private val BrowserIndent = 16.dp
 
 @Composable
 fun DocumentBrowser(state: DocumentBrowserState) {
-    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 10.dp)) {
+    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 10.dp)) {
         BrowserBreadcrumbRow(state)
-        Spacer(modifier = Modifier.size(12.dp))
+        Spacer(modifier = Modifier.size(10.dp))
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
             items(state.rows, key = { it.key }) { row ->
                 when (row) {
@@ -132,7 +133,10 @@ private fun BrowserScopeBackRow(
                         ),
                     onClick = onClick,
                 )
-                .padding(horizontal = BrowserRowHorizontalPadding, vertical = BrowserRowVerticalPadding),
+                .padding(
+                    horizontal = BrowserRowHorizontalPadding,
+                    vertical = BrowserScopeHeaderVerticalPadding,
+                ),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(BrowserRowContentGap),
     ) {
@@ -144,8 +148,9 @@ private fun BrowserScopeBackRow(
         )
         Text(
             label,
-            color = AladinColor.InkMuted,
-            fontWeight = FontWeight.Medium,
+            color = AladinColor.InkSecondary,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -231,7 +236,7 @@ private fun BrowserBreadcrumbRow(state: DocumentBrowserState, modifier: Modifier
         state = rememberTooltipState(),
     ) {
         Row(
-            modifier = modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 2.dp),
+            modifier = modifier.fillMaxWidth().padding(horizontal = 0.dp, vertical = 1.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
@@ -250,8 +255,8 @@ private fun BrowserBreadcrumbRow(state: DocumentBrowserState, modifier: Modifier
                             segment.item.label,
                             style = MaterialTheme.typography.bodySmall,
                             color =
-                                if (isLast) AladinColor.Ink else AladinColor.InkMuted,
-                            fontWeight = if (isLast) FontWeight.Medium else FontWeight.Normal,
+                                if (isLast) AladinColor.InkSecondary else AladinColor.InkMuted,
+                            fontWeight = if (isLast) FontWeight.SemiBold else FontWeight.Normal,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier =
