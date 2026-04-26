@@ -47,6 +47,11 @@ class DefaultDocumentBrowserProducer(
                     value = service.breadcrumbs(selectedItemId)
                 }
                 .value
+        val scopeBreadcrumbs =
+            produceState(initialValue = emptyList(), service, currentScopeId, refreshKey) {
+                    value = service.breadcrumbs(currentScopeId)
+                }
+                .value
         val rows =
             produceState(
                     initialValue = emptyList(),
@@ -54,7 +59,6 @@ class DefaultDocumentBrowserProducer(
                     expandedItemIds,
                     selectedItemId,
                     currentScopeId,
-                    scopeBackStack,
                     refreshKey,
                 ) {
                     val items = service.items()
@@ -71,7 +75,6 @@ class DefaultDocumentBrowserProducer(
                             expandedItemIds = expandedItemIds,
                             selectedItemId = selectedItemId,
                             currentScope = currentScope,
-                            backScopeId = scopeBackStack.lastOrNull(),
                         )
                 }
                 .value
@@ -80,6 +83,10 @@ class DefaultDocumentBrowserProducer(
             browser =
                 DocumentBrowserState(
                     breadcrumbs = breadcrumbs,
+                    scopeBreadcrumbs = scopeBreadcrumbs,
+                    canNavigateScopeBack = scopeBackStack.isNotEmpty(),
+                    scopeBackTargetId =
+                        if (scopeBackStack.isNotEmpty()) scopeBackStack.last() else null,
                     rows = rows,
                     eventSink = { event ->
                         when (event) {
@@ -156,10 +163,8 @@ class DefaultDocumentBrowserProducer(
         expandedItemIds: Set<String>,
         selectedItemId: String?,
         currentScope: Item?,
-        backScopeId: String?,
     ): List<BrowserTreeRow> {
         val childrenByParent = items.groupBy { it.parentId }
-        val itemById = items.associateBy { it.id }
         val rows = mutableListOf<BrowserTreeRow>()
 
         fun addItemRow(item: Item, depth: Int) {
@@ -209,13 +214,6 @@ class DefaultDocumentBrowserProducer(
                         visit(item.id, depth + 1, remainingDepth - 1)
                     }
                 }
-        }
-
-        if (currentScope != null) {
-            rows += BrowserTreeRow.ScopeBack(
-                targetScopeId = backScopeId,
-                label = currentScope.title,
-            )
         }
 
         visit(parentId = currentScope?.id, depth = 0, remainingDepth = DrillInDepth)

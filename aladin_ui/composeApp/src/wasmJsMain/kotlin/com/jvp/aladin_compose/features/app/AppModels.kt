@@ -25,6 +25,9 @@ data class DocumentBrowserProducerState(
 
 data class DocumentBrowserState(
     val breadcrumbs: List<BreadcrumbItem>,
+    val scopeBreadcrumbs: List<BreadcrumbItem>,
+    val canNavigateScopeBack: Boolean,
+    val scopeBackTargetId: String?,
     val rows: List<BrowserTreeRow>,
     val eventSink: (DocumentBrowserEvent) -> Unit,
 )

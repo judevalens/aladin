@@ -223,14 +223,26 @@ private fun RowScope.PaneThree(state: AppState) {
       NavDestination.Folders -> {
         val artifact = state.selectedArtifact
         if (artifact != null) {
-          ArtifactWorkspaceView(artifact = artifact)
+          ArtifactWorkspaceView(
+              artifact = artifact,
+              breadcrumbs = state.browser.breadcrumbs,
+              onNavigateBreadcrumb = {
+                state.browser.eventSink(DocumentBrowserEvent.NavigateBreadcrumb(it))
+              },
+          )
         } else if (state.selectedItem == null) {
           PlaceholderPane(
               "Select an item",
               "Choose an item from the browser to open its workspace.",
           )
         } else {
-          ItemWorkspaceView(item = state.selectedItem)
+          ItemWorkspaceView(
+              item = state.selectedItem,
+              breadcrumbs = state.browser.breadcrumbs,
+              onNavigateBreadcrumb = {
+                state.browser.eventSink(DocumentBrowserEvent.NavigateBreadcrumb(it))
+              },
+          )
         }
       }
 
@@ -251,15 +263,23 @@ private fun RowScope.PaneThree(state: AppState) {
 
 
 @Composable
-private fun ItemWorkspaceView(item: Item) {
+private fun ItemWorkspaceView(
+    item: Item,
+    breadcrumbs: List<BreadcrumbItem>,
+    onNavigateBreadcrumb: (String?) -> Unit,
+) {
   Box(
       modifier = Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 28.dp),
       contentAlignment = Alignment.TopStart,
   ) {
     Column(
         modifier = Modifier.fillMaxWidth().widthIn(max = WorkspaceMaxWidth),
-        verticalArrangement = Arrangement.spacedBy(26.dp),
+        verticalArrangement = Arrangement.spacedBy(22.dp),
     ) {
+      WorkspaceBreadcrumbRow(
+          breadcrumbs = breadcrumbs,
+          onNavigateBreadcrumb = onNavigateBreadcrumb,
+      )
       Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Text(
             item.title,
@@ -283,7 +303,11 @@ private fun ItemWorkspaceView(item: Item) {
 }
 
 @Composable
-private fun ArtifactWorkspaceView(artifact: Artifact) {
+private fun ArtifactWorkspaceView(
+    artifact: Artifact,
+    breadcrumbs: List<BreadcrumbItem>,
+    onNavigateBreadcrumb: (String?) -> Unit,
+) {
   Box(
       modifier = Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 28.dp),
       contentAlignment = Alignment.TopStart,
@@ -292,6 +316,10 @@ private fun ArtifactWorkspaceView(artifact: Artifact) {
         modifier = Modifier.fillMaxWidth().widthIn(max = WorkspaceMaxWidth),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+      WorkspaceBreadcrumbRow(
+          breadcrumbs = breadcrumbs,
+          onNavigateBreadcrumb = onNavigateBreadcrumb,
+      )
       Row(
           horizontalArrangement = Arrangement.spacedBy(10.dp),
           verticalAlignment = Alignment.CenterVertically,
@@ -314,6 +342,87 @@ private fun ArtifactWorkspaceView(artifact: Artifact) {
           color = AladinColor.InkMuted,
           style = MaterialTheme.typography.labelMedium,
       )
+    }
+  }
+}
+
+private sealed interface WorkspaceBreadcrumbSegment {
+  data class Crumb(val item: BreadcrumbItem) : WorkspaceBreadcrumbSegment
+
+  data object Ellipsis : WorkspaceBreadcrumbSegment
+}
+
+private fun compressedWorkspaceBreadcrumbs(items: List<BreadcrumbItem>):
+    List<WorkspaceBreadcrumbSegment> {
+  return when {
+    items.size <= 3 -> items.map { WorkspaceBreadcrumbSegment.Crumb(it) }
+    else ->
+        listOf(
+            WorkspaceBreadcrumbSegment.Crumb(items.first()),
+            WorkspaceBreadcrumbSegment.Ellipsis,
+            WorkspaceBreadcrumbSegment.Crumb(items[items.lastIndex - 1]),
+            WorkspaceBreadcrumbSegment.Crumb(items.last()),
+        )
+  }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun WorkspaceBreadcrumbRow(
+    breadcrumbs: List<BreadcrumbItem>,
+    onNavigateBreadcrumb: (String?) -> Unit,
+) {
+  val fullPath = breadcrumbs.joinToString(" / ") { it.label }
+  val displaySegments = compressedWorkspaceBreadcrumbs(breadcrumbs)
+
+  TooltipBox(
+      positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
+      tooltip = { PlainTooltip { Text(fullPath) } },
+      state = rememberTooltipState(),
+  ) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+      displaySegments.forEachIndexed { index, segment ->
+        if (index > 0) {
+          Text(
+              "/",
+              color = AladinColor.InkMuted,
+              style = MaterialTheme.typography.labelMedium,
+          )
+        }
+        when (segment) {
+          is WorkspaceBreadcrumbSegment.Crumb -> {
+            val isLast = index == displaySegments.lastIndex
+            Text(
+                segment.item.label,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (isLast) AladinColor.InkSecondary else AladinColor.InkMuted,
+                fontWeight = if (isLast) FontWeight.SemiBold else FontWeight.Normal,
+                modifier =
+                    Modifier.aladinClickable(
+                            enabled = !isLast,
+                            shape = RoundedCornerShape(SharpRadius),
+                            colors =
+                                AladinInteractionDefaults.colors(
+                                    hovered = AladinColor.ControlHover,
+                                    pressed = AladinColor.ControlPressed,
+                                ),
+                            onClick = { onNavigateBreadcrumb(segment.item.id) },
+                        )
+                        .padding(horizontal = 2.dp),
+            )
+          }
+          WorkspaceBreadcrumbSegment.Ellipsis ->
+              Text(
+                  "...",
+                  color = AladinColor.InkMuted,
+                  style = MaterialTheme.typography.bodySmall,
+              )
+        }
+      }
     }
   }
 }

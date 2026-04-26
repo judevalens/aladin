@@ -24,12 +24,7 @@ import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Text
-import androidx.compose.material3.TooltipAnchorPosition
-import androidx.compose.material3.TooltipBox
-import androidx.compose.material3.TooltipDefaults
-import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -59,7 +54,7 @@ private val BrowserIndent = 16.dp
 @Composable
 fun DocumentBrowser(state: DocumentBrowserState) {
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 10.dp)) {
-        BrowserBreadcrumbRow(state)
+        BrowserScopeBreadcrumbRow(state)
         Spacer(modifier = Modifier.size(10.dp))
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -67,11 +62,7 @@ fun DocumentBrowser(state: DocumentBrowserState) {
         ) {
             items(state.rows, key = { it.key }) { row ->
                 when (row) {
-                    is BrowserTreeRow.ScopeBack ->
-                        BrowserScopeBackRow(
-                            label = row.label,
-                            onClick = { state.eventSink(DocumentBrowserEvent.NavigateScope(row.targetScopeId)) },
-                        )
+                    is BrowserTreeRow.ScopeBack -> Unit
                     is BrowserTreeRow.Folder ->
                         BrowserFolderRow(
                             item = row.item,
@@ -117,21 +108,25 @@ fun DocumentBrowser(state: DocumentBrowserState) {
 }
 
 @Composable
-private fun BrowserScopeBackRow(
-    label: String,
-    onClick: () -> Unit,
+private fun BrowserScopeBreadcrumbRow(
+    state: DocumentBrowserState,
 ) {
+    val displaySegments = compressedBreadcrumbs(state.scopeBreadcrumbs)
+
     Row(
         modifier =
             Modifier.fillMaxWidth()
                 .aladinClickable(
+                    enabled = state.canNavigateScopeBack,
                     shape = RoundedCornerShape(ControlRadius),
                     colors =
                         AladinInteractionDefaults.colors(
                             hovered = AladinColor.ControlHover,
                             pressed = AladinColor.ControlPressed,
                         ),
-                    onClick = onClick,
+                    onClick = {
+                        state.eventSink(DocumentBrowserEvent.NavigateScope(state.scopeBackTargetId))
+                    },
                 )
                 .padding(
                     horizontal = BrowserRowHorizontalPadding,
@@ -140,20 +135,41 @@ private fun BrowserScopeBackRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(BrowserRowContentGap),
     ) {
-        Icon(
-            imageVector = Icons.AutoMirrored.Sharp.NavigateBefore,
-            contentDescription = null,
-            tint = AladinColor.InkMuted,
-            modifier = Modifier.size(BrowserIconSize),
-        )
-        Text(
-            label,
-            color = AladinColor.InkSecondary,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        if (state.canNavigateScopeBack) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Sharp.NavigateBefore,
+                contentDescription = null,
+                tint = AladinColor.InkMuted,
+                modifier = Modifier.size(BrowserIconSize),
+            )
+        }
+        displaySegments.forEachIndexed { index, segment ->
+            if (index > 0) {
+                Text(
+                    "/",
+                    color = AladinColor.InkMuted,
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            }
+            when (segment) {
+                is BreadcrumbSegment.Crumb ->
+                    Text(
+                        segment.item.label,
+                        color = AladinColor.InkSecondary,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                BreadcrumbSegment.Ellipsis ->
+                    Text(
+                        "...",
+                        color = AladinColor.InkMuted,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+            }
+        }
     }
 }
 
@@ -220,71 +236,6 @@ private fun compressedBreadcrumbs(items: List<BreadcrumbItem>): List<BreadcrumbS
                 BreadcrumbSegment.Ellipsis,
                 BreadcrumbSegment.Crumb(items.last()),
             )
-    }
-}
-
-@Composable
-@OptIn(ExperimentalMaterial3Api::class)
-private fun BrowserBreadcrumbRow(state: DocumentBrowserState, modifier: Modifier = Modifier) {
-    val fullPath = state.breadcrumbs.joinToString(" / ") { it.label }
-    val displaySegments = compressedBreadcrumbs(state.breadcrumbs)
-
-    TooltipBox(
-        positionProvider =
-            TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
-        tooltip = { PlainTooltip { Text(fullPath) } },
-        state = rememberTooltipState(),
-    ) {
-        Row(
-            modifier = modifier.fillMaxWidth().padding(horizontal = 0.dp, vertical = 1.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            displaySegments.forEachIndexed { index, segment ->
-                if (index > 0) {
-                    Text(
-                        "/",
-                        color = AladinColor.InkMuted,
-                        style = MaterialTheme.typography.labelMedium,
-                    )
-                }
-                when (segment) {
-                    is BreadcrumbSegment.Crumb -> {
-                        val isLast = index == displaySegments.lastIndex
-                        Text(
-                            segment.item.label,
-                            style = MaterialTheme.typography.bodySmall,
-                            color =
-                                if (isLast) AladinColor.InkSecondary else AladinColor.InkMuted,
-                            fontWeight = if (isLast) FontWeight.SemiBold else FontWeight.Normal,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier =
-                                Modifier.aladinClickable(
-                                    shape = RoundedCornerShape(SharpRadius),
-                                    colors =
-                                        AladinInteractionDefaults.colors(
-                                            hovered = AladinColor.ControlHover,
-                                            pressed = AladinColor.ControlPressed,
-                                        ),
-                                ) {
-                                        state.eventSink(
-                                            DocumentBrowserEvent.NavigateBreadcrumb(segment.item.id)
-                                        )
-                                    }
-                                    .padding(horizontal = 2.dp),
-                        )
-                    }
-                    BreadcrumbSegment.Ellipsis -> {
-                        Text(
-                            "...",
-                            color = AladinColor.InkMuted,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                }
-            }
-        }
     }
 }
 
