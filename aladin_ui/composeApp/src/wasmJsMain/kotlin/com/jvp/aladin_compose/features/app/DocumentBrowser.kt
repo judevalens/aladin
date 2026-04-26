@@ -21,7 +21,6 @@ import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.sharp.NavigateBefore
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
-import androidx.compose.material.icons.sharp.NavigateBefore
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -49,6 +48,7 @@ private val SharpRadius = 4.dp
 private val ControlRadius = 6.dp
 private val BrowserRowHorizontalPadding = 8.dp
 private val BrowserRowVerticalPadding = 5.dp
+private val BrowserRowContentGap = 6.dp
 private val BrowserGlyphSize = 22.dp
 private val BrowserIconSize = 15.dp
 private val BrowserChevronSize = 16.dp
@@ -134,7 +134,7 @@ private fun BrowserScopeBackRow(
                 )
                 .padding(horizontal = BrowserRowHorizontalPadding, vertical = BrowserRowVerticalPadding),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(BrowserRowContentGap),
     ) {
         Icon(
             imageVector = Icons.AutoMirrored.Sharp.NavigateBefore,
@@ -176,7 +176,7 @@ private fun BrowserArtifactRow(
                     onClick = onClick,
                 )
                 .padding(horizontal = BrowserRowHorizontalPadding, vertical = BrowserRowVerticalPadding),
-        horizontalArrangement = Arrangement.spacedBy(7.dp),
+        horizontalArrangement = Arrangement.spacedBy(BrowserRowContentGap),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         RowSelectionMarker(selected = selected)
@@ -310,7 +310,7 @@ private fun BrowserFolderRow(
                 )
                 .padding(horizontal = BrowserRowHorizontalPadding, vertical = BrowserRowVerticalPadding),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(BrowserRowContentGap),
     ) {
         RowSelectionMarker(selected = selected)
         ExpandToggle(
@@ -360,11 +360,11 @@ private fun BrowserGenericRow(
                             selected = AladinColor.InkSurface,
                             selectedHovered = AladinColor.InkSurfaceHover,
                         ),
-                    onClick = onToggleExpanded,
+                    onClick = onClick,
                 )
                 .padding(horizontal = BrowserRowHorizontalPadding, vertical = BrowserRowVerticalPadding),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(BrowserRowContentGap),
     ) {
         RowSelectionMarker(selected = selected)
         ExpandToggle(

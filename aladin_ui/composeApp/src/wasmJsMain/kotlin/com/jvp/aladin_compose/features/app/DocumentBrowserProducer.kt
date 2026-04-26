@@ -26,7 +26,7 @@ class DefaultDocumentBrowserProducer(
 ) : DocumentBrowserProducer {
     @Composable
     override fun produce(): DocumentBrowserProducerState {
-        var selectedItemId by remember { mutableStateOf<String?>("item_rivian") }
+        var selectedItemId by remember { mutableStateOf<String?>(null) }
         var currentScopeId by remember { mutableStateOf<String?>(null) }
         var scopeBackStack by remember { mutableStateOf<List<String?>>(emptyList()) }
         var expandedItemIds by remember { mutableStateOf(setOf("item_watch")) }
@@ -54,6 +54,7 @@ class DefaultDocumentBrowserProducer(
                     expandedItemIds,
                     selectedItemId,
                     currentScopeId,
+                    scopeBackStack,
                     refreshKey,
                 ) {
                     val items = service.items()
