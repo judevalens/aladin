@@ -32,14 +32,14 @@ func (r *pgInsightRepo) ExistsRecent(ctx context.Context, kgID, insightType, key
 }
 
 func (r *pgInsightRepo) Store(ctx context.Context, kgID string, insight *Insight) error {
-	artifactIDs, _ := json.Marshal(insight.ArtifactIDs)
+	recordIDs, _ := json.Marshal(insight.RecordIDs)
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO insights
-			(kg_id, type, title, body, artifact_ids, entity, topic, confidence, user_status)
+			(kg_id, type, title, body, record_ids, entity, topic, confidence, user_status)
 		VALUES
 			($1::uuid, $2, $3, $4, $5::jsonb, $6, $7, $8, 'pending')
 	`, kgID, insight.Type, insight.Title, insight.Body,
-		string(artifactIDs), nullStr(insight.Entity), nullStr(insight.Topic), insight.Confidence)
+		string(recordIDs), nullStr(insight.Entity), nullStr(insight.Topic), insight.Confidence)
 	return err
 }
 
@@ -49,16 +49,16 @@ func NewKnowledgeGraphRepository(pool *pgxpool.Pool) KnowledgeGraphRepository {
 	return &pgKnowledgeGraphRepo{pool}
 }
 
-func (r *pgKnowledgeGraphRepo) GetIDsWithEnrichedArtifacts(ctx context.Context) ([]string, error) {
+func (r *pgKnowledgeGraphRepo) GetIDsWithEnrichedRecords(ctx context.Context) ([]string, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT DISTINCT s.kg_id::text
-		FROM artifacts a
+		FROM records a
 		JOIN sources s ON s.id = a.source_id
 		WHERE a.enrichment IS NOT NULL
 		  AND a.status NOT IN ('superseded', 'dismissed')
 	`)
 	if err != nil {
-		return nil, fmt.Errorf("GetIDsWithEnrichedArtifacts: %w", err)
+		return nil, fmt.Errorf("GetIDsWithEnrichedRecords: %w", err)
 	}
 	defer rows.Close()
 

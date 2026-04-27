@@ -30,11 +30,19 @@ func main() {
 	w := io.MultiWriter(os.Stdout, logFile)
 	slog.SetDefault(slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{Level: level})))
 
-	cfg := config.LoadAPI()
+	cfg, err := config.LoadAPI()
+	if err != nil {
+		slog.Error("api: config load failed", "component", "api", "err", err)
+		os.Exit(1)
+	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	pool := db.Connect(ctx, cfg.DatabaseURL)
+	pool, err := db.Connect(ctx, cfg.DatabaseURL)
+	if err != nil {
+		slog.Error("api: db connect failed", "component", "api", "err", err)
+		os.Exit(1)
+	}
 	defer pool.Close()
 
 	if err := db.Migrate(ctx, pool); err != nil {

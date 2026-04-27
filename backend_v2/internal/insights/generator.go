@@ -47,15 +47,15 @@ func (g *Generator) GenerateAndStore(ctx context.Context, kgID string) (int, err
 
 // ── Finders ───────────────────────────────────────────────────────────────────
 
-// findTrendInsights finds topics appearing in 3+ artifacts in the last 24 hours.
+// findTrendInsights finds topics appearing in 3+ records in the last 24 hours.
 // Simple, no LLM — pure SQL over the enrichment JSONB.
 func (g *Generator) findTrendInsights(ctx context.Context, kgID string) ([]*db.Insight, error) {
 	rows, err := g.pool.Query(ctx, `
 		SELECT
 			topic,
 			count(*)        AS mention_count,
-			array_agg(a.id) AS artifact_ids
-		FROM artifacts a
+			array_agg(a.id) AS record_ids
+		FROM records a
 		JOIN sources s ON s.id = a.source_id
 		CROSS JOIN LATERAL jsonb_array_elements_text(a.enrichment->'topics') AS topic
 		WHERE s.kg_id = $1::uuid
@@ -75,17 +75,17 @@ func (g *Generator) findTrendInsights(ctx context.Context, kgID string) ([]*db.I
 	for rows.Next() {
 		var topic string
 		var count int
-		var artifactIDs []string
-		if err := rows.Scan(&topic, &count, &artifactIDs); err != nil {
+		var recordIDs []string
+		if err := rows.Scan(&topic, &count, &recordIDs); err != nil {
 			return nil, err
 		}
 		insights = append(insights, &db.Insight{
-			Type:        "trend",
-			Title:       fmt.Sprintf("'%s' is trending", topic),
-			Body:        fmt.Sprintf("'%s' appeared in %d articles in the last 24 hours.", topic, count),
-			Topic:       topic,
-			ArtifactIDs: artifactIDs,
-			Confidence:  min(0.5+float64(count)*0.05, 1.0),
+			Type:       "trend",
+			Title:      fmt.Sprintf("'%s' is trending", topic),
+			Body:       fmt.Sprintf("'%s' appeared in %d articles in the last 24 hours.", topic, count),
+			Topic:      topic,
+			RecordIDs:  recordIDs,
+			Confidence: min(0.5+float64(count)*0.05, 1.0),
 		})
 	}
 	return insights, rows.Err()

@@ -12,7 +12,7 @@ const defaultStageMaxRetry = 3
 
 // Enqueuer hides asynq-specific task construction and queue policy from handlers.
 type Enqueuer interface {
-	EnqueueStage(ctx context.Context, taskType, artifactID string, payload []byte) error
+	EnqueueStage(ctx context.Context, taskType, recordID string, payload []byte) error
 }
 
 type asynqEnqueuer struct {
@@ -23,12 +23,12 @@ func NewAsynqEnqueuer(client *asynq.Client) Enqueuer {
 	return &asynqEnqueuer{client: client}
 }
 
-func (e *asynqEnqueuer) EnqueueStage(ctx context.Context, taskType, artifactID string, payload []byte) error {
+func (e *asynqEnqueuer) EnqueueStage(ctx context.Context, taskType, recordID string, payload []byte) error {
 	task := asynq.NewTask(taskType, payload)
 	_, err := e.client.EnqueueContext(ctx, task,
 		asynq.Queue(taskType),
 		asynq.MaxRetry(defaultStageMaxRetry),
-		asynq.TaskID(stageTaskID(artifactID, taskType)),
+		asynq.TaskID(stageTaskID(recordID, taskType)),
 	)
 	if errors.Is(err, asynq.ErrTaskIDConflict) {
 		return nil
@@ -36,8 +36,8 @@ func (e *asynqEnqueuer) EnqueueStage(ctx context.Context, taskType, artifactID s
 	return err
 }
 
-func stageTaskID(artifactID, taskType string) string {
-	return artifactID + ":" + taskType
+func stageTaskID(recordID, taskType string) string {
+	return recordID + ":" + taskType
 }
 
 // RetryDelay is the asynq RetryDelayFunc for pipeline tasks.

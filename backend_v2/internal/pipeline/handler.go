@@ -16,13 +16,13 @@ import (
 // Adding a new pipeline variant means implementing a new ResultHandler — no other changes.
 type FullPipelineHandler struct {
 	enqueuer Enqueuer
-	repo     db.ArtifactRepository
+	repo     db.RecordRepository
 	insights chan<- string
 }
 
 func NewFullPipelineHandler(
 	enqueuer Enqueuer,
-	repo db.ArtifactRepository,
+	repo db.RecordRepository,
 	insights chan<- string,
 ) *FullPipelineHandler {
 	return &FullPipelineHandler{enqueuer: enqueuer, repo: repo, insights: insights}
@@ -31,7 +31,7 @@ func NewFullPipelineHandler(
 func (h *FullPipelineHandler) OnDone(ctx context.Context, result Result) error {
 	log := slog.With(
 		"component", "orchestrator",
-		"artifact_id", result.ArtifactID,
+		"record_id", result.RecordID,
 		"correlation_id", result.CorrelationID,
 		"kg_id", result.KgID,
 		"result_type", result.Type,
@@ -44,19 +44,19 @@ func (h *FullPipelineHandler) OnDone(ctx context.Context, result Result) error {
 	switch result.Type {
 	case ResultFirstPassSearchNeeded:
 		log.Info("orchestrator: routing to search")
-		return h.enqueue(ctx, TaskSearch, result.ArtifactID, result.Payload)
+		return h.enqueue(ctx, TaskSearch, result.RecordID, result.Payload)
 
 	case ResultFirstPassEmbedReady:
 		log.Info("orchestrator: skipping search, routing to embed")
-		return h.enqueue(ctx, TaskEmbed, result.ArtifactID, result.Payload)
+		return h.enqueue(ctx, TaskEmbed, result.RecordID, result.Payload)
 
 	case ResultSearchDone:
 		log.Info("orchestrator: routing to embed")
-		return h.enqueue(ctx, TaskEmbed, result.ArtifactID, result.Payload)
+		return h.enqueue(ctx, TaskEmbed, result.RecordID, result.Payload)
 
 	case ResultEmbedDone:
 		log.Info("orchestrator: routing to graph")
-		return h.enqueue(ctx, TaskGraph, result.ArtifactID, result.Payload)
+		return h.enqueue(ctx, TaskGraph, result.RecordID, result.Payload)
 
 	case ResultGraphDone:
 		log.Info("orchestrator: pipeline complete, persisting")
@@ -67,8 +67,8 @@ func (h *FullPipelineHandler) OnDone(ctx context.Context, result Result) error {
 	}
 }
 
-func (h *FullPipelineHandler) enqueue(ctx context.Context, taskType string, artifactID string, payload []byte) error {
-	return h.enqueuer.EnqueueStage(ctx, taskType, artifactID, payload)
+func (h *FullPipelineHandler) enqueue(ctx context.Context, taskType string, recordID string, payload []byte) error {
+	return h.enqueuer.EnqueueStage(ctx, taskType, recordID, payload)
 }
 
 func (h *FullPipelineHandler) handleError(ctx context.Context, log *slog.Logger, result Result) error {
@@ -97,7 +97,7 @@ func (h *FullPipelineHandler) handleError(ctx context.Context, log *slog.Logger,
 }
 
 func (h *FullPipelineHandler) persist(ctx context.Context, log *slog.Logger, payload []byte) error {
-	var p ArtifactPayload
+	var p RecordPayload
 	if err := json.Unmarshal(payload, &p); err != nil {
 		return fmt.Errorf("persist: unmarshal: %w", err)
 	}
@@ -120,8 +120,8 @@ func (h *FullPipelineHandler) persist(ctx context.Context, log *slog.Logger, pay
 		return fmt.Errorf("persist: marshal enrichment: %w", err)
 	}
 
-	a := &db.CompletedArtifact{
-		ID:         p.ArtifactID,
+	a := &db.CompletedRecord{
+		ID:         p.RecordID,
 		ExternalID: p.ExternalID,
 		SourceID:   p.SourceID,
 		Type:       p.Type,
@@ -143,7 +143,7 @@ func (h *FullPipelineHandler) persist(ctx context.Context, log *slog.Logger, pay
 	default:
 	}
 
-	log.Info("orchestrator: artifact persisted",
+	log.Info("orchestrator: record persisted",
 		"correlation_id", p.CorrelationID,
 		"external_id", p.ExternalID,
 		"source_id", p.SourceID,

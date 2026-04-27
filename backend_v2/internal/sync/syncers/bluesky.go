@@ -173,7 +173,7 @@ func (b *BlueskySyncer) Execute(ctx context.Context, job *db.SyncJob) (*sync.Res
 			newestAcceptedCreatedAt = post.Record.CreatedAt
 		}
 
-		result.Artifacts = append(result.Artifacts, &sync.RawArtifact{
+		result.Records = append(result.Records, &sync.RawRecord{
 			ExternalID: post.URI,
 			Type:       "post",
 			Label:      blueskyLabel(post),

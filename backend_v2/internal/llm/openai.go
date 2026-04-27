@@ -20,23 +20,23 @@ var firstPassSchema = map[string]any{
 			"description": "1-2 sentence summary of the content",
 		},
 		"entities": map[string]any{
-			"type":  "array",
-			"items": map[string]any{"type": "string"},
+			"type":        "array",
+			"items":       map[string]any{"type": "string"},
 			"description": "people, organizations, tools, or concepts explicitly mentioned",
 		},
 		"topics": map[string]any{
-			"type":  "array",
-			"items": map[string]any{"type": "string"},
+			"type":        "array",
+			"items":       map[string]any{"type": "string"},
 			"description": "2-5 high-level topic tags",
 		},
 		"key_claims": map[string]any{
-			"type":  "array",
-			"items": map[string]any{"type": "string"},
+			"type":        "array",
+			"items":       map[string]any{"type": "string"},
 			"description": "main points or arguments stated",
 		},
 		"low_confidence_entities": map[string]any{
-			"type":  "array",
-			"items": map[string]any{"type": "string"},
+			"type":        "array",
+			"items":       map[string]any{"type": "string"},
 			"description": "entities that are unknown, niche, or potentially recent",
 		},
 	},
@@ -53,14 +53,14 @@ func NewOpenAIEnricher(apiKey string) *OpenAIEnricher {
 	return &OpenAIEnricher{client: openai.NewClient(option.WithAPIKey(apiKey))}
 }
 
-func (e *OpenAIEnricher) Enrich(ctx context.Context, content, artifactType string) (*EnrichResult, error) {
+func (e *OpenAIEnricher) Enrich(ctx context.Context, content, recordType string) (*EnrichResult, error) {
 	resp, err := e.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Model: openai.ChatModelGPT4oMini,
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage("You are a research intelligence assistant."),
 			openai.UserMessage(fmt.Sprintf(
 				"Analyze this %s and extract structured information.\n\nContent: %s",
-				artifactType, content,
+				recordType, content,
 			)),
 		},
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{

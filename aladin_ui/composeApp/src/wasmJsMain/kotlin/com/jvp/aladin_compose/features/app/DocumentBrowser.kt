@@ -22,12 +22,14 @@ import androidx.compose.material.icons.automirrored.sharp.NavigateBefore
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -45,7 +47,7 @@ private val BrowserRowHorizontalPadding = 8.dp
 private val BrowserRowVerticalPadding = 5.dp
 private val BrowserRowContentGap = 6.dp
 private val BrowserScopeHeaderVerticalPadding = 7.dp
-private val BrowserGlyphSize = 22.dp
+private val BrowserGlyphSize = 32.dp
 private val BrowserIconSize = 15.dp
 private val BrowserChevronSize = 16.dp
 private val BrowserMarkerHeight = 20.dp
@@ -55,7 +57,9 @@ private val BrowserIndent = 16.dp
 fun DocumentBrowser(state: DocumentBrowserState) {
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 10.dp)) {
         BrowserScopeBreadcrumbRow(state)
-        Spacer(modifier = Modifier.size(10.dp))
+        Spacer(modifier = Modifier.size(8.dp))
+        HorizontalDivider(color = AladinColor.Divider)
+        Spacer(modifier = Modifier.size(8.dp))
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(3.dp),
@@ -191,8 +195,8 @@ private fun BrowserArtifactRow(
                     colors =
                         AladinInteractionDefaults.colors(
                             hovered = AladinColor.ControlHover,
-                            selected = AladinColor.InkSurface,
-                            selectedHovered = AladinColor.InkSurfaceHover,
+                            selected = AladinColor.RowSelected,
+                            selectedHovered = AladinColor.ControlPressed,
                         ),
                     onClick = onClick,
                 )
@@ -205,7 +209,7 @@ private fun BrowserArtifactRow(
         Column(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.weight(1f)) {
             Text(
                 item.title,
-                color = if (selected) AladinColor.OnInkSurface else AladinColor.Ink,
+                color = AladinColor.Ink,
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -213,7 +217,7 @@ private fun BrowserArtifactRow(
             Text(
                 artifact?.updatedLabel ?: "Linked item",
                 style = MaterialTheme.typography.bodySmall,
-                color = if (selected) AladinColor.OnInkSurface.copy(alpha = 0.72f) else AladinColor.InkMuted,
+                color = if (selected) AladinColor.InkSecondary else AladinColor.InkMuted,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -259,8 +263,8 @@ private fun BrowserFolderRow(
                     colors =
                         AladinInteractionDefaults.colors(
                             hovered = AladinColor.ControlHover,
-                            selected = AladinColor.InkSurface,
-                            selectedHovered = AladinColor.InkSurfaceHover,
+                            selected = AladinColor.RowSelected,
+                            selectedHovered = AladinColor.ControlPressed,
                         ),
                     onClick = onClick,
                 )
@@ -278,13 +282,13 @@ private fun BrowserFolderRow(
         Icon(
             imageVector = Icons.Outlined.Folder,
             contentDescription = null,
-            tint = if (selected) AladinColor.OnInkSurface else AladinColor.InkSecondary,
+            tint = if (selected) AladinColor.Ink else AladinColor.InkSecondary,
             modifier = Modifier.size(BrowserIconSize),
         )
         Column(verticalArrangement = Arrangement.spacedBy(1.dp), modifier = Modifier.weight(1f)) {
             Text(
                 item.title,
-                color = if (selected) AladinColor.OnInkSurface else AladinColor.Ink,
+                color = AladinColor.Ink,
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -313,8 +317,8 @@ private fun BrowserGenericRow(
                     colors =
                         AladinInteractionDefaults.colors(
                             hovered = AladinColor.ControlHover,
-                            selected = AladinColor.InkSurface,
-                            selectedHovered = AladinColor.InkSurfaceHover,
+                            selected = AladinColor.RowSelected,
+                            selectedHovered = AladinColor.ControlPressed,
                         ),
                     onClick = onClick,
                 )
@@ -332,12 +336,12 @@ private fun BrowserGenericRow(
         Icon(
             imageVector = Icons.AutoMirrored.Outlined.InsertDriveFile,
             contentDescription = null,
-            tint = if (selected) AladinColor.OnInkSurface else AladinColor.InkSecondary,
+            tint = if (selected) AladinColor.Ink else AladinColor.InkSecondary,
             modifier = Modifier.size(BrowserIconSize),
         )
         Text(
             item.title,
-            color = if (selected) AladinColor.OnInkSurface else AladinColor.Ink,
+            color = AladinColor.Ink,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -364,12 +368,8 @@ private fun ExpandToggle(
                     shape = RoundedCornerShape(SharpRadius),
                     colors =
                         AladinInteractionDefaults.colors(
-                            hovered =
-                                if (selected) AladinColor.OnInkSurface.copy(alpha = 0.12f)
-                                else AladinColor.ControlHover,
-                            pressed =
-                                if (selected) AladinColor.OnInkSurface.copy(alpha = 0.18f)
-                                else AladinColor.ControlPressed,
+                            hovered = AladinColor.ControlHover,
+                            pressed = AladinColor.ControlPressed,
                         ),
                     onClick = onClick,
                 ),
@@ -378,7 +378,7 @@ private fun ExpandToggle(
         Icon(
             imageVector = if (expanded) Icons.Outlined.KeyboardArrowDown else Icons.AutoMirrored.Outlined.KeyboardArrowRight,
             contentDescription = if (expanded) "Collapse" else "Expand",
-            tint = if (selected) AladinColor.OnInkSurface.copy(alpha = 0.72f) else AladinColor.InkMuted,
+            tint = if (selected) AladinColor.InkSecondary else AladinColor.InkMuted,
             modifier = Modifier.size(14.dp),
         )
     }
@@ -391,8 +391,7 @@ private fun RowSelectionMarker(selected: Boolean) {
             Modifier.width(2.dp)
                 .height(BrowserMarkerHeight)
                 .background(
-                    if (selected) AladinColor.OnInkSurface.copy(alpha = 0.42f)
-                    else androidx.compose.ui.graphics.Color.Transparent,
+                    if (selected) AladinColor.ActiveMarker else Color.Transparent,
                     RoundedCornerShape(999.dp),
                 )
     )
@@ -406,7 +405,7 @@ fun ArtifactGlyph(kind: ArtifactKind, selected: Boolean = false) {
         modifier =
             Modifier.size(BrowserGlyphSize)
                 .background(
-                    if (selected) AladinColor.OnInkSurface.copy(alpha = 0.14f)
+                    if (selected) AladinColor.ControlPressed
                     else AladinColor.ControlHover,
                     RoundedCornerShape(SharpRadius),
                 ),
@@ -418,7 +417,7 @@ fun ArtifactGlyph(kind: ArtifactKind, selected: Boolean = false) {
                 ArtifactKind.Link -> "L"
                 ArtifactKind.Voice -> "V"
             },
-            color = if (selected) AladinColor.OnInkSurface else AladinColor.InkSecondary,
+            color = if (selected) AladinColor.Ink else AladinColor.InkSecondary,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.SemiBold,
         )

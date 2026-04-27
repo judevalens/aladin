@@ -165,7 +165,7 @@ func (f *fakeEnqueuer) EnqueueSync(ctx context.Context, queueName, taskType stri
 	return nil
 }
 
-func (f *fakeEnqueuer) EnqueueFirstPass(ctx context.Context, artifactID string, payload []byte) error {
+func (f *fakeEnqueuer) EnqueueFirstPass(ctx context.Context, recordID string, payload []byte) error {
 	return nil
 }
 
@@ -372,7 +372,7 @@ func TestQueueClaimBatchContinuesExistingActiveCycleWhenRefreshNotDue(t *testing
 	}
 }
 
-func TestQueueMarksAcceptedArtifactsSeenAfterEnqueue(t *testing.T) {
+func TestQueueMarksAcceptedRecordsSeenAfterEnqueue(t *testing.T) {
 	t.Parallel()
 
 	repo := &fakeSourceRepo{}
@@ -382,7 +382,7 @@ func TestQueueMarksAcceptedArtifactsSeenAfterEnqueue(t *testing.T) {
 		sourceType: "reddit",
 		executeFn: func(ctx context.Context, job *db.SyncJob) (*Result, error) {
 			return &Result{
-				Artifacts: []*RawArtifact{
+				Records: []*RawRecord{
 					{ExternalID: "a-1", Type: "post"},
 					{ExternalID: "a-2", Type: "post"},
 				},
@@ -535,7 +535,7 @@ func TestOverlappingCyclesNewerCycleCompletesThenOlderCycleResumes(t *testing.T)
 			switch job.CycleID {
 			case olderCycle.ID:
 				return &Result{
-					Artifacts: []*RawArtifact{
+					Records: []*RawRecord{
 						{ExternalID: "old-1", Type: "post"},
 					},
 					HasMore:          false,
@@ -550,7 +550,7 @@ func TestOverlappingCyclesNewerCycleCompletesThenOlderCycleResumes(t *testing.T)
 				}
 				page := []string{"new-2", "new-1", "seen-1"}
 				result := &Result{
-					Artifacts:     []*RawArtifact{},
+					Records:       []*RawRecord{},
 					SourceUpdates: map[string]any{},
 					CursorUpdates: map[string]any{},
 					HeadBoundary:  map[string]any{},
@@ -560,7 +560,7 @@ func TestOverlappingCyclesNewerCycleCompletesThenOlderCycleResumes(t *testing.T)
 						result.CompletionReason = CompletionReasonSeenOverlap
 						break
 					}
-					result.Artifacts = append(result.Artifacts, &RawArtifact{ExternalID: id, Type: "post"})
+					result.Records = append(result.Records, &RawRecord{ExternalID: id, Type: "post"})
 					if len(result.HeadBoundary) == 0 {
 						result.HeadBoundary["id"] = id
 					}
@@ -674,7 +674,7 @@ func TestRefreshCycleTakesOverForTwoPagesThenOlderCycleContinues(t *testing.T) {
 			switch job.CycleID {
 			case olderCycle.ID:
 				return &Result{
-					Artifacts: []*RawArtifact{
+					Records: []*RawRecord{
 						{ExternalID: "old-1", Type: "post"},
 					},
 					HasMore:          false,
@@ -686,7 +686,7 @@ func TestRefreshCycleTakesOverForTwoPagesThenOlderCycleContinues(t *testing.T) {
 				after, _ := job.Payload["after"].(string)
 				if after == "" {
 					return &Result{
-						Artifacts: []*RawArtifact{
+						Records: []*RawRecord{
 							{ExternalID: "new-3", Type: "post"},
 							{ExternalID: "new-2", Type: "post"},
 						},
@@ -698,7 +698,7 @@ func TestRefreshCycleTakesOverForTwoPagesThenOlderCycleContinues(t *testing.T) {
 				}
 				if after == "page-2" {
 					return &Result{
-						Artifacts: []*RawArtifact{
+						Records: []*RawRecord{
 							{ExternalID: "new-1", Type: "post"},
 						},
 						HasMore:          false,

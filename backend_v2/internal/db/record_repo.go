@@ -8,18 +8,18 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type pgArtifactRepo struct{ pool *pgxpool.Pool }
+type pgRecordRepo struct{ pool *pgxpool.Pool }
 
-func NewArtifactRepository(pool *pgxpool.Pool) ArtifactRepository {
-	return &pgArtifactRepo{pool}
+func NewRecordRepository(pool *pgxpool.Pool) RecordRepository {
+	return &pgRecordRepo{pool}
 }
 
-// SaveComplete writes a fully-processed artifact to PG in a single INSERT.
+// SaveComplete writes a fully-processed record to PG in a single INSERT.
 // Uses external_id + source_id for dedup — re-fetching the same post is a no-op.
-func (r *pgArtifactRepo) SaveComplete(ctx context.Context, a *CompletedArtifact) error {
+func (r *pgRecordRepo) SaveComplete(ctx context.Context, a *CompletedRecord) error {
 	meta, _ := json.Marshal(a.Metadata)
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO artifacts
+		INSERT INTO records
 			(id, source_id, external_id, type, label, content, source_url,
 			 metadata, enrichment, embedding, status, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10::vector, 'in_graph', NOW())
@@ -36,12 +36,12 @@ func (r *pgArtifactRepo) SaveComplete(ctx context.Context, a *CompletedArtifact)
 }
 
 // ExistsExternal returns a set of which externalIDs already exist for the given source.
-func (r *pgArtifactRepo) ExistsExternal(ctx context.Context, sourceID string, externalIDs []string) (map[string]bool, error) {
+func (r *pgRecordRepo) ExistsExternal(ctx context.Context, sourceID string, externalIDs []string) (map[string]bool, error) {
 	if len(externalIDs) == 0 {
 		return nil, nil
 	}
 	rows, err := r.pool.Query(ctx, `
-		SELECT external_id FROM artifacts
+		SELECT external_id FROM records
 		WHERE source_id = $1 AND external_id = ANY($2)
 	`, sourceID, externalIDs)
 	if err != nil {

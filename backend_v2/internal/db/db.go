@@ -2,18 +2,19 @@ package db
 
 import (
 	"context"
-	"log"
+	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func Connect(ctx context.Context, url string) *pgxpool.Pool {
+func Connect(ctx context.Context, url string) (*pgxpool.Pool, error) {
 	pool, err := pgxpool.New(ctx, url)
 	if err != nil {
-		log.Fatalf("db connect: %v", err)
+		return nil, fmt.Errorf("db connect: %w", err)
 	}
 	if err := pool.Ping(ctx); err != nil {
-		log.Fatalf("db ping: %v", err)
+		pool.Close()
+		return nil, fmt.Errorf("db ping: %w", err)
 	}
-	return pool
+	return pool, nil
 }

@@ -150,7 +150,7 @@ func (e *integrationEnqueuer) EnqueueSync(ctx context.Context, queueName, taskTy
 	return nil
 }
 
-func (e *integrationEnqueuer) EnqueueFirstPass(ctx context.Context, artifactID string, payload []byte) error {
+func (e *integrationEnqueuer) EnqueueFirstPass(ctx context.Context, recordID string, payload []byte) error {
 	return nil
 }
 
@@ -159,11 +159,11 @@ type redditFlowFixture struct {
 }
 
 type redditFlowPage struct {
-	After    string               `json:"after"`
-	Children []redditFlowArtifact `json:"children"`
+	After    string             `json:"after"`
+	Children []redditFlowRecord `json:"children"`
 }
 
-type redditFlowArtifact struct {
+type redditFlowRecord struct {
 	ID         string  `json:"id"`
 	Title      string  `json:"title"`
 	Permalink  string  `json:"permalink"`

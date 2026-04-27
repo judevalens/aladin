@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS snapshots (
     status          TEXT NOT NULL DEFAULT 'processing',
     expected_jobs   INTEGER NOT NULL DEFAULT 0,
     completed_jobs  INTEGER NOT NULL DEFAULT 0,
-    artifact_count  INTEGER NOT NULL DEFAULT 0,
+    record_count  INTEGER NOT NULL DEFAULT 0,
     metadata        JSONB NOT NULL DEFAULT '{}',
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (source_id, version)
@@ -81,7 +81,7 @@ CREATE TABLE IF NOT EXISTS sync_cycles (
     completed_at  TIMESTAMPTZ
 );
 
-CREATE TABLE IF NOT EXISTS artifacts (
+CREATE TABLE IF NOT EXISTS records (
     id              TEXT PRIMARY KEY,
     type            TEXT NOT NULL,
     label           TEXT NOT NULL,
@@ -92,14 +92,27 @@ CREATE TABLE IF NOT EXISTS artifacts (
     snapshot_id     UUID REFERENCES snapshots(id) ON DELETE SET NULL,
     external_id     TEXT,
     version         INTEGER NOT NULL DEFAULT 1,
-    superseded_by   TEXT REFERENCES artifacts(id) ON DELETE SET NULL,
+    superseded_by   TEXT REFERENCES records(id) ON DELETE SET NULL,
     embedding       vector(1536),
     metadata        JSONB NOT NULL DEFAULT '{}',
     relevance_score FLOAT,
     status          TEXT NOT NULL DEFAULT 'pending',
-    parent_id       TEXT REFERENCES artifacts(id) ON DELETE CASCADE,
+    parent_id       TEXT REFERENCES records(id) ON DELETE CASCADE,
     user_status     TEXT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS artifacts (
+    id          TEXT PRIMARY KEY,
+    user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    type        TEXT NOT NULL,
+    title       TEXT NOT NULL,
+    content     TEXT NOT NULL,
+    summary     TEXT,
+    source_url  TEXT,
+    metadata    JSONB NOT NULL DEFAULT '{}',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS insights (
@@ -108,7 +121,7 @@ CREATE TABLE IF NOT EXISTS insights (
     type        TEXT NOT NULL,
     title       TEXT NOT NULL,
     body        TEXT NOT NULL,
-    artifact_ids JSONB NOT NULL DEFAULT '[]',
+    record_ids JSONB NOT NULL DEFAULT '[]',
     entity      TEXT,
     topic       TEXT,
     confidence  FLOAT NOT NULL DEFAULT 0.8,
@@ -122,31 +135,35 @@ CREATE INDEX IF NOT EXISTS idx_sources_claimable   ON sources (last_synced_at) W
 CREATE INDEX IF NOT EXISTS idx_sources_scheduler   ON sources (last_picked_at, last_synced_at, created_at) WHERE sync_mode = 'poll' AND sync_state = 'active' AND sync_status = 'idle';
 CREATE INDEX IF NOT EXISTS idx_sync_cycles_source_active ON sync_cycles (source_id, created_at) WHERE status IN ('active', 'running');
 CREATE INDEX IF NOT EXISTS idx_snapshots_source    ON snapshots (source_id);
-CREATE INDEX IF NOT EXISTS idx_artifacts_source    ON artifacts (source_id);
-CREATE INDEX IF NOT EXISTS idx_artifacts_snapshot  ON artifacts (snapshot_id);
-CREATE INDEX IF NOT EXISTS idx_artifacts_external  ON artifacts (source_id, external_id) WHERE external_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_artifacts_pending   ON artifacts (created_at) WHERE status = 'pending';
-CREATE INDEX IF NOT EXISTS idx_artifacts_parent    ON artifacts (parent_id) WHERE parent_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_artifacts_top_level ON artifacts (source_id, created_at) WHERE parent_id IS NULL;
+CREATE INDEX IF NOT EXISTS idx_records_source    ON records (source_id);
+CREATE INDEX IF NOT EXISTS idx_records_snapshot  ON records (snapshot_id);
+CREATE INDEX IF NOT EXISTS idx_records_external  ON records (source_id, external_id) WHERE external_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_records_pending   ON records (created_at) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_records_parent    ON records (parent_id) WHERE parent_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_records_top_level ON records (source_id, created_at) WHERE parent_id IS NULL;
 CREATE INDEX IF NOT EXISTS idx_insights_kg          ON insights (kg_id);
 CREATE INDEX IF NOT EXISTS idx_insights_user_status ON insights (user_status);
-CREATE INDEX IF NOT EXISTS idx_artifacts_user_status ON artifacts (user_status) WHERE user_status IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_artifacts_pipeline_status ON artifacts (status, created_at) WHERE status IN ('pending', 'enriched', 'embedded');
+CREATE INDEX IF NOT EXISTS idx_records_user_status ON records (user_status) WHERE user_status IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_records_pipeline_status ON records (status, created_at) WHERE status IN ('pending', 'enriched', 'embedded');
+CREATE INDEX IF NOT EXISTS idx_artifacts_user_updated ON artifacts (user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_artifacts_type ON artifacts (type);
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_artifacts_source_external ON artifacts (source_id, external_id) WHERE external_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_records_source_external ON records (source_id, external_id) WHERE external_id IS NOT NULL;
 
 -- +goose Down
-DROP INDEX IF EXISTS uq_artifacts_source_external;
-DROP INDEX IF EXISTS idx_artifacts_pipeline_status;
-DROP INDEX IF EXISTS idx_artifacts_user_status;
+DROP INDEX IF EXISTS uq_records_source_external;
+DROP INDEX IF EXISTS idx_artifacts_type;
+DROP INDEX IF EXISTS idx_artifacts_user_updated;
+DROP INDEX IF EXISTS idx_records_pipeline_status;
+DROP INDEX IF EXISTS idx_records_user_status;
 DROP INDEX IF EXISTS idx_insights_user_status;
 DROP INDEX IF EXISTS idx_insights_kg;
-DROP INDEX IF EXISTS idx_artifacts_top_level;
-DROP INDEX IF EXISTS idx_artifacts_parent;
-DROP INDEX IF EXISTS idx_artifacts_pending;
-DROP INDEX IF EXISTS idx_artifacts_external;
-DROP INDEX IF EXISTS idx_artifacts_snapshot;
-DROP INDEX IF EXISTS idx_artifacts_source;
+DROP INDEX IF EXISTS idx_records_top_level;
+DROP INDEX IF EXISTS idx_records_parent;
+DROP INDEX IF EXISTS idx_records_pending;
+DROP INDEX IF EXISTS idx_records_external;
+DROP INDEX IF EXISTS idx_records_snapshot;
+DROP INDEX IF EXISTS idx_records_source;
 DROP INDEX IF EXISTS idx_snapshots_source;
 DROP INDEX IF EXISTS idx_sources_claimable;
 DROP INDEX IF EXISTS idx_sources_scheduler;
@@ -154,6 +171,7 @@ DROP INDEX IF EXISTS idx_sources_due;
 DROP INDEX IF EXISTS idx_sync_cycles_source_active;
 DROP TABLE IF EXISTS insights;
 DROP TABLE IF EXISTS artifacts;
+DROP TABLE IF EXISTS records;
 DROP TABLE IF EXISTS sync_cycles;
 DROP TABLE IF EXISTS snapshots;
 DROP TABLE IF EXISTS sources;

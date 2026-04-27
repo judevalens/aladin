@@ -21,11 +21,11 @@ func NewFirstPassWorker(enricher llm.Enricher, limiter *ratelimit.Limiter) *Firs
 	return &FirstPassWorker{enricher: enricher, limiter: limiter}
 }
 
-func (w *FirstPassWorker) TaskType()    string { return pipeline.TaskFirstPass }
-func (w *FirstPassWorker) Concurrency() int    { return 10 }
+func (w *FirstPassWorker) TaskType() string { return pipeline.TaskFirstPass }
+func (w *FirstPassWorker) Concurrency() int { return 10 }
 
 func (w *FirstPassWorker) Run(ctx context.Context, raw []byte) pipeline.Result {
-	var p pipeline.ArtifactPayload
+	var p pipeline.RecordPayload
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return pipeline.Result{
 			TaskType: pipeline.TaskFirstPass,
@@ -36,7 +36,7 @@ func (w *FirstPassWorker) Run(ctx context.Context, raw []byte) pipeline.Result {
 	log := slog.With(
 		"component", "pipeline",
 		"stage", "first_pass",
-		"artifact_id", p.ArtifactID,
+		"record_id", p.RecordID,
 		"correlation_id", p.CorrelationID,
 		"kg_id", p.KgID,
 	)
@@ -58,10 +58,10 @@ func (w *FirstPassWorker) Run(ctx context.Context, raw []byte) pipeline.Result {
 		return errResult(pipeline.TaskFirstPass, p, pipeline.ErrTransient{Cause: fmt.Errorf("enrich: %w", err)})
 	}
 
-	p.Summary               = result.Summary
-	p.Entities              = result.Entities
-	p.Topics                = result.Topics
-	p.KeyClaims             = result.KeyClaims
+	p.Summary = result.Summary
+	p.Entities = result.Entities
+	p.Topics = result.Topics
+	p.KeyClaims = result.KeyClaims
 	p.LowConfidenceEntities = result.LowConfidenceEntities
 
 	log.Info("first_pass: complete",
@@ -81,21 +81,21 @@ func (w *FirstPassWorker) Run(ctx context.Context, raw []byte) pipeline.Result {
 	}
 
 	return pipeline.Result{
-		Type:       resultType,
-		TaskType:   pipeline.TaskFirstPass,
-		Payload:    payload,
-		ArtifactID: p.ArtifactID,
+		Type:          resultType,
+		TaskType:      pipeline.TaskFirstPass,
+		Payload:       payload,
+		RecordID:      p.RecordID,
 		CorrelationID: p.CorrelationID,
-		KgID:       p.KgID,
+		KgID:          p.KgID,
 	}
 }
 
-func errResult(taskType string, p pipeline.ArtifactPayload, err error) pipeline.Result {
+func errResult(taskType string, p pipeline.RecordPayload, err error) pipeline.Result {
 	return pipeline.Result{
-		TaskType:   taskType,
-		Err:        err,
-		ArtifactID: p.ArtifactID,
+		TaskType:      taskType,
+		Err:           err,
+		RecordID:      p.RecordID,
 		CorrelationID: p.CorrelationID,
-		KgID:       p.KgID,
+		KgID:          p.KgID,
 	}
 }

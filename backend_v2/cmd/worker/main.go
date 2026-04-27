@@ -41,12 +41,20 @@ func main() {
 	w := io.MultiWriter(os.Stdout, logFile)
 	slog.SetDefault(slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{Level: level})))
 
-	cfg := config.LoadWorker()
+	cfg, err := config.LoadWorker()
+	if err != nil {
+		slog.Error("worker: config load failed", "component", "worker", "err", err)
+		os.Exit(1)
+	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
 	// Postgres
-	pool := db.Connect(ctx, cfg.DatabaseURL)
+	pool, err := db.Connect(ctx, cfg.DatabaseURL)
+	if err != nil {
+		slog.Error("worker: db connect failed", "component", "worker", "err", err)
+		os.Exit(1)
+	}
 	defer pool.Close()
 
 	if err := db.Migrate(ctx, pool); err != nil {
@@ -73,7 +81,7 @@ func main() {
 	defer asynqClient.Close()
 
 	// Repositories
-	artifactRepo := db.NewArtifactRepository(pool)
+	recordRepo := db.NewRecordRepository(pool)
 	sourceRepo := db.NewSourceRepository(pool)
 	cycleRepo := db.NewSyncCycleRepository(pool)
 	insightRepo := db.NewInsightRepository(pool)
@@ -113,7 +121,7 @@ func main() {
 
 	// Pipeline
 	pipelineEnqueuer := pipeline.NewAsynqEnqueuer(asynqClient)
-	handler := pipeline.NewFullPipelineHandler(pipelineEnqueuer, artifactRepo, insightCh)
+	handler := pipeline.NewFullPipelineHandler(pipelineEnqueuer, recordRepo, insightCh)
 	orch := pipeline.NewOrchestrator(handler)
 	orch.Add(workers.NewFirstPassWorker(enricher, openaiLimiter))
 	orch.Add(workers.NewSearchWorker(cachedSearcher))

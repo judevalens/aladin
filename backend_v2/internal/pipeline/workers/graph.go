@@ -11,9 +11,9 @@ import (
 	"aladin/backend_v2/internal/pipeline"
 )
 
-// GraphPromoter writes an enriched artifact into Neo4j.
+// GraphPromoter writes an enriched record into Neo4j.
 type GraphPromoter interface {
-	Promote(ctx context.Context, artifact *db.EmbeddedArtifact) error
+	Promote(ctx context.Context, record *db.EmbeddedRecord) error
 }
 
 type GraphWorker struct {
@@ -24,11 +24,11 @@ func NewGraphWorker(promoter GraphPromoter) *GraphWorker {
 	return &GraphWorker{promoter: promoter}
 }
 
-func (w *GraphWorker) TaskType()    string { return pipeline.TaskGraph }
-func (w *GraphWorker) Concurrency() int    { return 5 }
+func (w *GraphWorker) TaskType() string { return pipeline.TaskGraph }
+func (w *GraphWorker) Concurrency() int { return 5 }
 
 func (w *GraphWorker) Run(ctx context.Context, raw []byte) pipeline.Result {
-	var p pipeline.ArtifactPayload
+	var p pipeline.RecordPayload
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return pipeline.Result{
 			TaskType: pipeline.TaskGraph,
@@ -39,7 +39,7 @@ func (w *GraphWorker) Run(ctx context.Context, raw []byte) pipeline.Result {
 	log := slog.With(
 		"component", "pipeline",
 		"stage", "graph",
-		"artifact_id", p.ArtifactID,
+		"record_id", p.RecordID,
 		"correlation_id", p.CorrelationID,
 		"kg_id", p.KgID,
 	)
@@ -56,8 +56,8 @@ func (w *GraphWorker) Run(ctx context.Context, raw []byte) pipeline.Result {
 			enrichment["search_context"] = p.SearchResolved
 		}
 
-		artifact := &db.EmbeddedArtifact{
-			ID:         p.ArtifactID,
+		record := &db.EmbeddedRecord{
+			ID:         p.RecordID,
 			Type:       p.Type,
 			Label:      p.Label,
 			SourceURL:  p.SourceURL,
@@ -65,7 +65,7 @@ func (w *GraphWorker) Run(ctx context.Context, raw []byte) pipeline.Result {
 			CreatedAt:  time.Now(),
 		}
 
-		if err := w.promoter.Promote(ctx, artifact); err != nil {
+		if err := w.promoter.Promote(ctx, record); err != nil {
 			log.Error("graph: promote failed", "err", err)
 			return errResult(pipeline.TaskGraph, p, pipeline.ErrTransient{Cause: fmt.Errorf("promote: %w", err)})
 		}
@@ -79,11 +79,11 @@ func (w *GraphWorker) Run(ctx context.Context, raw []byte) pipeline.Result {
 	}
 
 	return pipeline.Result{
-		Type:       pipeline.ResultGraphDone,
-		TaskType:   pipeline.TaskGraph,
-		Payload:    payload,
-		ArtifactID: p.ArtifactID,
+		Type:          pipeline.ResultGraphDone,
+		TaskType:      pipeline.TaskGraph,
+		Payload:       payload,
+		RecordID:      p.RecordID,
 		CorrelationID: p.CorrelationID,
-		KgID:       p.KgID,
+		KgID:          p.KgID,
 	}
 }

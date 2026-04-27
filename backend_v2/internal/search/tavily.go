@@ -18,9 +18,11 @@ func (e *ErrHTTP) Error() string {
 	return fmt.Sprintf("tavily status %d", e.StatusCode)
 }
 
-func (e *ErrHTTP) IsRateLimit() bool  { return e.StatusCode == http.StatusTooManyRequests }
-func (e *ErrHTTP) IsPermanent() bool  { return e.StatusCode == http.StatusUnauthorized || e.StatusCode == http.StatusForbidden }
-func (e *ErrHTTP) IsTransient() bool  { return !e.IsRateLimit() && !e.IsPermanent() }
+func (e *ErrHTTP) IsRateLimit() bool { return e.StatusCode == http.StatusTooManyRequests }
+func (e *ErrHTTP) IsPermanent() bool {
+	return e.StatusCode == http.StatusUnauthorized || e.StatusCode == http.StatusForbidden
+}
+func (e *ErrHTTP) IsTransient() bool { return !e.IsRateLimit() && !e.IsPermanent() }
 
 const tavilyEndpoint = "https://api.tavily.com/search"
 
@@ -37,9 +39,9 @@ func NewTavilyClient(apiKey string) *TavilyClient {
 }
 
 type SearchResult struct {
-	Title   string `json:"title"`
-	URL     string `json:"url"`
-	Content string `json:"content"`
+	Title   string  `json:"title"`
+	URL     string  `json:"url"`
+	Content string  `json:"content"`
 	Score   float64 `json:"score"`
 }
 

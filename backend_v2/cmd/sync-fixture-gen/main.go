@@ -13,12 +13,12 @@ type fixtureSpec struct {
 }
 
 type redditPageSpec struct {
-	Cursor     string               `json:"cursor"`
-	NextCursor string               `json:"next_cursor"`
-	Children   []redditArtifactSpec `json:"children"`
+	Cursor     string             `json:"cursor"`
+	NextCursor string             `json:"next_cursor"`
+	Children   []redditRecordSpec `json:"children"`
 }
 
-type redditArtifactSpec struct {
+type redditRecordSpec struct {
 	ID         string  `json:"id"`
 	Title      string  `json:"title"`
 	Permalink  string  `json:"permalink"`
@@ -31,8 +31,8 @@ type redditFixture struct {
 }
 
 type redditFixturePage struct {
-	After    string               `json:"after"`
-	Children []redditArtifactSpec `json:"children"`
+	After    string             `json:"after"`
+	Children []redditRecordSpec `json:"children"`
 }
 
 func main() {
@@ -87,7 +87,7 @@ func buildFixture(spec fixtureSpec) (*redditFixture, error) {
 		}
 		fixture.Pages[page.Cursor] = redditFixturePage{
 			After:    page.NextCursor,
-			Children: append([]redditArtifactSpec(nil), page.Children...),
+			Children: append([]redditRecordSpec(nil), page.Children...),
 		}
 	}
 	return fixture, nil

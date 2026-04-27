@@ -13,8 +13,8 @@ import (
 // skipTypes are containers that don't need graph nodes.
 var skipTypes = map[string]bool{"feed": true}
 
-// Promoter writes enriched artifacts into Neo4j.
-// Uses MERGE everywhere — safe to call multiple times for the same artifact.
+// Promoter writes enriched records into Neo4j.
+// Uses MERGE everywhere — safe to call multiple times for the same record.
 type Promoter struct {
 	driver neo4j.DriverWithContext
 }
@@ -31,7 +31,7 @@ func (p *Promoter) Close(ctx context.Context) {
 	p.driver.Close(ctx)
 }
 
-func (p *Promoter) Promote(ctx context.Context, a *db.EmbeddedArtifact) error {
+func (p *Promoter) Promote(ctx context.Context, a *db.EmbeddedRecord) error {
 	if skipTypes[a.Type] {
 		return nil
 	}
@@ -40,9 +40,9 @@ func (p *Promoter) Promote(ctx context.Context, a *db.EmbeddedArtifact) error {
 	defer session.Close(ctx)
 
 	_, err := session.ExecuteWrite(ctx, func(tx neo4j.ManagedTransaction) (any, error) {
-		// Upsert artifact node
+		// Upsert record node
 		if _, err := tx.Run(ctx, `
-			MERGE (a:Artifact {id: $id})
+			MERGE (a:Record {id: $id})
 			SET a.label    = $label,
 			    a.type     = $type,
 			    a.sourceUrl = $sourceUrl,
@@ -65,7 +65,7 @@ func (p *Promoter) Promote(ctx context.Context, a *db.EmbeddedArtifact) error {
 			if _, err := tx.Run(ctx, `
 				MERGE (e:Entity {name: $name})
 				WITH e
-				MATCH (a:Artifact {id: $aid})
+				MATCH (a:Record {id: $aid})
 				MERGE (a)-[:MENTIONS]->(e)
 			`, map[string]any{"name": entity, "aid": a.ID}); err != nil {
 				return nil, err
@@ -80,7 +80,7 @@ func (p *Promoter) Promote(ctx context.Context, a *db.EmbeddedArtifact) error {
 			if _, err := tx.Run(ctx, `
 				MERGE (t:Topic {name: $name})
 				WITH t
-				MATCH (a:Artifact {id: $aid})
+				MATCH (a:Record {id: $aid})
 				MERGE (a)-[:TAGGED_WITH]->(t)
 			`, map[string]any{"name": topic, "aid": a.ID}); err != nil {
 				return nil, err
@@ -92,15 +92,15 @@ func (p *Promoter) Promote(ctx context.Context, a *db.EmbeddedArtifact) error {
 	if err != nil {
 		slog.Error("graph: promote failed",
 			"component", "graph",
-			"artifact_id", a.ID,
+			"record_id", a.ID,
 			"err", err,
 		)
 		return fmt.Errorf("neo4j promote: %w", err)
 	}
 
-	slog.Debug("graph: promoted artifact",
+	slog.Debug("graph: promoted record",
 		"component", "graph",
-		"artifact_id", a.ID,
+		"record_id", a.ID,
 		"entity_count", len(stringsFromEnrichment(a.Enrichment, "entities")),
 		"topic_count", len(stringsFromEnrichment(a.Enrichment, "topics")),
 	)

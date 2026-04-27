@@ -7,6 +7,7 @@ import io.ktor.client.plugins.ServerResponseException
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
+import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
@@ -67,6 +68,32 @@ object ApiClient {
         }.body()
     }
 
+    suspend fun getUserArtifacts(): List<UserArtifact> = call {
+        httpClient.get("$BASE_URL/api/artifacts/").body()
+    }
+
+    suspend fun getUserArtifact(id: String): UserArtifact = call {
+        httpClient.get("$BASE_URL/api/artifacts/$id").body()
+    }
+
+    suspend fun createUserArtifact(req: UserArtifactCreateRequest): UserArtifact = call {
+        httpClient.post("$BASE_URL/api/artifacts/") {
+            contentType(ContentType.Application.Json)
+            setBody(req)
+        }.body()
+    }
+
+    suspend fun updateUserArtifact(id: String, req: UserArtifactUpdateRequest): UserArtifact = call {
+        httpClient.patch("$BASE_URL/api/artifacts/$id") {
+            contentType(ContentType.Application.Json)
+            setBody(req)
+        }.body()
+    }
+
+    suspend fun deleteUserArtifact(id: String) = call {
+        httpClient.delete("$BASE_URL/api/artifacts/$id")
+    }
+
     suspend fun getInsights(
         limit: Int = 30,
         offset: Int = 0,
@@ -106,6 +133,7 @@ object ApiClient {
     } catch (_: Throwable) {
         emptyMap()
     }
+
 }
 
 private suspend fun <T> call(block: suspend () -> T): T = try {

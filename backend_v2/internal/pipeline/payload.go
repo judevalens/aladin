@@ -2,16 +2,16 @@ package pipeline
 
 import "aladin/backend_v2/internal/search"
 
-// ArtifactPayload is the accumulating envelope passed between pipeline stages.
+// RecordPayload is the accumulating envelope passed between pipeline stages.
 // Each stage reads what it needs and appends its result before forwarding.
 // The full payload is written to PG once when the pipeline completes.
-type ArtifactPayload struct {
+type RecordPayload struct {
 	// Identity
-	ArtifactID     string `json:"artifact_id"`
-	CorrelationID  string `json:"correlation_id"`
-	KgID           string `json:"kg_id"`
-	SourceID       string `json:"source_id"`
-	ExternalID     string `json:"external_id"`
+	RecordID      string `json:"record_id"`
+	CorrelationID string `json:"correlation_id"`
+	KgID          string `json:"kg_id"`
+	SourceID      string `json:"source_id"`
+	ExternalID    string `json:"external_id"`
 
 	// Raw content — set at ingest, never modified
 	Type      string         `json:"type"`

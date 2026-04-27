@@ -1,10 +1,8 @@
 package syncv2
 
 type Scheduler struct {
-	
 }
 
-
-func NewScheduler()  Scheduler{
+func NewScheduler() Scheduler {
 	return Scheduler{}
 }

@@ -18,7 +18,7 @@ type fakeEnricher struct {
 	err    error
 }
 
-func (f *fakeEnricher) Enrich(ctx context.Context, content, artifactType string) (*llm.EnrichResult, error) {
+func (f *fakeEnricher) Enrich(ctx context.Context, content, recordType string) (*llm.EnrichResult, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -54,18 +54,18 @@ func TestFirstPassWorkerReturnsEmbedReady(t *testing.T) {
 
 	w := NewFirstPassWorker(&fakeEnricher{
 		result: &llm.EnrichResult{
-			Summary: "summary",
-			Entities: []string{"entity"},
-			Topics: []string{"topic"},
+			Summary:   "summary",
+			Entities:  []string{"entity"},
+			Topics:    []string{"topic"},
 			KeyClaims: []string{"claim"},
 		},
 	}, ratelimit.New(1000))
 
-	raw, _ := json.Marshal(pipeline.ArtifactPayload{
-		ArtifactID: "artifact-1",
-		KgID:       "kg-1",
-		Type:       "post",
-		Content:    "hello",
+	raw, _ := json.Marshal(pipeline.RecordPayload{
+		RecordID: "record-1",
+		KgID:     "kg-1",
+		Type:     "post",
+		Content:  "hello",
 	})
 
 	result := w.Run(context.Background(), raw)
@@ -87,11 +87,11 @@ func TestFirstPassWorkerReturnsSearchNeeded(t *testing.T) {
 		},
 	}, ratelimit.New(1000))
 
-	raw, _ := json.Marshal(pipeline.ArtifactPayload{
-		ArtifactID: "artifact-2",
-		KgID:       "kg-2",
-		Type:       "post",
-		Content:    "hello",
+	raw, _ := json.Marshal(pipeline.RecordPayload{
+		RecordID: "record-2",
+		KgID:     "kg-2",
+		Type:     "post",
+		Content:  "hello",
 	})
 
 	result := w.Run(context.Background(), raw)
@@ -122,9 +122,9 @@ func TestSearchWorkerClassifiesHTTPErrors(t *testing.T) {
 			t.Parallel()
 
 			w := NewSearchWorker(&fakeSearcher{errs: map[string]error{"entity": tt.err}})
-			raw, _ := json.Marshal(pipeline.ArtifactPayload{
-				ArtifactID:           "artifact",
-				KgID:                 "kg",
+			raw, _ := json.Marshal(pipeline.RecordPayload{
+				RecordID:              "record",
+				KgID:                  "kg",
 				LowConfidenceEntities: []string{"entity"},
 			})
 
@@ -165,8 +165,8 @@ func TestSearchWorkerTransientErrorCarriesNoPayload(t *testing.T) {
 		},
 	})
 
-	raw, _ := json.Marshal(pipeline.ArtifactPayload{
-		ArtifactID:            "artifact-3",
+	raw, _ := json.Marshal(pipeline.RecordPayload{
+		RecordID:              "record-3",
 		KgID:                  "kg-3",
 		LowConfidenceEntities: []string{"done", "next"},
 	})
@@ -185,12 +185,12 @@ func TestEmbedWorkerReturnsEmbedding(t *testing.T) {
 	t.Parallel()
 
 	w := NewEmbedWorker(&fakeEmbedder{vector: []float32{1, 2, 3}}, ratelimit.New(1000))
-	raw, _ := json.Marshal(pipeline.ArtifactPayload{
-		ArtifactID: "artifact-4",
-		KgID:       "kg-4",
-		Label:      "label",
-		Summary:    "summary",
-		Content:    "content",
+	raw, _ := json.Marshal(pipeline.RecordPayload{
+		RecordID: "record-4",
+		KgID:     "kg-4",
+		Label:    "label",
+		Summary:  "summary",
+		Content:  "content",
 	})
 
 	result := w.Run(context.Background(), raw)
@@ -207,7 +207,7 @@ type graphPromoterFake struct {
 	err    error
 }
 
-func (f *graphPromoterFake) Promote(ctx context.Context, artifact *db.EmbeddedArtifact) error {
+func (f *graphPromoterFake) Promote(ctx context.Context, record *db.EmbeddedRecord) error {
 	f.called = true
 	return f.err
 }
@@ -217,13 +217,13 @@ func TestGraphWorkerPromotesAndCompletes(t *testing.T) {
 
 	promoter := &graphPromoterFake{}
 	w := NewGraphWorker(promoter)
-	raw, _ := json.Marshal(pipeline.ArtifactPayload{
-		ArtifactID: "artifact-5",
-		KgID:       "kg-5",
-		Type:       "post",
-		Label:      "label",
-		SourceURL:  "https://example.com",
-		Summary:    "summary",
+	raw, _ := json.Marshal(pipeline.RecordPayload{
+		RecordID:  "record-5",
+		KgID:      "kg-5",
+		Type:      "post",
+		Label:     "label",
+		SourceURL: "https://example.com",
+		Summary:   "summary",
 	})
 
 	result := w.Run(context.Background(), raw)

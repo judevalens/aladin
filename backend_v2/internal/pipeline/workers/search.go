@@ -22,11 +22,11 @@ func NewSearchWorker(searcher search.Searcher) *SearchWorker {
 	return &SearchWorker{searcher: searcher}
 }
 
-func (w *SearchWorker) TaskType()    string { return pipeline.TaskSearch }
-func (w *SearchWorker) Concurrency() int    { return 5 }
+func (w *SearchWorker) TaskType() string { return pipeline.TaskSearch }
+func (w *SearchWorker) Concurrency() int { return 5 }
 
 func (w *SearchWorker) Run(ctx context.Context, raw []byte) pipeline.Result {
-	var p pipeline.ArtifactPayload
+	var p pipeline.RecordPayload
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return pipeline.Result{
 			TaskType: pipeline.TaskSearch,
@@ -37,7 +37,7 @@ func (w *SearchWorker) Run(ctx context.Context, raw []byte) pipeline.Result {
 	log := slog.With(
 		"component", "pipeline",
 		"stage", "search",
-		"artifact_id", p.ArtifactID,
+		"record_id", p.RecordID,
 		"correlation_id", p.CorrelationID,
 		"kg_id", p.KgID,
 	)
@@ -63,31 +63,31 @@ func (w *SearchWorker) Run(ctx context.Context, raw []byte) pipeline.Result {
 				case httpErr.IsRateLimit():
 					log.Warn("search: rate limited", "entity", entity, "retry_after", searchBackoff)
 					return pipeline.Result{
-						TaskType:   pipeline.TaskSearch,
-						Err:        pipeline.ErrRateLimit{RetryAfter: searchBackoff},
-						ArtifactID: p.ArtifactID,
+						TaskType:      pipeline.TaskSearch,
+						Err:           pipeline.ErrRateLimit{RetryAfter: searchBackoff},
+						RecordID:      p.RecordID,
 						CorrelationID: p.CorrelationID,
-						KgID:       p.KgID,
+						KgID:          p.KgID,
 					}
 				case httpErr.IsPermanent():
 					log.Error("search: permanent error", "entity", entity, "status", httpErr.StatusCode)
 					return pipeline.Result{
-						TaskType:   pipeline.TaskSearch,
-						Err:        pipeline.ErrPermanent{Cause: err},
-						ArtifactID: p.ArtifactID,
+						TaskType:      pipeline.TaskSearch,
+						Err:           pipeline.ErrPermanent{Cause: err},
+						RecordID:      p.RecordID,
 						CorrelationID: p.CorrelationID,
-						KgID:       p.KgID,
+						KgID:          p.KgID,
 					}
 				}
 			}
 			// Network error or transient HTTP failure — retry
 			log.Warn("search: transient error", "entity", entity, "err", err)
 			return pipeline.Result{
-				TaskType:   pipeline.TaskSearch,
-				Err:        pipeline.ErrTransient{Cause: err},
-				ArtifactID: p.ArtifactID,
+				TaskType:      pipeline.TaskSearch,
+				Err:           pipeline.ErrTransient{Cause: err},
+				RecordID:      p.RecordID,
 				CorrelationID: p.CorrelationID,
-				KgID:       p.KgID,
+				KgID:          p.KgID,
 			}
 		}
 		log.Debug("search: entity resolved", "entity", entity, "result_count", len(results))
@@ -105,11 +105,11 @@ func (w *SearchWorker) Run(ctx context.Context, raw []byte) pipeline.Result {
 	}
 
 	return pipeline.Result{
-		Type:       pipeline.ResultSearchDone,
-		TaskType:   pipeline.TaskSearch,
-		Payload:    payload,
-		ArtifactID: p.ArtifactID,
+		Type:          pipeline.ResultSearchDone,
+		TaskType:      pipeline.TaskSearch,
+		Payload:       payload,
+		RecordID:      p.RecordID,
 		CorrelationID: p.CorrelationID,
-		KgID:       p.KgID,
+		KgID:          p.KgID,
 	}
 }

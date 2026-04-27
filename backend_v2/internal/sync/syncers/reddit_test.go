@@ -163,8 +163,8 @@ func TestRedditExecuteStopsAtSeenID(t *testing.T) {
 	if result.CompletionReason != sync.CompletionReasonSeenOverlap {
 		t.Fatalf("CompletionReason = %q, want %q", result.CompletionReason, sync.CompletionReasonSeenOverlap)
 	}
-	if len(result.Artifacts) != 2 {
-		t.Fatalf("artifact count = %d, want 2", len(result.Artifacts))
+	if len(result.Records) != 2 {
+		t.Fatalf("record count = %d, want 2", len(result.Records))
 	}
 	if got := result.SourceUpdates["last_seen_id"]; got != "new-3" {
 		t.Fatalf("last_seen_id = %v, want new-3", got)
@@ -261,8 +261,8 @@ func TestRedditExecuteDoesNotAdvanceHighWaterMarkWhenFirstPostIsSeen(t *testing.
 	if err != nil {
 		t.Fatalf("Execute error: %v", err)
 	}
-	if len(result.Artifacts) != 0 {
-		t.Fatalf("artifact count = %d, want 0", len(result.Artifacts))
+	if len(result.Records) != 0 {
+		t.Fatalf("record count = %d, want 0", len(result.Records))
 	}
 	if result.CompletionReason != sync.CompletionReasonSeenOverlap {
 		t.Fatalf("CompletionReason = %q, want %q", result.CompletionReason, sync.CompletionReasonSeenOverlap)

@@ -71,17 +71,17 @@ type Snapshot struct {
 
 // Insight is an AI-generated signal from the knowledge graph.
 type Insight struct {
-	Type        string
-	Title       string
-	Body        string
-	Entity      string
-	Topic       string
-	ArtifactIDs []string
-	Confidence  float64
+	Type       string
+	Title      string
+	Body       string
+	Entity     string
+	Topic      string
+	RecordIDs  []string
+	Confidence float64
 }
 
-// CompletedArtifact is written to PG in a single INSERT when the pipeline finishes.
-type CompletedArtifact struct {
+// CompletedRecord is written to PG in a single INSERT when the pipeline finishes.
+type CompletedRecord struct {
 	ID         string
 	ExternalID string
 	SourceID   string
@@ -94,8 +94,8 @@ type CompletedArtifact struct {
 	Embedding  []float32 // pgvector
 }
 
-// EmbeddedArtifact is passed to the GraphPromoter after pipeline completion.
-type EmbeddedArtifact struct {
+// EmbeddedRecord is passed to the GraphPromoter after pipeline completion.
+type EmbeddedRecord struct {
 	ID         string
 	Type       string
 	Label      string

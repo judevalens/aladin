@@ -2,9 +2,9 @@
 
 ## Overview
 
-An event-driven blackboard pipeline for artifact enrichment. Redis holds FSM
-state and all intermediate data for in-flight artifacts. Postgres is written
-once — at the very end, when the artifact is fully processed. Each stage is a
+An event-driven blackboard pipeline for record enrichment. Redis holds FSM
+state and all intermediate data for in-flight records. Postgres is written
+once — at the very end, when the record is fully processed. Each stage is a
 single worker goroutine consuming from a dedicated channel.
 
 ---
@@ -15,7 +15,7 @@ Syncers are decoupled from the pipeline via asynq (Redis-backed task queue).
 
 ```
 Syncer (fetch_listing, fetch_thread, etc.)
-  └─→ enqueues pipeline:ingest task per artifact
+  └─→ enqueues pipeline:ingest task per record
         └─→ IngestHandler: writes blackboard entry → pushes to ready channel
               └─→ Controller router dispatches to stage channel
 ```
@@ -29,7 +29,7 @@ on the syncer. The syncer completes its fetch regardless of pipeline throughput.
 
 | Store    | Responsibility |
 |----------|----------------|
-| Redis    | Blackboard — FSM state + full raw artifact + intermediate results |
+| Redis    | Blackboard — FSM state + full raw record + intermediate results |
 | asynq    | Transport — pipeline:ingest, pipeline:retry task queues |
 | Postgres | Sink — written once at StateComplete with all data |
 
@@ -59,11 +59,11 @@ Failures are handled by the controller, not tracked as FSM states. On error:
 
 ## Blackboard Entry (Redis JSON)
 
-Key: `pipeline:artifact:<artifact_id>`
+Key: `pipeline:record:<record_id>`
 
 ```json
 {
-  "artifact_id": "uuid",
+  "record_id": "uuid",
   "kg_id": "uuid",
   "state": "searching",
   "attempts": 0,
@@ -100,7 +100,7 @@ Key: `pipeline:artifact:<artifact_id>`
 }
 ```
 
-The full raw artifact is stored in Redis so workers never need to read from PG.
+The full raw record is stored in Redis so workers never need to read from PG.
 
 ---
 
@@ -148,7 +148,7 @@ recovery knows which state to resume from.
 
 ### GraphWorker
 - **Input state**: `GRAPH_PENDING`
-- **Action**: call `GraphPromoter.Promote()` — MERGE artifact/entity/topic nodes in Neo4j
+- **Action**: call `GraphPromoter.Promote()` — MERGE record/entity/topic nodes in Neo4j
 - **Output state**: `COMPLETE`
 - **PG write**: none (controller persists after COMPLETE)
 
@@ -202,7 +202,7 @@ Redis sits in front of Tavily. Cache hit skips the Tavily call entirely.
 
 | When | What is written |
 |------|----------------|
-| `StateComplete` (once) | Full artifact: content, metadata, enrichment, embedding, status='in_graph' |
+| `StateComplete` (once) | Full record: content, metadata, enrichment, embedding, status='in_graph' |
 
 All prior stages are zero-PG-write. Old design's per-stage PG writes are gone.
 
@@ -236,11 +236,11 @@ backend_v2/
         embed.go
         graph.go
       blackboard/
-        state.go                  — FSM states, Entry, SyncedArtifact, FirstPassResult, SearchState
+        state.go                  — FSM states, Entry, SyncedRecord, FirstPassResult, SearchState
         blackboard.go             — Redis CRUD + IngestHandler
 
     graph/
-      promoter.go                 — Neo4j promoter (Artifact, Entity, Topic MERGE)
+      promoter.go                 — Neo4j promoter (Record, Entity, Topic MERGE)
 
     sync/
       queue.go                    — signal-based scheduler, asynq handler registration
@@ -248,8 +248,8 @@ backend_v2/
         reddit.go
 
     db/
-      models.go                   — CompletedArtifact, EmbeddedArtifact, Source, SyncJob, etc.
-      artifact_repo.go            — SaveComplete only
+      models.go                   — CompletedRecord, EmbeddedRecord, Source, SyncJob, etc.
+      record_repo.go            — SaveComplete only
       source_repo.go
       repositories.go
 
@@ -269,4 +269,4 @@ Current design runs one worker process. To scale:
 
 - **Multiple workers**: replace in-process ready channel with a Redis stream or additional asynq queue type. Controller becomes stateless — workers pull from queue directly.
 - **Per-stage scaling**: each stage becomes its own asynq queue + worker pool. Controller becomes a pure router.
-- **Higher throughput**: switch to Kafka for artifact transport. Syncer interface and worker logic stay unchanged — only the handoff changes.
+- **Higher throughput**: switch to Kafka for record transport. Syncer interface and worker logic stay unchanged — only the handoff changes.

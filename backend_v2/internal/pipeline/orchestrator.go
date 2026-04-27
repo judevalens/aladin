@@ -44,4 +44,3 @@ func (o *Orchestrator) Register(mux *asynq.ServeMux) {
 		)
 	}
 }
-

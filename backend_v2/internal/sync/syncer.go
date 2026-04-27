@@ -11,8 +11,8 @@ const (
 	CompletionReasonSeenOverlap = "seen_overlap"
 )
 
-// RawArtifact is returned by a syncer — gets persisted to the artifacts table.
-type RawArtifact struct {
+// RawRecord is returned by a syncer — gets persisted to the records table.
+type RawRecord struct {
 	ExternalID       string
 	ParentExternalID string
 	Type             string
@@ -24,7 +24,7 @@ type RawArtifact struct {
 
 // Result is what a syncer returns after executing a job.
 type Result struct {
-	Artifacts        []*RawArtifact
+	Records          []*RawRecord
 	HasMore          bool           // more pages remain — scheduler will re-claim and continue
 	CompletionReason string         // terminal reason when HasMore=false
 	SourceUpdates    map[string]any // merged into source config

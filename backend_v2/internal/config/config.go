@@ -1,7 +1,7 @@
 package config
 
 import (
-	"log"
+	"fmt"
 	"os"
 )
 
@@ -20,31 +20,51 @@ type WorkerConfig struct {
 	Neo4jPass    string
 }
 
-func LoadAPI() APIConfig {
-	return APIConfig{
-		DatabaseURL: require("DATABASE_URL"),
-		HTTPAddr:    optional("API_ADDR", ":8080"),
+func LoadAPI() (APIConfig, error) {
+	databaseURL, err := require("DATABASE_URL")
+	if err != nil {
+		return APIConfig{}, err
 	}
+	return APIConfig{
+		DatabaseURL: databaseURL,
+		HTTPAddr:    optional("API_ADDR", ":8080"),
+	}, nil
 }
 
-func LoadWorker() WorkerConfig {
+func LoadWorker() (WorkerConfig, error) {
+	databaseURL, err := require("DATABASE_URL")
+	if err != nil {
+		return WorkerConfig{}, err
+	}
+	redisURL, err := require("REDIS_URL")
+	if err != nil {
+		return WorkerConfig{}, err
+	}
+	openAIAPIKey, err := require("OPENAI_API_KEY")
+	if err != nil {
+		return WorkerConfig{}, err
+	}
+	tavilyAPIKey, err := require("TAVILY_API_KEY")
+	if err != nil {
+		return WorkerConfig{}, err
+	}
 	return WorkerConfig{
-		DatabaseURL:  require("DATABASE_URL"),
-		RedisURL:     require("REDIS_URL"),
-		OpenAIAPIKey: require("OPENAI_API_KEY"),
-		TavilyAPIKey: require("TAVILY_API_KEY"),
+		DatabaseURL:  databaseURL,
+		RedisURL:     redisURL,
+		OpenAIAPIKey: openAIAPIKey,
+		TavilyAPIKey: tavilyAPIKey,
 		Neo4jURI:     os.Getenv("NEO4J_URI"),
 		Neo4jUser:    os.Getenv("NEO4J_USER"),
 		Neo4jPass:    os.Getenv("NEO4J_PASS"),
-	}
+	}, nil
 }
 
-func require(key string) string {
+func require(key string) (string, error) {
 	v := os.Getenv(key)
 	if v == "" {
-		log.Fatalf("missing required env var: %s", key)
+		return "", fmt.Errorf("missing required env var: %s", key)
 	}
-	return v
+	return v, nil
 }
 
 func optional(key, fallback string) string {

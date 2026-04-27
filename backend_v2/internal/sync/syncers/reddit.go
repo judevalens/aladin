@@ -160,7 +160,7 @@ func (r *RedditSyncer) Execute(ctx context.Context, job *db.SyncJob) (*sync.Resu
 		if post.Selftext != "" {
 			content += "\n\n" + post.Selftext
 		}
-		result.Artifacts = append(result.Artifacts, &sync.RawArtifact{
+		result.Records = append(result.Records, &sync.RawRecord{
 			ExternalID: post.ID,
 			Type:       "post",
 			Label:      post.Title,

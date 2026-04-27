@@ -1,6 +1,7 @@
 package api
 
 import (
+	"aladin/backend_v2/internal/app"
 	"context"
 	"encoding/json"
 	"errors"
@@ -16,14 +17,14 @@ import (
 
 type Server struct {
 	httpServer *http.Server
-	deps       Dependencies
+	deps       app.Dependencies
 }
 
 func New(addr string, pool *pgxpool.Pool) *Server {
-	return NewWithDependencies(addr, NewDependencies(pool))
+	return NewWithDependencies(addr, app.NewDependencies(pool))
 }
 
-func NewWithDependencies(addr string, deps Dependencies) *Server {
+func NewWithDependencies(addr string, deps app.Dependencies) *Server {
 	s := &Server{deps: deps}
 	mux := http.NewServeMux()
 
@@ -37,26 +38,16 @@ func NewWithDependencies(addr string, deps Dependencies) *Server {
 
 	mux.HandleFunc("GET /api/worker/status", s.handleWorkerStatus)
 
-	mux.HandleFunc("POST /api/documents/upload", s.handleDocumentsUpload)
-	mux.HandleFunc("GET /api/documents/", s.handleDocumentsList)
-	mux.HandleFunc("GET /api/documents/{id}/file", s.handleDocumentFile)
-
-	mux.HandleFunc("POST /api/audio/upload", s.handleAudioUpload)
-	mux.HandleFunc("GET /api/audio/{filename}", s.handleAudioFile)
-
-	mux.HandleFunc("POST /api/notes/", s.handleNotesCreate)
-	mux.HandleFunc("PATCH /api/notes/{id}", s.handleNotesUpdate)
-	mux.HandleFunc("DELETE /api/notes/{id}", s.handleNotesDelete)
-	mux.HandleFunc("GET /api/notes/{id}/related", s.handleNotesRelated)
+	s.registerArtifactRoutes(mux)
 
 	mux.HandleFunc("GET /api/sources/", s.handleSourcesList)
 	mux.HandleFunc("POST /api/sources/", s.handleSourcesCreate)
 	mux.HandleFunc("DELETE /api/sources/{id}", s.handleSourcesDelete)
 
-	mux.HandleFunc("GET /api/artifacts/", s.handleArtifactsList)
-	mux.HandleFunc("POST /api/artifacts/", s.handleArtifactsCreate)
-	mux.HandleFunc("DELETE /api/artifacts/{id}", s.handleArtifactsDelete)
-	mux.HandleFunc("GET /api/artifacts/{id}/children", s.handleArtifactChildren)
+	mux.HandleFunc("GET /api/records/", s.handleRecordsList)
+	mux.HandleFunc("POST /api/records/", s.handleRecordsCreate)
+	mux.HandleFunc("DELETE /api/records/{id}", s.handleRecordsDelete)
+	mux.HandleFunc("GET /api/records/{id}/children", s.handleRecordChildren)
 
 	mux.HandleFunc("GET /api/feed/", s.handleFeedList)
 	mux.HandleFunc("GET /api/feed/topics", s.handleFeedTopics)
@@ -148,6 +139,13 @@ func floatQuery(r *http.Request, key string, fallback float64) float64 {
 	return n
 }
 
+func firstNonEmpty(value, fallback string) string {
+	if strings.TrimSpace(value) != "" {
+		return value
+	}
+	return fallback
+}
+
 var quotes = []map[string]string{
 	{"text": "The more that you read, the more things you will know.", "author": "Dr. Seuss"},
 	{"text": "Knowledge is power.", "author": "Francis Bacon"},
@@ -165,7 +163,7 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
-	if err := s.deps.System.Ready(r.Context()); err != nil {
+	if err := s.deps.System().Ready(r.Context()); err != nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"ok": false, "service": "api", "error": err.Error()})
 		return
 	}

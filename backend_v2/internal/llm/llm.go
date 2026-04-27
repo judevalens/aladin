@@ -11,9 +11,9 @@ type EnrichResult struct {
 	LowConfidenceEntities []string `json:"low_confidence_entities"`
 }
 
-// Enricher runs the first-pass LLM analysis on a raw artifact.
+// Enricher runs the first-pass LLM analysis on a raw record.
 type Enricher interface {
-	Enrich(ctx context.Context, content, artifactType string) (*EnrichResult, error)
+	Enrich(ctx context.Context, content, recordType string) (*EnrichResult, error)
 }
 
 // Embedder generates a dense vector for a piece of text.

@@ -21,11 +21,11 @@ func NewEmbedWorker(embedder llm.Embedder, limiter *ratelimit.Limiter) *EmbedWor
 	return &EmbedWorker{embedder: embedder, limiter: limiter}
 }
 
-func (w *EmbedWorker) TaskType()    string { return pipeline.TaskEmbed }
-func (w *EmbedWorker) Concurrency() int    { return 3 }
+func (w *EmbedWorker) TaskType() string { return pipeline.TaskEmbed }
+func (w *EmbedWorker) Concurrency() int { return 3 }
 
 func (w *EmbedWorker) Run(ctx context.Context, raw []byte) pipeline.Result {
-	var p pipeline.ArtifactPayload
+	var p pipeline.RecordPayload
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return pipeline.Result{
 			TaskType: pipeline.TaskEmbed,
@@ -36,7 +36,7 @@ func (w *EmbedWorker) Run(ctx context.Context, raw []byte) pipeline.Result {
 	log := slog.With(
 		"component", "pipeline",
 		"stage", "embed",
-		"artifact_id", p.ArtifactID,
+		"record_id", p.RecordID,
 		"correlation_id", p.CorrelationID,
 		"kg_id", p.KgID,
 	)
@@ -68,11 +68,11 @@ func (w *EmbedWorker) Run(ctx context.Context, raw []byte) pipeline.Result {
 	}
 
 	return pipeline.Result{
-		Type:       pipeline.ResultEmbedDone,
-		TaskType:   pipeline.TaskEmbed,
-		Payload:    payload,
-		ArtifactID: p.ArtifactID,
+		Type:          pipeline.ResultEmbedDone,
+		TaskType:      pipeline.TaskEmbed,
+		Payload:       payload,
+		RecordID:      p.RecordID,
 		CorrelationID: p.CorrelationID,
-		KgID:       p.KgID,
+		KgID:          p.KgID,
 	}
 }

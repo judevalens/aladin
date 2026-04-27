@@ -11,7 +11,7 @@ import (
 // Enqueuer hides asynq-specific sync and pipeline handoff policy from the sync queue.
 type Enqueuer interface {
 	EnqueueSync(ctx context.Context, queueName, taskType string, payload []byte, maxRetry int, timeout time.Duration) error
-	EnqueueFirstPass(ctx context.Context, artifactID string, payload []byte) error
+	EnqueueFirstPass(ctx context.Context, recordID string, payload []byte) error
 }
 
 type asynqEnqueuer struct {
@@ -32,12 +32,12 @@ func (e *asynqEnqueuer) EnqueueSync(ctx context.Context, queueName, taskType str
 	return err
 }
 
-func (e *asynqEnqueuer) EnqueueFirstPass(ctx context.Context, artifactID string, payload []byte) error {
+func (e *asynqEnqueuer) EnqueueFirstPass(ctx context.Context, recordID string, payload []byte) error {
 	task := asynq.NewTask(pipelineTaskFirstPass, payload)
 	_, err := e.client.EnqueueContext(ctx, task,
 		asynq.Queue(pipelineTaskFirstPass),
 		asynq.MaxRetry(3),
-		asynq.TaskID(artifactID+":"+pipelineTaskFirstPass),
+		asynq.TaskID(recordID+":"+pipelineTaskFirstPass),
 	)
 	if errors.Is(err, asynq.ErrTaskIDConflict) {
 		return nil

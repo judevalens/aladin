@@ -225,16 +225,16 @@ func (q *Orchestrator) makeHandler(syncer Syncer) asynq.HandlerFunc {
 			return err
 		}
 
-		log.Info("sync: complete", "artifact_count", len(result.Artifacts))
+		log.Info("sync: complete", "record_count", len(result.Records))
 
-		// Enqueue artifacts into the pipeline.
+		// Enqueue records into the pipeline.
 		// Any enqueue failure is a data loss — fail the whole handler so asynq retries.
 		queued := 0
-		seenIDs := make([]string, 0, len(result.Artifacts))
-		for _, a := range result.Artifacts {
-			artifactID := uuid.NewSHA1(uuid.NameSpaceURL, []byte(job.SourceID+":"+a.ExternalID)).String()
-			payload, err := json.Marshal(pipeline.ArtifactPayload{
-				ArtifactID:    artifactID,
+		seenIDs := make([]string, 0, len(result.Records))
+		for _, a := range result.Records {
+			recordID := uuid.NewSHA1(uuid.NameSpaceURL, []byte(job.SourceID+":"+a.ExternalID)).String()
+			payload, err := json.Marshal(pipeline.RecordPayload{
+				RecordID:      recordID,
 				CorrelationID: job.CorrelationID,
 				KgID:          job.KgID,
 				SourceID:      job.SourceID,
@@ -250,14 +250,14 @@ func (q *Orchestrator) makeHandler(syncer Syncer) asynq.HandlerFunc {
 				if job.SnapshotID == "" {
 					_ = q.sources.MarkSyncFailed(ctx, job.SourceID)
 				}
-				return fmt.Errorf("sync: marshal artifact payload: %w", err)
+				return fmt.Errorf("sync: marshal record payload: %w", err)
 			}
-			if err := q.enqueuer.EnqueueFirstPass(ctx, artifactID, payload); err != nil {
+			if err := q.enqueuer.EnqueueFirstPass(ctx, recordID, payload); err != nil {
 				// Enqueue failure — fail the handler so asynq retries the whole page
 				if job.SnapshotID == "" {
 					_ = q.sources.MarkSyncFailed(ctx, job.SourceID)
 				}
-				return fmt.Errorf("sync: enqueue artifact %s: %w", a.ExternalID, err)
+				return fmt.Errorf("sync: enqueue record %s: %w", a.ExternalID, err)
 			}
 			queued++
 			seenIDs = append(seenIDs, a.ExternalID)
@@ -265,7 +265,7 @@ func (q *Orchestrator) makeHandler(syncer Syncer) asynq.HandlerFunc {
 		if err := q.seen.MarkSeen(ctx, job.SourceID, seenIDs); err != nil {
 			return fmt.Errorf("sync: mark seen: %w", err)
 		}
-		log.Info("sync: artifacts enqueued for ingestion", "queued", queued, "total", len(result.Artifacts))
+		log.Info("sync: records enqueued for ingestion", "queued", queued, "total", len(result.Records))
 
 		// After each page, return the source to the scheduler.
 		// HasMore=true → MarkSyncPage (idle, no last_synced_at update, cursor persisted)

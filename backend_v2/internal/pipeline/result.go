@@ -21,17 +21,17 @@ const (
 
 // Result is the outcome of a pipeline stage.
 // Type is the discriminant the ResultHandler switches on for routing.
-// Payload is the updated ArtifactPayload to forward to the next stage.
+// Payload is the updated RecordPayload to forward to the next stage.
 // TaskType identifies which worker produced this result (used for re-enqueue on error).
 // Err is non-nil if the stage failed.
 type Result struct {
-	Type       string
-	TaskType   string
-	Payload    []byte
-	Err        error
-	ArtifactID string
+	Type          string
+	TaskType      string
+	Payload       []byte
+	Err           error
+	RecordID      string
 	CorrelationID string
-	KgID       string
+	KgID          string
 }
 
 // ResultHandler processes the outcome of a pipeline stage.
@@ -41,10 +41,10 @@ type ResultHandler interface {
 }
 
 // Worker is a single pipeline stage.
-// It receives the accumulated ArtifactPayload as bytes, does its work,
+// It receives the accumulated RecordPayload as bytes, does its work,
 // and returns a Result with a discriminant type for routing.
 type Worker interface {
-	TaskType()    string
+	TaskType() string
 	Concurrency() int
 	Run(ctx context.Context, payload []byte) Result
 }

@@ -18,34 +18,34 @@ type fakeEnqueuer struct {
 }
 
 type stageCall struct {
-	taskType   string
-	artifactID string
-	payload    []byte
+	taskType string
+	recordID string
+	payload  []byte
 }
 
 type delayedStageCall struct {
-	taskType   string
-	artifactID string
-	payload    []byte
-	delay      time.Duration
+	taskType string
+	recordID string
+	payload  []byte
+	delay    time.Duration
 }
 
-func (f *fakeEnqueuer) EnqueueStage(ctx context.Context, taskType, artifactID string, payload []byte) error {
-	f.stageCalls = append(f.stageCalls, stageCall{taskType: taskType, artifactID: artifactID, payload: payload})
+func (f *fakeEnqueuer) EnqueueStage(ctx context.Context, taskType, recordID string, payload []byte) error {
+	f.stageCalls = append(f.stageCalls, stageCall{taskType: taskType, recordID: recordID, payload: payload})
 	return f.stageErr
 }
 
-type fakeArtifactRepo struct {
-	saved []*db.CompletedArtifact
+type fakeRecordRepo struct {
+	saved []*db.CompletedRecord
 	err   error
 }
 
-func (f *fakeArtifactRepo) SaveComplete(ctx context.Context, a *db.CompletedArtifact) error {
+func (f *fakeRecordRepo) SaveComplete(ctx context.Context, a *db.CompletedRecord) error {
 	f.saved = append(f.saved, a)
 	return f.err
 }
 
-func (f *fakeArtifactRepo) ExistsExternal(ctx context.Context, sourceID string, externalIDs []string) (map[string]bool, error) {
+func (f *fakeRecordRepo) ExistsExternal(ctx context.Context, sourceID string, externalIDs []string) (map[string]bool, error) {
 	return nil, errors.New("not implemented")
 }
 
@@ -53,13 +53,13 @@ func TestFullPipelineHandlerRoutesFirstPassSearchNeeded(t *testing.T) {
 	t.Parallel()
 
 	enq := &fakeEnqueuer{}
-	h := NewFullPipelineHandler(enq, &fakeArtifactRepo{}, make(chan string, 1))
+	h := NewFullPipelineHandler(enq, &fakeRecordRepo{}, make(chan string, 1))
 
 	err := h.OnDone(context.Background(), Result{
-		Type:       ResultFirstPassSearchNeeded,
-		TaskType:   TaskFirstPass,
-		ArtifactID: "artifact-1",
-		Payload:    []byte(`{"artifact_id":"artifact-1"}`),
+		Type:     ResultFirstPassSearchNeeded,
+		TaskType: TaskFirstPass,
+		RecordID: "record-1",
+		Payload:  []byte(`{"record_id":"record-1"}`),
 	})
 	if err != nil {
 		t.Fatalf("OnDone returned error: %v", err)
@@ -67,8 +67,8 @@ func TestFullPipelineHandlerRoutesFirstPassSearchNeeded(t *testing.T) {
 	if len(enq.stageCalls) != 1 {
 		t.Fatalf("EnqueueStage calls = %d, want 1", len(enq.stageCalls))
 	}
-	if got := enq.stageCalls[0]; got.taskType != TaskSearch || got.artifactID != "artifact-1" {
-		t.Fatalf("EnqueueStage call = %+v, want task=%q artifact=%q", got, TaskSearch, "artifact-1")
+	if got := enq.stageCalls[0]; got.taskType != TaskSearch || got.recordID != "record-1" {
+		t.Fatalf("EnqueueStage call = %+v, want task=%q record=%q", got, TaskSearch, "record-1")
 	}
 }
 
@@ -76,14 +76,14 @@ func TestFullPipelineHandlerRateLimitBubblesError(t *testing.T) {
 	t.Parallel()
 
 	enq := &fakeEnqueuer{}
-	h := NewFullPipelineHandler(enq, &fakeArtifactRepo{}, make(chan string, 1))
+	h := NewFullPipelineHandler(enq, &fakeRecordRepo{}, make(chan string, 1))
 
 	rlErr := ErrRateLimit{RetryAfter: 45 * time.Second}
 	err := h.OnDone(context.Background(), Result{
-		TaskType:   TaskSearch,
-		ArtifactID: "artifact-2",
-		Payload:    []byte(`{"artifact_id":"artifact-2"}`),
-		Err:        rlErr,
+		TaskType: TaskSearch,
+		RecordID: "record-2",
+		Payload:  []byte(`{"record_id":"record-2"}`),
+		Err:      rlErr,
 	})
 	if err == nil {
 		t.Fatal("OnDone returned nil, want rate limit error")
@@ -101,12 +101,12 @@ func TestFullPipelineHandlerPermanentErrorDrops(t *testing.T) {
 	t.Parallel()
 
 	enq := &fakeEnqueuer{}
-	h := NewFullPipelineHandler(enq, &fakeArtifactRepo{}, make(chan string, 1))
+	h := NewFullPipelineHandler(enq, &fakeRecordRepo{}, make(chan string, 1))
 
 	err := h.OnDone(context.Background(), Result{
-		TaskType:   TaskEmbed,
-		ArtifactID: "artifact-3",
-		Err:        ErrPermanent{Cause: errors.New("bad input")},
+		TaskType: TaskEmbed,
+		RecordID: "record-3",
+		Err:      ErrPermanent{Cause: errors.New("bad input")},
 	})
 	if err != nil {
 		t.Fatalf("OnDone returned error: %v", err)
@@ -120,13 +120,13 @@ func TestFullPipelineHandlerTransientErrorBubbles(t *testing.T) {
 	t.Parallel()
 
 	enq := &fakeEnqueuer{}
-	h := NewFullPipelineHandler(enq, &fakeArtifactRepo{}, make(chan string, 1))
+	h := NewFullPipelineHandler(enq, &fakeRecordRepo{}, make(chan string, 1))
 
 	want := ErrTransient{Cause: errors.New("temporary")}
 	err := h.OnDone(context.Background(), Result{
-		TaskType:   TaskGraph,
-		ArtifactID: "artifact-4",
-		Err:        want,
+		TaskType: TaskGraph,
+		RecordID: "record-4",
+		Err:      want,
 	})
 	if err == nil {
 		t.Fatal("OnDone returned nil error, want transient error")
@@ -136,15 +136,15 @@ func TestFullPipelineHandlerTransientErrorBubbles(t *testing.T) {
 	}
 }
 
-func TestFullPipelineHandlerPersistsCompletedArtifact(t *testing.T) {
+func TestFullPipelineHandlerPersistsCompletedRecord(t *testing.T) {
 	t.Parallel()
 
-	repo := &fakeArtifactRepo{}
+	repo := &fakeRecordRepo{}
 	insights := make(chan string, 1)
 	h := NewFullPipelineHandler(&fakeEnqueuer{}, repo, insights)
 
-	payload, err := json.Marshal(ArtifactPayload{
-		ArtifactID: "artifact-5",
+	payload, err := json.Marshal(RecordPayload{
+		RecordID:   "record-5",
 		KgID:       "kg-5",
 		SourceID:   "source-5",
 		ExternalID: "ext-5",
@@ -164,11 +164,11 @@ func TestFullPipelineHandlerPersistsCompletedArtifact(t *testing.T) {
 	}
 
 	err = h.OnDone(context.Background(), Result{
-		Type:       ResultGraphDone,
-		TaskType:   TaskGraph,
-		ArtifactID: "artifact-5",
-		KgID:       "kg-5",
-		Payload:    payload,
+		Type:     ResultGraphDone,
+		TaskType: TaskGraph,
+		RecordID: "record-5",
+		KgID:     "kg-5",
+		Payload:  payload,
 	})
 	if err != nil {
 		t.Fatalf("OnDone returned error: %v", err)
@@ -176,8 +176,8 @@ func TestFullPipelineHandlerPersistsCompletedArtifact(t *testing.T) {
 	if len(repo.saved) != 1 {
 		t.Fatalf("SaveComplete calls = %d, want 1", len(repo.saved))
 	}
-	if repo.saved[0].ID != "artifact-5" || repo.saved[0].ExternalID != "ext-5" {
-		t.Fatalf("saved artifact = %+v", repo.saved[0])
+	if repo.saved[0].ID != "record-5" || repo.saved[0].ExternalID != "ext-5" {
+		t.Fatalf("saved record = %+v", repo.saved[0])
 	}
 	select {
 	case kgID := <-insights:

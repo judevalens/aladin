@@ -2,9 +2,9 @@ package db
 
 import "context"
 
-type ArtifactRepository interface {
-	// SaveComplete writes a fully-processed artifact to PG in one shot.
-	SaveComplete(ctx context.Context, a *CompletedArtifact) error
+type RecordRepository interface {
+	// SaveComplete writes a fully-processed record to PG in one shot.
+	SaveComplete(ctx context.Context, a *CompletedRecord) error
 	// ExistsExternal returns which externalIDs already exist for a given source.
 	// Used by syncers to stop pagination when they hit already-known content.
 	ExistsExternal(ctx context.Context, sourceID string, externalIDs []string) (map[string]bool, error)
@@ -64,5 +64,5 @@ type InsightRepository interface {
 }
 
 type KnowledgeGraphRepository interface {
-	GetIDsWithEnrichedArtifacts(ctx context.Context) ([]string, error)
+	GetIDsWithEnrichedRecords(ctx context.Context) ([]string, error)
 }

@@ -232,10 +232,10 @@ private fun InsightCard(
                 overflow = TextOverflow.Ellipsis
             )
 
-            if (insight.artifactIds.isNotEmpty()) {
+            if (insight.recordIds.isNotEmpty()) {
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "${insight.artifactIds.size} sources",
+                    "${insight.recordIds.size} sources",
                     style = MaterialTheme.typography.labelSmall,
                     color = AladinDark.TextMuted
                 )

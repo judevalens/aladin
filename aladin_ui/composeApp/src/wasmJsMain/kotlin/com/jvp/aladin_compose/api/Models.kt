@@ -1,6 +1,7 @@
 package com.jvp.aladin_compose.api
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 
 @Serializable
 data class FeedItem(
@@ -61,7 +62,7 @@ data class Insight(
     val body: String,
     val entity: String? = null,
     val topic: String? = null,
-    val artifactIds: List<String> = emptyList(),
+    val recordIds: List<String> = emptyList(),
     val confidence: Double = 0.0,
     val userStatus: String = "pending",
     val createdAt: String
@@ -90,4 +91,37 @@ data class WorkerStatus(
 data class Quote(
     val text: String,
     val author: String
+)
+
+@Serializable
+data class UserArtifact(
+    val id: String,
+    val type: String,
+    val title: String,
+    val content: String,
+    val summary: String? = null,
+    val sourceUrl: String? = null,
+    val metadata: Map<String, JsonElement> = emptyMap(),
+    val createdAt: String,
+    val updatedAt: String,
+)
+
+@Serializable
+data class UserArtifactCreateRequest(
+    val type: String = "note",
+    val title: String,
+    val content: String,
+    val summary: String? = null,
+    val sourceUrl: String? = null,
+    val metadata: Map<String, JsonElement> = emptyMap(),
+)
+
+@Serializable
+data class UserArtifactUpdateRequest(
+    val type: String? = null,
+    val title: String? = null,
+    val content: String? = null,
+    val summary: String? = null,
+    val sourceUrl: String? = null,
+    val metadata: Map<String, JsonElement>? = null,
 )

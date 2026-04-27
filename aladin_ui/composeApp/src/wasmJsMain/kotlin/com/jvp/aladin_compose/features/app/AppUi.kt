@@ -15,8 +15,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.jvp.aladin_compose.model.*
 import com.jvp.aladin_compose.ui.screens.SourcesScreen
 import com.jvp.aladin_compose.ui_lib.AladinColor
@@ -29,8 +31,14 @@ import com.slack.circuit.runtime.ui.Ui
 private val DividerThickness = 0.5.dp
 private val SharpRadius = 4.dp
 private val ControlRadius = 6.dp
-private val RailItemSize = 38.dp
-private val RailIconSize = 20.dp
+private val RailWidth = 64.dp
+private val RailLogoSize = 32.dp
+private val RailItemSize = 34.dp
+private val RailIconSize = 18.dp
+private val RailMarkerHeight = 18.dp
+private val RailMarkerWidth = 2.dp
+private val TopBarHeight = 64.dp
+private val CommandFieldWidth = 250.dp
 private val WorkspaceMaxWidth = 980.dp
 
 class AppUiFactory : Ui.Factory {
@@ -50,7 +58,7 @@ private class AppUi : Ui<AppState> {
       AppRail(
           selected = state.destination,
           onSelect = { state.eventSink(AppEvent.NavigateDestination(it)) },
-          modifier = Modifier.background(AladinColor.Canvas),
+          modifier = Modifier.background(AladinColor.PanelMuted),
       )
       VerticalDivider(
           color = AladinColor.Divider,
@@ -66,10 +74,6 @@ private class AppUi : Ui<AppState> {
             state = state,
             onCreateFolder = { state.browser.eventSink(DocumentBrowserEvent.CreateFolder) },
             onCreateArtifact = { state.browser.eventSink(DocumentBrowserEvent.CreateArtifact) },
-        )
-        HorizontalDivider(
-            color = AladinColor.Divider,
-            thickness = DividerThickness,
         )
         Row(modifier = Modifier.weight(1f)) { PaneThree(state = state) }
       }
@@ -93,22 +97,28 @@ private fun AppRail(
       )
 
   Column(
-      modifier = modifier.width(72.dp).fillMaxHeight().padding(vertical = 14.dp),
+      modifier = modifier.width(RailWidth).fillMaxHeight().padding(vertical = 14.dp),
       horizontalAlignment = Alignment.CenterHorizontally,
-      verticalArrangement = Arrangement.spacedBy(10.dp),
+      verticalArrangement = Arrangement.spacedBy(9.dp),
   ) {
     Box(
         modifier =
-            Modifier.size(34.dp)
+            Modifier.size(RailLogoSize)
                 .border(
-                    1.dp,
-                    AladinColor.InkSurface,
+                    DividerThickness,
+                    AladinColor.Border,
                     RoundedCornerShape(ControlRadius),
                 )
-                .background(AladinColor.InkSurface, RoundedCornerShape(ControlRadius)),
+                .background(AladinColor.CommandSurface, RoundedCornerShape(ControlRadius)),
         contentAlignment = Alignment.Center,
     ) {
-      Text("A", color = AladinColor.OnInkSurface, fontWeight = FontWeight.Bold)
+      Text(
+          "A",
+          color = AladinColor.Ink,
+          style = MaterialTheme.typography.labelLarge,
+          fontFamily = FontFamily.Monospace,
+          fontWeight = FontWeight.Bold,
+      )
     }
 
     Spacer(Modifier.height(8.dp))
@@ -125,19 +135,27 @@ private fun AppRail(
                       AladinInteractionDefaults.colors(
                           hovered = AladinColor.ControlHover,
                           pressed = AladinColor.ControlPressed,
-                          selected = AladinColor.InkSurface,
-                          selectedHovered = AladinColor.InkSurfaceHover,
+                          selected = AladinColor.RowSelected,
+                          selectedHovered = AladinColor.ControlPressed,
                       ),
               ) {
                 onSelect(destination)
               },
           contentAlignment = Alignment.Center,
       ) {
+        if (active) {
+          Box(
+              modifier =
+                  Modifier.align(Alignment.CenterStart)
+                      .width(RailMarkerWidth)
+                      .height(RailMarkerHeight)
+                      .background(AladinColor.ActiveMarker, RoundedCornerShape(999.dp))
+          )
+        }
         Icon(
             imageVector = icon,
             contentDescription = destination.name,
-            tint =
-                if (active) AladinColor.OnInkSurface else AladinColor.InkMuted,
+            tint = if (active) AladinColor.Ink else AladinColor.InkMuted,
             modifier = Modifier.size(RailIconSize),
         )
       }
@@ -154,20 +172,20 @@ private fun TopBar(
   Row(
       modifier =
           Modifier.fillMaxWidth()
-              .height(58.dp)
+              .height(TopBarHeight)
               .background(AladinColor.Canvas)
-              .padding(horizontal = 18.dp),
+              .padding(horizontal = 28.dp),
       verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(4.dp),
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
   ) {
     Spacer(Modifier.weight(1f))
 
     AladinToolbarField(
-        modifier = Modifier.width(250.dp).aladinClickable(shape = RoundedCornerShape(ControlRadius)) {},
+        modifier = Modifier.width(CommandFieldWidth).aladinClickable(shape = RoundedCornerShape(ControlRadius)) {},
         text = "Search or jump...",
     )
 
-    Spacer(Modifier.width(12.dp))
+    Spacer(Modifier.width(6.dp))
 
     AladinGhostAction(
         label = "+ Folder",
@@ -280,6 +298,10 @@ private fun ItemWorkspaceView(
           breadcrumbs = breadcrumbs,
           onNavigateBreadcrumb = onNavigateBreadcrumb,
       )
+      HorizontalDivider(
+          color = AladinColor.Divider,
+          thickness = DividerThickness,
+      )
       Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Text(
             item.title,
@@ -288,9 +310,10 @@ private fun ItemWorkspaceView(
             fontWeight = FontWeight.Bold,
         )
         Text(
-            "${item.kind.name.lowercase()} · 0 relevant signals",
-            style = MaterialTheme.typography.bodyMedium,
-            color = AladinColor.InkSecondary,
+            "${item.kind.name.lowercase()} / 0 relevant signals",
+            style = MaterialTheme.typography.labelMedium,
+            color = AladinColor.CodeText,
+            fontFamily = FontFamily.Monospace,
         )
       }
 
@@ -320,6 +343,10 @@ private fun ArtifactWorkspaceView(
           breadcrumbs = breadcrumbs,
           onNavigateBreadcrumb = onNavigateBreadcrumb,
       )
+      HorizontalDivider(
+          color = AladinColor.Divider,
+          thickness = DividerThickness,
+      )
       Row(
           horizontalArrangement = Arrangement.spacedBy(10.dp),
           verticalAlignment = Alignment.CenterVertically,
@@ -341,6 +368,7 @@ private fun ArtifactWorkspaceView(
           artifact.updatedLabel,
           color = AladinColor.InkMuted,
           style = MaterialTheme.typography.labelMedium,
+          fontFamily = FontFamily.Monospace,
       )
     }
   }
@@ -449,6 +477,8 @@ private fun WorkspaceSection(
           style = MaterialTheme.typography.labelMedium,
           color = AladinColor.Ink,
           fontWeight = FontWeight.Bold,
+          fontFamily = FontFamily.Monospace,
+          letterSpacing = 0.6.sp,
       )
       Text(
           body,
@@ -474,15 +504,26 @@ private fun AladinToolbarField(
                   AladinColor.Border,
                   RoundedCornerShape(ControlRadius),
               )
-              .background(AladinColor.Panel, RoundedCornerShape(ControlRadius))
-              .padding(horizontal = 14.dp, vertical = 10.dp),
+              .background(AladinColor.CommandSurface, RoundedCornerShape(ControlRadius))
+              .padding(horizontal = 14.dp, vertical = 9.dp),
       contentAlignment = Alignment.CenterStart,
   ) {
-    Text(
-        text,
-        color = AladinColor.InkSecondary,
-        style = MaterialTheme.typography.bodyMedium,
-    )
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+      Text(
+          ">",
+          color = AladinColor.CodeText,
+          style = MaterialTheme.typography.labelMedium,
+          fontFamily = FontFamily.Monospace,
+      )
+      Text(
+          text,
+          color = AladinColor.InkSecondary,
+          style = MaterialTheme.typography.bodyMedium,
+      )
+    }
   }
 }
 
@@ -501,6 +542,7 @@ private fun AladinGhostAction(
                   colors =
                       AladinInteractionDefaults.colors(
                           hovered = AladinColor.ControlHover,
+                          pressed = AladinColor.ControlPressed,
                           disabled = AladinColor.ControlHover.copy(alpha = 0.7f),
                       ),
                   onClick = onClick,
