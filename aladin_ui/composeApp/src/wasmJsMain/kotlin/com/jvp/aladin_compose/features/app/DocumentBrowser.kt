@@ -89,6 +89,7 @@ fun DocumentBrowser(state: DocumentBrowserState) {
                             expanded = row.expanded,
                             expandable = row.expandable,
                             selected = row.selected,
+                            menu = row.menu,
                             onToggleExpanded = { state.eventSink(DocumentBrowserEvent.ToggleFolderExpanded(row.folder.id, row.depth)) },
                             onClick = {
                                 state.eventSink(DocumentBrowserEvent.SelectFolder(row.folder.id))
@@ -96,12 +97,16 @@ fun DocumentBrowser(state: DocumentBrowserState) {
                                     state.eventSink(DocumentBrowserEvent.ToggleFolderExpanded(row.folder.id, row.depth))
                                 }
                             },
+                            onMenuAction = { option ->
+                                state.eventSink(DocumentBrowserEvent.CreateInFolder(row.folder.id, option))
+                            },
                         )
                     is BrowserTreeRow.Artifact ->
                         BrowserArtifactRow(
                             artifact = row.artifact,
                             depth = row.depth,
                             selected = row.selected,
+                            menu = row.menu,
                             onClick = { state.eventSink(DocumentBrowserEvent.SelectArtifact(row.artifact.id)) },
                         )
                 }
@@ -254,6 +259,7 @@ private fun BrowserArtifactRow(
     artifact: ArtifactPreview,
     depth: Int,
     selected: Boolean,
+    menu: BrowserRowMenuModel,
     onClick: () -> Unit,
 ) {
     Row(
@@ -293,6 +299,11 @@ private fun BrowserArtifactRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        BrowserRowContextMenu(
+            menu = menu,
+            selected = selected,
+            onActionSelected = {},
+        )
     }
 }
 
@@ -321,8 +332,10 @@ private fun BrowserFolderRow(
     expanded: Boolean,
     expandable: Boolean,
     selected: Boolean,
+    menu: BrowserRowMenuModel,
     onToggleExpanded: () -> Unit,
     onClick: () -> Unit,
+    onMenuAction: (BrowserCreateOption) -> Unit,
 ) {
     Row(
         modifier =
@@ -365,6 +378,13 @@ private fun BrowserFolderRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        BrowserRowContextMenu(
+            menu = menu,
+            selected = selected,
+            onActionSelected = { actionId ->
+                menuActionToCreateOption(actionId)?.let(onMenuAction)
+            },
+        )
     }
 }
 
@@ -417,6 +437,17 @@ private fun RowSelectionMarker(selected: Boolean) {
 }
 
 private fun treeIndent(depth: Int) = BrowserIndent * depth
+
+private fun menuActionToCreateOption(actionId: String): BrowserCreateOption? {
+    return when (actionId) {
+        "create:folder" -> BrowserCreateOption.Folder
+        "create:note" -> BrowserCreateOption.Note
+        "create:link" -> BrowserCreateOption.Link
+        "create:voice" -> BrowserCreateOption.Voice
+        "create:upload" -> BrowserCreateOption.Upload
+        else -> null
+    }
+}
 
 @Composable
 fun ArtifactGlyph(kind: ArtifactKind, selected: Boolean = false) {

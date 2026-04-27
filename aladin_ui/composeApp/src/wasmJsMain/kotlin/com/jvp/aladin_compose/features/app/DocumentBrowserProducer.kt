@@ -7,6 +7,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.jvp.aladin_compose.model.Artifact
+import com.jvp.aladin_compose.model.ArtifactKind
 import com.jvp.aladin_compose.model.BrowserNodeKind
 import com.jvp.aladin_compose.model.BrowserTreeNode
 import com.jvp.aladin_compose.model.FolderNode
@@ -161,6 +162,48 @@ class DefaultDocumentBrowserProducer(
                                     expandedFolderIds = expandedFolderIds + service.ancestorFolderIds(event.folderId)
                                 }
                             }
+                            is DocumentBrowserEvent.CreateInFolder -> {
+                                scope.launch {
+                                    when (event.option) {
+                                        BrowserCreateOption.Folder -> {
+                                            try {
+                                                val created = service.createFolder(event.folderId)
+                                                service.refreshBrowser()
+                                                browserError = null
+                                                selectedFolderId = created.id
+                                                selectedArtifactId = null
+                                                expandedFolderIds =
+                                                    expandedFolderIds + service.ancestorFolderIds(created.id)
+                                                refreshKey += 1
+                                            } catch (t: Throwable) {
+                                                browserError = t.message ?: "Failed to create folder"
+                                            }
+                                        }
+                                        BrowserCreateOption.Note,
+                                        BrowserCreateOption.Link -> {
+                                            try {
+                                                val kind =
+                                                    when (event.option) {
+                                                        BrowserCreateOption.Link -> ArtifactKind.Link
+                                                        else -> ArtifactKind.Note
+                                                    }
+                                                val created = service.createArtifact(event.folderId, kind)
+                                                service.refreshBrowser()
+                                                browserError = null
+                                                selectedArtifactId = created.id
+                                                selectedFolderId = null
+                                                expandedFolderIds =
+                                                    expandedFolderIds + service.ancestorFolderIds(created.folderId)
+                                                refreshKey += 1
+                                            } catch (t: Throwable) {
+                                                browserError = t.message ?: "Failed to create artifact"
+                                            }
+                                        }
+                                        BrowserCreateOption.Voice,
+                                        BrowserCreateOption.Upload -> Unit
+                                    }
+                                }
+                            }
                             DocumentBrowserEvent.CreateFolder -> {
                                 scope.launch {
                                     try {
@@ -232,6 +275,7 @@ class DefaultDocumentBrowserProducer(
                                 artifact = preview,
                                 depth = depth,
                                 selected = preview.id == selectedArtifactId,
+                                menu = artifactMenu(preview.id),
                             )
                     }
                 }
@@ -262,10 +306,50 @@ class DefaultDocumentBrowserProducer(
                 expanded = expanded,
                 expandable = expandable,
                 selected = node.id == selectedFolderId,
+                menu = folderMenu(node.id),
             )
 
         if (remainingDepth > 0 && expanded) {
             visit(node.id, depth + 1, remainingDepth - 1)
         }
     }
+
+    private fun folderMenu(folderId: String): BrowserRowMenuModel {
+        return BrowserRowMenuModel(
+            rowId = folderId,
+            rowKind = BrowserRowKind.Folder,
+            sections =
+                listOf(
+                    BrowserRowMenuSection(
+                        title = "Create",
+                        actions =
+                            listOf(
+                                BrowserRowMenuAction(id = createActionId(BrowserCreateOption.Folder), label = "New folder"),
+                                BrowserRowMenuAction(id = createActionId(BrowserCreateOption.Note), label = "New note"),
+                                BrowserRowMenuAction(id = createActionId(BrowserCreateOption.Link), label = "New link"),
+                                BrowserRowMenuAction(
+                                    id = createActionId(BrowserCreateOption.Voice),
+                                    label = "New voice",
+                                    enabled = false,
+                                ),
+                                BrowserRowMenuAction(
+                                    id = createActionId(BrowserCreateOption.Upload),
+                                    label = "New upload",
+                                    enabled = false,
+                                ),
+                            ),
+                    )
+                ),
+        )
+    }
+
+    private fun artifactMenu(artifactId: String): BrowserRowMenuModel {
+        return BrowserRowMenuModel(
+            rowId = artifactId,
+            rowKind = BrowserRowKind.Artifact,
+            sections = emptyList(),
+        )
+    }
+
+    private fun createActionId(option: BrowserCreateOption): String = "create:${option.name.lowercase()}"
 }

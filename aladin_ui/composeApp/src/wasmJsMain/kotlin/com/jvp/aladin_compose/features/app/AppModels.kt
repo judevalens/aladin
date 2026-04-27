@@ -35,10 +35,48 @@ data class DocumentBrowserState(
     val eventSink: (DocumentBrowserEvent) -> Unit,
 )
 
+enum class BrowserCreateOption {
+    Folder,
+    Note,
+    Link,
+    Voice,
+    Upload,
+}
+
+enum class BrowserRowKind {
+    Folder,
+    Artifact,
+}
+
+enum class BrowserRowMenuActionTone {
+    Normal,
+    Secondary,
+    Destructive,
+}
+
+data class BrowserRowMenuAction(
+    val id: String,
+    val label: String,
+    val enabled: Boolean = true,
+    val tone: BrowserRowMenuActionTone = BrowserRowMenuActionTone.Normal,
+)
+
+data class BrowserRowMenuSection(
+    val title: String,
+    val actions: List<BrowserRowMenuAction>,
+)
+
+data class BrowserRowMenuModel(
+    val rowId: String,
+    val rowKind: BrowserRowKind,
+    val sections: List<BrowserRowMenuSection>,
+)
+
 sealed interface BrowserTreeRow {
     val key: String
     val depth: Int
     val selected: Boolean
+    val menu: BrowserRowMenuModel
 
     data class Folder(
         val folder: FolderNode,
@@ -46,6 +84,7 @@ sealed interface BrowserTreeRow {
         val expanded: Boolean,
         val expandable: Boolean,
         override val selected: Boolean,
+        override val menu: BrowserRowMenuModel,
     ) : BrowserTreeRow {
         override val key: String = "folder_${folder.id}"
     }
@@ -54,6 +93,7 @@ sealed interface BrowserTreeRow {
         val artifact: ArtifactPreview,
         override val depth: Int,
         override val selected: Boolean,
+        override val menu: BrowserRowMenuModel,
     ) : BrowserTreeRow {
         override val key: String = "artifact_${artifact.id}"
     }
@@ -69,6 +109,7 @@ sealed interface DocumentBrowserEvent {
     data class ToggleFolderExpanded(val folderId: String, val depth: Int) : DocumentBrowserEvent
     data class NavigateScope(val folderId: String?) : DocumentBrowserEvent
     data class NavigateBreadcrumb(val folderId: String?) : DocumentBrowserEvent
+    data class CreateInFolder(val folderId: String, val option: BrowserCreateOption) : DocumentBrowserEvent
     data object CreateFolder : DocumentBrowserEvent
     data object CreateArtifact : DocumentBrowserEvent
     data object RetryLoad : DocumentBrowserEvent
