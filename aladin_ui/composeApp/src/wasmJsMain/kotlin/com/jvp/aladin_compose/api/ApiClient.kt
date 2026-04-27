@@ -5,15 +5,24 @@ import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.ktor.client.plugins.ServerResponseException
 import io.ktor.client.request.delete
+import io.ktor.client.request.forms.MultiPartFormDataContent
+import io.ktor.client.request.forms.formData
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
+import io.ktor.http.Headers
+import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 
 const val BASE_URL = "http://localhost:8000"
+
+class ApiException(
+    val userMessage: String,
+    cause: Throwable? = null,
+) : Exception(userMessage, cause)
 
 object ApiClient {
 
@@ -48,13 +57,13 @@ object ApiClient {
     }
 
     suspend fun getFeedTopics(): List<String> = try {
-        call { httpClient.get("$BASE_URL/api/feed/topics").body() }
+        call { httpClient.get("$BASE_URL/api/feed/topics").body<List<String>?>() ?: emptyList() }
     } catch (_: Throwable) {
         emptyList()
     }
 
     suspend fun getSources(): List<Source> = call {
-        httpClient.get("$BASE_URL/api/sources/").body()
+        httpClient.get("$BASE_URL/api/sources/").body<List<Source>?>() ?: emptyList()
     }
 
     suspend fun deleteSource(id: String) = call {
@@ -68,8 +77,35 @@ object ApiClient {
         }.body()
     }
 
-    suspend fun getUserArtifacts(): List<UserArtifact> = call {
-        httpClient.get("$BASE_URL/api/artifacts/").body()
+    suspend fun getFolders(parentId: String? = null): List<FolderRecord> = call {
+        httpClient.get("$BASE_URL/api/folders/") {
+            if (parentId != null) parameter("parentId", parentId)
+        }.body<List<FolderRecord>?>() ?: emptyList()
+    }
+
+    suspend fun getFolderTree(): List<FolderTreeRecord> = call {
+        httpClient.get("$BASE_URL/api/folders/tree").body<List<FolderTreeRecord>?>() ?: emptyList()
+    }
+
+    suspend fun getFolder(id: String): FolderRecord = call {
+        httpClient.get("$BASE_URL/api/folders/$id").body()
+    }
+
+    suspend fun getFolderBreadcrumbs(id: String): List<BreadcrumbRecord> = call {
+        httpClient.get("$BASE_URL/api/folders/$id/breadcrumbs").body<List<BreadcrumbRecord>?>() ?: emptyList()
+    }
+
+    suspend fun createFolder(req: FolderCreateRequest): FolderRecord = call {
+        httpClient.post("$BASE_URL/api/folders/") {
+            contentType(ContentType.Application.Json)
+            setBody(req)
+        }.body()
+    }
+
+    suspend fun getUserArtifacts(folderId: String? = null): List<UserArtifact> = call {
+        httpClient.get("$BASE_URL/api/artifacts/") {
+            if (folderId != null) parameter("folderId", folderId)
+        }.body<List<UserArtifact>?>() ?: emptyList()
     }
 
     suspend fun getUserArtifact(id: String): UserArtifact = call {
@@ -93,6 +129,34 @@ object ApiClient {
     suspend fun deleteUserArtifact(id: String) = call {
         httpClient.delete("$BASE_URL/api/artifacts/$id")
     }
+
+    suspend fun uploadUserArtifact(req: UserArtifactUploadRequest): UserArtifact = call {
+        httpClient.post("$BASE_URL/api/artifacts/upload") {
+            setBody(
+                MultiPartFormDataContent(
+                    formData {
+                        append("type", req.type)
+                        req.title?.let { append("title", it) }
+                        req.summary?.let { append("summary", it) }
+                        req.folderId?.let { append("folderId", it) }
+                        append(
+                            "file",
+                            req.bytes,
+                            Headers.build {
+                                append(
+                                    HttpHeaders.ContentDisposition,
+                                    "filename=\"${req.filename}\""
+                                )
+                                req.contentType?.let { append(HttpHeaders.ContentType, it) }
+                            },
+                        )
+                    }
+                )
+            )
+        }.body()
+    }
+
+    fun userArtifactResourceUrl(id: String): String = "$BASE_URL/api/artifacts/$id/resource"
 
     suspend fun getInsights(
         limit: Int = 30,
@@ -139,11 +203,11 @@ object ApiClient {
 private suspend fun <T> call(block: suspend () -> T): T = try {
     block()
 } catch (e: ClientRequestException) {
-    throw IllegalStateException("Request failed: ${e.response.status}", e)
+    throw ApiException("Request failed: ${e.response.status}", e)
 } catch (e: ServerResponseException) {
-    throw IllegalStateException("Server error: ${e.response.status}", e)
+    throw ApiException("Server error: ${e.response.status}", e)
 } catch (e: HttpRequestTimeoutException) {
-    throw IllegalStateException("Request timed out. Is the backend running at $BASE_URL?", e)
+    throw ApiException("Request timed out. Is the backend running at $BASE_URL?", e)
 } catch (e: Throwable) {
-    throw IllegalStateException("Request failed. Is the backend running at $BASE_URL?", e)
+    throw ApiException("Request failed. Is the backend running at $BASE_URL?", e)
 }

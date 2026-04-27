@@ -79,7 +79,7 @@ func (r *PostgresSourceRepository) List(ctx context.Context) ([]coreservice.Sour
 	}
 	defer rows.Close()
 
-	var out []coreservice.SourceRecord
+	out := make([]coreservice.SourceRecord, 0)
 	for rows.Next() {
 		var rec coreservice.SourceRecord
 		var configJSON []byte

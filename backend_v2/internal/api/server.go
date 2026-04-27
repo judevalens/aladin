@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -19,6 +20,21 @@ type Server struct {
 	httpServer *http.Server
 	deps       app.Dependencies
 }
+
+type contextKey string
+
+type errorCategory string
+
+const (
+	requestIDHeader = "X-Request-Id"
+	requestIDKey    contextKey = "request_id"
+
+	categoryDecodeError  errorCategory = "decode_error"
+	categoryBadRequest   errorCategory = "bad_request"
+	categoryNotFound     errorCategory = "not_found"
+	categoryServiceError errorCategory = "service_error"
+	categoryInternal     errorCategory = "internal_error"
+)
 
 func New(addr string, pool *pgxpool.Pool) *Server {
 	return NewWithDependencies(addr, app.NewDependencies(pool))
@@ -63,7 +79,7 @@ func NewWithDependencies(addr string, deps app.Dependencies) *Server {
 
 	s.httpServer = &http.Server{
 		Addr:              addr,
-		Handler:           cors(logging(mux)),
+		Handler:           cors(traceRequests(mux)),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	return s
@@ -82,10 +98,36 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return s.httpServer.Shutdown(ctx)
 }
 
-func logging(next http.Handler) http.Handler {
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(status int) {
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
+}
+
+func traceRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		slog.Info("api: request", "component", "api", "method", r.Method, "path", r.URL.Path)
-		next.ServeHTTP(w, r)
+		requestID := strings.TrimSpace(r.Header.Get(requestIDHeader))
+		if requestID == "" {
+			requestID = uuid.NewString()
+		}
+		ctx := context.WithValue(r.Context(), requestIDKey, requestID)
+		w.Header().Set(requestIDHeader, requestID)
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		start := time.Now()
+		next.ServeHTTP(rec, r.WithContext(ctx))
+		slog.Info(
+			"api: request completed",
+			"component", "api",
+			"request_id", requestID,
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", rec.status,
+			"duration_ms", time.Since(start).Milliseconds(),
+		)
 	})
 }
 
@@ -113,6 +155,46 @@ func readJSON(r *http.Request, dst any) error {
 		return errors.New("missing request body")
 	}
 	return json.NewDecoder(r.Body).Decode(dst)
+}
+
+func requestIDFromContext(ctx context.Context) string {
+	if value, ok := ctx.Value(requestIDKey).(string); ok {
+		return value
+	}
+	return ""
+}
+
+func writeAPIError(w http.ResponseWriter, r *http.Request, status int, category errorCategory, publicMessage string, err error) {
+	attrs := []any{
+		"component", "api",
+		"request_id", requestIDFromContext(r.Context()),
+		"method", r.Method,
+		"path", r.URL.Path,
+		"status", status,
+		"category", string(category),
+	}
+	if err != nil {
+		attrs = append(attrs, "err", err)
+	} else {
+		attrs = append(attrs, "message", publicMessage)
+	}
+	slog.Error("api: request failed", attrs...)
+	writeJSON(w, status, map[string]string{"error": publicMessage})
+}
+
+func writeDecodeError(w http.ResponseWriter, r *http.Request, err error) {
+	slog.Error(
+		"api: request decode failed",
+		"component", "api",
+		"request_id", requestIDFromContext(r.Context()),
+		"method", r.Method,
+		"path", r.URL.Path,
+		"status", http.StatusBadRequest,
+		"category", string(categoryDecodeError),
+		"content_type", r.Header.Get("Content-Type"),
+		"err", err,
+	)
+	writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
 }
 
 func intQuery(r *http.Request, key string, fallback int) int {

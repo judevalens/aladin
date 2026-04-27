@@ -12,7 +12,7 @@ import (
 func (s *Server) handleSourcesList(w http.ResponseWriter, r *http.Request) {
 	out, err := s.deps.Sources().List(r.Context())
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
 		return
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -21,7 +21,7 @@ func (s *Server) handleSourcesList(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSourcesCreate(w http.ResponseWriter, r *http.Request) {
 	var input coreservice.SourceCreateInput
 	if err := readJSON(r, &input); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		writeDecodeError(w, r, err)
 		return
 	}
 
@@ -29,10 +29,10 @@ func (s *Server) handleSourcesCreate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var requestErr coreservice.BadRequest
 		if errors.As(err, &requestErr) {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeAPIError(w, r, http.StatusBadRequest, categoryBadRequest, err.Error(), err)
 			return
 		}
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, rec)
@@ -41,15 +41,15 @@ func (s *Server) handleSourcesCreate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSourcesDelete(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if _, err := uuid.Parse(id); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid source id"})
+		writeAPIError(w, r, http.StatusBadRequest, categoryBadRequest, "Invalid source id", err)
 		return
 	}
 	if err := s.deps.Sources().Delete(r.Context(), id); err != nil {
 		if errors.Is(err, coreservice.ErrNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Source not found"})
+			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Source not found", err)
 			return
 		}
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

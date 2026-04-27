@@ -81,9 +81,35 @@ func TestArtifactServiceUploadCreatesArtifactRecord(t *testing.T) {
 	}
 }
 
+func TestArtifactServiceFolderTreeBuildsHierarchy(t *testing.T) {
+	t.Parallel()
+
+	rootID := "folder-root"
+	childID := "folder-child"
+	repo := &fakeArtifactRepository{
+		folders: []FolderNode{
+			{ID: childID, ParentID: &rootID, Title: "Child"},
+			{ID: rootID, ParentID: nil, Title: "Root"},
+		},
+	}
+	svc := NewArtifactService(repo, &fakeArtifactFiles{})
+
+	tree, err := svc.FolderTree(context.Background())
+	if err != nil {
+		t.Fatalf("FolderTree error: %v", err)
+	}
+	if len(tree) != 1 {
+		t.Fatalf("tree len = %d, want 1", len(tree))
+	}
+	if tree[0].ID != rootID || len(tree[0].Children) != 1 || tree[0].Children[0].ID != childID {
+		t.Fatalf("tree = %#v, want root -> child hierarchy", tree)
+	}
+}
+
 type fakeArtifactRepository struct {
 	artifactByID     map[string]ArtifactResponse
 	createdArtifacts []ArtifactResponse
+	folders          []FolderNode
 }
 
 func (f *fakeArtifactRepository) ListArtifacts(context.Context, ArtifactListParams) ([]ArtifactResponse, error) {
@@ -114,6 +140,9 @@ func (f *fakeArtifactRepository) DeleteArtifact(context.Context, string) error {
 
 func (f *fakeArtifactRepository) ListFolders(context.Context, *string) ([]FolderNode, error) {
 	return nil, nil
+}
+func (f *fakeArtifactRepository) ListAllFolders(context.Context) ([]FolderNode, error) {
+	return f.folders, nil
 }
 func (f *fakeArtifactRepository) CreateFolder(context.Context, FolderNode) error { return nil }
 func (f *fakeArtifactRepository) GetFolder(context.Context, string) (FolderNode, error) {

@@ -5,7 +5,7 @@ import "net/http"
 func (s *Server) handleWorkerStatus(w http.ResponseWriter, r *http.Request) {
 	out, err := s.deps.System().WorkerStatus(r.Context())
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
 		return
 	}
 	writeJSON(w, http.StatusOK, out)

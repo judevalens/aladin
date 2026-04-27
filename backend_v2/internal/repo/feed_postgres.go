@@ -63,7 +63,7 @@ func (r *PostgresFeedRepository) List(ctx context.Context, params coreservice.Fe
 	}
 	defer rows.Close()
 
-	var items []coreservice.FeedItem
+	items := make([]coreservice.FeedItem, 0)
 	for rows.Next() {
 		var item coreservice.FeedItem
 		var enrichment, metadata []byte
@@ -122,7 +122,7 @@ func (r *PostgresFeedRepository) Topics(ctx context.Context) ([]string, error) {
 		return []string{}, nil
 	}
 	defer rows.Close()
-	var out []string
+	out := make([]string, 0)
 	for rows.Next() {
 		var topic string
 		if rows.Scan(&topic) == nil {
@@ -142,7 +142,7 @@ func (r *PostgresFeedRepository) Sources(ctx context.Context) ([]coreservice.Fee
 		return []coreservice.FeedSourceRecord{}, nil
 	}
 	defer rows.Close()
-	var out []coreservice.FeedSourceRecord
+	out := make([]coreservice.FeedSourceRecord, 0)
 	for rows.Next() {
 		var rec coreservice.FeedSourceRecord
 		var lastSynced *time.Time

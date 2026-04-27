@@ -17,7 +17,7 @@ func (s *Server) handleFeedList(w http.ResponseWriter, r *http.Request) {
 	}
 	out, err := s.deps.Feed().List(r.Context(), params)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
 		return
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -46,7 +46,7 @@ func (s *Server) handleFeedUnsave(w http.ResponseWriter, r *http.Request) {
 func (s *Server) updateRecordUserStatus(w http.ResponseWriter, r *http.Request, status string) {
 	id := r.PathValue("id")
 	if err := s.deps.Feed().UpdateStatus(r.Context(), id, status); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

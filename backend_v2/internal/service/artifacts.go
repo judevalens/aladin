@@ -16,6 +16,7 @@ type ArtifactService interface {
 	Upload(context.Context, ArtifactUploadInput, io.Reader) (ArtifactResponse, error)
 	Resource(context.Context, string) (ArtifactResource, error)
 	ListFolders(context.Context, *string) ([]FolderNode, error)
+	FolderTree(context.Context) ([]FolderTreeNode, error)
 	CreateFolder(context.Context, string, *string) (FolderNode, error)
 	GetFolder(context.Context, string) (FolderNode, error)
 	FolderBreadcrumbs(context.Context, string) ([]BreadcrumbItem, error)
@@ -28,6 +29,7 @@ type ArtifactRepository interface {
 	UpdateArtifact(context.Context, string, ArtifactPatch) error
 	DeleteArtifact(context.Context, string) error
 	ListFolders(context.Context, *string) ([]FolderNode, error)
+	ListAllFolders(context.Context) ([]FolderNode, error)
 	CreateFolder(context.Context, FolderNode) error
 	GetFolder(context.Context, string) (FolderNode, error)
 	FolderBreadcrumbs(context.Context, string) ([]BreadcrumbItem, error)
@@ -291,6 +293,44 @@ func (s *DefaultArtifactService) ListFolders(ctx context.Context, parentID *stri
 		}
 	}
 	return s.repo.ListFolders(ctx, parentID)
+}
+
+func (s *DefaultArtifactService) FolderTree(ctx context.Context) ([]FolderTreeNode, error) {
+	folders, err := s.repo.ListAllFolders(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	childrenByParentID := make(map[string][]FolderNode)
+	rootFolders := make([]FolderNode, 0)
+	for _, folder := range folders {
+		if folder.ParentID == nil {
+			rootFolders = append(rootFolders, folder)
+			continue
+		}
+		childrenByParentID[*folder.ParentID] = append(childrenByParentID[*folder.ParentID], folder)
+	}
+
+	var build func(FolderNode) FolderTreeNode
+	build = func(folder FolderNode) FolderTreeNode {
+		children := childrenByParentID[folder.ID]
+		node := FolderTreeNode{
+			ID:       folder.ID,
+			ParentID: folder.ParentID,
+			Title:    folder.Title,
+			Children: make([]FolderTreeNode, 0, len(children)),
+		}
+		for _, child := range children {
+			node.Children = append(node.Children, build(child))
+		}
+		return node
+	}
+
+	tree := make([]FolderTreeNode, 0, len(rootFolders))
+	for _, folder := range rootFolders {
+		tree = append(tree, build(folder))
+	}
+	return tree, nil
 }
 
 func (s *DefaultArtifactService) CreateFolder(ctx context.Context, title string, parentID *string) (FolderNode, error) {

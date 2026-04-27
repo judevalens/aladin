@@ -97,6 +97,7 @@ data class Quote(
 data class UserArtifact(
     val id: String,
     val type: String,
+    val folderId: String? = null,
     val title: String,
     val content: String,
     val summary: String? = null,
@@ -109,8 +110,9 @@ data class UserArtifact(
 @Serializable
 data class UserArtifactCreateRequest(
     val type: String = "note",
-    val title: String,
-    val content: String,
+    val folderId: String? = null,
+    val title: String = "",
+    val content: String = "",
     val summary: String? = null,
     val sourceUrl: String? = null,
     val metadata: Map<String, JsonElement> = emptyMap(),
@@ -119,9 +121,47 @@ data class UserArtifactCreateRequest(
 @Serializable
 data class UserArtifactUpdateRequest(
     val type: String? = null,
+    val folderId: String? = null,
     val title: String? = null,
     val content: String? = null,
     val summary: String? = null,
     val sourceUrl: String? = null,
     val metadata: Map<String, JsonElement>? = null,
+)
+
+@Serializable
+data class FolderRecord(
+    val id: String,
+    val parentId: String? = null,
+    val title: String,
+)
+
+@Serializable
+data class FolderTreeRecord(
+    val id: String,
+    val parentId: String? = null,
+    val title: String,
+    val children: List<FolderTreeRecord> = emptyList(),
+)
+
+@Serializable
+data class FolderCreateRequest(
+    val title: String,
+    val parentId: String? = null,
+)
+
+@Serializable
+data class BreadcrumbRecord(
+    val id: String? = null,
+    val label: String,
+)
+
+data class UserArtifactUploadRequest(
+    val type: String,
+    val filename: String,
+    val bytes: ByteArray,
+    val contentType: String? = null,
+    val title: String? = null,
+    val summary: String? = null,
+    val folderId: String? = null,
 )

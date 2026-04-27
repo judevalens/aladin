@@ -45,7 +45,7 @@ func (r *PostgresArtifactRepository) ListArtifacts(ctx context.Context, params a
 	}
 	defer rows.Close()
 
-	var out []artifactservice.ArtifactResponse
+	out := make([]artifactservice.ArtifactResponse, 0)
 	for rows.Next() {
 		rec, err := scanArtifactResponse(rows)
 		if err != nil {
@@ -155,7 +155,33 @@ func (r *PostgresArtifactRepository) ListFolders(ctx context.Context, parentID *
 	}
 	defer rows.Close()
 
-	var out []artifactservice.FolderNode
+	out := make([]artifactservice.FolderNode, 0)
+	for rows.Next() {
+		var node artifactservice.FolderNode
+		if err := rows.Scan(&node.ID, &node.ParentID, &node.Title); err != nil {
+			return nil, err
+		}
+		out = append(out, node)
+	}
+	return out, rows.Err()
+}
+
+func (r *PostgresArtifactRepository) ListAllFolders(ctx context.Context) ([]artifactservice.FolderNode, error) {
+	if err := r.ensureDefaultUser(ctx); err != nil {
+		return nil, err
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, parent_id, title
+		  FROM folders
+		 WHERE user_id = $1::uuid
+		 ORDER BY title ASC
+	`, r.userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]artifactservice.FolderNode, 0)
 	for rows.Next() {
 		var node artifactservice.FolderNode
 		if err := rows.Scan(&node.ID, &node.ParentID, &node.Title); err != nil {

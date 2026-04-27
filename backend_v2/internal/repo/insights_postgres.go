@@ -44,7 +44,7 @@ func (r *PostgresInsightRepository) List(ctx context.Context, params coreservice
 	}
 	defer rows.Close()
 
-	var items []coreservice.InsightRecord
+	items := make([]coreservice.InsightRecord, 0)
 	for rows.Next() {
 		var item coreservice.InsightRecord
 		var createdAt time.Time

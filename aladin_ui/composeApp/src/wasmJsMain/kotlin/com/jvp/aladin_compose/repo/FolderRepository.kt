@@ -1,108 +1,126 @@
 package com.jvp.aladin_compose.repo
 
+import com.jvp.aladin_compose.api.ApiClient
+import com.jvp.aladin_compose.api.FolderCreateRequest
+import com.jvp.aladin_compose.api.UserArtifact
+import com.jvp.aladin_compose.api.UserArtifactCreateRequest
 import com.jvp.aladin_compose.model.Artifact
 import com.jvp.aladin_compose.model.ArtifactKind
 import com.jvp.aladin_compose.model.BreadcrumbItem
 import com.jvp.aladin_compose.model.FolderNode
-import com.jvp.aladin_compose.model.FolderWorkspace
+import com.jvp.aladin_compose.model.FolderTreeNode
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
 interface FolderRepository {
-    suspend fun children(parentId: String?): List<FolderNode>
-    suspend fun breadcrumbs(parentId: String?): List<BreadcrumbItem>
-    suspend fun workspace(folderId: String): FolderWorkspace?
+    suspend fun folderTree(): List<FolderTreeNode>
+    suspend fun folders(parentId: String?): List<FolderNode>
+    suspend fun folder(id: String): FolderNode
+    suspend fun folderBreadcrumbs(folderId: String?): List<BreadcrumbItem>
+    suspend fun artifacts(folderId: String?): List<Artifact>
+    suspend fun artifact(id: String): Artifact
     suspend fun createFolder(parentId: String?, title: String): FolderNode
-    suspend fun createArtifact(folderId: String, title: String, kind: ArtifactKind = ArtifactKind.Note): Artifact
+    suspend fun createArtifact(folderId: String?, title: String, kind: ArtifactKind = ArtifactKind.Note): Artifact
+    fun artifactResourceUrl(id: String): String
 }
 
-class FakeFolderRepository : FolderRepository {
-    private val nodes = mutableListOf(
-        FolderNode("folder_market", null, "Market Research"),
-        FolderNode("folder_watch", null, "Watchlist"),
-        FolderNode("folder_rivian", "folder_watch", "Rivian"),
-        FolderNode("folder_supply", "folder_market", "AI Supply Chain"),
-        FolderNode("folder_gtm", "folder_market", "GTM Research"),
-    )
-
-    private val artifacts = mutableListOf(
-        Artifact(
-            id = "artifact_rivian_note",
-            folderId = "folder_rivian",
-            title = "Rivian thesis",
-            summary = "Watch whether manufacturing pressure and adjacent AI capex narratives change sentiment over the next quarter.",
-            kind = ArtifactKind.Note,
-            updatedLabel = "Updated today",
-        ),
-        Artifact(
-            id = "artifact_rivian_link",
-            folderId = "folder_rivian",
-            title = "Rivian earnings clip",
-            summary = "Saved link with a short note about margin sensitivity and delivery pacing.",
-            kind = ArtifactKind.Link,
-            updatedLabel = "Yesterday",
-        ),
-        Artifact(
-            id = "artifact_supply_voice",
-            folderId = "folder_supply",
-            title = "Voice memo on chip pressure",
-            summary = "Quick recorded thought about second-order demand shifts from AI infra spending.",
-            kind = ArtifactKind.Voice,
-            updatedLabel = "2 days ago",
-        ),
-    )
-
-    override suspend fun children(parentId: String?): List<FolderNode> {
-        return nodes.filter { it.parentId == parentId }.sortedBy { it.title }
+class ApiFolderRepository : FolderRepository {
+    override suspend fun folderTree(): List<FolderTreeNode> {
+        return ApiClient.getFolderTree().map(::toFolderTreeNode)
     }
 
-    override suspend fun breadcrumbs(parentId: String?): List<BreadcrumbItem> {
-        val items = mutableListOf(BreadcrumbItem(id = null, label = "Folders"))
-        var current = nodes.firstOrNull { it.id == parentId }
-        val stack = mutableListOf<FolderNode>()
-        while (current != null) {
-            stack += current
-            current = nodes.firstOrNull { it.id == current.parentId }
-        }
-        stack.asReversed().forEach { items += BreadcrumbItem(it.id, it.title) }
-        return items
+    override suspend fun folders(parentId: String?): List<FolderNode> {
+        return ApiClient.getFolders(parentId).map { FolderNode(it.id, it.parentId, it.title) }
     }
 
-    override suspend fun workspace(folderId: String): FolderWorkspace? {
-        val folder = nodes.firstOrNull { it.id == folderId } ?: return null
-        return FolderWorkspace(
-            folder = folder,
-            artifacts = artifacts.filter { it.folderId == folderId },
-            signalCount = when (folderId) {
-                "folder_rivian" -> 3
-                "folder_supply" -> 5
-                else -> 0
-            },
-        )
+    override suspend fun folder(id: String): FolderNode {
+        val folder = ApiClient.getFolder(id)
+        return FolderNode(folder.id, folder.parentId, folder.title)
+    }
+
+    override suspend fun folderBreadcrumbs(folderId: String?): List<BreadcrumbItem> {
+        if (folderId == null) return listOf(BreadcrumbItem(id = null, label = "Folders"))
+        return ApiClient.getFolderBreadcrumbs(folderId).map { BreadcrumbItem(it.id, it.label) }
+    }
+
+    override suspend fun artifacts(folderId: String?): List<Artifact> {
+        return ApiClient.getUserArtifacts(folderId).map(::toArtifact)
+    }
+
+    override suspend fun artifact(id: String): Artifact {
+        return toArtifact(ApiClient.getUserArtifact(id))
     }
 
     override suspend fun createFolder(parentId: String?, title: String): FolderNode {
-        val folder = FolderNode(
-            id = "folder_${title.lowercase().replace(" ", "_")}_${nodes.size}",
-            parentId = parentId,
-            title = title,
-        )
-        nodes += folder
-        return folder
+        val created = ApiClient.createFolder(FolderCreateRequest(title = title, parentId = parentId))
+        return FolderNode(created.id, created.parentId, created.title)
     }
 
-    override suspend fun createArtifact(folderId: String, title: String, kind: ArtifactKind): Artifact {
-        val artifact = Artifact(
-            id = "artifact_${artifacts.size}",
-            folderId = folderId,
+    override suspend fun createArtifact(folderId: String?, title: String, kind: ArtifactKind): Artifact {
+        val type =
+            when (kind) {
+                ArtifactKind.Note -> "note"
+                ArtifactKind.Link -> "link"
+                ArtifactKind.Voice -> "voice"
+                ArtifactKind.File -> "file"
+            }
+        val created =
+            ApiClient.createUserArtifact(
+                UserArtifactCreateRequest(
+                    type = type,
+                    folderId = folderId,
+                    title = title,
+                    content = if (kind == ArtifactKind.Note) "New artifact" else "",
+                    sourceUrl = if (kind == ArtifactKind.Link) "https://example.com" else null,
+                )
+            )
+        return toArtifact(created)
+    }
+
+    override fun artifactResourceUrl(id: String): String = ApiClient.userArtifactResourceUrl(id)
+
+    private fun toArtifact(record: UserArtifact): Artifact {
+        val kind =
+            when (record.type.lowercase()) {
+                "note" -> ArtifactKind.Note
+                "link" -> ArtifactKind.Link
+                "voice" -> ArtifactKind.Voice
+                "file" -> ArtifactKind.File
+                else -> ArtifactKind.Note
+            }
+        val title =
+            record.title.ifBlank {
+                metadataString(record.metadata, "originalFilename")
+                    ?: metadataString(record.metadata, "storageKey")
+                    ?: "Untitled artifact"
+            }
+        return Artifact(
+            id = record.id,
+            folderId = record.folderId,
             title = title,
-            summary = when (kind) {
-                ArtifactKind.Note -> "New note artifact"
-                ArtifactKind.Link -> "New saved link"
-                ArtifactKind.Voice -> "New voice artifact"
-            },
+            content = record.content,
+            summary = record.summary,
             kind = kind,
-            updatedLabel = "Just now",
+            updatedLabel = record.updatedAt,
+            sourceUrl = record.sourceUrl,
+            resourceUrl =
+                if (kind == ArtifactKind.Voice || kind == ArtifactKind.File) artifactResourceUrl(record.id)
+                else null,
         )
-        artifacts.add(0, artifact)
-        return artifact
+    }
+
+    private fun toFolderTreeNode(record: com.jvp.aladin_compose.api.FolderTreeRecord): FolderTreeNode {
+        return FolderTreeNode(
+            id = record.id,
+            parentId = record.parentId,
+            title = record.title,
+            children = record.children.map(::toFolderTreeNode),
+        )
+    }
+
+    private fun metadataString(metadata: Map<String, JsonElement>, key: String): String? {
+        val value = metadata[key] ?: return null
+        return (value as? JsonPrimitive)?.contentOrNull
     }
 }

@@ -20,6 +20,7 @@ func (s *Server) registerArtifactRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/artifacts/{id}/resource", s.handleArtifactsResource)
 
 	mux.HandleFunc("GET /api/folders/", s.handleFoldersList)
+	mux.HandleFunc("GET /api/folders/tree", s.handleFoldersTree)
 	mux.HandleFunc("POST /api/folders/", s.handleFoldersCreate)
 	mux.HandleFunc("GET /api/folders/{id}", s.handleFoldersGet)
 	mux.HandleFunc("GET /api/folders/{id}/breadcrumbs", s.handleFoldersBreadcrumbs)
@@ -32,10 +33,10 @@ func (s *Server) handleArtifactsList(w http.ResponseWriter, r *http.Request) {
 	out, err := s.deps.Artifacts().List(r.Context(), params)
 	if err != nil {
 		if errors.Is(err, artifactservice.ErrNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Folder not found"})
+			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Folder not found", err)
 			return
 		}
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
 		return
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -45,10 +46,10 @@ func (s *Server) handleArtifactsGet(w http.ResponseWriter, r *http.Request) {
 	rec, err := s.deps.Artifacts().Get(r.Context(), r.PathValue("id"))
 	if err != nil {
 		if errors.Is(err, artifactservice.ErrNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Artifact not found"})
+			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Artifact not found", err)
 			return
 		}
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
 		return
 	}
 	writeJSON(w, http.StatusOK, rec)
@@ -57,21 +58,21 @@ func (s *Server) handleArtifactsGet(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleArtifactsCreate(w http.ResponseWriter, r *http.Request) {
 	var payload artifactservice.ArtifactPayload
 	if err := readJSON(r, &payload); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+		writeDecodeError(w, r, err)
 		return
 	}
 	rec, err := s.deps.Artifacts().Create(r.Context(), payload)
 	if err != nil {
 		if errors.Is(err, artifactservice.ErrNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Folder not found"})
+			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Folder not found", err)
 			return
 		}
 		var requestErr artifactservice.BadRequest
 		if errors.As(err, &requestErr) {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeAPIError(w, r, http.StatusBadRequest, categoryBadRequest, err.Error(), err)
 			return
 		}
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, rec)
@@ -80,21 +81,21 @@ func (s *Server) handleArtifactsCreate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleArtifactsUpdate(w http.ResponseWriter, r *http.Request) {
 	var patch artifactservice.ArtifactPatch
 	if err := readJSON(r, &patch); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+		writeDecodeError(w, r, err)
 		return
 	}
 	rec, err := s.deps.Artifacts().Update(r.Context(), r.PathValue("id"), patch)
 	if err != nil {
 		if errors.Is(err, artifactservice.ErrNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Artifact or folder not found"})
+			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Artifact or folder not found", err)
 			return
 		}
 		var requestErr artifactservice.BadRequest
 		if errors.As(err, &requestErr) {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeAPIError(w, r, http.StatusBadRequest, categoryBadRequest, err.Error(), err)
 			return
 		}
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
 		return
 	}
 	writeJSON(w, http.StatusOK, rec)
@@ -103,10 +104,10 @@ func (s *Server) handleArtifactsUpdate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleArtifactsDelete(w http.ResponseWriter, r *http.Request) {
 	if err := s.deps.Artifacts().Delete(r.Context(), r.PathValue("id")); err != nil {
 		if errors.Is(err, artifactservice.ErrNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Artifact not found"})
+			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Artifact not found", err)
 			return
 		}
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -115,7 +116,7 @@ func (s *Server) handleArtifactsDelete(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleArtifactsUpload(w http.ResponseWriter, r *http.Request) {
 	file, header, err := r.FormFile("file")
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no file provided"})
+		writeAPIError(w, r, http.StatusBadRequest, categoryBadRequest, "no file provided", err)
 		return
 	}
 	defer file.Close()
@@ -133,15 +134,15 @@ func (s *Server) handleArtifactsUpload(w http.ResponseWriter, r *http.Request) {
 	}, file)
 	if err != nil {
 		if errors.Is(err, artifactservice.ErrNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Folder not found"})
+			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Folder not found", err)
 			return
 		}
 		var requestErr artifactservice.BadRequest
 		if errors.As(err, &requestErr) {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeAPIError(w, r, http.StatusBadRequest, categoryBadRequest, err.Error(), err)
 			return
 		}
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, rec)
@@ -151,15 +152,15 @@ func (s *Server) handleArtifactsResource(w http.ResponseWriter, r *http.Request)
 	resource, err := s.deps.Artifacts().Resource(r.Context(), r.PathValue("id"))
 	if err != nil {
 		if errors.Is(err, artifactservice.ErrNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Artifact resource not found"})
+			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Artifact resource not found", err)
 			return
 		}
 		var requestErr artifactservice.BadRequest
 		if errors.As(err, &requestErr) {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeAPIError(w, r, http.StatusBadRequest, categoryBadRequest, err.Error(), err)
 			return
 		}
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
 		return
 	}
 	if resource.ContentType == "" {
@@ -177,10 +178,19 @@ func (s *Server) handleFoldersList(w http.ResponseWriter, r *http.Request) {
 	out, err := s.deps.Artifacts().ListFolders(r.Context(), stringQueryPtr(r, "parentId"))
 	if err != nil {
 		if errors.Is(err, artifactservice.ErrNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Folder not found"})
+			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Folder not found", err)
 			return
 		}
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handleFoldersTree(w http.ResponseWriter, r *http.Request) {
+	out, err := s.deps.Artifacts().FolderTree(r.Context())
+	if err != nil {
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
 		return
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -192,21 +202,21 @@ func (s *Server) handleFoldersCreate(w http.ResponseWriter, r *http.Request) {
 		ParentID *string `json:"parentId"`
 	}
 	if err := readJSON(r, &body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+		writeDecodeError(w, r, err)
 		return
 	}
 	folder, err := s.deps.Artifacts().CreateFolder(r.Context(), body.Title, body.ParentID)
 	if err != nil {
 		if errors.Is(err, artifactservice.ErrNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Folder not found"})
+			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Folder not found", err)
 			return
 		}
 		var requestErr artifactservice.BadRequest
 		if errors.As(err, &requestErr) {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeAPIError(w, r, http.StatusBadRequest, categoryBadRequest, err.Error(), err)
 			return
 		}
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, folder)
@@ -216,10 +226,10 @@ func (s *Server) handleFoldersGet(w http.ResponseWriter, r *http.Request) {
 	folder, err := s.deps.Artifacts().GetFolder(r.Context(), r.PathValue("id"))
 	if err != nil {
 		if errors.Is(err, artifactservice.ErrNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Folder not found"})
+			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Folder not found", err)
 			return
 		}
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
 		return
 	}
 	writeJSON(w, http.StatusOK, folder)
@@ -229,10 +239,10 @@ func (s *Server) handleFoldersBreadcrumbs(w http.ResponseWriter, r *http.Request
 	items, err := s.deps.Artifacts().FolderBreadcrumbs(r.Context(), r.PathValue("id"))
 	if err != nil {
 		if errors.Is(err, artifactservice.ErrNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Folder not found"})
+			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Folder not found", err)
 			return
 		}
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
 		return
 	}
 	writeJSON(w, http.StatusOK, items)

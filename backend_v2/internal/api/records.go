@@ -8,7 +8,7 @@ import (
 func (s *Server) handleRecordsList(w http.ResponseWriter, r *http.Request) {
 	out, err := s.deps.Records().List(r.Context())
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
 		return
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -21,7 +21,7 @@ func (s *Server) handleRecordChildren(w http.ResponseWriter, r *http.Request) {
 
 	out, err := s.deps.Records().Children(r.Context(), id, limit, offset)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
 		return
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -37,7 +37,7 @@ func (s *Server) handleRecordsCreate(w http.ResponseWriter, r *http.Request) {
 		ParentID  string `json:"parentId"`
 	}
 	if err := readJSON(r, &payload); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+		writeDecodeError(w, r, err)
 		return
 	}
 	payload.Type = strings.TrimSpace(payload.Type)
@@ -46,7 +46,7 @@ func (s *Server) handleRecordsCreate(w http.ResponseWriter, r *http.Request) {
 	payload.SourceURL = strings.TrimSpace(payload.SourceURL)
 	payload.ParentID = strings.TrimSpace(payload.ParentID)
 	if payload.Type == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "type is required"})
+		writeAPIError(w, r, http.StatusBadRequest, categoryBadRequest, "type is required", nil)
 		return
 	}
 	if payload.Label == "" {
@@ -63,11 +63,11 @@ func (s *Server) handleRecordsCreate(w http.ResponseWriter, r *http.Request) {
 		payload.Content = payload.Label
 	}
 	if payload.Content == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "content is required"})
+		writeAPIError(w, r, http.StatusBadRequest, categoryBadRequest, "content is required", nil)
 		return
 	}
 	if err := s.deps.Records().Create(r.Context(), payload.ID, payload.Type, payload.Label, payload.Content, payload.SourceURL, payload.ParentID); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]bool{"ok": true})
@@ -76,11 +76,11 @@ func (s *Server) handleRecordsCreate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRecordsDelete(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "record id is required"})
+		writeAPIError(w, r, http.StatusBadRequest, categoryBadRequest, "record id is required", nil)
 		return
 	}
 	if err := s.deps.Records().Delete(r.Context(), id); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

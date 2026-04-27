@@ -1,5 +1,6 @@
 package com.jvp.aladin_compose.features.app
 
+import com.jvp.aladin_compose.openUrl
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -247,15 +248,17 @@ private fun RowScope.PaneThree(state: AppState) {
               onNavigateBreadcrumb = {
                 state.browser.eventSink(DocumentBrowserEvent.NavigateBreadcrumb(it))
               },
+              onOpenResource = { artifact.resourceUrl?.let(::openUrl) },
+              onOpenSource = { artifact.sourceUrl?.let(::openUrl) },
           )
-        } else if (state.selectedItem == null) {
+        } else if (state.selectedFolder == null) {
           PlaceholderPane(
               "Select an item",
               "Choose an item from the browser to open its workspace.",
           )
         } else {
-          ItemWorkspaceView(
-              item = state.selectedItem,
+          FolderWorkspaceView(
+              folder = state.selectedFolder,
               breadcrumbs = state.browser.breadcrumbs,
               onNavigateBreadcrumb = {
                 state.browser.eventSink(DocumentBrowserEvent.NavigateBreadcrumb(it))
@@ -281,8 +284,8 @@ private fun RowScope.PaneThree(state: AppState) {
 
 
 @Composable
-private fun ItemWorkspaceView(
-    item: Item,
+private fun FolderWorkspaceView(
+    folder: FolderNode,
     breadcrumbs: List<BreadcrumbItem>,
     onNavigateBreadcrumb: (String?) -> Unit,
 ) {
@@ -304,13 +307,13 @@ private fun ItemWorkspaceView(
       )
       Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Text(
-            item.title,
+            folder.title,
             style = MaterialTheme.typography.headlineLarge,
             color = AladinColor.Ink,
             fontWeight = FontWeight.Bold,
         )
         Text(
-            "${item.kind.name.lowercase()} / 0 relevant signals",
+            "folder / workspace scope",
             style = MaterialTheme.typography.labelMedium,
             color = AladinColor.CodeText,
             fontFamily = FontFamily.Monospace,
@@ -330,6 +333,8 @@ private fun ArtifactWorkspaceView(
     artifact: Artifact,
     breadcrumbs: List<BreadcrumbItem>,
     onNavigateBreadcrumb: (String?) -> Unit,
+    onOpenResource: () -> Unit,
+    onOpenSource: () -> Unit,
 ) {
   Box(
       modifier = Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 28.dp),
@@ -360,16 +365,35 @@ private fun ArtifactWorkspaceView(
         )
       }
       Text(
-          artifact.summary,
+          artifact.summary ?: artifact.content.ifBlank { "No summary available." },
           color = AladinColor.InkSecondary,
           style = MaterialTheme.typography.bodyLarge,
       )
+      if (artifact.content.isNotBlank() && artifact.content != artifact.summary) {
+        Text(
+            artifact.content,
+            color = AladinColor.InkSecondary,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+      }
       Text(
           artifact.updatedLabel,
           color = AladinColor.InkMuted,
           style = MaterialTheme.typography.labelMedium,
           fontFamily = FontFamily.Monospace,
       )
+      artifact.sourceUrl?.let {
+        AladinGhostAction(
+            label = "Open Link",
+            onClick = onOpenSource,
+        )
+      }
+      artifact.resourceUrl?.let {
+        AladinGhostAction(
+            label = if (artifact.kind == ArtifactKind.Voice) "Open Audio" else "Open File",
+            onClick = onOpenResource,
+        )
+      }
     }
   }
 }

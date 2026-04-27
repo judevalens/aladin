@@ -103,6 +103,35 @@ func TestFoldersCreateRoute(t *testing.T) {
 	}
 }
 
+func TestFoldersTreeRoute(t *testing.T) {
+	t.Parallel()
+
+	server := NewWithDependencies(":0", app.StaticDependencies{
+		ArtifactsSvc: &fakeArtifactService{
+			folderTree: []artifactservice.FolderTreeNode{
+				{
+					ID:    "folder-root",
+					Title: "Root",
+					Children: []artifactservice.FolderTreeNode{
+						{ID: "folder-child", ParentID: stringPtr("folder-root"), Title: "Child", Children: []artifactservice.FolderTreeNode{}},
+					},
+				},
+			},
+		},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/folders/tree", nil)
+	rec := httptest.NewRecorder()
+
+	server.httpServer.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "\"children\"") {
+		t.Fatalf("body = %s, want recursive tree payload", rec.Body.String())
+	}
+}
+
 func TestArtifactsUploadRoute(t *testing.T) {
 	t.Parallel()
 
@@ -194,6 +223,7 @@ func TestLegacyArtifactRoutesRemoved(t *testing.T) {
 type fakeArtifactService struct {
 	list               []artifactservice.ArtifactResponse
 	listParams         *artifactservice.ArtifactListParams
+	folderTree         []artifactservice.FolderTreeNode
 	created            []artifactservice.ArtifactPayload
 	uploadInput        *artifactservice.ArtifactUploadInput
 	resource           artifactservice.ArtifactResource
@@ -238,6 +268,10 @@ func (f *fakeArtifactService) ListFolders(context.Context, *string) ([]artifacts
 	return nil, nil
 }
 
+func (f *fakeArtifactService) FolderTree(context.Context) ([]artifactservice.FolderTreeNode, error) {
+	return f.folderTree, nil
+}
+
 func (f *fakeArtifactService) CreateFolder(_ context.Context, title string, parentID *string) (artifactservice.FolderNode, error) {
 	f.createdFolderTitle = title
 	return artifactservice.FolderNode{ID: "folder-1", ParentID: parentID, Title: title}, nil
@@ -249,4 +283,8 @@ func (f *fakeArtifactService) GetFolder(context.Context, string) (artifactservic
 
 func (f *fakeArtifactService) FolderBreadcrumbs(context.Context, string) ([]artifactservice.BreadcrumbItem, error) {
 	return nil, nil
+}
+
+func stringPtr(value string) *string {
+	return &value
 }

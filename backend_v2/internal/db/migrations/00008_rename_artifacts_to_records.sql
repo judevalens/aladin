@@ -1,4 +1,5 @@
 -- +goose Up
+-- +goose StatementBegin
 DO $$
 BEGIN
     IF to_regclass('public.artifacts') IS NOT NULL AND to_regclass('public.records') IS NULL THEN
@@ -47,8 +48,10 @@ BEGIN
         ALTER INDEX uq_artifacts_source_external RENAME TO uq_records_source_external;
     END IF;
 END $$;
+-- +goose StatementEnd
 
 -- +goose Down
+-- +goose StatementBegin
 DO $$
 BEGIN
     IF to_regclass('public.records') IS NOT NULL AND to_regclass('public.artifacts') IS NULL THEN
@@ -97,3 +100,4 @@ BEGIN
         ALTER INDEX uq_records_source_external RENAME TO uq_artifacts_source_external;
     END IF;
 END $$;
+-- +goose StatementEnd

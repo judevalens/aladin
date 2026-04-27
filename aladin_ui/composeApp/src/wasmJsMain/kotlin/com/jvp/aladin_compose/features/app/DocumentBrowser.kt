@@ -1,6 +1,7 @@
 package com.jvp.aladin_compose.features.app
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,7 +17,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.sharp.NavigateBefore
 import androidx.compose.material.icons.outlined.Folder
@@ -25,6 +25,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -36,7 +37,9 @@ import androidx.compose.ui.unit.dp
 import com.jvp.aladin_compose.model.Artifact
 import com.jvp.aladin_compose.model.ArtifactKind
 import com.jvp.aladin_compose.model.BreadcrumbItem
-import com.jvp.aladin_compose.model.Item
+import com.jvp.aladin_compose.model.FolderNode
+import com.jvp.aladin_compose.ui_lib.ErrorState
+import com.jvp.aladin_compose.ui_lib.LoadingState
 import com.jvp.aladin_compose.ui_lib.AladinColor
 import com.jvp.aladin_compose.ui_lib.AladinInteractionDefaults
 import com.jvp.aladin_compose.ui_lib.aladinClickable
@@ -55,6 +58,19 @@ private val BrowserIndent = 16.dp
 
 @Composable
 fun DocumentBrowser(state: DocumentBrowserState) {
+    if (state.loading) {
+        LoadingState()
+        return
+    }
+    if (state.errorMessage != null) {
+        ErrorState(state.errorMessage) { state.eventSink(DocumentBrowserEvent.RetryLoad) }
+        return
+    }
+    if (state.rows.isEmpty()) {
+        BrowserEmptyState(state)
+        return
+    }
+
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 10.dp)) {
         BrowserScopeBreadcrumbRow(state)
         Spacer(modifier = Modifier.size(8.dp))
@@ -66,45 +82,101 @@ fun DocumentBrowser(state: DocumentBrowserState) {
         ) {
             items(state.rows, key = { it.key }) { row ->
                 when (row) {
-                    is BrowserTreeRow.ScopeBack -> Unit
                     is BrowserTreeRow.Folder ->
                         BrowserFolderRow(
-                            item = row.item,
+                            folder = row.folder,
                             depth = row.depth,
                             expanded = row.expanded,
                             expandable = row.expandable,
                             selected = row.selected,
-                            onToggleExpanded = { state.eventSink(DocumentBrowserEvent.ToggleItemExpanded(row.item.id, row.depth)) },
+                            onToggleExpanded = { state.eventSink(DocumentBrowserEvent.ToggleFolderExpanded(row.folder.id, row.depth)) },
                             onClick = {
-                                state.eventSink(DocumentBrowserEvent.SelectItem(row.item.id))
+                                state.eventSink(DocumentBrowserEvent.SelectFolder(row.folder.id))
                                 if (row.expandable) {
-                                    state.eventSink(DocumentBrowserEvent.ToggleItemExpanded(row.item.id, row.depth))
+                                    state.eventSink(DocumentBrowserEvent.ToggleFolderExpanded(row.folder.id, row.depth))
                                 }
                             },
                         )
                     is BrowserTreeRow.Artifact ->
                         BrowserArtifactRow(
-                            item = row.item,
                             artifact = row.artifact,
                             depth = row.depth,
                             selected = row.selected,
-                            onClick = { state.eventSink(DocumentBrowserEvent.SelectItem(row.item.id)) },
+                            onClick = { state.eventSink(DocumentBrowserEvent.SelectArtifact(row.artifact.id)) },
                         )
-                    is BrowserTreeRow.Generic ->
-                        BrowserGenericRow(
-                            item = row.item,
-                            depth = row.depth,
-                            expanded = row.expanded,
-                            expandable = row.expandable,
-                            selected = row.selected,
-                            onToggleExpanded = { state.eventSink(DocumentBrowserEvent.ToggleItemExpanded(row.item.id, row.depth)) },
-                            onClick = {
-                                state.eventSink(DocumentBrowserEvent.SelectItem(row.item.id))
-                                if (row.expandable) {
-                                    state.eventSink(DocumentBrowserEvent.ToggleItemExpanded(row.item.id, row.depth))
-                                }
-                            },
-                        )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BrowserEmptyState(state: DocumentBrowserState) {
+    val inFolder = state.scopeBreadcrumbs.size > 1
+    val folderLabel = state.scopeBreadcrumbs.lastOrNull()?.label ?: "this folder"
+    val title =
+        if (inFolder) {
+            "This folder is empty"
+        } else {
+            "Start your workspace"
+        }
+    val body =
+        if (inFolder) {
+            "Add a note or create a subfolder inside $folderLabel to begin organizing artifacts."
+        } else {
+            "Create a folder to organize research, or add a note to begin capturing artifacts."
+        }
+
+    Box(
+        modifier = Modifier.fillMaxSize().padding(18.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier =
+                Modifier.width(320.dp)
+                    .border(1.dp, AladinColor.Border, RoundedCornerShape(ControlRadius))
+                    .background(AladinColor.Panel, RoundedCornerShape(ControlRadius))
+                    .padding(horizontal = 20.dp, vertical = 22.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(
+                modifier =
+                    Modifier.size(42.dp)
+                        .background(AladinColor.ControlHover, RoundedCornerShape(SharpRadius)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Folder,
+                    contentDescription = null,
+                    tint = AladinColor.InkSecondary,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+            Text(
+                title,
+                color = AladinColor.Ink,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                body,
+                color = AladinColor.InkMuted,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(
+                    onClick = { state.eventSink(DocumentBrowserEvent.CreateFolder) },
+                ) {
+                    Text("+ Folder", color = AladinColor.Ink)
+                }
+                TextButton(
+                    onClick = { state.eventSink(DocumentBrowserEvent.CreateArtifact) },
+                ) {
+                    Text(if (inFolder) "+ Note" else "+ Artifact", color = AladinColor.Ink)
                 }
             }
         }
@@ -179,8 +251,7 @@ private fun BrowserScopeBreadcrumbRow(
 
 @Composable
 private fun BrowserArtifactRow(
-    item: Item,
-    artifact: Artifact?,
+    artifact: Artifact,
     depth: Int,
     selected: Boolean,
     onClick: () -> Unit,
@@ -205,17 +276,17 @@ private fun BrowserArtifactRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         RowSelectionMarker(selected = selected)
-        ArtifactGlyph(artifact?.kind ?: ArtifactKind.Note, selected = selected)
+        ArtifactGlyph(artifact.kind, selected = selected)
         Column(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.weight(1f)) {
             Text(
-                item.title,
+                artifact.title,
                 color = AladinColor.Ink,
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                artifact?.updatedLabel ?: "Linked item",
+                artifact.updatedLabel,
                 style = MaterialTheme.typography.bodySmall,
                 color = if (selected) AladinColor.InkSecondary else AladinColor.InkMuted,
                 maxLines = 1,
@@ -245,7 +316,7 @@ private fun compressedBreadcrumbs(items: List<BreadcrumbItem>): List<BreadcrumbS
 
 @Composable
 private fun BrowserFolderRow(
-    item: Item,
+    folder: FolderNode,
     depth: Int,
     expanded: Boolean,
     expandable: Boolean,
@@ -287,65 +358,13 @@ private fun BrowserFolderRow(
         )
         Column(verticalArrangement = Arrangement.spacedBy(1.dp), modifier = Modifier.weight(1f)) {
             Text(
-                item.title,
+                folder.title,
                 color = AladinColor.Ink,
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
-    }
-}
-
-@Composable
-private fun BrowserGenericRow(
-    item: Item,
-    depth: Int,
-    expanded: Boolean,
-    expandable: Boolean,
-    selected: Boolean,
-    onToggleExpanded: () -> Unit,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier =
-            Modifier.fillMaxWidth()
-                .padding(start = treeIndent(depth))
-                .aladinClickable(
-                    selected = selected,
-                    shape = RoundedCornerShape(ControlRadius),
-                    colors =
-                        AladinInteractionDefaults.colors(
-                            hovered = AladinColor.ControlHover,
-                            selected = AladinColor.RowSelected,
-                            selectedHovered = AladinColor.ControlPressed,
-                        ),
-                    onClick = onClick,
-                )
-                .padding(horizontal = BrowserRowHorizontalPadding, vertical = BrowserRowVerticalPadding),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(BrowserRowContentGap),
-    ) {
-        RowSelectionMarker(selected = selected)
-        ExpandToggle(
-            expanded = expanded,
-            expandable = expandable,
-            selected = selected,
-            onClick = onToggleExpanded,
-        )
-        Icon(
-            imageVector = Icons.AutoMirrored.Outlined.InsertDriveFile,
-            contentDescription = null,
-            tint = if (selected) AladinColor.Ink else AladinColor.InkSecondary,
-            modifier = Modifier.size(BrowserIconSize),
-        )
-        Text(
-            item.title,
-            color = AladinColor.Ink,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
     }
 }
 
@@ -416,6 +435,7 @@ fun ArtifactGlyph(kind: ArtifactKind, selected: Boolean = false) {
                 ArtifactKind.Note -> "N"
                 ArtifactKind.Link -> "L"
                 ArtifactKind.Voice -> "V"
+                ArtifactKind.File -> "F"
             },
             color = if (selected) AladinColor.Ink else AladinColor.InkSecondary,
             style = MaterialTheme.typography.labelMedium,

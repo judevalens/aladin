@@ -100,6 +100,13 @@ type FolderNode struct {
 	Title    string  `json:"title"`
 }
 
+type FolderTreeNode struct {
+	ID       string           `json:"id"`
+	ParentID *string          `json:"parentId,omitempty"`
+	Title    string           `json:"title"`
+	Children []FolderTreeNode `json:"children"`
+}
+
 type BreadcrumbItem struct {
 	ID    *string `json:"id,omitempty"`
 	Label string  `json:"label"`

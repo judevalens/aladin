@@ -7,10 +7,8 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.jvp.aladin_compose.model.Artifact
-import com.jvp.aladin_compose.model.Item
-import com.jvp.aladin_compose.model.ItemKind
-import com.jvp.aladin_compose.model.canHaveChildren
-import com.jvp.aladin_compose.service.ItemService
+import com.jvp.aladin_compose.model.FolderNode
+import com.jvp.aladin_compose.service.FolderService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -21,63 +19,91 @@ interface DocumentBrowserProducer {
 }
 
 class DefaultDocumentBrowserProducer(
-    private val service: ItemService,
+    private val service: FolderService,
     private val scope: CoroutineScope,
 ) : DocumentBrowserProducer {
     @Composable
     override fun produce(): DocumentBrowserProducerState {
-        var selectedItemId by remember { mutableStateOf<String?>(null) }
+        var selectedFolderId by remember { mutableStateOf<String?>(null) }
+        var selectedArtifactId by remember { mutableStateOf<String?>(null) }
         var currentScopeId by remember { mutableStateOf<String?>(null) }
         var scopeBackStack by remember { mutableStateOf<List<String?>>(emptyList()) }
-        var expandedItemIds by remember { mutableStateOf(setOf("item_watch")) }
+        var expandedFolderIds by remember { mutableStateOf(emptySet<String>()) }
         var refreshKey by remember { mutableStateOf(0) }
+        var browserError by remember { mutableStateOf<String?>(null) }
+        var hasLoadedRows by remember { mutableStateOf(false) }
 
-        val selectedItem =
-            produceState<Item?>(initialValue = null, service, selectedItemId, refreshKey) {
-                    value = service.item(selectedItemId)
-                }
-                .value
+        val selectedFolder =
+            produceState<FolderNode?>(initialValue = null, service, selectedFolderId, refreshKey) {
+                value =
+                    try {
+                        service.folder(selectedFolderId)
+                    } catch (_: Throwable) {
+                        null
+                    }
+            }.value
         val selectedArtifact =
-            produceState<Artifact?>(initialValue = null, service, selectedItem, refreshKey) {
-                    value = service.artifactFor(selectedItem)
-                }
-                .value
+            produceState<Artifact?>(initialValue = null, service, selectedArtifactId, refreshKey) {
+                value =
+                    try {
+                        service.artifact(selectedArtifactId)
+                    } catch (_: Throwable) {
+                        null
+                    }
+            }.value
         val breadcrumbs =
-            produceState(initialValue = emptyList(), service, selectedItemId, refreshKey) {
-                    value = service.breadcrumbs(selectedItemId)
-                }
-                .value
+            produceState(initialValue = emptyList(), service, selectedFolderId, selectedArtifactId, refreshKey) {
+                value =
+                    try {
+                        if (selectedArtifactId != null) {
+                            service.artifactBreadcrumbs(selectedArtifactId)
+                        } else {
+                            service.folderBreadcrumbs(selectedFolderId)
+                        }
+                    } catch (_: Throwable) {
+                        emptyList()
+                    }
+            }.value
         val scopeBreadcrumbs =
             produceState(initialValue = emptyList(), service, currentScopeId, refreshKey) {
-                    value = service.breadcrumbs(currentScopeId)
-                }
-                .value
+                value =
+                    try {
+                        service.folderBreadcrumbs(currentScopeId)
+                    } catch (_: Throwable) {
+                        emptyList()
+                    }
+            }.value
         val rows =
             produceState(
-                    initialValue = emptyList(),
-                    service,
-                    expandedItemIds,
-                    selectedItemId,
-                    currentScopeId,
-                    refreshKey,
-                ) {
-                    val items = service.items()
-                    val artifactByItemId =
-                        items
-                            .filter { it.kind == ItemKind.Artifact }
-                            .associate { item -> item.id to service.artifactFor(item) }
-                    val currentScope = currentScopeId?.let { id -> items.firstOrNull { it.id == id } }
-
+                initialValue = emptyList(),
+                service,
+                expandedFolderIds,
+                selectedFolderId,
+                selectedArtifactId,
+                currentScopeId,
+                refreshKey,
+            ) {
+                try {
+                    browserError = null
+                    service.prepareBrowser(
+                        scopeId = currentScopeId,
+                        expandedFolderIds = expandedFolderIds,
+                        drillDepth = DrillInDepth,
+                    )
                     value =
                         buildBrowserRows(
-                            items = items,
-                            artifactByItemId = artifactByItemId,
-                            expandedItemIds = expandedItemIds,
-                            selectedItemId = selectedItemId,
-                            currentScope = currentScope,
+                            currentScopeId = currentScopeId,
+                            expandedFolderIds = expandedFolderIds,
+                            selectedFolderId = selectedFolderId,
+                            selectedArtifactId = selectedArtifactId,
                         )
+                    hasLoadedRows = true
+                } catch (t: Throwable) {
+                    browserError = t.message ?: "Failed to load folders"
+                    hasLoadedRows = true
+                    value = emptyList()
                 }
-                .value
+            }.value
 
         return DocumentBrowserProducerState(
             browser =
@@ -85,138 +111,147 @@ class DefaultDocumentBrowserProducer(
                     breadcrumbs = breadcrumbs,
                     scopeBreadcrumbs = scopeBreadcrumbs,
                     canNavigateScopeBack = scopeBackStack.isNotEmpty(),
-                    scopeBackTargetId =
-                        if (scopeBackStack.isNotEmpty()) scopeBackStack.last() else null,
+                    scopeBackTargetId = scopeBackStack.lastOrNull(),
+                    loading = !hasLoadedRows,
+                    errorMessage = browserError,
                     rows = rows,
                     eventSink = { event ->
                         when (event) {
-                            is DocumentBrowserEvent.SelectItem -> {
-                                selectedItemId = event.itemId
+                            is DocumentBrowserEvent.SelectFolder -> {
+                                selectedFolderId = event.folderId
+                                selectedArtifactId = null
                                 scope.launch {
-                                    expandedItemIds =
-                                        expandedItemIds + service.ancestorIds(event.itemId)
+                                    expandedFolderIds = expandedFolderIds + service.ancestorFolderIds(event.folderId)
                                 }
                             }
-                            is DocumentBrowserEvent.ToggleItemExpanded -> {
+                            is DocumentBrowserEvent.SelectArtifact -> {
+                                selectedArtifactId = event.artifactId
+                                selectedFolderId = null
+                                scope.launch {
+                                    expandedFolderIds =
+                                        expandedFolderIds + service.ancestorFolderIdsForArtifact(event.artifactId)
+                                }
+                            }
+                            is DocumentBrowserEvent.ToggleFolderExpanded -> {
                                 if (event.depth >= DrillInDepth) {
                                     scopeBackStack = scopeBackStack + currentScopeId
-                                    currentScopeId = event.itemId
-                                    selectedItemId = event.itemId
-                                    expandedItemIds = expandedItemIds + event.itemId
+                                    currentScopeId = event.folderId
+                                    selectedFolderId = event.folderId
+                                    selectedArtifactId = null
+                                    expandedFolderIds = expandedFolderIds + event.folderId
                                 } else {
-                                    expandedItemIds =
-                                        if (event.itemId in expandedItemIds)
-                                            expandedItemIds - event.itemId
-                                        else expandedItemIds + event.itemId
+                                    expandedFolderIds =
+                                        if (event.folderId in expandedFolderIds) {
+                                            expandedFolderIds - event.folderId
+                                        } else {
+                                            expandedFolderIds + event.folderId
+                                        }
                                 }
                             }
                             is DocumentBrowserEvent.NavigateScope -> {
-                                currentScopeId = scopeBackStack.lastOrNull() ?: event.itemId
+                                currentScopeId = event.folderId
                                 scopeBackStack = scopeBackStack.dropLast(1)
-                                selectedItemId = event.itemId ?: selectedItemId
+                                selectedFolderId = event.folderId
+                                selectedArtifactId = null
                             }
                             is DocumentBrowserEvent.NavigateBreadcrumb -> {
-                                selectedItemId = event.itemId
+                                selectedFolderId = event.folderId
+                                selectedArtifactId = null
+                                currentScopeId = event.folderId
+                                scopeBackStack = emptyList()
                                 scope.launch {
-                                    currentScopeId = service.nearestContainerId(event.itemId)
-                                    scopeBackStack = emptyList()
-                                    expandedItemIds =
-                                        expandedItemIds + service.ancestorIds(event.itemId)
+                                    expandedFolderIds = expandedFolderIds + service.ancestorFolderIds(event.folderId)
                                 }
                             }
                             DocumentBrowserEvent.CreateFolder -> {
                                 scope.launch {
-                                    val parentId = service.nearestContainerId(selectedItemId)
-                                    val created = service.createFolder(parentId)
-                                    selectedItemId = created.id
-                                    currentScopeId = parentId
-                                    scopeBackStack = emptyList()
-                                    expandedItemIds =
-                                        expandedItemIds + service.ancestorIds(created.id)
-                                    refreshKey += 1
+                                    try {
+                                        val created = service.createFolder(currentScopeId)
+                                        service.refreshBrowser(currentScopeId)
+                                        browserError = null
+                                        selectedFolderId = created.id
+                                        selectedArtifactId = null
+                                        expandedFolderIds =
+                                            expandedFolderIds + service.ancestorFolderIds(created.id)
+                                        refreshKey += 1
+                                    } catch (t: Throwable) {
+                                        browserError = t.message ?: "Failed to create folder"
+                                    }
                                 }
                             }
                             DocumentBrowserEvent.CreateArtifact -> {
                                 scope.launch {
-                                    val parentId = service.nearestContainerId(selectedItemId)
-                                    val (createdItem, _) = service.createArtifactItem(parentId)
-                                    selectedItemId = createdItem.id
-                                    currentScopeId = parentId
-                                    scopeBackStack = emptyList()
-                                    expandedItemIds =
-                                        expandedItemIds + service.ancestorIds(createdItem.id)
+                                    try {
+                                        val created = service.createArtifact(currentScopeId)
+                                        service.refreshBrowser(currentScopeId)
+                                        browserError = null
+                                        selectedArtifactId = created.id
+                                        selectedFolderId = null
+                                        expandedFolderIds =
+                                            expandedFolderIds + service.ancestorFolderIds(created.folderId)
+                                        refreshKey += 1
+                                    } catch (t: Throwable) {
+                                        browserError = t.message ?: "Failed to create artifact"
+                                    }
+                                }
+                            }
+                            DocumentBrowserEvent.RetryLoad -> {
+                                scope.launch {
+                                    browserError = null
+                                    hasLoadedRows = false
+                                    service.refreshBrowser(currentScopeId)
                                     refreshKey += 1
                                 }
                             }
                         }
                     },
                 ),
-            selectedItem = selectedItem,
+            selectedFolder = selectedFolder,
             selectedArtifact = selectedArtifact,
-            canCreateArtifact = selectedItemId != null,
+            canCreateArtifact = true,
         )
     }
 
     private fun buildBrowserRows(
-        items: List<Item>,
-        artifactByItemId: Map<String, Artifact?>,
-        expandedItemIds: Set<String>,
-        selectedItemId: String?,
-        currentScope: Item?,
+        currentScopeId: String?,
+        expandedFolderIds: Set<String>,
+        selectedFolderId: String?,
+        selectedArtifactId: String?,
     ): List<BrowserTreeRow> {
-        val childrenByParent = items.groupBy { it.parentId }
         val rows = mutableListOf<BrowserTreeRow>()
 
-        fun addItemRow(item: Item, depth: Int) {
-            val children = childrenByParent[item.id].orEmpty()
-            val expandable = item.kind.canHaveChildren() && children.isNotEmpty()
-            val expanded = item.id in expandedItemIds
-            val selected = item.id == selectedItemId
-
-            val row =
-                when (item.kind) {
-                    ItemKind.Artifact ->
-                        BrowserTreeRow.Artifact(
-                            item = item,
-                            artifact = artifactByItemId[item.id],
-                            depth = depth,
-                            selected = selected,
-                        )
-                    ItemKind.Folder ->
-                        BrowserTreeRow.Folder(
-                            item = item,
-                            depth = depth,
-                            expanded = expanded,
-                            expandable = expandable,
-                            selected = selected,
-                        )
-                    ItemKind.Page,
-                    ItemKind.Group ->
-                        BrowserTreeRow.Generic(
-                            item = item,
-                            depth = depth,
-                            expanded = expanded,
-                            expandable = expandable,
-                            selected = selected,
-                        )
-                }
-
-            rows += row
-        }
-
         fun visit(parentId: String?, depth: Int, remainingDepth: Int) {
-            childrenByParent[parentId]
-                .orEmpty()
-                .sortedBy { it.position }
-                .forEach { item ->
-                    addItemRow(item = item, depth = depth)
-                    if (remainingDepth > 0 && item.id in expandedItemIds && item.kind.canHaveChildren()) {
-                        visit(item.id, depth + 1, remainingDepth - 1)
-                    }
+            val folders = service.cachedFolders(parentId).sortedBy { it.title.lowercase() }
+            val artifacts = service.cachedArtifacts(parentId).sortedBy { it.title.lowercase() }
+
+            folders.forEach { folder ->
+                val expanded = folder.id in expandedFolderIds
+
+                rows +=
+                    BrowserTreeRow.Folder(
+                        folder = folder,
+                        depth = depth,
+                        expanded = expanded,
+                        expandable = true,
+                        selected = folder.id == selectedFolderId,
+                    )
+
+                if (remainingDepth > 0 && expanded) {
+                    visit(folder.id, depth + 1, remainingDepth - 1)
                 }
+            }
+
+            artifacts.forEach { artifact ->
+                rows +=
+                    BrowserTreeRow.Artifact(
+                        artifact = artifact,
+                        depth = depth,
+                        selected = artifact.id == selectedArtifactId,
+                    )
+            }
         }
 
-        visit(parentId = currentScope?.id, depth = 0, remainingDepth = DrillInDepth)
+        visit(parentId = currentScopeId, depth = 0, remainingDepth = DrillInDepth)
         return rows
     }
 }

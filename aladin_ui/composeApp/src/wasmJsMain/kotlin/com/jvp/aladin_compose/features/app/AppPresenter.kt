@@ -6,7 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.jvp.aladin_compose.model.NavDestination
-import com.jvp.aladin_compose.service.ItemService
+import com.jvp.aladin_compose.service.FolderService
 import com.slack.circuit.runtime.CircuitContext
 import com.slack.circuit.runtime.Navigator
 import com.slack.circuit.runtime.presenter.Presenter
@@ -25,7 +25,7 @@ class AppPresenter(
         return AppState(
             destination = destination,
             browser = browser.browser,
-            selectedItem = browser.selectedItem,
+            selectedFolder = browser.selectedFolder,
             selectedArtifact = browser.selectedArtifact,
             canCreateArtifact = browser.canCreateArtifact,
             eventSink = { event ->
@@ -37,7 +37,7 @@ class AppPresenter(
     }
 
     class Factory(
-        private val itemService: ItemService,
+        private val folderService: FolderService,
         private val scope: CoroutineScope,
     ) : Presenter.Factory {
         override fun create(screen: Screen, navigator: Navigator, context: CircuitContext): Presenter<*>? {
@@ -46,7 +46,7 @@ class AppPresenter(
                     AppPresenter(
                         documentBrowserProducer =
                             DefaultDocumentBrowserProducer(
-                                service = itemService,
+                                service = folderService,
                                 scope = scope,
                             ),
                     )

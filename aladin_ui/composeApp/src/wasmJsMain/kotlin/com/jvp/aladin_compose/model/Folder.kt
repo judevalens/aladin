@@ -6,13 +6,14 @@ data class FolderNode(
     val title: String,
 )
 
+data class FolderTreeNode(
+    val id: String,
+    val parentId: String?,
+    val title: String,
+    val children: List<FolderTreeNode> = emptyList(),
+)
+
 data class BreadcrumbItem(
     val id: String?,
     val label: String,
-)
-
-data class FolderWorkspace(
-    val folder: FolderNode,
-    val artifacts: List<Artifact>,
-    val signalCount: Int,
 )

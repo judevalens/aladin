@@ -2,7 +2,7 @@ package com.jvp.aladin_compose.features.app
 
 import com.jvp.aladin_compose.model.Artifact
 import com.jvp.aladin_compose.model.BreadcrumbItem
-import com.jvp.aladin_compose.model.Item
+import com.jvp.aladin_compose.model.FolderNode
 import com.jvp.aladin_compose.model.NavDestination
 import com.slack.circuit.runtime.CircuitUiEvent
 import com.slack.circuit.runtime.CircuitUiState
@@ -10,7 +10,7 @@ import com.slack.circuit.runtime.CircuitUiState
 data class AppState(
     val destination: NavDestination,
     val browser: DocumentBrowserState,
-    val selectedItem: Item?,
+    val selectedFolder: FolderNode?,
     val selectedArtifact: Artifact?,
     val canCreateArtifact: Boolean,
     val eventSink: (AppEvent) -> Unit,
@@ -18,7 +18,7 @@ data class AppState(
 
 data class DocumentBrowserProducerState(
     val browser: DocumentBrowserState,
-    val selectedItem: Item?,
+    val selectedFolder: FolderNode?,
     val selectedArtifact: Artifact?,
     val canCreateArtifact: Boolean,
 )
@@ -28,6 +28,8 @@ data class DocumentBrowserState(
     val scopeBreadcrumbs: List<BreadcrumbItem>,
     val canNavigateScopeBack: Boolean,
     val scopeBackTargetId: String?,
+    val loading: Boolean,
+    val errorMessage: String?,
     val rows: List<BrowserTreeRow>,
     val eventSink: (DocumentBrowserEvent) -> Unit,
 )
@@ -38,41 +40,21 @@ sealed interface BrowserTreeRow {
     val selected: Boolean
 
     data class Folder(
-        val item: Item,
+        val folder: FolderNode,
         override val depth: Int,
         val expanded: Boolean,
         val expandable: Boolean,
         override val selected: Boolean,
     ) : BrowserTreeRow {
-        override val key: String = item.id
+        override val key: String = "folder_${folder.id}"
     }
 
     data class Artifact(
-        val item: Item,
-        val artifact: com.jvp.aladin_compose.model.Artifact?,
+        val artifact: com.jvp.aladin_compose.model.Artifact,
         override val depth: Int,
         override val selected: Boolean,
     ) : BrowserTreeRow {
-        override val key: String = item.id
-    }
-
-    data class Generic(
-        val item: Item,
-        override val depth: Int,
-        val expanded: Boolean,
-        val expandable: Boolean,
-        override val selected: Boolean,
-    ) : BrowserTreeRow {
-        override val key: String = item.id
-    }
-
-    data class ScopeBack(
-        val targetScopeId: String?,
-        val label: String,
-    ) : BrowserTreeRow {
-        override val key: String = "scope_back_${targetScopeId ?: "root"}"
-        override val depth: Int = 0
-        override val selected: Boolean = false
+        override val key: String = "artifact_${artifact.id}"
     }
 }
 
@@ -81,10 +63,12 @@ sealed interface AppEvent : CircuitUiEvent {
 }
 
 sealed interface DocumentBrowserEvent {
-    data class SelectItem(val itemId: String) : DocumentBrowserEvent
-    data class ToggleItemExpanded(val itemId: String, val depth: Int) : DocumentBrowserEvent
-    data class NavigateScope(val itemId: String?) : DocumentBrowserEvent
-    data class NavigateBreadcrumb(val itemId: String?) : DocumentBrowserEvent
+    data class SelectFolder(val folderId: String) : DocumentBrowserEvent
+    data class SelectArtifact(val artifactId: String) : DocumentBrowserEvent
+    data class ToggleFolderExpanded(val folderId: String, val depth: Int) : DocumentBrowserEvent
+    data class NavigateScope(val folderId: String?) : DocumentBrowserEvent
+    data class NavigateBreadcrumb(val folderId: String?) : DocumentBrowserEvent
     data object CreateFolder : DocumentBrowserEvent
     data object CreateArtifact : DocumentBrowserEvent
+    data object RetryLoad : DocumentBrowserEvent
 }
