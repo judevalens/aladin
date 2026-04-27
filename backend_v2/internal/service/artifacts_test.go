@@ -8,18 +8,17 @@ import (
 	"testing"
 )
 
-func TestArtifactServiceCreateDefaultsAndTrims(t *testing.T) {
+func TestArtifactServiceCreateNoteDefaultsAndTrims(t *testing.T) {
 	t.Parallel()
 
 	summary := "  useful memo  "
-	sourceURL := "  https://example.com/rivian  "
 	repo := &fakeArtifactRepository{}
 	svc := NewArtifactService(repo, &fakeArtifactFiles{})
 
 	rec, err := svc.Create(context.Background(), ArtifactPayload{
-		Content:   "  Rivian supply chain memo  ",
-		Summary:   &summary,
-		SourceURL: &sourceURL,
+		Type:    "note",
+		Content: "  Rivian supply chain memo  ",
+		Summary: &summary,
 	})
 	if err != nil {
 		t.Fatalf("Create error: %v", err)
@@ -32,11 +31,11 @@ func TestArtifactServiceCreateDefaultsAndTrims(t *testing.T) {
 	}
 }
 
-func TestArtifactServiceCreateRejectsMissingTitleAndContent(t *testing.T) {
+func TestArtifactServiceCreateLinkRequiresSourceURL(t *testing.T) {
 	t.Parallel()
 
 	svc := NewArtifactService(&fakeArtifactRepository{}, &fakeArtifactFiles{})
-	_, err := svc.Create(context.Background(), ArtifactPayload{Type: "note"})
+	_, err := svc.Create(context.Background(), ArtifactPayload{Type: "link", Title: "Saved"})
 	if err == nil {
 		t.Fatal("Create error = nil, want BadRequest")
 	}
@@ -61,41 +60,36 @@ func TestArtifactServiceEmptyIDsAreNotFound(t *testing.T) {
 	}
 }
 
-func TestArtifactServiceRelatedNotesMissingNoteIsNotFound(t *testing.T) {
+func TestArtifactServiceUploadCreatesArtifactRecord(t *testing.T) {
 	t.Parallel()
 
-	svc := NewArtifactService(&fakeArtifactRepository{noteExists: false}, &fakeArtifactFiles{})
-	_, err := svc.RelatedNotes(context.Background(), "note-1", 5)
-	if !errors.Is(err, ErrNotFound) {
-		t.Fatalf("RelatedNotes error = %v, want ErrNotFound", err)
-	}
-}
+	repo := &fakeArtifactRepository{}
+	svc := NewArtifactService(repo, &fakeArtifactFiles{})
 
-func TestArtifactServiceRelatedNotesNotEmbeddedReturnsMessage(t *testing.T) {
-	t.Parallel()
-
-	svc := NewArtifactService(&fakeArtifactRepository{noteExists: true}, &fakeArtifactFiles{})
-	out, err := svc.RelatedNotes(context.Background(), "note-1", 5)
+	rec, err := svc.Upload(context.Background(), ArtifactUploadInput{
+		Type:     "file",
+		Filename: "memo.txt",
+	}, strings.NewReader("hello"))
 	if err != nil {
-		t.Fatalf("RelatedNotes error: %v", err)
+		t.Fatalf("Upload error: %v", err)
 	}
-	if out.Message != "Note not yet embedded" {
-		t.Fatalf("message = %q, want not embedded", out.Message)
+	if rec.Type != "file" {
+		t.Fatalf("type = %q, want file", rec.Type)
 	}
-	if len(out.Results) != 0 {
-		t.Fatalf("results = %#v, want empty", out.Results)
+	if storageKey, _ := rec.Metadata["storageKey"].(string); storageKey == "" {
+		t.Fatalf("metadata = %#v, want storageKey", rec.Metadata)
 	}
 }
 
 type fakeArtifactRepository struct {
 	artifactByID     map[string]ArtifactResponse
 	createdArtifacts []ArtifactResponse
-	noteExists       bool
 }
 
-func (f *fakeArtifactRepository) ListArtifacts(context.Context) ([]ArtifactResponse, error) {
+func (f *fakeArtifactRepository) ListArtifacts(context.Context, ArtifactListParams) ([]ArtifactResponse, error) {
 	return nil, nil
 }
+
 func (f *fakeArtifactRepository) GetArtifact(_ context.Context, id string) (ArtifactResponse, error) {
 	if f.artifactByID == nil {
 		return ArtifactResponse{}, ErrNotFound
@@ -106,46 +100,40 @@ func (f *fakeArtifactRepository) GetArtifact(_ context.Context, id string) (Arti
 	}
 	return rec, nil
 }
+
 func (f *fakeArtifactRepository) CreateArtifact(_ context.Context, rec ArtifactResponse) error {
 	f.createdArtifacts = append(f.createdArtifacts, rec)
 	return nil
 }
+
 func (f *fakeArtifactRepository) UpdateArtifact(context.Context, string, ArtifactPatch) error {
 	return nil
 }
+
 func (f *fakeArtifactRepository) DeleteArtifact(context.Context, string) error { return nil }
-func (f *fakeArtifactRepository) FindDocument(context.Context, string) (DocumentRecord, bool, error) {
-	return DocumentRecord{}, false, nil
-}
-func (f *fakeArtifactRepository) CreateDocument(context.Context, DocumentRecord, int64) error {
-	return nil
-}
-func (f *fakeArtifactRepository) ListDocuments(context.Context) ([]DocumentRecord, error) {
+
+func (f *fakeArtifactRepository) ListFolders(context.Context, *string) ([]FolderNode, error) {
 	return nil, nil
 }
-func (f *fakeArtifactRepository) CreateNote(context.Context, NoteRecord) error { return nil }
-func (f *fakeArtifactRepository) NoteExists(context.Context, string) (bool, error) {
-	return f.noteExists, nil
+func (f *fakeArtifactRepository) CreateFolder(context.Context, FolderNode) error { return nil }
+func (f *fakeArtifactRepository) GetFolder(context.Context, string) (FolderNode, error) {
+	return FolderNode{}, ErrNotFound
 }
-func (f *fakeArtifactRepository) UpdateNote(context.Context, string, *string, *string) error {
-	return nil
-}
-func (f *fakeArtifactRepository) DeleteNote(context.Context, string) error { return nil }
-func (f *fakeArtifactRepository) FetchNote(context.Context, string) (NoteRecord, error) {
-	return NoteRecord{}, nil
-}
-func (f *fakeArtifactRepository) HasNoteEmbedding(context.Context, string) (bool, error) {
-	return false, nil
-}
-func (f *fakeArtifactRepository) RelatedNotes(context.Context, string, int) ([]RelatedRecord, error) {
+func (f *fakeArtifactRepository) FolderBreadcrumbs(context.Context, string) ([]BreadcrumbItem, error) {
 	return nil, nil
 }
 
 type fakeArtifactFiles struct{}
 
-func (f *fakeArtifactFiles) SaveDocument(string, []byte) error   { return nil }
-func (f *fakeArtifactFiles) DocumentPath(string) (string, error) { return "", ErrNotFound }
-func (f *fakeArtifactFiles) SaveAudio(string, io.Reader) (string, string, error) {
-	return "audio-1.webm", "audio/webm", nil
+func (f *fakeArtifactFiles) SaveResource(kind string, filename string, body io.Reader) (StoredArtifactResource, error) {
+	_, _ = io.ReadAll(body)
+	return StoredArtifactResource{
+		StorageKey:       kind + "/resource-1",
+		ResourceKind:     kind,
+		MIMEType:         "text/plain",
+		OriginalFilename: filename,
+		SizeBytes:        5,
+	}, nil
 }
-func (f *fakeArtifactFiles) AudioPath(string) (string, error) { return "", ErrNotFound }
+
+func (f *fakeArtifactFiles) ResourcePath(string) (string, error) { return "", ErrNotFound }

@@ -3,6 +3,7 @@ package service
 type ArtifactResponse struct {
 	ID        string         `json:"id"`
 	Type      string         `json:"type"`
+	FolderID  *string        `json:"folderId,omitempty"`
 	Title     string         `json:"title"`
 	Content   string         `json:"content"`
 	Summary   *string        `json:"summary"`
@@ -14,6 +15,7 @@ type ArtifactResponse struct {
 
 type ArtifactPayload struct {
 	Type      string         `json:"type"`
+	FolderID  *string        `json:"folderId,omitempty"`
 	Title     string         `json:"title"`
 	Content   string         `json:"content"`
 	Summary   *string        `json:"summary"`
@@ -23,6 +25,7 @@ type ArtifactPayload struct {
 
 type ArtifactPatch struct {
 	Type      *string         `json:"type"`
+	FolderID  *string         `json:"folderId,omitempty"`
 	Title     *string         `json:"title"`
 	Content   *string         `json:"content"`
 	Summary   *string         `json:"summary"`
@@ -72,4 +75,32 @@ type RelatedRecord struct {
 type RelatedNotesResponse struct {
 	Results []RelatedRecord `json:"results"`
 	Message string          `json:"message,omitempty"`
+}
+
+type ArtifactListParams struct {
+	FolderID *string
+}
+
+type ArtifactUploadInput struct {
+	Type     string
+	Filename string
+	Title    *string
+	Summary  *string
+	FolderID *string
+}
+
+type ArtifactResource struct {
+	Path        string
+	ContentType string
+}
+
+type FolderNode struct {
+	ID       string  `json:"id"`
+	ParentID *string `json:"parentId,omitempty"`
+	Title    string  `json:"title"`
+}
+
+type BreadcrumbItem struct {
+	ID    *string `json:"id,omitempty"`
+	Label string  `json:"label"`
 }

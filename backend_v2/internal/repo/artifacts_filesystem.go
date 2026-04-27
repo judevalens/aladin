@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"fmt"
 	"io"
 	"mime"
 	"os"
@@ -19,50 +20,62 @@ func NewFilesystemArtifactStore(uploadDir string, audioDir string) *FilesystemAr
 	return &FilesystemArtifactStore{uploadDir: uploadDir, audioDir: audioDir}
 }
 
-func (s *FilesystemArtifactStore) SaveDocument(id string, content []byte) error {
-	if err := os.MkdirAll(s.uploadDir, 0o755); err != nil {
-		return err
+func (s *FilesystemArtifactStore) SaveResource(kind string, filename string, body io.Reader) (coreservice.StoredArtifactResource, error) {
+	baseDir := s.baseDir(kind)
+	if baseDir == "" {
+		return coreservice.StoredArtifactResource{}, fmt.Errorf("unsupported artifact resource kind: %s", kind)
 	}
-	return os.WriteFile(filepath.Join(s.uploadDir, id+".pdf"), content, 0o644)
-}
-
-func (s *FilesystemArtifactStore) DocumentPath(id string) (string, error) {
-	path := filepath.Join(s.uploadDir, id+".pdf")
-	if _, err := os.Stat(path); err != nil {
-		return "", coreservice.ErrNotFound
-	}
-	return path, nil
-}
-
-func (s *FilesystemArtifactStore) SaveAudio(filename string, body io.Reader) (string, string, error) {
-	if err := os.MkdirAll(s.audioDir, 0o755); err != nil {
-		return "", "", err
+	if err := os.MkdirAll(baseDir, 0o755); err != nil {
+		return coreservice.StoredArtifactResource{}, err
 	}
 	ext := strings.ToLower(filepath.Ext(filepath.Base(filename)))
-	if ext == "" {
-		ext = ".webm"
-	}
-	storedFilename := coreservice.NewID("audio-", ext)
-	dest := filepath.Join(s.audioDir, storedFilename)
-	out, err := os.Create(dest)
+	storageKey := kind + "/" + coreservice.NewID(kind+"-", ext)
+	path := filepath.Join(baseDir, filepath.Base(strings.TrimPrefix(storageKey, kind+"/")))
+	out, err := os.Create(path)
 	if err != nil {
-		return "", "", err
+		return coreservice.StoredArtifactResource{}, err
 	}
 	defer out.Close()
-	if _, err := io.Copy(out, body); err != nil {
-		return "", "", err
+	size, err := io.Copy(out, body)
+	if err != nil {
+		return coreservice.StoredArtifactResource{}, err
 	}
 	contentType := mime.TypeByExtension(ext)
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
-	return storedFilename, contentType, nil
+	return coreservice.StoredArtifactResource{
+		StorageKey:       storageKey,
+		ResourceKind:     kind,
+		MIMEType:         contentType,
+		OriginalFilename: filepath.Base(filename),
+		SizeBytes:        size,
+	}, nil
 }
 
-func (s *FilesystemArtifactStore) AudioPath(filename string) (string, error) {
-	path := filepath.Join(s.audioDir, filepath.Base(filename))
+func (s *FilesystemArtifactStore) ResourcePath(storageKey string) (string, error) {
+	parts := strings.SplitN(storageKey, "/", 2)
+	if len(parts) != 2 {
+		return "", coreservice.ErrNotFound
+	}
+	baseDir := s.baseDir(parts[0])
+	if baseDir == "" {
+		return "", coreservice.ErrNotFound
+	}
+	path := filepath.Join(baseDir, filepath.Base(parts[1]))
 	if _, err := os.Stat(path); err != nil {
 		return "", coreservice.ErrNotFound
 	}
 	return path, nil
+}
+
+func (s *FilesystemArtifactStore) baseDir(kind string) string {
+	switch kind {
+	case "file":
+		return s.uploadDir
+	case "voice":
+		return s.audioDir
+	default:
+		return ""
+	}
 }

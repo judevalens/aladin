@@ -2,53 +2,48 @@ package service
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"io"
 	"strings"
 	"time"
 )
 
 type ArtifactService interface {
-	List(context.Context) ([]ArtifactResponse, error)
+	List(context.Context, ArtifactListParams) ([]ArtifactResponse, error)
 	Get(context.Context, string) (ArtifactResponse, error)
 	Create(context.Context, ArtifactPayload) (ArtifactResponse, error)
 	Update(context.Context, string, ArtifactPatch) (ArtifactResponse, error)
 	Delete(context.Context, string) error
-	CreateNote(context.Context, string, string) (NoteRecord, error)
-	UpdateNote(context.Context, string, *string, *string) (NoteRecord, error)
-	DeleteNote(context.Context, string) error
-	RelatedNotes(context.Context, string, int) (RelatedNotesResponse, error)
-	UploadDocument(context.Context, string, []byte) (DocumentRecord, error)
-	ListDocuments(context.Context) ([]DocumentRecord, error)
-	DocumentFilePath(string) (string, error)
-	UploadAudio(context.Context, string, io.Reader) (AudioUploadRecord, error)
-	AudioFilePath(string) (string, error)
+	Upload(context.Context, ArtifactUploadInput, io.Reader) (ArtifactResponse, error)
+	Resource(context.Context, string) (ArtifactResource, error)
+	ListFolders(context.Context, *string) ([]FolderNode, error)
+	CreateFolder(context.Context, string, *string) (FolderNode, error)
+	GetFolder(context.Context, string) (FolderNode, error)
+	FolderBreadcrumbs(context.Context, string) ([]BreadcrumbItem, error)
 }
 
 type ArtifactRepository interface {
-	ListArtifacts(context.Context) ([]ArtifactResponse, error)
+	ListArtifacts(context.Context, ArtifactListParams) ([]ArtifactResponse, error)
 	GetArtifact(context.Context, string) (ArtifactResponse, error)
 	CreateArtifact(context.Context, ArtifactResponse) error
 	UpdateArtifact(context.Context, string, ArtifactPatch) error
 	DeleteArtifact(context.Context, string) error
-	FindDocument(context.Context, string) (DocumentRecord, bool, error)
-	CreateDocument(context.Context, DocumentRecord, int64) error
-	ListDocuments(context.Context) ([]DocumentRecord, error)
-	CreateNote(context.Context, NoteRecord) error
-	NoteExists(context.Context, string) (bool, error)
-	UpdateNote(context.Context, string, *string, *string) error
-	DeleteNote(context.Context, string) error
-	FetchNote(context.Context, string) (NoteRecord, error)
-	HasNoteEmbedding(context.Context, string) (bool, error)
-	RelatedNotes(context.Context, string, int) ([]RelatedRecord, error)
+	ListFolders(context.Context, *string) ([]FolderNode, error)
+	CreateFolder(context.Context, FolderNode) error
+	GetFolder(context.Context, string) (FolderNode, error)
+	FolderBreadcrumbs(context.Context, string) ([]BreadcrumbItem, error)
+}
+
+type StoredArtifactResource struct {
+	StorageKey       string
+	ResourceKind     string
+	MIMEType         string
+	OriginalFilename string
+	SizeBytes        int64
 }
 
 type ArtifactFileStore interface {
-	SaveDocument(string, []byte) error
-	DocumentPath(string) (string, error)
-	SaveAudio(string, io.Reader) (string, string, error)
-	AudioPath(string) (string, error)
+	SaveResource(string, string, io.Reader) (StoredArtifactResource, error)
+	ResourcePath(string) (string, error)
 }
 
 type DefaultArtifactService struct {
@@ -60,8 +55,16 @@ func NewArtifactService(repo ArtifactRepository, files ArtifactFileStore) *Defau
 	return &DefaultArtifactService{repo: repo, files: files}
 }
 
-func (s *DefaultArtifactService) List(ctx context.Context) ([]ArtifactResponse, error) {
-	return s.repo.ListArtifacts(ctx)
+func (s *DefaultArtifactService) List(ctx context.Context, params ArtifactListParams) ([]ArtifactResponse, error) {
+	if params.FolderID != nil {
+		params.FolderID = TrimStringPtr(params.FolderID)
+		if params.FolderID != nil {
+			if _, err := s.repo.GetFolder(ctx, *params.FolderID); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return s.repo.ListArtifacts(ctx, params)
 }
 
 func (s *DefaultArtifactService) Get(ctx context.Context, id string) (ArtifactResponse, error) {
@@ -76,28 +79,49 @@ func (s *DefaultArtifactService) Create(ctx context.Context, payload ArtifactPay
 	if artifactType == "" {
 		artifactType = "note"
 	}
+	if artifactType != "note" && artifactType != "link" {
+		return ArtifactResponse{}, BadRequest("type must be one of: note, link")
+	}
+	payload.FolderID = TrimStringPtr(payload.FolderID)
+	if payload.FolderID != nil {
+		if _, err := s.repo.GetFolder(ctx, *payload.FolderID); err != nil {
+			return ArtifactResponse{}, err
+		}
+	}
+
 	title := strings.TrimSpace(payload.Title)
 	content := strings.TrimSpace(payload.Content)
-	if title == "" {
-		title = content
+	sourceURL := TrimStringPtr(payload.SourceURL)
+
+	switch artifactType {
+	case "note":
+		if title == "" {
+			title = content
+		}
+		if title == "" {
+			return ArtifactResponse{}, BadRequest("title or content is required")
+		}
+		if content == "" {
+			content = title
+		}
+	case "link":
+		if sourceURL == nil {
+			return ArtifactResponse{}, BadRequest("sourceUrl is required")
+		}
+		if title == "" {
+			return ArtifactResponse{}, BadRequest("title is required")
+		}
 	}
-	if title == "" && payload.SourceURL != nil {
-		title = strings.TrimSpace(*payload.SourceURL)
-	}
-	if title == "" {
-		return ArtifactResponse{}, BadRequest("title is required")
-	}
-	if content == "" {
-		content = title
-	}
+
 	now := time.Now().UTC().Format(time.RFC3339)
 	rec := ArtifactResponse{
 		ID:        newID("artifact-"),
 		Type:      artifactType,
+		FolderID:  payload.FolderID,
 		Title:     title,
 		Content:   content,
 		Summary:   TrimStringPtr(payload.Summary),
-		SourceURL: TrimStringPtr(payload.SourceURL),
+		SourceURL: sourceURL,
 		Metadata:  payload.Metadata,
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -115,20 +139,66 @@ func (s *DefaultArtifactService) Update(ctx context.Context, id string, patch Ar
 	if strings.TrimSpace(id) == "" {
 		return ArtifactResponse{}, ErrNotFound
 	}
+	current, err := s.repo.GetArtifact(ctx, id)
+	if err != nil {
+		return ArtifactResponse{}, err
+	}
+	if patch.Type != nil {
+		trimmedType := strings.TrimSpace(*patch.Type)
+		if trimmedType == "" {
+			return ArtifactResponse{}, BadRequest("type cannot be empty")
+		}
+		if trimmedType != "note" && trimmedType != "link" && trimmedType != "voice" && trimmedType != "file" {
+			return ArtifactResponse{}, BadRequest("unsupported type")
+		}
+		patch.Type = &trimmedType
+	}
 	if patch.Title != nil && strings.TrimSpace(*patch.Title) == "" {
 		return ArtifactResponse{}, BadRequest("title cannot be empty")
 	}
-	if patch.Content != nil && strings.TrimSpace(*patch.Content) == "" {
-		return ArtifactResponse{}, BadRequest("content cannot be empty")
+	if patch.Content != nil {
+		trimmedContent := strings.TrimSpace(*patch.Content)
+		if current.Type == "note" && trimmedContent == "" {
+			return ArtifactResponse{}, BadRequest("content cannot be empty")
+		}
+		patch.Content = &trimmedContent
 	}
-	if patch.Type != nil && strings.TrimSpace(*patch.Type) == "" {
-		return ArtifactResponse{}, BadRequest("type cannot be empty")
-	}
-	patch.Type = TrimStringPtr(patch.Type)
 	patch.Title = TrimStringPtr(patch.Title)
-	patch.Content = TrimStringPtr(patch.Content)
 	patch.Summary = TrimStringPtr(patch.Summary)
 	patch.SourceURL = TrimStringPtr(patch.SourceURL)
+	patch.FolderID = TrimStringPtr(patch.FolderID)
+	if patch.FolderID != nil {
+		if _, err := s.repo.GetFolder(ctx, *patch.FolderID); err != nil {
+			return ArtifactResponse{}, err
+		}
+	}
+
+	nextType := current.Type
+	if patch.Type != nil {
+		nextType = *patch.Type
+	}
+	nextTitle := current.Title
+	if patch.Title != nil {
+		nextTitle = *patch.Title
+	}
+	nextContent := current.Content
+	if patch.Content != nil {
+		nextContent = *patch.Content
+	}
+	nextSourceURL := current.SourceURL
+	if patch.SourceURL != nil {
+		nextSourceURL = patch.SourceURL
+	}
+	if nextType == "link" && nextSourceURL == nil {
+		return ArtifactResponse{}, BadRequest("sourceUrl is required")
+	}
+	if nextType == "link" && strings.TrimSpace(nextTitle) == "" {
+		return ArtifactResponse{}, BadRequest("title is required")
+	}
+	if nextType == "note" && strings.TrimSpace(nextTitle) == "" && strings.TrimSpace(nextContent) == "" {
+		return ArtifactResponse{}, BadRequest("title or content is required")
+	}
+
 	if err := s.repo.UpdateArtifact(ctx, id, patch); err != nil {
 		return ArtifactResponse{}, err
 	}
@@ -142,138 +212,122 @@ func (s *DefaultArtifactService) Delete(ctx context.Context, id string) error {
 	return s.repo.DeleteArtifact(ctx, id)
 }
 
-func (s *DefaultArtifactService) CreateNote(ctx context.Context, label string, content string) (NoteRecord, error) {
-	content = strings.TrimSpace(content)
-	if content == "" {
-		return NoteRecord{}, BadRequest("content is required")
+func (s *DefaultArtifactService) Upload(ctx context.Context, input ArtifactUploadInput, body io.Reader) (ArtifactResponse, error) {
+	artifactType := strings.TrimSpace(input.Type)
+	if artifactType != "voice" && artifactType != "file" {
+		return ArtifactResponse{}, BadRequest("type must be one of: voice, file")
 	}
-	label = strings.TrimSpace(label)
-	if label == "" {
-		label = content
-		if len(label) > 60 {
-			label = label[:60] + "..."
+	input.FolderID = TrimStringPtr(input.FolderID)
+	if input.FolderID != nil {
+		if _, err := s.repo.GetFolder(ctx, *input.FolderID); err != nil {
+			return ArtifactResponse{}, err
 		}
-		label = strings.ReplaceAll(label, "\n", " ")
 	}
-	now := time.Now().UTC()
-	rec := NoteRecord{
-		ID:        newID("note-"),
-		Type:      "note",
-		Label:     label,
-		Content:   content,
-		Metadata:  map[string]any{},
-		Status:    "pending",
-		CreatedAt: now.Format(time.RFC3339),
+	filename := strings.TrimSpace(input.Filename)
+	if filename == "" {
+		return ArtifactResponse{}, BadRequest("filename is required")
 	}
-	return rec, s.repo.CreateNote(ctx, rec)
-}
-
-func (s *DefaultArtifactService) UpdateNote(ctx context.Context, id string, label *string, content *string) (NoteRecord, error) {
-	if strings.TrimSpace(id) == "" {
-		return NoteRecord{}, ErrNotFound
-	}
-	label = TrimStringPtr(label)
-	content = TrimStringPtr(content)
-	if err := s.repo.UpdateNote(ctx, id, label, content); err != nil {
-		return NoteRecord{}, err
-	}
-	return s.repo.FetchNote(ctx, id)
-}
-
-func (s *DefaultArtifactService) DeleteNote(ctx context.Context, id string) error {
-	if strings.TrimSpace(id) == "" {
-		return ErrNotFound
-	}
-	return s.repo.DeleteNote(ctx, id)
-}
-
-func (s *DefaultArtifactService) RelatedNotes(ctx context.Context, id string, limit int) (RelatedNotesResponse, error) {
-	if strings.TrimSpace(id) == "" {
-		return RelatedNotesResponse{}, ErrNotFound
-	}
-	exists, err := s.repo.NoteExists(ctx, id)
+	stored, err := s.files.SaveResource(artifactType, filename, body)
 	if err != nil {
-		return RelatedNotesResponse{}, err
+		return ArtifactResponse{}, err
 	}
-	if !exists {
-		return RelatedNotesResponse{}, ErrNotFound
+	title := filename
+	if trimmedTitle := TrimStringPtr(input.Title); trimmedTitle != nil {
+		title = *trimmedTitle
 	}
-	hasEmbedding, err := s.repo.HasNoteEmbedding(ctx, id)
-	if err != nil {
-		return RelatedNotesResponse{}, err
+	now := time.Now().UTC().Format(time.RFC3339)
+	metadata := map[string]any{
+		"resourceKind":     stored.ResourceKind,
+		"storageKey":       stored.StorageKey,
+		"mimeType":         stored.MIMEType,
+		"originalFilename": stored.OriginalFilename,
+		"sizeBytes":        stored.SizeBytes,
 	}
-	if !hasEmbedding {
-		return RelatedNotesResponse{
-			Results: []RelatedRecord{},
-			Message: "Note not yet embedded",
-		}, nil
+	rec := ArtifactResponse{
+		ID:        newID("artifact-"),
+		Type:      artifactType,
+		FolderID:  input.FolderID,
+		Title:     title,
+		Content:   "",
+		Summary:   TrimStringPtr(input.Summary),
+		Metadata:  metadata,
+		CreatedAt: now,
+		UpdatedAt: now,
 	}
-	results, err := s.repo.RelatedNotes(ctx, id, limit)
-	if err != nil {
-		return RelatedNotesResponse{}, err
-	}
-	return RelatedNotesResponse{Results: results}, nil
-}
-
-func (s *DefaultArtifactService) UploadDocument(ctx context.Context, filename string, content []byte) (DocumentRecord, error) {
-	sum := sha256.Sum256(content)
-	docID := "sha256:" + hex.EncodeToString(sum[:])
-
-	existing, found, err := s.repo.FindDocument(ctx, docID)
-	if err != nil {
-		return DocumentRecord{}, err
-	}
-	if found {
-		existing.Status = "already_exists"
-		return existing, nil
-	}
-
-	if err := s.files.SaveDocument(docID, content); err != nil {
-		return DocumentRecord{}, err
-	}
-
-	size := int64(len(content))
-	now := time.Now().UTC()
-	rec := DocumentRecord{
-		ID:         docID,
-		Filename:   filename,
-		Title:      nil,
-		Size:       &size,
-		PageCount:  nil,
-		UploadedAt: now.Format(time.RFC3339),
-		Ingested:   true,
-		Status:     "ingested",
-	}
-	if err := s.repo.CreateDocument(ctx, rec, now.Unix()); err != nil {
-		return DocumentRecord{}, err
+	if err := s.repo.CreateArtifact(ctx, rec); err != nil {
+		return ArtifactResponse{}, err
 	}
 	return rec, nil
 }
 
-func (s *DefaultArtifactService) ListDocuments(ctx context.Context) ([]DocumentRecord, error) {
-	return s.repo.ListDocuments(ctx)
-}
-
-func (s *DefaultArtifactService) DocumentFilePath(id string) (string, error) {
-	if strings.TrimSpace(id) == "" {
-		return "", ErrNotFound
-	}
-	return s.files.DocumentPath(id)
-}
-
-func (s *DefaultArtifactService) UploadAudio(ctx context.Context, filename string, body io.Reader) (AudioUploadRecord, error) {
-	_ = ctx
-	storedFilename, contentType, err := s.files.SaveAudio(filename, body)
+func (s *DefaultArtifactService) Resource(ctx context.Context, id string) (ArtifactResource, error) {
+	rec, err := s.Get(ctx, id)
 	if err != nil {
-		return AudioUploadRecord{}, err
+		return ArtifactResource{}, err
 	}
-	return AudioUploadRecord{
-		Filename:    storedFilename,
-		URL:         "/api/audio/" + storedFilename,
+	if rec.Type != "voice" && rec.Type != "file" {
+		return ArtifactResource{}, BadRequest("artifact does not have a resource")
+	}
+	storageKey, _ := rec.Metadata["storageKey"].(string)
+	if strings.TrimSpace(storageKey) == "" {
+		return ArtifactResource{}, ErrNotFound
+	}
+	path, err := s.files.ResourcePath(storageKey)
+	if err != nil {
+		return ArtifactResource{}, err
+	}
+	contentType, _ := rec.Metadata["mimeType"].(string)
+	return ArtifactResource{
+		Path:        path,
 		ContentType: contentType,
 	}, nil
 }
 
-func (s *DefaultArtifactService) AudioFilePath(filename string) (string, error) {
-	return s.files.AudioPath(filename)
+func (s *DefaultArtifactService) ListFolders(ctx context.Context, parentID *string) ([]FolderNode, error) {
+	parentID = TrimStringPtr(parentID)
+	if parentID != nil {
+		if _, err := s.repo.GetFolder(ctx, *parentID); err != nil {
+			return nil, err
+		}
+	}
+	return s.repo.ListFolders(ctx, parentID)
+}
+
+func (s *DefaultArtifactService) CreateFolder(ctx context.Context, title string, parentID *string) (FolderNode, error) {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return FolderNode{}, BadRequest("title is required")
+	}
+	parentID = TrimStringPtr(parentID)
+	if parentID != nil {
+		if _, err := s.repo.GetFolder(ctx, *parentID); err != nil {
+			return FolderNode{}, err
+		}
+	}
+	folder := FolderNode{
+		ID:       newID("folder-"),
+		ParentID: parentID,
+		Title:    title,
+	}
+	if err := s.repo.CreateFolder(ctx, folder); err != nil {
+		return FolderNode{}, err
+	}
+	return folder, nil
+}
+
+func (s *DefaultArtifactService) GetFolder(ctx context.Context, id string) (FolderNode, error) {
+	if strings.TrimSpace(id) == "" {
+		return FolderNode{}, ErrNotFound
+	}
+	return s.repo.GetFolder(ctx, id)
+}
+
+func (s *DefaultArtifactService) FolderBreadcrumbs(ctx context.Context, id string) ([]BreadcrumbItem, error) {
+	if strings.TrimSpace(id) == "" {
+		return nil, ErrNotFound
+	}
+	if _, err := s.repo.GetFolder(ctx, id); err != nil {
+		return nil, err
+	}
+	return s.repo.FolderBreadcrumbs(ctx, id)
 }
