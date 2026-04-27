@@ -9,6 +9,7 @@ import (
 
 type ArtifactService interface {
 	List(context.Context, ArtifactListParams) ([]ArtifactResponse, error)
+	BrowserTree(context.Context) ([]BrowserTreeNode, error)
 	Get(context.Context, string) (ArtifactResponse, error)
 	Create(context.Context, ArtifactPayload) (ArtifactResponse, error)
 	Update(context.Context, string, ArtifactPatch) (ArtifactResponse, error)
@@ -30,6 +31,10 @@ type ArtifactRepository interface {
 	DeleteArtifact(context.Context, string) error
 	ListFolders(context.Context, *string) ([]FolderNode, error)
 	ListAllFolders(context.Context) ([]FolderNode, error)
+	ListAllBrowserNodes(context.Context) ([]BrowserTreeFlatNode, error)
+	NextNodePosition(context.Context, *string) (int64, error)
+	CreateTreeNode(context.Context, TreeNodeRecord) error
+	UpdateArtifactNodeParent(context.Context, string, *string) error
 	CreateFolder(context.Context, FolderNode) error
 	GetFolder(context.Context, string) (FolderNode, error)
 	FolderBreadcrumbs(context.Context, string) ([]BreadcrumbItem, error)
@@ -67,6 +72,48 @@ func (s *DefaultArtifactService) List(ctx context.Context, params ArtifactListPa
 		}
 	}
 	return s.repo.ListArtifacts(ctx, params)
+}
+
+func (s *DefaultArtifactService) BrowserTree(ctx context.Context) ([]BrowserTreeNode, error) {
+	nodes, err := s.repo.ListAllBrowserNodes(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	childrenByParentID := make(map[string][]BrowserTreeFlatNode)
+	rootNodes := make([]BrowserTreeFlatNode, 0)
+	for _, node := range nodes {
+		if node.ParentID == nil {
+			rootNodes = append(rootNodes, node)
+			continue
+		}
+		childrenByParentID[*node.ParentID] = append(childrenByParentID[*node.ParentID], node)
+	}
+
+	var build func(BrowserTreeFlatNode) BrowserTreeNode
+	build = func(node BrowserTreeFlatNode) BrowserTreeNode {
+		children := childrenByParentID[node.ID]
+		out := BrowserTreeNode{
+			ID:           node.ID,
+			ParentID:     node.ParentID,
+			Kind:         node.Kind,
+			Title:        node.Title,
+			ArtifactID:   node.ArtifactID,
+			ArtifactType: node.ArtifactType,
+			UpdatedAt:    node.UpdatedAt,
+			Children:     make([]BrowserTreeNode, 0, len(children)),
+		}
+		for _, child := range children {
+			out.Children = append(out.Children, build(child))
+		}
+		return out
+	}
+
+	tree := make([]BrowserTreeNode, 0, len(rootNodes))
+	for _, node := range rootNodes {
+		tree = append(tree, build(node))
+	}
+	return tree, nil
 }
 
 func (s *DefaultArtifactService) Get(ctx context.Context, id string) (ArtifactResponse, error) {
@@ -132,6 +179,20 @@ func (s *DefaultArtifactService) Create(ctx context.Context, payload ArtifactPay
 		rec.Metadata = map[string]any{}
 	}
 	if err := s.repo.CreateArtifact(ctx, rec); err != nil {
+		return ArtifactResponse{}, err
+	}
+	position, err := s.repo.NextNodePosition(ctx, payload.FolderID)
+	if err != nil {
+		return ArtifactResponse{}, err
+	}
+	artifactID := rec.ID
+	if err := s.repo.CreateTreeNode(ctx, TreeNodeRecord{
+		ID:         rec.ID,
+		ParentID:   payload.FolderID,
+		Kind:       "artifact",
+		ArtifactID: &artifactID,
+		Position:   position,
+	}); err != nil {
 		return ArtifactResponse{}, err
 	}
 	return rec, nil
@@ -201,6 +262,11 @@ func (s *DefaultArtifactService) Update(ctx context.Context, id string, patch Ar
 		return ArtifactResponse{}, BadRequest("title or content is required")
 	}
 
+	if patch.FolderID != nil {
+		if err := s.repo.UpdateArtifactNodeParent(ctx, id, patch.FolderID); err != nil {
+			return ArtifactResponse{}, err
+		}
+	}
 	if err := s.repo.UpdateArtifact(ctx, id, patch); err != nil {
 		return ArtifactResponse{}, err
 	}
@@ -257,6 +323,20 @@ func (s *DefaultArtifactService) Upload(ctx context.Context, input ArtifactUploa
 		UpdatedAt: now,
 	}
 	if err := s.repo.CreateArtifact(ctx, rec); err != nil {
+		return ArtifactResponse{}, err
+	}
+	position, err := s.repo.NextNodePosition(ctx, input.FolderID)
+	if err != nil {
+		return ArtifactResponse{}, err
+	}
+	artifactID := rec.ID
+	if err := s.repo.CreateTreeNode(ctx, TreeNodeRecord{
+		ID:         rec.ID,
+		ParentID:   input.FolderID,
+		Kind:       "artifact",
+		ArtifactID: &artifactID,
+		Position:   position,
+	}); err != nil {
 		return ArtifactResponse{}, err
 	}
 	return rec, nil
@@ -350,6 +430,20 @@ func (s *DefaultArtifactService) CreateFolder(ctx context.Context, title string,
 		Title:    title,
 	}
 	if err := s.repo.CreateFolder(ctx, folder); err != nil {
+		return FolderNode{}, err
+	}
+	position, err := s.repo.NextNodePosition(ctx, parentID)
+	if err != nil {
+		return FolderNode{}, err
+	}
+	folderTitle := folder.Title
+	if err := s.repo.CreateTreeNode(ctx, TreeNodeRecord{
+		ID:       folder.ID,
+		ParentID: parentID,
+		Kind:     "folder",
+		Title:    &folderTitle,
+		Position: position,
+	}); err != nil {
 		return FolderNode{}, err
 	}
 	return folder, nil

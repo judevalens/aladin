@@ -6,11 +6,26 @@ data class FolderNode(
     val title: String,
 )
 
-data class FolderTreeNode(
+enum class BrowserNodeKind {
+    Folder,
+    Artifact,
+}
+
+data class ArtifactPreview(
+    val id: String,
+    val title: String,
+    val kind: ArtifactKind,
+    val updatedLabel: String? = null,
+)
+
+data class BrowserTreeNode(
     val id: String,
     val parentId: String?,
+    val kind: BrowserNodeKind,
     val title: String,
-    val children: List<FolderTreeNode> = emptyList(),
+    val artifactId: String? = null,
+    val artifactPreview: ArtifactPreview? = null,
+    val children: List<BrowserTreeNode> = emptyList(),
 )
 
 data class BreadcrumbItem(

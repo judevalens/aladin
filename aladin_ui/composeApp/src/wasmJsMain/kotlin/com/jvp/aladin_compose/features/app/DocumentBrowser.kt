@@ -34,8 +34,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.jvp.aladin_compose.model.Artifact
 import com.jvp.aladin_compose.model.ArtifactKind
+import com.jvp.aladin_compose.model.ArtifactPreview
 import com.jvp.aladin_compose.model.BreadcrumbItem
 import com.jvp.aladin_compose.model.FolderNode
 import com.jvp.aladin_compose.ui_lib.ErrorState
@@ -251,7 +251,7 @@ private fun BrowserScopeBreadcrumbRow(
 
 @Composable
 private fun BrowserArtifactRow(
-    artifact: Artifact,
+    artifact: ArtifactPreview,
     depth: Int,
     selected: Boolean,
     onClick: () -> Unit,
@@ -286,7 +286,7 @@ private fun BrowserArtifactRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                artifact.updatedLabel,
+                artifact.updatedLabel ?: "",
                 style = MaterialTheme.typography.bodySmall,
                 color = if (selected) AladinColor.InkSecondary else AladinColor.InkMuted,
                 maxLines = 1,

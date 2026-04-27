@@ -1,6 +1,7 @@
 package com.jvp.aladin_compose.features.app
 
 import com.jvp.aladin_compose.model.Artifact
+import com.jvp.aladin_compose.model.ArtifactPreview
 import com.jvp.aladin_compose.model.BreadcrumbItem
 import com.jvp.aladin_compose.model.FolderNode
 import com.jvp.aladin_compose.model.NavDestination
@@ -50,7 +51,7 @@ sealed interface BrowserTreeRow {
     }
 
     data class Artifact(
-        val artifact: com.jvp.aladin_compose.model.Artifact,
+        val artifact: ArtifactPreview,
         override val depth: Int,
         override val selected: Boolean,
     ) : BrowserTreeRow {

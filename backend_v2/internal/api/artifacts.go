@@ -11,6 +11,7 @@ import (
 )
 
 func (s *Server) registerArtifactRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/browser/tree", s.handleBrowserTree)
 	mux.HandleFunc("GET /api/artifacts/", s.handleArtifactsList)
 	mux.HandleFunc("POST /api/artifacts/", s.handleArtifactsCreate)
 	mux.HandleFunc("POST /api/artifacts/upload", s.handleArtifactsUpload)
@@ -24,6 +25,15 @@ func (s *Server) registerArtifactRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/folders/", s.handleFoldersCreate)
 	mux.HandleFunc("GET /api/folders/{id}", s.handleFoldersGet)
 	mux.HandleFunc("GET /api/folders/{id}/breadcrumbs", s.handleFoldersBreadcrumbs)
+}
+
+func (s *Server) handleBrowserTree(w http.ResponseWriter, r *http.Request) {
+	out, err := s.deps.Artifacts().BrowserTree(r.Context())
+	if err != nil {
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) handleArtifactsList(w http.ResponseWriter, r *http.Request) {

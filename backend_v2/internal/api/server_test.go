@@ -62,6 +62,37 @@ func TestArtifactsCreate(t *testing.T) {
 	}
 }
 
+func TestBrowserTreeRoute(t *testing.T) {
+	t.Parallel()
+
+	artifactID := "artifact-1"
+	artifactType := "note"
+	updatedAt := "2026-04-27T00:00:00Z"
+	server := NewWithDependencies(":0", app.StaticDependencies{
+		ArtifactsSvc: &fakeArtifactService{
+			browserTree: []artifactservice.BrowserTreeNode{
+				{
+					ID:       "folder-root",
+					Kind:     "folder",
+					Title:    "Root",
+					Children: []artifactservice.BrowserTreeNode{{ID: artifactID, ParentID: stringPtr("folder-root"), Kind: "artifact", Title: "Memo", ArtifactID: &artifactID, ArtifactType: &artifactType, UpdatedAt: &updatedAt, Children: []artifactservice.BrowserTreeNode{}}},
+				},
+			},
+		},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/browser/tree", nil)
+	rec := httptest.NewRecorder()
+
+	server.httpServer.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "\"kind\":\"artifact\"") {
+		t.Fatalf("body = %s, want mixed browser tree payload", rec.Body.String())
+	}
+}
+
 func TestArtifactsListByFolder(t *testing.T) {
 	t.Parallel()
 
@@ -223,6 +254,7 @@ func TestLegacyArtifactRoutesRemoved(t *testing.T) {
 type fakeArtifactService struct {
 	list               []artifactservice.ArtifactResponse
 	listParams         *artifactservice.ArtifactListParams
+	browserTree        []artifactservice.BrowserTreeNode
 	folderTree         []artifactservice.FolderTreeNode
 	created            []artifactservice.ArtifactPayload
 	uploadInput        *artifactservice.ArtifactUploadInput
@@ -234,6 +266,10 @@ func (f *fakeArtifactService) List(_ context.Context, params artifactservice.Art
 	copyParams := params
 	f.listParams = &copyParams
 	return f.list, nil
+}
+
+func (f *fakeArtifactService) BrowserTree(context.Context) ([]artifactservice.BrowserTreeNode, error) {
+	return f.browserTree, nil
 }
 
 func (f *fakeArtifactService) Get(context.Context, string) (artifactservice.ArtifactResponse, error) {

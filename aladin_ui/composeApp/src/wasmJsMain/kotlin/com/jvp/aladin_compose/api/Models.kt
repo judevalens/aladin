@@ -137,11 +137,15 @@ data class FolderRecord(
 )
 
 @Serializable
-data class FolderTreeRecord(
+data class BrowserTreeRecord(
     val id: String,
     val parentId: String? = null,
+    val kind: String,
     val title: String,
-    val children: List<FolderTreeRecord> = emptyList(),
+    val artifactId: String? = null,
+    val artifactType: String? = null,
+    val updatedAt: String? = null,
+    val children: List<BrowserTreeRecord> = emptyList(),
 )
 
 @Serializable

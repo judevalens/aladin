@@ -5,16 +5,18 @@ import com.jvp.aladin_compose.api.FolderCreateRequest
 import com.jvp.aladin_compose.api.UserArtifact
 import com.jvp.aladin_compose.api.UserArtifactCreateRequest
 import com.jvp.aladin_compose.model.Artifact
+import com.jvp.aladin_compose.model.ArtifactPreview
 import com.jvp.aladin_compose.model.ArtifactKind
+import com.jvp.aladin_compose.model.BrowserNodeKind
 import com.jvp.aladin_compose.model.BreadcrumbItem
+import com.jvp.aladin_compose.model.BrowserTreeNode
 import com.jvp.aladin_compose.model.FolderNode
-import com.jvp.aladin_compose.model.FolderTreeNode
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 
 interface FolderRepository {
-    suspend fun folderTree(): List<FolderTreeNode>
+    suspend fun browserTree(): List<BrowserTreeNode>
     suspend fun folders(parentId: String?): List<FolderNode>
     suspend fun folder(id: String): FolderNode
     suspend fun folderBreadcrumbs(folderId: String?): List<BreadcrumbItem>
@@ -26,8 +28,8 @@ interface FolderRepository {
 }
 
 class ApiFolderRepository : FolderRepository {
-    override suspend fun folderTree(): List<FolderTreeNode> {
-        return ApiClient.getFolderTree().map(::toFolderTreeNode)
+    override suspend fun browserTree(): List<BrowserTreeNode> {
+        return ApiClient.getBrowserTree().map(::toBrowserTreeNode)
     }
 
     override suspend fun folders(parentId: String?): List<FolderNode> {
@@ -110,13 +112,41 @@ class ApiFolderRepository : FolderRepository {
         )
     }
 
-    private fun toFolderTreeNode(record: com.jvp.aladin_compose.api.FolderTreeRecord): FolderTreeNode {
-        return FolderTreeNode(
+    private fun toBrowserTreeNode(record: com.jvp.aladin_compose.api.BrowserTreeRecord): BrowserTreeNode {
+        val kind =
+            when (record.kind.lowercase()) {
+                "folder" -> BrowserNodeKind.Folder
+                else -> BrowserNodeKind.Artifact
+            }
+        val artifactPreview =
+            if (kind == BrowserNodeKind.Artifact && record.artifactId != null) {
+                ArtifactPreview(
+                    id = record.artifactId,
+                    title = record.title,
+                    kind = artifactKind(record.artifactType),
+                    updatedLabel = record.updatedAt,
+                )
+            } else {
+                null
+            }
+        return BrowserTreeNode(
             id = record.id,
             parentId = record.parentId,
+            kind = kind,
             title = record.title,
-            children = record.children.map(::toFolderTreeNode),
+            artifactId = record.artifactId,
+            artifactPreview = artifactPreview,
+            children = record.children.map(::toBrowserTreeNode),
         )
+    }
+
+    private fun artifactKind(type: String?): ArtifactKind {
+        return when (type?.lowercase()) {
+            "link" -> ArtifactKind.Link
+            "voice" -> ArtifactKind.Voice
+            "file" -> ArtifactKind.File
+            else -> ArtifactKind.Note
+        }
     }
 
     private fun metadataString(metadata: Map<String, JsonElement>, key: String): String? {

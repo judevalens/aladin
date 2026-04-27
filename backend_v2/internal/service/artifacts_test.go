@@ -106,10 +106,38 @@ func TestArtifactServiceFolderTreeBuildsHierarchy(t *testing.T) {
 	}
 }
 
+func TestArtifactServiceBrowserTreeBuildsMixedHierarchy(t *testing.T) {
+	t.Parallel()
+
+	rootID := "folder-root"
+	artifactID := "artifact-1"
+	artifactType := "note"
+	updatedAt := "2026-04-27T00:00:00Z"
+	repo := &fakeArtifactRepository{
+		browserNodes: []BrowserTreeFlatNode{
+			{ID: rootID, Kind: "folder", Title: "Root", Position: 1},
+			{ID: artifactID, ParentID: &rootID, Kind: "artifact", Title: "Memo", ArtifactID: &artifactID, ArtifactType: &artifactType, UpdatedAt: &updatedAt, Position: 1},
+		},
+	}
+	svc := NewArtifactService(repo, &fakeArtifactFiles{})
+
+	tree, err := svc.BrowserTree(context.Background())
+	if err != nil {
+		t.Fatalf("BrowserTree error: %v", err)
+	}
+	if len(tree) != 1 || len(tree[0].Children) != 1 {
+		t.Fatalf("tree = %#v, want mixed hierarchy", tree)
+	}
+	if tree[0].Children[0].ArtifactID == nil || *tree[0].Children[0].ArtifactID != artifactID {
+		t.Fatalf("artifact child = %#v, want artifact node", tree[0].Children[0])
+	}
+}
+
 type fakeArtifactRepository struct {
 	artifactByID     map[string]ArtifactResponse
 	createdArtifacts []ArtifactResponse
 	folders          []FolderNode
+	browserNodes     []BrowserTreeFlatNode
 }
 
 func (f *fakeArtifactRepository) ListArtifacts(context.Context, ArtifactListParams) ([]ArtifactResponse, error) {
@@ -143,6 +171,16 @@ func (f *fakeArtifactRepository) ListFolders(context.Context, *string) ([]Folder
 }
 func (f *fakeArtifactRepository) ListAllFolders(context.Context) ([]FolderNode, error) {
 	return f.folders, nil
+}
+func (f *fakeArtifactRepository) ListAllBrowserNodes(context.Context) ([]BrowserTreeFlatNode, error) {
+	return f.browserNodes, nil
+}
+func (f *fakeArtifactRepository) NextNodePosition(context.Context, *string) (int64, error) {
+	return 1, nil
+}
+func (f *fakeArtifactRepository) CreateTreeNode(context.Context, TreeNodeRecord) error { return nil }
+func (f *fakeArtifactRepository) UpdateArtifactNodeParent(context.Context, string, *string) error {
+	return nil
 }
 func (f *fakeArtifactRepository) CreateFolder(context.Context, FolderNode) error { return nil }
 func (f *fakeArtifactRepository) GetFolder(context.Context, string) (FolderNode, error) {

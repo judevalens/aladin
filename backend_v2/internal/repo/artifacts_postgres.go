@@ -26,18 +26,19 @@ func (r *PostgresArtifactRepository) ListArtifacts(ctx context.Context, params a
 		return nil, err
 	}
 	query := `
-		SELECT id, folder_id, type, title, content, summary, source_url, metadata, created_at, updated_at
-		  FROM artifacts
-		 WHERE user_id = $1::uuid
+		SELECT a.id, n.parent_id, a.type, a.title, a.content, a.summary, a.source_url, a.metadata, a.created_at, a.updated_at
+		  FROM artifacts a
+		  JOIN tree_nodes n ON n.artifact_id = a.id AND n.user_id = a.user_id AND n.kind = 'artifact'
+		 WHERE a.user_id = $1::uuid
 	`
 	args := []any{r.userID}
 	if params.FolderID == nil {
-		query += ` AND folder_id IS NULL`
+		query += ` AND n.parent_id IS NULL`
 	} else {
-		query += ` AND folder_id = $2`
+		query += ` AND n.parent_id = $2`
 		args = append(args, *params.FolderID)
 	}
-	query += ` ORDER BY updated_at DESC, created_at DESC`
+	query += ` ORDER BY n.position ASC, a.created_at ASC`
 
 	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {
@@ -61,9 +62,10 @@ func (r *PostgresArtifactRepository) GetArtifact(ctx context.Context, id string)
 		return artifactservice.ArtifactResponse{}, err
 	}
 	row := r.pool.QueryRow(ctx, `
-		SELECT id, folder_id, type, title, content, summary, source_url, metadata, created_at, updated_at
-		  FROM artifacts
-		 WHERE id = $1 AND user_id = $2::uuid
+		SELECT a.id, n.parent_id, a.type, a.title, a.content, a.summary, a.source_url, a.metadata, a.created_at, a.updated_at
+		  FROM artifacts a
+		  LEFT JOIN tree_nodes n ON n.artifact_id = a.id AND n.user_id = a.user_id AND n.kind = 'artifact'
+		 WHERE a.id = $1 AND a.user_id = $2::uuid
 	`, id, r.userID)
 	return scanArtifactResponse(row)
 }
@@ -138,8 +140,9 @@ func (r *PostgresArtifactRepository) ListFolders(ctx context.Context, parentID *
 	}
 	query := `
 		SELECT id, parent_id, title
-		  FROM folders
+		  FROM tree_nodes
 		 WHERE user_id = $1::uuid
+		   AND kind = 'folder'
 	`
 	args := []any{r.userID}
 	if parentID == nil {
@@ -148,7 +151,7 @@ func (r *PostgresArtifactRepository) ListFolders(ctx context.Context, parentID *
 		query += ` AND parent_id = $2`
 		args = append(args, *parentID)
 	}
-	query += ` ORDER BY title ASC`
+	query += ` ORDER BY position ASC, created_at ASC`
 	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -172,9 +175,10 @@ func (r *PostgresArtifactRepository) ListAllFolders(ctx context.Context) ([]arti
 	}
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, parent_id, title
-		  FROM folders
+		  FROM tree_nodes
 		 WHERE user_id = $1::uuid
-		 ORDER BY title ASC
+		   AND kind = 'folder'
+		 ORDER BY position ASC, created_at ASC
 	`, r.userID)
 	if err != nil {
 		return nil, err
@@ -190,6 +194,104 @@ func (r *PostgresArtifactRepository) ListAllFolders(ctx context.Context) ([]arti
 		out = append(out, node)
 	}
 	return out, rows.Err()
+}
+
+func (r *PostgresArtifactRepository) ListAllBrowserNodes(ctx context.Context) ([]artifactservice.BrowserTreeFlatNode, error) {
+	if err := r.ensureDefaultUser(ctx); err != nil {
+		return nil, err
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT
+			n.id,
+			n.parent_id,
+			n.kind,
+			CASE
+				WHEN n.kind = 'folder' THEN n.title
+				ELSE COALESCE(NULLIF(a.title, ''), a.metadata->>'originalFilename', a.metadata->>'storageKey', 'Untitled artifact')
+			END AS title,
+			n.artifact_id,
+			a.type,
+			CASE WHEN a.updated_at IS NULL THEN NULL ELSE to_char(a.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') END AS updated_at,
+			n.position
+		  FROM tree_nodes n
+		  LEFT JOIN artifacts a ON a.id = n.artifact_id AND a.user_id = n.user_id
+		 WHERE n.user_id = $1::uuid
+		 ORDER BY COALESCE(n.parent_id, ''), n.position ASC, n.created_at ASC, n.id ASC
+	`, r.userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]artifactservice.BrowserTreeFlatNode, 0)
+	for rows.Next() {
+		var node artifactservice.BrowserTreeFlatNode
+		if err := rows.Scan(
+			&node.ID,
+			&node.ParentID,
+			&node.Kind,
+			&node.Title,
+			&node.ArtifactID,
+			&node.ArtifactType,
+			&node.UpdatedAt,
+			&node.Position,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, node)
+	}
+	return out, rows.Err()
+}
+
+func (r *PostgresArtifactRepository) NextNodePosition(ctx context.Context, parentID *string) (int64, error) {
+	if err := r.ensureDefaultUser(ctx); err != nil {
+		return 0, err
+	}
+	var next int64
+	err := r.pool.QueryRow(ctx, `
+		SELECT COALESCE(MAX(position), 0) + 1
+		  FROM tree_nodes
+		 WHERE user_id = $1::uuid
+		   AND parent_id IS NOT DISTINCT FROM $2
+	`, r.userID, parentID).Scan(&next)
+	return next, err
+}
+
+func (r *PostgresArtifactRepository) CreateTreeNode(ctx context.Context, node artifactservice.TreeNodeRecord) error {
+	if err := r.ensureDefaultUser(ctx); err != nil {
+		return err
+	}
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO tree_nodes (id, user_id, parent_id, kind, title, artifact_id, position, created_at, updated_at)
+		VALUES ($1, $2::uuid, $3, $4, $5, $6, $7, now(), now())
+	`, node.ID, r.userID, node.ParentID, node.Kind, node.Title, node.ArtifactID, node.Position)
+	return err
+}
+
+func (r *PostgresArtifactRepository) UpdateArtifactNodeParent(ctx context.Context, artifactID string, parentID *string) error {
+	if err := r.ensureDefaultUser(ctx); err != nil {
+		return err
+	}
+	position, err := r.NextNodePosition(ctx, parentID)
+	if err != nil {
+		return err
+	}
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE tree_nodes
+		   SET parent_id = $3,
+		       position = $4,
+		       updated_at = now()
+		 WHERE id = $1
+		   AND user_id = $2::uuid
+		   AND kind = 'artifact'
+	`, artifactID, r.userID, parentID, position)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return artifactservice.ErrNotFound
+	}
+	return nil
 }
 
 func (r *PostgresArtifactRepository) CreateFolder(ctx context.Context, folder artifactservice.FolderNode) error {
@@ -210,8 +312,9 @@ func (r *PostgresArtifactRepository) GetFolder(ctx context.Context, id string) (
 	var node artifactservice.FolderNode
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, parent_id, title
-		  FROM folders
+		  FROM tree_nodes
 		 WHERE id = $1 AND user_id = $2::uuid
+		   AND kind = 'folder'
 	`, id, r.userID).Scan(&node.ID, &node.ParentID, &node.Title)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return artifactservice.FolderNode{}, artifactservice.ErrNotFound
@@ -229,13 +332,13 @@ func (r *PostgresArtifactRepository) FolderBreadcrumbs(ctx context.Context, id s
 	rows, err := r.pool.Query(ctx, `
 		WITH RECURSIVE chain AS (
 		    SELECT id, parent_id, title, 0 AS depth
-		      FROM folders
-		     WHERE id = $1 AND user_id = $2::uuid
+		      FROM tree_nodes
+		     WHERE id = $1 AND user_id = $2::uuid AND kind = 'folder'
 		    UNION ALL
 		    SELECT f.id, f.parent_id, f.title, c.depth + 1
-		      FROM folders f
+		      FROM tree_nodes f
 		      JOIN chain c ON c.parent_id = f.id
-		     WHERE f.user_id = $2::uuid
+		     WHERE f.user_id = $2::uuid AND f.kind = 'folder'
 		)
 		SELECT id, title
 		  FROM chain

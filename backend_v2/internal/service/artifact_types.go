@@ -100,6 +100,37 @@ type FolderNode struct {
 	Title    string  `json:"title"`
 }
 
+type BrowserTreeNode struct {
+	ID           string            `json:"id"`
+	ParentID     *string           `json:"parentId,omitempty"`
+	Kind         string            `json:"kind"`
+	Title        string            `json:"title"`
+	ArtifactID   *string           `json:"artifactId,omitempty"`
+	ArtifactType *string           `json:"artifactType,omitempty"`
+	UpdatedAt    *string           `json:"updatedAt,omitempty"`
+	Children     []BrowserTreeNode `json:"children"`
+}
+
+type BrowserTreeFlatNode struct {
+	ID           string
+	ParentID     *string
+	Kind         string
+	Title        string
+	ArtifactID   *string
+	ArtifactType *string
+	UpdatedAt    *string
+	Position     int64
+}
+
+type TreeNodeRecord struct {
+	ID         string
+	ParentID   *string
+	Kind       string
+	Title      *string
+	ArtifactID *string
+	Position   int64
+}
+
 type FolderTreeNode struct {
 	ID       string           `json:"id"`
 	ParentID *string          `json:"parentId,omitempty"`

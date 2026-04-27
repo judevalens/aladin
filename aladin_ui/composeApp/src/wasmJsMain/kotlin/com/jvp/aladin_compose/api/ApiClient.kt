@@ -83,8 +83,8 @@ object ApiClient {
         }.body<List<FolderRecord>?>() ?: emptyList()
     }
 
-    suspend fun getFolderTree(): List<FolderTreeRecord> = call {
-        httpClient.get("$BASE_URL/api/folders/tree").body<List<FolderTreeRecord>?>() ?: emptyList()
+    suspend fun getBrowserTree(): List<BrowserTreeRecord> = call {
+        httpClient.get("$BASE_URL/api/browser/tree").body<List<BrowserTreeRecord>?>() ?: emptyList()
     }
 
     suspend fun getFolder(id: String): FolderRecord = call {

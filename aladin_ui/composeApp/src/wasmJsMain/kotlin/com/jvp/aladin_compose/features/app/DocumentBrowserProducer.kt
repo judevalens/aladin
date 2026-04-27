@@ -7,6 +7,8 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.jvp.aladin_compose.model.Artifact
+import com.jvp.aladin_compose.model.BrowserNodeKind
+import com.jvp.aladin_compose.model.BrowserTreeNode
 import com.jvp.aladin_compose.model.FolderNode
 import com.jvp.aladin_compose.service.FolderService
 import kotlinx.coroutines.CoroutineScope
@@ -85,11 +87,7 @@ class DefaultDocumentBrowserProducer(
             ) {
                 try {
                     browserError = null
-                    service.prepareBrowser(
-                        scopeId = currentScopeId,
-                        expandedFolderIds = expandedFolderIds,
-                        drillDepth = DrillInDepth,
-                    )
+                    service.prepareBrowser()
                     value =
                         buildBrowserRows(
                             currentScopeId = currentScopeId,
@@ -166,8 +164,9 @@ class DefaultDocumentBrowserProducer(
                             DocumentBrowserEvent.CreateFolder -> {
                                 scope.launch {
                                     try {
-                                        val created = service.createFolder(currentScopeId)
-                                        service.refreshBrowser(currentScopeId)
+                                        val targetFolderId = selectedFolderId ?: currentScopeId
+                                        val created = service.createFolder(targetFolderId)
+                                        service.refreshBrowser()
                                         browserError = null
                                         selectedFolderId = created.id
                                         selectedArtifactId = null
@@ -182,8 +181,9 @@ class DefaultDocumentBrowserProducer(
                             DocumentBrowserEvent.CreateArtifact -> {
                                 scope.launch {
                                     try {
-                                        val created = service.createArtifact(currentScopeId)
-                                        service.refreshBrowser(currentScopeId)
+                                        val targetFolderId = selectedFolderId ?: currentScopeId
+                                        val created = service.createArtifact(targetFolderId)
+                                        service.refreshBrowser()
                                         browserError = null
                                         selectedArtifactId = created.id
                                         selectedFolderId = null
@@ -199,7 +199,7 @@ class DefaultDocumentBrowserProducer(
                                 scope.launch {
                                     browserError = null
                                     hasLoadedRows = false
-                                    service.refreshBrowser(currentScopeId)
+                                    service.refreshBrowser()
                                     refreshKey += 1
                                 }
                             }
@@ -221,37 +221,51 @@ class DefaultDocumentBrowserProducer(
         val rows = mutableListOf<BrowserTreeRow>()
 
         fun visit(parentId: String?, depth: Int, remainingDepth: Int) {
-            val folders = service.cachedFolders(parentId).sortedBy { it.title.lowercase() }
-            val artifacts = service.cachedArtifacts(parentId).sortedBy { it.title.lowercase() }
-
-            folders.forEach { folder ->
-                val expanded = folder.id in expandedFolderIds
-
-                rows +=
-                    BrowserTreeRow.Folder(
-                        folder = folder,
-                        depth = depth,
-                        expanded = expanded,
-                        expandable = true,
-                        selected = folder.id == selectedFolderId,
-                    )
-
-                if (remainingDepth > 0 && expanded) {
-                    visit(folder.id, depth + 1, remainingDepth - 1)
+            val nodes = service.treeChildren(parentId)
+            nodes.forEach { node ->
+                when (node.kind) {
+                    BrowserNodeKind.Folder -> appendFolderNode(rows, node, depth, remainingDepth, expandedFolderIds, selectedFolderId, ::visit)
+                    BrowserNodeKind.Artifact -> {
+                        val preview = node.artifactPreview ?: return@forEach
+                        rows +=
+                            BrowserTreeRow.Artifact(
+                                artifact = preview,
+                                depth = depth,
+                                selected = preview.id == selectedArtifactId,
+                            )
+                    }
                 }
-            }
-
-            artifacts.forEach { artifact ->
-                rows +=
-                    BrowserTreeRow.Artifact(
-                        artifact = artifact,
-                        depth = depth,
-                        selected = artifact.id == selectedArtifactId,
-                    )
             }
         }
 
         visit(parentId = currentScopeId, depth = 0, remainingDepth = DrillInDepth)
         return rows
+    }
+
+    private fun appendFolderNode(
+        rows: MutableList<BrowserTreeRow>,
+        node: BrowserTreeNode,
+        depth: Int,
+        remainingDepth: Int,
+        expandedFolderIds: Set<String>,
+        selectedFolderId: String?,
+        visit: (String?, Int, Int) -> Unit,
+    ) {
+        val folder = FolderNode(id = node.id, parentId = node.parentId, title = node.title)
+        val expanded = node.id in expandedFolderIds
+        val expandable = node.children.isNotEmpty()
+
+        rows +=
+            BrowserTreeRow.Folder(
+                folder = folder,
+                depth = depth,
+                expanded = expanded,
+                expandable = expandable,
+                selected = node.id == selectedFolderId,
+            )
+
+        if (remainingDepth > 0 && expanded) {
+            visit(node.id, depth + 1, remainingDepth - 1)
+        }
     }
 }
