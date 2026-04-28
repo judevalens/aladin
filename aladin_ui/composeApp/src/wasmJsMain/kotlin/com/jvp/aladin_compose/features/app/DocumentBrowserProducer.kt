@@ -27,8 +27,10 @@ class DefaultDocumentBrowserProducer(
 ) : DocumentBrowserProducer {
     @Composable
     override fun produce(): DocumentBrowserProducerState {
-        var selectedFolderId by remember { mutableStateOf<String?>(null) }
-        var selectedArtifactId by remember { mutableStateOf<String?>(null) }
+        var focusedFolderId by remember { mutableStateOf<String?>(null) }
+        var focusedArtifactId by remember { mutableStateOf<String?>(null) }
+        var openArtifactIds by remember { mutableStateOf<List<String>>(emptyList()) }
+        var activeArtifactId by remember { mutableStateOf<String?>(null) }
         var currentScopeId by remember { mutableStateOf<String?>(null) }
         var scopeBackStack by remember { mutableStateOf<List<String?>>(emptyList()) }
         var expandedFolderIds by remember { mutableStateOf(emptySet<String>()) }
@@ -36,32 +38,48 @@ class DefaultDocumentBrowserProducer(
         var browserError by remember { mutableStateOf<String?>(null) }
         var hasLoadedRows by remember { mutableStateOf(false) }
 
-        val selectedFolder =
-            produceState<FolderNode?>(initialValue = null, service, selectedFolderId, refreshKey) {
+        val focusedFolder =
+            produceState<FolderNode?>(initialValue = null, service, focusedFolderId, refreshKey) {
                 value =
                     try {
-                        service.folder(selectedFolderId)
+                        service.folder(focusedFolderId)
                     } catch (_: Throwable) {
                         null
                     }
             }.value
-        val selectedArtifact =
-            produceState<Artifact?>(initialValue = null, service, selectedArtifactId, refreshKey) {
+        val activeArtifact =
+            produceState<Artifact?>(initialValue = null, service, activeArtifactId, refreshKey) {
                 value =
                     try {
-                        service.artifact(selectedArtifactId)
+                        service.artifact(activeArtifactId)
                     } catch (_: Throwable) {
                         null
+                    }
+            }.value
+        val openArtifacts =
+            produceState(
+                initialValue = emptyList(),
+                service,
+                openArtifactIds,
+                refreshKey,
+            ) {
+                value =
+                    openArtifactIds.mapNotNull { artifactId ->
+                        try {
+                            service.artifact(artifactId)
+                        } catch (_: Throwable) {
+                            null
+                        }
                     }
             }.value
         val breadcrumbs =
-            produceState(initialValue = emptyList(), service, selectedFolderId, selectedArtifactId, refreshKey) {
+            produceState(initialValue = emptyList(), service, activeArtifactId, refreshKey) {
                 value =
                     try {
-                        if (selectedArtifactId != null) {
-                            service.artifactBreadcrumbs(selectedArtifactId)
+                        if (activeArtifactId != null) {
+                            service.artifactBreadcrumbs(activeArtifactId)
                         } else {
-                            service.folderBreadcrumbs(selectedFolderId)
+                            emptyList()
                         }
                     } catch (_: Throwable) {
                         emptyList()
@@ -81,8 +99,8 @@ class DefaultDocumentBrowserProducer(
                 initialValue = emptyList(),
                 service,
                 expandedFolderIds,
-                selectedFolderId,
-                selectedArtifactId,
+                focusedFolderId,
+                focusedArtifactId,
                 currentScopeId,
                 refreshKey,
             ) {
@@ -93,8 +111,8 @@ class DefaultDocumentBrowserProducer(
                         buildBrowserRows(
                             currentScopeId = currentScopeId,
                             expandedFolderIds = expandedFolderIds,
-                            selectedFolderId = selectedFolderId,
-                            selectedArtifactId = selectedArtifactId,
+                            focusedFolderId = focusedFolderId,
+                            focusedArtifactId = focusedArtifactId,
                         )
                     hasLoadedRows = true
                 } catch (t: Throwable) {
@@ -116,27 +134,38 @@ class DefaultDocumentBrowserProducer(
                     rows = rows,
                     eventSink = { event ->
                         when (event) {
-                            is DocumentBrowserEvent.SelectFolder -> {
-                                selectedFolderId = event.folderId
-                                selectedArtifactId = null
+                            is DocumentBrowserEvent.FocusFolder -> {
+                                focusedFolderId = event.folderId
+                                focusedArtifactId = null
                                 scope.launch {
                                     expandedFolderIds = expandedFolderIds + service.ancestorFolderIds(event.folderId)
                                 }
                             }
-                            is DocumentBrowserEvent.SelectArtifact -> {
-                                selectedArtifactId = event.artifactId
-                                selectedFolderId = null
+                            is DocumentBrowserEvent.OpenArtifact -> {
+                                focusedArtifactId = event.artifactId
+                                focusedFolderId = null
+                                if (event.artifactId !in openArtifactIds) {
+                                    openArtifactIds = openArtifactIds + event.artifactId
+                                }
+                                activeArtifactId = event.artifactId
                                 scope.launch {
                                     expandedFolderIds =
                                         expandedFolderIds + service.ancestorFolderIdsForArtifact(event.artifactId)
+                                }
+                            }
+                            is DocumentBrowserEvent.ActivateArtifactTab -> {
+                                if (event.artifactId in openArtifactIds) {
+                                    activeArtifactId = event.artifactId
+                                    focusedArtifactId = event.artifactId
+                                    focusedFolderId = null
                                 }
                             }
                             is DocumentBrowserEvent.ToggleFolderExpanded -> {
                                 if (event.depth >= DrillInDepth) {
                                     scopeBackStack = scopeBackStack + currentScopeId
                                     currentScopeId = event.folderId
-                                    selectedFolderId = event.folderId
-                                    selectedArtifactId = null
+                                    focusedFolderId = event.folderId
+                                    focusedArtifactId = null
                                     expandedFolderIds = expandedFolderIds + event.folderId
                                 } else {
                                     expandedFolderIds =
@@ -150,12 +179,12 @@ class DefaultDocumentBrowserProducer(
                             is DocumentBrowserEvent.NavigateScope -> {
                                 currentScopeId = event.folderId
                                 scopeBackStack = scopeBackStack.dropLast(1)
-                                selectedFolderId = event.folderId
-                                selectedArtifactId = null
+                                focusedFolderId = event.folderId
+                                focusedArtifactId = null
                             }
                             is DocumentBrowserEvent.NavigateBreadcrumb -> {
-                                selectedFolderId = event.folderId
-                                selectedArtifactId = null
+                                focusedFolderId = event.folderId
+                                focusedArtifactId = null
                                 currentScopeId = event.folderId
                                 scopeBackStack = emptyList()
                                 scope.launch {
@@ -170,8 +199,8 @@ class DefaultDocumentBrowserProducer(
                                                 val created = service.createFolder(event.folderId)
                                                 service.refreshBrowser()
                                                 browserError = null
-                                                selectedFolderId = created.id
-                                                selectedArtifactId = null
+                                                focusedFolderId = created.id
+                                                focusedArtifactId = null
                                                 expandedFolderIds =
                                                     expandedFolderIds + service.ancestorFolderIds(created.id)
                                                 refreshKey += 1
@@ -190,8 +219,12 @@ class DefaultDocumentBrowserProducer(
                                                 val created = service.createArtifact(event.folderId, kind)
                                                 service.refreshBrowser()
                                                 browserError = null
-                                                selectedArtifactId = created.id
-                                                selectedFolderId = null
+                                                focusedArtifactId = created.id
+                                                focusedFolderId = null
+                                                if (created.id !in openArtifactIds) {
+                                                    openArtifactIds = openArtifactIds + created.id
+                                                }
+                                                activeArtifactId = created.id
                                                 expandedFolderIds =
                                                     expandedFolderIds + service.ancestorFolderIds(created.folderId)
                                                 refreshKey += 1
@@ -207,12 +240,12 @@ class DefaultDocumentBrowserProducer(
                             DocumentBrowserEvent.CreateFolder -> {
                                 scope.launch {
                                     try {
-                                        val targetFolderId = selectedFolderId ?: currentScopeId
+                                        val targetFolderId = focusedFolderId ?: currentScopeId
                                         val created = service.createFolder(targetFolderId)
                                         service.refreshBrowser()
                                         browserError = null
-                                        selectedFolderId = created.id
-                                        selectedArtifactId = null
+                                        focusedFolderId = created.id
+                                        focusedArtifactId = null
                                         expandedFolderIds =
                                             expandedFolderIds + service.ancestorFolderIds(created.id)
                                         refreshKey += 1
@@ -224,12 +257,16 @@ class DefaultDocumentBrowserProducer(
                             DocumentBrowserEvent.CreateArtifact -> {
                                 scope.launch {
                                     try {
-                                        val targetFolderId = selectedFolderId ?: currentScopeId
+                                        val targetFolderId = focusedFolderId ?: currentScopeId
                                         val created = service.createArtifact(targetFolderId)
                                         service.refreshBrowser()
                                         browserError = null
-                                        selectedArtifactId = created.id
-                                        selectedFolderId = null
+                                        focusedArtifactId = created.id
+                                        focusedFolderId = null
+                                        if (created.id !in openArtifactIds) {
+                                            openArtifactIds = openArtifactIds + created.id
+                                        }
+                                        activeArtifactId = created.id
                                         expandedFolderIds =
                                             expandedFolderIds + service.ancestorFolderIds(created.folderId)
                                         refreshKey += 1
@@ -249,8 +286,9 @@ class DefaultDocumentBrowserProducer(
                         }
                     },
                 ),
-            selectedFolder = selectedFolder,
-            selectedArtifact = selectedArtifact,
+            focusedFolder = focusedFolder,
+            activeArtifact = activeArtifact,
+            openArtifacts = openArtifacts,
             canCreateArtifact = true,
         )
     }
@@ -258,8 +296,8 @@ class DefaultDocumentBrowserProducer(
     private fun buildBrowserRows(
         currentScopeId: String?,
         expandedFolderIds: Set<String>,
-        selectedFolderId: String?,
-        selectedArtifactId: String?,
+        focusedFolderId: String?,
+        focusedArtifactId: String?,
     ): List<BrowserTreeRow> {
         val rows = mutableListOf<BrowserTreeRow>()
 
@@ -267,14 +305,14 @@ class DefaultDocumentBrowserProducer(
             val nodes = service.treeChildren(parentId)
             nodes.forEach { node ->
                 when (node.kind) {
-                    BrowserNodeKind.Folder -> appendFolderNode(rows, node, depth, remainingDepth, expandedFolderIds, selectedFolderId, ::visit)
+                    BrowserNodeKind.Folder -> appendFolderNode(rows, node, depth, remainingDepth, expandedFolderIds, focusedFolderId, ::visit)
                     BrowserNodeKind.Artifact -> {
                         val preview = node.artifactPreview ?: return@forEach
                         rows +=
                             BrowserTreeRow.Artifact(
                                 artifact = preview,
                                 depth = depth,
-                                selected = preview.id == selectedArtifactId,
+                                selected = preview.id == focusedArtifactId,
                                 menu = artifactMenu(preview.id),
                             )
                     }
@@ -292,7 +330,7 @@ class DefaultDocumentBrowserProducer(
         depth: Int,
         remainingDepth: Int,
         expandedFolderIds: Set<String>,
-        selectedFolderId: String?,
+        focusedFolderId: String?,
         visit: (String?, Int, Int) -> Unit,
     ) {
         val folder = FolderNode(id = node.id, parentId = node.parentId, title = node.title)
@@ -305,7 +343,7 @@ class DefaultDocumentBrowserProducer(
                 depth = depth,
                 expanded = expanded,
                 expandable = expandable,
-                selected = node.id == selectedFolderId,
+                selected = node.id == focusedFolderId,
                 menu = folderMenu(node.id),
             )
 

@@ -11,16 +11,18 @@ import com.slack.circuit.runtime.CircuitUiState
 data class AppState(
     val destination: NavDestination,
     val browser: DocumentBrowserState,
-    val selectedFolder: FolderNode?,
-    val selectedArtifact: Artifact?,
+    val focusedFolder: FolderNode?,
+    val activeArtifact: Artifact?,
+    val openArtifacts: List<Artifact>,
     val canCreateArtifact: Boolean,
     val eventSink: (AppEvent) -> Unit,
 ) : CircuitUiState
 
 data class DocumentBrowserProducerState(
     val browser: DocumentBrowserState,
-    val selectedFolder: FolderNode?,
-    val selectedArtifact: Artifact?,
+    val focusedFolder: FolderNode?,
+    val activeArtifact: Artifact?,
+    val openArtifacts: List<Artifact>,
     val canCreateArtifact: Boolean,
 )
 
@@ -72,6 +74,14 @@ data class BrowserRowMenuModel(
     val sections: List<BrowserRowMenuSection>,
 )
 
+data class BrowserRowMenuRequest(
+    val menu: BrowserRowMenuModel,
+    val anchorLeftPx: Float,
+    val anchorRightPx: Float,
+    val anchorBottomPx: Float,
+    val onActionSelected: (String) -> Unit,
+)
+
 sealed interface BrowserTreeRow {
     val key: String
     val depth: Int
@@ -104,8 +114,9 @@ sealed interface AppEvent : CircuitUiEvent {
 }
 
 sealed interface DocumentBrowserEvent {
-    data class SelectFolder(val folderId: String) : DocumentBrowserEvent
-    data class SelectArtifact(val artifactId: String) : DocumentBrowserEvent
+    data class FocusFolder(val folderId: String) : DocumentBrowserEvent
+    data class OpenArtifact(val artifactId: String) : DocumentBrowserEvent
+    data class ActivateArtifactTab(val artifactId: String) : DocumentBrowserEvent
     data class ToggleFolderExpanded(val folderId: String, val depth: Int) : DocumentBrowserEvent
     data class NavigateScope(val folderId: String?) : DocumentBrowserEvent
     data class NavigateBreadcrumb(val folderId: String?) : DocumentBrowserEvent

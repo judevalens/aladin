@@ -1,4 +1,4 @@
-.PHONY: dev backend frontend install db-up db-down db-migrate db-revision worker sync-reddit sync-twitter sync-insights worker-go api-go
+.PHONY: dev backend frontend install db-up db-down db-migrate db-revision worker sync-reddit sync-twitter sync-insights worker-go api-go artifact-spa-build
 
 dev:
 	@$(MAKE) -j2 backend frontend
@@ -42,3 +42,10 @@ worker-go:
 
 api-go:
 	cd backend_v2 && go run ./cmd/api
+
+artifact-spa-build:
+	cd aladin_ui/composeApp/react-spa && npm install && npm run build
+	rm -rf aladin_ui/composeApp/src/wasmJsMain/resources/artifact-spa
+	mkdir -p aladin_ui/composeApp/src/wasmJsMain/resources/artifact-spa
+	cp aladin_ui/composeApp/react-spa/dist/artifact-spa.js aladin_ui/composeApp/src/wasmJsMain/resources/artifact-spa/artifact-spa.js
+	cp aladin_ui/composeApp/react-spa/dist/style.css aladin_ui/composeApp/src/wasmJsMain/resources/artifact-spa/style.css

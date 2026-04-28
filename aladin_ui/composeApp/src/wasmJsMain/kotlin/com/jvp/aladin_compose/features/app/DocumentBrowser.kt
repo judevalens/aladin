@@ -57,7 +57,11 @@ private val BrowserMarkerHeight = 20.dp
 private val BrowserIndent = 16.dp
 
 @Composable
-fun DocumentBrowser(state: DocumentBrowserState) {
+fun DocumentBrowser(
+    state: DocumentBrowserState,
+    onOpenRowMenu: (BrowserRowMenuRequest) -> Unit,
+    onDismissRowMenu: () -> Unit,
+) {
     if (state.loading) {
         LoadingState()
         return
@@ -90,9 +94,13 @@ fun DocumentBrowser(state: DocumentBrowserState) {
                             expandable = row.expandable,
                             selected = row.selected,
                             menu = row.menu,
-                            onToggleExpanded = { state.eventSink(DocumentBrowserEvent.ToggleFolderExpanded(row.folder.id, row.depth)) },
+                            onToggleExpanded = {
+                                onDismissRowMenu()
+                                state.eventSink(DocumentBrowserEvent.ToggleFolderExpanded(row.folder.id, row.depth))
+                            },
                             onClick = {
-                                state.eventSink(DocumentBrowserEvent.SelectFolder(row.folder.id))
+                                onDismissRowMenu()
+                                state.eventSink(DocumentBrowserEvent.FocusFolder(row.folder.id))
                                 if (row.expandable) {
                                     state.eventSink(DocumentBrowserEvent.ToggleFolderExpanded(row.folder.id, row.depth))
                                 }
@@ -100,6 +108,7 @@ fun DocumentBrowser(state: DocumentBrowserState) {
                             onMenuAction = { option ->
                                 state.eventSink(DocumentBrowserEvent.CreateInFolder(row.folder.id, option))
                             },
+                            onOpenMenu = onOpenRowMenu,
                         )
                     is BrowserTreeRow.Artifact ->
                         BrowserArtifactRow(
@@ -107,7 +116,11 @@ fun DocumentBrowser(state: DocumentBrowserState) {
                             depth = row.depth,
                             selected = row.selected,
                             menu = row.menu,
-                            onClick = { state.eventSink(DocumentBrowserEvent.SelectArtifact(row.artifact.id)) },
+                            onClick = {
+                                onDismissRowMenu()
+                                state.eventSink(DocumentBrowserEvent.OpenArtifact(row.artifact.id))
+                            },
+                            onOpenMenu = onOpenRowMenu,
                         )
                 }
             }
@@ -261,6 +274,7 @@ private fun BrowserArtifactRow(
     selected: Boolean,
     menu: BrowserRowMenuModel,
     onClick: () -> Unit,
+    onOpenMenu: (BrowserRowMenuRequest) -> Unit,
 ) {
     Row(
         modifier =
@@ -303,6 +317,7 @@ private fun BrowserArtifactRow(
             menu = menu,
             selected = selected,
             onActionSelected = {},
+            onOpenMenu = onOpenMenu,
         )
     }
 }
@@ -336,6 +351,7 @@ private fun BrowserFolderRow(
     onToggleExpanded: () -> Unit,
     onClick: () -> Unit,
     onMenuAction: (BrowserCreateOption) -> Unit,
+    onOpenMenu: (BrowserRowMenuRequest) -> Unit,
 ) {
     Row(
         modifier =
@@ -384,6 +400,7 @@ private fun BrowserFolderRow(
             onActionSelected = { actionId ->
                 menuActionToCreateOption(actionId)?.let(onMenuAction)
             },
+            onOpenMenu = onOpenMenu,
         )
     }
 }

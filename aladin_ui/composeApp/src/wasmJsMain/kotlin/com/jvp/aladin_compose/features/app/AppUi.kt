@@ -13,13 +13,23 @@ import androidx.compose.material.icons.sharp.Hub
 import androidx.compose.material.icons.sharp.Notifications
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.WebElementView
+import androidx.compose.ui.window.ComposeViewport
 import com.jvp.aladin_compose.model.*
 import com.jvp.aladin_compose.ui.screens.SourcesScreen
 import com.jvp.aladin_compose.ui_lib.AladinColor
@@ -28,6 +38,9 @@ import com.jvp.aladin_compose.ui_lib.aladinClickable
 import com.slack.circuit.runtime.CircuitContext
 import com.slack.circuit.runtime.screen.Screen
 import com.slack.circuit.runtime.ui.Ui
+import kotlinx.browser.document
+import kotlinx.browser.window
+import org.w3c.dom.HTMLDivElement
 
 private val DividerThickness = 0.5.dp
 private val SharpRadius = 4.dp
@@ -41,6 +54,8 @@ private val RailMarkerWidth = 2.dp
 private val TopBarHeight = 64.dp
 private val CommandFieldWidth = 250.dp
 private val WorkspaceMaxWidth = 980.dp
+private val WorkspaceChromeMaxWidth = 1120.dp
+private val ArtifactWebViewHeight = 640.dp
 
 class AppUiFactory : Ui.Factory {
   override fun create(screen: Screen, context: CircuitContext): Ui<*>? {
@@ -54,32 +69,98 @@ class AppUiFactory : Ui.Factory {
 private class AppUi : Ui<AppState> {
   @Composable
   override fun Content(state: AppState, modifier: Modifier) {
+    var overlayMenu by remember { mutableStateOf<BrowserRowMenuRequest?>(null) }
 
-    Row(modifier = modifier.fillMaxSize().background(AladinColor.Canvas)) {
-      AppRail(
-          selected = state.destination,
-          onSelect = { state.eventSink(AppEvent.NavigateDestination(it)) },
-          modifier = Modifier.background(AladinColor.PanelMuted),
-      )
-      VerticalDivider(
-          color = AladinColor.Divider,
-          thickness = DividerThickness,
-      )
-      PaneTwo(state = state)
-      VerticalDivider(
-          color = AladinColor.Divider,
-          thickness = DividerThickness,
-      )
-      Column(modifier = Modifier.weight(1f)) {
-        TopBar(
-            state = state,
-            onCreateFolder = { state.browser.eventSink(DocumentBrowserEvent.CreateFolder) },
-            onCreateArtifact = { state.browser.eventSink(DocumentBrowserEvent.CreateArtifact) },
+    Box(modifier = modifier.fillMaxSize().background(AladinColor.Canvas)) {
+      Row(modifier = Modifier.fillMaxSize()) {
+        AppRail(
+            selected = state.destination,
+            onSelect = { state.eventSink(AppEvent.NavigateDestination(it)) },
+            modifier = Modifier.background(AladinColor.PanelMuted),
         )
-        Row(modifier = Modifier.weight(1f)) { PaneThree(state = state) }
+        VerticalDivider(
+            color = AladinColor.Divider,
+            thickness = DividerThickness,
+        )
+        PaneTwo(
+            state = state,
+            onOpenRowMenu = { overlayMenu = it },
+            onDismissRowMenu = { overlayMenu = null },
+        )
+        VerticalDivider(
+            color = AladinColor.Divider,
+            thickness = DividerThickness,
+        )
+        Column(modifier = Modifier.weight(1f)) {
+          TopBar(
+              state = state,
+              onCreateFolder = { state.browser.eventSink(DocumentBrowserEvent.CreateFolder) },
+              onCreateArtifact = { state.browser.eventSink(DocumentBrowserEvent.CreateArtifact) },
+          )
+          Row(modifier = Modifier.weight(1f)) { PaneThree(state = state) }
+        }
+      }
+
+      if (overlayMenu != null) {
+        AppOverlayViewport(
+            request = overlayMenu,
+            onDismiss = { overlayMenu = null },
+            modifier = Modifier.fillMaxSize(),
+        )
       }
     }
   }
+}
+
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+private fun AppOverlayViewport(
+    request: BrowserRowMenuRequest?,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+  val currentRequest by rememberUpdatedState(request)
+  val currentOnDismiss by rememberUpdatedState(onDismiss)
+
+  WebElementView(
+      modifier = modifier,
+      factory = {
+        (document.createElement("div") as HTMLDivElement).apply {
+          style.background = "transparent"
+          style.position = "absolute"
+          style.top = "0"
+          style.left = "0"
+          style.right = "0"
+          style.bottom = "0"
+
+          window.requestAnimationFrame {
+            ComposeViewport(this) {
+              Box(
+                  modifier =
+                      Modifier.fillMaxSize().drawBehind {
+                        drawRect(
+                            color = Color.Transparent,
+                            blendMode = BlendMode.Clear,
+                        )
+                      }
+              ) {
+                currentRequest?.let {
+                  Box(
+                      modifier = Modifier.fillMaxSize()
+                  ) {
+                    BrowserRowContextMenuOverlay(
+                        request = it,
+                        onDismiss = currentOnDismiss,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+  )
 }
 
 @Composable
@@ -201,14 +282,23 @@ private fun TopBar(
 }
 
 @Composable
-private fun PaneTwo(state: AppState) {
+private fun PaneTwo(
+    state: AppState,
+    onOpenRowMenu: (BrowserRowMenuRequest) -> Unit,
+    onDismissRowMenu: () -> Unit,
+) {
   Box(
       modifier =
           Modifier.width(300.dp).fillMaxHeight().background(AladinColor.PanelMuted)
   ) {
     when (state.destination) {
       NavDestination.Home,
-      NavDestination.Folders -> DocumentBrowser(state = state.browser)
+      NavDestination.Folders ->
+          DocumentBrowser(
+              state = state.browser,
+              onOpenRowMenu = onOpenRowMenu,
+              onDismissRowMenu = onDismissRowMenu,
+          )
 
       NavDestination.Signals ->
           PlaceholderPane(
@@ -240,29 +330,38 @@ private fun RowScope.PaneThree(state: AppState) {
     when (state.destination) {
       NavDestination.Home,
       NavDestination.Folders -> {
-        val artifact = state.selectedArtifact
+        val artifact = state.activeArtifact
         if (artifact != null) {
-          ArtifactWorkspaceView(
-              artifact = artifact,
-              breadcrumbs = state.browser.breadcrumbs,
-              onNavigateBreadcrumb = {
-                state.browser.eventSink(DocumentBrowserEvent.NavigateBreadcrumb(it))
-              },
-              onOpenResource = { artifact.resourceUrl?.let(::openUrl) },
-              onOpenSource = { artifact.sourceUrl?.let(::openUrl) },
-          )
-        } else if (state.selectedFolder == null) {
-          PlaceholderPane(
-              "Select an item",
-              "Choose an item from the browser to open its workspace.",
-          )
+          Column(modifier = Modifier.fillMaxSize()) {
+            WorkspaceTabRail {
+              WorkspaceDocumentRail(
+                  openArtifacts = state.openArtifacts,
+                  activeArtifactId = artifact.id,
+                  onActivateArtifact = {
+                    state.browser.eventSink(DocumentBrowserEvent.ActivateArtifactTab(it))
+                  },
+              )
+            }
+            Box(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                contentAlignment = Alignment.TopCenter,
+            ) {
+              Column(
+                  modifier =
+                      Modifier.fillMaxWidth()
+                          .widthIn(max = WorkspaceChromeMaxWidth)
+                          .padding(horizontal = 22.dp, vertical = 12.dp),
+              ) {
+                ArtifactWorkspaceView(
+                    artifact = artifact,
+                )
+              }
+            }
+          }
         } else {
-          FolderWorkspaceView(
-              folder = state.selectedFolder,
-              breadcrumbs = state.browser.breadcrumbs,
-              onNavigateBreadcrumb = {
-                state.browser.eventSink(DocumentBrowserEvent.NavigateBreadcrumb(it))
-              },
+          PlaceholderPane(
+              "Open a document",
+              "Click an artifact in the browser to open it as a document tab here.",
           )
         }
       }
@@ -280,202 +379,127 @@ private fun RowScope.PaneThree(state: AppState) {
   }
 }
 
-
-
-
 @Composable
-private fun FolderWorkspaceView(
-    folder: FolderNode,
-    breadcrumbs: List<BreadcrumbItem>,
-    onNavigateBreadcrumb: (String?) -> Unit,
+private fun WorkspaceTabRail(
+    content: @Composable ColumnScope.() -> Unit,
 ) {
-  Box(
-      modifier = Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 28.dp),
-      contentAlignment = Alignment.TopStart,
+  Column(
+      modifier = Modifier.fillMaxWidth().background(AladinColor.Canvas),
+      horizontalAlignment = Alignment.CenterHorizontally,
   ) {
-    Column(
-        modifier = Modifier.fillMaxWidth().widthIn(max = WorkspaceMaxWidth),
-        verticalArrangement = Arrangement.spacedBy(22.dp),
-    ) {
-      WorkspaceBreadcrumbRow(
-          breadcrumbs = breadcrumbs,
-          onNavigateBreadcrumb = onNavigateBreadcrumb,
-      )
-      HorizontalDivider(
-          color = AladinColor.Divider,
-          thickness = DividerThickness,
-      )
-      Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        Text(
-            folder.title,
-            style = MaterialTheme.typography.headlineLarge,
-            color = AladinColor.Ink,
-            fontWeight = FontWeight.Bold,
-        )
-        Text(
-            "folder / workspace scope",
-            style = MaterialTheme.typography.labelMedium,
-            color = AladinColor.CodeText,
-            fontFamily = FontFamily.Monospace,
-        )
-      }
-
-      WorkspaceSection(
-          title = "Signals",
-          body = "Relevant signals will surface here once the first signal endpoints are wired.",
-      )
-    }
+    content()
+    HorizontalDivider(
+        color = AladinColor.Divider,
+        thickness = DividerThickness,
+    )
   }
 }
 
 @Composable
 private fun ArtifactWorkspaceView(
     artifact: Artifact,
-    breadcrumbs: List<BreadcrumbItem>,
-    onNavigateBreadcrumb: (String?) -> Unit,
-    onOpenResource: () -> Unit,
-    onOpenSource: () -> Unit,
 ) {
-  Box(
-      modifier = Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 28.dp),
-      contentAlignment = Alignment.TopStart,
+  WorkspaceEmbeddedArtifactSurface(
+      artifact = artifact,
+      height = ArtifactWebViewHeight,
+  )
+}
+
+@Composable
+private fun WorkspaceDocumentRail(
+    openArtifacts: List<Artifact>,
+    activeArtifactId: String?,
+    onActivateArtifact: (String) -> Unit,
+) {
+  Row(
+      modifier =
+          Modifier.fillMaxWidth()
+              .widthIn(max = WorkspaceChromeMaxWidth)
+              .padding(horizontal = 22.dp, vertical = 6.dp),
+      horizontalArrangement = Arrangement.spacedBy(10.dp),
+      verticalAlignment = Alignment.CenterVertically,
   ) {
-    Column(
-        modifier = Modifier.fillMaxWidth().widthIn(max = WorkspaceMaxWidth),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-      WorkspaceBreadcrumbRow(
-          breadcrumbs = breadcrumbs,
-          onNavigateBreadcrumb = onNavigateBreadcrumb,
-      )
-      HorizontalDivider(
-          color = AladinColor.Divider,
-          thickness = DividerThickness,
-      )
-      Row(
-          horizontalArrangement = Arrangement.spacedBy(10.dp),
-          verticalAlignment = Alignment.CenterVertically,
-      ) {
-        ArtifactGlyph(artifact.kind)
-        Text(
-            artifact.title,
-            color = AladinColor.Ink,
-            style = MaterialTheme.typography.headlineLarge,
-            fontWeight = FontWeight.Bold,
-        )
-      }
+    if (openArtifacts.isEmpty()) {
       Text(
-          artifact.summary ?: artifact.content.ifBlank { "No summary available." },
-          color = AladinColor.InkSecondary,
-          style = MaterialTheme.typography.bodyLarge,
-      )
-      if (artifact.content.isNotBlank() && artifact.content != artifact.summary) {
-        Text(
-            artifact.content,
-            color = AladinColor.InkSecondary,
-            style = MaterialTheme.typography.bodyMedium,
-        )
-      }
-      Text(
-          artifact.updatedLabel,
+          "No open documents",
           color = AladinColor.InkMuted,
-          style = MaterialTheme.typography.labelMedium,
-          fontFamily = FontFamily.Monospace,
+          style = MaterialTheme.typography.bodySmall,
       )
-      artifact.sourceUrl?.let {
-        AladinGhostAction(
-            label = "Open Link",
-            onClick = onOpenSource,
-        )
-      }
-      artifact.resourceUrl?.let {
-        AladinGhostAction(
-            label = if (artifact.kind == ArtifactKind.Voice) "Open Audio" else "Open File",
-            onClick = onOpenResource,
-        )
+    } else {
+      openArtifacts.forEach { artifact ->
+        val active = artifact.id == activeArtifactId
+        Box(
+            modifier =
+                Modifier.border(
+                        DividerThickness,
+                        if (active) AladinColor.ActiveMarker else AladinColor.Divider,
+                        RoundedCornerShape(SharpRadius),
+                    )
+                    .background(
+                        if (active) AladinColor.Panel else AladinColor.PanelMuted,
+                        RoundedCornerShape(SharpRadius),
+                    )
+                    .aladinClickable(
+                        selected = active,
+                        shape = RoundedCornerShape(SharpRadius),
+                        colors =
+                            AladinInteractionDefaults.colors(
+                                hovered = AladinColor.ControlHover,
+                                pressed = AladinColor.ControlPressed,
+                                selected = AladinColor.RowSelected,
+                                selectedHovered = AladinColor.ControlPressed,
+                            ),
+                        onClick = { onActivateArtifact(artifact.id) },
+                    )
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+        ) {
+          Row(
+              horizontalArrangement = Arrangement.spacedBy(8.dp),
+              verticalAlignment = Alignment.CenterVertically,
+          ) {
+            ArtifactGlyph(artifact.kind)
+            Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+              Text(
+                  artifact.title,
+                  color = AladinColor.Ink,
+                  style = MaterialTheme.typography.bodySmall,
+                  fontWeight = FontWeight.Medium,
+              )
+              Text(
+                  artifact.updatedLabel,
+                  color = AladinColor.InkMuted,
+                  style = MaterialTheme.typography.labelMedium,
+                  fontFamily = FontFamily.Monospace,
+              )
+            }
+          }
+        }
       }
     }
-  }
-}
-
-private sealed interface WorkspaceBreadcrumbSegment {
-  data class Crumb(val item: BreadcrumbItem) : WorkspaceBreadcrumbSegment
-
-  data object Ellipsis : WorkspaceBreadcrumbSegment
-}
-
-private fun compressedWorkspaceBreadcrumbs(items: List<BreadcrumbItem>):
-    List<WorkspaceBreadcrumbSegment> {
-  return when {
-    items.size <= 3 -> items.map { WorkspaceBreadcrumbSegment.Crumb(it) }
-    else ->
-        listOf(
-            WorkspaceBreadcrumbSegment.Crumb(items.first()),
-            WorkspaceBreadcrumbSegment.Ellipsis,
-            WorkspaceBreadcrumbSegment.Crumb(items[items.lastIndex - 1]),
-            WorkspaceBreadcrumbSegment.Crumb(items.last()),
-        )
   }
 }
 
 @Composable
-@OptIn(ExperimentalMaterial3Api::class)
-private fun WorkspaceBreadcrumbRow(
-    breadcrumbs: List<BreadcrumbItem>,
-    onNavigateBreadcrumb: (String?) -> Unit,
+private fun WorkspaceEmbeddedArtifactSurface(
+    artifact: Artifact,
+    height: androidx.compose.ui.unit.Dp,
 ) {
-  val fullPath = breadcrumbs.joinToString(" / ") { it.label }
-  val displaySegments = compressedWorkspaceBreadcrumbs(breadcrumbs)
-
-  TooltipBox(
-      positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
-      tooltip = { PlainTooltip { Text(fullPath) } },
-      state = rememberTooltipState(),
-  ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(5.dp),
-    ) {
-      displaySegments.forEachIndexed { index, segment ->
-        if (index > 0) {
-          Text(
-              "/",
-              color = AladinColor.InkMuted,
-              style = MaterialTheme.typography.labelMedium,
-          )
-        }
-        when (segment) {
-          is WorkspaceBreadcrumbSegment.Crumb -> {
-            val isLast = index == displaySegments.lastIndex
-            Text(
-                segment.item.label,
-                style = MaterialTheme.typography.bodySmall,
-                color = if (isLast) AladinColor.InkSecondary else AladinColor.InkMuted,
-                fontWeight = if (isLast) FontWeight.SemiBold else FontWeight.Normal,
-                modifier =
-                    Modifier.aladinClickable(
-                            enabled = !isLast,
-                            shape = RoundedCornerShape(SharpRadius),
-                            colors =
-                                AladinInteractionDefaults.colors(
-                                    hovered = AladinColor.ControlHover,
-                                    pressed = AladinColor.ControlPressed,
-                                ),
-                            onClick = { onNavigateBreadcrumb(segment.item.id) },
-                        )
-                        .padding(horizontal = 2.dp),
-            )
-          }
-          WorkspaceBreadcrumbSegment.Ellipsis ->
-              Text(
-                  "...",
-                  color = AladinColor.InkMuted,
-                  style = MaterialTheme.typography.bodySmall,
+  Box(
+      modifier =
+          Modifier.fillMaxWidth()
+              .height(height)
+              .border(
+                  DividerThickness,
+                  AladinColor.Divider,
+                  RoundedCornerShape(SharpRadius),
               )
-        }
-      }
-    }
+              .background(AladinColor.Panel, RoundedCornerShape(SharpRadius)),
+  ) {
+    ArtifactWebSurface(
+        modifier = Modifier.fillMaxSize(),
+        title = artifact.title,
+        kind = artifact.kind.name.lowercase(),
+    )
   }
 }
 

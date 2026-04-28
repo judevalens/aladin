@@ -25,8 +25,9 @@ class AppPresenter(
         return AppState(
             destination = destination,
             browser = browser.browser,
-            selectedFolder = browser.selectedFolder,
-            selectedArtifact = browser.selectedArtifact,
+            focusedFolder = browser.focusedFolder,
+            activeArtifact = browser.activeArtifact,
+            openArtifacts = browser.openArtifacts,
             canCreateArtifact = browser.canCreateArtifact,
             eventSink = { event ->
                 when (event) {
