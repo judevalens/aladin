@@ -36,30 +36,30 @@ object AladinLight {
 }
 
 object AladinColor {
-    val Canvas = Color(0xFFFBFBFA)
-    val Panel = Color(0xFFFFFFFF)
-    val PanelMuted = Color(0xFFF7F6F3)
+    val Canvas = Color(0xFFFFFFFF)
+    val Panel = Color(0xFFFCFCFB)
+    val PanelMuted = Color(0xFFF5F5F2)
 
-    val RowHover = Color(0xFFF0EFEC)
-    val RowSelected = Color(0xFFEDEBE7)
-    val ControlHover = Color(0xFFF1F0ED)
-    val ControlPressed = Color(0xFFE5E3DF)
+    val RowHover = Color(0xFFF3F3F0)
+    val RowSelected = Color(0xFFEDEDE9)
+    val ControlHover = Color(0xFFF2F2EF)
+    val ControlPressed = Color(0xFFE6E6E1)
 
-    val Divider = Color(0xFFE8E5DF)
-    val Border = Color(0xFFD8D4CC)
+    val Divider = Color(0xFFE7E7E2)
+    val Border = Color(0xFFD8D8D2)
 
     val Ink = Color(0xFF111111)
-    val InkSecondary = Color(0xFF55514B)
-    val InkMuted = Color(0xFF868078)
-    val InkDisabled = Color(0xFFB8B2AA)
+    val InkSecondary = Color(0xFF4F4F4A)
+    val InkMuted = Color(0xFF7C7C75)
+    val InkDisabled = Color(0xFFB2B2AA)
 
-    val InkSurface = Color(0xFF181818)
-    val InkSurfaceHover = Color(0xFF0F0F0F)
-    val OnInkSurface = Color(0xFFF7F6F3)
+    val InkSurface = Color(0xFF151515)
+    val InkSurfaceHover = Color(0xFF0D0D0D)
+    val OnInkSurface = Color(0xFFF7F7F4)
 
     val ActiveMarker = Color(0xFF111111)
-    val CommandSurface = Color(0xFFF4F3F0)
-    val CodeText = Color(0xFF3B3834)
+    val CommandSurface = Color(0xFFF5F5F2)
+    val CodeText = Color(0xFF32322E)
 }
 
 val AladinDarkColorScheme = darkColorScheme(
