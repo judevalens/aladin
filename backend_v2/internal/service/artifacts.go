@@ -35,7 +35,6 @@ type ArtifactRepository interface {
 	NextNodePosition(context.Context, *string) (int64, error)
 	CreateTreeNode(context.Context, TreeNodeRecord) error
 	UpdateArtifactNodeParent(context.Context, string, *string) error
-	CreateFolder(context.Context, FolderNode) error
 	GetFolder(context.Context, string) (FolderNode, error)
 	FolderBreadcrumbs(context.Context, string) ([]BreadcrumbItem, error)
 }
@@ -428,9 +427,6 @@ func (s *DefaultArtifactService) CreateFolder(ctx context.Context, title string,
 		ID:       newID("folder-"),
 		ParentID: parentID,
 		Title:    title,
-	}
-	if err := s.repo.CreateFolder(ctx, folder); err != nil {
-		return FolderNode{}, err
 	}
 	position, err := s.repo.NextNodePosition(ctx, parentID)
 	if err != nil {

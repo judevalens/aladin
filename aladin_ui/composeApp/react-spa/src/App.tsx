@@ -53,6 +53,127 @@ export default function App({
                             overlays and interactions inside the pane instead of letting the shell
                             dominate the experience.
                         </p>
+                        <p>
+                            Graph mode can reuse the same bounded-canvas model later, keeping local
+                            overlays and interactions inside the pane instead of letting the shell
+                            dominate the experience.
+                        </p>   <p>
+                        Graph mode can reuse the same bounded-canvas model later, keeping local
+                        overlays and interactions inside the pane instead of letting the shell
+                        dominate the experience.
+                    </p>   <p>
+                        Graph mode can reuse the same bounded-canvas model later, keeping local
+                        overlays and interactions inside the pane instead of letting the shell
+                        dominate the experience.
+                    </p>   <p>
+                        Graph mode can reuse the same bounded-canvas model later, keeping local
+                        overlays and interactions inside the pane instead of letting the shell
+                        dominate the experience.
+                    </p>   <p>
+                        Graph mode can reuse the same bounded-canvas model later, keeping local
+                        overlays and interactions inside the pane instead of letting the shell
+                        dominate the experience.
+                    </p>   <p>
+                        Graph mode can reuse the same bounded-canvas model later, keeping local
+                        overlays and interactions inside the pane instead of letting the shell
+                        dominate the experience.
+                    </p>   <p>
+                        Graph mode can reuse the same bounded-canvas model later, keeping local
+                        overlays and interactions inside the pane instead of letting the shell
+                        dominate the experience.
+                    </p>   <p>
+                        Graph mode can reuse the same bounded-canvas model later, keeping local
+                        overlays and interactions inside the pane instead of letting the shell
+                        dominate the experience.
+                    </p>   <p>
+                        Graph mode can reuse the same bounded-canvas model later, keeping local
+                        overlays and interactions inside the pane instead of letting the shell
+                        dominate the experience.
+                    </p>   <p>
+                        Graph mode can reuse the same bounded-canvas model later, keeping local
+                        overlays and interactions inside the pane instead of letting the shell
+                        dominate the experience.
+                    </p>   <p>
+                        Graph mode can reuse the same bounded-canvas model later, keeping local
+                        overlays and interactions inside the pane instead of letting the shell
+                        dominate the experience.
+                    </p>   <p>
+                        Graph mode can reuse the same bounded-canvas model later, keeping local
+                        overlays and interactions inside the pane instead of letting the shell
+                        dominate the experience.
+                    </p>   <p>
+                        Graph mode can reuse the same bounded-canvas model later, keeping local
+                        overlays and interactions inside the pane instead of letting the shell
+                        dominate the experience.
+                    </p>   <p>
+                        Graph mode can reuse the same bounded-canvas model later, keeping local
+                        overlays and interactions inside the pane instead of letting the shell
+                        dominate the experience.
+                    </p>   <p>
+                        Graph mode can reuse the same bounded-canvas model later, keeping local
+                        overlays and interactions inside the pane instead of letting the shell
+                        dominate the experience.
+                    </p>   <p>
+                        Graph mode can reuse the same bounded-canvas model later, keeping local
+                        overlays and interactions inside the pane instead of letting the shell
+                        dominate the experience.
+                    </p>   <p>
+                        Graph mode can reuse the same bounded-canvas model later, keeping local
+                        overlays and interactions inside the pane instead of letting the shell
+                        dominate the experience.
+                    </p>   <p>
+                        Graph mode can reuse the same bounded-canvas model later, keeping local
+                        overlays and interactions inside the pane instead of letting the shell
+                        dominate the experience.
+                    </p>   <p>
+                        Graph mode can reuse the same bounded-canvas model later, keeping local
+                        overlays and interactions inside the pane instead of letting the shell
+                        dominate the experience.
+                    </p>   <p>
+                        Graph mode can reuse the same bounded-canvas model later, keeping local
+                        overlays and interactions inside the pane instead of letting the shell
+                        dominate the experience.
+                    </p>   <p>
+                        Graph mode can reuse the same bounded-canvas model later, keeping local
+                        overlays and interactions inside the pane instead of letting the shell
+                        dominate the experience.
+                    </p>   <p>
+                        Graph mode can reuse the same bounded-canvas model later, keeping local
+                        overlays and interactions inside the pane instead of letting the shell
+                        dominate the experience.
+                    </p>   <p>
+                        Graph mode can reuse the same bounded-canvas model later, keeping local
+                        overlays and interactions inside the pane instead of letting the shell
+                        dominate the experience.
+                    </p>   <p>
+                        Graph mode can reuse the same bounded-canvas model later, keeping local
+                        overlays and interactions inside the pane instead of letting the shell
+                        dominate the experience.
+                    </p>   <p>
+                        Graph mode can reuse the same bounded-canvas model later, keeping local
+                        overlays and interactions inside the pane instead of letting the shell
+                        dominate the experience.
+                    </p>   <p>
+                        Graph mode can reuse the same bounded-canvas model later, keeping local
+                        overlays and interactions inside the pane instead of letting the shell
+                        dominate the experience.
+                    </p>   <p>
+                        Graph mode can reuse the same bounded-canvas model later, keeping local
+                        overlays and interactions inside the pane instead of letting the shell
+                        dominate the experience.
+                    </p>   <p>
+                        Graph mode can reuse the same bounded-canvas model later, keeping local
+                        overlays and interactions inside the pane instead of letting the shell
+                        dominate the experience.
+                    </p>   <p>
+                        Graph mode can reuse the same bounded-canvas model later, keeping local
+                        overlays and interactions inside the pane instead of letting the shell
+                        dominate the experience.
+                    </p>   <p>
+                        Graph mode can reuse the same bounded-canvas model later, keeping local
+                        overlays and interactions inside the pane instead of letting the shell
+                        dominate the experience.
+                    </p>
                     </section>
                 </article>
             </main>

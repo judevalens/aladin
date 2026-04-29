@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.shadow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material3.HorizontalDivider
@@ -33,6 +34,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.jvp.aladin_compose.ui_lib.AladinColor
 import com.jvp.aladin_compose.ui_lib.AladinInteractionDefaults
@@ -132,24 +134,39 @@ fun BrowserRowContextMenuOverlay(
                 onClick = onDismiss,
             )
     ) {
-        val menuWidthPx = with(density) { MenuPanelWidth.roundToPx() }
-        val viewportWidthPx = with(density) { maxWidth.roundToPx() }
-        val preferredRightX = (request.anchorRightPx + 8f).roundToInt()
-        val fallbackLeftX = (request.anchorLeftPx - menuWidthPx - 8f).roundToInt()
-        val maxX = viewportWidthPx - menuWidthPx - 8
-        val xPx =
+        val anchorWidthPx = max(0, (request.anchorRightPx - request.anchorLeftPx).roundToInt())
+        val panelWidthPx =
             when {
-                preferredRightX <= maxX -> preferredRightX
-                fallbackLeftX >= 8 -> fallbackLeftX
-                else -> max(8, min(preferredRightX, maxX))
+                request.matchAnchorWidth && anchorWidthPx > 0 -> anchorWidthPx
+                else -> with(density) { MenuPanelWidth.roundToPx() }
             }
-        val yPx = max(8, request.anchorBottomPx.roundToInt() + 4)
+        val viewportWidthPx = with(density) { maxWidth.roundToPx() }
+        val maxX = viewportWidthPx - panelWidthPx - 8
+        val xPx =
+            when (request.placement) {
+                BrowserMenuPlacement.ContextualRight -> {
+                    val preferredRightX = (request.anchorRightPx + 8f).roundToInt()
+                    val fallbackLeftX = (request.anchorLeftPx - panelWidthPx - 8f).roundToInt()
+                    when {
+                        preferredRightX <= maxX -> preferredRightX
+                        fallbackLeftX >= 8 -> fallbackLeftX
+                        else -> max(8, min(preferredRightX, maxX))
+                    }
+                }
+                BrowserMenuPlacement.DropdownBelow -> {
+                    val centeredX = (request.anchorLeftPx + ((anchorWidthPx - panelWidthPx) / 2f)).roundToInt()
+                    max(8, min(centeredX, maxX))
+                }
+            }
+        val yPx = max(8, request.anchorBottomPx.roundToInt() + if (request.placement == BrowserMenuPlacement.DropdownBelow) 6 else 4)
 
         Box(
             modifier = Modifier.offset { IntOffset(xPx, yPx) }
         ) {
             BrowserRowMenuPanel(
                 menu = request.menu,
+                panelWidth = with(density) { panelWidthPx.toDp() },
+                elevated = request.elevated,
                 onActionSelected = { actionId ->
                     onDismiss()
                     request.onActionSelected(actionId)
@@ -162,12 +179,19 @@ fun BrowserRowContextMenuOverlay(
 @Composable
 fun BrowserRowMenuPanel(
     menu: BrowserRowMenuModel,
+    panelWidth: Dp = MenuPanelWidth,
+    elevated: Boolean = false,
     onActionSelected: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
         modifier =
-            modifier.width(MenuPanelWidth)
+            modifier.width(panelWidth)
+                .shadow(
+                    elevation = if (elevated) 14.dp else 0.dp,
+                    shape = RoundedCornerShape(MenuRadius),
+                    clip = false,
+                )
                 .border(1.dp, AladinColor.Border, RoundedCornerShape(MenuRadius))
                 .background(AladinColor.Panel, RoundedCornerShape(MenuRadius)),
     ) {

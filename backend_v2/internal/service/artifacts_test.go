@@ -182,7 +182,6 @@ func (f *fakeArtifactRepository) CreateTreeNode(context.Context, TreeNodeRecord)
 func (f *fakeArtifactRepository) UpdateArtifactNodeParent(context.Context, string, *string) error {
 	return nil
 }
-func (f *fakeArtifactRepository) CreateFolder(context.Context, FolderNode) error { return nil }
 func (f *fakeArtifactRepository) GetFolder(context.Context, string) (FolderNode, error) {
 	return FolderNode{}, ErrNotFound
 }

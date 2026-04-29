@@ -85,11 +85,11 @@ func (r *PostgresArtifactRepository) CreateArtifact(ctx context.Context, rec art
 	metadata, _ := json.Marshal(rec.Metadata)
 	_, err = r.pool.Exec(ctx, `
 		INSERT INTO artifacts (
-		    id, user_id, folder_id, type, title, content, summary, source_url, metadata, created_at, updated_at
+		    id, user_id, type, title, content, summary, source_url, metadata, created_at, updated_at
 		) VALUES (
-		    $1, $2::uuid, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11
+		    $1, $2::uuid, $3, $4, $5, $6, $7, $8::jsonb, $9, $10
 		)
-	`, rec.ID, r.userID, rec.FolderID, rec.Type, rec.Title, rec.Content, rec.Summary, rec.SourceURL, string(metadata), createdAt, updatedAt)
+	`, rec.ID, r.userID, rec.Type, rec.Title, rec.Content, rec.Summary, rec.SourceURL, string(metadata), createdAt, updatedAt)
 	return err
 }
 
@@ -101,16 +101,15 @@ func (r *PostgresArtifactRepository) UpdateArtifact(ctx context.Context, id stri
 	}
 	tag, err := r.pool.Exec(ctx, `
 		UPDATE artifacts
-		   SET folder_id = COALESCE($3, folder_id),
-		       type = COALESCE($4, type),
-		       title = COALESCE($5, title),
-		       content = COALESCE($6, content),
-		       summary = COALESCE($7, summary),
-		       source_url = COALESCE($8, source_url),
-		       metadata = COALESCE($9::jsonb, metadata),
+		   SET type = COALESCE($3, type),
+		       title = COALESCE($4, title),
+		       content = COALESCE($5, content),
+		       summary = COALESCE($6, summary),
+		       source_url = COALESCE($7, source_url),
+		       metadata = COALESCE($8::jsonb, metadata),
 		       updated_at = now()
 		 WHERE id = $1 AND user_id = $2::uuid
-	`, id, r.userID, patch.FolderID, patch.Type, patch.Title, patch.Content, patch.Summary, patch.SourceURL, metadataJSON)
+	`, id, r.userID, patch.Type, patch.Title, patch.Content, patch.Summary, patch.SourceURL, metadataJSON)
 	if err != nil {
 		return err
 	}
@@ -292,17 +291,6 @@ func (r *PostgresArtifactRepository) UpdateArtifactNodeParent(ctx context.Contex
 		return artifactservice.ErrNotFound
 	}
 	return nil
-}
-
-func (r *PostgresArtifactRepository) CreateFolder(ctx context.Context, folder artifactservice.FolderNode) error {
-	if err := r.ensureDefaultUser(ctx); err != nil {
-		return err
-	}
-	_, err := r.pool.Exec(ctx, `
-		INSERT INTO folders (id, user_id, parent_id, title, created_at, updated_at)
-		VALUES ($1, $2::uuid, $3, $4, now(), now())
-	`, folder.ID, r.userID, folder.ParentID, folder.Title)
-	return err
 }
 
 func (r *PostgresArtifactRepository) GetFolder(ctx context.Context, id string) (artifactservice.FolderNode, error) {

@@ -74,11 +74,19 @@ data class BrowserRowMenuModel(
     val sections: List<BrowserRowMenuSection>,
 )
 
+enum class BrowserMenuPlacement {
+    ContextualRight,
+    DropdownBelow,
+}
+
 data class BrowserRowMenuRequest(
     val menu: BrowserRowMenuModel,
     val anchorLeftPx: Float,
     val anchorRightPx: Float,
     val anchorBottomPx: Float,
+    val placement: BrowserMenuPlacement = BrowserMenuPlacement.ContextualRight,
+    val matchAnchorWidth: Boolean = false,
+    val elevated: Boolean = false,
     val onActionSelected: (String) -> Unit,
 )
 

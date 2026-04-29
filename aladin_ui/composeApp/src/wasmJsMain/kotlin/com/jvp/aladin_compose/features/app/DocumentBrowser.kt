@@ -305,13 +305,6 @@ private fun BrowserArtifactRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                artifact.updatedLabel ?: "",
-                style = MaterialTheme.typography.bodySmall,
-                color = if (selected) AladinColor.InkSecondary else AladinColor.InkMuted,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
         }
         BrowserRowContextMenu(
             menu = menu,
