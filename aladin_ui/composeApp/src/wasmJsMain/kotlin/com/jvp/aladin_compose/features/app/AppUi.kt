@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.WebElementView
 import androidx.compose.ui.window.ComposeViewport
 import com.jvp.aladin_compose.model.*
+import com.jvp.aladin_compose.service.web.WebWidget
 import com.jvp.aladin_compose.ui.screens.SourcesScreen
 import com.jvp.aladin_compose.ui_lib.AladinColor
 import com.jvp.aladin_compose.ui_lib.AladinInteractionDefaults
@@ -61,7 +62,6 @@ private val RailMarkerHeight = 18.dp
 private val RailMarkerWidth = 2.dp
 private val WorkspaceMaxWidth = 980.dp
 private val WorkspaceChromeMaxWidth = 1120.dp
-private val ArtifactWebViewHeight = 640.dp
 
 class AppUiFactory : Ui.Factory {
     override fun create(screen: Screen, context: CircuitContext): Ui<*>? {
@@ -450,7 +450,7 @@ private fun PaneTwo(
     onOpenRowMenu: (BrowserRowMenuRequest) -> Unit,
     onDismissRowMenu: () -> Unit,
 ) {
-    Box(modifier = Modifier.width(300.dp).fillMaxHeight().background(AladinColor.PanelMuted)) {
+    Box(modifier = Modifier.width(300.dp).fillMaxHeight()) {
         when (state.destination) {
             NavDestination.Home,
             NavDestination.Folders ->
@@ -511,10 +511,14 @@ private fun RowScope.PaneThree(state: AppState) {
                             Column(
                                 modifier =
                                     Modifier.fillMaxWidth()
+                                        .fillMaxHeight()
                                         .widthIn(max = WorkspaceChromeMaxWidth)
-                                        .padding(horizontal = 22.dp, vertical = 12.dp)
+                                        .padding(horizontal = 4.dp, vertical = 4.dp)
                             ) {
-                                ArtifactWorkspaceView(artifact = artifact)
+                                ArtifactWorkspaceView(
+                                    artifact = artifact,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
                             }
                         }
                     }
@@ -551,8 +555,8 @@ private fun WorkspaceTabRail(content: @Composable ColumnScope.() -> Unit) {
 }
 
 @Composable
-private fun ArtifactWorkspaceView(artifact: Artifact) {
-    WorkspaceEmbeddedArtifactSurface(artifact = artifact)
+private fun ArtifactWorkspaceView(artifact: Artifact, modifier: Modifier = Modifier) {
+    WorkspaceEmbeddedArtifactSurface(artifact = artifact, modifier = modifier)
 }
 
 @Composable
@@ -631,12 +635,14 @@ private fun WorkspaceDocumentRail(
 }
 
 @Composable
-private fun WorkspaceEmbeddedArtifactSurface(artifact: Artifact) {
-        ArtifactWebSurface(
-            modifier = Modifier.fillMaxSize(),
-            title = artifact.title,
-            kind = artifact.kind.name.lowercase(),
-        )
+private fun WorkspaceEmbeddedArtifactSurface(artifact: Artifact, modifier: Modifier = Modifier) {
+    /*ArtifactWebSurface(
+        modifier = modifier.fillMaxSize(),
+        title = artifact.title,
+        kind = artifact.kind.name.lowercase(),
+    )*/
+
+    WebWidget(modifier = modifier.fillMaxSize())
 }
 
 @Composable

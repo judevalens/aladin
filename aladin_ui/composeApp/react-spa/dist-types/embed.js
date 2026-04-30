@@ -1,9 +1,7 @@
 import { jsx as _jsx } from "react/jsx-runtime";
-import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
-import "./styles.css";
-import cssText from "./styles.css?inline";
+import cssText from "./embed.css?inline";
 const roots = new WeakMap();
 const overlayRoots = new WeakMap();
 function ensureStyles(host) {
@@ -57,12 +55,12 @@ function ensureOverlayRoot(host) {
     overlayRoots.set(host, existing);
     return existing;
 }
-function mount(element, title, kind) {
+function mount(element, bridge, title) {
     ensureStyles(element);
     const overlayRoot = ensureOverlayRoot(element);
     const root = roots.get(element) ?? createRoot(element);
     roots.set(element, root);
-    root.render(_jsx(React.StrictMode, { children: _jsx(App, { title: title, kind: kind, overlayRoot: overlayRoot }) }));
+    root.render(_jsx(App, { widgetId: title, overlayRoot: overlayRoot, bridge: bridge }));
 }
 function unmount(element) {
     const root = roots.get(element);
@@ -72,6 +70,21 @@ function unmount(element) {
     }
     overlayRoots.delete(element);
 }
+function createBridge(jsEventHandler) {
+    let bridge = {
+        mount: (root) => mount(root, bridge),
+        unmount: unmount,
+        kotlinEvent: (event) => {
+            console.log("Kotlin event received: ", event);
+        },
+        jsEvent: (event) => {
+            console.log("JS event received: ", event);
+            jsEventHandler(event);
+        },
+    };
+    return bridge;
+}
+window.createBridge = createBridge;
 window.AladinArtifactSpa = {
     mount,
     unmount,
