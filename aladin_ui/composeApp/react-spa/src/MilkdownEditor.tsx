@@ -1,33 +1,93 @@
-import {useLayoutEffect, useMemo, useRef} from "react";
 import {Crepe} from "@milkdown/crepe";
-import "@milkdown/crepe/theme/common/style.css";
-import "@milkdown/crepe/theme/frame.css";
+import {Milkdown, MilkdownProvider, useEditor} from "@milkdown/react";
+import {useEffect, useRef} from "react";
+import {Bridge} from "./embed";
 
-type MilkdownEditorProps = {};
+type MilkdownEditorProps = {
+    defaultValue?: string;
+    bridge?: Bridge;
+};
 
-function initialMarkdown(title: string, kind: string): string {
-    return `Start writing here.`;
-}
+function EditorSurface({defaultValue = "Start writing here.", bridge}: MilkdownEditorProps) {
+    const latestMarkdownRef = useRef(defaultValue);
+    const lastEmittedMarkdownRef = useRef(defaultValue);
+    const flushTimerRef = useRef<number | null>(null);
 
-export function MilkdownEditor({}: MilkdownEditorProps) {
-    const rootRef = useRef<HTMLDivElement | null>(null);
+    const clearFlushTimer = () => {
+        if (flushTimerRef.current !== null) {
+            window.clearTimeout(flushTimerRef.current);
+            flushTimerRef.current = null;
+        }
+    };
 
-    useLayoutEffect(() => {
-        const root = rootRef.current;
-        if (!root) return;
+    const flushDocumentUpdate = () => {
+        const markdown = latestMarkdownRef.current;
+        clearFlushTimer();
 
-        root.innerHTML = "";
+        if (!bridge || markdown === lastEmittedMarkdownRef.current) {
+            return;
+        }
+
+        bridge.jsEvent({
+            type: "documentUpdated",
+            payload: {
+                markdown,
+            },
+        });
+        lastEmittedMarkdownRef.current = markdown;
+    };
+
+    const scheduleFlush = () => {
+        clearFlushTimer();
+        flushTimerRef.current = window.setTimeout(() => {
+            flushDocumentUpdate();
+        }, 250);
+    };
+
+    useEditor((root) => {
         const crepe = new Crepe({
             root,
+            defaultValue,
         });
 
-        void crepe.create();
+        crepe.on((listener) => {
+            listener.markdownUpdated((_ctx, markdown) => {
+                latestMarkdownRef.current = markdown;
+                scheduleFlush();
+            });
 
+            listener.blur(() => {
+                flushDocumentUpdate();
+            });
+        });
+
+        return crepe;
+    }, [defaultValue, bridge]);
+
+    useEffect(() => {
+        latestMarkdownRef.current = defaultValue;
+        lastEmittedMarkdownRef.current = defaultValue;
+        clearFlushTimer();
+    }, [defaultValue]);
+
+    useEffect(() => {
         return () => {
-            void crepe.destroy();
-            root.innerHTML = "";
+            flushDocumentUpdate();
+            clearFlushTimer();
         };
     }, []);
 
-    return <div className="milkdown-root" ref={rootRef}/>;
+    return (
+        <div className="milkdown-root" style={{height: "100%", overflow: "visible"}}>
+            <Milkdown/>
+        </div>
+    );
+}
+
+export function MilkdownEditor({defaultValue, bridge}: MilkdownEditorProps) {
+    return (
+        <MilkdownProvider>
+            <EditorSurface defaultValue={defaultValue} bridge={bridge}/>
+        </MilkdownProvider>
+    );
 }

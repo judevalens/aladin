@@ -1,49 +1,46 @@
-import {MilkdownEditor} from "./MilkdownEditor";
-import {Bridge} from "./embed";
 import {useEffect} from "react";
+import {Bridge} from "./embed";
+import {MilkdownEditor} from "./MilkdownEditor";
+import "./styles.css";
 
 export type ArtifactSpaProps = {
-    widgetId?: string,
-    overlayRoot?: HTMLElement | null,
-    bridge: Bridge | undefined,
+    widgetId?: string;
+    overlayRoot?: HTMLElement | null;
+    bridge: Bridge | undefined;
 };
 
-export default function App({
-                                bridge,
-                                overlayRoot = null,
-                            }: ArtifactSpaProps) {
+function initialMarkdown(widgetId?: string): string {
+    if (!widgetId) {
+        return "Start writing here.";
+    }
 
+    return `# ${widgetId}\n\nStart writing here.`;
+}
+
+export default function App({bridge, widgetId}: ArtifactSpaProps) {
     useEffect(() => {
         if (!bridge) return;
+
         bridge.kotlinEvent = (event) => {
-            console.log("JS event received: ", event);
-        }
+            console.log("Kotlin event received:", event);
+        };
+
         return () => {
-            bridge.kotlinEvent = (event) => {
-                console.log(`JS event received: ${event} | NO_OP event handler!`);
-            }
-        }
+            bridge.kotlinEvent = () => {
+            };
+        };
     }, [bridge]);
 
-
     return (
-        <>
-            <div className="app-shell" style={{
+        <div
+            className="app-shell"
+            style={{
                 height: "100%",
                 boxSizing: "border-box",
-            }}>
-                <div style={
-                    {
-                        height: "100%",
-                        paddingLeft: "15px",
-                        paddingRight: "15px",
-                        boxSizing: "border-box",
-                        overflowY: "auto",
-                    }
-                }>
-                    <MilkdownEditor/>
-                </div>
-            </div>
-        </>
+                overflowY: "auto",
+            }}
+        >
+            <MilkdownEditor defaultValue={initialMarkdown(widgetId)} bridge={bridge}/>
+        </div>
     );
 }

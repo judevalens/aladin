@@ -93,10 +93,14 @@ function unmount(element: HTMLElement) {
     overlayRoots.delete(element);
 }
 
-type Event = {
-    type: string;
-    payload: Object;
+export type DocumentUpdatedEvent = {
+    type: "documentUpdated";
+    payload: {
+        markdown: string;
+    };
 };
+
+export type Event = DocumentUpdatedEvent;
 
 export type Bridge = {
     mount: (root: HTMLElement) => void;
@@ -110,10 +114,8 @@ function createBridge(jsEventHandler: (event: Event) => void): Bridge {
         mount: (root: HTMLElement) => mount(root, bridge),
         unmount: unmount,
         kotlinEvent: (event: Event) => {
-            console.log("Kotlin event received: ", event);
         },
         jsEvent: (event: Event) => {
-            console.log("JS event received: ", event);
             jsEventHandler(event);
         },
     };
@@ -127,7 +129,6 @@ declare global {
             unmount: typeof unmount;
         };
         createBridge: typeof createBridge;
-
     }
 }
 window.createBridge = createBridge

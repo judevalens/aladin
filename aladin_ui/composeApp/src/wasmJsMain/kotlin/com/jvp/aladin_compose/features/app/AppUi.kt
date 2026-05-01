@@ -2,9 +2,15 @@ package com.jvp.aladin_compose.features.app
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AutoGraph
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Hub
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.sharp.Add
 import androidx.compose.material.icons.sharp.AutoGraph
 import androidx.compose.material.icons.sharp.Close
@@ -13,7 +19,10 @@ import androidx.compose.material.icons.sharp.Folder
 import androidx.compose.material.icons.sharp.Home
 import androidx.compose.material.icons.sharp.Hub
 import androidx.compose.material.icons.sharp.Notifications
+import androidx.compose.material.icons.sharp.Search
+import androidx.compose.material.icons.sharp.StarBorder
 import androidx.compose.material.icons.sharp.Settings
+import androidx.compose.material.icons.sharp.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -32,6 +41,7 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.WebElementView
@@ -198,11 +208,11 @@ private fun AppSidebar(
     val createAnchorBounds = remember { mutableStateOf<Rect?>(null) }
     val items =
         listOf(
-            NavDestination.Home to Icons.Sharp.Home,
-            NavDestination.Folders to Icons.Sharp.Folder,
-            NavDestination.Signals to Icons.Sharp.Notifications,
-            NavDestination.Sources to Icons.Sharp.Hub,
-            NavDestination.Graph to Icons.Sharp.AutoGraph,
+            NavDestination.Home to Icons.Outlined.Home,
+            NavDestination.Folders to Icons.Outlined.Folder,
+            NavDestination.Signals to Icons.Outlined.Notifications,
+            NavDestination.Sources to Icons.Outlined.Hub,
+            NavDestination.Graph to Icons.Outlined.AutoGraph,
         )
 
     Column(
@@ -232,7 +242,7 @@ private fun AppSidebar(
                 Text(
                     "A",
                     color = AladinColor.Ink,
-                    style = MaterialTheme.typography.labelMedium,
+                    style = MaterialTheme.typography.labelLarge,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
                 )
@@ -503,6 +513,10 @@ private fun RowScope.PaneThree(state: AppState) {
                                     )
                                 },
                             )
+                            WorkspaceContextRail(
+                                breadcrumbs = state.browser.breadcrumbs,
+                                artifact = artifact,
+                            )
                         }
                         Box(
                             modifier = Modifier.fillMaxWidth().weight(1f),
@@ -513,7 +527,7 @@ private fun RowScope.PaneThree(state: AppState) {
                                     Modifier.fillMaxWidth()
                                         .fillMaxHeight()
                                         .widthIn(max = WorkspaceChromeMaxWidth)
-                                        .padding(horizontal = 4.dp, vertical = 4.dp)
+                                        .padding(horizontal = 4.dp, vertical = 0.dp)
                             ) {
                                 ArtifactWorkspaceView(
                                     artifact = artifact,
@@ -550,7 +564,85 @@ private fun WorkspaceTabRail(content: @Composable ColumnScope.() -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         content()
-        HorizontalDivider(color = AladinColor.Divider, thickness = DividerThickness)
+    }
+}
+
+@Composable
+private fun WorkspaceContextRail(
+    breadcrumbs: List<BreadcrumbItem>,
+    artifact: Artifact,
+) {
+    val pathText =
+        when {
+            breadcrumbs.isNotEmpty() -> breadcrumbs.joinToString(" / ") { it.label }
+            else -> artifact.title
+        }
+
+    Row(
+        modifier =
+            Modifier.fillMaxWidth()
+                .background(AladinColor.Panel)
+                .border(DividerThickness, AladinColor.Divider)
+                .padding(horizontal = 14.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            pathText,
+            color = AladinColor.InkMuted,
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        WorkspaceUtilityIcon(
+            icon = Icons.Sharp.Search,
+            contentDescription = "Search document",
+            onClick = {},
+        )
+        WorkspaceUtilityIcon(
+            icon = Icons.Sharp.StarBorder,
+            contentDescription = "Favorite document",
+            onClick = {},
+        )
+        WorkspaceUtilityIcon(
+            icon = Icons.Sharp.AutoGraph,
+            contentDescription = "Open graph context",
+            onClick = {},
+        )
+        WorkspaceUtilityIcon(
+            icon = Icons.Sharp.Tune,
+            contentDescription = "Open document panel",
+            onClick = {},
+        )
+    }
+}
+
+@Composable
+private fun WorkspaceUtilityIcon(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier =
+            Modifier.size(26.dp).aladinClickable(
+                shape = RoundedCornerShape(SharpRadius),
+                colors =
+                    AladinInteractionDefaults.colors(
+                        hovered = AladinColor.ControlHover,
+                        pressed = AladinColor.ControlPressed,
+                    ),
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = AladinColor.InkSecondary,
+            modifier = Modifier.size(15.dp),
+        )
     }
 }
 
@@ -566,11 +658,8 @@ private fun WorkspaceDocumentRail(
     onActivateArtifact: (String) -> Unit,
 ) {
     Row(
-        modifier =
-            Modifier.fillMaxWidth()
-                .widthIn(max = WorkspaceChromeMaxWidth)
-                .padding(horizontal = 22.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier.fillMaxWidth().padding(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (openArtifacts.isEmpty()) {
@@ -582,19 +671,13 @@ private fun WorkspaceDocumentRail(
         } else {
             openArtifacts.forEach { artifact ->
                 val active = artifact.id == activeArtifactId
-                val shape = RoundedCornerShape(SharpRadius)
+                val shape = RoundedCornerShape(8.dp)
 
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     modifier =
-                        Modifier.background(if (active) AladinColor.Panel else Color.Transparent)
-                            .border(
-                                0.3.dp,
-                                if (active) AladinColor.Border else Color.Transparent,
-                                shape = shape,
-                            )
-                            .aladinClickable(
+                        Modifier.aladinClickable(
                                 selected = active,
                                 shape = shape,
                                 colors =
@@ -602,11 +685,11 @@ private fun WorkspaceDocumentRail(
                                         hovered = AladinColor.ControlHover,
                                         pressed = AladinColor.ControlPressed,
                                         selected = AladinColor.RowSelected,
-                                        selectedHovered = AladinColor.ControlPressed,
+                                        selectedHovered = AladinColor.ControlHover,
                                     ),
                                 onClick = { onActivateArtifact(artifact.id) },
                             )
-                            .padding(horizontal = 8.dp, vertical = 8.dp),
+                            .padding(horizontal = 12.dp, vertical = 12.dp),
                 ) {
                     Text(
                         artifact.title,
@@ -624,7 +707,7 @@ private fun WorkspaceDocumentRail(
                                 onClick = {},
                                 colors =
                                     AladinInteractionDefaults.colors(
-                                        hovered = AladinColor.InkDisabled
+                                        hovered = AladinColor.ControlPressed
                                     ),
                             ),
                     )

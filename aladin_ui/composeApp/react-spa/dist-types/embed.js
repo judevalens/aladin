@@ -75,10 +75,8 @@ function createBridge(jsEventHandler) {
         mount: (root) => mount(root, bridge),
         unmount: unmount,
         kotlinEvent: (event) => {
-            console.log("Kotlin event received: ", event);
         },
         jsEvent: (event) => {
-            console.log("JS event received: ", event);
             jsEventHandler(event);
         },
     };

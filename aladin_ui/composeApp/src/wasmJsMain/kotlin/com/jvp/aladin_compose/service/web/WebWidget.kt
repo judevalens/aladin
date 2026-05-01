@@ -14,6 +14,10 @@ external interface JsEvent : JsAny {
     val payload: JsAny?
 }
 
+external interface DocumentUpdatedPayload : JsAny {
+    val markdown: String
+}
+
 @OptIn(ExperimentalWasmJsInterop::class)
 external fun createBridge(jsEventHandler: (JsEvent) -> Unit): WebBridge
 
@@ -26,7 +30,20 @@ external interface WebBridge : JsAny {
 @OptIn(ExperimentalComposeUiApi::class, ExperimentalWasmJsInterop::class)
 @Composable
 fun WebWidget(modifier: Modifier = Modifier) {
-    val bridge = remember { createBridge {} }
+    val bridge = remember {
+        createBridge { event ->
+            when (event.type) {
+                "documentUpdated" -> {
+                    val markdown = event.payload
+                        ?.unsafeCast<DocumentUpdatedPayload>()
+                        ?.markdown
+                    println("\nReceived documentUpdated event:\n $markdown")
+
+                }
+            }
+            println("Received event: $event")
+        }
+    }
     WebElementView(
         modifier = modifier,
         factory = {
@@ -38,7 +55,7 @@ fun WebWidget(modifier: Modifier = Modifier) {
                 style.overflowX = "hidden"
             }
         },
-        update = { element -> bridge.mount(element)  },
-        onRelease = { element -> },
+        update = { element -> bridge.mount(element) },
+        onRelease = { element -> bridge.unmount(element) },
     )
 }

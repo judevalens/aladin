@@ -1,27 +1,28 @@
-import { jsx as _jsx, Fragment as _Fragment } from "react/jsx-runtime";
-import { MilkdownEditor } from "./MilkdownEditor";
+import { jsx as _jsx } from "react/jsx-runtime";
 import { useEffect } from "react";
-export default function App({ bridge, overlayRoot = null, }) {
+import { MilkdownEditor } from "./MilkdownEditor";
+import "./styles.css";
+function initialMarkdown(widgetId) {
+    if (!widgetId) {
+        return "Start writing here.";
+    }
+    return `# ${widgetId}\n\nStart writing here.`;
+}
+export default function App({ bridge, widgetId }) {
     useEffect(() => {
         if (!bridge)
             return;
         bridge.kotlinEvent = (event) => {
-            console.log("JS event received: ", event);
+            console.log("Kotlin event received:", event);
         };
         return () => {
-            bridge.kotlinEvent = (event) => {
-                console.log(`JS event received: ${event} | NO_OP event handler!`);
+            bridge.kotlinEvent = () => {
             };
         };
     }, [bridge]);
-    return (_jsx(_Fragment, { children: _jsx("div", { className: "app-shell", style: {
-                height: "100%",
-                boxSizing: "border-box",
-            }, children: _jsx("div", { style: {
-                    height: "100%",
-                    paddingLeft: "15px",
-                    paddingRight: "15px",
-                    boxSizing: "border-box",
-                    overflowY: "auto",
-                }, children: _jsx(MilkdownEditor, {}) }) }) }));
+    return (_jsx("div", { className: "app-shell", style: {
+            height: "100%",
+            boxSizing: "border-box",
+            overflowY: "auto",
+        }, children: _jsx(MilkdownEditor, { defaultValue: initialMarkdown(widgetId), bridge: bridge }) }));
 }
