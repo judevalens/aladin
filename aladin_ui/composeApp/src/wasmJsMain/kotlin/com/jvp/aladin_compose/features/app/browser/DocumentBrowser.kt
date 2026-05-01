@@ -1,4 +1,4 @@
-package com.jvp.aladin_compose.features.app
+package com.jvp.aladin_compose.features.app.browser
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -34,6 +34,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.jvp.aladin_compose.features.app.BrowserRowContextMenu
+import com.jvp.aladin_compose.features.app.BrowserRowMenuModel
+import com.jvp.aladin_compose.features.app.BrowserRowMenuRequest
 import com.jvp.aladin_compose.model.ArtifactKind
 import com.jvp.aladin_compose.model.ArtifactPreview
 import com.jvp.aladin_compose.model.BreadcrumbItem

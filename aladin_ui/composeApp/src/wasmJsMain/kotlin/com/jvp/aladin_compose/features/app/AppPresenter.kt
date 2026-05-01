@@ -1,11 +1,6 @@
 package com.jvp.aladin_compose.features.app
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import com.jvp.aladin_compose.model.NavDestination
 import com.jvp.aladin_compose.service.FolderService
 import com.slack.circuit.runtime.CircuitContext
 import com.slack.circuit.runtime.Navigator
@@ -14,27 +9,12 @@ import com.slack.circuit.runtime.screen.Screen
 import kotlinx.coroutines.CoroutineScope
 
 class AppPresenter(
-    private val documentBrowserProducer: DocumentBrowserProducer,
+    private val appWorkspaceProducer: AppWorkspaceProducer,
 ) : Presenter<AppState> {
 
     @Composable
     override fun present(): AppState {
-        var destination by remember { mutableStateOf(NavDestination.Home) }
-        val browser = documentBrowserProducer.produce()
-
-        return AppState(
-            destination = destination,
-            browser = browser.browser,
-            focusedFolder = browser.focusedFolder,
-            activeArtifact = browser.activeArtifact,
-            openArtifacts = browser.openArtifacts,
-            canCreateArtifact = browser.canCreateArtifact,
-            eventSink = { event ->
-                when (event) {
-                    is AppEvent.NavigateDestination -> destination = event.destination
-                }
-            },
-        )
+        return appWorkspaceProducer.produce()
     }
 
     class Factory(
@@ -45,11 +25,7 @@ class AppPresenter(
             return when (screen) {
                 AppScreen ->
                     AppPresenter(
-                        documentBrowserProducer =
-                            DefaultDocumentBrowserProducer(
-                                service = folderService,
-                                scope = scope,
-                            ),
+                        appWorkspaceProducer = defaultAppWorkspaceProducer(folderService, scope),
                     )
                 else -> null
             }
