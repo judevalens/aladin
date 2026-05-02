@@ -55,12 +55,12 @@ function ensureOverlayRoot(host) {
     overlayRoots.set(host, existing);
     return existing;
 }
-function mount(element, bridge, title) {
+function mount(element, bridge, pageId, initialMarkdown, isEditable) {
     ensureStyles(element);
     const overlayRoot = ensureOverlayRoot(element);
     const root = roots.get(element) ?? createRoot(element);
     roots.set(element, root);
-    root.render(_jsx(App, { widgetId: title, overlayRoot: overlayRoot, bridge: bridge }));
+    root.render(_jsx(App, { pageId: pageId, initialMarkdown: initialMarkdown, isEditable: isEditable, overlayRoot: overlayRoot, bridge: bridge }));
 }
 function unmount(element) {
     const root = roots.get(element);
@@ -72,12 +72,32 @@ function unmount(element) {
 }
 function createBridge(jsEventHandler) {
     let bridge = {
-        mount: (root) => mount(root, bridge),
+        mount: (root, pageId, initialMarkdown, isEditable) => mount(root, bridge, pageId, initialMarkdown, isEditable),
         unmount: unmount,
         kotlinEvent: (event) => {
         },
         jsEvent: (event) => {
             jsEventHandler(event);
+        },
+        notifyFileUploadCompleted: (pageId, requestId, url) => {
+            bridge.kotlinEvent({
+                type: "fileUploadCompleted",
+                payload: {
+                    pageId,
+                    requestId,
+                    url,
+                },
+            });
+        },
+        notifyFileUploadFailed: (pageId, requestId, message) => {
+            bridge.kotlinEvent({
+                type: "fileUploadFailed",
+                payload: {
+                    pageId,
+                    requestId,
+                    message,
+                },
+            });
         },
     };
     return bridge;

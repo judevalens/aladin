@@ -19,6 +19,7 @@ type ArtifactService interface {
 	ListFolders(context.Context, *string) ([]FolderNode, error)
 	FolderTree(context.Context) ([]FolderTreeNode, error)
 	CreateFolder(context.Context, string, *string) (FolderNode, error)
+	UpdateFolder(context.Context, string, FolderPatch) (FolderNode, error)
 	GetFolder(context.Context, string) (FolderNode, error)
 	FolderBreadcrumbs(context.Context, string) ([]BreadcrumbItem, error)
 }
@@ -28,6 +29,8 @@ type ArtifactRepository interface {
 	GetArtifact(context.Context, string) (ArtifactResponse, error)
 	CreateArtifact(context.Context, ArtifactResponse) error
 	UpdateArtifact(context.Context, string, ArtifactPatch) error
+	CreatePageDocument(context.Context, string, string) error
+	SavePageDocument(context.Context, string, string) error
 	DeleteArtifact(context.Context, string) error
 	ListFolders(context.Context, *string) ([]FolderNode, error)
 	ListAllFolders(context.Context) ([]FolderNode, error)
@@ -35,6 +38,7 @@ type ArtifactRepository interface {
 	NextNodePosition(context.Context, *string) (int64, error)
 	CreateTreeNode(context.Context, TreeNodeRecord) error
 	UpdateArtifactNodeParent(context.Context, string, *string) error
+	UpdateFolderTitle(context.Context, string, string) error
 	GetFolder(context.Context, string) (FolderNode, error)
 	FolderBreadcrumbs(context.Context, string) ([]BreadcrumbItem, error)
 }
@@ -125,10 +129,10 @@ func (s *DefaultArtifactService) Get(ctx context.Context, id string) (ArtifactRe
 func (s *DefaultArtifactService) Create(ctx context.Context, payload ArtifactPayload) (ArtifactResponse, error) {
 	artifactType := strings.TrimSpace(payload.Type)
 	if artifactType == "" {
-		artifactType = "note"
+		artifactType = "page"
 	}
-	if artifactType != "note" && artifactType != "link" {
-		return ArtifactResponse{}, BadRequest("type must be one of: note, link")
+	if artifactType != "page" && artifactType != "link" {
+		return ArtifactResponse{}, BadRequest("type must be one of: page, link")
 	}
 	payload.FolderID = TrimStringPtr(payload.FolderID)
 	if payload.FolderID != nil {
@@ -142,7 +146,7 @@ func (s *DefaultArtifactService) Create(ctx context.Context, payload ArtifactPay
 	sourceURL := TrimStringPtr(payload.SourceURL)
 
 	switch artifactType {
-	case "note":
+	case "page":
 		if title == "" {
 			title = content
 		}
@@ -180,6 +184,11 @@ func (s *DefaultArtifactService) Create(ctx context.Context, payload ArtifactPay
 	if err := s.repo.CreateArtifact(ctx, rec); err != nil {
 		return ArtifactResponse{}, err
 	}
+	if artifactType == "page" {
+		if err := s.repo.CreatePageDocument(ctx, rec.ID, content); err != nil {
+			return ArtifactResponse{}, err
+		}
+	}
 	position, err := s.repo.NextNodePosition(ctx, payload.FolderID)
 	if err != nil {
 		return ArtifactResponse{}, err
@@ -210,7 +219,7 @@ func (s *DefaultArtifactService) Update(ctx context.Context, id string, patch Ar
 		if trimmedType == "" {
 			return ArtifactResponse{}, BadRequest("type cannot be empty")
 		}
-		if trimmedType != "note" && trimmedType != "link" && trimmedType != "voice" && trimmedType != "file" {
+		if trimmedType != "page" && trimmedType != "link" && trimmedType != "voice" && trimmedType != "file" {
 			return ArtifactResponse{}, BadRequest("unsupported type")
 		}
 		patch.Type = &trimmedType
@@ -219,11 +228,8 @@ func (s *DefaultArtifactService) Update(ctx context.Context, id string, patch Ar
 		return ArtifactResponse{}, BadRequest("title cannot be empty")
 	}
 	if patch.Content != nil {
-		trimmedContent := strings.TrimSpace(*patch.Content)
-		if current.Type == "note" && trimmedContent == "" {
-			return ArtifactResponse{}, BadRequest("content cannot be empty")
-		}
-		patch.Content = &trimmedContent
+		content := *patch.Content
+		patch.Content = &content
 	}
 	patch.Title = TrimStringPtr(patch.Title)
 	patch.Summary = TrimStringPtr(patch.Summary)
@@ -257,12 +263,17 @@ func (s *DefaultArtifactService) Update(ctx context.Context, id string, patch Ar
 	if nextType == "link" && strings.TrimSpace(nextTitle) == "" {
 		return ArtifactResponse{}, BadRequest("title is required")
 	}
-	if nextType == "note" && strings.TrimSpace(nextTitle) == "" && strings.TrimSpace(nextContent) == "" {
+	if nextType == "page" && strings.TrimSpace(nextTitle) == "" && strings.TrimSpace(nextContent) == "" {
 		return ArtifactResponse{}, BadRequest("title or content is required")
 	}
 
 	if patch.FolderID != nil {
 		if err := s.repo.UpdateArtifactNodeParent(ctx, id, patch.FolderID); err != nil {
+			return ArtifactResponse{}, err
+		}
+	}
+	if current.Type == "page" && patch.Content != nil {
+		if err := s.repo.SavePageDocument(ctx, id, *patch.Content); err != nil {
 			return ArtifactResponse{}, err
 		}
 	}
@@ -443,6 +454,23 @@ func (s *DefaultArtifactService) CreateFolder(ctx context.Context, title string,
 		return FolderNode{}, err
 	}
 	return folder, nil
+}
+
+func (s *DefaultArtifactService) UpdateFolder(ctx context.Context, id string, patch FolderPatch) (FolderNode, error) {
+	if strings.TrimSpace(id) == "" {
+		return FolderNode{}, ErrNotFound
+	}
+	if patch.Title == nil {
+		return s.repo.GetFolder(ctx, id)
+	}
+	title := strings.TrimSpace(*patch.Title)
+	if title == "" {
+		return FolderNode{}, BadRequest("title cannot be empty")
+	}
+	if err := s.repo.UpdateFolderTitle(ctx, id, title); err != nil {
+		return FolderNode{}, err
+	}
+	return s.repo.GetFolder(ctx, id)
 }
 
 func (s *DefaultArtifactService) GetFolder(ctx context.Context, id string) (FolderNode, error) {

@@ -100,6 +100,10 @@ type FolderNode struct {
 	Title    string  `json:"title"`
 }
 
+type FolderPatch struct {
+	Title *string `json:"title"`
+}
+
 type BrowserTreeNode struct {
 	ID           string            `json:"id"`
 	ParentID     *string           `json:"parentId,omitempty"`

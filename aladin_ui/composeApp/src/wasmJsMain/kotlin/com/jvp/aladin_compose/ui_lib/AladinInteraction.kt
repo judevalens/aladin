@@ -2,6 +2,7 @@ package com.jvp.aladin_compose.ui_lib
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -106,16 +107,29 @@ fun Modifier.aladinClickable(
     selected: Boolean = false,
     colors: AladinInteractionColors = AladinInteractionDefaults.colors(),
     shape: Shape = AladinInteractionDefaults.Shape,
+    onDoubleClick: (() -> Unit)? = null,
     onClick: () -> Unit,
 ): Modifier {
   val state = rememberAladinInteractionState(enabled = enabled, selected = selected)
 
   return aladinInteractiveBackground(state = state, colors = colors, shape = shape)
       .hoverable(interactionSource = state.source, enabled = enabled)
-      .clickable(
-          interactionSource = state.source,
-          indication = null,
-          enabled = enabled,
-          onClick = onClick,
+      .then(
+          if (onDoubleClick == null) {
+            Modifier.clickable(
+                interactionSource = state.source,
+                indication = null,
+                enabled = enabled,
+                onClick = onClick,
+            )
+          } else {
+            Modifier.combinedClickable(
+                interactionSource = state.source,
+                indication = null,
+                enabled = enabled,
+                onClick = onClick,
+                onDoubleClick = onDoubleClick,
+            )
+          }
       )
 }

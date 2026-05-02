@@ -1,11 +1,12 @@
 package com.jvp.aladin_compose.features.app
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
@@ -17,8 +18,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.WebElementView
 import androidx.compose.ui.window.ComposeViewport
 import com.jvp.aladin_compose.features.app.artifactpane.ArtifactPane
@@ -35,7 +40,6 @@ import com.slack.circuit.runtime.ui.Ui
 import kotlinx.browser.document
 import kotlinx.browser.window
 import org.w3c.dom.HTMLDivElement
-import androidx.compose.ui.unit.dp
 
 class AppUiFactory : Ui.Factory {
     override fun create(screen: Screen, context: CircuitContext): Ui<*>? {
@@ -50,8 +54,14 @@ private class AppUi : Ui<AppState> {
     @Composable
     override fun Content(state: AppState, modifier: Modifier) {
         var overlayMenu by remember { mutableStateOf<BrowserRowMenuRequest?>(null) }
+        val focusManager = LocalFocusManager.current
 
-        Box(modifier = modifier.fillMaxSize().background(AladinColor.Canvas)) {
+        Box(
+            modifier =
+                modifier.fillMaxSize()
+                    .clearFocusOnAppTap(focusManager)
+                    .background(AladinColor.Canvas),
+        ) {
             Row(modifier = Modifier.fillMaxSize()) {
                 AppSidebar(
                     state = state.sidebar,
@@ -84,6 +94,13 @@ private class AppUi : Ui<AppState> {
         }
     }
 }
+
+private fun Modifier.clearFocusOnAppTap(focusManager: FocusManager): Modifier =
+    pointerInput(focusManager) {
+        detectTapGestures {
+            focusManager.clearFocus()
+        }
+    }
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable

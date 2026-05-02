@@ -6,14 +6,17 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.jvp.aladin_compose.features.app.artifactpane.ArtifactPaneProducer
-import com.jvp.aladin_compose.features.app.artifactpane.DefaultArtifactPaneProducer
+import com.jvp.aladin_compose.features.app.artifactpane.defaultArtifactPaneProducer
 import com.jvp.aladin_compose.features.app.browser.DefaultDocumentBrowserProducer
 import com.jvp.aladin_compose.features.app.browser.DocumentBrowserEvent
 import com.jvp.aladin_compose.features.app.browser.DocumentBrowserProducer
 import com.jvp.aladin_compose.features.app.sidebar.DefaultSidebarProducer
 import com.jvp.aladin_compose.features.app.sidebar.SidebarProducer
 import com.jvp.aladin_compose.model.NavDestination
+import com.jvp.aladin_compose.repo.ApiArtifactRepository
 import com.jvp.aladin_compose.service.FolderService
+import com.jvp.aladin_compose.service.ArtifactService
+import com.jvp.aladin_compose.service.DefaultPageDocumentSyncer
 import kotlinx.coroutines.CoroutineScope
 
 interface AppWorkspaceProducer {
@@ -74,9 +77,17 @@ fun defaultAppWorkspaceProducer(
     folderService: FolderService,
     scope: CoroutineScope,
 ): AppWorkspaceProducer {
+    val artifactService = ArtifactService(ApiArtifactRepository())
+    val pageDocumentSyncer = DefaultPageDocumentSyncer(artifactService, scope)
     return DefaultAppWorkspaceProducer(
         sidebarProducer = DefaultSidebarProducer(),
-        documentBrowserProducer = DefaultDocumentBrowserProducer(folderService, scope),
-        artifactPaneProducer = DefaultArtifactPaneProducer(folderService),
+        documentBrowserProducer = DefaultDocumentBrowserProducer(folderService, artifactService, scope),
+        artifactPaneProducer =
+            defaultArtifactPaneProducer(
+                folderService = folderService,
+                artifactService = artifactService,
+                pageDocumentSyncer = pageDocumentSyncer,
+                scope = scope,
+            ),
     )
 }

@@ -20,6 +20,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.sharp.AutoGraph
 import androidx.compose.material.icons.sharp.Close
+import androidx.compose.material.icons.sharp.Lock
+import androidx.compose.material.icons.sharp.LockOpen
 import androidx.compose.material.icons.sharp.Search
 import androidx.compose.material.icons.sharp.StarBorder
 import androidx.compose.material.icons.sharp.Tune
@@ -38,9 +40,13 @@ import com.jvp.aladin_compose.features.app.DividerThickness
 import com.jvp.aladin_compose.features.app.PlaceholderPane
 import com.jvp.aladin_compose.features.app.SharpRadius
 import com.jvp.aladin_compose.features.app.WorkspaceChromeMaxWidth
+import com.jvp.aladin_compose.features.app.artifactpane.page.PageEditorState
+import com.jvp.aladin_compose.features.app.artifactpane.page.PageUi
+import com.jvp.aladin_compose.features.app.artifactpane.page.PageStateEvent
 import com.jvp.aladin_compose.model.Artifact
+import com.jvp.aladin_compose.model.ArtifactKind
 import com.jvp.aladin_compose.model.BreadcrumbItem
-import com.jvp.aladin_compose.service.web.WebWidget
+import com.jvp.aladin_compose.service.formatUpdatedTimestamp
 import com.jvp.aladin_compose.ui_lib.AladinColor
 import com.jvp.aladin_compose.ui_lib.AladinInteractionDefaults
 import com.jvp.aladin_compose.ui_lib.aladinClickable
@@ -68,6 +74,19 @@ fun RowScope.ArtifactPane(
                     WorkspaceContextRail(
                         breadcrumbs = state.breadcrumbs,
                         artifact = artifact,
+                        pageState = state.pages.pagesById[artifact.id],
+                        onRetrySave = { pageId ->
+                            state.pages.eventSink(PageStateEvent.RetrySave(pageId))
+                        },
+                        onRetryLoad = { pageId ->
+                            state.pages.eventSink(PageStateEvent.RetryLoad(pageId))
+                        },
+                        onRetryUpload = { pageId ->
+                            state.pages.eventSink(PageStateEvent.RetryUpload(pageId))
+                        },
+                        onToggleEditable = { pageId ->
+                            state.pages.eventSink(PageStateEvent.ToggleEditable(pageId))
+                        },
                     )
                 }
                 Box(
@@ -83,6 +102,7 @@ fun RowScope.ArtifactPane(
                     ) {
                         ArtifactWorkspaceView(
                             artifact = artifact,
+                            state = state,
                             modifier = Modifier.fillMaxSize(),
                         )
                     }
@@ -111,6 +131,11 @@ private fun WorkspaceTabRail(content: @Composable ColumnScope.() -> Unit) {
 private fun WorkspaceContextRail(
     breadcrumbs: List<BreadcrumbItem>,
     artifact: Artifact,
+    pageState: PageEditorState?,
+    onRetrySave: (String) -> Unit,
+    onRetryLoad: (String) -> Unit,
+    onRetryUpload: (String) -> Unit,
+    onToggleEditable: (String) -> Unit,
 ) {
     val pathText =
         when {
@@ -135,6 +160,25 @@ private fun WorkspaceContextRail(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
+        if (artifact.kind == ArtifactKind.Note && pageState != null) {
+            WorkspacePageStatus(
+                state = pageState,
+                onRetrySave = onRetrySave,
+                onRetryLoad = onRetryLoad,
+                onRetryUpload = onRetryUpload,
+            )
+            WorkspaceUtilityIcon(
+                icon = if (pageState.isEditable) Icons.Sharp.LockOpen else Icons.Sharp.Lock,
+                contentDescription =
+                    if (pageState.isEditable) {
+                        "Lock document editing"
+                    } else {
+                        "Unlock document editing"
+                    },
+                isActive = !pageState.isEditable,
+                onClick = { onToggleEditable(pageState.pageId) },
+            )
+        }
         WorkspaceUtilityIcon(
             icon = Icons.Sharp.Search,
             contentDescription = "Search document",
@@ -162,6 +206,7 @@ private fun WorkspaceContextRail(
 private fun WorkspaceUtilityIcon(
     icon: ImageVector,
     contentDescription: String,
+    isActive: Boolean = false,
     onClick: () -> Unit,
 ) {
     Box(
@@ -180,15 +225,121 @@ private fun WorkspaceUtilityIcon(
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
-            tint = AladinColor.InkSecondary,
+            tint = if (isActive) AladinColor.Ink else AladinColor.InkSecondary,
             modifier = Modifier.size(15.dp),
         )
     }
 }
 
 @Composable
-private fun ArtifactWorkspaceView(artifact: Artifact, modifier: Modifier = Modifier) {
-    WorkspaceEmbeddedArtifactSurface(artifact = artifact, modifier = modifier)
+private fun ArtifactWorkspaceView(
+    artifact: Artifact,
+    state: ArtifactPaneState,
+    modifier: Modifier = Modifier,
+) {
+    when (artifact.kind) {
+        ArtifactKind.Note -> {
+            val pageState = state.pages.pagesById[artifact.id]
+            if (pageState != null) {
+                PageUi(
+                    state = pageState,
+                    onDocumentUpdated = { pageId, markdown ->
+                        state.pages.eventSink(PageStateEvent.DocumentUpdated(pageId, markdown))
+                    },
+                    onFileUploadRequested = { pageId, requestId, filename, contentType, base64Data ->
+                        state.pages.eventSink(
+                            PageStateEvent.FileUploadRequested(
+                                pageId = pageId,
+                                requestId = requestId,
+                                filename = filename,
+                                contentType = contentType,
+                                base64Data = base64Data,
+                            ),
+                        )
+                    },
+                    pageEditorBridge = state.pageEditorBridge,
+                    modifier = modifier,
+                )
+            } else {
+                PlaceholderPane(
+                    "Page unavailable",
+                    "The selected page could not be prepared for editing.",
+                )
+            }
+        }
+        ArtifactKind.Link -> UnsupportedArtifactPane("Link view coming next.")
+        ArtifactKind.Voice -> UnsupportedArtifactPane("Voice view coming next.")
+        ArtifactKind.File -> UnsupportedArtifactPane("File view coming next.")
+    }
+}
+
+@Composable
+private fun WorkspacePageStatus(
+    state: PageEditorState,
+    onRetrySave: (String) -> Unit,
+    onRetryLoad: (String) -> Unit,
+    onRetryUpload: (String) -> Unit,
+) {
+    val statusText =
+        when {
+            state.loadError != null -> "Load failed"
+            state.uploadError != null -> "Upload failed"
+            state.isUploading -> "Uploading..."
+            state.isSaving -> "Saving..."
+            state.saveError != null -> "Save failed"
+            state.showUnsavedStatus -> "Unsaved changes"
+            state.lastSavedAt != null ->
+                "Saved • ${formatUpdatedTimestamp(raw = state.lastSavedAt, now = state.timestampTick)}"
+            else -> "Ready"
+        }
+
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = statusText,
+            color =
+                when {
+                    state.loadError != null || state.saveError != null || state.uploadError != null -> MaterialTheme.colorScheme.error
+                    state.isSaving || state.isUploading -> AladinColor.InkSecondary
+                    else -> AladinColor.InkMuted
+                },
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (state.loadError != null) {
+            ContextStatusAction("Retry load") { onRetryLoad(state.pageId) }
+        } else if (state.uploadError != null) {
+            ContextStatusAction("Retry upload") { onRetryUpload(state.pageId) }
+        } else if (state.saveError != null) {
+            ContextStatusAction("Retry save") { onRetrySave(state.pageId) }
+        }
+    }
+}
+
+@Composable
+private fun ContextStatusAction(
+    label: String,
+    onClick: () -> Unit,
+) {
+    Text(
+        text = label,
+        color = AladinColor.Ink,
+        style = MaterialTheme.typography.bodySmall,
+        modifier =
+            Modifier.aladinClickable(
+                shape = RoundedCornerShape(SharpRadius),
+                colors =
+                    AladinInteractionDefaults.colors(
+                        hovered = AladinColor.ControlHover,
+                        pressed = AladinColor.ControlPressed,
+                    ),
+                onClick = onClick,
+            )
+                .padding(horizontal = 6.dp, vertical = 2.dp),
+    )
 }
 
 @Composable
@@ -259,6 +410,9 @@ private fun WorkspaceDocumentRail(
 }
 
 @Composable
-private fun WorkspaceEmbeddedArtifactSurface(artifact: Artifact, modifier: Modifier = Modifier) {
-    WebWidget(modifier = modifier.fillMaxSize())
+private fun UnsupportedArtifactPane(message: String) {
+    PlaceholderPane(
+        "Viewer not ready",
+        message,
+    )
 }

@@ -24,6 +24,7 @@ func (s *Server) registerArtifactRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/folders/tree", s.handleFoldersTree)
 	mux.HandleFunc("POST /api/folders/", s.handleFoldersCreate)
 	mux.HandleFunc("GET /api/folders/{id}", s.handleFoldersGet)
+	mux.HandleFunc("PATCH /api/folders/{id}", s.handleFoldersUpdate)
 	mux.HandleFunc("GET /api/folders/{id}/breadcrumbs", s.handleFoldersBreadcrumbs)
 }
 
@@ -237,6 +238,29 @@ func (s *Server) handleFoldersGet(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, artifactservice.ErrNotFound) {
 			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Folder not found", err)
+			return
+		}
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
+		return
+	}
+	writeJSON(w, http.StatusOK, folder)
+}
+
+func (s *Server) handleFoldersUpdate(w http.ResponseWriter, r *http.Request) {
+	var patch artifactservice.FolderPatch
+	if err := readJSON(r, &patch); err != nil {
+		writeDecodeError(w, r, err)
+		return
+	}
+	folder, err := s.deps.Artifacts().UpdateFolder(r.Context(), r.PathValue("id"), patch)
+	if err != nil {
+		if errors.Is(err, artifactservice.ErrNotFound) {
+			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Folder not found", err)
+			return
+		}
+		var requestErr artifactservice.BadRequest
+		if errors.As(err, &requestErr) {
+			writeAPIError(w, r, http.StatusBadRequest, categoryBadRequest, err.Error(), err)
 			return
 		}
 		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)

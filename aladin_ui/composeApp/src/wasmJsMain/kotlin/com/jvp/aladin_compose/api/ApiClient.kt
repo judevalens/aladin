@@ -102,6 +102,13 @@ object ApiClient {
         }.body()
     }
 
+    suspend fun updateFolder(id: String, req: FolderUpdateRequest): FolderRecord = call {
+        httpClient.patch("$BASE_URL/api/folders/$id") {
+            contentType(ContentType.Application.Json)
+            setBody(req)
+        }.body()
+    }
+
     suspend fun getUserArtifacts(folderId: String? = null): List<UserArtifact> = call {
         httpClient.get("$BASE_URL/api/artifacts/") {
             if (folderId != null) parameter("folderId", folderId)
@@ -110,6 +117,39 @@ object ApiClient {
 
     suspend fun getUserArtifact(id: String): UserArtifact = call {
         httpClient.get("$BASE_URL/api/artifacts/$id").body()
+    }
+
+    suspend fun getPage(id: String): PageDocumentRecord = call {
+        httpClient.get("$BASE_URL/api/pages/$id").body()
+    }
+
+    suspend fun savePage(id: String, req: PageSaveRequest): PageDocumentRecord = call {
+        httpClient.patch("$BASE_URL/api/pages/$id") {
+            contentType(ContentType.Application.Json)
+            setBody(req)
+        }.body()
+    }
+
+    suspend fun uploadFile(req: FileUploadRequest): UploadedFileRecord = call {
+        httpClient.post("$BASE_URL/api/files/upload") {
+            setBody(
+                MultiPartFormDataContent(
+                    formData {
+                        append(
+                            "file",
+                            req.bytes,
+                            Headers.build {
+                                append(
+                                    HttpHeaders.ContentDisposition,
+                                    "filename=\"${req.filename}\""
+                                )
+                                req.contentType?.let { append(HttpHeaders.ContentType, it) }
+                            },
+                        )
+                    }
+                )
+            )
+        }.body()
     }
 
     suspend fun createUserArtifact(req: UserArtifactCreateRequest): UserArtifact = call {
@@ -157,6 +197,18 @@ object ApiClient {
     }
 
     fun userArtifactResourceUrl(id: String): String = "$BASE_URL/api/artifacts/$id/resource"
+
+    fun backendUrl(pathOrUrl: String): String {
+        if (pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://")) {
+            return pathOrUrl
+        }
+
+        return if (pathOrUrl.startsWith("/")) {
+            "$BASE_URL$pathOrUrl"
+        } else {
+            "$BASE_URL/$pathOrUrl"
+        }
+    }
 
     suspend fun getInsights(
         limit: Int = 30,

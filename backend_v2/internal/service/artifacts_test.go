@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestArtifactServiceCreateNoteDefaultsAndTrims(t *testing.T) {
+func TestArtifactServiceCreatePageDefaultsAndTrims(t *testing.T) {
 	t.Parallel()
 
 	summary := "  useful memo  "
@@ -16,7 +16,7 @@ func TestArtifactServiceCreateNoteDefaultsAndTrims(t *testing.T) {
 	svc := NewArtifactService(repo, &fakeArtifactFiles{})
 
 	rec, err := svc.Create(context.Background(), ArtifactPayload{
-		Type:    "note",
+		Type:    "page",
 		Content: "  Rivian supply chain memo  ",
 		Summary: &summary,
 	})
@@ -111,7 +111,7 @@ func TestArtifactServiceBrowserTreeBuildsMixedHierarchy(t *testing.T) {
 
 	rootID := "folder-root"
 	artifactID := "artifact-1"
-	artifactType := "note"
+	artifactType := "page"
 	updatedAt := "2026-04-27T00:00:00Z"
 	repo := &fakeArtifactRepository{
 		browserNodes: []BrowserTreeFlatNode{
@@ -136,6 +136,7 @@ func TestArtifactServiceBrowserTreeBuildsMixedHierarchy(t *testing.T) {
 type fakeArtifactRepository struct {
 	artifactByID     map[string]ArtifactResponse
 	createdArtifacts []ArtifactResponse
+	pageContentByID  map[string]string
 	folders          []FolderNode
 	browserNodes     []BrowserTreeFlatNode
 }
@@ -152,6 +153,11 @@ func (f *fakeArtifactRepository) GetArtifact(_ context.Context, id string) (Arti
 	if !ok {
 		return ArtifactResponse{}, ErrNotFound
 	}
+	if rec.Type == "page" {
+		if markdown, ok := f.pageContentByID[id]; ok {
+			rec.Content = markdown
+		}
+	}
 	return rec, nil
 }
 
@@ -161,6 +167,30 @@ func (f *fakeArtifactRepository) CreateArtifact(_ context.Context, rec ArtifactR
 }
 
 func (f *fakeArtifactRepository) UpdateArtifact(context.Context, string, ArtifactPatch) error {
+	return nil
+}
+
+func (f *fakeArtifactRepository) CreatePageDocument(_ context.Context, artifactID string, markdown string) error {
+	if f.pageContentByID == nil {
+		f.pageContentByID = map[string]string{}
+	}
+	f.pageContentByID[artifactID] = markdown
+	if rec, ok := f.artifactByID[artifactID]; ok {
+		rec.Content = markdown
+		f.artifactByID[artifactID] = rec
+	}
+	return nil
+}
+
+func (f *fakeArtifactRepository) SavePageDocument(_ context.Context, artifactID string, markdown string) error {
+	if f.pageContentByID == nil {
+		f.pageContentByID = map[string]string{}
+	}
+	f.pageContentByID[artifactID] = markdown
+	if rec, ok := f.artifactByID[artifactID]; ok {
+		rec.Content = markdown
+		f.artifactByID[artifactID] = rec
+	}
 	return nil
 }
 
@@ -180,6 +210,9 @@ func (f *fakeArtifactRepository) NextNodePosition(context.Context, *string) (int
 }
 func (f *fakeArtifactRepository) CreateTreeNode(context.Context, TreeNodeRecord) error { return nil }
 func (f *fakeArtifactRepository) UpdateArtifactNodeParent(context.Context, string, *string) error {
+	return nil
+}
+func (f *fakeArtifactRepository) UpdateFolderTitle(context.Context, string, string) error {
 	return nil
 }
 func (f *fakeArtifactRepository) GetFolder(context.Context, string) (FolderNode, error) {

@@ -16,6 +16,7 @@ import com.jvp.aladin_compose.model.ArtifactKind
 import com.jvp.aladin_compose.model.BrowserNodeKind
 import com.jvp.aladin_compose.model.BrowserTreeNode
 import com.jvp.aladin_compose.model.FolderNode
+import com.jvp.aladin_compose.service.ArtifactService
 import com.jvp.aladin_compose.service.FolderService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -34,7 +35,16 @@ data class DocumentBrowserState(
     val loading: Boolean,
     val errorMessage: String?,
     val rows: List<BrowserTreeRow>,
+    val activeRename: BrowserRenameState?,
     val eventSink: (DocumentBrowserEvent) -> Unit,
+)
+
+data class BrowserRenameState(
+    val rowKind: BrowserRowKind,
+    val rowId: String,
+    val originalTitle: String,
+    val draftTitle: String,
+    val saving: Boolean = false,
 )
 
 sealed interface DocumentBrowserEvent {
@@ -44,6 +54,10 @@ sealed interface DocumentBrowserEvent {
     data class NavigateScope(val folderId: String?) : DocumentBrowserEvent
     data class NavigateBreadcrumb(val folderId: String?) : DocumentBrowserEvent
     data class CreateInFolder(val folderId: String, val option: BrowserCreateOption) : DocumentBrowserEvent
+    data class StartRename(val rowKind: BrowserRowKind, val rowId: String, val currentTitle: String) : DocumentBrowserEvent
+    data class RenameDraftChanged(val rowId: String, val title: String) : DocumentBrowserEvent
+    data class CommitRename(val rowId: String) : DocumentBrowserEvent
+    data class CancelRename(val rowId: String) : DocumentBrowserEvent
     data object CreateFolder : DocumentBrowserEvent
     data object CreateArtifact : DocumentBrowserEvent
     data object RetryLoad : DocumentBrowserEvent
@@ -51,6 +65,7 @@ sealed interface DocumentBrowserEvent {
 
 class DefaultDocumentBrowserProducer(
     private val service: FolderService,
+    private val artifactService: ArtifactService,
     private val scope: CoroutineScope,
 ) : DocumentBrowserProducer {
     @Composable
@@ -65,6 +80,7 @@ class DefaultDocumentBrowserProducer(
         var refreshKey by remember { mutableStateOf(0) }
         var browserError by remember { mutableStateOf<String?>(null) }
         var hasLoadedRows by remember { mutableStateOf(false) }
+        var activeRename by remember { mutableStateOf<BrowserRenameState?>(null) }
 
         val focusedFolder =
             produceState<FolderNode?>(initialValue = null, service, focusedFolderId, refreshKey) {
@@ -133,6 +149,7 @@ class DefaultDocumentBrowserProducer(
             loading = !hasLoadedRows,
             errorMessage = browserError,
             rows = rows,
+            activeRename = activeRename,
             eventSink = { event ->
                 when (event) {
                     is DocumentBrowserEvent.FocusFolder -> {
@@ -217,6 +234,34 @@ class DefaultDocumentBrowserProducer(
                                 BrowserCreateOption.Upload -> Unit
                             }
                         }
+                    }
+                    is DocumentBrowserEvent.StartRename -> {
+                        activeRename =
+                            BrowserRenameState(
+                                rowKind = event.rowKind,
+                                rowId = event.rowId,
+                                originalTitle = event.currentTitle,
+                                draftTitle = event.currentTitle,
+                            )
+                        browserError = null
+                    }
+                    is DocumentBrowserEvent.RenameDraftChanged -> {
+                        activeRename =
+                            activeRename?.takeIf { it.rowId == event.rowId && !it.saving }?.copy(draftTitle = event.title)
+                                ?: activeRename
+                    }
+                    is DocumentBrowserEvent.CommitRename -> {
+                        val rename = activeRename?.takeIf { it.rowId == event.rowId } ?: return@DocumentBrowserState
+                        commitRename(
+                            rename = rename,
+                            setActiveRename = { activeRename = it },
+                            setBrowserError = { browserError = it },
+                            setFocusedFolderId = { focusedFolderId = it },
+                            refresh = { refreshKey += 1 },
+                        )
+                    }
+                    is DocumentBrowserEvent.CancelRename -> {
+                        activeRename = activeRename?.takeUnless { it.rowId == event.rowId }
                     }
                     DocumentBrowserEvent.CreateFolder -> {
                         scope.launch {
@@ -330,6 +375,13 @@ class DefaultDocumentBrowserProducer(
             sections =
                 listOf(
                     BrowserRowMenuSection(
+                        title = "Manage",
+                        actions =
+                            listOf(
+                                BrowserRowMenuAction(id = RenameActionId, label = "Rename"),
+                            ),
+                    ),
+                    BrowserRowMenuSection(
                         title = "Create",
                         actions =
                             listOf(
@@ -356,9 +408,58 @@ class DefaultDocumentBrowserProducer(
         return BrowserRowMenuModel(
             rowId = artifactId,
             rowKind = BrowserRowKind.Artifact,
-            sections = emptyList(),
+            sections =
+                listOf(
+                    BrowserRowMenuSection(
+                        title = "Manage",
+                        actions =
+                            listOf(
+                                BrowserRowMenuAction(id = RenameActionId, label = "Rename"),
+                            ),
+                    ),
+                ),
         )
     }
 
     private fun createActionId(option: BrowserCreateOption): String = "create:${option.name.lowercase()}"
+
+    private fun commitRename(
+        rename: BrowserRenameState,
+        setActiveRename: (BrowserRenameState?) -> Unit,
+        setBrowserError: (String?) -> Unit,
+        setFocusedFolderId: (String?) -> Unit,
+        refresh: () -> Unit,
+    ) {
+        if (rename.saving) return
+        val nextTitle = rename.draftTitle.trim()
+        if (nextTitle.isEmpty() || nextTitle == rename.originalTitle) {
+            setActiveRename(null)
+            return
+        }
+        setActiveRename(rename.copy(draftTitle = nextTitle, saving = true))
+        scope.launch {
+            try {
+                when (rename.rowKind) {
+                    BrowserRowKind.Folder -> {
+                        val renamed = service.renameFolder(rename.rowId, nextTitle)
+                        setFocusedFolderId(renamed.id)
+                    }
+                    BrowserRowKind.Artifact -> {
+                        artifactService.renameArtifact(rename.rowId, nextTitle)
+                        service.refreshBrowser()
+                    }
+                }
+                setBrowserError(null)
+                setActiveRename(null)
+                refresh()
+            } catch (t: Throwable) {
+                setBrowserError(t.message ?: "Failed to rename")
+                setActiveRename(rename.copy(draftTitle = nextTitle, saving = false))
+            }
+        }
+    }
+
+    private companion object {
+        const val RenameActionId = "rename"
+    }
 }

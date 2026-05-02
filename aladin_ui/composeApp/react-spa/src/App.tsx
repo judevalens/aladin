@@ -1,36 +1,16 @@
-import {useEffect} from "react";
 import {Bridge} from "./embed";
 import {MilkdownEditor} from "./MilkdownEditor";
 import "./styles.css";
 
 export type ArtifactSpaProps = {
-    widgetId?: string;
+    pageId: string;
+    initialMarkdown: string;
+    isEditable: boolean;
     overlayRoot?: HTMLElement | null;
     bridge: Bridge | undefined;
 };
 
-function initialMarkdown(widgetId?: string): string {
-    if (!widgetId) {
-        return "Start writing here.";
-    }
-
-    return `# ${widgetId}\n\nStart writing here.`;
-}
-
-export default function App({bridge, widgetId}: ArtifactSpaProps) {
-    useEffect(() => {
-        if (!bridge) return;
-
-        bridge.kotlinEvent = (event) => {
-            console.log("Kotlin event received:", event);
-        };
-
-        return () => {
-            bridge.kotlinEvent = () => {
-            };
-        };
-    }, [bridge]);
-
+export default function App({bridge, pageId, initialMarkdown, isEditable}: ArtifactSpaProps) {
     return (
         <div
             className="app-shell"
@@ -40,7 +20,13 @@ export default function App({bridge, widgetId}: ArtifactSpaProps) {
                 overflowY: "auto",
             }}
         >
-            <MilkdownEditor defaultValue={initialMarkdown(widgetId)} bridge={bridge}/>
+            <MilkdownEditor
+                key={pageId}
+                pageId={pageId}
+                defaultValue={initialMarkdown}
+                isEditable={isEditable}
+                bridge={bridge}
+            />
         </div>
     );
 }

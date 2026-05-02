@@ -26,7 +26,7 @@ type contextKey string
 type errorCategory string
 
 const (
-	requestIDHeader = "X-Request-Id"
+	requestIDHeader            = "X-Request-Id"
 	requestIDKey    contextKey = "request_id"
 
 	categoryDecodeError  errorCategory = "decode_error"
@@ -55,6 +55,8 @@ func NewWithDependencies(addr string, deps app.Dependencies) *Server {
 	mux.HandleFunc("GET /api/worker/status", s.handleWorkerStatus)
 
 	s.registerArtifactRoutes(mux)
+	s.registerPageRoutes(mux)
+	s.registerFileRoutes(mux)
 
 	mux.HandleFunc("GET /api/sources/", s.handleSourcesList)
 	mux.HandleFunc("POST /api/sources/", s.handleSourcesCreate)

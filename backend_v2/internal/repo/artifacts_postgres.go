@@ -26,9 +26,12 @@ func (r *PostgresArtifactRepository) ListArtifacts(ctx context.Context, params a
 		return nil, err
 	}
 	query := `
-		SELECT a.id, n.parent_id, a.type, a.title, a.content, a.summary, a.source_url, a.metadata, a.created_at, a.updated_at
+		SELECT a.id, n.parent_id, a.type, a.title,
+		       CASE WHEN a.type = 'page' THEN COALESCE(p.markdown, a.content) ELSE a.content END AS content,
+		       a.summary, a.source_url, a.metadata, a.created_at, a.updated_at
 		  FROM artifacts a
 		  JOIN tree_nodes n ON n.artifact_id = a.id AND n.user_id = a.user_id AND n.kind = 'artifact'
+		  LEFT JOIN page_documents p ON p.artifact_id = a.id
 		 WHERE a.user_id = $1::uuid
 	`
 	args := []any{r.userID}
@@ -62,9 +65,12 @@ func (r *PostgresArtifactRepository) GetArtifact(ctx context.Context, id string)
 		return artifactservice.ArtifactResponse{}, err
 	}
 	row := r.pool.QueryRow(ctx, `
-		SELECT a.id, n.parent_id, a.type, a.title, a.content, a.summary, a.source_url, a.metadata, a.created_at, a.updated_at
+		SELECT a.id, n.parent_id, a.type, a.title,
+		       CASE WHEN a.type = 'page' THEN COALESCE(p.markdown, a.content) ELSE a.content END AS content,
+		       a.summary, a.source_url, a.metadata, a.created_at, a.updated_at
 		  FROM artifacts a
 		  LEFT JOIN tree_nodes n ON n.artifact_id = a.id AND n.user_id = a.user_id AND n.kind = 'artifact'
+		  LEFT JOIN page_documents p ON p.artifact_id = a.id
 		 WHERE a.id = $1 AND a.user_id = $2::uuid
 	`, id, r.userID)
 	return scanArtifactResponse(row)
@@ -117,6 +123,55 @@ func (r *PostgresArtifactRepository) UpdateArtifact(ctx context.Context, id stri
 		return artifactservice.ErrNotFound
 	}
 	return nil
+}
+
+func (r *PostgresArtifactRepository) CreatePageDocument(ctx context.Context, artifactID string, markdown string) error {
+	if err := r.ensureDefaultUser(ctx); err != nil {
+		return err
+	}
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO page_documents (artifact_id, markdown, created_at, updated_at)
+		VALUES ($1, $2, now(), now())
+		ON CONFLICT (artifact_id) DO NOTHING
+	`, artifactID, markdown)
+	return err
+}
+
+func (r *PostgresArtifactRepository) SavePageDocument(ctx context.Context, artifactID string, markdown string) error {
+	if err := r.ensureDefaultUser(ctx); err != nil {
+		return err
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO page_documents (artifact_id, markdown, created_at, updated_at)
+		VALUES ($1, $2, now(), now())
+		ON CONFLICT (artifact_id)
+		DO UPDATE SET markdown = EXCLUDED.markdown, updated_at = now()
+	`, artifactID, markdown); err != nil {
+		return err
+	}
+
+	tag, err := tx.Exec(ctx, `
+		UPDATE artifacts
+		   SET content = $3,
+		       updated_at = now()
+		 WHERE id = $1 AND user_id = $2::uuid
+	`, artifactID, r.userID, markdown)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return artifactservice.ErrNotFound
+	}
+
+	return tx.Commit(ctx)
 }
 
 func (r *PostgresArtifactRepository) DeleteArtifact(ctx context.Context, id string) error {
@@ -284,6 +339,27 @@ func (r *PostgresArtifactRepository) UpdateArtifactNodeParent(ctx context.Contex
 		   AND user_id = $2::uuid
 		   AND kind = 'artifact'
 	`, artifactID, r.userID, parentID, position)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return artifactservice.ErrNotFound
+	}
+	return nil
+}
+
+func (r *PostgresArtifactRepository) UpdateFolderTitle(ctx context.Context, id string, title string) error {
+	if err := r.ensureDefaultUser(ctx); err != nil {
+		return err
+	}
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE tree_nodes
+		   SET title = $3,
+		       updated_at = now()
+		 WHERE id = $1
+		   AND user_id = $2::uuid
+		   AND kind = 'folder'
+	`, id, r.userID, title)
 	if err != nil {
 		return err
 	}

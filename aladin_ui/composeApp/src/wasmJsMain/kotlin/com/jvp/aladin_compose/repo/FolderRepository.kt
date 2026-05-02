@@ -2,6 +2,7 @@ package com.jvp.aladin_compose.repo
 
 import com.jvp.aladin_compose.api.ApiClient
 import com.jvp.aladin_compose.api.FolderCreateRequest
+import com.jvp.aladin_compose.api.FolderUpdateRequest
 import com.jvp.aladin_compose.api.UserArtifact
 import com.jvp.aladin_compose.api.UserArtifactCreateRequest
 import com.jvp.aladin_compose.model.Artifact
@@ -21,10 +22,9 @@ interface FolderRepository {
     suspend fun folder(id: String): FolderNode
     suspend fun folderBreadcrumbs(folderId: String?): List<BreadcrumbItem>
     suspend fun artifacts(folderId: String?): List<Artifact>
-    suspend fun artifact(id: String): Artifact
     suspend fun createFolder(parentId: String?, title: String): FolderNode
     suspend fun createArtifact(folderId: String?, title: String, kind: ArtifactKind = ArtifactKind.Note): Artifact
-    fun artifactResourceUrl(id: String): String
+    suspend fun renameFolder(folderId: String, title: String): FolderNode
 }
 
 class ApiFolderRepository : FolderRepository {
@@ -50,10 +50,6 @@ class ApiFolderRepository : FolderRepository {
         return ApiClient.getUserArtifacts(folderId).map(::toArtifact)
     }
 
-    override suspend fun artifact(id: String): Artifact {
-        return toArtifact(ApiClient.getUserArtifact(id))
-    }
-
     override suspend fun createFolder(parentId: String?, title: String): FolderNode {
         val created = ApiClient.createFolder(FolderCreateRequest(title = title, parentId = parentId))
         return FolderNode(created.id, created.parentId, created.title)
@@ -62,7 +58,7 @@ class ApiFolderRepository : FolderRepository {
     override suspend fun createArtifact(folderId: String?, title: String, kind: ArtifactKind): Artifact {
         val type =
             when (kind) {
-                ArtifactKind.Note -> "note"
+                ArtifactKind.Note -> "page"
                 ArtifactKind.Link -> "link"
                 ArtifactKind.Voice -> "voice"
                 ArtifactKind.File -> "file"
@@ -80,11 +76,15 @@ class ApiFolderRepository : FolderRepository {
         return toArtifact(created)
     }
 
-    override fun artifactResourceUrl(id: String): String = ApiClient.userArtifactResourceUrl(id)
+    override suspend fun renameFolder(folderId: String, title: String): FolderNode {
+        val updated = ApiClient.updateFolder(folderId, FolderUpdateRequest(title = title))
+        return FolderNode(updated.id, updated.parentId, updated.title)
+    }
 
     private fun toArtifact(record: UserArtifact): Artifact {
         val kind =
             when (record.type.lowercase()) {
+                "page" -> ArtifactKind.Note
                 "note" -> ArtifactKind.Note
                 "link" -> ArtifactKind.Link
                 "voice" -> ArtifactKind.Voice
@@ -107,7 +107,7 @@ class ApiFolderRepository : FolderRepository {
             updatedLabel = record.updatedAt,
             sourceUrl = record.sourceUrl,
             resourceUrl =
-                if (kind == ArtifactKind.Voice || kind == ArtifactKind.File) artifactResourceUrl(record.id)
+                if (kind == ArtifactKind.Voice || kind == ArtifactKind.File) ApiClient.userArtifactResourceUrl(record.id)
                 else null,
         )
     }
@@ -142,6 +142,7 @@ class ApiFolderRepository : FolderRepository {
 
     private fun artifactKind(type: String?): ArtifactKind {
         return when (type?.lowercase()) {
+            "page" -> ArtifactKind.Note
             "link" -> ArtifactKind.Link
             "voice" -> ArtifactKind.Voice
             "file" -> ArtifactKind.File

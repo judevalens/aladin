@@ -1,12 +1,6 @@
-import React from "react";
 import {createRoot, Root} from "react-dom/client";
 import App from "./App";
 import cssText from "./embed.css?inline";
-
-type ArtifactMountPayload = {
-    title?: string;
-    kind?: string;
-};
 
 const roots = new WeakMap<HTMLElement, Root>();
 const overlayRoots = new WeakMap<HTMLElement, HTMLElement>();
@@ -73,14 +67,22 @@ function ensureOverlayRoot(host: HTMLElement): HTMLElement {
 function mount(
     element: HTMLElement,
     bridge: Bridge,
-    title?: string,
+    pageId: string,
+    initialMarkdown: string,
+    isEditable: boolean,
 ) {
     ensureStyles(element);
     const overlayRoot = ensureOverlayRoot(element);
     const root = roots.get(element) ?? createRoot(element);
     roots.set(element, root);
     root.render(
-        <App widgetId={title} overlayRoot={overlayRoot} bridge={bridge}/>,
+        <App
+            pageId={pageId}
+            initialMarkdown={initialMarkdown}
+            isEditable={isEditable}
+            overlayRoot={overlayRoot}
+            bridge={bridge}
+        />,
     );
 }
 
@@ -96,27 +98,84 @@ function unmount(element: HTMLElement) {
 export type DocumentUpdatedEvent = {
     type: "documentUpdated";
     payload: {
+        pageId: string;
         markdown: string;
     };
 };
 
-export type Event = DocumentUpdatedEvent;
+export type FileUploadRequestedEvent = {
+    type: "fileUploadRequested";
+    payload: {
+        pageId: string;
+        requestId: string;
+        filename: string;
+        contentType?: string;
+        base64Data: string;
+    };
+};
+
+export type FileUploadCompletedEvent = {
+    type: "fileUploadCompleted";
+    payload: {
+        pageId: string;
+        requestId: string;
+        url: string;
+    };
+};
+
+export type FileUploadFailedEvent = {
+    type: "fileUploadFailed";
+    payload: {
+        pageId: string;
+        requestId: string;
+        message: string;
+    };
+};
+
+export type Event =
+    | DocumentUpdatedEvent
+    | FileUploadRequestedEvent
+    | FileUploadCompletedEvent
+    | FileUploadFailedEvent;
 
 export type Bridge = {
-    mount: (root: HTMLElement) => void;
+    mount: (root: HTMLElement, pageId: string, initialMarkdown: string, isEditable: boolean) => void;
     unmount: (root: HTMLElement) => void;
     kotlinEvent: (event: Event) => void;
     jsEvent: (event: Event) => void;
+    notifyFileUploadCompleted: (pageId: string, requestId: string, url: string) => void;
+    notifyFileUploadFailed: (pageId: string, requestId: string, message: string) => void;
 }
 
 function createBridge(jsEventHandler: (event: Event) => void): Bridge {
     let bridge = {
-        mount: (root: HTMLElement) => mount(root, bridge),
+        mount: (root: HTMLElement, pageId: string, initialMarkdown: string, isEditable: boolean) =>
+            mount(root, bridge, pageId, initialMarkdown, isEditable),
         unmount: unmount,
         kotlinEvent: (event: Event) => {
         },
         jsEvent: (event: Event) => {
             jsEventHandler(event);
+        },
+        notifyFileUploadCompleted: (pageId: string, requestId: string, url: string) => {
+            bridge.kotlinEvent({
+                type: "fileUploadCompleted",
+                payload: {
+                    pageId,
+                    requestId,
+                    url,
+                },
+            });
+        },
+        notifyFileUploadFailed: (pageId: string, requestId: string, message: string) => {
+            bridge.kotlinEvent({
+                type: "fileUploadFailed",
+                payload: {
+                    pageId,
+                    requestId,
+                    message,
+                },
+            });
         },
     };
     return bridge;

@@ -22,8 +22,6 @@ class FolderService(
     private var folderById: Map<String, FolderNode> = emptyMap()
     private var artifactPreviewById: Map<String, ArtifactPreview> = emptyMap()
 
-    private val artifactById = mutableMapOf<String, Artifact>()
-
     suspend fun prepareBrowser() {
         ensureTreeLoaded()
     }
@@ -36,7 +34,6 @@ class FolderService(
         parentById = emptyMap()
         folderById = emptyMap()
         artifactPreviewById = emptyMap()
-        artifactById.clear()
         ensureTreeLoaded()
     }
 
@@ -48,12 +45,6 @@ class FolderService(
     }
 
     fun artifactPreview(artifactId: String?): ArtifactPreview? = artifactId?.let { artifactPreviewById[it] }
-
-    suspend fun artifact(artifactId: String?): Artifact? {
-        val id = artifactId ?: return null
-        artifactById[id]?.let { return it }
-        return repository.artifact(id).also { artifactById[id] = it }
-    }
 
     suspend fun folderBreadcrumbs(folderId: String?): List<BreadcrumbItem> {
         ensureTreeLoaded()
@@ -97,6 +88,12 @@ class FolderService(
         ensureTreeLoaded()
         val siblingCount = treeChildren(folderId).count { it.kind == BrowserNodeKind.Artifact } + 1
         return repository.createArtifact(folderId, "New Artifact $siblingCount", kind)
+    }
+
+    suspend fun renameFolder(folderId: String, title: String): FolderNode {
+        val renamed = repository.renameFolder(folderId, title)
+        refreshBrowser()
+        return renamed
     }
 
     fun rootNodes(): List<BrowserTreeNode> = treeRoots

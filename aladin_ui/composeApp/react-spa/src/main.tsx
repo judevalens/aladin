@@ -5,6 +5,6 @@ import "./styles.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <App bridge={undefined} />
+    <App pageId="preview-page" initialMarkdown="Start writing here." isEditable={true} bridge={undefined} />
   </React.StrictMode>,
 );

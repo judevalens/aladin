@@ -47,7 +47,7 @@ func TestArtifactsCreate(t *testing.T) {
 	req := httptest.NewRequest(
 		http.MethodPost,
 		"/api/artifacts/",
-		strings.NewReader(`{"type":"note","title":"Rivian thesis","content":"Supply chain notes"}`),
+		strings.NewReader(`{"type":"page","title":"Rivian thesis","content":"Supply chain notes"}`),
 	)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -66,7 +66,7 @@ func TestBrowserTreeRoute(t *testing.T) {
 	t.Parallel()
 
 	artifactID := "artifact-1"
-	artifactType := "note"
+	artifactType := "page"
 	updatedAt := "2026-04-27T00:00:00Z"
 	server := NewWithDependencies(":0", app.StaticDependencies{
 		ArtifactsSvc: &fakeArtifactService{
@@ -251,6 +251,125 @@ func TestLegacyArtifactRoutesRemoved(t *testing.T) {
 	}
 }
 
+func TestPagesGet(t *testing.T) {
+	t.Parallel()
+
+	server := NewWithDependencies(":0", app.StaticDependencies{
+		PagesSvc: &fakePageService{
+			page: artifactservice.PageDocument{
+				ID:        "artifact-1",
+				Title:     "Memo",
+				Content:   "# Hello",
+				UpdatedAt: "2026-05-01T00:00:00Z",
+			},
+		},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/pages/artifact-1", nil)
+	rec := httptest.NewRecorder()
+
+	server.httpServer.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "\"content\":\"# Hello\"") {
+		t.Fatalf("body = %s, want page content", rec.Body.String())
+	}
+}
+
+func TestPagesSave(t *testing.T) {
+	t.Parallel()
+
+	service := &fakePageService{
+		page: artifactservice.PageDocument{
+			ID:        "artifact-1",
+			Title:     "Memo",
+			Content:   "updated markdown",
+			UpdatedAt: "2026-05-01T00:00:00Z",
+		},
+	}
+	server := NewWithDependencies(":0", app.StaticDependencies{PagesSvc: service})
+	req := httptest.NewRequest(http.MethodPatch, "/api/pages/artifact-1", strings.NewReader(`{"content":"updated markdown"}`))
+	rec := httptest.NewRecorder()
+
+	server.httpServer.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if service.saved == nil || service.saved.Content != "updated markdown" {
+		t.Fatalf("saved payload = %#v, want updated markdown", service.saved)
+	}
+}
+
+func TestFilesUpload(t *testing.T) {
+	t.Parallel()
+
+	service := &fakeFileService{}
+	server := NewWithDependencies(":0", app.StaticDependencies{FilesSvc: service})
+
+	var body strings.Builder
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "memo.txt")
+	if err != nil {
+		t.Fatalf("CreateFormFile error: %v", err)
+	}
+	if _, err := part.Write([]byte("hello")); err != nil {
+		t.Fatalf("write form file: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("writer close: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/files/upload", strings.NewReader(body.String()))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	rec := httptest.NewRecorder()
+
+	server.httpServer.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	if service.uploadInput == nil || service.uploadInput.Filename != "memo.txt" {
+		t.Fatalf("upload input = %#v, want memo.txt", service.uploadInput)
+	}
+}
+
+func TestFilesResourceRoute(t *testing.T) {
+	t.Parallel()
+
+	tmp, err := os.CreateTemp(t.TempDir(), "file-*.txt")
+	if err != nil {
+		t.Fatalf("CreateTemp: %v", err)
+	}
+	if _, err := tmp.WriteString("hello"); err != nil {
+		t.Fatalf("WriteString: %v", err)
+	}
+	if err := tmp.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	server := NewWithDependencies(":0", app.StaticDependencies{
+		FilesSvc: &fakeFileService{
+			resource: artifactservice.FileResource{
+				Path:        tmp.Name(),
+				ContentType: "text/plain",
+			},
+		},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/files/file-1/resource", nil)
+	rec := httptest.NewRecorder()
+
+	server.httpServer.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "text/plain") {
+		t.Fatalf("content-type = %q, want text/plain", contentType)
+	}
+}
+
 type fakeArtifactService struct {
 	list               []artifactservice.ArtifactResponse
 	listParams         *artifactservice.ArtifactListParams
@@ -260,6 +379,41 @@ type fakeArtifactService struct {
 	uploadInput        *artifactservice.ArtifactUploadInput
 	resource           artifactservice.ArtifactResource
 	createdFolderTitle string
+}
+
+type fakePageService struct {
+	page  artifactservice.PageDocument
+	saved *artifactservice.PageSaveInput
+}
+
+type fakeFileService struct {
+	uploadInput *artifactservice.FileUploadInput
+	resource    artifactservice.FileResource
+}
+
+func (f *fakePageService) Get(context.Context, string) (artifactservice.PageDocument, error) {
+	return f.page, nil
+}
+
+func (f *fakePageService) Save(_ context.Context, _ string, input artifactservice.PageSaveInput) (artifactservice.PageDocument, error) {
+	copyInput := input
+	f.saved = &copyInput
+	return f.page, nil
+}
+
+func (f *fakeFileService) Upload(_ context.Context, input artifactservice.FileUploadInput, body io.Reader) (artifactservice.FileRecord, error) {
+	_, _ = io.ReadAll(body)
+	copyInput := input
+	f.uploadInput = &copyInput
+	return artifactservice.FileRecord{
+		ID:         "file-uploaded",
+		URL:        "/api/files/file-uploaded/resource",
+		UploadedAt: "2026-05-01T00:00:00Z",
+	}, nil
+}
+
+func (f *fakeFileService) Resource(context.Context, string) (artifactservice.FileResource, error) {
+	return f.resource, nil
 }
 
 func (f *fakeArtifactService) List(_ context.Context, params artifactservice.ArtifactListParams) ([]artifactservice.ArtifactResponse, error) {
@@ -311,6 +465,10 @@ func (f *fakeArtifactService) FolderTree(context.Context) ([]artifactservice.Fol
 func (f *fakeArtifactService) CreateFolder(_ context.Context, title string, parentID *string) (artifactservice.FolderNode, error) {
 	f.createdFolderTitle = title
 	return artifactservice.FolderNode{ID: "folder-1", ParentID: parentID, Title: title}, nil
+}
+
+func (f *fakeArtifactService) UpdateFolder(context.Context, string, artifactservice.FolderPatch) (artifactservice.FolderNode, error) {
+	return artifactservice.FolderNode{}, artifactservice.ErrNotFound
 }
 
 func (f *fakeArtifactService) GetFolder(context.Context, string) (artifactservice.FolderNode, error) {

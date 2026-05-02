@@ -109,7 +109,7 @@ data class UserArtifact(
 
 @Serializable
 data class UserArtifactCreateRequest(
-    val type: String = "note",
+    val type: String = "page",
     val folderId: String? = null,
     val title: String = "",
     val content: String = "",
@@ -127,6 +127,26 @@ data class UserArtifactUpdateRequest(
     val summary: String? = null,
     val sourceUrl: String? = null,
     val metadata: Map<String, JsonElement>? = null,
+)
+
+@Serializable
+data class PageDocumentRecord(
+    val id: String,
+    val title: String,
+    val content: String,
+    val updatedAt: String,
+)
+
+@Serializable
+data class PageSaveRequest(
+    val content: String,
+)
+
+@Serializable
+data class UploadedFileRecord(
+    val id: String,
+    val url: String,
+    val uploadedAt: String,
 )
 
 @Serializable
@@ -155,6 +175,11 @@ data class FolderCreateRequest(
 )
 
 @Serializable
+data class FolderUpdateRequest(
+    val title: String,
+)
+
+@Serializable
 data class BreadcrumbRecord(
     val id: String? = null,
     val label: String,
@@ -168,4 +193,10 @@ data class UserArtifactUploadRequest(
     val title: String? = null,
     val summary: String? = null,
     val folderId: String? = null,
+)
+
+data class FileUploadRequest(
+    val filename: String,
+    val bytes: ByteArray,
+    val contentType: String? = null,
 )
