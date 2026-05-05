@@ -28,7 +28,8 @@ func (r *PostgresArtifactRepository) ListArtifacts(ctx context.Context, params a
 	query := `
 		SELECT a.id, n.parent_id, a.type, a.title,
 		       CASE WHEN a.type = 'page' THEN COALESCE(p.markdown, a.content) ELSE a.content END AS content,
-		       a.summary, a.source_url, a.metadata, a.created_at, a.updated_at
+		       a.summary, a.source_url, a.metadata, a.created_at, a.updated_at,
+		       COALESCE(p.revision, 0) AS revision
 		  FROM artifacts a
 		  JOIN tree_nodes n ON n.artifact_id = a.id AND n.user_id = a.user_id AND n.kind = 'artifact'
 		  LEFT JOIN page_documents p ON p.artifact_id = a.id
@@ -67,7 +68,8 @@ func (r *PostgresArtifactRepository) GetArtifact(ctx context.Context, id string)
 	row := r.pool.QueryRow(ctx, `
 		SELECT a.id, n.parent_id, a.type, a.title,
 		       CASE WHEN a.type = 'page' THEN COALESCE(p.markdown, a.content) ELSE a.content END AS content,
-		       a.summary, a.source_url, a.metadata, a.created_at, a.updated_at
+		       a.summary, a.source_url, a.metadata, a.created_at, a.updated_at,
+		       COALESCE(p.revision, 0) AS revision
 		  FROM artifacts a
 		  LEFT JOIN tree_nodes n ON n.artifact_id = a.id AND n.user_id = a.user_id AND n.kind = 'artifact'
 		  LEFT JOIN page_documents p ON p.artifact_id = a.id
@@ -163,6 +165,67 @@ func (r *PostgresArtifactRepository) SavePageDocument(ctx context.Context, artif
 		   SET content = $3,
 		       updated_at = now()
 		 WHERE id = $1 AND user_id = $2::uuid
+	`, artifactID, r.userID, markdown)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return artifactservice.ErrNotFound
+	}
+
+	return tx.Commit(ctx)
+}
+
+func (r *PostgresArtifactRepository) SavePageDocumentRevision(ctx context.Context, artifactID string, markdown string, revision int64) error {
+	if err := r.ensureDefaultUser(ctx); err != nil {
+		return err
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	tag, err := tx.Exec(ctx, `
+		UPDATE page_documents
+		   SET markdown = $2,
+		       revision = $3,
+		       updated_at = now()
+		 WHERE artifact_id = $1
+		   AND revision < $3
+	`, artifactID, markdown, revision)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		var exists bool
+		if err := tx.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1
+				  FROM artifacts a
+				  JOIN page_documents p ON p.artifact_id = a.id
+				 WHERE a.id = $1
+				   AND a.user_id = $2::uuid
+				   AND a.type = 'page'
+			)
+		`, artifactID, r.userID).Scan(&exists); err != nil {
+			return err
+		}
+		if !exists {
+			return artifactservice.ErrNotFound
+		}
+		return artifactservice.ErrConflict
+	}
+
+	tag, err = tx.Exec(ctx, `
+		UPDATE artifacts
+		   SET content = $3,
+		       updated_at = now()
+		 WHERE id = $1
+		   AND user_id = $2::uuid
+		   AND type = 'page'
 	`, artifactID, r.userID, markdown)
 	if err != nil {
 		return err
@@ -452,6 +515,7 @@ func scanArtifactResponse(row scanner) (artifactservice.ArtifactResponse, error)
 		&metadata,
 		&createdAt,
 		&updatedAt,
+		&rec.Revision,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

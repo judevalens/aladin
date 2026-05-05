@@ -260,6 +260,7 @@ func TestPagesGet(t *testing.T) {
 				ID:        "artifact-1",
 				Title:     "Memo",
 				Content:   "# Hello",
+				Revision:  7,
 				UpdatedAt: "2026-05-01T00:00:00Z",
 			},
 		},
@@ -275,6 +276,9 @@ func TestPagesGet(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "\"content\":\"# Hello\"") {
 		t.Fatalf("body = %s, want page content", rec.Body.String())
 	}
+	if !strings.Contains(rec.Body.String(), "\"revision\":7") {
+		t.Fatalf("body = %s, want page revision", rec.Body.String())
+	}
 }
 
 func TestPagesSave(t *testing.T) {
@@ -285,11 +289,12 @@ func TestPagesSave(t *testing.T) {
 			ID:        "artifact-1",
 			Title:     "Memo",
 			Content:   "updated markdown",
+			Revision:  2,
 			UpdatedAt: "2026-05-01T00:00:00Z",
 		},
 	}
 	server := NewWithDependencies(":0", app.StaticDependencies{PagesSvc: service})
-	req := httptest.NewRequest(http.MethodPatch, "/api/pages/artifact-1", strings.NewReader(`{"content":"updated markdown"}`))
+	req := httptest.NewRequest(http.MethodPatch, "/api/pages/artifact-1", strings.NewReader(`{"content":"updated markdown","revision":2}`))
 	rec := httptest.NewRecorder()
 
 	server.httpServer.Handler.ServeHTTP(rec, req)
@@ -299,6 +304,9 @@ func TestPagesSave(t *testing.T) {
 	}
 	if service.saved == nil || service.saved.Content != "updated markdown" {
 		t.Fatalf("saved payload = %#v, want updated markdown", service.saved)
+	}
+	if service.saved == nil || service.saved.Revision != 2 {
+		t.Fatalf("saved payload = %#v, want revision 2", service.saved)
 	}
 }
 

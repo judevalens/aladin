@@ -57,12 +57,17 @@ type ArtifactFileStore interface {
 }
 
 type DefaultArtifactService struct {
-	repo  ArtifactRepository
-	files ArtifactFileStore
+	repo     ArtifactRepository
+	files    ArtifactFileStore
+	realtime RealtimeEventService
 }
 
-func NewArtifactService(repo ArtifactRepository, files ArtifactFileStore) *DefaultArtifactService {
-	return &DefaultArtifactService{repo: repo, files: files}
+func NewArtifactService(repo ArtifactRepository, files ArtifactFileStore, realtime ...RealtimeEventService) *DefaultArtifactService {
+	var rt RealtimeEventService
+	if len(realtime) > 0 {
+		rt = realtime[0]
+	}
+	return &DefaultArtifactService{repo: repo, files: files, realtime: rt}
 }
 
 func (s *DefaultArtifactService) List(ctx context.Context, params ArtifactListParams) ([]ArtifactResponse, error) {
@@ -203,6 +208,7 @@ func (s *DefaultArtifactService) Create(ctx context.Context, payload ArtifactPay
 	}); err != nil {
 		return ArtifactResponse{}, err
 	}
+	s.publishWorkspaceEvent(ctx, "artifact", rec.ID, "created", rec)
 	return rec, nil
 }
 
@@ -280,14 +286,23 @@ func (s *DefaultArtifactService) Update(ctx context.Context, id string, patch Ar
 	if err := s.repo.UpdateArtifact(ctx, id, patch); err != nil {
 		return ArtifactResponse{}, err
 	}
-	return s.repo.GetArtifact(ctx, id)
+	updated, err := s.repo.GetArtifact(ctx, id)
+	if err != nil {
+		return ArtifactResponse{}, err
+	}
+	s.publishWorkspaceEvent(ctx, "artifact", updated.ID, "updated", updated)
+	return updated, nil
 }
 
 func (s *DefaultArtifactService) Delete(ctx context.Context, id string) error {
 	if strings.TrimSpace(id) == "" {
 		return ErrNotFound
 	}
-	return s.repo.DeleteArtifact(ctx, id)
+	if err := s.repo.DeleteArtifact(ctx, id); err != nil {
+		return err
+	}
+	s.publishWorkspaceEvent(ctx, "artifact", id, "deleted", map[string]string{"id": id})
+	return nil
 }
 
 func (s *DefaultArtifactService) Upload(ctx context.Context, input ArtifactUploadInput, body io.Reader) (ArtifactResponse, error) {
@@ -349,6 +364,7 @@ func (s *DefaultArtifactService) Upload(ctx context.Context, input ArtifactUploa
 	}); err != nil {
 		return ArtifactResponse{}, err
 	}
+	s.publishWorkspaceEvent(ctx, "artifact", rec.ID, "created", rec)
 	return rec, nil
 }
 
@@ -453,6 +469,7 @@ func (s *DefaultArtifactService) CreateFolder(ctx context.Context, title string,
 	}); err != nil {
 		return FolderNode{}, err
 	}
+	s.publishWorkspaceEvent(ctx, "folder", folder.ID, "created", folder)
 	return folder, nil
 }
 
@@ -470,7 +487,12 @@ func (s *DefaultArtifactService) UpdateFolder(ctx context.Context, id string, pa
 	if err := s.repo.UpdateFolderTitle(ctx, id, title); err != nil {
 		return FolderNode{}, err
 	}
-	return s.repo.GetFolder(ctx, id)
+	updated, err := s.repo.GetFolder(ctx, id)
+	if err != nil {
+		return FolderNode{}, err
+	}
+	s.publishWorkspaceEvent(ctx, "folder", updated.ID, "updated", updated)
+	return updated, nil
 }
 
 func (s *DefaultArtifactService) GetFolder(ctx context.Context, id string) (FolderNode, error) {
@@ -488,4 +510,17 @@ func (s *DefaultArtifactService) FolderBreadcrumbs(ctx context.Context, id strin
 		return nil, err
 	}
 	return s.repo.FolderBreadcrumbs(ctx, id)
+}
+
+func (s *DefaultArtifactService) publishWorkspaceEvent(ctx context.Context, resourceKind string, resourceID string, operation string, payload any) {
+	if s.realtime == nil {
+		return
+	}
+	_ = s.realtime.Publish(ctx, PublishTarget{
+		TenantID:     DefaultRealtimeTenantID,
+		Stream:       WorkspaceStream,
+		ResourceKind: resourceKind,
+		ResourceID:   resourceID,
+		Operation:    operation,
+	}, payload)
 }

@@ -28,7 +28,7 @@ sealed interface SidebarEvent {
     data object CreateArtifact : SidebarEvent
 }
 
-class DefaultSidebarProducer : SidebarProducer {
+class SidebarProducerImpl : SidebarProducer {
     @Composable
     override fun produce(
         selectedDestination: NavDestination,

@@ -134,12 +134,14 @@ data class PageDocumentRecord(
     val id: String,
     val title: String,
     val content: String,
+    val revision: Long,
     val updatedAt: String,
 )
 
 @Serializable
 data class PageSaveRequest(
     val content: String,
+    val revision: Long,
 )
 
 @Serializable

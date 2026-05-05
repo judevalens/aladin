@@ -11,6 +11,7 @@ type ArtifactResponse struct {
 	Metadata  map[string]any `json:"metadata"`
 	CreatedAt string         `json:"createdAt"`
 	UpdatedAt string         `json:"updatedAt"`
+	Revision  int64          `json:"-"`
 }
 
 type ArtifactPayload struct {

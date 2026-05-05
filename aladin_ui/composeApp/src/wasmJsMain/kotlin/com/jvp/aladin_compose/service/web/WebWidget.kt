@@ -52,7 +52,7 @@ interface PageEditorBridge {
     fun notifyFileUploadFailed(pageId: String, requestId: String, message: String)
 }
 
-class DefaultPageEditorBridge : PageEditorBridge {
+class PageEditorBridgeImpl : PageEditorBridge {
     private val bridgesByPageId = mutableMapOf<String, WebBridge>()
 
     override fun register(pageId: String, bridge: WebBridge) {
@@ -81,49 +81,49 @@ fun WebWidget(
     initialMarkdown: String,
     isEditable: Boolean,
     onDocumentUpdated: (pageId: String, markdown: String) -> Unit,
-    onFileUploadRequested: (
-        pageId: String,
-        requestId: String,
-        filename: String,
-        contentType: String?,
-        base64Data: String,
-    ) -> Unit,
+    onFileUploadRequested:
+        (
+            pageId: String,
+            requestId: String,
+            filename: String,
+            contentType: String?,
+            base64Data: String,
+        ) -> Unit,
     pageEditorBridge: PageEditorBridge,
     modifier: Modifier = Modifier,
 ) {
     val currentOnDocumentUpdated = rememberUpdatedState(onDocumentUpdated)
     val currentOnFileUploadRequested = rememberUpdatedState(onFileUploadRequested)
-    val bridge = remember(pageId) {
-        createBridge { event ->
-            when (event.type) {
-                "documentUpdated" -> {
-                    val payload = event.payload?.unsafeCast<DocumentUpdatedPayload>()
-                    val updatedPageId = payload?.pageId ?: pageId
-                    val markdown = payload?.markdown ?: return@createBridge
-                    currentOnDocumentUpdated.value(updatedPageId, markdown)
-                }
-                "fileUploadRequested" -> {
-                    val payload = event.payload?.unsafeCast<FileUploadRequestedPayload>()
-                    val updatedPageId = payload?.pageId ?: pageId
-                    val requestId = payload?.requestId ?: return@createBridge
-                    val filename = payload.filename
-                    val base64Data = payload.base64Data
-                    currentOnFileUploadRequested.value(
-                        updatedPageId,
-                        requestId,
-                        filename,
-                        payload.contentType,
-                        base64Data,
-                    )
+    val bridge =
+        remember(pageId) {
+            createBridge { event ->
+                when (event.type) {
+                    "documentUpdated" -> {
+                        val payload = event.payload?.unsafeCast<DocumentUpdatedPayload>()
+                        val updatedPageId = payload?.pageId ?: pageId
+                        val markdown = payload?.markdown ?: return@createBridge
+                        currentOnDocumentUpdated.value(updatedPageId, markdown)
+                    }
+                    "fileUploadRequested" -> {
+                        val payload = event.payload?.unsafeCast<FileUploadRequestedPayload>()
+                        val updatedPageId = payload?.pageId ?: pageId
+                        val requestId = payload?.requestId ?: return@createBridge
+                        val filename = payload.filename
+                        val base64Data = payload.base64Data
+                        currentOnFileUploadRequested.value(
+                            updatedPageId,
+                            requestId,
+                            filename,
+                            payload.contentType,
+                            base64Data,
+                        )
+                    }
                 }
             }
         }
-    }
     DisposableEffect(pageId, bridge, pageEditorBridge) {
         pageEditorBridge.register(pageId, bridge)
-        onDispose {
-            pageEditorBridge.unregister(pageId, bridge)
-        }
+        onDispose { pageEditorBridge.unregister(pageId, bridge) }
     }
     WebElementView(
         modifier = modifier,

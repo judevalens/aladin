@@ -1,0 +1,109 @@
+package service
+
+import (
+	"context"
+	"errors"
+	"testing"
+)
+
+func TestPageServiceGetLoadsPageDocument(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeArtifactRepository{
+		artifactByID: map[string]ArtifactResponse{
+			"artifact-1": {
+				ID:        "artifact-1",
+				Type:      "page",
+				Title:     "Memo",
+				Content:   "stale",
+				Revision:  3,
+				UpdatedAt: "2026-05-01T00:00:00Z",
+			},
+		},
+		pageContentByID: map[string]string{"artifact-1": "# Hello"},
+	}
+	svc := NewPageService(repo)
+
+	page, err := svc.Get(context.Background(), "artifact-1")
+	if err != nil {
+		t.Fatalf("Get error: %v", err)
+	}
+	if page.Content != "# Hello" {
+		t.Fatalf("content = %q, want # Hello", page.Content)
+	}
+	if page.Revision != 3 {
+		t.Fatalf("revision = %d, want 3", page.Revision)
+	}
+}
+
+func TestPageServiceSavePersistsMarkdown(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeArtifactRepository{
+		artifactByID: map[string]ArtifactResponse{
+			"artifact-1": {
+				ID:        "artifact-1",
+				Type:      "page",
+				Title:     "Memo",
+				Content:   "",
+				UpdatedAt: "2026-05-01T00:00:00Z",
+			},
+		},
+	}
+	svc := NewPageService(repo)
+
+	page, err := svc.Save(context.Background(), "artifact-1", PageSaveInput{Content: "", Revision: 1})
+	if err != nil {
+		t.Fatalf("Save error: %v", err)
+	}
+	if page.Content != "" {
+		t.Fatalf("content = %q, want empty markdown", page.Content)
+	}
+	if repo.pageContentByID["artifact-1"] != "" {
+		t.Fatalf("stored markdown = %q, want empty markdown", repo.pageContentByID["artifact-1"])
+	}
+}
+
+func TestPageServiceSaveRejectsStaleRevision(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeArtifactRepository{
+		artifactByID: map[string]ArtifactResponse{
+			"artifact-1": {
+				ID:       "artifact-1",
+				Type:     "page",
+				Title:    "Memo",
+				Revision: 3,
+			},
+		},
+	}
+	svc := NewPageService(repo)
+
+	_, err := svc.Save(context.Background(), "artifact-1", PageSaveInput{
+		Content:  "stale",
+		Revision: 3,
+	})
+	if !errors.Is(err, ErrConflict) {
+		t.Fatalf("Save error = %v, want ErrConflict", err)
+	}
+}
+
+func TestPageServiceRejectsNonPageArtifacts(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeArtifactRepository{
+		artifactByID: map[string]ArtifactResponse{
+			"artifact-1": {
+				ID:        "artifact-1",
+				Type:      "link",
+				Title:     "Saved",
+				UpdatedAt: "2026-05-01T00:00:00Z",
+			},
+		},
+	}
+	svc := NewPageService(repo)
+
+	if _, err := svc.Get(context.Background(), "artifact-1"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Get error = %v, want ErrNotFound", err)
+	}
+}

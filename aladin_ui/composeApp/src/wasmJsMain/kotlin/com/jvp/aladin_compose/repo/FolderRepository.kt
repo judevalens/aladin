@@ -6,10 +6,10 @@ import com.jvp.aladin_compose.api.FolderUpdateRequest
 import com.jvp.aladin_compose.api.UserArtifact
 import com.jvp.aladin_compose.api.UserArtifactCreateRequest
 import com.jvp.aladin_compose.model.Artifact
-import com.jvp.aladin_compose.model.ArtifactPreview
 import com.jvp.aladin_compose.model.ArtifactKind
-import com.jvp.aladin_compose.model.BrowserNodeKind
+import com.jvp.aladin_compose.model.ArtifactPreview
 import com.jvp.aladin_compose.model.BreadcrumbItem
+import com.jvp.aladin_compose.model.BrowserNodeKind
 import com.jvp.aladin_compose.model.BrowserTreeNode
 import com.jvp.aladin_compose.model.FolderNode
 import kotlinx.serialization.json.JsonElement
@@ -18,12 +18,23 @@ import kotlinx.serialization.json.contentOrNull
 
 interface FolderRepository {
     suspend fun browserTree(): List<BrowserTreeNode>
+
     suspend fun folders(parentId: String?): List<FolderNode>
+
     suspend fun folder(id: String): FolderNode
+
     suspend fun folderBreadcrumbs(folderId: String?): List<BreadcrumbItem>
+
     suspend fun artifacts(folderId: String?): List<Artifact>
+
     suspend fun createFolder(parentId: String?, title: String): FolderNode
-    suspend fun createArtifact(folderId: String?, title: String, kind: ArtifactKind = ArtifactKind.Note): Artifact
+
+    suspend fun createArtifact(
+        folderId: String?,
+        title: String,
+        kind: ArtifactKind = ArtifactKind.Note,
+    ): Artifact
+
     suspend fun renameFolder(folderId: String, title: String): FolderNode
 }
 
@@ -51,11 +62,16 @@ class ApiFolderRepository : FolderRepository {
     }
 
     override suspend fun createFolder(parentId: String?, title: String): FolderNode {
-        val created = ApiClient.createFolder(FolderCreateRequest(title = title, parentId = parentId))
+        val created =
+            ApiClient.createFolder(FolderCreateRequest(title = title, parentId = parentId))
         return FolderNode(created.id, created.parentId, created.title)
     }
 
-    override suspend fun createArtifact(folderId: String?, title: String, kind: ArtifactKind): Artifact {
+    override suspend fun createArtifact(
+        folderId: String?,
+        title: String,
+        kind: ArtifactKind,
+    ): Artifact {
         val type =
             when (kind) {
                 ArtifactKind.Note -> "page"
@@ -107,12 +123,15 @@ class ApiFolderRepository : FolderRepository {
             updatedLabel = record.updatedAt,
             sourceUrl = record.sourceUrl,
             resourceUrl =
-                if (kind == ArtifactKind.Voice || kind == ArtifactKind.File) ApiClient.userArtifactResourceUrl(record.id)
+                if (kind == ArtifactKind.Voice || kind == ArtifactKind.File)
+                    ApiClient.userArtifactResourceUrl(record.id)
                 else null,
         )
     }
 
-    private fun toBrowserTreeNode(record: com.jvp.aladin_compose.api.BrowserTreeRecord): BrowserTreeNode {
+    private fun toBrowserTreeNode(
+        record: com.jvp.aladin_compose.api.BrowserTreeRecord
+    ): BrowserTreeNode {
         val kind =
             when (record.kind.lowercase()) {
                 "folder" -> BrowserNodeKind.Folder

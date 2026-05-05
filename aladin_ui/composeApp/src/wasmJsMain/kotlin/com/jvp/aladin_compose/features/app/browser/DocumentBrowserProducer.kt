@@ -1,14 +1,14 @@
 package com.jvp.aladin_compose.features.app.browser
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.jvp.aladin_compose.features.app.BrowserRowKind
 import com.jvp.aladin_compose.features.app.BrowserRowMenuAction
-import com.jvp.aladin_compose.features.app.BrowserRowMenuActionTone
 import com.jvp.aladin_compose.features.app.BrowserRowMenuModel
 import com.jvp.aladin_compose.features.app.BrowserRowMenuSection
 import com.jvp.aladin_compose.model.BreadcrumbItem
@@ -16,8 +16,8 @@ import com.jvp.aladin_compose.model.ArtifactKind
 import com.jvp.aladin_compose.model.BrowserNodeKind
 import com.jvp.aladin_compose.model.BrowserTreeNode
 import com.jvp.aladin_compose.model.FolderNode
-import com.jvp.aladin_compose.service.ArtifactService
-import com.jvp.aladin_compose.service.FolderService
+import com.jvp.aladin_compose.repo.ArtifactRepository
+import com.jvp.aladin_compose.repo.FolderRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -63,9 +63,9 @@ sealed interface DocumentBrowserEvent {
     data object RetryLoad : DocumentBrowserEvent
 }
 
-class DefaultDocumentBrowserProducer(
-    private val service: FolderService,
-    private val artifactService: ArtifactService,
+class DocumentBrowserProducerImpl(
+    private val folderRepository: FolderRepository,
+    private val artifactRepository: ArtifactRepository,
     private val scope: CoroutineScope,
 ) : DocumentBrowserProducer {
     @Composable
@@ -77,69 +77,32 @@ class DefaultDocumentBrowserProducer(
         var currentScopeId by remember { mutableStateOf<String?>(null) }
         var scopeBackStack by remember { mutableStateOf<List<String?>>(emptyList()) }
         var expandedFolderIds by remember { mutableStateOf(emptySet<String>()) }
-        var refreshKey by remember { mutableStateOf(0) }
         var browserError by remember { mutableStateOf<String?>(null) }
         var hasLoadedRows by remember { mutableStateOf(false) }
         var activeRename by remember { mutableStateOf<BrowserRenameState?>(null) }
+        var tree by remember { mutableStateOf(emptyList<BrowserTreeNode>()) }
+        val breadcrumbs by artifactRepository.observeArtifactBreadcrumbs(activeArtifactId).collectAsState(initial = emptyList())
+        val scopeBreadcrumbs = buildFolderBreadcrumbs(tree, currentScopeId)
 
-        val focusedFolder =
-            produceState<FolderNode?>(initialValue = null, service, focusedFolderId, refreshKey) {
-                value =
-                    try {
-                        service.folder(focusedFolderId)
-                    } catch (_: Throwable) {
-                        null
-                    }
-            }.value
-        val breadcrumbs =
-            produceState(initialValue = emptyList(), service, activeArtifactId, refreshKey) {
-                value =
-                    try {
-                        if (activeArtifactId != null) {
-                            service.artifactBreadcrumbs(activeArtifactId)
-                        } else {
-                            emptyList()
-                        }
-                    } catch (_: Throwable) {
-                        emptyList()
-                    }
-            }.value
-        val scopeBreadcrumbs =
-            produceState(initialValue = emptyList(), service, currentScopeId, refreshKey) {
-                value =
-                    try {
-                        service.folderBreadcrumbs(currentScopeId)
-                    } catch (_: Throwable) {
-                        emptyList()
-                    }
-            }.value
+        LaunchedEffect(folderRepository) {
+            try {
+                browserError = null
+                tree = folderRepository.browserTree()
+                hasLoadedRows = true
+            } catch (t: Throwable) {
+                browserError = t.message ?: "Failed to load folders"
+                hasLoadedRows = true
+            }
+        }
+
         val rows =
-            produceState(
-                initialValue = emptyList(),
-                service,
-                expandedFolderIds,
-                focusedFolderId,
-                activeArtifactId,
-                currentScopeId,
-                refreshKey,
-            ) {
-                try {
-                    browserError = null
-                    service.prepareBrowser()
-                    value =
-                        buildBrowserRows(
-                            currentScopeId = currentScopeId,
-                            expandedFolderIds = expandedFolderIds,
-                            focusedFolderId = focusedFolderId,
-                            focusedArtifactId = activeArtifactId,
-                        )
-                    hasLoadedRows = true
-                } catch (t: Throwable) {
-                    browserError = t.message ?: "Failed to load folders"
-                    hasLoadedRows = true
-                    value = emptyList()
-                }
-            }.value
+            buildBrowserRows(
+                tree = tree,
+                currentScopeId = currentScopeId,
+                expandedFolderIds = expandedFolderIds,
+                focusedFolderId = focusedFolderId,
+                focusedArtifactId = activeArtifactId,
+            )
 
         return DocumentBrowserState(
             breadcrumbs = breadcrumbs,
@@ -154,17 +117,12 @@ class DefaultDocumentBrowserProducer(
                 when (event) {
                     is DocumentBrowserEvent.FocusFolder -> {
                         focusedFolderId = event.folderId
-                        scope.launch {
-                            expandedFolderIds = expandedFolderIds + service.ancestorFolderIds(event.folderId)
-                        }
+                        expandedFolderIds = expandedFolderIds + ancestorFolderIds(tree, event.folderId)
                     }
                     is DocumentBrowserEvent.OpenArtifact -> {
                         focusedFolderId = null
                         onOpenArtifact(event.artifactId)
-                        scope.launch {
-                            expandedFolderIds =
-                                expandedFolderIds + service.ancestorFolderIdsForArtifact(event.artifactId)
-                        }
+                        expandedFolderIds = expandedFolderIds + ancestorFolderIdsForArtifact(tree, event.artifactId)
                     }
                     is DocumentBrowserEvent.ToggleFolderExpanded -> {
                         if (event.depth >= DrillInDepth) {
@@ -190,22 +148,22 @@ class DefaultDocumentBrowserProducer(
                         focusedFolderId = event.folderId
                         currentScopeId = event.folderId
                         scopeBackStack = emptyList()
-                        scope.launch {
-                            expandedFolderIds = expandedFolderIds + service.ancestorFolderIds(event.folderId)
-                        }
+                        expandedFolderIds = expandedFolderIds + ancestorFolderIds(tree, event.folderId)
                     }
                     is DocumentBrowserEvent.CreateInFolder -> {
                         scope.launch {
                             when (event.option) {
                                 BrowserCreateOption.Folder -> {
                                     try {
-                                        val created = service.createFolder(event.folderId)
-                                        service.refreshBrowser()
+                                        val created =
+                                            folderRepository.createFolder(
+                                                event.folderId,
+                                                nextFolderTitle(tree, event.folderId),
+                                            )
+                                        tree = folderRepository.browserTree()
                                         browserError = null
                                         focusedFolderId = created.id
-                                        expandedFolderIds =
-                                            expandedFolderIds + service.ancestorFolderIds(created.id)
-                                        refreshKey += 1
+                                        expandedFolderIds = expandedFolderIds + ancestorFolderIds(tree, created.id)
                                     } catch (t: Throwable) {
                                         browserError = t.message ?: "Failed to create folder"
                                     }
@@ -218,14 +176,17 @@ class DefaultDocumentBrowserProducer(
                                                 BrowserCreateOption.Link -> ArtifactKind.Link
                                                 else -> ArtifactKind.Note
                                             }
-                                        val created = service.createArtifact(event.folderId, kind)
-                                        service.refreshBrowser()
+                                        val created =
+                                            folderRepository.createArtifact(
+                                                event.folderId,
+                                                nextArtifactTitle(tree, event.folderId),
+                                                kind,
+                                            )
+                                        tree = folderRepository.browserTree()
                                         browserError = null
                                         focusedFolderId = null
                                         onOpenArtifact(created.id)
-                                        expandedFolderIds =
-                                            expandedFolderIds + service.ancestorFolderIds(created.folderId)
-                                        refreshKey += 1
+                                        expandedFolderIds = expandedFolderIds + ancestorFolderIds(tree, created.folderId)
                                     } catch (t: Throwable) {
                                         browserError = t.message ?: "Failed to create artifact"
                                     }
@@ -257,7 +218,7 @@ class DefaultDocumentBrowserProducer(
                             setActiveRename = { activeRename = it },
                             setBrowserError = { browserError = it },
                             setFocusedFolderId = { focusedFolderId = it },
-                            refresh = { refreshKey += 1 },
+                            setTree = { tree = it },
                         )
                     }
                     is DocumentBrowserEvent.CancelRename -> {
@@ -267,13 +228,15 @@ class DefaultDocumentBrowserProducer(
                         scope.launch {
                             try {
                                 val targetFolderId = focusedFolderId ?: currentScopeId
-                                val created = service.createFolder(targetFolderId)
-                                service.refreshBrowser()
+                                val created =
+                                    folderRepository.createFolder(
+                                        targetFolderId,
+                                        nextFolderTitle(tree, targetFolderId),
+                                    )
+                                tree = folderRepository.browserTree()
                                 browserError = null
                                 focusedFolderId = created.id
-                                expandedFolderIds =
-                                    expandedFolderIds + service.ancestorFolderIds(created.id)
-                                refreshKey += 1
+                                expandedFolderIds = expandedFolderIds + ancestorFolderIds(tree, created.id)
                             } catch (t: Throwable) {
                                 browserError = t.message ?: "Failed to create folder"
                             }
@@ -283,14 +246,16 @@ class DefaultDocumentBrowserProducer(
                         scope.launch {
                             try {
                                 val targetFolderId = focusedFolderId ?: currentScopeId
-                                val created = service.createArtifact(targetFolderId)
-                                service.refreshBrowser()
+                                val created =
+                                    folderRepository.createArtifact(
+                                        targetFolderId,
+                                        nextArtifactTitle(tree, targetFolderId),
+                                    )
+                                tree = folderRepository.browserTree()
                                 browserError = null
                                 focusedFolderId = null
                                 onOpenArtifact(created.id)
-                                expandedFolderIds =
-                                    expandedFolderIds + service.ancestorFolderIds(created.folderId)
-                                refreshKey += 1
+                                expandedFolderIds = expandedFolderIds + ancestorFolderIds(tree, created.folderId)
                             } catch (t: Throwable) {
                                 browserError = t.message ?: "Failed to create artifact"
                             }
@@ -300,8 +265,14 @@ class DefaultDocumentBrowserProducer(
                         scope.launch {
                             browserError = null
                             hasLoadedRows = false
-                            service.refreshBrowser()
-                            refreshKey += 1
+                            try {
+                                tree = folderRepository.browserTree()
+                                browserError = null
+                            } catch (t: Throwable) {
+                                browserError = t.message ?: "Failed to load folders"
+                            } finally {
+                                hasLoadedRows = true
+                            }
                         }
                     }
                 }
@@ -310,6 +281,7 @@ class DefaultDocumentBrowserProducer(
     }
 
     private fun buildBrowserRows(
+        tree: List<BrowserTreeNode>,
         currentScopeId: String?,
         expandedFolderIds: Set<String>,
         focusedFolderId: String?,
@@ -318,7 +290,7 @@ class DefaultDocumentBrowserProducer(
         val rows = mutableListOf<BrowserTreeRow>()
 
         fun visit(parentId: String?, depth: Int, remainingDepth: Int) {
-            val nodes = service.treeChildren(parentId)
+            val nodes = tree.childrenOf(parentId)
             nodes.forEach { node ->
                 when (node.kind) {
                     BrowserNodeKind.Folder -> appendFolderNode(rows, node, depth, remainingDepth, expandedFolderIds, focusedFolderId, ::visit)
@@ -428,7 +400,7 @@ class DefaultDocumentBrowserProducer(
         setActiveRename: (BrowserRenameState?) -> Unit,
         setBrowserError: (String?) -> Unit,
         setFocusedFolderId: (String?) -> Unit,
-        refresh: () -> Unit,
+        setTree: (List<BrowserTreeNode>) -> Unit,
     ) {
         if (rename.saving) return
         val nextTitle = rename.draftTitle.trim()
@@ -441,17 +413,17 @@ class DefaultDocumentBrowserProducer(
             try {
                 when (rename.rowKind) {
                     BrowserRowKind.Folder -> {
-                        val renamed = service.renameFolder(rename.rowId, nextTitle)
+                        val renamed = folderRepository.renameFolder(rename.rowId, nextTitle)
                         setFocusedFolderId(renamed.id)
+                        setTree(folderRepository.browserTree())
                     }
                     BrowserRowKind.Artifact -> {
-                        artifactService.renameArtifact(rename.rowId, nextTitle)
-                        service.refreshBrowser()
+                        artifactRepository.renameArtifact(rename.rowId, nextTitle)
+                        setTree(folderRepository.browserTree())
                     }
                 }
                 setBrowserError(null)
                 setActiveRename(null)
-                refresh()
             } catch (t: Throwable) {
                 setBrowserError(t.message ?: "Failed to rename")
                 setActiveRename(rename.copy(draftTitle = nextTitle, saving = false))
@@ -462,4 +434,66 @@ class DefaultDocumentBrowserProducer(
     private companion object {
         const val RenameActionId = "rename"
     }
+}
+
+private fun ancestorFolderIds(tree: List<BrowserTreeNode>, id: String?): Set<String> {
+    val ids = linkedSetOf<String>()
+    var currentId = id
+    while (currentId != null) {
+        val current = tree.findNode { it.id == currentId } ?: break
+        if (current.kind == BrowserNodeKind.Folder) {
+            ids += current.id
+        }
+        currentId = current.parentId
+    }
+    return ids
+}
+
+private fun ancestorFolderIdsForArtifact(tree: List<BrowserTreeNode>, artifactId: String?): Set<String> {
+    val id = artifactId ?: return emptySet()
+    val node = tree.findNode { it.artifactPreview?.id == id || it.id == id } ?: return emptySet()
+    return ancestorFolderIds(tree, node.parentId)
+}
+
+private fun buildFolderBreadcrumbs(
+    tree: List<BrowserTreeNode>,
+    folderId: String?,
+): List<BreadcrumbItem> {
+    if (folderId == null) return listOf(BreadcrumbItem(id = null, label = "Folders"))
+    val folders = mutableListOf<BrowserTreeNode>()
+    var currentId: String? = folderId
+    while (currentId != null) {
+        val folder = tree.findNode { it.kind == BrowserNodeKind.Folder && it.id == currentId } ?: break
+        folders += folder
+        currentId = folder.parentId
+    }
+    return buildList {
+        add(BreadcrumbItem(id = null, label = "Folders"))
+        folders.asReversed().forEach { folder ->
+            add(BreadcrumbItem(id = folder.id, label = folder.title))
+        }
+    }
+}
+
+private fun nextFolderTitle(tree: List<BrowserTreeNode>, parentId: String?): String {
+    val count = tree.childrenOf(parentId).count { it.kind == BrowserNodeKind.Folder } + 1
+    return "New Folder $count"
+}
+
+private fun nextArtifactTitle(tree: List<BrowserTreeNode>, parentId: String?): String {
+    val count = tree.childrenOf(parentId).count { it.kind == BrowserNodeKind.Artifact } + 1
+    return "New Artifact $count"
+}
+
+private fun List<BrowserTreeNode>.childrenOf(parentId: String?): List<BrowserTreeNode> {
+    if (parentId == null) return this
+    return findNode { it.kind == BrowserNodeKind.Folder && it.id == parentId }?.children.orEmpty()
+}
+
+private fun List<BrowserTreeNode>.findNode(predicate: (BrowserTreeNode) -> Boolean): BrowserTreeNode? {
+    fun visit(node: BrowserTreeNode): BrowserTreeNode? {
+        if (predicate(node)) return node
+        return node.children.firstNotNullOfOrNull(::visit)
+    }
+    return firstNotNullOfOrNull(::visit)
 }

@@ -194,6 +194,27 @@ func (f *fakeArtifactRepository) SavePageDocument(_ context.Context, artifactID 
 	return nil
 }
 
+func (f *fakeArtifactRepository) SavePageDocumentRevision(_ context.Context, artifactID string, markdown string, revision int64) error {
+	if f.artifactByID == nil {
+		return ErrNotFound
+	}
+	rec, ok := f.artifactByID[artifactID]
+	if !ok {
+		return ErrNotFound
+	}
+	if rec.Revision >= revision {
+		return ErrConflict
+	}
+	if f.pageContentByID == nil {
+		f.pageContentByID = map[string]string{}
+	}
+	f.pageContentByID[artifactID] = markdown
+	rec.Content = markdown
+	rec.Revision = revision
+	f.artifactByID[artifactID] = rec
+	return nil
+}
+
 func (f *fakeArtifactRepository) DeleteArtifact(context.Context, string) error { return nil }
 
 func (f *fakeArtifactRepository) ListFolders(context.Context, *string) ([]FolderNode, error) {
