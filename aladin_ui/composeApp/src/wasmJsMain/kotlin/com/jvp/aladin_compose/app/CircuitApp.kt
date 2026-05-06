@@ -15,6 +15,7 @@ import com.jvp.aladin_compose.features.app.sidebar.SidebarProducerImpl
 import com.jvp.aladin_compose.repo.ApiFolderRepository
 import com.jvp.aladin_compose.repo.ArtifactRepositoryImpl
 import com.jvp.aladin_compose.repo.doa.InMemoryArtifactDoa
+import com.jvp.aladin_compose.service.BrowserVoiceCaptureService
 import com.jvp.aladin_compose.service.PageDocumentSyncerImpl
 import com.jvp.aladin_compose.service.web.PageEditorBridgeImpl
 import com.slack.circuit.foundation.Circuit
@@ -29,6 +30,7 @@ fun CircuitApp() {
         val artifactRepository = ArtifactRepositoryImpl(InMemoryArtifactDoa())
         val pageEditorBridge = PageEditorBridgeImpl()
         val pageDocumentSyncer = PageDocumentSyncerImpl(artifactRepository, scope)
+        val voiceCaptureService = BrowserVoiceCaptureService()
         Circuit.Builder()
             .addPresenterFactory(
                 AppPresenter.Factory(
@@ -37,6 +39,7 @@ fun CircuitApp() {
                         DocumentBrowserProducerImpl(
                             folderRepository = folderRepository,
                             artifactRepository = artifactRepository,
+                            voiceCaptureService = voiceCaptureService,
                             scope = scope,
                         ),
                     artifactPaneProducer =

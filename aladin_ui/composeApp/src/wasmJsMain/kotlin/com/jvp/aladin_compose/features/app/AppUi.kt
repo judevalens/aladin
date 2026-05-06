@@ -32,6 +32,7 @@ import com.jvp.aladin_compose.features.app.browser.DocumentBrowser
 import com.jvp.aladin_compose.features.app.browser.BrowserRenameDialogOverlay
 import com.jvp.aladin_compose.features.app.browser.DocumentBrowserEvent
 import com.jvp.aladin_compose.features.app.browser.DocumentBrowserState
+import com.jvp.aladin_compose.features.app.browser.VoiceCaptureDialogOverlay
 import com.jvp.aladin_compose.features.app.sidebar.AppSidebar
 import com.jvp.aladin_compose.model.NavDestination
 import com.jvp.aladin_compose.ui.screens.SourcesScreen
@@ -86,7 +87,10 @@ private class AppUi : Ui<AppState> {
                 }
             }
 
-            if (overlayMenu != null || state.browser.activeRename != null) {
+            if (overlayMenu != null ||
+                state.browser.activeRename != null ||
+                state.browser.activeVoiceCapture != null
+            ) {
                 AppOverlayViewport(
                     request = overlayMenu,
                     onDismiss = { overlayMenu = null },
@@ -165,6 +169,53 @@ private fun AppOverlayViewport(
                                     onCancel = {
                                         currentBrowser.eventSink(
                                             DocumentBrowserEvent.CancelRename(rename.rowId)
+                                        )
+                                    },
+                                )
+                            }
+                            currentBrowser.activeVoiceCapture?.let { capture ->
+                                VoiceCaptureDialogOverlay(
+                                    state = capture,
+                                    onBeginRecording = {
+                                        currentBrowser.eventSink(
+                                            DocumentBrowserEvent.BeginVoiceRecording
+                                        )
+                                    },
+                                    onStopRecording = {
+                                        currentBrowser.eventSink(
+                                            DocumentBrowserEvent.StopVoiceRecording
+                                        )
+                                    },
+                                    onTogglePlayback = {
+                                        currentBrowser.eventSink(
+                                            DocumentBrowserEvent.ToggleVoicePlayback
+                                        )
+                                    },
+                                    onSeekPlayback = { positionMs ->
+                                        currentBrowser.eventSink(
+                                            DocumentBrowserEvent.SeekVoicePlayback(positionMs)
+                                        )
+                                    },
+                                    onTitleChanged = { title ->
+                                        currentBrowser.eventSink(
+                                            DocumentBrowserEvent.VoiceCaptureTitleChanged(title)
+                                        )
+                                    },
+                                    onDescriptionChanged = { description ->
+                                        currentBrowser.eventSink(
+                                            DocumentBrowserEvent.VoiceCaptureDescriptionChanged(
+                                                description,
+                                            )
+                                        )
+                                    },
+                                    onSave = {
+                                        currentBrowser.eventSink(
+                                            DocumentBrowserEvent.SaveVoiceCapture
+                                        )
+                                    },
+                                    onCancel = {
+                                        currentBrowser.eventSink(
+                                            DocumentBrowserEvent.CancelVoiceCapture
                                         )
                                     },
                                 )
