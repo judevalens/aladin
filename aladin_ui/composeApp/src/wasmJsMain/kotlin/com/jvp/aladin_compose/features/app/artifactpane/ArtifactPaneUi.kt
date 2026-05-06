@@ -44,6 +44,7 @@ import com.jvp.aladin_compose.features.app.artifactpane.link.LinkUi
 import com.jvp.aladin_compose.features.app.artifactpane.page.PageEditorState
 import com.jvp.aladin_compose.features.app.artifactpane.page.PageUi
 import com.jvp.aladin_compose.features.app.artifactpane.page.PageStateEvent
+import com.jvp.aladin_compose.features.app.artifactpane.voice.VoiceUi
 import com.jvp.aladin_compose.model.Artifact
 import com.jvp.aladin_compose.model.ArtifactKind
 import com.jvp.aladin_compose.model.BreadcrumbItem
@@ -303,7 +304,27 @@ private fun ArtifactWorkspaceView(
                 )
             }
         }
-        ArtifactKind.Voice -> UnsupportedArtifactPane("Voice view coming next.")
+        ArtifactKind.Voice -> {
+            val voiceState = state.voices.activeVoice
+            if (voiceState != null) {
+                Box(
+                    modifier =
+                        modifier.fillMaxWidth()
+                            .padding(
+                                horizontal = if (state.inspectorOpen) 4.dp else 26.dp,
+                                vertical = 56.dp,
+                            ),
+                    contentAlignment = Alignment.TopCenter,
+                ) {
+                    VoiceUi(state = voiceState, modifier = Modifier.fillMaxSize())
+                }
+            } else {
+                PlaceholderPane(
+                    "Voice note unavailable",
+                    "The selected recording could not be prepared for playback.",
+                )
+            }
+        }
         ArtifactKind.File -> UnsupportedArtifactPane("File view coming next.")
     }
 }

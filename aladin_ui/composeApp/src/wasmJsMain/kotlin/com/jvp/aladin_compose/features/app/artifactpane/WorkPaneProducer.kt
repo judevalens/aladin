@@ -11,6 +11,8 @@ import com.jvp.aladin_compose.features.app.artifactpane.link.LinkProducerState
 import com.jvp.aladin_compose.features.app.artifactpane.link.LinkStateProducer
 import com.jvp.aladin_compose.features.app.artifactpane.page.PageProducerState
 import com.jvp.aladin_compose.features.app.artifactpane.page.PageStateProducer
+import com.jvp.aladin_compose.features.app.artifactpane.voice.VoiceProducerState
+import com.jvp.aladin_compose.features.app.artifactpane.voice.VoiceStateProducer
 import com.jvp.aladin_compose.model.Artifact
 import com.jvp.aladin_compose.model.ArtifactKind
 import com.jvp.aladin_compose.model.BreadcrumbItem
@@ -35,6 +37,7 @@ data class ArtifactPaneState(
     val breadcrumbs: List<BreadcrumbItem>,
     val pages: PageProducerState,
     val links: LinkProducerState,
+    val voices: VoiceProducerState,
     val activeInsight: ArtifactInsight?,
     val inspectorOpen: Boolean,
     val pageEditorBridge: PageEditorBridge,
@@ -53,6 +56,7 @@ class WorkPaneProducerImpl(
     private val artifactRepository: ArtifactRepository,
     private val pageStateProducer: PageStateProducer,
     private val linkStateProducer: LinkStateProducer,
+    private val voiceStateProducer: VoiceStateProducer,
     private val pageEditorBridge: PageEditorBridge,
 ) : WorkPaneProducer {
     @Composable
@@ -80,7 +84,7 @@ class WorkPaneProducerImpl(
         var inspectorOverrides by remember { mutableStateOf(emptyMap<String, Boolean>()) }
         val inspectorOpen =
             activeArtifact?.let { artifact ->
-                inspectorOverrides[artifact.id] ?: (artifact.kind == ArtifactKind.Link)
+                inspectorOverrides[artifact.id] ?: (artifact.kind == ArtifactKind.Link || artifact.kind == ArtifactKind.Voice)
             } ?: false
 
         val activeInsightFlow =
@@ -97,6 +101,11 @@ class WorkPaneProducerImpl(
                 openArtifacts = openArtifacts,
                 activeArtifactId = activeArtifactId,
             )
+        val voices =
+            voiceStateProducer.produce(
+                openArtifacts = openArtifacts,
+                activeArtifactId = activeArtifactId,
+            )
 
         return ArtifactPaneState(
             activeArtifact = activeArtifact,
@@ -104,6 +113,7 @@ class WorkPaneProducerImpl(
             breadcrumbs = breadcrumbs,
             pages = pages,
             links = links,
+            voices = voices,
             activeInsight = activeInsight,
             inspectorOpen = inspectorOpen,
             pageEditorBridge = pageEditorBridge,

@@ -28,7 +28,11 @@ interface ArtifactRepository {
 
     fun observeArtifactBreadcrumbs(id: String?): Flow<List<BreadcrumbItem>>
 
+    fun registerLocalArtifact(artifact: Artifact)
+
     fun linkContent(artifact: Artifact): Flow<LinkArtifactContent>
+
+    fun voiceContent(artifact: Artifact): Flow<VoiceArtifactContent>
 
     fun artifactInsight(artifact: Artifact): Flow<ArtifactInsight>
 
@@ -63,6 +67,16 @@ data class LinkArtifactContent(
     val statusLabel: String,
 )
 
+data class VoiceArtifactContent(
+    val artifactId: String,
+    val resourceUrl: String?,
+    val durationLabel: String,
+    val recordedAtLabel: String,
+    val transcript: String,
+    val userNotes: String,
+    val statusLabel: String,
+)
+
 data class ArtifactInsight(
     val artifactId: String,
     val summary: String?,
@@ -82,11 +96,12 @@ data class ArtifactMetadataItem(val label: String, val value: String)
 
 class ArtifactRepositoryImpl(val inMemoryArtifactDoa: ArtifactDoa) : ArtifactRepository {
 
+    private val localArtifactsById = mutableMapOf<String, Artifact>()
     val artifactFlow: MutableSharedFlow<Artifact> = MutableSharedFlow()
     val pageFLow: MutableSharedFlow<PageDocument> = MutableSharedFlow()
 
     override fun artifact(id: String): Flow<Artifact> = flow {
-        val artifact = inMemoryArtifactDoa.getArtifact(id)?.let(::userArtifactToArtifact)
+        val artifact = localArtifactsById[id] ?: inMemoryArtifactDoa.getArtifact(id)?.let(::userArtifactToArtifact)
         if (artifact != null) {
             emit(artifact)
             emitAll(artifactFlow.filter { it.id == id })
@@ -102,7 +117,8 @@ class ArtifactRepositoryImpl(val inMemoryArtifactDoa: ArtifactDoa) : ArtifactRep
         return flow {
             val initialArtifacts =
                 ids.mapNotNull {
-                        inMemoryArtifactDoa.getArtifact(it)?.let(::userArtifactToArtifact)
+                        localArtifactsById[it]
+                            ?: inMemoryArtifactDoa.getArtifact(it)?.let(::userArtifactToArtifact)
                     }
                     .associateBy { it.id }
 
@@ -122,7 +138,7 @@ class ArtifactRepositoryImpl(val inMemoryArtifactDoa: ArtifactDoa) : ArtifactRep
 
         return flow {
             val initialArtifact =
-                inMemoryArtifactDoa.getArtifact(id)?.let(::userArtifactToArtifact)
+                localArtifactsById[id] ?: inMemoryArtifactDoa.getArtifact(id)?.let(::userArtifactToArtifact)
                     ?: throw IllegalStateException("Artifact not found")
             emit(artifactBreadcrumbs(initialArtifact))
             val updateFlow =
@@ -131,6 +147,10 @@ class ArtifactRepositoryImpl(val inMemoryArtifactDoa: ArtifactDoa) : ArtifactRep
                     .map { artifact -> artifactBreadcrumbs(artifact) }
             emitAll(updateFlow)
         }
+    }
+
+    override fun registerLocalArtifact(artifact: Artifact) {
+        localArtifactsById[artifact.id] = artifact
     }
 
     override fun linkContent(artifact: Artifact): Flow<LinkArtifactContent> =
@@ -147,6 +167,21 @@ class ArtifactRepositoryImpl(val inMemoryArtifactDoa: ArtifactDoa) : ArtifactRep
                 userNotes =
                     "User notes will live with the link artifact. This keeps the source object independent while still letting pages embed it later.",
                 statusLabel = "Stub summary",
+            )
+        )
+
+    override fun voiceContent(artifact: Artifact): Flow<VoiceArtifactContent> =
+        flowOf(
+            VoiceArtifactContent(
+                artifactId = artifact.id,
+                resourceUrl = artifact.resourceUrl,
+                durationLabel = "04:12",
+                recordedAtLabel = artifact.updatedLabel,
+                transcript =
+                    "Transcript will appear here after voice transcription is wired. This stub is shaped like the final consumption surface: audio remains the source of truth, and text becomes searchable context.",
+                userNotes =
+                    "User notes can capture the interpretation or follow-up thought that belongs with this recording.",
+                statusLabel = "Transcript pending",
             )
         )
 

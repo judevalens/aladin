@@ -83,7 +83,6 @@ fun AppSidebar(
                                 BrowserRowMenuAction(
                                     id = "create:voice",
                                     label = "New voice",
-                                    enabled = false,
                                 ),
                                 BrowserRowMenuAction(
                                     id = "create:upload",
@@ -183,6 +182,7 @@ fun AppSidebar(
                                 "create:folder" -> state.eventSink(SidebarEvent.CreateFolder)
                                 "create:note",
                                 "create:link" -> state.eventSink(SidebarEvent.CreateArtifact)
+                                "create:voice" -> state.eventSink(SidebarEvent.CreateVoice)
                             }
                         },
                     )

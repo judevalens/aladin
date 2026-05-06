@@ -11,8 +11,10 @@ import com.jvp.aladin_compose.features.app.BrowserRowKind
 import com.jvp.aladin_compose.features.app.BrowserRowMenuAction
 import com.jvp.aladin_compose.features.app.BrowserRowMenuModel
 import com.jvp.aladin_compose.features.app.BrowserRowMenuSection
-import com.jvp.aladin_compose.model.BreadcrumbItem
+import com.jvp.aladin_compose.model.Artifact
 import com.jvp.aladin_compose.model.ArtifactKind
+import com.jvp.aladin_compose.model.ArtifactPreview
+import com.jvp.aladin_compose.model.BreadcrumbItem
 import com.jvp.aladin_compose.model.BrowserNodeKind
 import com.jvp.aladin_compose.model.BrowserTreeNode
 import com.jvp.aladin_compose.model.FolderNode
@@ -20,6 +22,7 @@ import com.jvp.aladin_compose.repo.ArtifactRepository
 import com.jvp.aladin_compose.repo.FolderRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import kotlin.random.Random
 
 private const val DrillInDepth = 2
 
@@ -59,6 +62,7 @@ sealed interface DocumentBrowserEvent {
     data class CancelRename(val rowId: String) : DocumentBrowserEvent
     data object CreateFolder : DocumentBrowserEvent
     data object CreateArtifact : DocumentBrowserEvent
+    data object CreateVoiceArtifact : DocumentBrowserEvent
     data object RetryLoad : DocumentBrowserEvent
 }
 
@@ -163,20 +167,27 @@ class DocumentBrowserProducerImpl(
                                     }
                                 }
                                 BrowserCreateOption.Note,
-                                BrowserCreateOption.Link -> {
+                                BrowserCreateOption.Link,
+                                BrowserCreateOption.Voice -> {
                                     try {
-                                        val kind =
-                                            when (event.option) {
-                                                BrowserCreateOption.Link -> ArtifactKind.Link
-                                                else -> ArtifactKind.Note
-                                            }
+                                        val kind = event.option.toArtifactKind()
+                                        val title = nextArtifactTitle(tree, event.folderId, kind)
                                         val created =
-                                            folderRepository.createArtifact(
-                                                event.folderId,
-                                                nextArtifactTitle(tree, event.folderId),
-                                                kind,
-                                            )
-                                        tree = folderRepository.browserTree()
+                                            if (kind == ArtifactKind.Voice) {
+                                                createLocalVoiceArtifact(event.folderId, title)
+                                            } else {
+                                                folderRepository.createArtifact(
+                                                    event.folderId,
+                                                    title,
+                                                    kind,
+                                                )
+                                            }
+                                        tree =
+                                            if (kind == ArtifactKind.Voice) {
+                                                tree.addLocalArtifactNode(created)
+                                            } else {
+                                                folderRepository.browserTree()
+                                            }
                                         browserError = null
                                         focusedFolderId = null
                                         onOpenArtifact(created.id)
@@ -185,7 +196,6 @@ class DocumentBrowserProducerImpl(
                                         browserError = t.message ?: "Failed to create artifact"
                                     }
                                 }
-                                BrowserCreateOption.Voice,
                                 BrowserCreateOption.Upload -> Unit
                             }
                         }
@@ -252,6 +262,25 @@ class DocumentBrowserProducerImpl(
                                 expandedFolderIds = expandedFolderIds + ancestorFolderIds(tree, created.folderId)
                             } catch (t: Throwable) {
                                 browserError = t.message ?: "Failed to create artifact"
+                            }
+                        }
+                    }
+                    DocumentBrowserEvent.CreateVoiceArtifact -> {
+                        scope.launch {
+                            try {
+                                val targetFolderId = focusedFolderId ?: currentScopeId
+                                val created =
+                                    createLocalVoiceArtifact(
+                                        targetFolderId,
+                                        nextArtifactTitle(tree, targetFolderId, ArtifactKind.Voice),
+                                    )
+                                tree = tree.addLocalArtifactNode(created)
+                                browserError = null
+                                focusedFolderId = null
+                                onOpenArtifact(created.id)
+                                expandedFolderIds = expandedFolderIds + ancestorFolderIds(tree, created.folderId)
+                            } catch (t: Throwable) {
+                                browserError = t.message ?: "Failed to create voice note"
                             }
                         }
                     }
@@ -355,7 +384,6 @@ class DocumentBrowserProducerImpl(
                                 BrowserRowMenuAction(
                                     id = createActionId(BrowserCreateOption.Voice),
                                     label = "New voice",
-                                    enabled = false,
                                 ),
                                 BrowserRowMenuAction(
                                     id = createActionId(BrowserCreateOption.Upload),
@@ -386,6 +414,22 @@ class DocumentBrowserProducerImpl(
     }
 
     private fun createActionId(option: BrowserCreateOption): String = "create:${option.name.lowercase()}"
+
+    private fun createLocalVoiceArtifact(folderId: String?, title: String): Artifact {
+        val artifact =
+            Artifact(
+                id = "local-voice-${Random.nextInt(100_000, 999_999)}",
+                folderId = folderId,
+                title = title,
+                content = "",
+                summary = "Recording capture will be wired in a backend pass.",
+                kind = ArtifactKind.Voice,
+                updatedLabel = "Just now",
+                resourceUrl = null,
+            )
+        artifactRepository.registerLocalArtifact(artifact)
+        return artifact
+    }
 
     private fun commitRename(
         rename: BrowserRenameState,
@@ -475,6 +519,56 @@ private fun nextFolderTitle(tree: List<BrowserTreeNode>, parentId: String?): Str
 private fun nextArtifactTitle(tree: List<BrowserTreeNode>, parentId: String?): String {
     val count = tree.childrenOf(parentId).count { it.kind == BrowserNodeKind.Artifact } + 1
     return "New Artifact $count"
+}
+
+private fun nextArtifactTitle(
+    tree: List<BrowserTreeNode>,
+    parentId: String?,
+    kind: ArtifactKind,
+): String {
+    val count =
+        tree.childrenOf(parentId).count {
+            it.kind == BrowserNodeKind.Artifact && it.artifactPreview?.kind == kind
+        } + 1
+    return when (kind) {
+        ArtifactKind.Note -> "New Note $count"
+        ArtifactKind.Link -> "New Link $count"
+        ArtifactKind.Voice -> "New Voice $count"
+        ArtifactKind.File -> "New File $count"
+    }
+}
+
+private fun BrowserCreateOption.toArtifactKind(): ArtifactKind =
+    when (this) {
+        BrowserCreateOption.Link -> ArtifactKind.Link
+        BrowserCreateOption.Voice -> ArtifactKind.Voice
+        else -> ArtifactKind.Note
+    }
+
+private fun List<BrowserTreeNode>.addLocalArtifactNode(artifact: Artifact): List<BrowserTreeNode> {
+    val node =
+        BrowserTreeNode(
+            id = artifact.id,
+            parentId = artifact.folderId,
+            kind = BrowserNodeKind.Artifact,
+            title = artifact.title,
+            artifactId = artifact.id,
+            artifactPreview =
+                ArtifactPreview(
+                    id = artifact.id,
+                    title = artifact.title,
+                    kind = artifact.kind,
+                    updatedLabel = artifact.updatedLabel,
+                ),
+        )
+    if (artifact.folderId == null) return this + node
+    return map { current ->
+        if (current.kind == BrowserNodeKind.Folder && current.id == artifact.folderId) {
+            current.copy(children = current.children + node)
+        } else {
+            current.copy(children = current.children.addLocalArtifactNode(artifact))
+        }
+    }
 }
 
 private fun List<BrowserTreeNode>.childrenOf(parentId: String?): List<BrowserTreeNode> {

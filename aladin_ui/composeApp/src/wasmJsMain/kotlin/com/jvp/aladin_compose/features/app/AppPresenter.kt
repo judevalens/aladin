@@ -39,6 +39,7 @@ class AppPresenter(
                 onNavigate = { destination = it },
                 onCreateFolder = { browser.eventSink(DocumentBrowserEvent.CreateFolder) },
                 onCreateArtifact = { browser.eventSink(DocumentBrowserEvent.CreateArtifact) },
+                onCreateVoice = { browser.eventSink(DocumentBrowserEvent.CreateVoiceArtifact) },
             )
 
         val artifactPane =

@@ -11,6 +11,7 @@ interface SidebarProducer {
         onNavigate: (NavDestination) -> Unit,
         onCreateFolder: () -> Unit,
         onCreateArtifact: () -> Unit,
+        onCreateVoice: () -> Unit,
     ): SidebarState
 }
 
@@ -26,6 +27,8 @@ sealed interface SidebarEvent {
     data object CreateFolder : SidebarEvent
 
     data object CreateArtifact : SidebarEvent
+
+    data object CreateVoice : SidebarEvent
 }
 
 class SidebarProducerImpl : SidebarProducer {
@@ -36,6 +39,7 @@ class SidebarProducerImpl : SidebarProducer {
         onNavigate: (NavDestination) -> Unit,
         onCreateFolder: () -> Unit,
         onCreateArtifact: () -> Unit,
+        onCreateVoice: () -> Unit,
     ): SidebarState {
         return SidebarState(
             selectedDestination = selectedDestination,
@@ -45,6 +49,7 @@ class SidebarProducerImpl : SidebarProducer {
                     is SidebarEvent.Navigate -> onNavigate(event.destination)
                     SidebarEvent.CreateFolder -> onCreateFolder()
                     SidebarEvent.CreateArtifact -> onCreateArtifact()
+                    SidebarEvent.CreateVoice -> onCreateVoice()
                 }
             },
         )

@@ -9,6 +9,7 @@ import com.jvp.aladin_compose.features.app.AppUiFactory
 import com.jvp.aladin_compose.features.app.artifactpane.WorkPaneProducerImpl
 import com.jvp.aladin_compose.features.app.artifactpane.link.LinkStateProducerImpl
 import com.jvp.aladin_compose.features.app.artifactpane.page.PageStateProducerImpl
+import com.jvp.aladin_compose.features.app.artifactpane.voice.VoiceStateProducerImpl
 import com.jvp.aladin_compose.features.app.browser.DocumentBrowserProducerImpl
 import com.jvp.aladin_compose.features.app.sidebar.SidebarProducerImpl
 import com.jvp.aladin_compose.repo.ApiFolderRepository
@@ -50,6 +51,8 @@ fun CircuitApp() {
                                 ),
                             linkStateProducer =
                                 LinkStateProducerImpl(artifactRepository = artifactRepository),
+                            voiceStateProducer =
+                                VoiceStateProducerImpl(artifactRepository = artifactRepository),
                             pageEditorBridge = pageEditorBridge,
                         ),
                 )
