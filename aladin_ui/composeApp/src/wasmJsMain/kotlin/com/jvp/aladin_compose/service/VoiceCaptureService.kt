@@ -21,6 +21,7 @@ data class VoiceCaptureResult(
     val base64Data: String,
     val contentType: String?,
     val durationMs: Long,
+    val waveformLevels: List<Float>,
 )
 
 interface VoicePlaybackHandle {
@@ -65,6 +66,7 @@ class BrowserVoiceCaptureService : VoiceCaptureService {
     }
 }
 
+@OptIn(ExperimentalWasmJsInterop::class)
 private class BrowserVoiceCaptureSession(private val session: BrowserVoiceCaptureHandle) :
     VoiceCaptureSession {
     override fun stop(
@@ -78,6 +80,7 @@ private class BrowserVoiceCaptureSession(private val session: BrowserVoiceCaptur
                         base64Data = result.base64Data,
                         contentType = result.contentType,
                         durationMs = result.durationMs.toLong(),
+                        waveformLevels = result.waveformLevels.toFloatList(),
                     )
                 )
             },
@@ -114,6 +117,7 @@ private external interface BrowserVoiceCaptureResult : JsAny {
     val base64Data: String
     val contentType: String?
     val durationMs: Double
+    val waveformLevels: JsArray<JsNumber>
 }
 
 @OptIn(ExperimentalWasmJsInterop::class)
@@ -173,6 +177,52 @@ private external interface BrowserVoicePlaybackInteropHandle : JsAny {
         rafId = requestAnimationFrame(tick);
       };
 
+      const fallbackWaveform = () => Array.from({ length: 42 }, () => 0);
+
+      const computeWaveform = async (blob) => {
+        let context = null;
+        try {
+          const buffer = await blob.arrayBuffer();
+          context = new AudioContext();
+          const decoded = await context.decodeAudioData(buffer.slice(0));
+          const channels = Math.max(1, decoded.numberOfChannels);
+          const sampleCount = decoded.length;
+          const bucketCount = 42;
+          const bucketSize = Math.max(1, Math.floor(sampleCount / bucketCount));
+          const levels = [];
+          let maxLevel = 0;
+
+          for (let bucket = 0; bucket < bucketCount; bucket++) {
+            const start = bucket * bucketSize;
+            const end = bucket === bucketCount - 1
+              ? sampleCount
+              : Math.min(sampleCount, start + bucketSize);
+            let sum = 0;
+            let count = 0;
+
+            for (let channel = 0; channel < channels; channel++) {
+              const data = decoded.getChannelData(channel);
+              for (let i = start; i < end; i++) {
+                const sample = data[i] || 0;
+                sum += sample * sample;
+                count++;
+              }
+            }
+
+            const rms = count > 0 ? Math.sqrt(sum / count) : 0;
+            levels.push(rms);
+            if (rms > maxLevel) maxLevel = rms;
+          }
+
+          if (maxLevel <= 0) return fallbackWaveform();
+          return levels.map((level) => Math.min(1, level / maxLevel));
+        } catch (_) {
+          return fallbackWaveform();
+        } finally {
+          if (context) context.close().catch(() => {});
+        }
+      };
+
       navigator.mediaDevices.getUserMedia({ audio: true })
         .then((nextStream) => {
           stream = nextStream;
@@ -212,13 +262,16 @@ private external interface BrowserVoicePlaybackInteropHandle : JsAny {
             const blob = new Blob(chunks, { type });
             const reader = new FileReader();
             reader.onloadend = () => {
-              cleanup();
               const value = String(reader.result || "");
               const base64Data = value.includes(",") ? value.substring(value.indexOf(",") + 1) : value;
-              onComplete({
-                base64Data,
-                contentType: type,
-                durationMs: Date.now() - startTime
+              computeWaveform(blob).then((waveformLevels) => {
+                cleanup();
+                onComplete({
+                  base64Data,
+                  contentType: type,
+                  durationMs: Date.now() - startTime,
+                  waveformLevels
+                });
               });
             };
             reader.onerror = () => {
@@ -300,3 +353,7 @@ private external fun createBrowserVoicePlayback(
     onEnded: () -> Unit,
     onError: (String) -> Unit,
 ): BrowserVoicePlaybackInteropHandle
+
+@OptIn(ExperimentalWasmJsInterop::class)
+private fun JsArray<JsNumber>.toFloatList(): List<Float> =
+    List(length) { index -> get(index)?.toDouble()?.toFloat() ?: 0f }

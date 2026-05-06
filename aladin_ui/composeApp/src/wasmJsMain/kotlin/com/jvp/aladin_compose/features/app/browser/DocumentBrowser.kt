@@ -43,8 +43,10 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.jvp.aladin_compose.features.app.BrowserRowContextMenu
@@ -373,6 +375,14 @@ fun BrowserRenameDialogOverlay(
 ) {
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(rename.rowId) { focusRequester.requestFocus() }
+    var inputValue by remember(rename.rowId) {
+        mutableStateOf(
+            TextFieldValue(
+                text = rename.draftTitle,
+                selection = TextRange(rename.draftTitle.length),
+            )
+        )
+    }
     val targetLabel = if (rename.rowKind == BrowserRowKind.Folder) "Folder" else "Artifact"
 
     Box(
@@ -438,10 +448,13 @@ fun BrowserRenameDialogOverlay(
             }
             HorizontalDivider(color = AladinColor.Divider)
             RenameCommandInput(
-                value = rename.draftTitle,
+                value = inputValue,
                 enabled = !rename.saving,
                 focusRequester = focusRequester,
-                onValueChange = onDraftChanged,
+                onValueChange = { nextValue ->
+                    inputValue = nextValue
+                    onDraftChanged(nextValue.text)
+                },
                 onCommit = onCommit,
                 onCancel = onCancel,
             )
@@ -488,10 +501,10 @@ fun BrowserRenameDialogOverlay(
 
 @Composable
 private fun RenameCommandInput(
-    value: String,
+    value: TextFieldValue,
     enabled: Boolean,
     focusRequester: FocusRequester,
-    onValueChange: (String) -> Unit,
+    onValueChange: (TextFieldValue) -> Unit,
     onCommit: () -> Unit,
     onCancel: () -> Unit,
 ) {

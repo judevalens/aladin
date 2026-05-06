@@ -35,8 +35,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -440,6 +442,14 @@ private fun VoiceTextField(
     minHeight: androidx.compose.ui.unit.Dp,
     onValueChange: (String) -> Unit,
 ) {
+    var inputValue by remember(label) {
+        mutableStateOf(
+            TextFieldValue(
+                text = value,
+                selection = TextRange(value.length),
+            )
+        )
+    }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
             text = label,
@@ -448,8 +458,11 @@ private fun VoiceTextField(
             fontWeight = FontWeight.SemiBold,
         )
         BasicTextField(
-            value = value,
-            onValueChange = onValueChange,
+            value = inputValue,
+            onValueChange = { nextValue ->
+                inputValue = nextValue
+                onValueChange(nextValue.text)
+            },
             enabled = enabled,
             singleLine = singleLine,
             textStyle =

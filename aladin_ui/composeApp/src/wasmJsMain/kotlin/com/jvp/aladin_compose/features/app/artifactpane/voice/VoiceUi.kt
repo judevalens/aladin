@@ -192,9 +192,9 @@ private fun AudioPlayer(resourceUrl: String?) {
     Box(
         modifier =
             Modifier.fillMaxWidth()
-                .height(42.dp)
+                .height(54.dp)
                 .background(AladinColor.CommandSurface, RoundedCornerShape(VoiceControlRadius))
-                .padding(horizontal = 8.dp, vertical = 6.dp),
+                .padding(horizontal = 10.dp, vertical = 9.dp),
         contentAlignment = Alignment.Center,
     ) {
         WebElementView(
@@ -202,7 +202,7 @@ private fun AudioPlayer(resourceUrl: String?) {
                 (document.createElement("audio") as HTMLElement).apply {
                     setAttribute("controls", "true")
                     setAttribute("src", resourceUrl)
-                    setAttribute("style", "width: 100%; height: 30px; display: block;")
+                    setAttribute("style", "width: 100%; height: 36px; display: block;")
                 }
             },
             modifier = Modifier.fillMaxSize(),

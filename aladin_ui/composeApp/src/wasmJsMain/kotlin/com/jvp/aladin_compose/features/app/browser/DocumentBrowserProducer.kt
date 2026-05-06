@@ -11,7 +11,6 @@ import com.jvp.aladin_compose.features.app.BrowserRowKind
 import com.jvp.aladin_compose.features.app.BrowserRowMenuAction
 import com.jvp.aladin_compose.features.app.BrowserRowMenuModel
 import com.jvp.aladin_compose.features.app.BrowserRowMenuSection
-import com.jvp.aladin_compose.model.Artifact
 import com.jvp.aladin_compose.model.ArtifactKind
 import com.jvp.aladin_compose.model.ArtifactPreview
 import com.jvp.aladin_compose.model.BreadcrumbItem
@@ -29,7 +28,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.random.Random
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 private const val DrillInDepth = 2
 
@@ -391,6 +391,9 @@ class DocumentBrowserProducerImpl(
                             onComplete = { result ->
                                 scope.launch {
                                     val playbackUrl = result.toPlaybackDataUrl()
+                                    val reviewWaveform =
+                                        result.waveformLevels.takeIf { it.isNotEmpty() }
+                                            ?: activeVoiceCapture?.levels.orEmpty()
                                     voiceCaptureResult = result
                                     voicePlaybackHandle?.dispose()
                                     voicePlaybackHandle =
@@ -427,6 +430,7 @@ class DocumentBrowserProducerImpl(
                                         activeVoiceCapture?.copy(
                                             phase = BrowserVoiceCapturePhase.Review,
                                             elapsedMs = result.durationMs,
+                                            levels = reviewWaveform,
                                             playbackUrl = playbackUrl,
                                             isPlaying = false,
                                             playbackPositionMs = 0,
@@ -492,6 +496,7 @@ class DocumentBrowserProducerImpl(
                     }
                     DocumentBrowserEvent.SaveVoiceCapture -> {
                         val capture = activeVoiceCapture ?: return@DocumentBrowserState
+                        val result = voiceCaptureResult ?: return@DocumentBrowserState
                         voicePlaybackHandle?.pause()
                         val targetFolderId = voiceCaptureTargetFolderId
                         val title =
@@ -500,24 +505,36 @@ class DocumentBrowserProducerImpl(
                             }
                         activeVoiceCapture = capture.copy(phase = BrowserVoiceCapturePhase.Saving)
                         scope.launch {
-                            val created =
-                                createLocalVoiceArtifact(
-                                    folderId = targetFolderId,
-                                    title = title,
-                                    summary = capture.description.trim().ifBlank { null },
-                                )
-                            tree = tree.addLocalArtifactNode(created)
-                            browserError = null
-                            focusedFolderId = null
-                            activeVoiceCapture = null
-                            voiceCaptureResult = null
-                            voiceCaptureTargetFolderId = null
-                            voiceCaptureSession = null
-                            voicePlaybackHandle?.dispose()
-                            voicePlaybackHandle = null
-                            onOpenArtifact(created.id)
-                            expandedFolderIds =
-                                expandedFolderIds + ancestorFolderIds(tree, created.folderId)
+                            try {
+                                val created =
+                                    artifactRepository.uploadArtifact(
+                                        kind = ArtifactKind.Voice,
+                                        filename = voiceCaptureFilename(title, result.contentType),
+                                        bytes = decodeBase64(result.base64Data),
+                                        contentType = result.contentType,
+                                        title = title,
+                                        summary = capture.description.trim().ifBlank { null },
+                                        folderId = targetFolderId,
+                                    )
+                                tree = folderRepository.browserTree()
+                                browserError = null
+                                focusedFolderId = null
+                                activeVoiceCapture = null
+                                voiceCaptureResult = null
+                                voiceCaptureTargetFolderId = null
+                                voiceCaptureSession = null
+                                voicePlaybackHandle?.dispose()
+                                voicePlaybackHandle = null
+                                onOpenArtifact(created.id)
+                                expandedFolderIds =
+                                    expandedFolderIds + ancestorFolderIds(tree, created.folderId)
+                            } catch (t: Throwable) {
+                                activeVoiceCapture =
+                                    capture.copy(
+                                        phase = BrowserVoiceCapturePhase.Review,
+                                        errorMessage = t.message ?: "Failed to save voice note",
+                                    )
+                            }
                         }
                     }
                     DocumentBrowserEvent.CancelVoiceCapture -> {
@@ -662,26 +679,6 @@ class DocumentBrowserProducerImpl(
 
     private fun createActionId(option: BrowserCreateOption): String = "create:${option.name.lowercase()}"
 
-    private fun createLocalVoiceArtifact(
-        folderId: String?,
-        title: String,
-        summary: String?,
-    ): Artifact {
-        val artifact =
-            Artifact(
-                id = "local-voice-${Random.nextInt(100_000, 999_999)}",
-                folderId = folderId,
-                title = title,
-                content = "",
-                summary = summary ?: "Recording capture will be wired in a backend pass.",
-                kind = ArtifactKind.Voice,
-                updatedLabel = "Just now",
-                resourceUrl = null,
-            )
-        artifactRepository.registerLocalArtifact(artifact)
-        return artifact
-    }
-
     private fun commitRename(
         rename: BrowserRenameState,
         setActiveRename: (BrowserRenameState?) -> Unit,
@@ -811,38 +808,32 @@ private fun VoiceCaptureResult.toPlaybackDataUrl(): String {
     return "data:$mediaType;base64,$base64Data"
 }
 
+private fun voiceCaptureFilename(title: String, contentType: String?): String {
+    val base =
+        title
+            .lowercase()
+            .replace(Regex("[^a-z0-9]+"), "-")
+            .trim('-')
+            .ifBlank { "voice-note" }
+    val extension =
+        when {
+            contentType?.contains("mp4", ignoreCase = true) == true -> "mp4"
+            contentType?.contains("mpeg", ignoreCase = true) == true -> "mp3"
+            contentType?.contains("ogg", ignoreCase = true) == true -> "ogg"
+            else -> "webm"
+        }
+    return "$base.$extension"
+}
+
+@OptIn(ExperimentalEncodingApi::class)
+private fun decodeBase64(value: String): ByteArray = Base64.decode(value)
+
 private fun BrowserCreateOption.toArtifactKind(): ArtifactKind =
     when (this) {
         BrowserCreateOption.Link -> ArtifactKind.Link
         BrowserCreateOption.Voice -> ArtifactKind.Voice
         else -> ArtifactKind.Note
     }
-
-private fun List<BrowserTreeNode>.addLocalArtifactNode(artifact: Artifact): List<BrowserTreeNode> {
-    val node =
-        BrowserTreeNode(
-            id = artifact.id,
-            parentId = artifact.folderId,
-            kind = BrowserNodeKind.Artifact,
-            title = artifact.title,
-            artifactId = artifact.id,
-            artifactPreview =
-                ArtifactPreview(
-                    id = artifact.id,
-                    title = artifact.title,
-                    kind = artifact.kind,
-                    updatedLabel = artifact.updatedLabel,
-                ),
-        )
-    if (artifact.folderId == null) return this + node
-    return map { current ->
-        if (current.kind == BrowserNodeKind.Folder && current.id == artifact.folderId) {
-            current.copy(children = current.children + node)
-        } else {
-            current.copy(children = current.children.addLocalArtifactNode(artifact))
-        }
-    }
-}
 
 private fun List<BrowserTreeNode>.childrenOf(parentId: String?): List<BrowserTreeNode> {
     if (parentId == null) return this

@@ -5,6 +5,7 @@ import com.jvp.aladin_compose.api.FileUploadRequest
 import com.jvp.aladin_compose.api.PageDocumentRecord
 import com.jvp.aladin_compose.api.UploadedFileRecord
 import com.jvp.aladin_compose.api.UserArtifact
+import com.jvp.aladin_compose.api.UserArtifactUploadRequest
 import com.jvp.aladin_compose.model.Artifact
 import com.jvp.aladin_compose.model.ArtifactKind
 import com.jvp.aladin_compose.model.BreadcrumbItem
@@ -43,6 +44,16 @@ interface ArtifactRepository {
     suspend fun renameArtifact(id: String, title: String): Artifact
 
     suspend fun uploadFile(filename: String, bytes: ByteArray, contentType: String?): UploadedFile
+
+    suspend fun uploadArtifact(
+        kind: ArtifactKind,
+        filename: String,
+        bytes: ByteArray,
+        contentType: String?,
+        title: String?,
+        summary: String?,
+        folderId: String?,
+    ): Artifact
 
     fun artifactResourceUrl(id: String): String
 }
@@ -272,6 +283,33 @@ class ArtifactRepositoryImpl(val inMemoryArtifactDoa: ArtifactDoa) : ArtifactRep
             )
         )
 
+    override suspend fun uploadArtifact(
+        kind: ArtifactKind,
+        filename: String,
+        bytes: ByteArray,
+        contentType: String?,
+        title: String?,
+        summary: String?,
+        folderId: String?,
+    ): Artifact {
+        val artifact =
+            userArtifactToArtifact(
+                ApiClient.uploadUserArtifact(
+                    UserArtifactUploadRequest(
+                        type = kind.toArtifactUploadType(),
+                        filename = filename,
+                        bytes = bytes,
+                        contentType = contentType,
+                        title = title,
+                        summary = summary,
+                        folderId = folderId,
+                    )
+                )
+            )
+        artifactFlow.emit(artifact)
+        return artifact
+    }
+
     override fun artifactResourceUrl(id: String): String = ApiClient.userArtifactResourceUrl(id)
 
     private fun toPageDocument(record: PageDocumentRecord): PageDocument =
@@ -296,6 +334,14 @@ class ArtifactRepositoryImpl(val inMemoryArtifactDoa: ArtifactDoa) : ArtifactRep
             BreadcrumbItem(id = artifact.id, label = artifact.title),
         )
 }
+
+private fun ArtifactKind.toArtifactUploadType(): String =
+    when (this) {
+        ArtifactKind.Voice -> "voice"
+        ArtifactKind.File -> "file"
+        ArtifactKind.Note -> "page"
+        ArtifactKind.Link -> "link"
+    }
 
 fun userArtifactToArtifact(record: UserArtifact): Artifact {
     val kind =
