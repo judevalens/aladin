@@ -62,6 +62,8 @@ Examples:
 
 Artifacts live inside sections from the user’s point of view.
 
+From the product point of view, an artifact is one concrete unit in the workspace. Internally, Aladin keeps the shared artifact envelope lightweight and lets type-specific content live in modular slices. A page, link, voice note, uploaded file, or future artifact type can therefore have different storage and behavior while still appearing as one artifact in the workspace.
+
 ### Signal
 
 A signal is a processed, meaningful event or surfaced unit derived from one or more artifacts.
@@ -154,6 +156,8 @@ User-created containers for organizing work. Sections are the primary user-facin
 
 Concrete captured or stored items within sections.
 
+Artifact metadata is shared across types, but artifact content is type-specific. Pages own markdown content, files own resource storage, and future link/voice/document types should keep their specialized state out of the shared artifact envelope.
+
 ### Graph / Context
 
 A global graph-backed context layer that improves retrieval, linking, and future LLM pipelines across all sections.
@@ -166,6 +170,8 @@ Examples:
 - markdown editor
 - graph explorer
 - mini React surfaces
+
+Specialist surfaces should behave like input/rendering adapters. Core product behavior such as document sync, persistence, upload workflow, and artifact state belongs in Kotlin and backend services.
 
 ## 8. Core User Loop
 
@@ -309,7 +315,22 @@ Show selected signal detail:
 
 Signals should default to a **curated update card** style rather than raw evidence first.
 
-## 14. Sources Experience
+## 14. Document / Page Editing
+
+Pages are the first artifact type with a full editing loop.
+
+The user experience should feel like a trustworthy document surface:
+- initial content loads before the editor mounts
+- typing should never reset or delete the live draft
+- autosave should be quiet and visible through lightweight metadata
+- stale saves should not overwrite newer document content
+- uploads should produce durable resource URLs, not temporary browser blob URLs
+
+The editor owns live draft text after mount. Kotlin owns page sync metadata such as load state, saved state, revision, upload state, and retry behavior. The backend owns durable content and rejects stale writes using a persisted page revision.
+
+This keeps business logic out of the JS editor while still allowing Aladin to use best-in-class browser editing libraries.
+
+## 15. Sources Experience
 
 Sources remain a dedicated operational area.
 
@@ -326,7 +347,7 @@ Show:
 
 Language should emphasize “live inputs” more than technical sync internals.
 
-## 15. Graph Experience
+## 16. Graph Experience
 
 Graph is a secondary analysis surface.
 
@@ -344,7 +365,7 @@ The graph should help users discover:
 - cross-section overlaps
 - contextual clusters
 
-## 16. Capture UX
+## 17. Capture UX
 
 Capture should remain globally reachable.
 
@@ -359,7 +380,7 @@ Recommended shell pattern:
 
 Captured artifacts should be easy to place into a section at creation time.
 
-## 17. Visual Direction
+## 18. Visual Direction
 
 Target:
 - **calm intelligence**
@@ -379,7 +400,7 @@ The interface should privilege:
 - reading
 - progressive discovery
 
-## 18. Acceptance Criteria
+## 19. Acceptance Criteria
 
 The redesign is correct if a user can:
 
@@ -387,11 +408,12 @@ The redesign is correct if a user can:
 2. Add artifacts into a section using note, link, or voice capture.
 3. Navigate section hierarchy through the middle pane with breadcrumbs.
 4. Open a section and view its artifacts and relevant signals in the right pane.
-5. Inspect signals separately in a dedicated Signals area.
-6. Understand that graph context is global across the workspace, not local to one section.
-7. Use the product without needing to understand graph internals or backend concepts.
+5. Open and edit a markdown page without the editor resetting while typing.
+6. Inspect signals separately in a dedicated Signals area.
+7. Understand that graph context is global across the workspace, not local to one section.
+8. Use the product without needing to understand graph internals or backend concepts.
 
-## 19. Assumptions and Defaults
+## 20. Assumptions and Defaults
 
 - Primary v1 audience: **founder / analyst**
 - Primary UX container: **Section**

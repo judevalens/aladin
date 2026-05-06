@@ -29,6 +29,8 @@ import androidx.compose.ui.window.ComposeViewport
 import com.jvp.aladin_compose.features.app.artifactpane.ArtifactPane
 import com.jvp.aladin_compose.features.app.artifactpane.ArtifactPaneState
 import com.jvp.aladin_compose.features.app.browser.DocumentBrowser
+import com.jvp.aladin_compose.features.app.browser.BrowserRenameDialogOverlay
+import com.jvp.aladin_compose.features.app.browser.DocumentBrowserEvent
 import com.jvp.aladin_compose.features.app.browser.DocumentBrowserState
 import com.jvp.aladin_compose.features.app.sidebar.AppSidebar
 import com.jvp.aladin_compose.model.NavDestination
@@ -84,10 +86,11 @@ private class AppUi : Ui<AppState> {
                 }
             }
 
-            if (overlayMenu != null) {
+            if (overlayMenu != null || state.browser.activeRename != null) {
                 AppOverlayViewport(
                     request = overlayMenu,
                     onDismiss = { overlayMenu = null },
+                    browser = state.browser,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -107,10 +110,12 @@ private fun Modifier.clearFocusOnAppTap(focusManager: FocusManager): Modifier =
 private fun AppOverlayViewport(
     request: BrowserRowMenuRequest?,
     onDismiss: () -> Unit,
+    browser: DocumentBrowserState,
     modifier: Modifier = Modifier,
 ) {
     val currentRequest by rememberUpdatedState(request)
     val currentOnDismiss by rememberUpdatedState(onDismiss)
+    val currentBrowser by rememberUpdatedState(browser)
 
     WebElementView(
         modifier = modifier,
@@ -139,6 +144,30 @@ private fun AppOverlayViewport(
                                         modifier = Modifier.fillMaxSize(),
                                     )
                                 }
+                            }
+                            currentBrowser.activeRename?.let { rename ->
+                                BrowserRenameDialogOverlay(
+                                    rename = rename,
+                                    errorMessage = currentBrowser.errorMessage,
+                                    onDraftChanged = { title ->
+                                        currentBrowser.eventSink(
+                                            DocumentBrowserEvent.RenameDraftChanged(
+                                                rename.rowId,
+                                                title,
+                                            )
+                                        )
+                                    },
+                                    onCommit = {
+                                        currentBrowser.eventSink(
+                                            DocumentBrowserEvent.CommitRename(rename.rowId)
+                                        )
+                                    },
+                                    onCancel = {
+                                        currentBrowser.eventSink(
+                                            DocumentBrowserEvent.CancelRename(rename.rowId)
+                                        )
+                                    },
+                                )
                             }
                         }
                     }

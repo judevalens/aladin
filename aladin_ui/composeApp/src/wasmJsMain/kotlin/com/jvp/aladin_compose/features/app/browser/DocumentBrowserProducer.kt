@@ -48,7 +48,6 @@ data class BrowserRenameState(
 )
 
 sealed interface DocumentBrowserEvent {
-    data class FocusFolder(val folderId: String) : DocumentBrowserEvent
     data class OpenArtifact(val artifactId: String) : DocumentBrowserEvent
     data class ToggleFolderExpanded(val folderId: String, val depth: Int) : DocumentBrowserEvent
     data class NavigateScope(val folderId: String?) : DocumentBrowserEvent
@@ -100,7 +99,6 @@ class DocumentBrowserProducerImpl(
                 tree = tree,
                 currentScopeId = currentScopeId,
                 expandedFolderIds = expandedFolderIds,
-                focusedFolderId = focusedFolderId,
                 focusedArtifactId = activeArtifactId,
             )
 
@@ -115,10 +113,6 @@ class DocumentBrowserProducerImpl(
             activeRename = activeRename,
             eventSink = { event ->
                 when (event) {
-                    is DocumentBrowserEvent.FocusFolder -> {
-                        focusedFolderId = event.folderId
-                        expandedFolderIds = expandedFolderIds + ancestorFolderIds(tree, event.folderId)
-                    }
                     is DocumentBrowserEvent.OpenArtifact -> {
                         focusedFolderId = null
                         onOpenArtifact(event.artifactId)
@@ -284,7 +278,6 @@ class DocumentBrowserProducerImpl(
         tree: List<BrowserTreeNode>,
         currentScopeId: String?,
         expandedFolderIds: Set<String>,
-        focusedFolderId: String?,
         focusedArtifactId: String?,
     ): List<BrowserTreeRow> {
         val rows = mutableListOf<BrowserTreeRow>()
@@ -293,7 +286,7 @@ class DocumentBrowserProducerImpl(
             val nodes = tree.childrenOf(parentId)
             nodes.forEach { node ->
                 when (node.kind) {
-                    BrowserNodeKind.Folder -> appendFolderNode(rows, node, depth, remainingDepth, expandedFolderIds, focusedFolderId, ::visit)
+                    BrowserNodeKind.Folder -> appendFolderNode(rows, node, depth, remainingDepth, expandedFolderIds, ::visit)
                     BrowserNodeKind.Artifact -> {
                         val preview = node.artifactPreview ?: return@forEach
                         rows +=
@@ -318,7 +311,6 @@ class DocumentBrowserProducerImpl(
         depth: Int,
         remainingDepth: Int,
         expandedFolderIds: Set<String>,
-        focusedFolderId: String?,
         visit: (String?, Int, Int) -> Unit,
     ) {
         val folder = FolderNode(id = node.id, parentId = node.parentId, title = node.title)
@@ -331,7 +323,7 @@ class DocumentBrowserProducerImpl(
                 depth = depth,
                 expanded = expanded,
                 expandable = expandable,
-                selected = node.id == focusedFolderId,
+                selected = false,
                 menu = folderMenu(node.id),
             )
 

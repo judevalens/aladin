@@ -37,16 +37,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.jvp.aladin_compose.features.app.BrowserRowContextMenu
@@ -74,6 +72,8 @@ private val BrowserIconSize = 15.dp
 private val BrowserChevronSize = 16.dp
 private val BrowserMarkerHeight = 20.dp
 private val BrowserIndent = 16.dp
+private val RenameSheetWidth = 368.dp
+private val RenameInputHeight = 38.dp
 
 @Composable
 fun DocumentBrowser(
@@ -85,7 +85,7 @@ fun DocumentBrowser(
         LoadingState()
         return
     }
-    if (state.errorMessage != null) {
+    if (state.errorMessage != null && state.activeRename == null) {
         ErrorState(state.errorMessage) { state.eventSink(DocumentBrowserEvent.RetryLoad) }
         return
     }
@@ -111,12 +111,7 @@ fun DocumentBrowser(
                             depth = row.depth,
                             expanded = row.expanded,
                             expandable = row.expandable,
-                            selected = row.selected,
                             menu = row.menu,
-                            rename =
-                                state.activeRename?.takeIf {
-                                    it.rowKind == BrowserRowKind.Folder && it.rowId == row.folder.id
-                                },
                             onToggleExpanded = {
                                 onDismissRowMenu()
                                 state.eventSink(
@@ -128,15 +123,12 @@ fun DocumentBrowser(
                             },
                             onClick = {
                                 onDismissRowMenu()
-                                state.eventSink(DocumentBrowserEvent.FocusFolder(row.folder.id))
-                                if (row.expandable) {
-                                    state.eventSink(
-                                        DocumentBrowserEvent.ToggleFolderExpanded(
-                                            row.folder.id,
-                                            row.depth,
-                                        )
+                                state.eventSink(
+                                    DocumentBrowserEvent.ToggleFolderExpanded(
+                                        row.folder.id,
+                                        row.depth,
                                     )
-                                }
+                                )
                             },
                             onMenuAction = { option ->
                                 state.eventSink(
@@ -153,17 +145,6 @@ fun DocumentBrowser(
                                     )
                                 )
                             },
-                            onRenameDraftChanged = { title ->
-                                state.eventSink(
-                                    DocumentBrowserEvent.RenameDraftChanged(row.folder.id, title)
-                                )
-                            },
-                            onCommitRename = {
-                                state.eventSink(DocumentBrowserEvent.CommitRename(row.folder.id))
-                            },
-                            onCancelRename = {
-                                state.eventSink(DocumentBrowserEvent.CancelRename(row.folder.id))
-                            },
                             onOpenMenu = onOpenRowMenu,
                         )
                     is BrowserTreeRow.Artifact ->
@@ -172,11 +153,6 @@ fun DocumentBrowser(
                             depth = row.depth,
                             selected = row.selected,
                             menu = row.menu,
-                            rename =
-                                state.activeRename?.takeIf {
-                                    it.rowKind == BrowserRowKind.Artifact &&
-                                        it.rowId == row.artifact.id
-                                },
                             onClick = {
                                 onDismissRowMenu()
                                 state.eventSink(DocumentBrowserEvent.OpenArtifact(row.artifact.id))
@@ -190,17 +166,6 @@ fun DocumentBrowser(
                                         row.artifact.title,
                                     )
                                 )
-                            },
-                            onRenameDraftChanged = { title ->
-                                state.eventSink(
-                                    DocumentBrowserEvent.RenameDraftChanged(row.artifact.id, title)
-                                )
-                            },
-                            onCommitRename = {
-                                state.eventSink(DocumentBrowserEvent.CommitRename(row.artifact.id))
-                            },
-                            onCancelRename = {
-                                state.eventSink(DocumentBrowserEvent.CancelRename(row.artifact.id))
                             },
                             onOpenMenu = onOpenRowMenu,
                         )
@@ -342,21 +307,15 @@ private fun BrowserArtifactRow(
     depth: Int,
     selected: Boolean,
     menu: BrowserRowMenuModel,
-    rename: BrowserRenameState?,
     onClick: () -> Unit,
     onStartRename: () -> Unit,
-    onRenameDraftChanged: (String) -> Unit,
-    onCommitRename: () -> Unit,
-    onCancelRename: () -> Unit,
     onOpenMenu: (BrowserRowMenuRequest) -> Unit,
 ) {
-    val isRenaming = rename != null
     Row(
         modifier =
             Modifier.fillMaxWidth()
                 .padding(start = treeIndent(depth))
                 .aladinClickable(
-                    enabled = !isRenaming,
                     selected = selected,
                     shape = RoundedCornerShape(ControlRadius),
                     colors =
@@ -378,17 +337,7 @@ private fun BrowserArtifactRow(
         RowSelectionMarker(selected = selected)
         ArtifactGlyph(artifact.kind, selected = selected)
         Column(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.weight(1f)) {
-            if (rename != null) {
-                RenameTitleField(
-                    rename = rename,
-                    selected = selected,
-                    onDraftChanged = onRenameDraftChanged,
-                    onCommit = onCommitRename,
-                    onCancel = onCancelRename,
-                )
-            } else {
-                BrowserRowTitle(title = artifact.title, selected = selected)
-            }
+            BrowserRowTitle(title = artifact.title, selected = selected)
         }
         BrowserRowContextMenu(
             menu = menu,
@@ -415,94 +364,246 @@ private fun BrowserRowTitle(title: String, selected: Boolean) {
 }
 
 @Composable
-private fun RenameTitleField(
+fun BrowserRenameDialogOverlay(
     rename: BrowserRenameState,
-    selected: Boolean,
+    errorMessage: String?,
     onDraftChanged: (String) -> Unit,
     onCommit: () -> Unit,
     onCancel: () -> Unit,
 ) {
     val focusRequester = remember { FocusRequester() }
-    val fieldShape = RoundedCornerShape(5.dp)
-    var hadFocus by remember(rename.rowId) { mutableStateOf(false) }
-    var cancelled by remember(rename.rowId) { mutableStateOf(false) }
-    var fieldValue by
-        remember(rename.rowId) {
-            mutableStateOf(
-                TextFieldValue(
-                    text = rename.draftTitle,
-                    selection = TextRange(0, rename.draftTitle.length),
-                )
-            )
-        }
-
     LaunchedEffect(rename.rowId) { focusRequester.requestFocus() }
+    val targetLabel = if (rename.rowKind == BrowserRowKind.Folder) "Folder" else "Artifact"
 
+    Box(
+        modifier =
+            Modifier.fillMaxSize()
+                .background(AladinColor.Ink.copy(alpha = 0.16f))
+                .aladinClickable(
+                    shape = RoundedCornerShape(0.dp),
+                    colors =
+                        AladinInteractionDefaults.colors(
+                            rest = Color.Transparent,
+                            hovered = Color.Transparent,
+                            pressed = Color.Transparent,
+                        ),
+                    onClick = {
+                        if (!rename.saving) onCancel()
+                    },
+                ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier =
+                Modifier.width(RenameSheetWidth)
+                    .aladinClickable(
+                        shape = RoundedCornerShape(ControlRadius),
+                        colors =
+                            AladinInteractionDefaults.colors(
+                                rest = Color.Transparent,
+                                hovered = Color.Transparent,
+                                pressed = Color.Transparent,
+                            ),
+                        onClick = {},
+                    )
+                    .border(1.dp, AladinColor.Border, RoundedCornerShape(ControlRadius))
+                    .background(AladinColor.Panel, RoundedCornerShape(ControlRadius))
+                    .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = "Rename",
+                        color = AladinColor.Ink,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = targetLabel.uppercase(),
+                        color = AladinColor.CodeText,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+                Text(
+                    text = "esc cancels",
+                    color = AladinColor.InkMuted,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
+            HorizontalDivider(color = AladinColor.Divider)
+            RenameCommandInput(
+                value = rename.draftTitle,
+                enabled = !rename.saving,
+                focusRequester = focusRequester,
+                onValueChange = onDraftChanged,
+                onCommit = onCommit,
+                onCancel = onCancel,
+            )
+            if (errorMessage != null) {
+                Text(
+                    text = errorMessage,
+                    color = AladinColor.Ink,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier =
+                        Modifier.fillMaxWidth()
+                            .border(1.dp, AladinColor.Border, RoundedCornerShape(SharpRadius))
+                            .background(AladinColor.ControlHover, RoundedCornerShape(SharpRadius))
+                            .padding(horizontal = 8.dp, vertical = 7.dp),
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Enter saves",
+                    color = AladinColor.InkMuted,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    RenameDialogButton(
+                        label = "Cancel",
+                        enabled = !rename.saving,
+                        primary = false,
+                        onClick = onCancel,
+                    )
+                    RenameDialogButton(
+                        label = if (rename.saving) "Saving" else "Save",
+                        enabled = !rename.saving,
+                        primary = true,
+                        onClick = onCommit,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RenameCommandInput(
+    value: String,
+    enabled: Boolean,
+    focusRequester: FocusRequester,
+    onValueChange: (String) -> Unit,
+    onCommit: () -> Unit,
+    onCancel: () -> Unit,
+) {
     BasicTextField(
-        value = fieldValue,
-        onValueChange = { next ->
-            fieldValue = next
-            onDraftChanged(next.text)
-        },
+        value = value,
+        onValueChange = onValueChange,
+        enabled = enabled,
         singleLine = true,
-        enabled = !rename.saving,
         textStyle =
-            MaterialTheme.typography.bodyMedium.copy(
-                color = if (rename.saving) AladinColor.InkMuted else AladinColor.Ink,
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            TextStyle(
+                color = if (enabled) AladinColor.Ink else AladinColor.InkMuted,
+                fontWeight = FontWeight.Medium,
             ),
         modifier =
             Modifier.fillMaxWidth()
+                .height(RenameInputHeight)
                 .focusRequester(focusRequester)
-                .onFocusChanged { focus ->
-                    if (focus.isFocused) {
-                        hadFocus = true
-                    } else if (hadFocus && !cancelled) {
-                        onCommit()
-                    }
-                }
                 .onPreviewKeyEvent { event ->
-                    if (event.type != KeyEventType.KeyDown) {
-                        return@onPreviewKeyEvent false
-                    }
+                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                     when (event.key) {
                         Key.Enter -> {
                             onCommit()
                             true
                         }
                         Key.Escape -> {
-                            cancelled = true
                             onCancel()
                             true
                         }
                         else -> false
                     }
-                }
-                .background(AladinColor.Panel, fieldShape),
+                },
         decorationBox = { innerTextField ->
             Row(
                 modifier =
-                    Modifier.fillMaxWidth()
-                        .border(
-                            0.5.dp,
-                            if (selected) AladinColor.Border else AladinColor.Divider,
-                            fieldShape,
-                        )
-                        .background(AladinColor.Panel, fieldShape)
-                        .padding(horizontal = 6.dp, vertical = 6.dp),
+                    Modifier.fillMaxSize()
+                        .border(1.dp, AladinColor.Border, RoundedCornerShape(SharpRadius))
+                        .background(AladinColor.CommandSurface, RoundedCornerShape(SharpRadius))
+                        .padding(horizontal = 9.dp),
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
             ) {
                 Box(
                     modifier =
                         Modifier.width(2.dp)
-                            .height(16.dp)
+                            .height(18.dp)
                             .background(AladinColor.ActiveMarker, RoundedCornerShape(999.dp))
                 )
-                Spacer(modifier = Modifier.width(6.dp))
                 Box(modifier = Modifier.weight(1f)) { innerTextField() }
             }
         },
     )
+}
+
+@Composable
+private fun RenameDialogButton(
+    label: String,
+    enabled: Boolean,
+    primary: Boolean,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(SharpRadius)
+    Box(
+        modifier =
+            Modifier.height(30.dp)
+                .border(
+                    1.dp,
+                    if (primary) AladinColor.InkSurface else AladinColor.Border,
+                    shape,
+                )
+                .background(
+                    when {
+                        !enabled -> AladinColor.ControlHover
+                        primary -> AladinColor.InkSurface
+                        else -> AladinColor.Panel
+                    },
+                    shape,
+                )
+                .then(
+                    if (enabled) {
+                        Modifier.aladinClickable(
+                            shape = shape,
+                            colors =
+                                AladinInteractionDefaults.colors(
+                                    rest = Color.Transparent,
+                                    hovered =
+                                        if (primary) AladinColor.InkSurfaceHover
+                                        else AladinColor.ControlHover,
+                                    pressed =
+                                        if (primary) AladinColor.InkSurfaceHover
+                                        else AladinColor.ControlPressed,
+                                ),
+                            onClick = onClick,
+                        )
+                    } else {
+                        Modifier
+                    }
+                )
+                .padding(horizontal = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            color =
+                when {
+                    !enabled -> AladinColor.InkDisabled
+                    primary -> AladinColor.OnInkSurface
+                    else -> AladinColor.InkSecondary
+                },
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Medium,
+        )
+    }
 }
 
 private sealed interface BreadcrumbSegment {
@@ -529,26 +630,18 @@ private fun BrowserFolderRow(
     depth: Int,
     expanded: Boolean,
     expandable: Boolean,
-    selected: Boolean,
     menu: BrowserRowMenuModel,
-    rename: BrowserRenameState?,
     onToggleExpanded: () -> Unit,
     onClick: () -> Unit,
     onMenuAction: (BrowserCreateOption) -> Unit,
     onStartRename: () -> Unit,
-    onRenameDraftChanged: (String) -> Unit,
-    onCommitRename: () -> Unit,
-    onCancelRename: () -> Unit,
     onOpenMenu: (BrowserRowMenuRequest) -> Unit,
 ) {
-    val isRenaming = rename != null
     Row(
         modifier =
             Modifier.fillMaxWidth()
                 .padding(start = treeIndent(depth))
                 .aladinClickable(
-                    enabled = !isRenaming,
-                    selected = selected,
                     shape = RoundedCornerShape(ControlRadius),
                     colors =
                         AladinInteractionDefaults.colors(
@@ -566,35 +659,25 @@ private fun BrowserFolderRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(BrowserRowContentGap),
     ) {
-        RowSelectionMarker(selected = selected)
+        RowSelectionMarker(selected = false)
         ExpandToggle(
             expanded = expanded,
             expandable = expandable,
-            selected = selected,
+            selected = false,
             onClick = onToggleExpanded,
         )
         Icon(
             imageVector = Icons.Outlined.Folder,
             contentDescription = null,
-            tint = if (selected) AladinColor.Ink else AladinColor.InkSecondary,
+            tint = AladinColor.InkSecondary,
             modifier = Modifier.size(BrowserIconSize),
         )
         Column(verticalArrangement = Arrangement.spacedBy(1.dp), modifier = Modifier.weight(1f)) {
-            if (rename != null) {
-                RenameTitleField(
-                    rename = rename,
-                    selected = selected,
-                    onDraftChanged = onRenameDraftChanged,
-                    onCommit = onCommitRename,
-                    onCancel = onCancelRename,
-                )
-            } else {
-                BrowserRowTitle(title = folder.title, selected = selected)
-            }
+            BrowserRowTitle(title = folder.title, selected = false)
         }
         BrowserRowContextMenu(
             menu = menu,
-            selected = selected,
+            selected = false,
             onActionSelected = { actionId ->
                 if (actionId == RenameActionId) {
                     onStartRename()

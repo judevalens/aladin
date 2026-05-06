@@ -1,4 +1,4 @@
-# Aladin — Roadmap
+# Aladin Engineering Roadmap
 
 ## Status legend
 - ✅ Done
@@ -8,192 +8,220 @@
 
 ---
 
-## Phase 0 — Foundation ✅
+## Current Direction
 
-Core frontend workspace and basic artifact pipeline.
+Aladin is now centered on a Kotlin/Wasm workspace shell with specialist JS surfaces mounted where browser tooling is strongest. Product logic, sync state, repositories, and orchestration stay in Kotlin and Go. React/TypeScript surfaces should remain thin rendering/input adapters.
 
-- ✅ React Flow graph canvas (nodes, edges, force layout)
-- ✅ Artifact collection panel
-- ✅ Dashboard (artifact grid, focus view, chat)
-- ✅ Basic Flask backend with Postgres + Neo4j
-- ✅ Artifact enrichment (LLM: summary, entities, topics, key_claims)
-- ✅ Bluesky single-post ingestion
-- ✅ Data model design (Source, Snapshot, Artifact, Node, Edge, Insight, KG)
-- ✅ Sync queue design (job schema, builder pattern, syncer interface)
+The current foundation is shifting from a monolithic app surface toward composable workspace subsystems:
 
----
+- app-level orchestration and shared workspace state
+- browser/folder tree navigation
+- artifact/work pane with tabs and context rail
+- page-specific editor/sync flow
+- modular backend artifact slices
 
-## Phase 1 — Schema & Queue Infrastructure ✅
-
-- ✅ DB migration: `sources`, `snapshots`, `sync_jobs` tables
-- ✅ DB migration: `artifacts` updated (source_id, snapshot_id, external_id, version, superseded_by, relevance_score, status)
-- ✅ DB migration: `parent_id` on artifacts (tree structure)
-- ✅ SQLAlchemy models: Source, Snapshot, SyncJob, Artifact (with tree relationships)
-- ✅ `SourceSyncer` ABC (plan + execute)
-- ✅ `SyncResult` + `SyncJob` dataclasses
-- ✅ `SyncRouter`
-- ✅ `JobQueue` with builder pattern
-- ✅ Worker loop (SKIP LOCKED dequeue → route → handle result → snapshot completion)
-- ✅ Scheduler loop (find due sources → plan → enqueue)
-- ✅ Stuck snapshot cleanup (>2h in processing → failed + dead-letter jobs)
+This roadmap replaces the older pipeline-first phase ordering with the current architecture-first path.
 
 ---
 
-## Phase 2 — Reddit Live Source ✅
+## Phase 1 — Workspace Foundation ✅
 
-- ✅ `RedditSyncer` — plan() + execute()
-- ✅ `ensure_feed` job: upserts top-level feed artifact (no HTTP)
-- ✅ `fetch_listing` job: GET /new.json, cursor pagination, stop_at_id, min_score gate
-- ✅ `fetch_thread` job: re-fetch active threads, diff detection, supersede logic
-- ✅ Score-bracket re-fetch scheduling (≥500 → 30min, ≥100 → 1hr, ≥20 → 2hr)
-- ✅ Rate limiting: 10 req/min in-process token bucket
-- ✅ Artifact tree: feed → posts (parent_id linking)
-- ✅ Seed script: `scripts/seed_reddit_source.py`
+Build the main desktop-style workspace shell and split the former god app surface into composed feature slices.
 
----
+- ✅ Kotlin/Wasm + Compose Multiplatform shell
+- ✅ Circuit presenter entrypoint with producer-based decomposition
+- ✅ Three-pane workspace direction: app rail, browser pane, artifact/work pane
+- ✅ Sidebar producer and UI split
+- ✅ Browser producer and UI split
+- ✅ Artifact/work pane producer and UI split
+- ✅ Page state producer separated from pane orchestration
+- ✅ Interface implementation naming standardized with `Impl` suffix
+- ✅ Feature package rule established: app subfeatures coordinate through app-root contracts, not sibling imports
 
-## Phase 2b — Twitter/X Live Source ✅
+### Remaining
 
-- ✅ `TwitterSyncer` — user timeline mode + search/hashtag mode
-- ✅ `ensure_feed` job: builds feed artifact for both modes
-- ✅ `fetch_timeline` job: user timeline with pagination, user_id resolution
-- ✅ `fetch_search` job: recent search with auto-retweet/reply filtering
-- ✅ Rate limiting: 100s interval (conservative for Basic tier)
-- ✅ Metadata: like_count, retweet_count, reply_count mapped to common score field
-- ✅ Seed script: `scripts/seed_twitter_source.py --mode user/search`
-- 📋 Wire Twitter Bearer Token credentials and test end-to-end
+- 📋 Continue shrinking `AppPresenter` toward orchestration only
+- 📋 Keep pane-specific UI logic inside browser/artifact/page producers
+- 📋 Add dependency composition/DI once constructor wiring becomes noisy enough to justify it
 
 ---
 
-## Phase 2c — Dashboard: Feed Drill-Down ✅
+## Phase 2 — Modular Artifacts ✅
 
-- ✅ `GET /api/artifacts/` returns top-level only (parent_id IS NULL) with childCount
-- ✅ `GET /api/artifacts/<id>/children` — paginated, sorted by score
-- ✅ ArtifactType extended: `feed`, `post`
-- ✅ Feed cards: Live badge, post count
-- ✅ Feed drill-down view: ranked post list (score, author, flair, comment count)
-- ✅ Three-tier navigation: grid → feed → post focus/chat
+Make artifacts a lightweight shared envelope and move type-specific content/behavior into domain slices.
 
----
+- ✅ Canonical writable document type is `page`
+- ✅ `artifacts` remains the shared metadata/envelope table
+- ✅ page markdown moved to `page_documents`
+- ✅ page load/save endpoints added under `/api/pages/{id}`
+- ✅ file upload/resource endpoint added under `/api/files`
+- ✅ backend files are addressable through durable resource URLs
+- ✅ browser tree moved toward tree-node driven metadata
+- ✅ artifact pane can render by artifact type
 
-## Phase 3 — Enrichment Pipeline ✅
+### Remaining
 
-Full rewrite of the enrichment pipeline in Go (`backend_v2`). Event-driven blackboard
-architecture replaces the old Python polling worker. Postgres is written once at completion.
-
-- ✅ Go worker binary (`backend_v2/cmd/worker/main.go`) owns asynq server, pipeline controller, insight worker
-- ✅ Blackboard FSM: Redis holds full artifact state + intermediate data for in-flight entries
-- ✅ `pipeline:ingest` asynq task — handoff between syncers and blackboard (unbounded buffer)
-- ✅ Event-driven controller: `ready` channel + per-stage channels + one goroutine per stage
-- ✅ **FirstPassWorker**: GPT-4o-mini → summary, entities, topics, key_claims, low_confidence_entities
-- ✅ **SearchWorker**: resolve low-confidence entities via Tavily (Redis-cached, 7-day TTL)
-- ✅ **EmbedWorker**: OpenAI text-embedding-3-small → vector stored in blackboard entry
-- ✅ **GraphWorker**: Neo4j promoter — MERGE Artifact/Entity/Topic nodes and MENTIONS/TAGGED_WITH edges
-- ✅ Single PG write at `StateComplete` — full artifact (content + enrichment + embedding) in one INSERT
-- ✅ `ON CONFLICT (source_id, external_id) DO NOTHING` — dedup via unique partial index
-- ✅ Typed error handling: `ErrRateLimit` → asynq retry-after, `ErrTransient` → exponential backoff, `ErrPermanent` → drop
-- ✅ Crash recovery: on startup, drain Redis blackboard back into ready channel
-- ✅ Signal-based scheduler: `Trigger(sourceID)` for immediate sync on source creation
-- ✅ Structured JSON logging with trace IDs (artifact_id, kg_id, source_id, stage) throughout
-- ✅ Grafana + Loki + Promtail observability stack in docker-compose
-- ✅ Migration: `uq_artifacts_source_external` unique partial index on `(source_id, external_id)`
+- 📋 Keep link, voice, file, and future artifact-specific content out of the artifact envelope
+- 📋 Add type-specific viewers/producers as artifact types mature
+- 📋 Clean up transitional `artifacts.content` usage after page path is stable
+- 📋 Make folder/artifact metadata updates flow through repositories instead of ad hoc refreshes
 
 ---
 
-## Phase 4 — Note-Taking Improvements 📋
+## Phase 3 — Trustworthy Page Editing 🔨
 
-Make note creation a first-class experience — the primary manual input path.
+Make markdown pages feel safe: load once, do not reset while typing, autosave predictably, and surface status without extra chrome.
 
-- 📋 **Note composer modal**: proper title + body editor (not just clipboard paste)
-- 📋 **Markdown rendering** in focus view content panel
-- 📋 **Capture-from-context**: "Take note" button on post/feed focus view — opens composer pre-filled with source reference
-- 📋 **Selection → note**: highlight text in focus view → "Quote & annotate" creates note with quoted block + annotation
-- 📋 **Note-to-artifact linking**: notes can reference other artifacts (stored in metadata)
-- 📋 **Voice → note**: audio recordings run through Whisper transcription → text note
-- 📋 Note status: `scratch` (quick dump) vs `note` (curated) — grid can filter by status
+- ✅ Milkdown/Crepe editor mounted through the web widget bridge
+- ✅ document updates emitted as structured bridge events
+- ✅ Kotlin page syncer owns load/save metadata
+- ✅ editor owns live draft text after initial mount
+- ✅ page save/load API wired through Kotlin repository
+- ✅ page save status moved into the artifact context rail
+- ✅ edit/view lock control added
+- ✅ backend page revision guard rejects stale saves with `409 Conflict`
+- ✅ client sends monotonically increasing page revisions loaded from the backend
+- ✅ image/file upload flow routes through Kotlin/backend, not direct React persistence
 
----
+### Remaining
 
-## Phase 5 — Insight Pipeline (MVP types) 📋
-
-Batch insight generation per snapshot. Immediate for manual input.
-
-- 📋 `InsightSyncer` fully implemented (replaces stub)
-- 📋 `reinforcement`: embedding similarity + shared entities → add evidence to existing edge
-- 📋 `extension`: similarity + new entities → enrich existing node
-- 📋 `bridge`: ANN candidates from two disconnected clusters → new edge proposal
-- 📋 `convergence`: N artifacts from different sources pointing to same node in one batch
-- 📋 `proposed_changes` per insight with confidence score
-- 📋 Apply based on `pipeline_autonomy`: `auto_promote` (≥threshold) or `suggest` (ghost node + insight record)
-- 📋 Immediate insight path for `one_shot` / manual sources
+- 🔨 Stabilize simplified `PageDocumentSyncerImpl` state shape and producer mapping
+- 🔨 Restore or refine upload status/retry behavior after syncer simplification
+- 🔨 Ensure edit lock consistently disables editor input
+- 📋 Add tests around out-of-order save rejection and client conflict handling
+- 📋 Consider replacing Crepe if toolbar/drag-handle positioning becomes a product blocker
 
 ---
 
-## Phase 6 — UI: Insight Feed & Graph Neighborhood 📋
+## Phase 4 — Browser and Workspace Metadata 🔨
 
-Bring the intelligence into the frontend.
+Make browser/tree metadata reactive and coherent across panes without revision stitches or manual recomposition triggers.
 
-- 📋 Insight feed on dashboard: pending insights shown as cards — accept / dismiss actions
-- 📋 Node detail view: evidence trail, confidence over time, source breakdown
-- 📋 Graph workspace rework: render neighborhood subgraph (10–20 nodes), not full KG
-  - "Explore from node" → expand 1/2/3 hops
-  - Hop depth slider
-  - Highlight path between two selected nodes
-- 📋 Timeline scrubber: scrub KG state by snapshot version
-- 📋 Source management UI: add / pause / delete sources, view sync health
+- ✅ inline rename for folders/artifacts
+- ✅ rename can start from double-click or context menu
+- ✅ app-level focus clear supports outside-click commit
+- ✅ browser tree refreshes after local rename
 
----
+### Remaining
 
-## Phase 7 — Bluesky Live Source 📋
-
-- 📋 `BlueskySyncer` — plan() + execute()
-- 📋 `fetch_feed` job: AT Protocol getFeed, opaque cursor
-- 📋 `fetch_thread` job: reply detection, NotFound → supersede
-- 📋 Engagement-bracket re-fetch (like + repost weighting)
-- 📋 Seed script: `scripts/seed_bluesky_source.py`
+- 🔨 Replace stale tab/title refresh hacks with repository flows
+- 🔨 Move folder and artifact metadata into dedicated repositories with in-memory cache
+- 📋 Compute breadcrumbs from canonical tree/browser metadata
+- 📋 Keep open artifact/tab metadata coherent after rename, move, delete, and realtime updates
+- 📋 Decide whether browser folder scope is derived from tree state or a separate navigation model
 
 ---
 
-## Phase 8 — Slack Live Source 💭
+## Phase 5 — Reactive Client Repositories 📋
 
-Push-based source — different architecture from poll.
+Use repositories as the client-side cache/store boundary. Producers observe flows and submit intents; repositories own data access, local cache, and update emission.
 
-- 💭 Slack Events API webhook endpoint
-- 💭 Message/thread event handler → artifact creation (bypasses queue)
-- 💭 Signing secret verification
-- 💭 Thread reply fetching on-demand
+- 📋 Split folder and artifact repositories instead of one broad workspace store
+- 📋 Keep storage behind interfaces so in-memory storage can later become IndexedDB/SQLite/WASM-backed storage
+- 📋 Emit repository flows from actual data updates, not directly from transport events
+- 📋 Use simple hand-coded projections per repo instead of building a generic local Firebase framework
+- 📋 Establish consistent patterns for single resource, list, breadcrumb, and browser-tree flows
 
----
+### Design Defaults
 
-## Phase 9 — Advanced Insight Types 💭
-
-Expensive reasoning pass. Build after MVP insight types are validated.
-
-- 💭 `contradiction`: high similarity + LLM key_claims comparison
-- 💭 `obsolescence`: temporal language + LLM reasoning
-- 💭 Community detection (Leiden) on KG
-- 💭 Community re-summarization on structural changes (GraphRAG-inspired)
-- 💭 Global query against community summaries
+- Repositories own local cache and network/API calls.
+- Producers should not build resource keys.
+- Realtime events are signals to update repository data, not UI state by themselves.
+- Lists should preserve requested order and update by id.
 
 ---
 
-## Phase 10 — Intelligence Feedback Loop 💭
+## Phase 6 — Realtime + Offline Readiness 📋
 
-System learns from user behavior.
+Add realtime transport and client event processing as the foundation for live metadata updates, offline caching, and future collaboration.
 
-- 💭 Track accept/dismiss rates per insight type
-- 💭 Track dismissed insights later proven correct
-- 💭 Adjust confidence weights per user calibration
-- 💭 Personalized threshold tuning per source type
+- ✅ initial backend realtime service shape explored with in-memory broker
+- 📋 WebSocket connection on client boot
+- 📋 subscription messages for workspace metadata streams
+- 📋 client event processor with event-id dedupe
+- 📋 repository listeners that decide whether a realtime event affects their cached data
+- 📋 local storage abstraction for browser persistence
+- 📋 offline save queue for page/document mutations
+- 📋 cache invalidation policy for uploaded resources and metadata
+
+### Long-Term Transport Direction
+
+- In-memory broker first for local development
+- Redis/asynq-backed broker later if distributed fanout is needed
+- Subscription keys remain a backend/service detail, not producer/UI logic
+
+---
+
+## Phase 7 — Signals and Source Intelligence 📋
+
+Return to source ingestion and signal generation after the workspace can reliably hold, edit, and react to artifacts.
+
+- 📋 reframe source ingestion around `signals`, not raw feed browsing
+- 📋 connect source artifacts to sections/folders through relevance
+- 📋 Daily Brief on Home: what changed, where it matters, suggested next actions
+- 📋 Signals area: curated signal cards with evidence and linked artifacts
+- 📋 Sources area: operational health, configuration, recent activity
+- 📋 Reddit/Bluesky/news/ticker source integrations as reusable live input patterns
+
+### Existing Foundation To Reuse
+
+- Go backend pipeline work
+- source/snapshot/job design
+- enrichment and graph worker concepts
+- queue and scheduler design docs
+
+---
+
+## Phase 8 — Graph / Context Layer 📋
+
+Make the graph useful as context infrastructure, not as a default visualization-first experience.
+
+- 📋 workspace-wide entity/topic/context graph
+- 📋 evidence trails from signals back to artifacts
+- 📋 graph-derived related context inside section/artifact workspaces
+- 📋 graph explorer as a secondary analysis surface
+- 📋 retrieval hooks for future LLM workflows
+- 📋 provenance-aware updates when artifacts/signals change
+
+---
+
+## Phase 9 — Packaging + Distribution 💭
+
+Keep web iteration fast, but preserve the path to a desktop app.
+
+- 💭 continue web-first development for iteration speed
+- 💭 evaluate Tauri wrapping for native desktop distribution
+- 💭 keep Kotlin/Wasm shell and JS specialist surfaces as the app architecture
+- 💭 avoid moving business logic into React/Electron/Tauri layers
+
+---
+
+## Phase 10 — Collaboration / CRDT Track 💭
+
+The current markdown + revision model is a stepping stone. Later collaboration should evolve the page path without forcing a UI rewrite.
+
+- 💭 document operation log
+- 💭 CRDT-backed page model
+- 💭 snapshot compaction
+- 💭 migration bridge from markdown snapshots to collaborative document state
+- 💭 remote cursors/presence if multi-user editing becomes important
+- 💭 conflict-aware offline editing
+
+### Current Bridge
+
+- Page load returns content + revision.
+- Editor owns live draft text.
+- Kotlin syncer owns save/load metadata.
+- Backend rejects stale saves.
+- Future CRDT work can replace content/revision with snapshot/ops/clock while preserving the same high-level boundaries.
 
 ---
 
 ## Open Design Questions
 
-- **Multi-KG sources**: one source → one KG for MVP. Post-MVP: source feeds multiple KGs with per-KG relevance + autonomy.
-- **Auth / multi-user**: currently single-user seeded. Needs proper auth before sharing.
-- **Graph namespace isolation**: each KG isolated by `kg_id` filter. No cross-KG queries for now.
-- **Embedding model**: OpenAI `text-embedding-3-small`. Consider local model (nomic-embed) for cost at scale.
-- **Note-to-KG path**: notes should be first-class KG citizens — how does a "scratch" note become a node? Manual promote? Auto on enrichment?
-- **Real-time UI**: frontend currently polls. Plan is WebSocket full-duplex — push artifact/insight signals to UI on state change. Pattern: signal-on-write (like outbox but best-effort publish to Redis pub/sub → WS fan-out).
-- **Pipeline scaling**: current design is single-process. To scale: replace in-process `ready` channel with asynq queues per stage → stateless workers. At higher scale: Kafka transport, Flink/Spark for stream processing. Syncer and worker interfaces unchanged.
+- **Sections vs folders:** product language favors sections, current implementation uses folders/tree nodes. Decide whether sections are a folder kind, artifact kind, or higher-level workspace object.
+- **Repository storage:** in-memory first; choose IndexedDB, SQLite/WASM, or another browser-local store when offline work begins.
+- **Realtime granularity:** decide how broad workspace subscriptions should be before scaling beyond local development.
+- **Page editor ownership:** keep Crepe if issues remain tolerable; rebuild on Milkdown primitives if toolbar/drag-handle control becomes worth the cost.
+- **Artifact metadata flow:** decide whether rename/move/delete update open pane state through repository flows, realtime events, or both.
+- **CRDT timing:** do not start until single-user autosave, offline queue semantics, and repository boundaries are stable.
