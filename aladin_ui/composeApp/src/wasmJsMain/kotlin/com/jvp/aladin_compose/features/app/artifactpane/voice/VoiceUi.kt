@@ -1,7 +1,6 @@
 package com.jvp.aladin_compose.features.app.artifactpane.voice
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,7 +28,6 @@ import kotlinx.browser.document
 import org.w3c.dom.HTMLElement
 
 private val VoiceCardWidth = 720.dp
-private val VoiceCardRadius = 6.dp
 private val VoiceControlRadius = 4.dp
 
 @Composable
@@ -46,21 +44,19 @@ fun VoiceUi(
             modifier =
                 Modifier.widthIn(max = VoiceCardWidth)
                     .fillMaxWidth()
-                    .border(1.dp, AladinColor.Border, RoundedCornerShape(VoiceCardRadius))
-                    .background(AladinColor.Panel, RoundedCornerShape(VoiceCardRadius))
-                    .padding(20.dp),
+                    .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             VoiceHeader(state = state, content = content)
 
             if (content == null) {
-                VoiceSection(title = "Recording", emphasis = true) {
+                VoiceSection(title = "Recording") {
                     MutedText("Preparing voice note...")
                 }
                 return@Column
             }
 
-            VoiceSection(title = "Playback", eyebrow = "Audio is the source of truth", emphasis = true) {
+            VoiceSection(title = "Playback", eyebrow = "Audio is the source of truth") {
                 AudioPlayer(resourceUrl = content.resourceUrl)
             }
             VoiceSection(title = "Transcript", eyebrow = "Searchable derived text") {
@@ -135,13 +131,11 @@ private fun VoiceHeader(
 private fun VoiceSection(
     title: String,
     eyebrow: String? = null,
-    emphasis: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     Column(
         modifier =
             Modifier.fillMaxWidth()
-                .background(if (emphasis) AladinColor.Canvas else AladinColor.Panel)
                 .padding(vertical = 2.dp),
         verticalArrangement = Arrangement.spacedBy(9.dp),
     ) {

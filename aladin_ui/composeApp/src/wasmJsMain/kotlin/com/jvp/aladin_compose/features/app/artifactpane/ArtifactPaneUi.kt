@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.sharp.AutoGraph
@@ -28,6 +27,7 @@ import androidx.compose.material.icons.sharp.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,7 +39,6 @@ import com.jvp.aladin_compose.features.app.ControlRadius
 import com.jvp.aladin_compose.features.app.DividerThickness
 import com.jvp.aladin_compose.features.app.PlaceholderPane
 import com.jvp.aladin_compose.features.app.SharpRadius
-import com.jvp.aladin_compose.features.app.WorkspaceChromeMaxWidth
 import com.jvp.aladin_compose.features.app.artifactpane.link.LinkUi
 import com.jvp.aladin_compose.features.app.artifactpane.page.PageEditorState
 import com.jvp.aladin_compose.features.app.artifactpane.page.PageUi
@@ -100,12 +99,7 @@ fun RowScope.ArtifactPane(
                     contentAlignment = Alignment.TopCenter,
                 ) {
                     Row(
-                        modifier =
-                            Modifier.fillMaxWidth()
-                                .fillMaxHeight()
-                                .widthIn(max = WorkspaceChromeMaxWidth)
-                                .padding(horizontal = 4.dp, vertical = 0.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxSize(),
                     ) {
                         ArtifactWorkspaceView(
                             artifact = artifact,
@@ -113,9 +107,14 @@ fun RowScope.ArtifactPane(
                             modifier = Modifier.weight(1f).fillMaxHeight(),
                         )
                         if (state.inspectorOpen) {
+                            VerticalDivider(
+                                modifier = Modifier.fillMaxHeight(),
+                                thickness = DividerThickness,
+                                color = AladinColor.Divider,
+                            )
                             ArtifactInspector(
                                 insight = state.activeInsight,
-                                modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
+                                modifier = Modifier.fillMaxHeight(),
                             )
                         }
                     }
@@ -288,11 +287,8 @@ private fun ArtifactWorkspaceView(
             if (linkState != null) {
                 Box(
                     modifier =
-                        modifier.fillMaxWidth()
-                            .padding(
-                                horizontal = if (state.inspectorOpen) 4.dp else 26.dp,
-                                vertical = 56.dp,
-                            ),
+                        modifier.fillMaxSize()
+                            .padding(horizontal = 32.dp, vertical = 44.dp),
                     contentAlignment = Alignment.TopCenter,
                 ) {
                     LinkUi(state = linkState, modifier = Modifier.fillMaxSize())
@@ -309,11 +305,8 @@ private fun ArtifactWorkspaceView(
             if (voiceState != null) {
                 Box(
                     modifier =
-                        modifier.fillMaxWidth()
-                            .padding(
-                                horizontal = if (state.inspectorOpen) 4.dp else 26.dp,
-                                vertical = 56.dp,
-                            ),
+                        modifier.fillMaxSize()
+                            .padding(horizontal = 32.dp, vertical = 44.dp),
                     contentAlignment = Alignment.TopCenter,
                 ) {
                     VoiceUi(state = voiceState, modifier = Modifier.fillMaxSize())

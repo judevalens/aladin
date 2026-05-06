@@ -156,12 +156,22 @@ Add realtime transport and client event processing as the foundation for live me
 
 Return to source ingestion and signal generation after the workspace can reliably hold, edit, and react to artifacts.
 
+- 📋 Trending Research Delta v1: one watched subreddit, entity overlap relevance, gap/connection synthesis, in-app inbox
 - 📋 reframe source ingestion around `signals`, not raw feed browsing
+- 📋 entity extraction at ingestion time for source artifacts and user-authored artifacts
+- 📋 trend detection with per-source tuned thresholds before rolling baselines
+- 📋 relevance matching through graph/entity overlap against the user's existing artifacts
+- 📋 gap and connection analysis as structured LLM comparisons over deterministic graph query results
+- 📋 in-app inbox notification surface before push or email delivery
 - 📋 connect source artifacts to sections/folders through relevance
 - 📋 Daily Brief on Home: what changed, where it matters, suggested next actions
 - 📋 Signals area: curated signal cards with evidence and linked artifacts
 - 📋 Sources area: operational health, configuration, recent activity
 - 📋 Reddit/Bluesky/news/ticker source integrations as reusable live input patterns
+
+### North-Star Loop
+
+The reference workflow for this phase is [Trending Post Gap Analysis](./TRENDING_POST_GAP_ANALYSIS.md): ambient source capture, silent graph/entity structure, proactive synthesis, and a consume surface that explains why the signal was sent.
 
 ### Existing Foundation To Reuse
 

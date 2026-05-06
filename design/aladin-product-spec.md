@@ -20,6 +20,10 @@ The core promise is:
 
 **New signals do not just arrive. They update what you were already working on.**
 
+The sharpest expression of this promise is a **proactive research delta**: Aladin notices a meaningful change in an external source, compares it against the user's existing research context, and surfaces what is new, missing, or newly connected. A notification should not be a raw alert. It should be synthesized context.
+
+The north-star example is a trending source item that produces a personalized gap or connection against the user's notes. The implementation-facing version of that loop lives in [`sys_design/TRENDING_POST_GAP_ANALYSIS.md`](../sys_design/TRENDING_POST_GAP_ANALYSIS.md).
+
 ## 3. Product Vision
 
 Aladin is a living knowledge and thought workspace where:

@@ -1,7 +1,5 @@
 package com.jvp.aladin_compose.features.app.artifactpane
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,7 +7,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -33,10 +30,8 @@ fun ArtifactInspector(
         modifier =
             modifier.width(ArtifactInspectorWidth)
                 .fillMaxHeight()
-                .border(1.dp, AladinColor.Divider, RoundedCornerShape(6.dp))
-                .background(AladinColor.Panel, RoundedCornerShape(6.dp))
-                .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Text(
@@ -95,7 +90,6 @@ private fun InspectorSection(
     Column(
         modifier =
             Modifier.fillMaxWidth()
-                .background(AladinColor.Canvas, RoundedCornerShape(4.dp))
                 .padding(vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {

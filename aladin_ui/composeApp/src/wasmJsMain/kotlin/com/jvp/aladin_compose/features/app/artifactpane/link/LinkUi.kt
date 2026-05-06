@@ -27,7 +27,6 @@ import com.jvp.aladin_compose.ui_lib.AladinInteractionDefaults
 import com.jvp.aladin_compose.ui_lib.aladinClickable
 
 private val LinkCardWidth = 720.dp
-private val LinkCardRadius = 6.dp
 private val LinkControlRadius = 4.dp
 
 @Composable
@@ -44,21 +43,19 @@ fun LinkUi(
             modifier =
                 Modifier.widthIn(max = LinkCardWidth)
                     .fillMaxWidth()
-                    .border(1.dp, AladinColor.Border, RoundedCornerShape(LinkCardRadius))
-                    .background(AladinColor.Panel, RoundedCornerShape(LinkCardRadius))
-                    .padding(20.dp),
+                    .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             LinkHeader(state = state, content = content)
 
             if (content == null) {
-                LinkSection(title = "Source", emphasis = true) {
+                LinkSection(title = "Source") {
                     MutedText("Preparing link content...")
                 }
                 return@Column
             }
 
-            LinkSection(title = "AI Summary", eyebrow = "Generated context", emphasis = true) {
+            LinkSection(title = "AI Summary", eyebrow = "Generated context") {
                 Text(
                     text = content.aiSummary,
                     color = AladinColor.Ink,
@@ -139,13 +136,11 @@ private fun LinkHeader(
 private fun LinkSection(
     title: String,
     eyebrow: String? = null,
-    emphasis: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     Column(
         modifier =
             Modifier.fillMaxWidth()
-                .background(if (emphasis) AladinColor.Canvas else AladinColor.Panel)
                 .padding(vertical = 2.dp),
         verticalArrangement = Arrangement.spacedBy(9.dp),
     ) {
