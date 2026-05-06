@@ -28,6 +28,10 @@ interface ArtifactRepository {
 
     fun observeArtifactBreadcrumbs(id: String?): Flow<List<BreadcrumbItem>>
 
+    fun linkContent(artifact: Artifact): Flow<LinkArtifactContent>
+
+    fun artifactInsight(artifact: Artifact): Flow<ArtifactInsight>
+
     suspend fun page(id: String): Flow<PageDocument>
 
     suspend fun savePage(id: String, markdown: String, revision: Long): PageDocument
@@ -48,6 +52,33 @@ data class PageDocument(
 )
 
 data class UploadedFile(val id: String, val url: String, val uploadedAt: String)
+
+data class LinkArtifactContent(
+    val artifactId: String,
+    val sourceUrl: String,
+    val displayDomain: String,
+    val rawExcerpt: String,
+    val aiSummary: String,
+    val userNotes: String,
+    val statusLabel: String,
+)
+
+data class ArtifactInsight(
+    val artifactId: String,
+    val summary: String?,
+    val keyPoints: List<String>,
+    val relatedItems: List<RelatedArtifact>,
+    val entities: List<String>,
+    val metadata: List<ArtifactMetadataItem>,
+)
+
+data class RelatedArtifact(
+    val id: String,
+    val title: String,
+    val kind: ArtifactKind,
+)
+
+data class ArtifactMetadataItem(val label: String, val value: String)
 
 class ArtifactRepositoryImpl(val inMemoryArtifactDoa: ArtifactDoa) : ArtifactRepository {
 
@@ -101,6 +132,80 @@ class ArtifactRepositoryImpl(val inMemoryArtifactDoa: ArtifactDoa) : ArtifactRep
             emitAll(updateFlow)
         }
     }
+
+    override fun linkContent(artifact: Artifact): Flow<LinkArtifactContent> =
+        flowOf(
+            LinkArtifactContent(
+                artifactId = artifact.id,
+                sourceUrl = artifact.sourceUrl ?: "https://example.com/source/${artifact.id}",
+                displayDomain = displayDomain(artifact.sourceUrl),
+                rawExcerpt =
+                    artifact.summary
+                        ?: "Raw captured source text will appear here once link ingestion is wired. For now this stub keeps the consumption layout realistic without backend enrichment.",
+                aiSummary =
+                    "This saved source appears relevant to the current workspace because it adds external context, evidence, or a reusable reference point.",
+                userNotes =
+                    "User notes will live with the link artifact. This keeps the source object independent while still letting pages embed it later.",
+                statusLabel = "Stub summary",
+            )
+        )
+
+    override fun artifactInsight(artifact: Artifact): Flow<ArtifactInsight> =
+        flowOf(
+            ArtifactInsight(
+                artifactId = artifact.id,
+                summary =
+                    when (artifact.kind) {
+                        ArtifactKind.Note ->
+                            "This page is being interpreted as a working document. Future enrichment will summarize the draft and connect it to source artifacts."
+                        ArtifactKind.Link ->
+                            "This link is treated as an external source. Future ingestion will extract title, author, key claims, and workspace relevance."
+                        ArtifactKind.Voice ->
+                            "Voice enrichment will summarize transcript, key moments, and detected action items after recording support lands."
+                        ArtifactKind.File ->
+                            "File enrichment will expose document metadata, preview text, and related workspace context."
+                    },
+                keyPoints =
+                    when (artifact.kind) {
+                        ArtifactKind.Link ->
+                            listOf(
+                                "Source can be opened independently from the workspace.",
+                                "AI summary and user notes stay attached to the link artifact.",
+                                "Pages can later embed this link by reference.",
+                            )
+                        ArtifactKind.Note ->
+                            listOf(
+                                "User-authored markdown remains the source of truth.",
+                                "System context stays outside the editable page body.",
+                            )
+                        else -> emptyList()
+                    },
+                relatedItems =
+                    listOf(
+                        RelatedArtifact(
+                            id = "related-${artifact.id}-page",
+                            title = "Workspace context note",
+                            kind = ArtifactKind.Note,
+                        ),
+                        RelatedArtifact(
+                            id = "related-${artifact.id}-source",
+                            title = "Source mentioned nearby",
+                            kind = ArtifactKind.Link,
+                        ),
+                    ),
+                entities =
+                    when (artifact.kind) {
+                        ArtifactKind.Link -> listOf("source", "reference", "external context")
+                        ArtifactKind.Note -> listOf("working note", "draft", "workspace")
+                        else -> emptyList()
+                    },
+                metadata =
+                    listOf(
+                        ArtifactMetadataItem("Type", artifact.kind.name),
+                        ArtifactMetadataItem("Updated", artifact.updatedLabel),
+                    ),
+            )
+        )
 
     override suspend fun page(id: String): Flow<PageDocument> = flow {
         val pageDocument = inMemoryArtifactDoa.getPage(id)?.let(::toPageDocument)
@@ -192,4 +297,10 @@ fun userArtifactToArtifact(record: UserArtifact): Artifact {
 private fun metadataString(metadata: Map<String, JsonElement>, key: String): String? {
     val value = metadata[key] ?: return null
     return (value as? JsonPrimitive)?.contentOrNull
+}
+
+private fun displayDomain(url: String?): String {
+    val value = url?.trim().orEmpty()
+    if (value.isEmpty()) return "example.com"
+    return value.removePrefix("https://").removePrefix("http://").substringBefore("/")
 }

@@ -40,6 +40,7 @@ import com.jvp.aladin_compose.features.app.DividerThickness
 import com.jvp.aladin_compose.features.app.PlaceholderPane
 import com.jvp.aladin_compose.features.app.SharpRadius
 import com.jvp.aladin_compose.features.app.WorkspaceChromeMaxWidth
+import com.jvp.aladin_compose.features.app.artifactpane.link.LinkUi
 import com.jvp.aladin_compose.features.app.artifactpane.page.PageEditorState
 import com.jvp.aladin_compose.features.app.artifactpane.page.PageUi
 import com.jvp.aladin_compose.features.app.artifactpane.page.PageStateEvent
@@ -87,24 +88,35 @@ fun RowScope.ArtifactPane(
                         onToggleEditable = { pageId ->
                             state.pages.eventSink(PageStateEvent.ToggleEditable(pageId))
                         },
+                        inspectorOpen = state.inspectorOpen,
+                        onToggleInspector = {
+                            state.eventSink(ArtifactPaneEvent.ToggleInspector)
+                        },
                     )
                 }
                 Box(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     contentAlignment = Alignment.TopCenter,
                 ) {
-                    Column(
+                    Row(
                         modifier =
                             Modifier.fillMaxWidth()
                                 .fillMaxHeight()
                                 .widthIn(max = WorkspaceChromeMaxWidth)
-                                .padding(horizontal = 4.dp, vertical = 0.dp)
+                                .padding(horizontal = 4.dp, vertical = 0.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         ArtifactWorkspaceView(
                             artifact = artifact,
                             state = state,
-                            modifier = Modifier.fillMaxSize(),
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
                         )
+                        if (state.inspectorOpen) {
+                            ArtifactInspector(
+                                insight = state.activeInsight,
+                                modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
+                            )
+                        }
                     }
                 }
             }
@@ -136,6 +148,8 @@ private fun WorkspaceContextRail(
     onRetryLoad: (String) -> Unit,
     onRetryUpload: (String) -> Unit,
     onToggleEditable: (String) -> Unit,
+    inspectorOpen: Boolean,
+    onToggleInspector: () -> Unit,
 ) {
     val pathText =
         when {
@@ -197,7 +211,8 @@ private fun WorkspaceContextRail(
         WorkspaceUtilityIcon(
             icon = Icons.Sharp.Tune,
             contentDescription = "Open document panel",
-            onClick = {},
+            isActive = inspectorOpen,
+            onClick = onToggleInspector,
         )
     }
 }
@@ -267,7 +282,27 @@ private fun ArtifactWorkspaceView(
                 )
             }
         }
-        ArtifactKind.Link -> UnsupportedArtifactPane("Link view coming next.")
+        ArtifactKind.Link -> {
+            val linkState = state.links.activeLink
+            if (linkState != null) {
+                Box(
+                    modifier =
+                        modifier.fillMaxWidth()
+                            .padding(
+                                horizontal = if (state.inspectorOpen) 4.dp else 26.dp,
+                                vertical = 56.dp,
+                            ),
+                    contentAlignment = Alignment.TopCenter,
+                ) {
+                    LinkUi(state = linkState, modifier = Modifier.fillMaxSize())
+                }
+            } else {
+                PlaceholderPane(
+                    "Link unavailable",
+                    "The selected link could not be prepared for viewing.",
+                )
+            }
+        }
         ArtifactKind.Voice -> UnsupportedArtifactPane("Voice view coming next.")
         ArtifactKind.File -> UnsupportedArtifactPane("File view coming next.")
     }

@@ -7,6 +7,7 @@ import com.jvp.aladin_compose.features.app.AppPresenter
 import com.jvp.aladin_compose.features.app.AppScreen
 import com.jvp.aladin_compose.features.app.AppUiFactory
 import com.jvp.aladin_compose.features.app.artifactpane.WorkPaneProducerImpl
+import com.jvp.aladin_compose.features.app.artifactpane.link.LinkStateProducerImpl
 import com.jvp.aladin_compose.features.app.artifactpane.page.PageStateProducerImpl
 import com.jvp.aladin_compose.features.app.browser.DocumentBrowserProducerImpl
 import com.jvp.aladin_compose.features.app.sidebar.SidebarProducerImpl
@@ -47,6 +48,8 @@ fun CircuitApp() {
                                     scope = scope,
                                     pageEditorBridge = pageEditorBridge,
                                 ),
+                            linkStateProducer =
+                                LinkStateProducerImpl(artifactRepository = artifactRepository),
                             pageEditorBridge = pageEditorBridge,
                         ),
                 )
