@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -117,10 +119,20 @@ func (r *RedditSyncer) Execute(ctx context.Context, job *db.SyncJob) (*sync.Resu
 	}
 
 	state := redditCycleStateFromPayload(job.Payload)
+	log := slog.With(
+		"component", "source_syncer",
+		"source_type", "reddit",
+		"source_id", job.SourceID,
+		"cycle_id", job.CycleID,
+		"correlation_id", job.CorrelationID,
+		"subreddit", state.Subreddit,
+	)
+	log.Debug("reddit: fetching listing", "after", state.After, "has_next_last_seen", state.NextLastSeenID != "")
 	body, err := r.client.FetchListing(ctx, state)
 	if err != nil {
 		return nil, err
 	}
+	log.Debug("reddit: fetched listing", "provider_record_count", len(body.Data.Children), "has_next_cursor", body.Data.After != "")
 
 	result := &sync.Result{
 		SourceUpdates: map[string]any{},
@@ -129,30 +141,33 @@ func (r *RedditSyncer) Execute(ctx context.Context, job *db.SyncJob) (*sync.Resu
 	externalIDs := make([]string, 0, len(body.Data.Children))
 	for _, child := range body.Data.Children {
 		if child.Data.ID != "" {
-			externalIDs = append(externalIDs, child.Data.ID)
+			externalIDs = append(externalIDs, redditExternalID(child.Data.ID))
 		}
 	}
 	known, err := r.seen.Seen(ctx, job.SourceID, externalIDs)
 	if err != nil {
 		return nil, fmt.Errorf("reddit seen lookup: %w", err)
 	}
+	log.Debug("reddit: seen lookup complete", "candidate_count", len(externalIDs), "known_count", countSeen(known))
 	hitBoundary := false
 	var newestAcceptedID string
 	var newestAcceptedCreated float64
 	for _, child := range body.Data.Children {
 		post := child.Data
-		if known[post.ID] {
+		externalID := redditExternalID(post.ID)
+		if known[externalID] {
+			log.Debug("reddit: seen boundary reached", "external_id", externalID)
 			hitBoundary = true
 			result.CompletionReason = sync.CompletionReasonSeenOverlap
 			break
 		}
 
 		if state.NextLastSeenID == "" {
-			state.NextLastSeenID = post.ID
+			state.NextLastSeenID = externalID
 			state.NextLastSeenCreated = post.CreatedUTC
 		}
 		if newestAcceptedID == "" {
-			newestAcceptedID = post.ID
+			newestAcceptedID = externalID
 			newestAcceptedCreated = post.CreatedUTC
 		}
 
@@ -161,12 +176,19 @@ func (r *RedditSyncer) Execute(ctx context.Context, job *db.SyncJob) (*sync.Resu
 			content += "\n\n" + post.Selftext
 		}
 		result.Records = append(result.Records, &sync.RawRecord{
-			ExternalID: post.ID,
+			ExternalID: externalID,
 			Type:       "post",
 			Label:      post.Title,
 			Content:    content,
-			SourceURL:  redditAPI + post.Permalink,
-			Metadata:   map[string]any{"score": post.Score},
+			SourceURL:  redditURL(post.Permalink),
+			Metadata: map[string]any{
+				"platform":    "reddit",
+				"reddit_id":   externalID,
+				"subreddit":   state.Subreddit,
+				"permalink":   post.Permalink,
+				"score":       post.Score,
+				"created_utc": post.CreatedUTC,
+			},
 		})
 	}
 
@@ -192,7 +214,40 @@ func (r *RedditSyncer) Execute(ctx context.Context, job *db.SyncJob) (*sync.Resu
 		result.CursorUpdates["after"] = ""
 	}
 
+	log.Debug(
+		"reddit: execution result built",
+		"accepted_record_count", len(result.Records),
+		"has_more", result.HasMore,
+		"completion_reason", result.CompletionReason,
+		"source_update_keys", mapKeysForLog(result.SourceUpdates),
+		"cursor_update_keys", mapKeysForLog(result.CursorUpdates),
+		"head_boundary_keys", mapKeysForLog(result.HeadBoundary),
+	)
 	return result, nil
+}
+
+func redditExternalID(id string) string {
+	if id == "" || strings.HasPrefix(id, "t3_") {
+		return id
+	}
+	return "t3_" + id
+}
+
+func redditURL(permalink string) string {
+	if strings.HasPrefix(permalink, "http://") || strings.HasPrefix(permalink, "https://") {
+		return permalink
+	}
+	return redditAPI + permalink
+}
+
+func countSeen(known map[string]bool) int {
+	count := 0
+	for _, seen := range known {
+		if seen {
+			count++
+		}
+	}
+	return count
 }
 
 func newRedditCycleState(source db.Source, cycle *db.SyncCycle, subreddit string) redditCycleState {

@@ -4,24 +4,30 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/hibiken/asynq"
 
 	"aladin/backend_v2/internal/db"
+	"aladin/backend_v2/internal/pipeline"
 )
 
 type fakeSourceRepo struct {
-	claimed        []*db.Source
-	claimErr       error
-	markFailedIDs  []string
-	markStartedIDs []string
-	markSyncedIDs  []string
-	releasedIDs    []string
-	markFailedErr  error
-	markStartedErr error
-	markSyncedErr  error
+	claimed           []*db.Source
+	claimErr          error
+	markFailedIDs     []string
+	markStartedIDs    []string
+	markPageIDs       []string
+	markPageUpdates   []map[string]any
+	markSyncedIDs     []string
+	markSyncedUpdates []map[string]any
+	releasedIDs       []string
+	markFailedErr     error
+	markStartedErr    error
+	markSyncedErr     error
 }
 
 func (f *fakeSourceRepo) GetByID(ctx context.Context, id string) (*db.Source, error) {
@@ -41,11 +47,14 @@ func (f *fakeSourceRepo) MarkSyncStarted(ctx context.Context, id string) error {
 }
 
 func (f *fakeSourceRepo) MarkSyncPage(ctx context.Context, id string, configUpdates map[string]any) error {
+	f.markPageIDs = append(f.markPageIDs, id)
+	f.markPageUpdates = append(f.markPageUpdates, cloneMap(configUpdates))
 	return nil
 }
 
 func (f *fakeSourceRepo) MarkSynced(ctx context.Context, id string, configUpdates map[string]any) error {
 	f.markSyncedIDs = append(f.markSyncedIDs, id)
+	f.markSyncedUpdates = append(f.markSyncedUpdates, cloneMap(configUpdates))
 	return f.markSyncedErr
 }
 
@@ -64,6 +73,7 @@ type fakeCycleRepo struct {
 	created          []*db.SyncCycle
 	runningIDs       []string
 	updatedIDs       []string
+	updatedCursors   []map[string]any
 	updatedHeads     []map[string]any
 	completedIDs     []string
 	completedHeads   []map[string]any
@@ -101,6 +111,7 @@ func (f *fakeCycleRepo) MarkRunning(ctx context.Context, id string) error {
 
 func (f *fakeCycleRepo) UpdateProgress(ctx context.Context, id string, cursor map[string]any, headBoundary map[string]any) error {
 	f.updatedIDs = append(f.updatedIDs, id)
+	f.updatedCursors = append(f.updatedCursors, cloneMap(cursor))
 	f.updatedHeads = append(f.updatedHeads, headBoundary)
 	f.updateCycle(id, func(c *db.SyncCycle) {
 		c.Status = CycleStatusActive
@@ -152,20 +163,47 @@ type fakeSyncer struct {
 }
 
 type fakeSeenStore struct {
-	marked [][]string
+	marked  [][]string
+	markErr error
 }
 
 type fakeArbiter struct {
 	decideFn func(source *db.Source, cycles []*db.SyncCycle, now time.Time) Decision
 }
 
-type fakeEnqueuer struct{}
+type fakeEnqueuer struct {
+	firstPassCalls  []firstPassCall
+	firstPassErr    error
+	failFirstPassAt int
+	failExternalID  string
+}
+
+type firstPassCall struct {
+	recordID   string
+	payload    []byte
+	externalID string
+}
 
 func (f *fakeEnqueuer) EnqueueSync(ctx context.Context, queueName, taskType string, payload []byte, maxRetry int, timeout time.Duration) error {
 	return nil
 }
 
 func (f *fakeEnqueuer) EnqueueFirstPass(ctx context.Context, recordID string, payload []byte) error {
+	call := firstPassCall{recordID: recordID, payload: append([]byte(nil), payload...)}
+	var rec pipeline.RecordPayload
+	if err := json.Unmarshal(payload, &rec); err == nil {
+		call.externalID = rec.ExternalID
+	}
+	f.firstPassCalls = append(f.firstPassCalls, call)
+	if f.firstPassErr != nil {
+		return f.firstPassErr
+	}
+	if f.failFirstPassAt > 0 && len(f.firstPassCalls) == f.failFirstPassAt {
+		return fmt.Errorf("enqueue first pass failed at call %d", f.failFirstPassAt)
+	}
+	if f.failExternalID != "" && call.externalID == f.failExternalID {
+		return fmt.Errorf("enqueue first pass failed for external id %s", f.failExternalID)
+	}
 	return nil
 }
 
@@ -194,7 +232,7 @@ func (f *fakeSeenStore) Seen(ctx context.Context, sourceID string, externalIDs [
 func (f *fakeSeenStore) MarkSeen(ctx context.Context, sourceID string, externalIDs []string) error {
 	cp := append([]string(nil), externalIDs...)
 	f.marked = append(f.marked, cp)
-	return nil
+	return f.markErr
 }
 
 func cloneMap(in map[string]any) map[string]any {
@@ -206,6 +244,15 @@ func cloneMap(in map[string]any) map[string]any {
 		out[k] = v
 	}
 	return out
+}
+
+func syncTask(t *testing.T, job db.SyncJob) *asynq.Task {
+	t.Helper()
+	payload, err := json.Marshal(job)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	return asynq.NewTask("sync:"+job.SourceType, payload)
 }
 
 func (f *fakeArbiter) Decide(source *db.Source, cycles []*db.SyncCycle, now time.Time) Decision {
@@ -423,6 +470,302 @@ func TestQueueMarksAcceptedRecordsSeenAfterEnqueue(t *testing.T) {
 	if len(cycles.completedReasons) != 1 || cycles.completedReasons[0] != CompletionReasonExhausted {
 		t.Fatalf("completion reasons = %v, want [%s]", cycles.completedReasons, CompletionReasonExhausted)
 	}
+}
+
+func TestQueueEnqueueFailureOnFirstRecordBlocksProgress(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeSourceRepo{}
+	cycles := &fakeCycleRepo{}
+	seen := &fakeSeenStore{}
+	enqueuer := &fakeEnqueuer{failFirstPassAt: 1}
+	syncer := &fakeSyncer{
+		sourceType: "reddit",
+		executeFn: func(ctx context.Context, job *db.SyncJob) (*Result, error) {
+			return &Result{
+				Records: []*RawRecord{
+					{ExternalID: "a-1", Type: "post"},
+					{ExternalID: "a-2", Type: "post"},
+				},
+				HasMore:       true,
+				SourceUpdates: map[string]any{"last_seen_id": "a-1"},
+				CursorUpdates: map[string]any{"after": "page-2"},
+				HeadBoundary:  map[string]any{"id": "a-1"},
+			}, nil
+		},
+	}
+
+	q := NewOrchestrator(enqueuer, repo, cycles, seen, NewFreshnessFirstArbiter(), syncer)
+	err := q.makeHandler(syncer)(context.Background(), syncTask(t, db.SyncJob{
+		CycleID:    "cycle-1",
+		SourceID:   "source-1",
+		KgID:       "kg-1",
+		SourceType: "reddit",
+		JobType:    "fetch_posts",
+		Payload:    map[string]any{"after": ""},
+	}))
+	if err == nil {
+		t.Fatal("handler returned nil, want enqueue error")
+	}
+	if len(enqueuer.firstPassCalls) != 1 {
+		t.Fatalf("EnqueueFirstPass calls = %d, want 1", len(enqueuer.firstPassCalls))
+	}
+	assertNoAcceptedProgress(t, repo, cycles, seen)
+	if len(repo.markFailedIDs) != 1 || repo.markFailedIDs[0] != "source-1" {
+		t.Fatalf("MarkSyncFailed calls = %v, want [source-1]", repo.markFailedIDs)
+	}
+}
+
+func TestQueueEnqueueFailureAfterPartialPageBlocksProgressAndRetryIsStable(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeSourceRepo{}
+	cycles := &fakeCycleRepo{}
+	seen := &fakeSeenStore{}
+	enqueuer := &fakeEnqueuer{failFirstPassAt: 2}
+	syncer := &fakeSyncer{
+		sourceType: "reddit",
+		executeFn: func(ctx context.Context, job *db.SyncJob) (*Result, error) {
+			return &Result{
+				Records: []*RawRecord{
+					{ExternalID: "a-1", Type: "post"},
+					{ExternalID: "a-2", Type: "post"},
+				},
+				HasMore:          false,
+				CompletionReason: CompletionReasonExhausted,
+				SourceUpdates:    map[string]any{"last_seen_id": "a-1"},
+				CursorUpdates:    map[string]any{},
+			}, nil
+		},
+	}
+
+	q := NewOrchestrator(enqueuer, repo, cycles, seen, NewFreshnessFirstArbiter(), syncer)
+	task := syncTask(t, db.SyncJob{
+		CycleID:    "cycle-1",
+		SourceID:   "source-1",
+		KgID:       "kg-1",
+		SourceType: "reddit",
+		JobType:    "fetch_posts",
+		Payload:    map[string]any{"after": ""},
+	})
+
+	err := q.makeHandler(syncer)(context.Background(), task)
+	if err == nil {
+		t.Fatal("handler returned nil, want enqueue error")
+	}
+	firstIDs := queuedRecordIDs(enqueuer.firstPassCalls)
+	if len(firstIDs) != 2 {
+		t.Fatalf("first run queued IDs = %v, want two attempted IDs", firstIDs)
+	}
+	assertNoAcceptedProgress(t, repo, cycles, seen)
+
+	enqueuer.failFirstPassAt = 0
+	enqueuer.firstPassCalls = nil
+	if err := q.makeHandler(syncer)(context.Background(), task); err != nil {
+		t.Fatalf("retry handler returned error: %v", err)
+	}
+	secondIDs := queuedRecordIDs(enqueuer.firstPassCalls)
+	if !reflect.DeepEqual(firstIDs, secondIDs) {
+		t.Fatalf("queued record IDs changed across retry: first=%v second=%v", firstIDs, secondIDs)
+	}
+	if len(seen.marked) != 1 || !reflect.DeepEqual(seen.marked[0], []string{"a-1", "a-2"}) {
+		t.Fatalf("MarkSeen calls = %v, want [[a-1 a-2]] after retry success", seen.marked)
+	}
+	if len(repo.markSyncedIDs) != 1 || repo.markSyncedIDs[0] != "source-1" {
+		t.Fatalf("MarkSynced calls = %v, want [source-1]", repo.markSyncedIDs)
+	}
+	if len(cycles.completedIDs) != 1 || cycles.completedIDs[0] != "cycle-1" {
+		t.Fatalf("completed cycle ids = %v, want [cycle-1]", cycles.completedIDs)
+	}
+}
+
+func TestQueueExecuteFailureDoesNotEnqueueOrAdvance(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeSourceRepo{}
+	cycles := &fakeCycleRepo{}
+	seen := &fakeSeenStore{}
+	enqueuer := &fakeEnqueuer{}
+	syncer := &fakeSyncer{
+		sourceType: "reddit",
+		executeFn: func(ctx context.Context, job *db.SyncJob) (*Result, error) {
+			return nil, errors.New("source api failed")
+		},
+	}
+
+	q := NewOrchestrator(enqueuer, repo, cycles, seen, NewFreshnessFirstArbiter(), syncer)
+	err := q.makeHandler(syncer)(context.Background(), syncTask(t, db.SyncJob{
+		CycleID:    "cycle-1",
+		SourceID:   "source-1",
+		KgID:       "kg-1",
+		SourceType: "reddit",
+		JobType:    "fetch_posts",
+		Payload:    map[string]any{"after": ""},
+	}))
+	if err == nil {
+		t.Fatal("handler returned nil, want execute error")
+	}
+	if len(enqueuer.firstPassCalls) != 0 {
+		t.Fatalf("EnqueueFirstPass calls = %d, want 0", len(enqueuer.firstPassCalls))
+	}
+	assertNoAcceptedProgress(t, repo, cycles, seen)
+	if len(repo.markFailedIDs) != 1 || repo.markFailedIDs[0] != "source-1" {
+		t.Fatalf("MarkSyncFailed calls = %v, want [source-1]", repo.markFailedIDs)
+	}
+}
+
+func TestQueueMarkSeenFailureBlocksProgress(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeSourceRepo{}
+	cycles := &fakeCycleRepo{}
+	seen := &fakeSeenStore{markErr: errors.New("seen unavailable")}
+	enqueuer := &fakeEnqueuer{}
+	syncer := &fakeSyncer{
+		sourceType: "reddit",
+		executeFn: func(ctx context.Context, job *db.SyncJob) (*Result, error) {
+			return &Result{
+				Records: []*RawRecord{
+					{ExternalID: "a-1", Type: "post"},
+				},
+				HasMore:          false,
+				CompletionReason: CompletionReasonExhausted,
+				SourceUpdates:    map[string]any{"last_seen_id": "a-1"},
+				CursorUpdates:    map[string]any{},
+			}, nil
+		},
+	}
+
+	q := NewOrchestrator(enqueuer, repo, cycles, seen, NewFreshnessFirstArbiter(), syncer)
+	err := q.makeHandler(syncer)(context.Background(), syncTask(t, db.SyncJob{
+		CycleID:    "cycle-1",
+		SourceID:   "source-1",
+		KgID:       "kg-1",
+		SourceType: "reddit",
+		JobType:    "fetch_posts",
+		Payload:    map[string]any{"after": ""},
+	}))
+	if err == nil {
+		t.Fatal("handler returned nil, want MarkSeen error")
+	}
+	if len(enqueuer.firstPassCalls) != 1 {
+		t.Fatalf("EnqueueFirstPass calls = %d, want 1", len(enqueuer.firstPassCalls))
+	}
+	if len(seen.marked) != 1 || !reflect.DeepEqual(seen.marked[0], []string{"a-1"}) {
+		t.Fatalf("MarkSeen calls = %v, want [[a-1]]", seen.marked)
+	}
+	if len(repo.markPageIDs) != 0 || len(repo.markSyncedIDs) != 0 {
+		t.Fatalf("source progress advanced despite MarkSeen failure: pages=%v synced=%v", repo.markPageIDs, repo.markSyncedIDs)
+	}
+	if len(cycles.updatedIDs) != 0 || len(cycles.completedIDs) != 0 {
+		t.Fatalf("cycle progress advanced despite MarkSeen failure: updated=%v completed=%v", cycles.updatedIDs, cycles.completedIDs)
+	}
+}
+
+func TestQueueRetryProducesStablePayloadWithProvenance(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeSourceRepo{}
+	cycles := &fakeCycleRepo{}
+	seen := &fakeSeenStore{}
+	enqueuer := &fakeEnqueuer{}
+	syncer := &fakeSyncer{
+		sourceType: "reddit",
+		executeFn: func(ctx context.Context, job *db.SyncJob) (*Result, error) {
+			return &Result{
+				Records: []*RawRecord{
+					{
+						ExternalID: "t3_post-1",
+						Type:       "post",
+						Label:      "Post title",
+						Content:    "transient raw content",
+						SourceURL:  "https://reddit.com/r/golang/comments/post_1/title",
+						Metadata: map[string]any{
+							"platform": "reddit",
+							"score":    7,
+						},
+					},
+				},
+				HasMore:          false,
+				CompletionReason: CompletionReasonExhausted,
+				SourceUpdates:    map[string]any{"last_seen_id": "t3_post-1"},
+				CursorUpdates:    map[string]any{},
+			}, nil
+		},
+	}
+
+	q := NewOrchestrator(enqueuer, repo, cycles, seen, NewFreshnessFirstArbiter(), syncer)
+	task := syncTask(t, db.SyncJob{
+		CorrelationID: "corr-1",
+		CycleID:       "cycle-1",
+		SourceID:      "source-1",
+		KgID:          "kg-1",
+		SourceType:    "reddit",
+		JobType:       "fetch_posts",
+		Payload:       map[string]any{"after": ""},
+	})
+
+	if err := q.makeHandler(syncer)(context.Background(), task); err != nil {
+		t.Fatalf("first handler returned error: %v", err)
+	}
+	if err := q.makeHandler(syncer)(context.Background(), task); err != nil {
+		t.Fatalf("second handler returned error: %v", err)
+	}
+	if len(enqueuer.firstPassCalls) != 2 {
+		t.Fatalf("EnqueueFirstPass calls = %d, want 2", len(enqueuer.firstPassCalls))
+	}
+	if enqueuer.firstPassCalls[0].recordID != enqueuer.firstPassCalls[1].recordID {
+		t.Fatalf("record IDs changed across retry: %q vs %q", enqueuer.firstPassCalls[0].recordID, enqueuer.firstPassCalls[1].recordID)
+	}
+	if string(enqueuer.firstPassCalls[0].payload) != string(enqueuer.firstPassCalls[1].payload) {
+		t.Fatalf("payload changed across retry:\nfirst=%s\nsecond=%s", enqueuer.firstPassCalls[0].payload, enqueuer.firstPassCalls[1].payload)
+	}
+
+	var queued pipeline.RecordPayload
+	if err := json.Unmarshal(enqueuer.firstPassCalls[0].payload, &queued); err != nil {
+		t.Fatalf("unmarshal queued payload: %v", err)
+	}
+	if queued.CorrelationID != "corr-1" ||
+		queued.KgID != "kg-1" ||
+		queued.SourceID != "source-1" ||
+		queued.ExternalID != "t3_post-1" ||
+		queued.SourceURL != "https://reddit.com/r/golang/comments/post_1/title" {
+		t.Fatalf("queued payload missing provenance: %+v", queued)
+	}
+	if queued.Metadata["platform"] != "reddit" || queued.Metadata["score"] != float64(7) {
+		t.Fatalf("queued metadata = %v, want reddit provenance metadata", queued.Metadata)
+	}
+	if len(repo.markSyncedUpdates) != 2 ||
+		!reflect.DeepEqual(repo.markSyncedUpdates[0], repo.markSyncedUpdates[1]) {
+		t.Fatalf("source updates changed across retry: %v", repo.markSyncedUpdates)
+	}
+}
+
+func assertNoAcceptedProgress(t *testing.T, repo *fakeSourceRepo, cycles *fakeCycleRepo, seen *fakeSeenStore) {
+	t.Helper()
+	if len(seen.marked) != 0 {
+		t.Fatalf("MarkSeen calls = %v, want none", seen.marked)
+	}
+	if len(repo.markPageIDs) != 0 {
+		t.Fatalf("MarkSyncPage calls = %v, want none", repo.markPageIDs)
+	}
+	if len(repo.markSyncedIDs) != 0 {
+		t.Fatalf("MarkSynced calls = %v, want none", repo.markSyncedIDs)
+	}
+	if len(cycles.updatedIDs) != 0 {
+		t.Fatalf("UpdateProgress calls = %v, want none", cycles.updatedIDs)
+	}
+	if len(cycles.completedIDs) != 0 {
+		t.Fatalf("Complete calls = %v, want none", cycles.completedIDs)
+	}
+}
+
+func queuedRecordIDs(calls []firstPassCall) []string {
+	ids := make([]string, 0, len(calls))
+	for _, call := range calls {
+		ids = append(ids, call.recordID)
+	}
+	return ids
 }
 
 func TestQueueClaimBatchUsesInjectedArbiter(t *testing.T) {

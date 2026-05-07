@@ -2,6 +2,7 @@ package sync
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -58,6 +59,10 @@ func (s *Scheduler) Start(ctx context.Context) {
 
 		jobs, err := s.poller.ClaimBatch(ctx, s.batchSize)
 		if err != nil {
+			if errors.Is(err, context.Canceled) || ctx.Err() != nil {
+				log.Info("scheduler: stopped during claim", "err", ctx.Err())
+				return
+			}
 			log.Error("scheduler: claim failed, backing off", "err", err, "backoff", defaultBackoff)
 			sleep(ctx, defaultBackoff)
 			continue

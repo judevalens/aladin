@@ -230,7 +230,7 @@ func TestOrchestratorWithRealRedditSyncerRefreshTakesOverThenOlderCycleResumes(t
 			source.ID: {olderCycle},
 		},
 	}
-	seen := &integrationSeenStore{known: map[string]bool{"seen-1": true}}
+	seen := &integrationSeenStore{known: map[string]bool{"t3_seen-1": true}}
 	reddit := syncers.NewRedditSyncerWithClient(loadFixtureRedditClient(t, "reddit_refresh_takeover_flow.json"), seen)
 	orch := syncpkg.NewOrchestrator(&integrationEnqueuer{}, sources, cycles, seen, syncpkg.NewFreshnessFirstArbiter(), reddit)
 	mux := asynq.NewServeMux()

@@ -148,6 +148,8 @@ Future examples:
 - internal messaging
 - additional social/media sources
 
+For third-party live sources, Aladin should treat raw provider content as processing input unless a provider policy and product need explicitly allow durable retention. The durable product value is the system's derived signal, summary, entities, graph context, and provenance link back to the original source.
+
 ### Signals
 
 System-generated meaningful surfaced units derived from new source data.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -131,10 +132,20 @@ func (b *BlueskySyncer) Execute(ctx context.Context, job *db.SyncJob) (*sync.Res
 	}
 
 	state := blueskyCycleStateFromPayload(job.Payload)
+	log := slog.With(
+		"component", "source_syncer",
+		"source_type", "bluesky",
+		"source_id", job.SourceID,
+		"cycle_id", job.CycleID,
+		"correlation_id", job.CorrelationID,
+		"query", state.Query,
+	)
+	log.Debug("bluesky: searching posts", "cursor", state.Cursor, "has_next_last_seen", state.NextLastSeenURI != "")
 	body, err := b.client.SearchPosts(ctx, state)
 	if err != nil {
 		return nil, err
 	}
+	log.Debug("bluesky: fetched search page", "provider_record_count", len(body.Posts), "has_next_cursor", body.Cursor != "")
 
 	result := &sync.Result{
 		SourceUpdates: map[string]any{},
@@ -150,6 +161,7 @@ func (b *BlueskySyncer) Execute(ctx context.Context, job *db.SyncJob) (*sync.Res
 	if err != nil {
 		return nil, fmt.Errorf("bluesky seen lookup: %w", err)
 	}
+	log.Debug("bluesky: seen lookup complete", "candidate_count", len(externalIDs), "known_count", countSeen(known))
 	hitBoundary := false
 	var newestAcceptedURI string
 	var newestAcceptedCreatedAt string
@@ -159,6 +171,7 @@ func (b *BlueskySyncer) Execute(ctx context.Context, job *db.SyncJob) (*sync.Res
 		}
 
 		if known[post.URI] {
+			log.Debug("bluesky: seen boundary reached", "external_id", post.URI)
 			hitBoundary = true
 			result.CompletionReason = sync.CompletionReasonSeenOverlap
 			break
@@ -221,6 +234,15 @@ func (b *BlueskySyncer) Execute(ctx context.Context, job *db.SyncJob) (*sync.Res
 		result.CursorUpdates["cursor"] = ""
 	}
 
+	log.Debug(
+		"bluesky: execution result built",
+		"accepted_record_count", len(result.Records),
+		"has_more", result.HasMore,
+		"completion_reason", result.CompletionReason,
+		"source_update_keys", mapKeysForLog(result.SourceUpdates),
+		"cursor_update_keys", mapKeysForLog(result.CursorUpdates),
+		"head_boundary_keys", mapKeysForLog(result.HeadBoundary),
+	)
 	return result, nil
 }
 

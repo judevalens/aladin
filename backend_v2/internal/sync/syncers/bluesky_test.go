@@ -240,3 +240,62 @@ func TestBlueskyExecuteDoesNotAdvanceHighWaterMarkWhenFirstPostIsSeen(t *testing
 		t.Fatalf("head_boundary = %v, want empty", result.HeadBoundary)
 	}
 }
+
+func TestBlueskyExecuteEmitsURIAndProvenance(t *testing.T) {
+	t.Parallel()
+
+	s := NewBlueskySyncerWithClient(fakeBlueskyClient{resp: blueskyResponse(
+		blueskyFixturePost{
+			uri:       "at://did:plc:alice/app.bsky.feed.post/abc123",
+			cid:       "cid-abc123",
+			indexedAt: "2026-04-03T12:01:00Z",
+			text:      "LLM agents for research",
+			createdAt: "2026-04-03T12:00:00Z",
+		},
+	)}, sync.NewNoopSeenStore())
+
+	job := &db.SyncJob{
+		SourceID:   "source-1",
+		SourceType: "bluesky",
+		Payload: map[string]any{
+			"query":                     "llm agents",
+			"cursor":                    "",
+			"next_last_seen_uri":        "",
+			"next_last_seen_created_at": "",
+		},
+	}
+
+	result, err := s.Execute(context.Background(), job)
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+	if len(result.Records) != 1 {
+		t.Fatalf("record count = %d, want 1", len(result.Records))
+	}
+
+	record := result.Records[0]
+	if record.ExternalID != "at://did:plc:alice/app.bsky.feed.post/abc123" {
+		t.Fatalf("ExternalID = %q, want Bluesky URI", record.ExternalID)
+	}
+	if record.SourceURL != "https://bsky.app/profile/alice.bsky.social/post/abc123" {
+		t.Fatalf("SourceURL = %q, want bsky post URL", record.SourceURL)
+	}
+	if got := record.Metadata["platform"]; got != "bluesky" {
+		t.Fatalf("metadata.platform = %v, want bluesky", got)
+	}
+	if got := record.Metadata["query"]; got != "llm agents" {
+		t.Fatalf("metadata.query = %v, want query", got)
+	}
+	if got := record.Metadata["uri"]; got != record.ExternalID {
+		t.Fatalf("metadata.uri = %v, want external ID", got)
+	}
+	if got := record.Metadata["cid"]; got != "cid-abc123" {
+		t.Fatalf("metadata.cid = %v, want cid", got)
+	}
+	if got := record.Metadata["author_handle"]; got != "alice.bsky.social" {
+		t.Fatalf("metadata.author_handle = %v, want alice.bsky.social", got)
+	}
+	if got := record.Metadata["created_at"]; got != "2026-04-03T12:00:00Z" {
+		t.Fatalf("metadata.created_at = %v, want post created timestamp", got)
+	}
+}

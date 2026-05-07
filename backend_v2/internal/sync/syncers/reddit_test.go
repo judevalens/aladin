@@ -140,7 +140,7 @@ func TestRedditExecuteStopsAtSeenID(t *testing.T) {
 		)
 		resp.Data.After = "t3_next"
 		return resp
-	}()}, fakeSeenStore{known: map[string]bool{"seen-1": true}})
+	}()}, fakeSeenStore{known: map[string]bool{"t3_seen-1": true}})
 
 	job := &db.SyncJob{
 		SourceID:   "source-1",
@@ -166,14 +166,14 @@ func TestRedditExecuteStopsAtSeenID(t *testing.T) {
 	if len(result.Records) != 2 {
 		t.Fatalf("record count = %d, want 2", len(result.Records))
 	}
-	if got := result.SourceUpdates["last_seen_id"]; got != "new-3" {
-		t.Fatalf("last_seen_id = %v, want new-3", got)
+	if got := result.SourceUpdates["last_seen_id"]; got != "t3_new-3" {
+		t.Fatalf("last_seen_id = %v, want t3_new-3", got)
 	}
 	if got := floatFromAny(result.SourceUpdates["last_seen_created_utc"]); got != 300 {
 		t.Fatalf("last_seen_created_utc = %v, want 300", got)
 	}
-	if got := result.HeadBoundary["id"]; got != "new-3" {
-		t.Fatalf("head_boundary.id = %v, want new-3", got)
+	if got := result.HeadBoundary["id"]; got != "t3_new-3" {
+		t.Fatalf("head_boundary.id = %v, want t3_new-3", got)
 	}
 	if got := floatFromAny(result.HeadBoundary["created_utc"]); got != 300 {
 		t.Fatalf("head_boundary.created_utc = %v, want 300", got)
@@ -219,18 +219,18 @@ func TestRedditExecuteCarriesNextBoundaryAcrossPagination(t *testing.T) {
 	if got := result.CursorUpdates["after"]; got != "t3_next" {
 		t.Fatalf("after = %v, want t3_next", got)
 	}
-	if got := result.SourceUpdates["last_seen_id"]; got != "new-3" {
-		t.Fatalf("last_seen_id = %v, want new-3", got)
+	if got := result.SourceUpdates["last_seen_id"]; got != "t3_new-3" {
+		t.Fatalf("last_seen_id = %v, want t3_new-3", got)
 	}
-	if got := result.HeadBoundary["id"]; got != "new-3" {
-		t.Fatalf("head_boundary.id = %v, want new-3", got)
+	if got := result.HeadBoundary["id"]; got != "t3_new-3" {
+		t.Fatalf("head_boundary.id = %v, want t3_new-3", got)
 	}
 }
 
 func TestRedditExecuteDoesNotAdvanceHighWaterMarkWhenFirstPostIsSeen(t *testing.T) {
 	t.Parallel()
 
-	s := NewRedditSyncer(fakeSeenStore{known: map[string]bool{"seen-1": true}})
+	s := NewRedditSyncer(fakeSeenStore{known: map[string]bool{"t3_seen-1": true}})
 	s.client = fakeRedditClient{resp: func() *redditListingResponse {
 		resp := redditResponse(
 			struct {
@@ -272,5 +272,61 @@ func TestRedditExecuteDoesNotAdvanceHighWaterMarkWhenFirstPostIsSeen(t *testing.
 	}
 	if len(result.HeadBoundary) != 0 {
 		t.Fatalf("head_boundary = %v, want empty", result.HeadBoundary)
+	}
+}
+
+func TestRedditExecuteEmitsCanonicalIDsAndProvenance(t *testing.T) {
+	t.Parallel()
+
+	s := NewRedditSyncerWithClient(fakeRedditClient{resp: redditResponse(
+		redditFixturePost{"abc123", "Pairs trading", "Cointegration notes", "/r/algotrading/comments/abc123/pairs", 17, 420},
+	)}, sync.NewNoopSeenStore())
+
+	job := &db.SyncJob{
+		SourceID:   "source-1",
+		SourceType: "reddit",
+		Payload: map[string]any{
+			"subreddit":                  "algotrading",
+			"after":                      "",
+			"next_last_seen_id":          "",
+			"next_last_seen_created_utc": float64(0),
+		},
+	}
+
+	result, err := s.Execute(context.Background(), job)
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+	if len(result.Records) != 1 {
+		t.Fatalf("record count = %d, want 1", len(result.Records))
+	}
+
+	record := result.Records[0]
+	if record.ExternalID != "t3_abc123" {
+		t.Fatalf("ExternalID = %q, want t3_abc123", record.ExternalID)
+	}
+	if record.SourceURL != "https://www.reddit.com/r/algotrading/comments/abc123/pairs" {
+		t.Fatalf("SourceURL = %q, want reddit permalink", record.SourceURL)
+	}
+	if record.Content != "Pairs trading\n\nCointegration notes" {
+		t.Fatalf("Content = %q, want title plus selftext", record.Content)
+	}
+	if got := record.Metadata["platform"]; got != "reddit" {
+		t.Fatalf("metadata.platform = %v, want reddit", got)
+	}
+	if got := record.Metadata["reddit_id"]; got != "t3_abc123" {
+		t.Fatalf("metadata.reddit_id = %v, want t3_abc123", got)
+	}
+	if got := record.Metadata["subreddit"]; got != "algotrading" {
+		t.Fatalf("metadata.subreddit = %v, want algotrading", got)
+	}
+	if got := record.Metadata["permalink"]; got != "/r/algotrading/comments/abc123/pairs" {
+		t.Fatalf("metadata.permalink = %v, want permalink", got)
+	}
+	if got := record.Metadata["score"]; got != 17 {
+		t.Fatalf("metadata.score = %v, want 17", got)
+	}
+	if got := record.Metadata["created_utc"]; got != float64(420) {
+		t.Fatalf("metadata.created_utc = %v, want 420", got)
 	}
 }

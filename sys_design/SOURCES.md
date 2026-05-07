@@ -10,22 +10,24 @@ Sources fall into three sync modes:
 | `push` | External system calls a webhook endpoint. No scheduler, no cursor. | Slack, GitHub, Linear |
 | `one_shot` | Manual upload or paste. Single snapshot, never re-synced. | File upload, voice memo, paste |
 
-The sync mode determines how artifacts are created. Everything downstream — enrichment, relevance scoring, graph promotion — is identical regardless of how an artifact arrived.
+The sync mode determines how source payloads enter the enrichment pipeline. Everything downstream — enrichment, relevance scoring, graph promotion — is identical regardless of how an item arrived.
+
+For third-party social sources, raw provider content is **transient processing input**, not durable Aladin content. The durable product object should be the derived Aladin value: summary, entities, topics, key claims, relevance/gap/connection output, and provenance back to the original source URL or external ID. This keeps Aladin focused on signals rather than raw feed archives, and limits retention/compliance risk for providers such as Reddit and X.
 
 ```
 poll source:
-  Scheduler → SyncJob → Queue → Worker → Syncer → fetch → Artifact (pending)
+  Scheduler → SyncJob → Queue → Worker → Syncer → fetch → Raw payload (transient)
 
 push source:
-  External system → Webhook endpoint → Handler → Artifact (pending)
+  External system → Webhook endpoint → Handler → Raw payload (transient or provider-dependent)
 
 one_shot source:
-  User action → Ingest endpoint → Artifact (pending)
+  User action → Ingest endpoint → User-owned artifact (durable)
 
                                           ↓ (all paths converge here)
                                    Enrichment pipeline
                                           ↓
-                                   Graph / Insights
+                         Durable signal / derived artifact / graph context
 ```
 
 ---
@@ -88,6 +90,21 @@ one_shot config:
 
 ---
 
+## Retention Policy
+
+Default retention policy by source class:
+
+| Source class | Raw content retention | Durable output |
+|---|---|---|
+| Third-party social sources such as Reddit or X | transient queue/pipeline payload only | derived insight, entities/topics, source URL, external ID, attribution metadata |
+| More permissive public protocols such as Bluesky | provider-dependent; default to transient until explicitly relaxed | derived insight plus provenance |
+| User-owned uploads, pages, and voice notes | durable user content | original content plus derived enrichment |
+| RSS/news/web pages | publisher/license dependent | default to derived summary plus canonical URL |
+
+Provider-specific syncers may fetch and pass raw content through the enrichment pipeline, but durable records should avoid storing full third-party post/comment bodies unless the provider policy and product need explicitly allow it. If a source item cannot produce useful derived value, it may be dropped rather than stored as raw feed exhaust.
+
+---
+
 ## Reddit
 
 ### Source config
@@ -107,18 +124,17 @@ Source
 
 One Source per subreddit. A user tracking two subreddits creates two Sources.
 
-### Artifact mapping
+### Transient payload and durable output
 
-| Reddit unit | Artifact type | external_id | content |
+| Reddit unit | external_id | transient raw input | durable Aladin output |
 |---|---|---|---|
-| Post / thread | `message` | `t3_<post_id>` | post title + selftext |
-| Comment (optional) | `message` | `t1_<comment_id>` | comment body |
+| Post / thread | `t3_<post_id>` | title + selftext | summary/key claims/entities/topics, trend/relevance metadata, source URL |
+| Comment (optional) | `t1_<comment_id>` | comment body | only derived value if useful, plus parent/source provenance |
 
 ```
-Artifact (post)
-  type: 'message'
+Transient payload (post)
   external_id: 't3_abc123'
-  content: post.title + "\n\n" + post.selftext
+  content: post.title + "\n\n" + post.selftext   ← processing input only
   metadata:
     reddit_id: 't3_abc123'
     subreddit: 'MachineLearning'
@@ -129,10 +145,25 @@ Artifact (post)
     created_utc: 1710000000
     num_comments: 43
 
-Artifact (comment, optional)
-  type: 'message'
+Durable output (post)
+  type: 'signal' or provider-derived artifact
+  external_id: 't3_abc123'
+  source_url: 'https://reddit.com/r/...'
+  summary: generated summary / gap / connection text
+  enrichment:
+    entities: [...]
+    topics: [...]
+    key_claims: [...]
+  metadata:
+    provider: 'reddit'
+    subreddit: 'MachineLearning'
+    reddit_id: 't3_abc123'
+    created_utc: 1710000000
+    score: 847
+
+Transient payload (comment, optional)
   external_id: 't1_xyz789'
-  content: comment.body
+  content: comment.body                         ← processing input only
   metadata:
     reddit_id: 't1_xyz789'
     parent_id: 't3_abc123'
@@ -199,7 +230,7 @@ Stage 1 — pre-pipeline (source.config.min_score)
   Cheap. Runs in syncer before any DB write.
 
 Stage 2 — post-enrichment (source.suggest_threshold)
-  artifact.relevance_score < suggest_threshold → status: 'dismissed'
+  derived relevance_score < suggest_threshold → drop or dismiss
   Semantic similarity + entity overlap against existing KG.
   Expensive. Runs async in enrichment pipeline.
 ```
