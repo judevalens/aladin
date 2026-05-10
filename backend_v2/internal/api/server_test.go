@@ -410,6 +410,102 @@ func TestAuthMiddlewareInjectsCurrentUser(t *testing.T) {
 	}
 }
 
+func TestProviderConnectionsRequireAuth(t *testing.T) {
+	t.Parallel()
+
+	server := NewWithDependencies(":0", app.StaticDependencies{
+		AuthSvc:                &fakeAuthService{},
+		ProviderConnectionsSvc: &fakeProviderConnectionService{},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/provider-connections/providers", nil)
+	rec := httptest.NewRecorder()
+
+	server.httpServer.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusUnauthorized, rec.Body.String())
+	}
+}
+
+func TestProviderConnectionsProviders(t *testing.T) {
+	t.Parallel()
+
+	server := NewWithDependencies(":0", app.StaticDependencies{
+		AuthSvc: &fakeAuthService{},
+		ProviderConnectionsSvc: &fakeProviderConnectionService{
+			providers: []artifactservice.ProviderDescriptor{
+				{
+					Provider:          "google",
+					Label:             "Google",
+					Backend:           "nango",
+					ProviderConfigKey: "google-dev",
+					Available:         true,
+				},
+			},
+		},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/provider-connections/providers", nil)
+	req.AddCookie(&http.Cookie{Name: artifactservice.SessionCookieName, Value: "valid"})
+	rec := httptest.NewRecorder()
+
+	server.httpServer.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "google") || strings.Contains(rec.Body.String(), "secret") {
+		t.Fatalf("body = %s, want google provider without secrets", rec.Body.String())
+	}
+}
+
+func TestProviderConnectionsStartConnect(t *testing.T) {
+	t.Parallel()
+
+	service := &fakeProviderConnectionService{
+		session: artifactservice.ProviderConnectSession{ConnectSessionToken: "nango-session"},
+	}
+	server := NewWithDependencies(":0", app.StaticDependencies{
+		AuthSvc:                &fakeAuthService{},
+		ProviderConnectionsSvc: service,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/provider-connections/google/connect", nil)
+	req.AddCookie(&http.Cookie{Name: artifactservice.SessionCookieName, Value: "valid"})
+	rec := httptest.NewRecorder()
+
+	server.httpServer.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if service.startProvider != "google" {
+		t.Fatalf("start provider = %q, want google", service.startProvider)
+	}
+}
+
+func TestProviderConnectionsSync(t *testing.T) {
+	t.Parallel()
+
+	service := &fakeProviderConnectionService{
+		connections: []artifactservice.ProviderConnection{{ID: "conn-1", Provider: "google"}},
+	}
+	server := NewWithDependencies(":0", app.StaticDependencies{
+		AuthSvc:                &fakeAuthService{},
+		ProviderConnectionsSvc: service,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/provider-connections/sync", nil)
+	req.AddCookie(&http.Cookie{Name: artifactservice.SessionCookieName, Value: "valid"})
+	rec := httptest.NewRecorder()
+
+	server.httpServer.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if service.syncCalls != 1 {
+		t.Fatalf("sync calls = %d, want 1", service.syncCalls)
+	}
+}
+
 type fakeArtifactService struct {
 	list               []artifactservice.ArtifactResponse
 	listParams         *artifactservice.ArtifactListParams
@@ -433,6 +529,14 @@ type fakeFileService struct {
 
 type fakeAuthService struct{}
 
+type fakeProviderConnectionService struct {
+	providers     []artifactservice.ProviderDescriptor
+	connections   []artifactservice.ProviderConnection
+	session       artifactservice.ProviderConnectSession
+	startProvider string
+	syncCalls     int
+}
+
 func (f *fakeAuthService) Register(context.Context, artifactservice.AuthCredentials, string) (artifactservice.AuthSession, error) {
 	return artifactservice.AuthSession{}, nil
 }
@@ -450,6 +554,32 @@ func (f *fakeAuthService) CurrentUser(_ context.Context, token string) (artifact
 		return artifactservice.CurrentUser{}, artifactservice.ErrUnauthenticated
 	}
 	return artifactservice.CurrentUser{ID: "user-1", Email: "user@example.com"}, nil
+}
+
+func (f *fakeProviderConnectionService) ListProviders(context.Context) ([]artifactservice.ProviderDescriptor, error) {
+	return f.providers, nil
+}
+
+func (f *fakeProviderConnectionService) StartConnect(_ context.Context, input artifactservice.StartProviderConnectInput) (artifactservice.ProviderConnectSession, error) {
+	f.startProvider = input.Provider
+	return f.session, nil
+}
+
+func (f *fakeProviderConnectionService) SyncConnections(context.Context, artifactservice.SyncProviderConnectionsInput) ([]artifactservice.ProviderConnection, error) {
+	f.syncCalls++
+	return f.connections, nil
+}
+
+func (f *fakeProviderConnectionService) ListConnections(context.Context) ([]artifactservice.ProviderConnection, error) {
+	return f.connections, nil
+}
+
+func (f *fakeProviderConnectionService) Disconnect(context.Context, string) error {
+	return nil
+}
+
+func (f *fakeProviderConnectionService) GetConnectionCredentials(context.Context, artifactservice.ProviderCredentialRequest) (artifactservice.ProviderCredentials, error) {
+	return artifactservice.ProviderCredentials{}, nil
 }
 
 func (f *fakePageService) Get(context.Context, string) (artifactservice.PageDocument, error) {

@@ -11,6 +11,7 @@ import (
 	"github.com/joho/godotenv"
 
 	"aladin/backend_v2/internal/api"
+	"aladin/backend_v2/internal/app"
 	"aladin/backend_v2/internal/config"
 	"aladin/backend_v2/internal/db"
 )
@@ -50,7 +51,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	server := api.New(cfg.HTTPAddr, pool)
+	server := api.NewWithDependencies(cfg.HTTPAddr, app.NewDependenciesWithProviderConnections(pool, cfg.ProviderConnections))
 
 	go func() {
 		<-ctx.Done()

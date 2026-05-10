@@ -114,7 +114,7 @@ func (r *PostgresSourceRepository) Create(ctx context.Context, sourceID string, 
 		        provider, stream_kind, stream_key, name, sync_mode, sync_state, config
 		    )
 		    VALUES ($1, $2, $3, $4, $5, 'active', $6::jsonb)
-		    ON CONFLICT (provider, stream_kind, stream_key) DO UPDATE
+		    ON CONFLICT (provider, stream_kind, stream_key) WHERE owner_user_id IS NULL DO UPDATE
 		    SET name = EXCLUDED.name,
 		        config = provider_streams.config || EXCLUDED.config,
 		        updated_at = now()

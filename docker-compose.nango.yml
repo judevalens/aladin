@@ -1,0 +1,48 @@
+services:
+  nango-postgres:
+    image: postgres:16-alpine
+    container_name: aladin-nango-postgres
+    environment:
+      POSTGRES_DB: nango
+      POSTGRES_USER: nango
+      POSTGRES_PASSWORD: nango
+    ports:
+      - "5434:5432"
+    volumes:
+      - nango_postgres_data:/var/lib/postgresql/data
+
+  nango-redis:
+    image: redis:7-alpine
+    container_name: aladin-nango-redis
+    ports:
+      - "6380:6379"
+    volumes:
+      - nango_redis_data:/data
+    command: redis-server --appendonly yes
+
+  nango-server:
+    image: nangohq/nango-server:hosted
+    container_name: aladin-nango-server
+    depends_on:
+      - nango-postgres
+      - nango-redis
+    ports:
+      - "3003:3003"
+      - "3009:3009"
+    environment:
+      NODE_ENV: production
+      NANGO_DB_HOST: nango-postgres
+      NANGO_DB_PORT: 5432
+      NANGO_DB_NAME: nango
+      NANGO_DB_USER: nango
+      NANGO_DB_PASSWORD: nango
+      NANGO_REDIS_URL: redis://nango-redis:6379
+      NANGO_SERVER_URL: http://localhost:3003
+      NANGO_PUBLIC_SERVER_URL: http://localhost:3003
+      NANGO_PUBLIC_CONNECT_URL: http://localhost:3009
+      NANGO_ENCRYPTION_KEY: ${NANGO_ENCRYPTION_KEY:-}
+      NANGO_SECRET_KEY: ${NANGO_SECRET_KEY:-}
+
+volumes:
+  nango_postgres_data:
+  nango_redis_data:

@@ -7,8 +7,9 @@ import (
 )
 
 type APIConfig struct {
-	DatabaseURL string
-	HTTPAddr    string
+	DatabaseURL         string
+	HTTPAddr            string
+	ProviderConnections ProviderConnectionConfig
 }
 
 type WorkerConfig struct {
@@ -22,14 +23,22 @@ type WorkerConfig struct {
 	Concurrency  int
 }
 
+type ProviderConnectionConfig struct {
+	NangoBaseURL                 string
+	NangoConnectBaseURL          string
+	NangoSecretKey               string
+	NangoGoogleProviderConfigKey string
+}
+
 func LoadAPI() (APIConfig, error) {
 	databaseURL, err := require("DATABASE_URL")
 	if err != nil {
 		return APIConfig{}, err
 	}
 	return APIConfig{
-		DatabaseURL: databaseURL,
-		HTTPAddr:    optional("API_ADDR", ":8080"),
+		DatabaseURL:         databaseURL,
+		HTTPAddr:            optional("API_ADDR", ":8080"),
+		ProviderConnections: LoadProviderConnections(),
 	}, nil
 }
 
@@ -60,6 +69,15 @@ func LoadWorker() (WorkerConfig, error) {
 		Neo4jPass:    os.Getenv("NEO4J_PASS"),
 		Concurrency:  optionalInt("WORKER_CONCURRENCY", 16),
 	}, nil
+}
+
+func LoadProviderConnections() ProviderConnectionConfig {
+	return ProviderConnectionConfig{
+		NangoBaseURL:                 optional("NANGO_BASE_URL", "http://localhost:3003"),
+		NangoConnectBaseURL:          optional("NANGO_CONNECT_BASE_URL", "http://localhost:3009"),
+		NangoSecretKey:               os.Getenv("NANGO_SECRET_KEY"),
+		NangoGoogleProviderConfigKey: os.Getenv("NANGO_GOOGLE_PROVIDER_CONFIG_KEY"),
+	}
 }
 
 func require(key string) (string, error) {

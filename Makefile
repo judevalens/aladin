@@ -1,4 +1,4 @@
-.PHONY: help backend db-up db-down worker-go api-go artifact-spa-build ops-status ops-errors ops-streams ops-queues ops-force-stream ops-reset-stuck-cycles
+.PHONY: help backend db-up db-down nango-up nango-down nango-logs worker-go api-go artifact-spa-build ops-status ops-errors ops-streams ops-queues ops-force-stream ops-reset-stuck-cycles
 
 help: ## List available make targets
 	@awk 'BEGIN {FS = ":.*## "; printf "Available targets:\n"} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-24s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -11,6 +11,15 @@ db-up: ## Start local Docker infrastructure
 
 db-down: ## Stop local Docker infrastructure
 	docker compose down
+
+nango-up: ## Start local Nango self-hosted services
+	docker compose -f docker-compose.nango.yml up -d
+
+nango-down: ## Stop local Nango self-hosted services
+	docker compose -f docker-compose.nango.yml down
+
+nango-logs: ## Tail local Nango logs
+	docker compose -f docker-compose.nango.yml logs -f
 
 worker-go: ## Run the Go worker; optional CONCURRENCY=24
 	cd backend_v2 && WORKER_CONCURRENCY=$(or $(CONCURRENCY),16) go run ./cmd/worker

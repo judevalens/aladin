@@ -209,15 +209,15 @@ The client still uses throwing API calls. A future `Result<T>` boundary can be i
 
 This auth layer is the trusted user binding that OAuth needs.
 
-For OAuth connect later:
+For provider connections:
 
-- OAuth state must be bound to the currently authenticated user/session.
-- Callback must reject if the current user differs from the state owner.
-- `returnTo` must be path-only or allowlisted to avoid open redirects.
-- Provider credentials should reference `user_id`.
-- Refresh tokens should be nullable because not every provider always returns one.
-- Credential rows should store `key_version` for future encryption rotation.
-- Existing owner-scoped streams should be paused or disabled on disconnect.
+- Aladin uses Nango free self-hosted as the default credential backend for supported providers.
+- Provider tokens live in Nango; Aladin stores only `provider_connections` refs tied to `user_id`.
+- Product code depends on `ProviderConnectionService`, not Nango directly.
+- Nango is used for Auth/credential/proxy responsibilities only; Aladin keeps ingestion, scheduling, records, matching, and insights.
+- Public provider streams stay global; private streams later reference `owner_user_id` and `provider_connection_id`.
+- Disconnecting a provider connection marks the local ref inactive and disables dependent owner-scoped streams.
+- Threads is deferred because Nango does not support it today; it can later use a local backend behind the same interface.
 
 Do not let OAuth callbacks attach credentials to arbitrary user ids from request payloads.
 

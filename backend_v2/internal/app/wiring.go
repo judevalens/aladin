@@ -3,6 +3,7 @@ package app
 import (
 	"path/filepath"
 
+	"aladin/backend_v2/internal/config"
 	"aladin/backend_v2/internal/repo"
 	coreservice "aladin/backend_v2/internal/service"
 
@@ -19,22 +20,24 @@ type Dependencies interface {
 	Files() coreservice.FileService
 	Feed() coreservice.FeedService
 	Insights() coreservice.InsightService
+	ProviderConnections() coreservice.ProviderConnectionService
 	Realtime() coreservice.RealtimeEventService
 	RealtimeKeyResolver() coreservice.SubscriptionKeyResolver
 }
 
 type StaticDependencies struct {
-	AuthSvc      coreservice.AuthService
-	SystemSvc    coreservice.SystemService
-	SourcesSvc   coreservice.SourceService
-	RecordsSvc   coreservice.RecordService
-	ArtifactsSvc coreservice.ArtifactService
-	PagesSvc     coreservice.PageService
-	FilesSvc     coreservice.FileService
-	FeedSvc      coreservice.FeedService
-	InsightsSvc  coreservice.InsightService
-	RealtimeSvc  coreservice.RealtimeEventService
-	RealtimeKeys coreservice.SubscriptionKeyResolver
+	AuthSvc                coreservice.AuthService
+	SystemSvc              coreservice.SystemService
+	SourcesSvc             coreservice.SourceService
+	RecordsSvc             coreservice.RecordService
+	ArtifactsSvc           coreservice.ArtifactService
+	PagesSvc               coreservice.PageService
+	FilesSvc               coreservice.FileService
+	FeedSvc                coreservice.FeedService
+	InsightsSvc            coreservice.InsightService
+	ProviderConnectionsSvc coreservice.ProviderConnectionService
+	RealtimeSvc            coreservice.RealtimeEventService
+	RealtimeKeys           coreservice.SubscriptionKeyResolver
 }
 
 func (d StaticDependencies) Auth() coreservice.AuthService          { return d.AuthSvc }
@@ -46,6 +49,9 @@ func (d StaticDependencies) Pages() coreservice.PageService         { return d.P
 func (d StaticDependencies) Files() coreservice.FileService         { return d.FilesSvc }
 func (d StaticDependencies) Feed() coreservice.FeedService          { return d.FeedSvc }
 func (d StaticDependencies) Insights() coreservice.InsightService   { return d.InsightsSvc }
+func (d StaticDependencies) ProviderConnections() coreservice.ProviderConnectionService {
+	return d.ProviderConnectionsSvc
+}
 func (d StaticDependencies) Realtime() coreservice.RealtimeEventService {
 	return d.RealtimeSvc
 }
@@ -54,17 +60,18 @@ func (d StaticDependencies) RealtimeKeyResolver() coreservice.SubscriptionKeyRes
 }
 
 type wiring struct {
-	auth      coreservice.AuthService
-	system    coreservice.SystemService
-	sources   coreservice.SourceService
-	records   coreservice.RecordService
-	artifacts coreservice.ArtifactService
-	pages     coreservice.PageService
-	files     coreservice.FileService
-	feed      coreservice.FeedService
-	insights  coreservice.InsightService
-	realtime  coreservice.RealtimeEventService
-	rtKeys    coreservice.SubscriptionKeyResolver
+	auth                coreservice.AuthService
+	system              coreservice.SystemService
+	sources             coreservice.SourceService
+	records             coreservice.RecordService
+	artifacts           coreservice.ArtifactService
+	pages               coreservice.PageService
+	files               coreservice.FileService
+	feed                coreservice.FeedService
+	insights            coreservice.InsightService
+	providerConnections coreservice.ProviderConnectionService
+	realtime            coreservice.RealtimeEventService
+	rtKeys              coreservice.SubscriptionKeyResolver
 }
 
 func (w wiring) Auth() coreservice.AuthService          { return w.auth }
@@ -76,6 +83,9 @@ func (w wiring) Pages() coreservice.PageService         { return w.pages }
 func (w wiring) Files() coreservice.FileService         { return w.files }
 func (w wiring) Feed() coreservice.FeedService          { return w.feed }
 func (w wiring) Insights() coreservice.InsightService   { return w.insights }
+func (w wiring) ProviderConnections() coreservice.ProviderConnectionService {
+	return w.providerConnections
+}
 func (w wiring) Realtime() coreservice.RealtimeEventService {
 	return w.realtime
 }
@@ -86,6 +96,10 @@ func (w wiring) RealtimeKeyResolver() coreservice.SubscriptionKeyResolver {
 const defaultUserID = "00000000-0000-0000-0000-000000000001"
 
 func NewDependencies(pool *pgxpool.Pool) Dependencies {
+	return NewDependenciesWithProviderConnections(pool, config.LoadProviderConnections())
+}
+
+func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig config.ProviderConnectionConfig) Dependencies {
 	authRepo := repo.NewAuthPostgres(pool)
 	sourceRepo := repo.NewSourcePostgres(pool)
 	recordRepo := repo.NewRecordPostgres(pool)
@@ -94,21 +108,42 @@ func NewDependencies(pool *pgxpool.Pool) Dependencies {
 	feedRepo := repo.NewFeedPostgres(pool)
 	insightRepo := repo.NewInsightPostgres(pool)
 	systemRepo := repo.NewSystemPostgres(pool)
+	providerConnectionRepo := repo.NewProviderConnectionPostgres(pool)
 	realtimeKeys := coreservice.NewSubscriptionKeyResolver(defaultUserID)
 	realtime := coreservice.NewInMemoryRealtimeEventService(realtimeKeys)
+	nangoClient := coreservice.NewHTTPNangoClient(providerConfig.NangoBaseURL, providerConfig.NangoSecretKey)
+	nangoBackend := coreservice.NewNangoProviderConnectionBackend(
+		nangoClient,
+		providerConfig.NangoBaseURL,
+		providerConfig.NangoConnectBaseURL,
+		providerConfig.NangoSecretKey,
+	)
+	providerConnections := coreservice.NewProviderConnectionService(
+		providerConnectionRepo,
+		[]coreservice.ProviderDefinition{
+			{
+				Provider:          coreservice.ProviderGoogle,
+				Label:             "Google",
+				Backend:           coreservice.ProviderConnectionBackendNango,
+				ProviderConfigKey: providerConfig.NangoGoogleProviderConfigKey,
+			},
+		},
+		[]coreservice.ProviderConnectionBackend{nangoBackend},
+	)
 
 	return wiring{
-		auth:      coreservice.NewAuthService(authRepo, coreservice.NewPasswordHasher()),
-		system:    coreservice.NewSystemService(systemRepo),
-		sources:   coreservice.NewSourceService(sourceRepo),
-		records:   coreservice.NewRecordService(recordRepo),
-		artifacts: coreservice.NewArtifactService(artifactRepo, artifactFiles, realtime),
-		pages:     coreservice.NewPageService(artifactRepo, realtime),
-		files:     coreservice.NewFileService(artifactRepo, artifactFiles),
-		feed:      coreservice.NewFeedService(feedRepo),
-		insights:  coreservice.NewInsightService(insightRepo),
-		realtime:  realtime,
-		rtKeys:    realtimeKeys,
+		auth:                coreservice.NewAuthService(authRepo, coreservice.NewPasswordHasher()),
+		system:              coreservice.NewSystemService(systemRepo),
+		sources:             coreservice.NewSourceService(sourceRepo),
+		records:             coreservice.NewRecordService(recordRepo),
+		artifacts:           coreservice.NewArtifactService(artifactRepo, artifactFiles, realtime),
+		pages:               coreservice.NewPageService(artifactRepo, realtime),
+		files:               coreservice.NewFileService(artifactRepo, artifactFiles),
+		feed:                coreservice.NewFeedService(feedRepo),
+		insights:            coreservice.NewInsightService(insightRepo),
+		providerConnections: providerConnections,
+		realtime:            realtime,
+		rtKeys:              realtimeKeys,
 	}
 }
 

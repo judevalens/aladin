@@ -257,100 +257,83 @@ Prevent external actors from receiving full app access by default.
 - A token with `artifacts:read/write` can use notes tools.
 - Authorization failures return MCP tool errors, not panics.
 
-## Milestone 4 — OAuth Credential Model
+## Milestone 4 — Nango-Backed Provider Connections
 
 ### Goal
 
-Define provider account storage before implementing Gmail, Threads, or other private sources.
+Use Nango free self-hosted as the default provider-connection backend for supported integrations. Aladin keeps users, sessions, source subscriptions, provider streams, records, matching, and insights. Nango owns OAuth authorization, credential storage, token refresh, and proxy/token retrieval.
 
-### Proposed Data Model
+The stable product boundary is `ProviderConnectionService`, not Nango directly. This keeps source syncers insulated if we later replace Nango or add a local provider backend.
+
+### Data Model
 
 ```sql
-provider_credentials (
-    id UUID PRIMARY KEY,
+provider_connections (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     provider TEXT NOT NULL,
-    provider_subject TEXT NOT NULL,
-    display_name TEXT,
-    encrypted_access_token BYTEA NOT NULL,
-    encrypted_refresh_token BYTEA,
-    token_type TEXT,
-    expires_at TIMESTAMPTZ,
-    requested_scopes TEXT[] NOT NULL,
-    granted_scopes TEXT[] NOT NULL,
-    status TEXT NOT NULL,
-    refresh_kind TEXT NOT NULL,
-    key_version TEXT NOT NULL,
+    backend TEXT NOT NULL DEFAULT 'nango',
+    provider_config_key TEXT NOT NULL,
+    external_connection_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    granted_scopes TEXT[] NOT NULL DEFAULT '{}',
     metadata JSONB NOT NULL DEFAULT '{}',
-    created_at TIMESTAMPTZ NOT NULL,
-    updated_at TIMESTAMPTZ NOT NULL
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    disconnected_at TIMESTAMPTZ
 )
 ```
 
 Indexes:
 
 ```sql
-CREATE UNIQUE INDEX provider_credentials_active_subject
-ON provider_credentials (user_id, provider, provider_subject)
+CREATE UNIQUE INDEX uq_provider_connections_active
+ON provider_connections (user_id, backend, provider_config_key, external_connection_id)
 WHERE status = 'active';
 ```
 
-### OAuth State
+Provider streams gain:
 
 ```sql
-oauth_states (
-    id UUID PRIMARY KEY,
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    provider TEXT NOT NULL,
-    state_hash TEXT NOT NULL UNIQUE,
-    code_verifier_hash TEXT,
-    return_to TEXT,
-    expires_at TIMESTAMPTZ NOT NULL,
-    consumed_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL
-)
+owner_user_id UUID NULL,
+provider_connection_id UUID NULL
 ```
 
-Rules:
+Public streams keep both null. Private streams use both.
 
-- State is single-use.
-- State is bound to the initiating authenticated user.
-- Callback rejects if current user differs from state owner.
-- `return_to` is path-only or allowlisted.
-- Expired states are periodically deleted.
-- PKCE is provider-capability-based, not assumed globally.
+### Service Boundary
 
-### Acceptance Criteria
+```go
+type ProviderConnectionService interface {
+    ListProviders(ctx context.Context) ([]ProviderDescriptor, error)
+    StartConnect(ctx context.Context, input StartProviderConnectInput) (ProviderConnectSession, error)
+    SyncConnections(ctx context.Context, input SyncProviderConnectionsInput) ([]ProviderConnection, error)
+    ListConnections(ctx context.Context) ([]ProviderConnection, error)
+    Disconnect(ctx context.Context, connectionID string) error
+    GetConnectionCredentials(ctx context.Context, input ProviderCredentialRequest) (ProviderCredentials, error)
+}
+```
 
-- OAuth callback cannot attach credentials to arbitrary users.
-- Refresh token is nullable.
-- Granted scopes and requested scopes are stored separately.
-- Token encryption has `key_version`.
-- Disconnect behavior is defined for owner-scoped streams.
-
-## Milestone 5 — Provider Account APIs
-
-### Goal
-
-Expose a clean product/API layer for connecting provider accounts.
+Supported providers use `NangoProviderConnectionBackend`. Unsupported providers can later use local backends under the same interface.
 
 ### API Shape
 
-Prefer SPA-friendly API semantics:
+- `GET /api/provider-connections/providers`
+- `POST /api/provider-connections/{provider}/connect`
+- `POST /api/provider-connections/sync`
+- `GET /api/provider-connections`
+- `POST /api/provider-connections/{connectionId}/disconnect`
 
-- `POST /api/oauth/{provider}/connect` returns `{ authUrl }`
-- `GET /api/oauth/{provider}/callback` handles provider redirect
-- `GET /api/provider-credentials` lists connected accounts
-- `POST /api/provider-credentials/{id}/disconnect`
-
-Avoid `GET /connect` creating state because prefetchers and browser retries can accidentally create OAuth attempts.
+The frontend starts Nango Connect through Aladin, then calls sync after the Connect UI succeeds or closes. M2 does not rely on Nango webhooks.
 
 ### Acceptance Criteria
 
-- Frontend can open OAuth URL explicitly.
-- Provider availability does not leak missing env var names.
-- Callback has deterministic success/failure redirects.
-- Existing streams tied to disconnected credentials are paused or disabled.
+- Nango starts locally through Docker.
+- Aladin can create a Nango connect session for Google.
+- Aladin stores only provider connection refs, never raw provider tokens.
+- Sync is idempotent and user-scoped.
+- Disconnect marks the local connection inactive and disables dependent owner-scoped streams.
+- Threads is deferred because Nango does not support it today.
 
 ## Milestone 6 — MCP Notes Server
 
@@ -481,16 +464,16 @@ Public provider streams:
 Private/credentialed streams:
 
 - owner-scoped
-- use `provider_credentials`
+- use `provider_connections`
 - never shared across users
-- examples: Gmail, Threads keyword search under a user's account quota
+- examples: Gmail under a user's Google connection; Threads later through a local backend or future Nango support
 
 ### Acceptance Criteria
 
 - Private source items include `owner_user_id`.
 - Private records/items never match other users.
-- Provider rate limits are tracked against the owning credential where relevant.
-- Disconnecting a credential stops future sync for dependent streams.
+- Provider rate limits are tracked against the owning connection where relevant.
+- Disconnecting a connection stops future sync for dependent streams.
 
 ## Milestone 8 — Management UI
 
@@ -522,9 +505,9 @@ Make auth/integration state visible and controllable from the app.
 2. Move artifact/page/folder ownership to current user.
 3. Add DB-backed integration tokens.
 4. Add MCP server with notes tools backed by integration tokens.
-5. Add provider credential storage and OAuth state.
-6. Add one OAuth provider.
-7. Add private-source sync using provider credentials.
+5. Add Nango-backed provider connection refs.
+6. Prove Google connect through Nango.
+7. Add private-source sync using provider connections.
 8. Add management UI for tokens and connected accounts.
 
 This order lets MCP ship before full OAuth while still using the same long-term auth architecture.
@@ -535,7 +518,7 @@ This order lets MCP ship before full OAuth while still using the same long-term 
 - MCP SDK transport APIs may shift; pin the module version once implemented.
 - Search over page content will be basic until full-text or embedding search is introduced.
 - Scope enforcement can become noisy if implemented too granularly too early.
-- Credential encryption/key rotation needs careful handling before real external users.
+- Nango self-hosting adds operational surface area; keep it isolated behind `ProviderConnectionService`.
 
 ## Deferred Decisions
 
@@ -543,5 +526,5 @@ This order lets MCP ship before full OAuth while still using the same long-term 
 - Whether MCP should expose resources in addition to tools.
 - Whether agent-authored notes need a dedicated UI marker.
 - Whether delete should be exposed to MCP agents.
-- Whether OAuth provider clients live in one package or per-provider packages.
+- Whether Threads should be implemented as a local backend or added to Nango when support exists.
 - Whether browser sessions eventually use the same `Principal` struct internally.
