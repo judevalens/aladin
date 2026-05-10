@@ -30,6 +30,32 @@ class ApiException(
 
 object ApiClient {
 
+    suspend fun register(req: AuthRequest): AuthResponse = call("POST /api/auth/register") {
+        httpClient
+            .post("$BASE_URL/api/auth/register") {
+                contentType(ContentType.Application.Json)
+                setBody(req)
+            }
+            .body()
+    }
+
+    suspend fun login(req: AuthRequest): AuthResponse = call("POST /api/auth/login") {
+        httpClient
+            .post("$BASE_URL/api/auth/login") {
+                contentType(ContentType.Application.Json)
+                setBody(req)
+            }
+            .body()
+    }
+
+    suspend fun logout() = call("POST /api/auth/logout") {
+        httpClient.post("$BASE_URL/api/auth/logout")
+    }
+
+    suspend fun me(): AuthResponse = call("GET /api/auth/me") {
+        httpClient.get("$BASE_URL/api/auth/me").body()
+    }
+
     suspend fun getFeed(
         limit: Int = 50,
         offset: Int = 0,

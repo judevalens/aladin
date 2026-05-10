@@ -10,10 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const (
-	defaultUserID = "00000000-0000-0000-0000-000000000001"
-	defaultKGName = "Default Research Graph"
-)
+const defaultKGName = "Default Research Graph"
 
 type PostgresSourceRepository struct{ pool *pgxpool.Pool }
 
@@ -21,7 +18,7 @@ func NewSourcePostgres(pool *pgxpool.Pool) *PostgresSourceRepository {
 	return &PostgresSourceRepository{pool: pool}
 }
 
-func (r *PostgresSourceRepository) EnsureDefaultUserAndGraph(ctx context.Context) (string, error) {
+func (r *PostgresSourceRepository) EnsureUserAndGraph(ctx context.Context, userID string) (string, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return "", err
@@ -29,10 +26,10 @@ func (r *PostgresSourceRepository) EnsureDefaultUserAndGraph(ctx context.Context
 	defer tx.Rollback(ctx)
 
 	_, err = tx.Exec(ctx, `
-		INSERT INTO users (id, email, created_at)
-		VALUES ($1::uuid, 'dev@aladin.local', now())
-		ON CONFLICT (id) DO NOTHING
-	`, defaultUserID)
+		UPDATE users
+		   SET updated_at = now()
+		 WHERE id = $1::uuid
+	`, userID)
 	if err != nil {
 		return "", err
 	}
@@ -55,7 +52,7 @@ func (r *PostgresSourceRepository) EnsureDefaultUserAndGraph(ctx context.Context
 		UNION ALL
 		SELECT id FROM inserted
 		LIMIT 1
-	`, defaultUserID, defaultKGName).Scan(&kgID)
+	`, userID, defaultKGName).Scan(&kgID)
 	if err != nil {
 		return "", err
 	}
@@ -65,7 +62,7 @@ func (r *PostgresSourceRepository) EnsureDefaultUserAndGraph(ctx context.Context
 	return kgID, nil
 }
 
-func (r *PostgresSourceRepository) List(ctx context.Context) ([]coreservice.SourceRecord, error) {
+func (r *PostgresSourceRepository) List(ctx context.Context, userID string) ([]coreservice.SourceRecord, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT ss.id::text, ss.name, ps.provider, ps.sync_mode, ss.status, ps.config,
 		       0.85::float, 0.60::float, ss.created_at, ps.last_refresh_at
@@ -73,7 +70,7 @@ func (r *PostgresSourceRepository) List(ctx context.Context) ([]coreservice.Sour
 		  JOIN provider_streams ps ON ps.id = ss.provider_stream_id
 		 WHERE ss.user_id = $1::uuid
 		 ORDER BY ss.created_at DESC
-	`, defaultUserID)
+	`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +99,7 @@ func (r *PostgresSourceRepository) List(ctx context.Context) ([]coreservice.Sour
 	return out, rows.Err()
 }
 
-func (r *PostgresSourceRepository) Create(ctx context.Context, sourceID string, kgID string, payload *coreservice.SourcePayload) (coreservice.SourceRecord, error) {
+func (r *PostgresSourceRepository) Create(ctx context.Context, sourceID string, userID string, kgID string, payload *coreservice.SourcePayload) (coreservice.SourceRecord, error) {
 	configJSON, _ := json.Marshal(payload.Config)
 	policyJSON, _ := json.Marshal(payload.Policy)
 	if payload.StreamKind == "" {
@@ -134,7 +131,7 @@ func (r *PostgresSourceRepository) Create(ctx context.Context, sourceID string, 
 		    status = 'active',
 		    updated_at = now()
 	`, payload.Type, payload.StreamKind, payload.StreamKey, payload.Name, payload.SyncMode, string(configJSON),
-		sourceID, defaultUserID, kgID, string(policyJSON))
+		sourceID, userID, kgID, string(policyJSON))
 	if err != nil {
 		return coreservice.SourceRecord{}, err
 	}
@@ -165,11 +162,11 @@ func (r *PostgresSourceRepository) Create(ctx context.Context, sourceID string, 
 	return rec, nil
 }
 
-func (r *PostgresSourceRepository) Delete(ctx context.Context, id string) error {
+func (r *PostgresSourceRepository) Delete(ctx context.Context, id string, userID string) error {
 	tag, err := r.pool.Exec(ctx, `
 		DELETE FROM source_subscriptions
 		 WHERE id = $1::uuid AND user_id = $2::uuid
-	`, id, defaultUserID)
+	`, id, userID)
 	if err != nil {
 		return err
 	}

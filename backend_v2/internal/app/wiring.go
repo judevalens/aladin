@@ -10,6 +10,7 @@ import (
 )
 
 type Dependencies interface {
+	Auth() coreservice.AuthService
 	System() coreservice.SystemService
 	Sources() coreservice.SourceService
 	Records() coreservice.RecordService
@@ -23,6 +24,7 @@ type Dependencies interface {
 }
 
 type StaticDependencies struct {
+	AuthSvc      coreservice.AuthService
 	SystemSvc    coreservice.SystemService
 	SourcesSvc   coreservice.SourceService
 	RecordsSvc   coreservice.RecordService
@@ -35,6 +37,7 @@ type StaticDependencies struct {
 	RealtimeKeys coreservice.SubscriptionKeyResolver
 }
 
+func (d StaticDependencies) Auth() coreservice.AuthService          { return d.AuthSvc }
 func (d StaticDependencies) System() coreservice.SystemService      { return d.SystemSvc }
 func (d StaticDependencies) Sources() coreservice.SourceService     { return d.SourcesSvc }
 func (d StaticDependencies) Records() coreservice.RecordService     { return d.RecordsSvc }
@@ -51,6 +54,7 @@ func (d StaticDependencies) RealtimeKeyResolver() coreservice.SubscriptionKeyRes
 }
 
 type wiring struct {
+	auth      coreservice.AuthService
 	system    coreservice.SystemService
 	sources   coreservice.SourceService
 	records   coreservice.RecordService
@@ -63,6 +67,7 @@ type wiring struct {
 	rtKeys    coreservice.SubscriptionKeyResolver
 }
 
+func (w wiring) Auth() coreservice.AuthService          { return w.auth }
 func (w wiring) System() coreservice.SystemService      { return w.system }
 func (w wiring) Sources() coreservice.SourceService     { return w.sources }
 func (w wiring) Records() coreservice.RecordService     { return w.records }
@@ -81,6 +86,7 @@ func (w wiring) RealtimeKeyResolver() coreservice.SubscriptionKeyResolver {
 const defaultUserID = "00000000-0000-0000-0000-000000000001"
 
 func NewDependencies(pool *pgxpool.Pool) Dependencies {
+	authRepo := repo.NewAuthPostgres(pool)
 	sourceRepo := repo.NewSourcePostgres(pool)
 	recordRepo := repo.NewRecordPostgres(pool)
 	artifactRepo := repo.NewArtifactsPostgres(pool, defaultUserID)
@@ -92,6 +98,7 @@ func NewDependencies(pool *pgxpool.Pool) Dependencies {
 	realtime := coreservice.NewInMemoryRealtimeEventService(realtimeKeys)
 
 	return wiring{
+		auth:      coreservice.NewAuthService(authRepo, coreservice.NewPasswordHasher()),
 		system:    coreservice.NewSystemService(systemRepo),
 		sources:   coreservice.NewSourceService(sourceRepo),
 		records:   coreservice.NewRecordService(recordRepo),

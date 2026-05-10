@@ -10,6 +10,25 @@ import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 
+@OptIn(ExperimentalWasmJsInterop::class)
+@JsFun(
+    """
+    () => {
+        if (globalThis.__aladinCredentialedFetchInstalled) return;
+        const originalFetch = globalThis.fetch.bind(globalThis);
+        globalThis.fetch = (input, init) => {
+            const next = init ? { ...init } : {};
+            if (next.credentials === undefined) {
+                next.credentials = 'include';
+            }
+            return originalFetch(input, next);
+        };
+        globalThis.__aladinCredentialedFetchInstalled = true;
+    }
+    """
+)
+private external fun installCredentialedFetch()
+
 private val clientJson = Json {
     ignoreUnknownKeys = true
     isLenient = true
@@ -18,7 +37,8 @@ private val clientJson = Json {
 }
 
 val httpClient: HttpClient by lazy {
-    HttpClient(Js).config {
+    installCredentialedFetch()
+    HttpClient(Js) {
         expectSuccess = true
         defaultRequest {
             contentType(ContentType.Application.Json)

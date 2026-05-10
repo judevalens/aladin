@@ -4,6 +4,23 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
 @Serializable
+data class AuthRequest(
+    val email: String,
+    val password: String,
+)
+
+@Serializable
+data class AuthUser(
+    val id: String,
+    val email: String,
+)
+
+@Serializable
+data class AuthResponse(
+    val user: AuthUser,
+)
+
+@Serializable
 data class FeedItem(
     val id: String,
     val type: String,

@@ -12,10 +12,10 @@ type SourceService interface {
 }
 
 type SourceRepository interface {
-	EnsureDefaultUserAndGraph(context.Context) (string, error)
-	List(context.Context) ([]SourceRecord, error)
-	Create(context.Context, string, string, *SourcePayload) (SourceRecord, error)
-	Delete(context.Context, string) error
+	EnsureUserAndGraph(context.Context, string) (string, error)
+	List(context.Context, string) ([]SourceRecord, error)
+	Create(context.Context, string, string, string, *SourcePayload) (SourceRecord, error)
+	Delete(context.Context, string, string) error
 }
 
 type SourceRecord struct {
@@ -65,26 +65,38 @@ func NewSourceService(repo SourceRepository) *DefaultSourceService {
 }
 
 func (s *DefaultSourceService) List(ctx context.Context) ([]SourceRecord, error) {
-	if _, err := s.repo.EnsureDefaultUserAndGraph(ctx); err != nil {
+	user, ok := CurrentUserFromContext(ctx)
+	if !ok {
+		return nil, ErrUnauthenticated
+	}
+	if _, err := s.repo.EnsureUserAndGraph(ctx, user.ID); err != nil {
 		return nil, err
 	}
-	return s.repo.List(ctx)
+	return s.repo.List(ctx, user.ID)
 }
 
 func (s *DefaultSourceService) Create(ctx context.Context, input SourceCreateInput) (SourceRecord, error) {
+	user, ok := CurrentUserFromContext(ctx)
+	if !ok {
+		return SourceRecord{}, ErrUnauthenticated
+	}
 	payload, err := buildSourcePayload(input)
 	if err != nil {
 		return SourceRecord{}, err
 	}
-	kgID, err := s.repo.EnsureDefaultUserAndGraph(ctx)
+	kgID, err := s.repo.EnsureUserAndGraph(ctx, user.ID)
 	if err != nil {
 		return SourceRecord{}, err
 	}
-	return s.repo.Create(ctx, newID(""), kgID, payload)
+	return s.repo.Create(ctx, newID(""), user.ID, kgID, payload)
 }
 
 func (s *DefaultSourceService) Delete(ctx context.Context, id string) error {
-	return s.repo.Delete(ctx, id)
+	user, ok := CurrentUserFromContext(ctx)
+	if !ok {
+		return ErrUnauthenticated
+	}
+	return s.repo.Delete(ctx, id, user.ID)
 }
 
 func buildSourcePayload(input SourceCreateInput) (*SourcePayload, error) {

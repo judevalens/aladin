@@ -2,6 +2,7 @@ package api
 
 import (
 	"aladin/backend_v2/internal/app"
+	coreservice "aladin/backend_v2/internal/service"
 	"context"
 	"encoding/json"
 	"errors"
@@ -48,6 +49,7 @@ func NewWithDependencies(addr string, deps app.Dependencies) *Server {
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.HandleFunc("GET /readyz", s.handleReadyz)
 	mux.HandleFunc("GET /api/quote", s.handleQuote)
+	s.registerAuthRoutes(mux)
 
 	mux.HandleFunc("GET /api/graph", s.handleEmptyGraph)
 	mux.HandleFunc("GET /api/graph-explore/full", s.handleEmptyGraph)
@@ -82,7 +84,7 @@ func NewWithDependencies(addr string, deps app.Dependencies) *Server {
 
 	s.httpServer = &http.Server{
 		Addr:              addr,
-		Handler:           cors(traceRequests(mux)),
+		Handler:           cors(traceRequests(s.authMiddleware(mux))),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	return s
@@ -136,7 +138,14 @@ func traceRequests(next http.Handler) http.Handler {
 
 func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		origin := strings.TrimSpace(r.Header.Get("Origin"))
+		if origin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+		} else {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+		}
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 		if r.Method == http.MethodOptions {
@@ -145,6 +154,40 @@ func cors(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (s *Server) authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.deps.Auth() == nil {
+			next.ServeHTTP(w, r)
+			return
+		}
+		cookie, err := r.Cookie(coreservice.SessionCookieName)
+		if err == nil && strings.TrimSpace(cookie.Value) != "" {
+			user, authErr := s.deps.Auth().CurrentUser(r.Context(), cookie.Value)
+			if authErr == nil {
+				next.ServeHTTP(w, r.WithContext(coreservice.WithCurrentUser(r.Context(), user)))
+				return
+			}
+		}
+
+		if isPublicRoute(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		writeAPIError(w, r, http.StatusUnauthorized, categoryBadRequest, "Unauthenticated", coreservice.ErrUnauthenticated)
+	})
+}
+
+func isPublicRoute(r *http.Request) bool {
+	path := r.URL.Path
+	if path == "/api/health" || path == "/healthz" || path == "/readyz" || path == "/api/quote" {
+		return true
+	}
+	if path == "/api/auth/register" || path == "/api/auth/login" || path == "/api/auth/logout" {
+		return true
+	}
+	return false
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

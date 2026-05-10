@@ -1,8 +1,22 @@
 package com.jvp.aladin_compose.app
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.sp
+import com.jvp.aladin_compose.api.ApiClient
+import com.jvp.aladin_compose.api.AuthRequest
+import com.jvp.aladin_compose.api.AuthUser
 import com.jvp.aladin_compose.features.app.AppNavigationProducerImpl
 import com.jvp.aladin_compose.features.app.AppPresenter
 import com.jvp.aladin_compose.features.app.AppScreen
@@ -13,19 +27,46 @@ import com.jvp.aladin_compose.features.app.artifactpane.page.PageStateProducerIm
 import com.jvp.aladin_compose.features.app.artifactpane.voice.VoiceStateProducerImpl
 import com.jvp.aladin_compose.features.app.browser.DocumentBrowserProducerImpl
 import com.jvp.aladin_compose.features.app.sidebar.SidebarProducerImpl
+import com.jvp.aladin_compose.features.auth.AuthEvent
+import com.jvp.aladin_compose.features.auth.AuthMode
+import com.jvp.aladin_compose.features.auth.AuthUi
+import com.jvp.aladin_compose.features.auth.AuthUiState
 import com.jvp.aladin_compose.repo.ApiFolderRepository
 import com.jvp.aladin_compose.repo.ArtifactRepositoryImpl
 import com.jvp.aladin_compose.repo.doa.InMemoryArtifactDoa
 import com.jvp.aladin_compose.service.BrowserVoiceCaptureService
 import com.jvp.aladin_compose.service.PageDocumentSyncerImpl
 import com.jvp.aladin_compose.service.web.PageEditorBridgeImpl
+import com.jvp.aladin_compose.ui_lib.AladinColor
 import com.slack.circuit.foundation.Circuit
 import com.slack.circuit.foundation.CircuitCompositionLocals
 import com.slack.circuit.foundation.CircuitContent
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 
 @Composable
 fun CircuitApp() {
     val scope = rememberCoroutineScope()
+    var currentUser by remember { mutableStateOf<AuthUser?>(null) }
+    var checkingAuth by remember { mutableStateOf(true) }
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var authMode by remember { mutableStateOf(AuthMode.Login) }
+    var authLoading by remember { mutableStateOf(false) }
+    var authError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        try {
+            currentUser = ApiClient.me().user
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Throwable) {
+            currentUser = null
+        } finally {
+            checkingAuth = false
+        }
+    }
+
     val circuit = remember {
         val folderRepository = ApiFolderRepository()
         val artifactRepository = ArtifactRepositoryImpl(InMemoryArtifactDoa())
@@ -64,6 +105,72 @@ fun CircuitApp() {
             )
             .addUiFactory(AppUiFactory())
             .build()
+    }
+
+    if (checkingAuth) {
+        Box(
+            modifier = Modifier.fillMaxSize().background(AladinColor.Canvas),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("Checking session", color = AladinColor.InkSecondary, fontSize = 13.sp)
+        }
+        return
+    }
+
+    if (currentUser == null) {
+        AuthUi(
+            state =
+                AuthUiState(
+                    email = email,
+                    password = password,
+                    mode = authMode,
+                    loading = authLoading,
+                    errorMessage = authError,
+                    eventSink = { event ->
+                        when (event) {
+                            is AuthEvent.EmailChanged -> {
+                                email = event.email
+                                authError = null
+                            }
+                            is AuthEvent.PasswordChanged -> {
+                                password = event.password
+                                authError = null
+                            }
+                            AuthEvent.ToggleMode -> {
+                                authMode =
+                                    if (authMode == AuthMode.Login) AuthMode.Register
+                                    else AuthMode.Login
+                                authError = null
+                            }
+                            AuthEvent.Submit -> {
+                                if (!authLoading) {
+                                    scope.launch {
+                                        authLoading = true
+                                        authError = null
+                                        try {
+                                            val response =
+                                                if (authMode == AuthMode.Login) {
+                                                    ApiClient.login(AuthRequest(email, password))
+                                                } else {
+                                                    ApiClient.register(AuthRequest(email, password))
+                                                }
+                                            currentUser = response.user
+                                            password = ""
+                                        } catch (e: CancellationException) {
+                                            throw e
+                                        } catch (t: Throwable) {
+                                            authError = t.message ?: "Authentication failed"
+                                        } finally {
+                                            authLoading = false
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                )
+        )
+        return
     }
 
     CircuitCompositionLocals(circuit) { CircuitContent(AppScreen) }

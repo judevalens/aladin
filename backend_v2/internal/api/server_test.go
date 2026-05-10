@@ -378,6 +378,38 @@ func TestFilesResourceRoute(t *testing.T) {
 	}
 }
 
+func TestAuthMiddlewareRequiresSession(t *testing.T) {
+	t.Parallel()
+
+	server := NewWithDependencies(":0", app.StaticDependencies{AuthSvc: &fakeAuthService{}})
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	rec := httptest.NewRecorder()
+
+	server.httpServer.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusUnauthorized, rec.Body.String())
+	}
+}
+
+func TestAuthMiddlewareInjectsCurrentUser(t *testing.T) {
+	t.Parallel()
+
+	server := NewWithDependencies(":0", app.StaticDependencies{AuthSvc: &fakeAuthService{}})
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	req.AddCookie(&http.Cookie{Name: artifactservice.SessionCookieName, Value: "valid"})
+	rec := httptest.NewRecorder()
+
+	server.httpServer.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "user@example.com") {
+		t.Fatalf("body = %s, want current user", rec.Body.String())
+	}
+}
+
 type fakeArtifactService struct {
 	list               []artifactservice.ArtifactResponse
 	listParams         *artifactservice.ArtifactListParams
@@ -397,6 +429,27 @@ type fakePageService struct {
 type fakeFileService struct {
 	uploadInput *artifactservice.FileUploadInput
 	resource    artifactservice.FileResource
+}
+
+type fakeAuthService struct{}
+
+func (f *fakeAuthService) Register(context.Context, artifactservice.AuthCredentials, string) (artifactservice.AuthSession, error) {
+	return artifactservice.AuthSession{}, nil
+}
+
+func (f *fakeAuthService) Login(context.Context, artifactservice.AuthCredentials, string) (artifactservice.AuthSession, error) {
+	return artifactservice.AuthSession{}, nil
+}
+
+func (f *fakeAuthService) Logout(context.Context, string) error {
+	return nil
+}
+
+func (f *fakeAuthService) CurrentUser(_ context.Context, token string) (artifactservice.CurrentUser, error) {
+	if token != "valid" {
+		return artifactservice.CurrentUser{}, artifactservice.ErrUnauthenticated
+	}
+	return artifactservice.CurrentUser{ID: "user-1", Email: "user@example.com"}, nil
 }
 
 func (f *fakePageService) Get(context.Context, string) (artifactservice.PageDocument, error) {
