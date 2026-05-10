@@ -6,22 +6,19 @@ services:
       POSTGRES_DB: nango
       POSTGRES_USER: nango
       POSTGRES_PASSWORD: nango
-    ports:
-      - "5434:5432"
     volumes:
       - nango_postgres_data:/var/lib/postgresql/data
 
   nango-redis:
     image: redis:7-alpine
     container_name: aladin-nango-redis
-    ports:
-      - "6380:6379"
     volumes:
       - nango_redis_data:/data
     command: redis-server --appendonly yes
 
   nango-server:
     image: nangohq/nango-server:hosted
+    platform: linux/amd64
     container_name: aladin-nango-server
     depends_on:
       - nango-postgres
