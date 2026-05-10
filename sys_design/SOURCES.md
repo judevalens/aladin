@@ -1,5 +1,14 @@
 # Aladin — Live Source Designs
 
+> Historical note: this document describes the older source/snapshot-oriented design.
+> The current backend ingestion model is stream-native and is documented in
+> [`docs/GLOBAL_SOURCE_ITEM_PIPELINE.md`](../docs/GLOBAL_SOURCE_ITEM_PIPELINE.md).
+> In the current model, public provider transport lives in `provider_streams`,
+> user/KG intent lives in `source_subscriptions`, normalized fetched data lives in
+> `source_items`, reusable enrichment lives in `source_item_enrichments`, and
+> tenant-specific relevance lives in `tenant_item_matches`. Legacy `sources`,
+> `snapshots`, and `sync_jobs` are removed.
+
 ## Sync Modes
 
 Sources fall into three sync modes:

@@ -1,5 +1,7 @@
 # Aladin Engineering Roadmap
 
+Strategic anchor: [Aladin Product Vision](../docs/ALADIN_PRODUCT_VISION.md).
+
 ## Status legend
 - ✅ Done
 - 🔨 In progress
@@ -176,9 +178,11 @@ The reference workflow for this phase is [Trending Post Gap Analysis](./TRENDING
 ### Existing Foundation To Reuse
 
 - Go backend pipeline work
-- source/snapshot/job design
+- stream-native provider ingestion design
+- global source item and enrichment model
+- tenant matching model for personalized relevance
 - enrichment and graph worker concepts
-- queue and scheduler design docs
+- queue and scheduler implementation backed by provider streams
 
 ---
 

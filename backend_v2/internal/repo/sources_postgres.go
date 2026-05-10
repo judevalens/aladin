@@ -67,12 +67,12 @@ func (r *PostgresSourceRepository) EnsureDefaultUserAndGraph(ctx context.Context
 
 func (r *PostgresSourceRepository) List(ctx context.Context) ([]coreservice.SourceRecord, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id::text, name, type, sync_mode, sync_state, config,
-		       auto_promote_threshold, suggest_threshold, created_at,
-		       last_synced_at
-		  FROM sources
-		 WHERE user_id = $1::uuid
-		 ORDER BY created_at DESC
+		SELECT ss.id::text, ss.name, ps.provider, ps.sync_mode, ss.status, ps.config,
+		       0.85::float, 0.60::float, ss.created_at, ps.last_refresh_at
+		  FROM source_subscriptions ss
+		  JOIN provider_streams ps ON ps.id = ss.provider_stream_id
+		 WHERE ss.user_id = $1::uuid
+		 ORDER BY ss.created_at DESC
 	`, defaultUserID)
 	if err != nil {
 		return nil, err
@@ -104,23 +104,47 @@ func (r *PostgresSourceRepository) List(ctx context.Context) ([]coreservice.Sour
 
 func (r *PostgresSourceRepository) Create(ctx context.Context, sourceID string, kgID string, payload *coreservice.SourcePayload) (coreservice.SourceRecord, error) {
 	configJSON, _ := json.Marshal(payload.Config)
+	policyJSON, _ := json.Marshal(payload.Policy)
+	if payload.StreamKind == "" {
+		payload.StreamKind = "default"
+	}
+	if payload.StreamKey == "" {
+		payload.StreamKey = payload.Name
+	}
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO sources (
-		    id, user_id, kg_id, name, type, sync_mode, sync_state, config
-		) VALUES (
-		    $1::uuid, $2::uuid, $3::uuid, $4, $5, $6, 'active', $7::jsonb
+		WITH stream AS (
+		    INSERT INTO provider_streams (
+		        provider, stream_kind, stream_key, name, sync_mode, sync_state, config
+		    )
+		    VALUES ($1, $2, $3, $4, $5, 'active', $6::jsonb)
+		    ON CONFLICT (provider, stream_kind, stream_key) DO UPDATE
+		    SET name = EXCLUDED.name,
+		        config = provider_streams.config || EXCLUDED.config,
+		        updated_at = now()
+		    RETURNING id
 		)
-	`, sourceID, defaultUserID, kgID, payload.Name, payload.Type, payload.SyncMode, string(configJSON))
+		INSERT INTO source_subscriptions (
+		    id, user_id, kg_id, provider_stream_id, name, policy, status
+		)
+		SELECT $7::uuid, $8::uuid, $9::uuid, stream.id, $4, $10::jsonb, 'active'
+		  FROM stream
+		ON CONFLICT (user_id, kg_id, provider_stream_id) DO UPDATE
+		SET name = EXCLUDED.name,
+		    policy = source_subscriptions.policy || EXCLUDED.policy,
+		    status = 'active',
+		    updated_at = now()
+	`, payload.Type, payload.StreamKind, payload.StreamKey, payload.Name, payload.SyncMode, string(configJSON),
+		sourceID, defaultUserID, kgID, string(policyJSON))
 	if err != nil {
 		return coreservice.SourceRecord{}, err
 	}
 
 	row := r.pool.QueryRow(ctx, `
-		SELECT id::text, name, type, sync_mode, sync_state, config,
-		       auto_promote_threshold, suggest_threshold, created_at,
-		       last_synced_at
-		  FROM sources
-		 WHERE id = $1::uuid
+		SELECT ss.id::text, ss.name, ps.provider, ps.sync_mode, ss.status, ps.config,
+		       0.85::float, 0.60::float, ss.created_at, ps.last_refresh_at
+		  FROM source_subscriptions ss
+		  JOIN provider_streams ps ON ps.id = ss.provider_stream_id
+		 WHERE ss.id = $1::uuid
 	`, sourceID)
 	var rec coreservice.SourceRecord
 	var configOut []byte
@@ -143,7 +167,7 @@ func (r *PostgresSourceRepository) Create(ctx context.Context, sourceID string, 
 
 func (r *PostgresSourceRepository) Delete(ctx context.Context, id string) error {
 	tag, err := r.pool.Exec(ctx, `
-		DELETE FROM sources
+		DELETE FROM source_subscriptions
 		 WHERE id = $1::uuid AND user_id = $2::uuid
 	`, id, defaultUserID)
 	if err != nil {

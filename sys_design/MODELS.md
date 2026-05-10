@@ -1,5 +1,16 @@
 # Aladin — Data Models
 
+> Historical note: this document predates the global source item refactor and
+> still uses the old `Source → Snapshot → Artifact` ingestion vocabulary.
+> For current live-source backend storage, use
+> [`docs/GLOBAL_SOURCE_ITEM_PIPELINE.md`](../docs/GLOBAL_SOURCE_ITEM_PIPELINE.md).
+> The current ingestion chain is:
+>
+> `provider_streams → source_items → source_item_enrichments → tenant_item_matches → records`
+>
+> `records` is tenant-derived output and no longer carries `source_id`; source
+> context is resolved through `tenant_item_matches`.
+
 ## Vocabulary
 
 | Term | Definition |

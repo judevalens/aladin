@@ -42,7 +42,11 @@ func (w *FirstPassWorker) Run(ctx context.Context, raw []byte) pipeline.Result {
 	)
 	start := time.Now()
 
-	if p.Content == "" {
+	enrichmentContent := p.Content
+	if p.EnrichmentContent != "" {
+		enrichmentContent = p.EnrichmentContent
+	}
+	if enrichmentContent == "" {
 		return errResult(pipeline.TaskFirstPass, p, pipeline.ErrPermanent{Cause: fmt.Errorf("missing content")})
 	}
 
@@ -50,9 +54,9 @@ func (w *FirstPassWorker) Run(ctx context.Context, raw []byte) pipeline.Result {
 		return errResult(pipeline.TaskFirstPass, p, pipeline.ErrTransient{Cause: err})
 	}
 
-	log.Debug("first_pass: calling enricher", "content_len", len(p.Content), "type", p.Type)
+	log.Debug("first_pass: calling enricher", "content_len", len(enrichmentContent), "type", p.Type)
 
-	result, err := w.enricher.Enrich(ctx, p.Content, p.Type)
+	result, err := w.enricher.Enrich(ctx, enrichmentContent, p.Type)
 	if err != nil {
 		log.Error("first_pass: enrich failed", "err", err)
 		return errResult(pipeline.TaskFirstPass, p, pipeline.ErrTransient{Cause: fmt.Errorf("enrich: %w", err)})

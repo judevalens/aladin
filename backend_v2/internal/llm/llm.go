@@ -20,3 +20,22 @@ type Enricher interface {
 type Embedder interface {
 	Embed(ctx context.Context, text string) ([]float32, error)
 }
+
+type RelevanceInput struct {
+	SubscriptionName string
+	Policy           map[string]any
+	ItemTitle        string
+	ItemSummary      string
+	ItemEntities     []string
+	ItemTopics       []string
+}
+
+type RelevanceResult struct {
+	Relevant   bool    `json:"relevant"`
+	Confidence float64 `json:"confidence"`
+	Reason     string  `json:"reason"`
+}
+
+type RelevanceJudge interface {
+	JudgeRelevance(ctx context.Context, input RelevanceInput) (*RelevanceResult, error)
+}

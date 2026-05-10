@@ -16,21 +16,25 @@ import (
 )
 
 type integrationSourceRepo struct {
-	source         *db.Source
+	source         *db.ProviderStream
 	markStartedIDs []string
 	markSyncedIDs  []string
 	markPageIDs    []string
 }
 
-func (r *integrationSourceRepo) GetByID(ctx context.Context, id string) (*db.Source, error) {
+func (r *integrationSourceRepo) GetByID(ctx context.Context, id string) (*db.ProviderStream, error) {
 	return r.source, nil
 }
 
-func (r *integrationSourceRepo) ClaimBatch(ctx context.Context, limit int) ([]*db.Source, error) {
+func (r *integrationSourceRepo) Ensure(ctx context.Context, stream *db.ProviderStream) (*db.ProviderStream, error) {
+	return stream, nil
+}
+
+func (r *integrationSourceRepo) ClaimBatch(ctx context.Context, limit int) ([]*db.ProviderStream, error) {
 	if r.source == nil {
 		return nil, nil
 	}
-	return []*db.Source{r.source}, nil
+	return []*db.ProviderStream{r.source}, nil
 }
 
 func (r *integrationSourceRepo) MarkSyncStarted(ctx context.Context, id string) error {
@@ -67,8 +71,8 @@ type integrationCycleRepo struct {
 	completedReasons []string
 }
 
-func (r *integrationCycleRepo) ListActiveBySource(ctx context.Context, sourceID string) ([]*db.SyncCycle, error) {
-	return r.cyclesBySource[sourceID], nil
+func (r *integrationCycleRepo) ListActiveByProviderStream(ctx context.Context, providerStreamID string) ([]*db.SyncCycle, error) {
+	return r.cyclesBySource[providerStreamID], nil
 }
 
 func (r *integrationCycleRepo) Create(ctx context.Context, cycle *db.SyncCycle) error {
@@ -76,7 +80,7 @@ func (r *integrationCycleRepo) Create(ctx context.Context, cycle *db.SyncCycle) 
 		cycle.CreatedAt = time.Now().UTC()
 	}
 	r.created = append(r.created, cycle)
-	r.cyclesBySource[cycle.SourceID] = append(r.cyclesBySource[cycle.SourceID], cycle)
+	r.cyclesBySource[cycle.ProviderStreamID] = append(r.cyclesBySource[cycle.ProviderStreamID], cycle)
 	return nil
 }
 
@@ -85,12 +89,15 @@ func (r *integrationCycleRepo) MarkRunning(ctx context.Context, id string) error
 	return nil
 }
 
-func (r *integrationCycleRepo) UpdateProgress(ctx context.Context, id string, cursor map[string]any, headBoundary map[string]any) error {
+func (r *integrationCycleRepo) UpdateProgress(ctx context.Context, id string, cursor map[string]any, headBoundary map[string]any, lastHydratedAt *time.Time) error {
 	r.updatedIDs = append(r.updatedIDs, id)
 	r.updateCycle(id, func(c *db.SyncCycle) {
 		c.Status = syncpkg.CycleStatusActive
 		c.Cursor = cloneMap(cursor)
 		c.HeadBoundary = cloneMap(headBoundary)
+		if lastHydratedAt != nil {
+			c.LastHydratedAt = lastHydratedAt
+		}
 	})
 	return nil
 }
@@ -150,8 +157,19 @@ func (e *integrationEnqueuer) EnqueueSync(ctx context.Context, queueName, taskTy
 	return nil
 }
 
-func (e *integrationEnqueuer) EnqueueFirstPass(ctx context.Context, recordID string, payload []byte) error {
+func (e *integrationEnqueuer) EnqueueGlobalFirstPass(ctx context.Context, sourceItemID string, payload []byte) error {
 	return nil
+}
+
+type integrationSourceItemRepo struct{}
+
+func (r *integrationSourceItemRepo) Upsert(ctx context.Context, item *db.SourceItem) (*db.SourceItemUpsertResult, error) {
+	cp := *item
+	return &db.SourceItemUpsertResult{Item: &cp, Changed: true, Inserted: true}, nil
+}
+
+func (r *integrationSourceItemRepo) Get(ctx context.Context, id string) (*db.SourceItem, error) {
+	return nil, nil
 }
 
 type redditFlowFixture struct {
@@ -164,11 +182,12 @@ type redditFlowPage struct {
 }
 
 type redditFlowRecord struct {
-	ID         string  `json:"id"`
-	Title      string  `json:"title"`
-	Permalink  string  `json:"permalink"`
-	Score      int     `json:"score"`
-	CreatedUTC float64 `json:"created_utc"`
+	ID          string  `json:"id"`
+	Title       string  `json:"title"`
+	Permalink   string  `json:"permalink"`
+	Score       int     `json:"score"`
+	NumComments int     `json:"num_comments"`
+	CreatedUTC  float64 `json:"created_utc"`
 }
 
 type fixtureRedditClient struct {
@@ -183,9 +202,51 @@ func (f fixtureRedditClient) FetchListing(ctx context.Context, state syncers.Red
 	resp := &syncers.RedditListingResponse{}
 	resp.Data.After = page.After
 	for _, child := range page.Children {
-		resp.Data.Children = append(resp.Data.Children, redditChild(child.ID, child.Title, child.Permalink, child.Score, child.CreatedUTC))
+		resp.Data.Children = append(resp.Data.Children, redditChild(child.ID, child.Title, child.Permalink, child.Score, child.NumComments, child.CreatedUTC))
 	}
 	return resp, nil
+}
+
+func (f fixtureRedditClient) FetchThread(ctx context.Context, subreddit string, postID string, limit int) (*syncers.RedditThreadResponse, error) {
+	resp := syncers.RedditThreadResponse{}
+	var postListing struct {
+		Data struct {
+			Children []struct {
+				Kind string `json:"kind"`
+				Data struct {
+					ID          string  `json:"id"`
+					Title       string  `json:"title"`
+					Selftext    string  `json:"selftext"`
+					Body        string  `json:"body"`
+					Permalink   string  `json:"permalink"`
+					Score       int     `json:"score"`
+					NumComments int     `json:"num_comments"`
+					CreatedUTC  float64 `json:"created_utc"`
+				} `json:"data"`
+			} `json:"children"`
+		} `json:"data"`
+	}
+	postListing.Data.Children = append(postListing.Data.Children, redditThreadChild("t3", postID, "hydrated "+postID, "", "", "/r/"+subreddit+"/comments/"+postID+"/x", 10, 1, 300))
+	var commentsListing struct {
+		Data struct {
+			Children []struct {
+				Kind string `json:"kind"`
+				Data struct {
+					ID          string  `json:"id"`
+					Title       string  `json:"title"`
+					Selftext    string  `json:"selftext"`
+					Body        string  `json:"body"`
+					Permalink   string  `json:"permalink"`
+					Score       int     `json:"score"`
+					NumComments int     `json:"num_comments"`
+					CreatedUTC  float64 `json:"created_utc"`
+				} `json:"data"`
+			} `json:"children"`
+		} `json:"data"`
+	}
+	commentsListing.Data.Children = append(commentsListing.Data.Children, redditThreadChild("t1", "comment-1", "", "", "top comment", "/r/"+subreddit+"/comments/"+postID+"/comment/comment-1", 1, 0, 301))
+	resp = append(resp, postListing, commentsListing)
+	return &resp, nil
 }
 
 func cloneMap(in map[string]any) map[string]any {
@@ -203,10 +264,9 @@ func TestOrchestratorWithRealRedditSyncerRefreshTakesOverThenOlderCycleResumes(t
 	t.Parallel()
 
 	now := time.Now().UTC()
-	source := &db.Source{
+	source := &db.ProviderStream{
 		ID:            "source-1",
-		Type:          "reddit",
-		KgID:          "kg-1",
+		Provider:      "reddit",
 		SyncInterval:  300,
 		LastRefreshAt: ptrTime(now.Add(-2 * time.Hour)),
 		Config: map[string]any{
@@ -214,11 +274,11 @@ func TestOrchestratorWithRealRedditSyncerRefreshTakesOverThenOlderCycleResumes(t
 		},
 	}
 	olderCycle := &db.SyncCycle{
-		ID:        "cycle-old",
-		SourceID:  source.ID,
-		Kind:      syncpkg.CycleKindRefresh,
-		Status:    syncpkg.CycleStatusActive,
-		CreatedAt: now.Add(-119 * time.Minute),
+		ID:               "cycle-old",
+		ProviderStreamID: source.ID,
+		Kind:             syncpkg.CycleKindRefresh,
+		Status:           syncpkg.CycleStatusActive,
+		CreatedAt:        now.Add(-119 * time.Minute),
 		Cursor: map[string]any{
 			"subreddit": "golang",
 			"after":     "old-page-1",
@@ -232,7 +292,7 @@ func TestOrchestratorWithRealRedditSyncerRefreshTakesOverThenOlderCycleResumes(t
 	}
 	seen := &integrationSeenStore{known: map[string]bool{"t3_seen-1": true}}
 	reddit := syncers.NewRedditSyncerWithClient(loadFixtureRedditClient(t, "reddit_refresh_takeover_flow.json"), seen)
-	orch := syncpkg.NewOrchestrator(&integrationEnqueuer{}, sources, cycles, seen, syncpkg.NewFreshnessFirstArbiter(), reddit)
+	orch := syncpkg.NewOrchestrator(&integrationEnqueuer{}, sources, &integrationSourceItemRepo{}, cycles, seen, syncpkg.NewFreshnessFirstArbiter(), reddit)
 	mux := asynq.NewServeMux()
 	orch.RegisterHandlers(mux)
 
@@ -321,30 +381,71 @@ func loadFixtureRedditClient(t *testing.T, name string) syncers.RedditClient {
 	return fixtureRedditClient{fixture: fixture}
 }
 
-func redditChild(id, title, permalink string, score int, createdUTC float64) struct {
+func redditChild(id, title, permalink string, score int, numComments int, createdUTC float64) struct {
 	Data struct {
-		ID         string  `json:"id"`
-		Title      string  `json:"title"`
-		Selftext   string  `json:"selftext"`
-		Permalink  string  `json:"permalink"`
-		Score      int     `json:"score"`
-		CreatedUTC float64 `json:"created_utc"`
+		ID          string  `json:"id"`
+		Title       string  `json:"title"`
+		Selftext    string  `json:"selftext"`
+		Permalink   string  `json:"permalink"`
+		Score       int     `json:"score"`
+		NumComments int     `json:"num_comments"`
+		CreatedUTC  float64 `json:"created_utc"`
 	} `json:"data"`
 } {
 	var child struct {
 		Data struct {
-			ID         string  `json:"id"`
-			Title      string  `json:"title"`
-			Selftext   string  `json:"selftext"`
-			Permalink  string  `json:"permalink"`
-			Score      int     `json:"score"`
-			CreatedUTC float64 `json:"created_utc"`
+			ID          string  `json:"id"`
+			Title       string  `json:"title"`
+			Selftext    string  `json:"selftext"`
+			Permalink   string  `json:"permalink"`
+			Score       int     `json:"score"`
+			NumComments int     `json:"num_comments"`
+			CreatedUTC  float64 `json:"created_utc"`
 		} `json:"data"`
 	}
 	child.Data.ID = id
 	child.Data.Title = title
 	child.Data.Permalink = permalink
 	child.Data.Score = score
+	child.Data.NumComments = numComments
+	child.Data.CreatedUTC = createdUTC
+	return child
+}
+
+func redditThreadChild(kind string, id string, title string, selftext string, body string, permalink string, score int, numComments int, createdUTC float64) struct {
+	Kind string `json:"kind"`
+	Data struct {
+		ID          string  `json:"id"`
+		Title       string  `json:"title"`
+		Selftext    string  `json:"selftext"`
+		Body        string  `json:"body"`
+		Permalink   string  `json:"permalink"`
+		Score       int     `json:"score"`
+		NumComments int     `json:"num_comments"`
+		CreatedUTC  float64 `json:"created_utc"`
+	} `json:"data"`
+} {
+	var child struct {
+		Kind string `json:"kind"`
+		Data struct {
+			ID          string  `json:"id"`
+			Title       string  `json:"title"`
+			Selftext    string  `json:"selftext"`
+			Body        string  `json:"body"`
+			Permalink   string  `json:"permalink"`
+			Score       int     `json:"score"`
+			NumComments int     `json:"num_comments"`
+			CreatedUTC  float64 `json:"created_utc"`
+		} `json:"data"`
+	}
+	child.Kind = kind
+	child.Data.ID = id
+	child.Data.Title = title
+	child.Data.Selftext = selftext
+	child.Data.Body = body
+	child.Data.Permalink = permalink
+	child.Data.Score = score
+	child.Data.NumComments = numComments
 	child.Data.CreatedUTC = createdUTC
 	return child
 }

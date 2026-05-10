@@ -46,7 +46,11 @@ func (w *EmbedWorker) Run(ctx context.Context, raw []byte) pipeline.Result {
 		return errResult(pipeline.TaskEmbed, p, pipeline.ErrTransient{Cause: err})
 	}
 
-	text := p.Label + "\n" + p.Summary + "\n" + p.Content
+	content := p.Content
+	if p.EnrichmentContent != "" {
+		content = p.EnrichmentContent
+	}
+	text := p.Label + "\n" + p.Summary + "\n" + content
 	log.Debug("embed: calling embedder", "text_len", len(text))
 
 	vector, err := w.embedder.Embed(ctx, text)

@@ -16,7 +16,7 @@ import (
 )
 
 type fakeSourceRepo struct {
-	claimed           []*db.Source
+	claimed           []*db.ProviderStream
 	claimErr          error
 	markFailedIDs     []string
 	markStartedIDs    []string
@@ -30,11 +30,15 @@ type fakeSourceRepo struct {
 	markSyncedErr     error
 }
 
-func (f *fakeSourceRepo) GetByID(ctx context.Context, id string) (*db.Source, error) {
+func (f *fakeSourceRepo) GetByID(ctx context.Context, id string) (*db.ProviderStream, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (f *fakeSourceRepo) ClaimBatch(ctx context.Context, limit int) ([]*db.Source, error) {
+func (f *fakeSourceRepo) Ensure(ctx context.Context, stream *db.ProviderStream) (*db.ProviderStream, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (f *fakeSourceRepo) ClaimBatch(ctx context.Context, limit int) ([]*db.ProviderStream, error) {
 	if f.claimErr != nil {
 		return nil, f.claimErr
 	}
@@ -71,23 +75,28 @@ func (f *fakeSourceRepo) Release(ctx context.Context, id string) error {
 type fakeCycleRepo struct {
 	cyclesBySource   map[string][]*db.SyncCycle
 	created          []*db.SyncCycle
+	createErr        error
 	runningIDs       []string
 	updatedIDs       []string
 	updatedCursors   []map[string]any
 	updatedHeads     []map[string]any
+	updatedHydrated  []*time.Time
 	completedIDs     []string
 	completedHeads   []map[string]any
 	completedReasons []string
 }
 
-func (f *fakeCycleRepo) ListActiveBySource(ctx context.Context, sourceID string) ([]*db.SyncCycle, error) {
+func (f *fakeCycleRepo) ListActiveByProviderStream(ctx context.Context, providerStreamID string) ([]*db.SyncCycle, error) {
 	if f.cyclesBySource == nil {
 		return nil, nil
 	}
-	return f.cyclesBySource[sourceID], nil
+	return f.cyclesBySource[providerStreamID], nil
 }
 
 func (f *fakeCycleRepo) Create(ctx context.Context, cycle *db.SyncCycle) error {
+	if f.createErr != nil {
+		return f.createErr
+	}
 	f.created = append(f.created, cycle)
 	if cycle != nil {
 		if cycle.CreatedAt.IsZero() {
@@ -96,7 +105,11 @@ func (f *fakeCycleRepo) Create(ctx context.Context, cycle *db.SyncCycle) error {
 		if f.cyclesBySource == nil {
 			f.cyclesBySource = make(map[string][]*db.SyncCycle)
 		}
-		f.cyclesBySource[cycle.SourceID] = append(f.cyclesBySource[cycle.SourceID], cycle)
+		key := cycle.ProviderStreamID
+		if key == "" {
+			key = cycle.ProviderStreamID
+		}
+		f.cyclesBySource[key] = append(f.cyclesBySource[key], cycle)
 	}
 	return nil
 }
@@ -109,13 +122,17 @@ func (f *fakeCycleRepo) MarkRunning(ctx context.Context, id string) error {
 	return nil
 }
 
-func (f *fakeCycleRepo) UpdateProgress(ctx context.Context, id string, cursor map[string]any, headBoundary map[string]any) error {
+func (f *fakeCycleRepo) UpdateProgress(ctx context.Context, id string, cursor map[string]any, headBoundary map[string]any, lastHydratedAt *time.Time) error {
 	f.updatedIDs = append(f.updatedIDs, id)
 	f.updatedCursors = append(f.updatedCursors, cloneMap(cursor))
 	f.updatedHeads = append(f.updatedHeads, headBoundary)
+	f.updatedHydrated = append(f.updatedHydrated, lastHydratedAt)
 	f.updateCycle(id, func(c *db.SyncCycle) {
 		c.Status = CycleStatusActive
 		c.Cursor = cloneMap(cursor)
+		if lastHydratedAt != nil {
+			c.LastHydratedAt = lastHydratedAt
+		}
 		if len(c.HeadBoundary) == 0 && len(headBoundary) > 0 {
 			c.HeadBoundary = cloneMap(headBoundary)
 		}
@@ -158,7 +175,7 @@ func (f *fakeCycleRepo) updateCycle(id string, fn func(*db.SyncCycle)) {
 
 type fakeSyncer struct {
 	sourceType string
-	buildJobFn func(source db.Source, cycle *db.SyncCycle) (*db.ScheduledJob, error)
+	buildJobFn func(stream db.ProviderStream, cycle *db.SyncCycle) (*db.ScheduledJob, error)
 	executeFn  func(ctx context.Context, job *db.SyncJob) (*Result, error)
 }
 
@@ -168,7 +185,7 @@ type fakeSeenStore struct {
 }
 
 type fakeArbiter struct {
-	decideFn func(source *db.Source, cycles []*db.SyncCycle, now time.Time) Decision
+	decideFn func(stream *db.ProviderStream, cycles []*db.SyncCycle, now time.Time) Decision
 }
 
 type fakeEnqueuer struct {
@@ -176,6 +193,12 @@ type fakeEnqueuer struct {
 	firstPassErr    error
 	failFirstPassAt int
 	failExternalID  string
+}
+
+type fakeSourceItemRepo struct {
+	upserted            []*db.SourceItem
+	upsertErr           error
+	existingExternalIDs map[string]bool
 }
 
 type firstPassCall struct {
@@ -188,9 +211,13 @@ func (f *fakeEnqueuer) EnqueueSync(ctx context.Context, queueName, taskType stri
 	return nil
 }
 
-func (f *fakeEnqueuer) EnqueueFirstPass(ctx context.Context, recordID string, payload []byte) error {
+func (f *fakeEnqueuer) EnqueueGlobalFirstPass(ctx context.Context, sourceItemID string, payload []byte) error {
+	return f.enqueueGlobal(sourceItemID, payload)
+}
+
+func (f *fakeEnqueuer) enqueueGlobal(recordID string, payload []byte) error {
 	call := firstPassCall{recordID: recordID, payload: append([]byte(nil), payload...)}
-	var rec pipeline.RecordPayload
+	var rec pipeline.SourceItemPayload
 	if err := json.Unmarshal(payload, &rec); err == nil {
 		call.externalID = rec.ExternalID
 	}
@@ -207,13 +234,29 @@ func (f *fakeEnqueuer) EnqueueFirstPass(ctx context.Context, recordID string, pa
 	return nil
 }
 
-func (f *fakeSyncer) SourceType() string { return f.sourceType }
-func (f *fakeSyncer) HeadQueue() string  { return "sync_head:" + f.sourceType }
-func (f *fakeSyncer) PageQueue() string  { return "sync:" + f.sourceType }
+func (f *fakeSourceItemRepo) Upsert(ctx context.Context, item *db.SourceItem) (*db.SourceItemUpsertResult, error) {
+	if f.upsertErr != nil {
+		return nil, f.upsertErr
+	}
+	cp := *item
+	f.upserted = append(f.upserted, &cp)
+	if f.existingExternalIDs != nil && f.existingExternalIDs[item.ExternalID] {
+		return &db.SourceItemUpsertResult{Item: &cp, Changed: false, Inserted: false, IsStale: true}, nil
+	}
+	return &db.SourceItemUpsertResult{Item: &cp, Changed: true, Inserted: true}, nil
+}
 
-func (f *fakeSyncer) BuildJob(source db.Source, cycle *db.SyncCycle) (*db.ScheduledJob, error) {
+func (f *fakeSourceItemRepo) Get(ctx context.Context, id string) (*db.SourceItem, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (f *fakeSyncer) Provider() string  { return f.sourceType }
+func (f *fakeSyncer) HeadQueue() string { return "sync_head:" + f.sourceType }
+func (f *fakeSyncer) PageQueue() string { return "sync:" + f.sourceType }
+
+func (f *fakeSyncer) BuildJob(stream db.ProviderStream, cycle *db.SyncCycle) (*db.ScheduledJob, error) {
 	if f.buildJobFn != nil {
-		return f.buildJobFn(source, cycle)
+		return f.buildJobFn(stream, cycle)
 	}
 	return nil, errors.New("not implemented")
 }
@@ -252,24 +295,23 @@ func syncTask(t *testing.T, job db.SyncJob) *asynq.Task {
 	if err != nil {
 		t.Fatalf("marshal payload: %v", err)
 	}
-	return asynq.NewTask("sync:"+job.SourceType, payload)
+	return asynq.NewTask("sync:"+job.Provider, payload)
 }
 
-func (f *fakeArbiter) Decide(source *db.Source, cycles []*db.SyncCycle, now time.Time) Decision {
+func (f *fakeArbiter) Decide(stream *db.ProviderStream, cycles []*db.SyncCycle, now time.Time) Decision {
 	if f != nil && f.decideFn != nil {
-		return f.decideFn(source, cycles, now)
+		return f.decideFn(stream, cycles, now)
 	}
-	return ChooseCycle(source, cycles, now)
+	return ChooseCycle(stream, cycles, now)
 }
 
 func TestQueueClaimBatchBuildsJobsFromSyncer(t *testing.T) {
 	t.Parallel()
 
 	repo := &fakeSourceRepo{
-		claimed: []*db.Source{{
-			ID:   "source-1",
-			Type: "reddit",
-			KgID: "kg-1",
+		claimed: []*db.ProviderStream{{
+			ID:       "source-1",
+			Provider: "reddit",
 			Config: map[string]any{
 				"subreddit": "golang",
 			},
@@ -284,9 +326,9 @@ func TestQueueClaimBatchBuildsJobsFromSyncer(t *testing.T) {
 	}
 	syncer := &fakeSyncer{
 		sourceType: "reddit",
-		buildJobFn: func(source db.Source, cycle *db.SyncCycle) (*db.ScheduledJob, error) {
-			if source.ID != "source-1" {
-				t.Fatalf("BuildJob got source ID %q, want source-1", source.ID)
+		buildJobFn: func(stream db.ProviderStream, cycle *db.SyncCycle) (*db.ScheduledJob, error) {
+			if stream.ID != "source-1" {
+				t.Fatalf("BuildJob got stream ID %q, want source-1", stream.ID)
 			}
 			if cycle == nil || cycle.Kind != CycleKindRefresh {
 				t.Fatalf("cycle = %#v, want refresh cycle", cycle)
@@ -295,7 +337,7 @@ func TestQueueClaimBatchBuildsJobsFromSyncer(t *testing.T) {
 		},
 	}
 
-	q := NewOrchestrator(&fakeEnqueuer{}, repo, &fakeCycleRepo{}, NewNoopSeenStore(), NewFreshnessFirstArbiter(), syncer)
+	q := NewOrchestrator(&fakeEnqueuer{}, repo, &fakeSourceItemRepo{}, &fakeCycleRepo{}, NewNoopSeenStore(), NewFreshnessFirstArbiter(), syncer)
 
 	jobs, err := q.ClaimBatch(context.Background(), 10)
 	if err != nil {
@@ -316,12 +358,12 @@ func TestQueueClaimBatchMarksUnsupportedSourcesFailed(t *testing.T) {
 	t.Parallel()
 
 	repo := &fakeSourceRepo{
-		claimed: []*db.Source{{
-			ID:   "source-unsupported",
-			Type: "hackernews",
+		claimed: []*db.ProviderStream{{
+			ID:       "source-unsupported",
+			Provider: "hackernews",
 		}},
 	}
-	q := NewOrchestrator(&fakeEnqueuer{}, repo, &fakeCycleRepo{}, NewNoopSeenStore(), NewFreshnessFirstArbiter())
+	q := NewOrchestrator(&fakeEnqueuer{}, repo, &fakeSourceItemRepo{}, &fakeCycleRepo{}, NewNoopSeenStore(), NewFreshnessFirstArbiter())
 
 	jobs, err := q.ClaimBatch(context.Background(), 10)
 	if err != nil {
@@ -339,18 +381,18 @@ func TestQueueClaimBatchMarksBuildJobFailuresFailed(t *testing.T) {
 	t.Parallel()
 
 	repo := &fakeSourceRepo{
-		claimed: []*db.Source{{
-			ID:   "source-bad",
-			Type: "reddit",
+		claimed: []*db.ProviderStream{{
+			ID:       "source-bad",
+			Provider: "reddit",
 		}},
 	}
 	syncer := &fakeSyncer{
 		sourceType: "reddit",
-		buildJobFn: func(source db.Source, cycle *db.SyncCycle) (*db.ScheduledJob, error) {
+		buildJobFn: func(stream db.ProviderStream, cycle *db.SyncCycle) (*db.ScheduledJob, error) {
 			return nil, errors.New("bad config")
 		},
 	}
-	q := NewOrchestrator(&fakeEnqueuer{}, repo, &fakeCycleRepo{}, NewNoopSeenStore(), NewFreshnessFirstArbiter(), syncer)
+	q := NewOrchestrator(&fakeEnqueuer{}, repo, &fakeSourceItemRepo{}, &fakeCycleRepo{}, NewNoopSeenStore(), NewFreshnessFirstArbiter(), syncer)
 
 	jobs, err := q.ClaimBatch(context.Background(), 10)
 	if err != nil {
@@ -369,10 +411,9 @@ func TestQueueClaimBatchContinuesExistingActiveCycleWhenRefreshNotDue(t *testing
 
 	lastRefresh := time.Now().UTC()
 	repo := &fakeSourceRepo{
-		claimed: []*db.Source{{
+		claimed: []*db.ProviderStream{{
 			ID:            "source-1",
-			Type:          "reddit",
-			KgID:          "kg-1",
+			Provider:      "reddit",
 			SyncInterval:  3600,
 			LastRefreshAt: &lastRefresh,
 			Config: map[string]any{
@@ -381,11 +422,11 @@ func TestQueueClaimBatchContinuesExistingActiveCycleWhenRefreshNotDue(t *testing
 		}},
 	}
 	existing := &db.SyncCycle{
-		ID:        "cycle-1",
-		SourceID:  "source-1",
-		Kind:      CycleKindRefresh,
-		Status:    CycleStatusActive,
-		CreatedAt: time.Now().UTC().Add(-time.Hour),
+		ID:               "cycle-1",
+		ProviderStreamID: "source-1",
+		Kind:             CycleKindRefresh,
+		Status:           CycleStatusActive,
+		CreatedAt:        time.Now().UTC().Add(-time.Hour),
 	}
 	cycles := &fakeCycleRepo{
 		cyclesBySource: map[string][]*db.SyncCycle{
@@ -394,7 +435,7 @@ func TestQueueClaimBatchContinuesExistingActiveCycleWhenRefreshNotDue(t *testing
 	}
 	syncer := &fakeSyncer{
 		sourceType: "reddit",
-		buildJobFn: func(source db.Source, cycle *db.SyncCycle) (*db.ScheduledJob, error) {
+		buildJobFn: func(stream db.ProviderStream, cycle *db.SyncCycle) (*db.ScheduledJob, error) {
 			if cycle == nil || cycle.ID != "cycle-1" {
 				t.Fatalf("cycle = %#v, want existing active cycle", cycle)
 			}
@@ -402,7 +443,7 @@ func TestQueueClaimBatchContinuesExistingActiveCycleWhenRefreshNotDue(t *testing
 		},
 	}
 
-	q := NewOrchestrator(&fakeEnqueuer{}, repo, cycles, NewNoopSeenStore(), NewFreshnessFirstArbiter(), syncer)
+	q := NewOrchestrator(&fakeEnqueuer{}, repo, &fakeSourceItemRepo{}, cycles, NewNoopSeenStore(), NewFreshnessFirstArbiter(), syncer)
 
 	jobs, err := q.ClaimBatch(context.Background(), 10)
 	if err != nil {
@@ -433,23 +474,22 @@ func TestQueueMarksAcceptedRecordsSeenAfterEnqueue(t *testing.T) {
 					{ExternalID: "a-1", Type: "post"},
 					{ExternalID: "a-2", Type: "post"},
 				},
-				HasMore:       false,
-				SourceUpdates: map[string]any{},
-				CursorUpdates: map[string]any{},
+				HasMore:               false,
+				ProviderStreamUpdates: map[string]any{},
+				CursorUpdates:         map[string]any{},
 			}, nil
 		},
 	}
 
-	q := NewOrchestrator(&fakeEnqueuer{}, repo, cycles, seen, NewFreshnessFirstArbiter(), syncer)
+	q := NewOrchestrator(&fakeEnqueuer{}, repo, &fakeSourceItemRepo{}, cycles, seen, NewFreshnessFirstArbiter(), syncer)
 	handler := q.makeHandler(syncer)
 
 	payload, err := json.Marshal(db.SyncJob{
-		CycleID:    "cycle-1",
-		SourceID:   "source-1",
-		KgID:       "kg-1",
-		SourceType: "reddit",
-		JobType:    "fetch_posts",
-		Payload:    map[string]any{"after": ""},
+		CycleID:          "cycle-1",
+		ProviderStreamID: "source-1",
+		Provider:         "reddit",
+		JobType:          "fetch_posts",
+		Payload:          map[string]any{"after": ""},
 	})
 	if err != nil {
 		t.Fatalf("marshal payload: %v", err)
@@ -487,28 +527,27 @@ func TestQueueEnqueueFailureOnFirstRecordBlocksProgress(t *testing.T) {
 					{ExternalID: "a-1", Type: "post"},
 					{ExternalID: "a-2", Type: "post"},
 				},
-				HasMore:       true,
-				SourceUpdates: map[string]any{"last_seen_id": "a-1"},
-				CursorUpdates: map[string]any{"after": "page-2"},
-				HeadBoundary:  map[string]any{"id": "a-1"},
+				HasMore:               true,
+				ProviderStreamUpdates: map[string]any{"last_seen_id": "a-1"},
+				CursorUpdates:         map[string]any{"after": "page-2"},
+				HeadBoundary:          map[string]any{"id": "a-1"},
 			}, nil
 		},
 	}
 
-	q := NewOrchestrator(enqueuer, repo, cycles, seen, NewFreshnessFirstArbiter(), syncer)
+	q := NewOrchestrator(enqueuer, repo, &fakeSourceItemRepo{}, cycles, seen, NewFreshnessFirstArbiter(), syncer)
 	err := q.makeHandler(syncer)(context.Background(), syncTask(t, db.SyncJob{
-		CycleID:    "cycle-1",
-		SourceID:   "source-1",
-		KgID:       "kg-1",
-		SourceType: "reddit",
-		JobType:    "fetch_posts",
-		Payload:    map[string]any{"after": ""},
+		CycleID:          "cycle-1",
+		ProviderStreamID: "source-1",
+		Provider:         "reddit",
+		JobType:          "fetch_posts",
+		Payload:          map[string]any{"after": ""},
 	}))
 	if err == nil {
 		t.Fatal("handler returned nil, want enqueue error")
 	}
 	if len(enqueuer.firstPassCalls) != 1 {
-		t.Fatalf("EnqueueFirstPass calls = %d, want 1", len(enqueuer.firstPassCalls))
+		t.Fatalf("EnqueueGlobalFirstPass calls = %d, want 1", len(enqueuer.firstPassCalls))
 	}
 	assertNoAcceptedProgress(t, repo, cycles, seen)
 	if len(repo.markFailedIDs) != 1 || repo.markFailedIDs[0] != "source-1" {
@@ -531,22 +570,21 @@ func TestQueueEnqueueFailureAfterPartialPageBlocksProgressAndRetryIsStable(t *te
 					{ExternalID: "a-1", Type: "post"},
 					{ExternalID: "a-2", Type: "post"},
 				},
-				HasMore:          false,
-				CompletionReason: CompletionReasonExhausted,
-				SourceUpdates:    map[string]any{"last_seen_id": "a-1"},
-				CursorUpdates:    map[string]any{},
+				HasMore:               false,
+				CompletionReason:      CompletionReasonExhausted,
+				ProviderStreamUpdates: map[string]any{"last_seen_id": "a-1"},
+				CursorUpdates:         map[string]any{},
 			}, nil
 		},
 	}
 
-	q := NewOrchestrator(enqueuer, repo, cycles, seen, NewFreshnessFirstArbiter(), syncer)
+	q := NewOrchestrator(enqueuer, repo, &fakeSourceItemRepo{}, cycles, seen, NewFreshnessFirstArbiter(), syncer)
 	task := syncTask(t, db.SyncJob{
-		CycleID:    "cycle-1",
-		SourceID:   "source-1",
-		KgID:       "kg-1",
-		SourceType: "reddit",
-		JobType:    "fetch_posts",
-		Payload:    map[string]any{"after": ""},
+		CycleID:          "cycle-1",
+		ProviderStreamID: "source-1",
+		Provider:         "reddit",
+		JobType:          "fetch_posts",
+		Payload:          map[string]any{"after": ""},
 	})
 
 	err := q.makeHandler(syncer)(context.Background(), task)
@@ -593,24 +631,67 @@ func TestQueueExecuteFailureDoesNotEnqueueOrAdvance(t *testing.T) {
 		},
 	}
 
-	q := NewOrchestrator(enqueuer, repo, cycles, seen, NewFreshnessFirstArbiter(), syncer)
+	q := NewOrchestrator(enqueuer, repo, &fakeSourceItemRepo{}, cycles, seen, NewFreshnessFirstArbiter(), syncer)
 	err := q.makeHandler(syncer)(context.Background(), syncTask(t, db.SyncJob{
-		CycleID:    "cycle-1",
-		SourceID:   "source-1",
-		KgID:       "kg-1",
-		SourceType: "reddit",
-		JobType:    "fetch_posts",
-		Payload:    map[string]any{"after": ""},
+		CycleID:          "cycle-1",
+		ProviderStreamID: "source-1",
+		Provider:         "reddit",
+		JobType:          "fetch_posts",
+		Payload:          map[string]any{"after": ""},
 	}))
 	if err == nil {
 		t.Fatal("handler returned nil, want execute error")
 	}
 	if len(enqueuer.firstPassCalls) != 0 {
-		t.Fatalf("EnqueueFirstPass calls = %d, want 0", len(enqueuer.firstPassCalls))
+		t.Fatalf("EnqueueGlobalFirstPass calls = %d, want 0", len(enqueuer.firstPassCalls))
 	}
 	assertNoAcceptedProgress(t, repo, cycles, seen)
 	if len(repo.markFailedIDs) != 1 || repo.markFailedIDs[0] != "source-1" {
 		t.Fatalf("MarkSyncFailed calls = %v, want [source-1]", repo.markFailedIDs)
+	}
+}
+
+func TestQueueExistingSourceItemSkipsGlobalFirstPassEnqueue(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeSourceRepo{}
+	cycles := &fakeCycleRepo{}
+	seen := &fakeSeenStore{}
+	enqueuer := &fakeEnqueuer{}
+	items := &fakeSourceItemRepo{existingExternalIDs: map[string]bool{"bsky-1": true}}
+	syncer := &fakeSyncer{
+		sourceType: "bluesky",
+		executeFn: func(ctx context.Context, job *db.SyncJob) (*Result, error) {
+			return &Result{
+				Records: []*RawRecord{
+					{ExternalID: "bsky-1", Type: "post"},
+				},
+				HasMore:               false,
+				CompletionReason:      CompletionReasonExhausted,
+				ProviderStreamUpdates: map[string]any{},
+				CursorUpdates:         map[string]any{},
+			}, nil
+		},
+	}
+
+	q := NewOrchestrator(enqueuer, repo, items, cycles, seen, NewFreshnessFirstArbiter(), syncer)
+	if err := q.makeHandler(syncer)(context.Background(), syncTask(t, db.SyncJob{
+		CycleID:          "cycle-1",
+		ProviderStreamID: "stream-1",
+		Provider:         "bluesky",
+		JobType:          "search_posts",
+		Payload:          map[string]any{},
+	})); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(enqueuer.firstPassCalls) != 0 {
+		t.Fatalf("EnqueueGlobalFirstPass calls = %d, want 0", len(enqueuer.firstPassCalls))
+	}
+	if len(items.upserted) != 1 {
+		t.Fatalf("source item upserts = %d, want 1 existence check", len(items.upserted))
+	}
+	if len(repo.markSyncedIDs) != 1 || repo.markSyncedIDs[0] != "stream-1" {
+		t.Fatalf("MarkSynced calls = %v, want [stream-1]", repo.markSyncedIDs)
 	}
 }
 
@@ -628,28 +709,27 @@ func TestQueueMarkSeenFailureBlocksProgress(t *testing.T) {
 				Records: []*RawRecord{
 					{ExternalID: "a-1", Type: "post"},
 				},
-				HasMore:          false,
-				CompletionReason: CompletionReasonExhausted,
-				SourceUpdates:    map[string]any{"last_seen_id": "a-1"},
-				CursorUpdates:    map[string]any{},
+				HasMore:               false,
+				CompletionReason:      CompletionReasonExhausted,
+				ProviderStreamUpdates: map[string]any{"last_seen_id": "a-1"},
+				CursorUpdates:         map[string]any{},
 			}, nil
 		},
 	}
 
-	q := NewOrchestrator(enqueuer, repo, cycles, seen, NewFreshnessFirstArbiter(), syncer)
+	q := NewOrchestrator(enqueuer, repo, &fakeSourceItemRepo{}, cycles, seen, NewFreshnessFirstArbiter(), syncer)
 	err := q.makeHandler(syncer)(context.Background(), syncTask(t, db.SyncJob{
-		CycleID:    "cycle-1",
-		SourceID:   "source-1",
-		KgID:       "kg-1",
-		SourceType: "reddit",
-		JobType:    "fetch_posts",
-		Payload:    map[string]any{"after": ""},
+		CycleID:          "cycle-1",
+		ProviderStreamID: "source-1",
+		Provider:         "reddit",
+		JobType:          "fetch_posts",
+		Payload:          map[string]any{"after": ""},
 	}))
 	if err == nil {
 		t.Fatal("handler returned nil, want MarkSeen error")
 	}
 	if len(enqueuer.firstPassCalls) != 1 {
-		t.Fatalf("EnqueueFirstPass calls = %d, want 1", len(enqueuer.firstPassCalls))
+		t.Fatalf("EnqueueGlobalFirstPass calls = %d, want 1", len(enqueuer.firstPassCalls))
 	}
 	if len(seen.marked) != 1 || !reflect.DeepEqual(seen.marked[0], []string{"a-1"}) {
 		t.Fatalf("MarkSeen calls = %v, want [[a-1]]", seen.marked)
@@ -686,23 +766,22 @@ func TestQueueRetryProducesStablePayloadWithProvenance(t *testing.T) {
 						},
 					},
 				},
-				HasMore:          false,
-				CompletionReason: CompletionReasonExhausted,
-				SourceUpdates:    map[string]any{"last_seen_id": "t3_post-1"},
-				CursorUpdates:    map[string]any{},
+				HasMore:               false,
+				CompletionReason:      CompletionReasonExhausted,
+				ProviderStreamUpdates: map[string]any{"last_seen_id": "t3_post-1"},
+				CursorUpdates:         map[string]any{},
 			}, nil
 		},
 	}
 
-	q := NewOrchestrator(enqueuer, repo, cycles, seen, NewFreshnessFirstArbiter(), syncer)
+	q := NewOrchestrator(enqueuer, repo, &fakeSourceItemRepo{}, cycles, seen, NewFreshnessFirstArbiter(), syncer)
 	task := syncTask(t, db.SyncJob{
-		CorrelationID: "corr-1",
-		CycleID:       "cycle-1",
-		SourceID:      "source-1",
-		KgID:          "kg-1",
-		SourceType:    "reddit",
-		JobType:       "fetch_posts",
-		Payload:       map[string]any{"after": ""},
+		CorrelationID:    "corr-1",
+		CycleID:          "cycle-1",
+		ProviderStreamID: "source-1",
+		Provider:         "reddit",
+		JobType:          "fetch_posts",
+		Payload:          map[string]any{"after": ""},
 	})
 
 	if err := q.makeHandler(syncer)(context.Background(), task); err != nil {
@@ -712,7 +791,7 @@ func TestQueueRetryProducesStablePayloadWithProvenance(t *testing.T) {
 		t.Fatalf("second handler returned error: %v", err)
 	}
 	if len(enqueuer.firstPassCalls) != 2 {
-		t.Fatalf("EnqueueFirstPass calls = %d, want 2", len(enqueuer.firstPassCalls))
+		t.Fatalf("EnqueueGlobalFirstPass calls = %d, want 2", len(enqueuer.firstPassCalls))
 	}
 	if enqueuer.firstPassCalls[0].recordID != enqueuer.firstPassCalls[1].recordID {
 		t.Fatalf("record IDs changed across retry: %q vs %q", enqueuer.firstPassCalls[0].recordID, enqueuer.firstPassCalls[1].recordID)
@@ -721,13 +800,12 @@ func TestQueueRetryProducesStablePayloadWithProvenance(t *testing.T) {
 		t.Fatalf("payload changed across retry:\nfirst=%s\nsecond=%s", enqueuer.firstPassCalls[0].payload, enqueuer.firstPassCalls[1].payload)
 	}
 
-	var queued pipeline.RecordPayload
+	var queued pipeline.SourceItemPayload
 	if err := json.Unmarshal(enqueuer.firstPassCalls[0].payload, &queued); err != nil {
 		t.Fatalf("unmarshal queued payload: %v", err)
 	}
 	if queued.CorrelationID != "corr-1" ||
-		queued.KgID != "kg-1" ||
-		queued.SourceID != "source-1" ||
+		queued.ProviderStreamID != "source-1" ||
 		queued.ExternalID != "t3_post-1" ||
 		queued.SourceURL != "https://reddit.com/r/golang/comments/post_1/title" {
 		t.Fatalf("queued payload missing provenance: %+v", queued)
@@ -738,6 +816,108 @@ func TestQueueRetryProducesStablePayloadWithProvenance(t *testing.T) {
 	if len(repo.markSyncedUpdates) != 2 ||
 		!reflect.DeepEqual(repo.markSyncedUpdates[0], repo.markSyncedUpdates[1]) {
 		t.Fatalf("source updates changed across retry: %v", repo.markSyncedUpdates)
+	}
+}
+
+func TestQueueFollowUpCycleCreateFailureBlocksProgress(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeSourceRepo{}
+	cycles := &fakeCycleRepo{createErr: errors.New("cycle insert failed")}
+	seen := &fakeSeenStore{}
+	enqueuer := &fakeEnqueuer{}
+	syncer := &fakeSyncer{
+		sourceType: "reddit",
+		executeFn: func(ctx context.Context, job *db.SyncJob) (*Result, error) {
+			return &Result{
+				Records: []*RawRecord{
+					{ExternalID: "t3_post-1", Type: "post", Content: "post"},
+				},
+				NewCycles: []*db.SyncCycle{{
+					Kind:             CycleKindHydration,
+					TargetKind:       "reddit_post",
+					TargetExternalID: "t3_post-1",
+					Cursor:           map[string]any{"post_id": "t3_post-1", "hydration_interval_seconds": 3600},
+				}},
+				HasMore:               false,
+				CompletionReason:      CompletionReasonExhausted,
+				ProviderStreamUpdates: map[string]any{"last_seen_id": "t3_post-1"},
+				CursorUpdates:         map[string]any{},
+			}, nil
+		},
+	}
+
+	q := NewOrchestrator(enqueuer, repo, &fakeSourceItemRepo{}, cycles, seen, NewFreshnessFirstArbiter(), syncer)
+	err := q.makeHandler(syncer)(context.Background(), syncTask(t, db.SyncJob{
+		CycleID:          "cycle-1",
+		ProviderStreamID: "source-1",
+		Provider:         "reddit",
+		JobType:          "fetch_posts",
+		Payload:          map[string]any{"after": ""},
+	}))
+	if err == nil {
+		t.Fatal("handler returned nil, want cycle create error")
+	}
+	if len(enqueuer.firstPassCalls) != 1 {
+		t.Fatalf("EnqueueGlobalFirstPass calls = %d, want 1", len(enqueuer.firstPassCalls))
+	}
+	assertNoAcceptedProgress(t, repo, cycles, seen)
+}
+
+func TestQueueCreatesHydrationCyclesAfterRecordsAccepted(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeSourceRepo{}
+	cycles := &fakeCycleRepo{}
+	seen := &fakeSeenStore{}
+	enqueuer := &fakeEnqueuer{}
+	syncer := &fakeSyncer{
+		sourceType: "reddit",
+		executeFn: func(ctx context.Context, job *db.SyncJob) (*Result, error) {
+			return &Result{
+				Records: []*RawRecord{
+					{ExternalID: "t3_post-1", Type: "post", Content: "post"},
+				},
+				NewCycles: []*db.SyncCycle{{
+					Kind:             CycleKindHydration,
+					TargetKind:       "reddit_post",
+					TargetExternalID: "t3_post-1",
+					Cursor:           map[string]any{"post_id": "t3_post-1", "hydration_interval_seconds": 3600},
+				}},
+				HasMore:               false,
+				CompletionReason:      CompletionReasonExhausted,
+				ProviderStreamUpdates: map[string]any{"last_seen_id": "t3_post-1"},
+				CursorUpdates:         map[string]any{},
+			}, nil
+		},
+	}
+
+	q := NewOrchestrator(enqueuer, repo, &fakeSourceItemRepo{}, cycles, seen, NewFreshnessFirstArbiter(), syncer)
+	err := q.makeHandler(syncer)(context.Background(), syncTask(t, db.SyncJob{
+		CycleID:          "cycle-1",
+		ProviderStreamID: "source-1",
+		Provider:         "reddit",
+		JobType:          "fetch_posts",
+		Payload:          map[string]any{"after": ""},
+	}))
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(enqueuer.firstPassCalls) != 1 {
+		t.Fatalf("EnqueueGlobalFirstPass calls = %d, want 1", len(enqueuer.firstPassCalls))
+	}
+	if len(cycles.created) != 1 {
+		t.Fatalf("created cycles = %d, want 1", len(cycles.created))
+	}
+	created := cycles.created[0]
+	if created.ID == "" || created.ProviderStreamID != "source-1" || created.Status != CycleStatusActive {
+		t.Fatalf("created cycle missing orchestrator defaults: %#v", created)
+	}
+	if created.Kind != CycleKindHydration || created.TargetExternalID != "t3_post-1" || created.LastHydratedAt == nil {
+		t.Fatalf("created cycle = %#v, want hydration cycle for t3_post-1", created)
+	}
+	if len(seen.marked) != 1 || !reflect.DeepEqual(seen.marked[0], []string{"t3_post-1"}) {
+		t.Fatalf("MarkSeen calls = %v, want [[t3_post-1]]", seen.marked)
 	}
 }
 
@@ -758,6 +938,9 @@ func assertNoAcceptedProgress(t *testing.T, repo *fakeSourceRepo, cycles *fakeCy
 	if len(cycles.completedIDs) != 0 {
 		t.Fatalf("Complete calls = %v, want none", cycles.completedIDs)
 	}
+	if len(cycles.created) != 0 {
+		t.Fatalf("Create calls = %v, want none", cycles.created)
+	}
 }
 
 func queuedRecordIDs(calls []firstPassCall) []string {
@@ -772,10 +955,9 @@ func TestQueueClaimBatchUsesInjectedArbiter(t *testing.T) {
 	t.Parallel()
 
 	repo := &fakeSourceRepo{
-		claimed: []*db.Source{{
-			ID:   "source-1",
-			Type: "reddit",
-			KgID: "kg-1",
+		claimed: []*db.ProviderStream{{
+			ID:       "source-1",
+			Provider: "reddit",
 			Config: map[string]any{
 				"subreddit": "golang",
 			},
@@ -783,7 +965,7 @@ func TestQueueClaimBatchUsesInjectedArbiter(t *testing.T) {
 	}
 	syncer := &fakeSyncer{
 		sourceType: "reddit",
-		buildJobFn: func(source db.Source, cycle *db.SyncCycle) (*db.ScheduledJob, error) {
+		buildJobFn: func(stream db.ProviderStream, cycle *db.SyncCycle) (*db.ScheduledJob, error) {
 			if cycle == nil || cycle.ID != "cycle-injected" {
 				t.Fatalf("cycle = %#v, want injected cycle", cycle)
 			}
@@ -791,7 +973,7 @@ func TestQueueClaimBatchUsesInjectedArbiter(t *testing.T) {
 		},
 	}
 	arbiter := &fakeArbiter{
-		decideFn: func(source *db.Source, cycles []*db.SyncCycle, now time.Time) Decision {
+		decideFn: func(stream *db.ProviderStream, cycles []*db.SyncCycle, now time.Time) Decision {
 			return Decision{
 				Action: DecisionRunCycle,
 				Cycle: &db.SyncCycle{
@@ -804,7 +986,7 @@ func TestQueueClaimBatchUsesInjectedArbiter(t *testing.T) {
 		},
 	}
 
-	q := NewOrchestrator(&fakeEnqueuer{}, repo, &fakeCycleRepo{}, NewNoopSeenStore(), arbiter, syncer)
+	q := NewOrchestrator(&fakeEnqueuer{}, repo, &fakeSourceItemRepo{}, &fakeCycleRepo{}, NewNoopSeenStore(), arbiter, syncer)
 
 	jobs, err := q.ClaimBatch(context.Background(), 1)
 	if err != nil {
@@ -822,10 +1004,9 @@ func TestOverlappingCyclesNewerCycleCompletesThenOlderCycleResumes(t *testing.T)
 	lastRefreshOld := now.Add(-2 * time.Hour)
 	lastRefreshRecent := now.Add(-time.Minute)
 
-	source := &db.Source{
+	source := &db.ProviderStream{
 		ID:            "source-1",
-		Type:          "reddit",
-		KgID:          "kg-1",
+		Provider:      "reddit",
 		SyncInterval:  300,
 		LastRefreshAt: &lastRefreshOld,
 		Config: map[string]any{
@@ -833,11 +1014,11 @@ func TestOverlappingCyclesNewerCycleCompletesThenOlderCycleResumes(t *testing.T)
 		},
 	}
 	olderCycle := &db.SyncCycle{
-		ID:        "cycle-old",
-		SourceID:  "source-1",
-		Kind:      CycleKindRefresh,
-		Status:    CycleStatusActive,
-		CreatedAt: now.Add(-119 * time.Minute),
+		ID:               "cycle-old",
+		ProviderStreamID: "source-1",
+		Kind:             CycleKindRefresh,
+		Status:           CycleStatusActive,
+		CreatedAt:        now.Add(-119 * time.Minute),
 	}
 	cycles := &fakeCycleRepo{
 		cyclesBySource: map[string][]*db.SyncCycle{
@@ -845,25 +1026,24 @@ func TestOverlappingCyclesNewerCycleCompletesThenOlderCycleResumes(t *testing.T)
 		},
 	}
 	repo := &fakeSourceRepo{
-		claimed: []*db.Source{source},
+		claimed: []*db.ProviderStream{source},
 	}
 	seen := &fakeSeenStore{}
 	seenKnown := map[string]bool{"seen-1": true}
 	var builtCycleIDs []string
 	syncer := &fakeSyncer{
 		sourceType: "reddit",
-		buildJobFn: func(source db.Source, cycle *db.SyncCycle) (*db.ScheduledJob, error) {
+		buildJobFn: func(stream db.ProviderStream, cycle *db.SyncCycle) (*db.ScheduledJob, error) {
 			if cycle == nil {
 				t.Fatal("BuildJob cycle = nil")
 			}
 			builtCycleIDs = append(builtCycleIDs, cycle.ID)
 			payload, err := json.Marshal(db.SyncJob{
-				CycleID:    cycle.ID,
-				SourceID:   source.ID,
-				KgID:       source.KgID,
-				SourceType: source.Type,
-				JobType:    "fetch_posts",
-				Payload:    map[string]any{"after": ""},
+				CycleID:          cycle.ID,
+				ProviderStreamID: stream.ID,
+				Provider:         stream.Provider,
+				JobType:          "fetch_posts",
+				Payload:          map[string]any{"after": ""},
 			})
 			if err != nil {
 				return nil, err
@@ -881,10 +1061,10 @@ func TestOverlappingCyclesNewerCycleCompletesThenOlderCycleResumes(t *testing.T)
 					Records: []*RawRecord{
 						{ExternalID: "old-1", Type: "post"},
 					},
-					HasMore:          false,
-					CompletionReason: CompletionReasonExhausted,
-					SourceUpdates:    map[string]any{},
-					CursorUpdates:    map[string]any{},
+					HasMore:               false,
+					CompletionReason:      CompletionReasonExhausted,
+					ProviderStreamUpdates: map[string]any{},
+					CursorUpdates:         map[string]any{},
 				}, nil
 			default:
 				known := make(map[string]bool, len(seenKnown))
@@ -893,10 +1073,10 @@ func TestOverlappingCyclesNewerCycleCompletesThenOlderCycleResumes(t *testing.T)
 				}
 				page := []string{"new-2", "new-1", "seen-1"}
 				result := &Result{
-					Records:       []*RawRecord{},
-					SourceUpdates: map[string]any{},
-					CursorUpdates: map[string]any{},
-					HeadBoundary:  map[string]any{},
+					Records:               []*RawRecord{},
+					ProviderStreamUpdates: map[string]any{},
+					CursorUpdates:         map[string]any{},
+					HeadBoundary:          map[string]any{},
 				}
 				for _, id := range page {
 					if known[id] {
@@ -913,7 +1093,7 @@ func TestOverlappingCyclesNewerCycleCompletesThenOlderCycleResumes(t *testing.T)
 		},
 	}
 
-	orch := NewOrchestrator(&fakeEnqueuer{}, repo, cycles, seen, NewFreshnessFirstArbiter(), syncer)
+	orch := NewOrchestrator(&fakeEnqueuer{}, repo, &fakeSourceItemRepo{}, cycles, seen, NewFreshnessFirstArbiter(), syncer)
 
 	jobs, err := orch.ClaimBatch(context.Background(), 1)
 	if err != nil {
@@ -964,10 +1144,9 @@ func TestRefreshCycleTakesOverForTwoPagesThenOlderCycleContinues(t *testing.T) {
 	lastRefreshOld := now.Add(-2 * time.Hour)
 	lastRefreshRecent := now.Add(-time.Minute)
 
-	source := &db.Source{
+	source := &db.ProviderStream{
 		ID:            "source-1",
-		Type:          "reddit",
-		KgID:          "kg-1",
+		Provider:      "reddit",
 		SyncInterval:  300,
 		LastRefreshAt: &lastRefreshOld,
 		Config: map[string]any{
@@ -975,11 +1154,11 @@ func TestRefreshCycleTakesOverForTwoPagesThenOlderCycleContinues(t *testing.T) {
 		},
 	}
 	olderCycle := &db.SyncCycle{
-		ID:        "cycle-old",
-		SourceID:  "source-1",
-		Kind:      CycleKindRefresh,
-		Status:    CycleStatusActive,
-		CreatedAt: now.Add(-119 * time.Minute),
+		ID:               "cycle-old",
+		ProviderStreamID: "source-1",
+		Kind:             CycleKindRefresh,
+		Status:           CycleStatusActive,
+		CreatedAt:        now.Add(-119 * time.Minute),
 	}
 	cycles := &fakeCycleRepo{
 		cyclesBySource: map[string][]*db.SyncCycle{
@@ -987,22 +1166,21 @@ func TestRefreshCycleTakesOverForTwoPagesThenOlderCycleContinues(t *testing.T) {
 		},
 	}
 	repo := &fakeSourceRepo{
-		claimed: []*db.Source{source},
+		claimed: []*db.ProviderStream{source},
 	}
 	seen := &fakeSeenStore{}
 	var builtCycleIDs []string
 
 	syncer := &fakeSyncer{
 		sourceType: "reddit",
-		buildJobFn: func(source db.Source, cycle *db.SyncCycle) (*db.ScheduledJob, error) {
+		buildJobFn: func(stream db.ProviderStream, cycle *db.SyncCycle) (*db.ScheduledJob, error) {
 			builtCycleIDs = append(builtCycleIDs, cycle.ID)
 			payload, err := json.Marshal(db.SyncJob{
-				CycleID:    cycle.ID,
-				SourceID:   source.ID,
-				KgID:       source.KgID,
-				SourceType: source.Type,
-				JobType:    "fetch_posts",
-				Payload:    cloneMap(cycle.Cursor),
+				CycleID:          cycle.ID,
+				ProviderStreamID: stream.ID,
+				Provider:         stream.Provider,
+				JobType:          "fetch_posts",
+				Payload:          cloneMap(cycle.Cursor),
 			})
 			if err != nil {
 				return nil, err
@@ -1020,10 +1198,10 @@ func TestRefreshCycleTakesOverForTwoPagesThenOlderCycleContinues(t *testing.T) {
 					Records: []*RawRecord{
 						{ExternalID: "old-1", Type: "post"},
 					},
-					HasMore:          false,
-					CompletionReason: CompletionReasonExhausted,
-					SourceUpdates:    map[string]any{},
-					CursorUpdates:    map[string]any{},
+					HasMore:               false,
+					CompletionReason:      CompletionReasonExhausted,
+					ProviderStreamUpdates: map[string]any{},
+					CursorUpdates:         map[string]any{},
 				}, nil
 			default:
 				after, _ := job.Payload["after"].(string)
@@ -1033,10 +1211,10 @@ func TestRefreshCycleTakesOverForTwoPagesThenOlderCycleContinues(t *testing.T) {
 							{ExternalID: "new-3", Type: "post"},
 							{ExternalID: "new-2", Type: "post"},
 						},
-						HasMore:       true,
-						SourceUpdates: map[string]any{},
-						CursorUpdates: map[string]any{"after": "page-2"},
-						HeadBoundary:  map[string]any{"id": "new-3"},
+						HasMore:               true,
+						ProviderStreamUpdates: map[string]any{},
+						CursorUpdates:         map[string]any{"after": "page-2"},
+						HeadBoundary:          map[string]any{"id": "new-3"},
 					}, nil
 				}
 				if after == "page-2" {
@@ -1044,10 +1222,10 @@ func TestRefreshCycleTakesOverForTwoPagesThenOlderCycleContinues(t *testing.T) {
 						Records: []*RawRecord{
 							{ExternalID: "new-1", Type: "post"},
 						},
-						HasMore:          false,
-						CompletionReason: CompletionReasonSeenOverlap,
-						SourceUpdates:    map[string]any{},
-						CursorUpdates:    map[string]any{},
+						HasMore:               false,
+						CompletionReason:      CompletionReasonSeenOverlap,
+						ProviderStreamUpdates: map[string]any{},
+						CursorUpdates:         map[string]any{},
 					}, nil
 				}
 				return nil, errors.New("unexpected cursor state")
@@ -1055,7 +1233,7 @@ func TestRefreshCycleTakesOverForTwoPagesThenOlderCycleContinues(t *testing.T) {
 		},
 	}
 
-	orch := NewOrchestrator(&fakeEnqueuer{}, repo, cycles, seen, NewFreshnessFirstArbiter(), syncer)
+	orch := NewOrchestrator(&fakeEnqueuer{}, repo, &fakeSourceItemRepo{}, cycles, seen, NewFreshnessFirstArbiter(), syncer)
 
 	jobs, err := orch.ClaimBatch(context.Background(), 1)
 	if err != nil {

@@ -1,5 +1,11 @@
 # Aladin — Source Scheduler And Sync Cycles
 
+> Historical note: this document was written for source-owned scheduling. The
+> current scheduler/arbiter model uses `provider_streams` as the fairness unit
+> and `sync_cycles.provider_stream_id` as traversal ownership. The old
+> `sources` table is removed. The current end-to-end data model is documented in
+> [`docs/GLOBAL_SOURCE_ITEM_PIPELINE.md`](../docs/GLOBAL_SOURCE_ITEM_PIPELINE.md).
+
 ## Problem
 
 The Redis/asynq sync path was using `sources.config` for two different jobs:

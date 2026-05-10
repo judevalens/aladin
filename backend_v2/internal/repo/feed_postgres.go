@@ -22,21 +22,29 @@ func (r *PostgresFeedRepository) List(ctx context.Context, params coreservice.Fe
 		SELECT
 		    a.id, a.type, a.label, LEFT(COALESCE(a.content, ''), 500) AS content,
 		    a.source_url, a.enrichment, a.metadata, a.user_status, a.created_at,
-		    s.type AS source_type, s.name AS source_name,
+		    ps.provider AS source_type, ss.name AS source_name,
 		    COALESCE(
 		        LN(COALESCE((a.metadata->>'score')::float, 0) + 1) * 0.4
 		        + GREATEST(0, 1 - EXTRACT(EPOCH FROM (now() - a.created_at)) / 2592000.0) * 0.6,
 		        0
 		    ) AS signal_score
 		  FROM records a
-		  LEFT JOIN sources s ON s.id = a.source_id
+		  LEFT JOIN LATERAL (
+		      SELECT subscription_id
+		        FROM tenant_item_matches
+		       WHERE record_id = a.id
+		       ORDER BY updated_at DESC
+		       LIMIT 1
+		  ) tim ON TRUE
+		  LEFT JOIN source_subscriptions ss ON ss.id = tim.subscription_id
+		  LEFT JOIN provider_streams ps ON ps.id = ss.provider_stream_id
 		 WHERE a.status != 'superseded'
 		   AND a.user_status IS DISTINCT FROM 'dismissed'
 	`
 	args := []any{}
 	argPos := 1
 	if params.SourceType != "" {
-		query += ` AND s.type = $` + strconv.Itoa(argPos)
+		query += ` AND ps.provider = $` + strconv.Itoa(argPos)
 		args = append(args, params.SourceType)
 		argPos++
 	}
@@ -86,11 +94,11 @@ func (r *PostgresFeedRepository) List(ctx context.Context, params coreservice.Fe
 		items = append(items, item)
 	}
 
-	countQuery := `SELECT COUNT(*) FROM records a LEFT JOIN sources s ON s.id = a.source_id WHERE a.status != 'superseded' AND a.user_status IS DISTINCT FROM 'dismissed'`
+	countQuery := `SELECT COUNT(*) FROM records a LEFT JOIN LATERAL (SELECT subscription_id FROM tenant_item_matches WHERE record_id = a.id ORDER BY updated_at DESC LIMIT 1) tim ON TRUE LEFT JOIN source_subscriptions ss ON ss.id = tim.subscription_id LEFT JOIN provider_streams ps ON ps.id = ss.provider_stream_id WHERE a.status != 'superseded' AND a.user_status IS DISTINCT FROM 'dismissed'`
 	countArgs := []any{}
 	countPos := 1
 	if params.SourceType != "" {
-		countQuery += ` AND s.type = $` + strconv.Itoa(countPos)
+		countQuery += ` AND ps.provider = $` + strconv.Itoa(countPos)
 		countArgs = append(countArgs, params.SourceType)
 		countPos++
 	}
@@ -134,9 +142,10 @@ func (r *PostgresFeedRepository) Topics(ctx context.Context) ([]string, error) {
 
 func (r *PostgresFeedRepository) Sources(ctx context.Context) ([]coreservice.FeedSourceRecord, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id::text, name, type, sync_state, last_synced_at
-		  FROM sources
-		 ORDER BY name
+		SELECT ss.id::text, ss.name, ps.provider, ss.status, ps.last_refresh_at
+		  FROM source_subscriptions ss
+		  JOIN provider_streams ps ON ps.id = ss.provider_stream_id
+		 ORDER BY ss.name
 	`)
 	if err != nil {
 		return []coreservice.FeedSourceRecord{}, nil

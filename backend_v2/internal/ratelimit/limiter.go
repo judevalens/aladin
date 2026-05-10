@@ -13,13 +13,32 @@ type Limiter struct {
 
 // New creates a limiter allowing rpm requests per minute.
 func New(rpm int) *Limiter {
+	return newLimiter(rpm, rpm)
+}
+
+// NewPaced creates a limiter allowing rpm requests per minute without an
+// initial burst. Use this for provider APIs that punish short request spikes.
+func NewPaced(rpm int) *Limiter {
+	return newLimiter(rpm, 0)
+}
+
+func newLimiter(rpm int, initialTokens int) *Limiter {
+	if rpm <= 0 {
+		rpm = 1
+	}
+	if initialTokens < 0 {
+		initialTokens = 0
+	}
+	if initialTokens > rpm {
+		initialTokens = rpm
+	}
 	interval := time.Minute / time.Duration(rpm)
 	l := &Limiter{
 		tokens:   make(chan struct{}, rpm),
 		interval: interval,
 	}
 	// Fill bucket
-	for i := 0; i < rpm; i++ {
+	for i := 0; i < initialTokens; i++ {
 		l.tokens <- struct{}{}
 	}
 	// Refill one token per interval

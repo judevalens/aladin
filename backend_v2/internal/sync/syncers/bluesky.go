@@ -18,17 +18,16 @@ import (
 const (
 	blueskyAPI      = "https://public.api.bsky.app/xrpc"
 	blueskyRate     = 30
-	blueskyPageSize = 100
+	blueskyPageSize = 50
 
 	QueueBlueskyHead = "sync_head:bluesky"
 	QueueBluesky     = "sync:bluesky"
 )
 
 type blueskyCycleState struct {
-	Query                 string
-	Cursor                string
-	NextLastSeenURI       string
-	NextLastSeenCreatedAt string
+	Query string
+	Sort  string
+	Limit int
 }
 
 type blueskySearchPostsResponse struct {
@@ -63,7 +62,6 @@ type blueskyPostView struct {
 type BlueskySyncer struct {
 	client  BlueskyClient
 	limiter *ratelimit.Limiter
-	seen    sync.SeenStore
 }
 
 func NewBlueskySyncer(seen sync.SeenStore) *BlueskySyncer {
@@ -80,43 +78,41 @@ func NewBlueskySyncerWithClient(client BlueskyClient, seen sync.SeenStore) *Blue
 	return &BlueskySyncer{
 		client:  client,
 		limiter: ratelimit.New(blueskyRate),
-		seen:    seen,
 	}
 }
 
-func (b *BlueskySyncer) SourceType() string { return "bluesky" }
-func (b *BlueskySyncer) HeadQueue() string  { return QueueBlueskyHead }
+func (b *BlueskySyncer) Provider() string  { return "bluesky" }
+func (b *BlueskySyncer) HeadQueue() string { return QueueBlueskyHead }
 
-func (b *BlueskySyncer) BuildJob(source db.Source, cycle *db.SyncCycle) (*db.ScheduledJob, error) {
-	query, _ := source.Config["query"].(string)
+func (b *BlueskySyncer) BuildJob(stream db.ProviderStream, cycle *db.SyncCycle) (*db.ScheduledJob, error) {
+	query, _ := stream.Config["query"].(string)
 	query = strings.TrimSpace(query)
 	if query == "" {
-		return nil, fmt.Errorf("bluesky source %q missing required config field: query", source.Name)
+		return nil, fmt.Errorf("bluesky stream %q missing required config field: query", stream.Name)
 	}
 
-	state := newBlueskyCycleState(source, cycle, query)
+	state := newBlueskyCycleState(stream, query)
 	cycleID := ""
 	if cycle != nil {
 		cycleID = cycle.ID
 	}
 	correlationID := uuid.NewString()
 	payload, err := json.Marshal(db.SyncJob{
-		CorrelationID: correlationID,
-		CycleID:       cycleID,
-		SourceID:      source.ID,
-		KgID:          source.KgID,
-		SourceType:    "bluesky",
-		JobType:       "search_posts",
-		Payload:       state.payload(),
-		Priority:      5,
-		MaxAttempts:   3,
+		CorrelationID:    correlationID,
+		CycleID:          cycleID,
+		ProviderStreamID: stream.ID,
+		Provider:         "bluesky",
+		JobType:          "search_posts",
+		Payload:          state.payload(),
+		Priority:         5,
+		MaxAttempts:      3,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("bluesky BuildJob marshal: %w", err)
 	}
 
 	return &db.ScheduledJob{
-		ID:            source.ID,
+		ID:            stream.ID,
 		CorrelationID: correlationID,
 		Type:          "sync:bluesky",
 		Payload:       payload,
@@ -134,13 +130,15 @@ func (b *BlueskySyncer) Execute(ctx context.Context, job *db.SyncJob) (*sync.Res
 	state := blueskyCycleStateFromPayload(job.Payload)
 	log := slog.With(
 		"component", "source_syncer",
-		"source_type", "bluesky",
-		"source_id", job.SourceID,
+		"provider", "bluesky",
+		"provider_stream_id", job.ProviderStreamID,
 		"cycle_id", job.CycleID,
 		"correlation_id", job.CorrelationID,
 		"query", state.Query,
+		"sort", state.Sort,
+		"limit", state.limit(),
 	)
-	log.Debug("bluesky: searching posts", "cursor", state.Cursor, "has_next_last_seen", state.NextLastSeenURI != "")
+	log.Debug("bluesky: searching top posts")
 	body, err := b.client.SearchPosts(ctx, state)
 	if err != nil {
 		return nil, err
@@ -148,38 +146,14 @@ func (b *BlueskySyncer) Execute(ctx context.Context, job *db.SyncJob) (*sync.Res
 	log.Debug("bluesky: fetched search page", "provider_record_count", len(body.Posts), "has_next_cursor", body.Cursor != "")
 
 	result := &sync.Result{
-		SourceUpdates: map[string]any{},
-		CursorUpdates: map[string]any{},
+		ProviderStreamUpdates: map[string]any{},
+		CursorUpdates:         map[string]any{},
 	}
-	externalIDs := make([]string, 0, len(body.Posts))
-	for _, post := range body.Posts {
-		if post.URI != "" {
-			externalIDs = append(externalIDs, post.URI)
-		}
-	}
-	known, err := b.seen.Seen(ctx, job.SourceID, externalIDs)
-	if err != nil {
-		return nil, fmt.Errorf("bluesky seen lookup: %w", err)
-	}
-	log.Debug("bluesky: seen lookup complete", "candidate_count", len(externalIDs), "known_count", countSeen(known))
-	hitBoundary := false
 	var newestAcceptedURI string
 	var newestAcceptedCreatedAt string
 	for _, post := range body.Posts {
 		if post.URI == "" {
 			continue
-		}
-
-		if known[post.URI] {
-			log.Debug("bluesky: seen boundary reached", "external_id", post.URI)
-			hitBoundary = true
-			result.CompletionReason = sync.CompletionReasonSeenOverlap
-			break
-		}
-
-		if state.NextLastSeenURI == "" {
-			state.NextLastSeenURI = post.URI
-			state.NextLastSeenCreatedAt = post.Record.CreatedAt
 		}
 		if newestAcceptedURI == "" {
 			newestAcceptedURI = post.URI
@@ -187,14 +161,17 @@ func (b *BlueskySyncer) Execute(ctx context.Context, job *db.SyncJob) (*sync.Res
 		}
 
 		result.Records = append(result.Records, &sync.RawRecord{
-			ExternalID: post.URI,
-			Type:       "post",
-			Label:      blueskyLabel(post),
-			Content:    post.Record.Text,
-			SourceURL:  blueskyPostURL(post),
+			ExternalID:        post.URI,
+			SourceRevision:    0,
+			Type:              "post",
+			Label:             blueskyLabel(post),
+			Content:           post.Record.Text,
+			EnrichmentContent: blueskyEnrichmentContent(post),
+			SourceURL:         blueskyPostURL(post),
 			Metadata: map[string]any{
 				"platform":      "bluesky",
 				"query":         state.Query,
+				"sort":          state.sort(),
 				"uri":           post.URI,
 				"cid":           post.CID,
 				"author_did":    post.Author.DID,
@@ -208,6 +185,7 @@ func (b *BlueskySyncer) Execute(ctx context.Context, job *db.SyncJob) (*sync.Res
 				"reply_count":   post.ReplyCount,
 				"quote_count":   post.QuoteCount,
 				"embed_type":    post.Record.Embed.Type,
+				"sample_limit":  state.limit(),
 			},
 		})
 	}
@@ -219,45 +197,28 @@ func (b *BlueskySyncer) Execute(ctx context.Context, job *db.SyncJob) (*sync.Res
 		}
 	}
 
-	if state.NextLastSeenURI != "" {
-		result.SourceUpdates["last_seen_post_uri"] = state.NextLastSeenURI
-		result.SourceUpdates["last_seen_post_created_at"] = state.NextLastSeenCreatedAt
-	}
-
-	if !hitBoundary && body.Cursor != "" {
-		result.HasMore = true
-		result.CursorUpdates["cursor"] = body.Cursor
-	} else {
-		if result.CompletionReason == "" {
-			result.CompletionReason = sync.CompletionReasonExhausted
-		}
-		result.CursorUpdates["cursor"] = ""
-	}
+	result.CompletionReason = sync.CompletionReasonExhausted
 
 	log.Debug(
 		"bluesky: execution result built",
 		"accepted_record_count", len(result.Records),
 		"has_more", result.HasMore,
 		"completion_reason", result.CompletionReason,
-		"source_update_keys", mapKeysForLog(result.SourceUpdates),
+		"provider_stream_update_keys", mapKeysForLog(result.ProviderStreamUpdates),
 		"cursor_update_keys", mapKeysForLog(result.CursorUpdates),
 		"head_boundary_keys", mapKeysForLog(result.HeadBoundary),
 	)
 	return result, nil
 }
 
-func newBlueskyCycleState(source db.Source, cycle *db.SyncCycle, query string) blueskyCycleState {
-	state := blueskyCycleState{
+func newBlueskyCycleState(stream db.ProviderStream, query string) blueskyCycleState {
+	sort, _ := stream.Config["sort"].(string)
+	limit := intFromAny(stream.Config["limit"])
+	return blueskyCycleState{
 		Query: query,
+		Sort:  sort,
+		Limit: limit,
 	}
-	if cycle != nil && len(cycle.Cursor) > 0 {
-		state = blueskyCycleStateFromPayload(cycle.Cursor)
-		if state.Query == "" {
-			state.Query = query
-		}
-		return state
-	}
-	return state
 }
 
 func blueskyCycleStateFromPayload(payload map[string]any) blueskyCycleState {
@@ -266,19 +227,34 @@ func blueskyCycleStateFromPayload(payload map[string]any) blueskyCycleState {
 		return state
 	}
 	state.Query, _ = payload["query"].(string)
-	state.Cursor, _ = payload["cursor"].(string)
-	state.NextLastSeenURI, _ = payload["next_last_seen_uri"].(string)
-	state.NextLastSeenCreatedAt, _ = payload["next_last_seen_created_at"].(string)
+	state.Sort, _ = payload["sort"].(string)
+	state.Limit = intFromAny(payload["limit"])
 	return state
 }
 
 func (s blueskyCycleState) payload() map[string]any {
 	return map[string]any{
-		"query":                     s.Query,
-		"cursor":                    s.Cursor,
-		"next_last_seen_uri":        s.NextLastSeenURI,
-		"next_last_seen_created_at": s.NextLastSeenCreatedAt,
+		"query": s.Query,
+		"sort":  s.sort(),
+		"limit": s.limit(),
 	}
+}
+
+func (s blueskyCycleState) sort() string {
+	if strings.TrimSpace(s.Sort) == "" {
+		return "top"
+	}
+	return strings.TrimSpace(s.Sort)
+}
+
+func (s blueskyCycleState) limit() int {
+	if s.Limit <= 0 {
+		return blueskyPageSize
+	}
+	if s.Limit > blueskyPageSize {
+		return blueskyPageSize
+	}
+	return s.Limit
 }
 
 func blueskyLabel(post blueskyPostView) string {
@@ -314,4 +290,53 @@ func blueskyPostURL(post blueskyPostView) string {
 		return ""
 	}
 	return "https://bsky.app/profile/" + post.Author.Handle + "/post/" + rkey
+}
+
+func blueskyEnrichmentContent(post blueskyPostView) string {
+	parts := []string{
+		"Bluesky post",
+		"author: " + firstNonEmptyString(post.Author.DisplayName, post.Author.Handle),
+		fmt.Sprintf("likes: %d", post.LikeCount),
+		fmt.Sprintf("reposts: %d", post.RepostCount),
+		fmt.Sprintf("replies: %d", post.ReplyCount),
+	}
+	if post.Record.Text != "" {
+		parts = append(parts, "text: "+post.Record.Text)
+	}
+	return strings.Join(parts, "\n")
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func intFromAny(value any) int {
+	switch v := value.(type) {
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case int32:
+		return int(v)
+	case float64:
+		return int(v)
+	case float32:
+		return int(v)
+	case string:
+		var parsed int
+		for _, ch := range v {
+			if ch < '0' || ch > '9' {
+				return 0
+			}
+			parsed = parsed*10 + int(ch-'0')
+		}
+		return parsed
+	default:
+		return 0
+	}
 }

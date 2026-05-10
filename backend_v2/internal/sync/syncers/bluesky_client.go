@@ -33,11 +33,8 @@ func (b *blueskyHTTPClient) SearchPosts(ctx context.Context, state blueskyCycleS
 
 	q := req.URL.Query()
 	q.Set("q", state.Query)
-	q.Set("sort", "latest")
-	q.Set("limit", fmt.Sprintf("%d", blueskyPageSize))
-	if state.Cursor != "" {
-		q.Set("cursor", state.Cursor)
-	}
+	q.Set("sort", state.sort())
+	q.Set("limit", fmt.Sprintf("%d", state.limit()))
 	req.URL.RawQuery = q.Encode()
 
 	resp, err := b.client.Do(req)

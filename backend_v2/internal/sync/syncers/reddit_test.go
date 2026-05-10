@@ -3,7 +3,11 @@ package syncers
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"reflect"
+	"strings"
 	"testing"
+	"time"
 
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/sync"
@@ -14,14 +18,43 @@ type fakeSeenStore struct {
 }
 
 type fakeRedditClient struct {
-	resp *redditListingResponse
-	err  error
+	resp        *redditListingResponse
+	err         error
+	threads     map[string]*redditThreadResponse
+	threadErrs  map[string]error
+	threadCalls []string
+}
+
+type fakeRequestLimiter struct {
+	calls int
+	err   error
+}
+
+func (f *fakeRequestLimiter) Wait(ctx context.Context) error {
+	f.calls++
+	return f.err
+}
+
+func newTestRedditSyncer(client *fakeRedditClient, seen sync.SeenStore) (*RedditSyncer, *fakeRequestLimiter) {
+	s := NewRedditSyncerWithClient(client, seen)
+	limiter := &fakeRequestLimiter{}
+	s.limiter = limiter
+	return s, limiter
 }
 
 type redditFixturePost struct {
+	id          string
+	title       string
+	selftext    string
+	permalink   string
+	score       int
+	numComments int
+	createdUTC  float64
+}
+
+type redditFixtureComment struct {
 	id         string
-	title      string
-	selftext   string
+	body       string
 	permalink  string
 	score      int
 	createdUTC float64
@@ -31,17 +64,37 @@ func (f fakeRedditClient) FetchListing(ctx context.Context, state redditCycleSta
 	return f.resp, f.err
 }
 
+func (f *fakeRedditClient) FetchThread(ctx context.Context, subreddit string, postID string, limit int) (*redditThreadResponse, error) {
+	f.threadCalls = append(f.threadCalls, redditExternalID(postID))
+	if err := f.threadErrs[postID]; err != nil {
+		return nil, err
+	}
+	if err := f.threadErrs[redditExternalID(postID)]; err != nil {
+		return nil, err
+	}
+	if resp := f.threads[postID]; resp != nil {
+		return resp, nil
+	}
+	if resp := f.threads[redditExternalID(postID)]; resp != nil {
+		return resp, nil
+	}
+	return redditThreadResponseFor(redditFixturePost{
+		id: postID, title: "hydrated " + postID, permalink: "/r/" + subreddit + "/comments/" + postID + "/x",
+	}), nil
+}
+
 func redditResponse(children ...redditFixturePost) *redditListingResponse {
 	resp := &redditListingResponse{}
 	for _, child := range children {
 		var item struct {
 			Data struct {
-				ID         string  `json:"id"`
-				Title      string  `json:"title"`
-				Selftext   string  `json:"selftext"`
-				Permalink  string  `json:"permalink"`
-				Score      int     `json:"score"`
-				CreatedUTC float64 `json:"created_utc"`
+				ID          string  `json:"id"`
+				Title       string  `json:"title"`
+				Selftext    string  `json:"selftext"`
+				Permalink   string  `json:"permalink"`
+				Score       int     `json:"score"`
+				NumComments int     `json:"num_comments"`
+				CreatedUTC  float64 `json:"created_utc"`
 			} `json:"data"`
 		}
 		item.Data.ID = child.id
@@ -49,10 +102,94 @@ func redditResponse(children ...redditFixturePost) *redditListingResponse {
 		item.Data.Selftext = child.selftext
 		item.Data.Permalink = child.permalink
 		item.Data.Score = child.score
+		item.Data.NumComments = child.numComments
 		item.Data.CreatedUTC = child.createdUTC
 		resp.Data.Children = append(resp.Data.Children, item)
 	}
 	return resp
+}
+
+func redditThreadResponseFor(post redditFixturePost, comments ...redditFixtureComment) *redditThreadResponse {
+	resp := redditThreadResponse{}
+	var postListing struct {
+		Data struct {
+			Children []struct {
+				Kind string `json:"kind"`
+				Data struct {
+					ID          string  `json:"id"`
+					Title       string  `json:"title"`
+					Selftext    string  `json:"selftext"`
+					Body        string  `json:"body"`
+					Permalink   string  `json:"permalink"`
+					Score       int     `json:"score"`
+					NumComments int     `json:"num_comments"`
+					CreatedUTC  float64 `json:"created_utc"`
+				} `json:"data"`
+			} `json:"children"`
+		} `json:"data"`
+	}
+	postListing.Data.Children = append(postListing.Data.Children, redditThreadChild("t3", post.id, post.title, post.selftext, "", post.permalink, post.score, post.numComments, post.createdUTC))
+
+	var commentListing struct {
+		Data struct {
+			Children []struct {
+				Kind string `json:"kind"`
+				Data struct {
+					ID          string  `json:"id"`
+					Title       string  `json:"title"`
+					Selftext    string  `json:"selftext"`
+					Body        string  `json:"body"`
+					Permalink   string  `json:"permalink"`
+					Score       int     `json:"score"`
+					NumComments int     `json:"num_comments"`
+					CreatedUTC  float64 `json:"created_utc"`
+				} `json:"data"`
+			} `json:"children"`
+		} `json:"data"`
+	}
+	for _, comment := range comments {
+		commentListing.Data.Children = append(commentListing.Data.Children, redditThreadChild("t1", comment.id, "", "", comment.body, comment.permalink, comment.score, 0, comment.createdUTC))
+	}
+	resp = append(resp, postListing, commentListing)
+	return &resp
+}
+
+func redditThreadChild(kind string, id string, title string, selftext string, body string, permalink string, score int, numComments int, createdUTC float64) struct {
+	Kind string `json:"kind"`
+	Data struct {
+		ID          string  `json:"id"`
+		Title       string  `json:"title"`
+		Selftext    string  `json:"selftext"`
+		Body        string  `json:"body"`
+		Permalink   string  `json:"permalink"`
+		Score       int     `json:"score"`
+		NumComments int     `json:"num_comments"`
+		CreatedUTC  float64 `json:"created_utc"`
+	} `json:"data"`
+} {
+	var child struct {
+		Kind string `json:"kind"`
+		Data struct {
+			ID          string  `json:"id"`
+			Title       string  `json:"title"`
+			Selftext    string  `json:"selftext"`
+			Body        string  `json:"body"`
+			Permalink   string  `json:"permalink"`
+			Score       int     `json:"score"`
+			NumComments int     `json:"num_comments"`
+			CreatedUTC  float64 `json:"created_utc"`
+		} `json:"data"`
+	}
+	child.Kind = kind
+	child.Data.ID = id
+	child.Data.Title = title
+	child.Data.Selftext = selftext
+	child.Data.Body = body
+	child.Data.Permalink = permalink
+	child.Data.Score = score
+	child.Data.NumComments = numComments
+	child.Data.CreatedUTC = createdUTC
+	return child
 }
 
 func (f fakeSeenStore) Seen(ctx context.Context, sourceID string, externalIDs []string) (map[string]bool, error) {
@@ -73,11 +210,10 @@ func TestRedditBuildJobBootstrapForNewSource(t *testing.T) {
 	t.Parallel()
 
 	s := NewRedditSyncer(sync.NewNoopSeenStore())
-	job, err := s.BuildJob(db.Source{
-		ID:   "source-1",
-		KgID: "kg-1",
-		Name: "golang",
-		Type: "reddit",
+	job, err := s.BuildJob(db.ProviderStream{
+		ID:       "source-1",
+		Name:     "golang",
+		Provider: "reddit",
 		Config: map[string]any{
 			"subreddit": "golang",
 		},
@@ -102,11 +238,10 @@ func TestRedditBuildJobCarriesLastSeenBoundary(t *testing.T) {
 	t.Parallel()
 
 	s := NewRedditSyncer(sync.NewNoopSeenStore())
-	job, err := s.BuildJob(db.Source{
-		ID:   "source-1",
-		KgID: "kg-1",
-		Name: "golang",
-		Type: "reddit",
+	job, err := s.BuildJob(db.ProviderStream{
+		ID:       "source-1",
+		Name:     "golang",
+		Provider: "reddit",
 		Config: map[string]any{
 			"subreddit":             "golang",
 			"last_seen_id":          "seen-123",
@@ -132,19 +267,19 @@ func TestRedditBuildJobCarriesLastSeenBoundary(t *testing.T) {
 func TestRedditExecuteStopsAtSeenID(t *testing.T) {
 	t.Parallel()
 
-	s := NewRedditSyncerWithClient(fakeRedditClient{resp: func() *redditListingResponse {
+	s, _ := newTestRedditSyncer(&fakeRedditClient{resp: func() *redditListingResponse {
 		resp := redditResponse(
-			redditFixturePost{"new-3", "newest", "", "/r/golang/comments/new3/x", 10, 300},
-			redditFixturePost{"new-2", "newer", "", "/r/golang/comments/new2/x", 9, 200},
-			redditFixturePost{"seen-1", "seen", "", "/r/golang/comments/seen1/x", 8, 100},
+			redditFixturePost{"new-3", "newest", "", "/r/golang/comments/new3/x", 10, 3, 300},
+			redditFixturePost{"new-2", "newer", "", "/r/golang/comments/new2/x", 9, 2, 200},
+			redditFixturePost{"seen-1", "seen", "", "/r/golang/comments/seen1/x", 8, 1, 100},
 		)
 		resp.Data.After = "t3_next"
 		return resp
 	}()}, fakeSeenStore{known: map[string]bool{"t3_seen-1": true}})
 
 	job := &db.SyncJob{
-		SourceID:   "source-1",
-		SourceType: "reddit",
+		ProviderStreamID: "source-1",
+		Provider:         "reddit",
 		Payload: map[string]any{
 			"subreddit":                  "golang",
 			"after":                      "",
@@ -166,10 +301,10 @@ func TestRedditExecuteStopsAtSeenID(t *testing.T) {
 	if len(result.Records) != 2 {
 		t.Fatalf("record count = %d, want 2", len(result.Records))
 	}
-	if got := result.SourceUpdates["last_seen_id"]; got != "t3_new-3" {
+	if got := result.ProviderStreamUpdates["last_seen_id"]; got != "t3_new-3" {
 		t.Fatalf("last_seen_id = %v, want t3_new-3", got)
 	}
-	if got := floatFromAny(result.SourceUpdates["last_seen_created_utc"]); got != 300 {
+	if got := floatFromAny(result.ProviderStreamUpdates["last_seen_created_utc"]); got != 300 {
 		t.Fatalf("last_seen_created_utc = %v, want 300", got)
 	}
 	if got := result.HeadBoundary["id"]; got != "t3_new-3" {
@@ -183,21 +318,21 @@ func TestRedditExecuteStopsAtSeenID(t *testing.T) {
 func TestRedditExecuteCarriesNextBoundaryAcrossPagination(t *testing.T) {
 	t.Parallel()
 
-	s := NewRedditSyncerWithClient(fakeRedditClient{resp: func() *redditListingResponse {
+	s, _ := newTestRedditSyncer(&fakeRedditClient{resp: func() *redditListingResponse {
 		resp := redditResponse(
-			redditFixturePost{"new-3", "newest", "", "/r/golang/comments/new3/x", 10, 300},
-			redditFixturePost{"new-2", "newer", "", "/r/golang/comments/new2/x", 9, 200},
+			redditFixturePost{"new-3", "newest", "", "/r/golang/comments/new3/x", 10, 3, 300},
+			redditFixturePost{"new-2", "newer", "", "/r/golang/comments/new2/x", 9, 2, 200},
 		)
 		resp.Data.After = "t3_next"
 		return resp
 	}()}, sync.NewNoopSeenStore())
 
 	job := &db.SyncJob{
-		CorrelationID: "corr-1",
-		SourceID:      "source-1",
-		SourceType:    "reddit",
-		Priority:      5,
-		MaxAttempts:   3,
+		CorrelationID:    "corr-1",
+		ProviderStreamID: "source-1",
+		Provider:         "reddit",
+		Priority:         5,
+		MaxAttempts:      3,
 		Payload: map[string]any{
 			"subreddit":                  "golang",
 			"after":                      "",
@@ -219,7 +354,7 @@ func TestRedditExecuteCarriesNextBoundaryAcrossPagination(t *testing.T) {
 	if got := result.CursorUpdates["after"]; got != "t3_next" {
 		t.Fatalf("after = %v, want t3_next", got)
 	}
-	if got := result.SourceUpdates["last_seen_id"]; got != "t3_new-3" {
+	if got := result.ProviderStreamUpdates["last_seen_id"]; got != "t3_new-3" {
 		t.Fatalf("last_seen_id = %v, want t3_new-3", got)
 	}
 	if got := result.HeadBoundary["id"]; got != "t3_new-3" {
@@ -231,24 +366,18 @@ func TestRedditExecuteDoesNotAdvanceHighWaterMarkWhenFirstPostIsSeen(t *testing.
 	t.Parallel()
 
 	s := NewRedditSyncer(fakeSeenStore{known: map[string]bool{"t3_seen-1": true}})
-	s.client = fakeRedditClient{resp: func() *redditListingResponse {
+	s.limiter = &fakeRequestLimiter{}
+	s.client = &fakeRedditClient{resp: func() *redditListingResponse {
 		resp := redditResponse(
-			struct {
-				id         string
-				title      string
-				selftext   string
-				permalink  string
-				score      int
-				createdUTC float64
-			}{"seen-1", "seen", "", "/r/golang/comments/seen1/x", 8, 100},
+			redditFixturePost{"seen-1", "seen", "", "/r/golang/comments/seen1/x", 8, 1, 100},
 		)
 		resp.Data.After = "t3_next"
 		return resp
 	}()}
 
 	job := &db.SyncJob{
-		SourceID:   "source-1",
-		SourceType: "reddit",
+		ProviderStreamID: "source-1",
+		Provider:         "reddit",
 		Payload: map[string]any{
 			"subreddit":                  "golang",
 			"after":                      "",
@@ -267,7 +396,7 @@ func TestRedditExecuteDoesNotAdvanceHighWaterMarkWhenFirstPostIsSeen(t *testing.
 	if result.CompletionReason != sync.CompletionReasonSeenOverlap {
 		t.Fatalf("CompletionReason = %q, want %q", result.CompletionReason, sync.CompletionReasonSeenOverlap)
 	}
-	if _, ok := result.SourceUpdates["last_seen_id"]; ok {
+	if _, ok := result.ProviderStreamUpdates["last_seen_id"]; ok {
 		t.Fatal("last_seen_id should not advance when boundary is first post")
 	}
 	if len(result.HeadBoundary) != 0 {
@@ -278,13 +407,13 @@ func TestRedditExecuteDoesNotAdvanceHighWaterMarkWhenFirstPostIsSeen(t *testing.
 func TestRedditExecuteEmitsCanonicalIDsAndProvenance(t *testing.T) {
 	t.Parallel()
 
-	s := NewRedditSyncerWithClient(fakeRedditClient{resp: redditResponse(
-		redditFixturePost{"abc123", "Pairs trading", "Cointegration notes", "/r/algotrading/comments/abc123/pairs", 17, 420},
+	s, _ := newTestRedditSyncer(&fakeRedditClient{resp: redditResponse(
+		redditFixturePost{"abc123", "Pairs trading", "Cointegration notes", "/r/algotrading/comments/abc123/pairs", 17, 2, 420},
 	)}, sync.NewNoopSeenStore())
 
 	job := &db.SyncJob{
-		SourceID:   "source-1",
-		SourceType: "reddit",
+		ProviderStreamID: "source-1",
+		Provider:         "reddit",
 		Payload: map[string]any{
 			"subreddit":                  "algotrading",
 			"after":                      "",
@@ -329,4 +458,91 @@ func TestRedditExecuteEmitsCanonicalIDsAndProvenance(t *testing.T) {
 	if got := record.Metadata["created_utc"]; got != float64(420) {
 		t.Fatalf("metadata.created_utc = %v, want 420", got)
 	}
+}
+
+func TestRedditExecuteHydratesAcceptedPostsInline(t *testing.T) {
+	t.Parallel()
+
+	now := float64(timeNowUnix())
+	client := &fakeRedditClient{
+		resp: redditResponse(
+			redditFixturePost{"post-1", "Post 1", "Body 1", "/r/golang/comments/post1/x", 120, 42, now},
+			redditFixturePost{"post-2", "Post 2", "Body 2", "/r/golang/comments/post2/x", 20, 10, now},
+			redditFixturePost{"seen-1", "Seen", "", "/r/golang/comments/seen1/x", 5, 1, now},
+		),
+		threads: map[string]*redditThreadResponse{
+			"t3_post-1": redditThreadResponseFor(
+				redditFixturePost{"post-1", "Post 1", "Body 1", "/r/golang/comments/post1/x", 120, 42, now},
+				redditFixtureComment{"c1", "first useful comment", "/r/golang/comments/post1/x/c1", 9, now + 1},
+			),
+			"t3_post-2": redditThreadResponseFor(
+				redditFixturePost{"post-2", "Post 2", "Body 2", "/r/golang/comments/post2/x", 20, 10, now},
+				redditFixtureComment{"c2", "second useful comment", "/r/golang/comments/post2/x/c2", 4, now + 1},
+			),
+		},
+	}
+	s, limiter := newTestRedditSyncer(client, fakeSeenStore{known: map[string]bool{"t3_seen-1": true}})
+
+	result, err := s.Execute(context.Background(), &db.SyncJob{
+		ProviderStreamID: "source-1",
+		Provider:         "reddit",
+		JobType:          "fetch_posts",
+		Payload: map[string]any{
+			"subreddit": "golang",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+	if len(result.Records) != 2 {
+		t.Fatalf("record count = %d, want 2", len(result.Records))
+	}
+	if got, want := client.threadCalls, []string{"t3_post-1", "t3_post-2"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("thread calls = %v, want %v", got, want)
+	}
+	if limiter.calls != 3 {
+		t.Fatalf("rate limiter calls = %d, want 3", limiter.calls)
+	}
+	if strings.Contains(result.Records[0].Content, "first useful comment") {
+		t.Fatal("durable Content includes raw comment body")
+	}
+	if !strings.Contains(result.Records[0].EnrichmentContent, "first useful comment") {
+		t.Fatalf("EnrichmentContent = %q, want hydrated comment context", result.Records[0].EnrichmentContent)
+	}
+	if got := result.Records[0].Metadata["top_comment_count"]; got != 1 {
+		t.Fatalf("top_comment_count = %v, want 1", got)
+	}
+	if len(result.NewCycles) != 2 {
+		t.Fatalf("new hydration cycles = %d, want 2", len(result.NewCycles))
+	}
+	if result.NewCycles[0].Kind != sync.CycleKindHydration || result.NewCycles[0].TargetExternalID != "t3_post-1" {
+		t.Fatalf("first hydration cycle = %#v, want post-1 hydration", result.NewCycles[0])
+	}
+}
+
+func TestRedditExecuteFailsWholePageWhenInlineHydrationFails(t *testing.T) {
+	t.Parallel()
+
+	s, _ := newTestRedditSyncer(&fakeRedditClient{
+		resp: redditResponse(
+			redditFixturePost{"post-1", "Post 1", "Body 1", "/r/golang/comments/post1/x", 120, 42, float64(timeNowUnix())},
+		),
+		threadErrs: map[string]error{"t3_post-1": errors.New("thread unavailable")},
+	}, sync.NewNoopSeenStore())
+
+	_, err := s.Execute(context.Background(), &db.SyncJob{
+		ProviderStreamID: "source-1",
+		Provider:         "reddit",
+		JobType:          "fetch_posts",
+		Payload: map[string]any{
+			"subreddit": "golang",
+		},
+	})
+	if err == nil {
+		t.Fatal("Execute returned nil, want hydration failure")
+	}
+}
+
+func timeNowUnix() int64 {
+	return time.Now().UTC().Unix()
 }

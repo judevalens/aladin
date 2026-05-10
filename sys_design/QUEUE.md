@@ -1,5 +1,13 @@
 # Aladin — Sync Queue Design
 
+> Historical note: this document describes the older source/artifact queue shape.
+> The current backend still uses asynq for dispatch, but provider fetching is now
+> stream-native: the scheduler claims `provider_streams`, syncers return
+> normalized `source_items`, the orchestrator enqueues `pipeline:global_first_pass`,
+> and tenant records are created only after `tenant_item_matches`. See
+> [`docs/GLOBAL_SOURCE_ITEM_PIPELINE.md`](../docs/GLOBAL_SOURCE_ITEM_PIPELINE.md)
+> for the current data model.
+
 ## Overview
 
 The sync queue drives all poll-based source syncing. It is backed by **asynq**

@@ -144,20 +144,21 @@ func TestFullPipelineHandlerPersistsCompletedRecord(t *testing.T) {
 	h := NewFullPipelineHandler(&fakeEnqueuer{}, repo, insights)
 
 	payload, err := json.Marshal(RecordPayload{
-		RecordID:   "record-5",
-		KgID:       "kg-5",
-		SourceID:   "source-5",
-		ExternalID: "ext-5",
-		Type:       "post",
-		Label:      "label",
-		Content:    "content",
-		SourceURL:  "https://example.com",
-		Metadata:   map[string]any{"score": float64(7)},
-		Summary:    "summary",
-		Entities:   []string{"entity"},
-		Topics:     []string{"topic"},
-		KeyClaims:  []string{"claim"},
-		Embedding:  []float32{1, 2, 3},
+		RecordID:       "record-5",
+		KgID:           "kg-5",
+		SourceID:       "source-5",
+		ExternalID:     "ext-5",
+		SourceRevision: 42,
+		Type:           "post",
+		Label:          "label",
+		Content:        "content",
+		SourceURL:      "https://example.com",
+		Metadata:       map[string]any{"score": float64(7)},
+		Summary:        "summary",
+		Entities:       []string{"entity"},
+		Topics:         []string{"topic"},
+		KeyClaims:      []string{"claim"},
+		Embedding:      []float32{1, 2, 3},
 	})
 	if err != nil {
 		t.Fatalf("json.Marshal returned error: %v", err)
@@ -178,6 +179,9 @@ func TestFullPipelineHandlerPersistsCompletedRecord(t *testing.T) {
 	}
 	if repo.saved[0].ID != "record-5" || repo.saved[0].ExternalID != "ext-5" {
 		t.Fatalf("saved record = %+v", repo.saved[0])
+	}
+	if repo.saved[0].SourceRevision != 42 {
+		t.Fatalf("saved source revision = %d, want 42", repo.saved[0].SourceRevision)
 	}
 	select {
 	case kgID := <-insights:

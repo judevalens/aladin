@@ -103,6 +103,42 @@ func TestFirstPassWorkerReturnsSearchNeeded(t *testing.T) {
 	}
 }
 
+func TestGlobalFirstPassWorkerEnrichesSourceItem(t *testing.T) {
+	t.Parallel()
+
+	w := NewGlobalFirstPassWorker(&fakeEnricher{
+		result: &llm.EnrichResult{
+			Summary:   "source summary",
+			Entities:  []string{"Hacker News"},
+			Topics:    []string{"agents"},
+			KeyClaims: []string{"claim"},
+		},
+	}, ratelimit.New(1000))
+
+	raw, _ := json.Marshal(pipeline.SourceItemPayload{
+		SourceItemID:     "source-item-1",
+		ProviderStreamID: "stream-1",
+		Type:             "post",
+		ContentExcerpt:   "raw post excerpt",
+		ContextExcerpt:   "hydrated context excerpt",
+	})
+
+	result := w.Run(context.Background(), raw)
+	if result.Err != nil {
+		t.Fatalf("Run returned error: %v", result.Err)
+	}
+	if result.Type != pipeline.ResultGlobalFirstPassDone {
+		t.Fatalf("result.Type = %q, want %q", result.Type, pipeline.ResultGlobalFirstPassDone)
+	}
+	var payload pipeline.SourceItemPayload
+	if err := json.Unmarshal(result.Payload, &payload); err != nil {
+		t.Fatalf("unmarshal result payload: %v", err)
+	}
+	if payload.Summary != "source summary" || len(payload.Entities) != 1 {
+		t.Fatalf("payload enrichment = %#v, want summary and entities", payload)
+	}
+}
+
 func TestSearchWorkerClassifiesHTTPErrors(t *testing.T) {
 	t.Parallel()
 

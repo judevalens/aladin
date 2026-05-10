@@ -18,17 +18,19 @@ import (
 
 // Orchestrator manages sync handler registration, job execution, and scheduler startup.
 type Orchestrator struct {
-	enqueuer Enqueuer
-	sources  db.SourceRepository
-	cycles   db.SyncCycleRepository
-	seen     SeenStore
-	arbiter  Arbiter
-	syncers  map[string]Syncer
+	enqueuer    Enqueuer
+	streams     db.ProviderStreamRepository
+	sourceItems db.SourceItemRepository
+	cycles      db.SyncCycleRepository
+	seen        SeenStore
+	arbiter     Arbiter
+	syncers     map[string]Syncer
 }
 
 func NewOrchestrator(
 	enqueuer Enqueuer,
-	sources db.SourceRepository,
+	streams db.ProviderStreamRepository,
+	sourceItems db.SourceItemRepository,
 	cycles db.SyncCycleRepository,
 	seen SeenStore,
 	arbiter Arbiter,
@@ -36,7 +38,7 @@ func NewOrchestrator(
 ) *Orchestrator {
 	m := make(map[string]Syncer, len(syncers))
 	for _, s := range syncers {
-		m[s.SourceType()] = s
+		m[s.Provider()] = s
 	}
 	if seen == nil {
 		seen = NewNoopSeenStore()
@@ -45,121 +47,160 @@ func NewOrchestrator(
 		arbiter = NewFreshnessFirstArbiter()
 	}
 	return &Orchestrator{
-		enqueuer: enqueuer,
-		sources:  sources,
-		cycles:   cycles,
-		seen:     seen,
-		arbiter:  arbiter,
-		syncers:  m,
+		enqueuer:    enqueuer,
+		streams:     streams,
+		sourceItems: sourceItems,
+		cycles:      cycles,
+		seen:        seen,
+		arbiter:     arbiter,
+		syncers:     m,
 	}
 }
 
-// Start launches the scheduler — polls for due sources and dispatches them.
+// Start launches the scheduler, which polls for due provider streams and dispatches them.
 func (q *Orchestrator) Start(ctx context.Context) {
 	go NewScheduler(q, q, defaultBatchSize).Start(ctx)
 }
 
-// ClaimBatch implements JobPoller — claims due sources and builds jobs using syncer policy.
-// This is where source data meets execution policy: the repo claims rows,
+// ClaimBatch implements JobPoller. It claims due provider streams and builds jobs using syncer policy.
+// This is where provider stream data meets execution policy: the repo claims rows,
 // the syncer decides job shape.
 func (q *Orchestrator) ClaimBatch(ctx context.Context, limit int) ([]*db.ScheduledJob, error) {
 	log := slog.With("component", "sync_orchestrator")
-	sources, err := q.sources.ClaimBatch(ctx, limit)
+	streams, err := q.streams.ClaimBatch(ctx, limit)
 	if err != nil {
 		return nil, err
 	}
-	log.Debug("sync: claimed sources", "count", len(sources), "limit", limit)
-	jobs := make([]*db.ScheduledJob, 0, len(sources))
+	log.Debug("sync: claimed provider streams", "count", len(streams), "limit", limit)
+	jobs := make([]*db.ScheduledJob, 0, len(streams))
 	now := time.Now().UTC()
-	for _, src := range sources {
-		sourceLog := log.With(
-			"source_id", src.ID,
-			"source_type", src.Type,
-		)
-		syncer, ok := q.syncers[src.Type]
-		if !ok {
-			sourceLog.Warn("sync: no syncer for source type, skipping")
-			if err := q.sources.MarkSyncFailed(ctx, src.ID); err != nil {
-				sourceLog.Error("sync: mark failed error", "err", err)
-			}
-			continue
-		}
-
-		cycles, err := q.cycles.ListActiveBySource(ctx, src.ID)
+	for _, stream := range streams {
+		job, err := q.buildProviderStreamJob(ctx, log, stream, now)
 		if err != nil {
-			if rErr := q.sources.Release(ctx, src.ID); rErr != nil {
-				sourceLog.Error("sync: release source after cycle list failure", "err", rErr)
-			}
-			return nil, fmt.Errorf("claim cycles for source %s: %w", src.ID, err)
+			return nil, err
 		}
-
-		decision := q.arbiter.Decide(src, cycles, now)
-		cycleID := ""
-		if decision.Cycle != nil {
-			cycleID = decision.Cycle.ID
+		if job != nil {
+			jobs = append(jobs, job)
 		}
-		sourceLog.Debug(
-			"sync: arbiter decision",
-			"action", decision.Action,
-			"reason", decision.Reason,
-			"cycle_id", cycleID,
-			"active_cycle_count", len(cycles),
-		)
-		if decision.Action == DecisionSkip {
-			if err := q.sources.Release(ctx, src.ID); err != nil {
-				sourceLog.Error("sync: release skipped source failed", "reason", decision.Reason, "err", err)
-			}
-			continue
-		}
-
-		cycle := decision.Cycle
-		if decision.Action == DecisionCreateRefresh {
-			cycle = &db.SyncCycle{
-				ID:       uuid.NewString(),
-				SourceID: src.ID,
-				Kind:     CycleKindRefresh,
-				Status:   CycleStatusActive,
-			}
-			if err := q.cycles.Create(ctx, cycle); err != nil {
-				if rErr := q.sources.Release(ctx, src.ID); rErr != nil {
-					sourceLog.Error("sync: release source after create cycle failure", "err", rErr)
-				}
-				return nil, fmt.Errorf("create refresh cycle for source %s: %w", src.ID, err)
-			}
-			sourceLog.Info("sync: created refresh cycle", "cycle_id", cycle.ID)
-		}
-
-		job, err := syncer.BuildJob(*src, cycle)
-		if err != nil {
-			sourceLog.Error("sync: build job failed, marking source failed", "err", err)
-			if err := q.sources.MarkSyncFailed(ctx, src.ID); err != nil {
-				sourceLog.Error("sync: mark failed error", "err", err)
-			}
-			continue
-		}
-		sourceLog.Debug(
-			"sync: built job",
-			"job_id", job.ID,
-			"job_type", job.Type,
-			"correlation_id", job.CorrelationID,
-			"cycle_id", cycleIDForLog(cycle),
-		)
-		jobs = append(jobs, job)
 	}
 	return jobs, nil
 }
 
-// RegisterHandlers registers a sync handler for each source type on the mux.
+func (q *Orchestrator) buildProviderStreamJob(ctx context.Context, log *slog.Logger, stream *db.ProviderStream, now time.Time) (*db.ScheduledJob, error) {
+	streamLog := log.With(
+		"provider_stream_id", stream.ID,
+		"provider", stream.Provider,
+		"stream_kind", stream.StreamKind,
+		"stream_key", stream.StreamKey,
+	)
+	syncer, ok := q.syncerForProviderStream(ctx, streamLog, stream)
+	if !ok {
+		return nil, nil
+	}
+	cycles, err := q.cycles.ListActiveByProviderStream(ctx, stream.ID)
+	if err != nil {
+		if rErr := q.streams.Release(ctx, stream.ID); rErr != nil {
+			streamLog.Error("sync: release stream after cycle list failure", "err", rErr)
+		}
+		return nil, fmt.Errorf("claim cycles for provider stream %s: %w", stream.ID, err)
+	}
+	cycle, skip, err := q.selectProviderStreamCycle(ctx, streamLog, stream, cycles, now)
+	if err != nil || skip {
+		return nil, err
+	}
+	job, err := syncer.BuildJob(*stream, cycle)
+	if err != nil {
+		streamLog.Error("sync: build job failed, marking stream failed", "err", err)
+		if mErr := q.streams.MarkSyncFailed(ctx, stream.ID); mErr != nil {
+			streamLog.Error("sync: mark stream failed error", "err", mErr)
+		}
+		return nil, nil
+	}
+	logBuiltJob(streamLog, job, cycle)
+	return job, nil
+}
+
+func (q *Orchestrator) syncerForProviderStream(ctx context.Context, log *slog.Logger, stream *db.ProviderStream) (Syncer, bool) {
+	syncer, ok := q.syncers[stream.Provider]
+	if ok {
+		return syncer, true
+	}
+	log.Warn("sync: no syncer for provider, skipping")
+	if err := q.streams.MarkSyncFailed(ctx, stream.ID); err != nil {
+		log.Error("sync: mark stream failed error", "err", err)
+	}
+	return nil, false
+}
+
+func (q *Orchestrator) selectProviderStreamCycle(
+	ctx context.Context,
+	log *slog.Logger,
+	stream *db.ProviderStream,
+	cycles []*db.SyncCycle,
+	now time.Time,
+) (*db.SyncCycle, bool, error) {
+	decision := q.arbiter.Decide(stream, cycles, now)
+	logArbiterDecision(log, decision, len(cycles))
+	if decision.Action == DecisionSkip {
+		if err := q.streams.Release(ctx, stream.ID); err != nil {
+			log.Error("sync: release skipped stream failed", "reason", decision.Reason, "err", err)
+		}
+		return nil, true, nil
+	}
+	if decision.Action != DecisionCreateRefresh {
+		return decision.Cycle, false, nil
+	}
+	cycle := &db.SyncCycle{
+		ID:               uuid.NewString(),
+		ProviderStreamID: stream.ID,
+		Kind:             CycleKindRefresh,
+		Status:           CycleStatusActive,
+	}
+	if err := q.cycles.Create(ctx, cycle); err != nil {
+		if rErr := q.streams.Release(ctx, stream.ID); rErr != nil {
+			log.Error("sync: release stream after create cycle failure", "err", rErr)
+		}
+		return nil, false, fmt.Errorf("create refresh cycle for provider stream %s: %w", stream.ID, err)
+	}
+	log.Info("sync: created refresh cycle", "cycle_id", cycle.ID)
+	return cycle, false, nil
+}
+
+func logArbiterDecision(log *slog.Logger, decision Decision, activeCycleCount int) {
+	cycleID := ""
+	if decision.Cycle != nil {
+		cycleID = decision.Cycle.ID
+	}
+	log.Debug(
+		"sync: arbiter decision",
+		"action", decision.Action,
+		"reason", decision.Reason,
+		"cycle_id", cycleID,
+		"active_cycle_count", activeCycleCount,
+	)
+}
+
+func logBuiltJob(log *slog.Logger, job *db.ScheduledJob, cycle *db.SyncCycle) {
+	log.Debug(
+		"sync: built job",
+		"job_id", job.ID,
+		"job_type", job.Type,
+		"correlation_id", job.CorrelationID,
+		"cycle_id", cycleIDForLog(cycle),
+	)
+}
+
+// RegisterHandlers registers a sync handler for each provider on the mux.
 func (q *Orchestrator) RegisterHandlers(mux *asynq.ServeMux) {
-	for sourceType, syncer := range q.syncers {
-		mux.HandleFunc(taskType(sourceType), q.makeHandler(syncer))
-		slog.Info("sync: registered handler", "component", "sync_queue", "source_type", sourceType)
+	for provider, syncer := range q.syncers {
+		mux.HandleFunc(taskType(provider), q.makeHandler(syncer))
+		slog.Info("sync: registered handler", "component", "sync_queue", "provider", provider)
 	}
 }
 
 // Dispatch implements JobDispatcher — enqueues a claimed job to its syncer's queue.
 func (q *Orchestrator) Dispatch(ctx context.Context, job *db.ScheduledJob) error {
-	syncer, ok := q.syncers[sourceTypeFromTaskType(job.Type)]
+	syncer, ok := q.syncers[providerFromTaskType(job.Type)]
 	if !ok {
 		return fmt.Errorf("dispatch: no syncer for task type %q", job.Type)
 	}
@@ -201,19 +242,15 @@ func (q *Orchestrator) makeHandler(syncer Syncer) asynq.HandlerFunc {
 			"component", "sync_queue",
 			"correlation_id", job.CorrelationID,
 			"cycle_id", job.CycleID,
-			"source_type", job.SourceType,
+			"provider", job.Provider,
 			"job_type", job.JobType,
-			"source_id", job.SourceID,
-			"snapshot_id", job.SnapshotID,
+			"provider_stream_id", job.ProviderStreamID,
 		)
 		log.Info("sync: executing")
 
-		// Stamp start time on the root job only (first page, no SnapshotID).
-		// Non-fatal — monitoring may be degraded but execution can proceed.
-		if job.SnapshotID == "" {
-			if err := q.sources.MarkSyncStarted(ctx, job.SourceID); err != nil {
-				log.Warn("sync: mark started failed — source will appear queued during execution", "err", err)
-			}
+		// Non-fatal; monitoring may be degraded but execution can proceed.
+		if err := q.markSyncStarted(ctx, job.ProviderStreamID); err != nil {
+			log.Warn("sync: mark started failed; provider stream will appear queued during execution", "err", err)
 		}
 		if job.CycleID != "" {
 			if err := q.cycles.MarkRunning(ctx, job.CycleID); err != nil {
@@ -224,10 +261,8 @@ func (q *Orchestrator) makeHandler(syncer Syncer) asynq.HandlerFunc {
 		result, err := syncer.Execute(ctx, &job)
 		if err != nil {
 			log.Error("sync: execute failed", "err", err)
-			if job.SnapshotID == "" {
-				if mErr := q.sources.MarkSyncFailed(ctx, job.SourceID); mErr != nil {
-					log.Error("sync: mark failed error", "err", mErr)
-				}
+			if mErr := q.markSyncFailed(ctx, job.ProviderStreamID); mErr != nil {
+				log.Error("sync: mark failed error", "err", mErr)
 			}
 			return err
 		}
@@ -237,79 +272,105 @@ func (q *Orchestrator) makeHandler(syncer Syncer) asynq.HandlerFunc {
 			"record_count", len(result.Records),
 			"has_more", result.HasMore,
 			"completion_reason", result.CompletionReason,
-			"source_update_keys", mapKeys(result.SourceUpdates),
+			"provider_stream_update_keys", mapKeys(result.ProviderStreamUpdates),
 			"cursor_update_keys", mapKeys(result.CursorUpdates),
 			"head_boundary_keys", mapKeys(result.HeadBoundary),
 		)
 
-		// Enqueue records into the pipeline.
-		// Any enqueue failure is a data loss — fail the whole handler so asynq retries.
+		// Accept records into durable source-item storage, then enqueue global enrichment.
+		// Any enqueue/upsert failure aborts the whole page so progress does not advance.
 		queued := 0
 		seenIDs := make([]string, 0, len(result.Records))
 		for _, a := range result.Records {
-			recordID := uuid.NewSHA1(uuid.NameSpaceURL, []byte(job.SourceID+":"+a.ExternalID)).String()
-			payload, err := json.Marshal(pipeline.RecordPayload{
-				RecordID:      recordID,
-				CorrelationID: job.CorrelationID,
-				KgID:          job.KgID,
-				SourceID:      job.SourceID,
-				ExternalID:    a.ExternalID,
-				Type:          a.Type,
-				Label:         a.Label,
-				Content:       a.Content,
-				SourceURL:     a.SourceURL,
-				Metadata:      a.Metadata,
-			})
+			upserted, err := q.sourceItems.Upsert(ctx, sourceItemFromRecord(job, a))
 			if err != nil {
-				// Marshal failure is a programming error — fail fast
-				if job.SnapshotID == "" {
-					_ = q.sources.MarkSyncFailed(ctx, job.SourceID)
-				}
-				log.Error(
-					"sync: marshal record payload failed",
-					"external_id", a.ExternalID,
-					"record_type", a.Type,
-					"err", err,
-				)
-				return fmt.Errorf("sync: marshal record payload: %w", err)
+				_ = q.markSyncFailed(ctx, job.ProviderStreamID)
+				log.Error("sync: upsert source item failed", "external_id", a.ExternalID, "err", err)
+				return fmt.Errorf("sync: upsert source item %s: %w", a.ExternalID, err)
 			}
-			if err := q.enqueuer.EnqueueFirstPass(ctx, recordID, payload); err != nil {
-				// Enqueue failure — fail the handler so asynq retries the whole page
-				if job.SnapshotID == "" {
-					_ = q.sources.MarkSyncFailed(ctx, job.SourceID)
+			if upserted.Changed {
+				payload, err := json.Marshal(pipeline.SourceItemPayload{
+					SourceItemID:     upserted.Item.ID,
+					CorrelationID:    job.CorrelationID,
+					ProviderStreamID: upserted.Item.ProviderStreamID,
+					Provider:         upserted.Item.Provider,
+					ExternalID:       upserted.Item.ExternalID,
+					SourceRevision:   upserted.Item.SourceRevision,
+					Type:             upserted.Item.Type,
+					Title:            upserted.Item.Title,
+					ContentExcerpt:   upserted.Item.ContentExcerpt,
+					ContextExcerpt:   upserted.Item.ContextExcerpt,
+					SourceURL:        upserted.Item.SourceURL,
+					Metadata:         upserted.Item.ProviderMetadata,
+				})
+				if err != nil {
+					return fmt.Errorf("sync: marshal source item payload: %w", err)
 				}
-				log.Error(
-					"sync: enqueue first pass failed",
-					"external_id", a.ExternalID,
-					"record_id", recordID,
-					"record_type", a.Type,
-					"err", err,
-				)
-				return fmt.Errorf("sync: enqueue record %s: %w", a.ExternalID, err)
+				if err := q.enqueuer.EnqueueGlobalFirstPass(ctx, upserted.Item.ID, payload); err != nil {
+					_ = q.markSyncFailed(ctx, job.ProviderStreamID)
+					log.Error("sync: enqueue global first pass failed", "source_item_id", upserted.Item.ID, "external_id", a.ExternalID, "err", err)
+					return fmt.Errorf("sync: enqueue source item %s: %w", a.ExternalID, err)
+				}
+				queued++
 			}
-			log.Debug(
-				"sync: enqueued first pass",
-				"external_id", a.ExternalID,
-				"record_id", recordID,
-				"record_type", a.Type,
-			)
-			queued++
 			seenIDs = append(seenIDs, a.ExternalID)
 		}
-		if err := q.seen.MarkSeen(ctx, job.SourceID, seenIDs); err != nil {
+		acceptedAt := time.Now().UTC()
+		for _, cycle := range result.NewCycles {
+			if cycle == nil {
+				continue
+			}
+			if cycle.ID == "" {
+				cycle.ID = uuid.NewString()
+			}
+			if cycle.ProviderStreamID == "" {
+				cycle.ProviderStreamID = job.ProviderStreamID
+			}
+			if cycle.Status == "" {
+				cycle.Status = CycleStatusActive
+			}
+			if cycle.CreatedAt.IsZero() {
+				cycle.CreatedAt = acceptedAt
+			}
+			if cycle.Kind == CycleKindHydration && cycle.LastHydratedAt == nil {
+				cycle.LastHydratedAt = &acceptedAt
+			}
+			if err := q.cycles.Create(ctx, cycle); err != nil {
+				log.Error(
+					"sync: create follow-up cycle failed",
+					"cycle_kind", cycle.Kind,
+					"target_kind", cycle.TargetKind,
+					"target_external_id", cycle.TargetExternalID,
+					"err", err,
+				)
+				return fmt.Errorf("sync: create follow-up cycle: %w", err)
+			}
+			log.Info(
+				"sync: follow-up cycle created",
+				"cycle_kind", cycle.Kind,
+				"target_kind", cycle.TargetKind,
+				"target_external_id", cycle.TargetExternalID,
+				"last_hydrated_at", cycle.LastHydratedAt,
+			)
+		}
+		if err := q.seen.MarkSeen(ctx, job.ProviderStreamID, seenIDs); err != nil {
 			log.Error("sync: mark seen failed", "seen_count", len(seenIDs), "err", err)
 			return fmt.Errorf("sync: mark seen: %w", err)
 		}
 		log.Info("sync: records accepted for ingestion", "queued", queued, "marked_seen", len(seenIDs), "total", len(result.Records))
 
-		// After each page, return the source to the scheduler.
+		// After each page, return the provider stream to the scheduler.
 		// HasMore=true → MarkSyncPage (idle, no last_synced_at update, cursor persisted)
-		//              → scheduler re-claims immediately alongside other sources (fairness)
+		//              → scheduler re-claims immediately alongside other streams (fairness)
 		// HasMore=false → MarkSynced (idle, last_synced_at stamped, cycle complete)
 		if result.HasMore {
 			if job.CycleID != "" {
 				cursor := mergeState(job.Payload, result.CursorUpdates)
-				if err := q.cycles.UpdateProgress(ctx, job.CycleID, cursor, result.HeadBoundary); err != nil {
+				var lastHydratedAt *time.Time
+				if selectedCycleKind(job) == CycleKindHydration {
+					lastHydratedAt = &acceptedAt
+				}
+				if err := q.cycles.UpdateProgress(ctx, job.CycleID, cursor, result.HeadBoundary, lastHydratedAt); err != nil {
 					log.Error("sync: update cycle progress failed", "err", err)
 					return fmt.Errorf("sync: update cycle progress: %w", err)
 				}
@@ -319,13 +380,13 @@ func (q *Orchestrator) makeHandler(syncer Syncer) asynq.HandlerFunc {
 					"head_boundary_keys", mapKeys(result.HeadBoundary),
 				)
 			}
-			if err := q.sources.MarkSyncPage(ctx, job.SourceID, result.SourceUpdates); err != nil {
+			if err := q.markSyncPage(ctx, job.ProviderStreamID, result.ProviderStreamUpdates); err != nil {
 				log.Error("sync: mark sync page failed", "err", err)
 				return fmt.Errorf("sync: mark sync page: %w", err)
 			}
 			log.Info(
-				"sync: page accepted, returning source to scheduler",
-				"source_update_keys", mapKeys(result.SourceUpdates),
+				"sync: page accepted, returning provider stream to scheduler",
+				"provider_stream_update_keys", mapKeys(result.ProviderStreamUpdates),
 				"cursor_update_keys", mapKeys(result.CursorUpdates),
 			)
 		} else {
@@ -344,11 +405,19 @@ func (q *Orchestrator) makeHandler(syncer Syncer) asynq.HandlerFunc {
 					"head_boundary_keys", mapKeys(result.HeadBoundary),
 				)
 			}
-			if err := q.sources.MarkSynced(ctx, job.SourceID, result.SourceUpdates); err != nil {
-				log.Error("sync: mark synced failed", "err", err)
-				return fmt.Errorf("sync: mark synced: %w", err)
+			if job.CycleID != "" && selectedCycleKind(job) == CycleKindHydration {
+				if err := q.markSyncPage(ctx, job.ProviderStreamID, result.ProviderStreamUpdates); err != nil {
+					log.Error("sync: mark hydration page complete failed", "err", err)
+					return fmt.Errorf("sync: mark hydration page complete: %w", err)
+				}
+				log.Info("sync: hydration provider stream turn complete", "completion_reason", reason, "provider_stream_update_keys", mapKeys(result.ProviderStreamUpdates))
+			} else {
+				if err := q.markSynced(ctx, job.ProviderStreamID, result.ProviderStreamUpdates); err != nil {
+					log.Error("sync: mark synced failed", "err", err)
+					return fmt.Errorf("sync: mark synced: %w", err)
+				}
+				log.Info("sync: provider stream marked synced", "completion_reason", reason, "provider_stream_update_keys", mapKeys(result.ProviderStreamUpdates))
 			}
-			log.Info("sync: source marked synced", "completion_reason", reason, "source_update_keys", mapKeys(result.SourceUpdates))
 		}
 
 		return nil
@@ -357,8 +426,8 @@ func (q *Orchestrator) makeHandler(syncer Syncer) asynq.HandlerFunc {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-func taskType(sourceType string) string      { return "sync:" + sourceType }
-func sourceTypeFromTaskType(t string) string { return strings.TrimPrefix(t, "sync:") }
+func taskType(provider string) string      { return "sync:" + provider }
+func providerFromTaskType(t string) string { return strings.TrimPrefix(t, "sync:") }
 
 func cycleIDForLog(cycle *db.SyncCycle) string {
 	if cycle == nil {
@@ -379,6 +448,13 @@ func mapKeys(m map[string]any) []string {
 	return keys
 }
 
+func selectedCycleKind(job db.SyncJob) string {
+	if kind, _ := job.Payload["cycle_kind"].(string); kind != "" {
+		return kind
+	}
+	return CycleKindRefresh
+}
+
 func mergeState(base map[string]any, updates map[string]any) map[string]any {
 	merged := make(map[string]any, len(base)+len(updates))
 	for k, v := range base {
@@ -388,4 +464,41 @@ func mergeState(base map[string]any, updates map[string]any) map[string]any {
 		merged[k] = v
 	}
 	return merged
+}
+
+func sourceItemFromRecord(job db.SyncJob, record *RawRecord) *db.SourceItem {
+	itemID := uuid.NewSHA1(uuid.NameSpaceURL, []byte(job.Provider+":"+record.ExternalID)).String()
+	title := record.Label
+	if title == "" {
+		title = record.ExternalID
+	}
+	return &db.SourceItem{
+		ID:               itemID,
+		ProviderStreamID: job.ProviderStreamID,
+		Provider:         job.Provider,
+		ExternalID:       record.ExternalID,
+		Type:             record.Type,
+		Title:            title,
+		SourceURL:        record.SourceURL,
+		ContentExcerpt:   record.Content,
+		ContextExcerpt:   record.EnrichmentContent,
+		SourceRevision:   record.SourceRevision,
+		ProviderMetadata: record.Metadata,
+	}
+}
+
+func (q *Orchestrator) markSyncStarted(ctx context.Context, id string) error {
+	return q.streams.MarkSyncStarted(ctx, id)
+}
+
+func (q *Orchestrator) markSyncFailed(ctx context.Context, id string) error {
+	return q.streams.MarkSyncFailed(ctx, id)
+}
+
+func (q *Orchestrator) markSyncPage(ctx context.Context, id string, configUpdates map[string]any) error {
+	return q.streams.MarkSyncPage(ctx, id, configUpdates)
+}
+
+func (q *Orchestrator) markSynced(ctx context.Context, id string, configUpdates map[string]any) error {
+	return q.streams.MarkSynced(ctx, id, configUpdates)
 }

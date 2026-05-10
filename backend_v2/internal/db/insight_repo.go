@@ -51,9 +51,10 @@ func NewKnowledgeGraphRepository(pool *pgxpool.Pool) KnowledgeGraphRepository {
 
 func (r *pgKnowledgeGraphRepo) GetIDsWithEnrichedRecords(ctx context.Context) ([]string, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT DISTINCT s.kg_id::text
+		SELECT DISTINCT ss.kg_id::text
 		FROM records a
-		JOIN sources s ON s.id = a.source_id
+		JOIN tenant_item_matches tim ON tim.record_id = a.id
+		JOIN source_subscriptions ss ON ss.id = tim.subscription_id
 		WHERE a.enrichment IS NOT NULL
 		  AND a.status NOT IN ('superseded', 'dismissed')
 	`)

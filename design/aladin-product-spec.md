@@ -1,5 +1,7 @@
 # Aladin Product Spec
 
+Strategic anchor: [Aladin Product Vision](../docs/ALADIN_PRODUCT_VISION.md).
+
 ## 1. Product Summary
 
 Aladin is a terminal for signals and thoughts.

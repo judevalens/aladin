@@ -20,7 +20,7 @@ func NewRedisSeenStore(client *redis.Client) SeenStore {
 	return &redisSeenStore{client: client}
 }
 
-func (s *redisSeenStore) Seen(ctx context.Context, sourceID string, externalIDs []string) (map[string]bool, error) {
+func (s *redisSeenStore) Seen(ctx context.Context, providerStreamID string, externalIDs []string) (map[string]bool, error) {
 	known := make(map[string]bool, len(externalIDs))
 	if len(externalIDs) == 0 {
 		return known, nil
@@ -32,7 +32,7 @@ func (s *redisSeenStore) Seen(ctx context.Context, sourceID string, externalIDs 
 		if id == "" {
 			continue
 		}
-		fields = append(fields, seenField(sourceID, id))
+		fields = append(fields, seenField(providerStreamID, id))
 		ids = append(ids, id)
 	}
 	if len(fields) == 0 {
@@ -51,7 +51,7 @@ func (s *redisSeenStore) Seen(ctx context.Context, sourceID string, externalIDs 
 	return known, nil
 }
 
-func (s *redisSeenStore) MarkSeen(ctx context.Context, sourceID string, externalIDs []string) error {
+func (s *redisSeenStore) MarkSeen(ctx context.Context, providerStreamID string, externalIDs []string) error {
 	if len(externalIDs) == 0 {
 		return nil
 	}
@@ -61,7 +61,7 @@ func (s *redisSeenStore) MarkSeen(ctx context.Context, sourceID string, external
 		if id == "" {
 			continue
 		}
-		values[seenField(sourceID, id)] = "1"
+		values[seenField(providerStreamID, id)] = "1"
 	}
 	if len(values) == 0 {
 		return nil
@@ -73,6 +73,6 @@ func (s *redisSeenStore) MarkSeen(ctx context.Context, sourceID string, external
 	return nil
 }
 
-func seenField(sourceID, externalID string) string {
-	return sourceID + ":" + externalID
+func seenField(providerStreamID, externalID string) string {
+	return providerStreamID + ":" + externalID
 }

@@ -82,8 +82,12 @@ func main() {
 
 	// Repositories
 	recordRepo := db.NewRecordRepository(pool)
-	sourceRepo := db.NewSourceRepository(pool)
+	providerStreamRepo := db.NewProviderStreamRepository(pool)
 	cycleRepo := db.NewSyncCycleRepository(pool)
+	sourceItemRepo := db.NewSourceItemRepository(pool)
+	sourceItemEnrichmentRepo := db.NewSourceItemEnrichmentRepository(pool)
+	sourceSubscriptionRepo := db.NewSourceSubscriptionRepository(pool)
+	tenantItemMatchRepo := db.NewTenantItemMatchRepository(pool)
 	insightRepo := db.NewInsightRepository(pool)
 
 	// Rate limiters
@@ -112,6 +116,7 @@ func main() {
 	// LLM clients
 	enricher := llm.NewOpenAIEnricher(cfg.OpenAIAPIKey)
 	embedder := llm.NewOpenAIEmbedder(cfg.OpenAIAPIKey)
+	relevanceJudge := llm.NewOpenAIRelevanceJudge(cfg.OpenAIAPIKey)
 
 	// Insight worker
 	insightCh := make(chan string, 256)
@@ -121,8 +126,11 @@ func main() {
 
 	// Pipeline
 	pipelineEnqueuer := pipeline.NewAsynqEnqueuer(asynqClient)
-	handler := pipeline.NewFullPipelineHandler(pipelineEnqueuer, recordRepo, insightCh)
+	handler := pipeline.NewFullPipelineHandler(pipelineEnqueuer, recordRepo, insightCh).
+		WithSourceItemEnrichments(sourceItemEnrichmentRepo)
 	orch := pipeline.NewOrchestrator(handler)
+	orch.Add(workers.NewGlobalFirstPassWorker(enricher, openaiLimiter))
+	orch.Add(workers.NewTenantMatchWorker(sourceItemRepo, sourceItemEnrichmentRepo, sourceSubscriptionRepo, tenantItemMatchRepo, pipelineEnqueuer, relevanceJudge))
 	orch.Add(workers.NewFirstPassWorker(enricher, openaiLimiter))
 	orch.Add(workers.NewSearchWorker(cachedSearcher))
 	orch.Add(workers.NewEmbedWorker(embedder, openaiLimiter))
@@ -135,17 +143,20 @@ func main() {
 	// Sync orchestrator
 	seenStore := isync.NewRedisSeenStore(redisClient)
 	syncEnqueuer := isync.NewAsynqEnqueuer(asynqClient)
-	syncOrchestrator := isync.NewOrchestrator(syncEnqueuer, sourceRepo, cycleRepo, seenStore, isync.NewFreshnessFirstArbiter(),
+	syncOrchestrator := isync.NewOrchestrator(syncEnqueuer, providerStreamRepo, sourceItemRepo, cycleRepo, seenStore, isync.NewFreshnessFirstArbiter(),
 		syncers.NewBlueskySyncer(seenStore),
+		syncers.NewHackerNewsSyncer(seenStore),
 		syncers.NewRedditSyncer(seenStore),
 	)
 
 	// asynq server — built after syncOrchestrator so we can pull queue names from syncers
 	queues := map[string]int{
-		// pipeline.TaskFirstPass: 10,
-		// pipeline.TaskSearch:    5,
-		// pipeline.TaskEmbed:     3,
-		// pipeline.TaskGraph:     5,
+		pipeline.TaskGlobalFirstPass: 10,
+		pipeline.TaskTenantMatch:     10,
+		pipeline.TaskFirstPass:       10,
+		pipeline.TaskSearch:          5,
+		pipeline.TaskEmbed:           3,
+		pipeline.TaskGraph:           5,
 	}
 	for name, weight := range syncOrchestrator.Queues() {
 		queues[name] = weight

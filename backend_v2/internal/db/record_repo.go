@@ -14,53 +14,35 @@ func NewRecordRepository(pool *pgxpool.Pool) RecordRepository {
 	return &pgRecordRepo{pool}
 }
 
-// SaveComplete writes a fully-processed record to PG in a single INSERT.
-// Uses external_id + source_id for dedup — re-fetching the same post is a no-op.
+// SaveComplete writes a fully-processed tenant record to PG.
+// Tenant/source matching context lives in tenant_item_matches, not records.
 func (r *pgRecordRepo) SaveComplete(ctx context.Context, a *CompletedRecord) error {
 	meta, _ := json.Marshal(a.Metadata)
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO records
-			(id, source_id, external_id, type, label, content, source_url,
-			 metadata, enrichment, embedding, status, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10::vector, 'in_graph', NOW())
-		ON CONFLICT (source_id, external_id) WHERE external_id IS NOT NULL DO NOTHING
+			(id, external_id, type, label, content, source_url,
+			 metadata, enrichment, embedding, status, source_revision, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9::vector, 'in_graph', $10, NOW())
+		ON CONFLICT (id) DO UPDATE
+		SET type = EXCLUDED.type,
+		    label = EXCLUDED.label,
+		    content = EXCLUDED.content,
+		    source_url = EXCLUDED.source_url,
+		    metadata = EXCLUDED.metadata,
+		    enrichment = EXCLUDED.enrichment,
+		    embedding = EXCLUDED.embedding,
+		    status = EXCLUDED.status,
+		    source_revision = EXCLUDED.source_revision
+		WHERE records.source_revision < EXCLUDED.source_revision
 	`,
-		a.ID, a.SourceID, a.ExternalID,
+		a.ID, a.ExternalID,
 		a.Type, a.Label, a.Content, a.SourceURL,
-		string(meta), string(a.Enrichment), vectorToString(a.Embedding),
+		string(meta), string(a.Enrichment), vectorToString(a.Embedding), a.SourceRevision,
 	)
 	if err != nil {
 		return fmt.Errorf("SaveComplete: %w", err)
 	}
 	return nil
-}
-
-// ExistsExternal returns a set of which externalIDs already exist for the given source.
-func (r *pgRecordRepo) ExistsExternal(ctx context.Context, sourceID string, externalIDs []string) (map[string]bool, error) {
-	if len(externalIDs) == 0 {
-		return nil, nil
-	}
-	rows, err := r.pool.Query(ctx, `
-		SELECT external_id FROM records
-		WHERE source_id = $1 AND external_id = ANY($2)
-	`, sourceID, externalIDs)
-	if err != nil {
-		return nil, fmt.Errorf("ExistsExternal: %w", err)
-	}
-	defer rows.Close()
-
-	known := make(map[string]bool)
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, fmt.Errorf("ExistsExternal scan: %w", err)
-		}
-		known[id] = true
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("ExistsExternal rows: %w", err)
-	}
-	return known, nil
 }
 
 func vectorToString(v []float32) string {

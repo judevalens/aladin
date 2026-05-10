@@ -32,16 +32,20 @@ type SourceRecord struct {
 }
 
 type SourcePayload struct {
-	Name     string
-	Type     string
-	SyncMode string
-	Config   map[string]any
+	Name       string
+	Type       string
+	SyncMode   string
+	StreamKind string
+	StreamKey  string
+	Config     map[string]any
+	Policy     map[string]any
 }
 
 type SourceCreateInput struct {
 	Kind                string `json:"kind"`
 	Name                string `json:"name"`
 	Subreddit           string `json:"subreddit"`
+	Feed                string `json:"feed"`
 	Sort                string `json:"sort"`
 	Query               string `json:"query"`
 	Handle              string `json:"handle"`
@@ -91,6 +95,32 @@ func buildSourcePayload(input SourceCreateInput) (*SourcePayload, error) {
 	name := strings.TrimSpace(input.Name)
 
 	switch kind {
+	case "hackernews_feed":
+		feed := strings.ToLower(strings.TrimSpace(input.Feed))
+		if feed == "" {
+			feed = "topstories"
+		}
+		switch feed {
+		case "topstories", "newstories", "beststories", "askstories", "showstories", "jobstories":
+		default:
+			return nil, BadRequest("feed must be one of: topstories, newstories, beststories, askstories, showstories, jobstories")
+		}
+		return &SourcePayload{
+			Name:       firstNonEmpty(name, "Hacker News: "+feed),
+			Type:       "hackernews",
+			SyncMode:   "poll",
+			StreamKind: "feed",
+			StreamKey:  feed,
+			Config: map[string]any{
+				"feed":                  feed,
+				"offset":                0,
+				"page_size":             maxInt(intOrDefault(input.Limit, 10), 1),
+				"top_comments_n":        maxInt(intOrDefault(input.TopComments, 5), 0),
+				"last_seen_item_id":     nil,
+				"last_seen_item_time":   nil,
+				"sync_interval_seconds": intOrDefault(input.SyncIntervalSeconds, 60),
+			},
+		}, nil
 	case "reddit_subreddit":
 		subreddit := strings.TrimSpace(input.Subreddit)
 		if subreddit == "" {
@@ -105,9 +135,11 @@ func buildSourcePayload(input SourceCreateInput) (*SourcePayload, error) {
 			return nil, BadRequest("sort must be one of: new, hot, top")
 		}
 		return &SourcePayload{
-			Name:     firstNonEmpty(name, "r/"+subreddit),
-			Type:     "reddit",
-			SyncMode: "poll",
+			Name:       firstNonEmpty(name, "r/"+subreddit),
+			Type:       "reddit",
+			SyncMode:   "poll",
+			StreamKind: "subreddit",
+			StreamKey:  strings.ToLower(subreddit) + "/" + sort,
 			Config: map[string]any{
 				"subreddit":             subreddit,
 				"min_score":             maxInt(intOrDefault(input.MinScore, 10), 0),
@@ -120,48 +152,43 @@ func buildSourcePayload(input SourceCreateInput) (*SourcePayload, error) {
 			},
 		}, nil
 	case "bluesky_search":
-		query := strings.TrimSpace(input.Query)
+		query := normalizeSpace(input.Query)
 		if query == "" {
 			return nil, BadRequest("query is required")
 		}
+		limit := clampInt(intOrDefault(input.Limit, 50), 1, 50)
+		interval := maxInt(intOrDefault(input.SyncIntervalSeconds, 300), 60)
 		return &SourcePayload{
-			Name:     firstNonEmpty(name, "Bluesky: "+truncate(query, 48)),
-			Type:     "bluesky",
-			SyncMode: "poll",
+			Name:       firstNonEmpty(name, "Bluesky: "+truncate(query, 48)),
+			Type:       "bluesky",
+			SyncMode:   "poll",
+			StreamKind: "search",
+			StreamKey:  strings.ToLower(query),
 			Config: map[string]any{
 				"mode":                  "search",
 				"query":                 query,
-				"cursor":                nil,
-				"limit":                 maxInt(intOrDefault(input.Limit, 50), 1),
-				"sync_interval_seconds": intOrDefault(input.SyncIntervalSeconds, 10),
+				"sort":                  "top",
+				"limit":                 limit,
+				"sync_interval_seconds": interval,
+			},
+			Policy: map[string]any{
+				"query":    query,
+				"keywords": queryKeywords(query),
 			},
 		}, nil
 	case "bluesky_account":
-		handle := strings.TrimPrefix(strings.TrimSpace(input.Handle), "@")
-		if handle == "" {
-			return nil, BadRequest("handle is required")
-		}
-		return &SourcePayload{
-			Name:     firstNonEmpty(name, "@"+handle),
-			Type:     "bluesky",
-			SyncMode: "poll",
-			Config: map[string]any{
-				"mode":                  "account",
-				"handle":                handle,
-				"cursor":                nil,
-				"limit":                 maxInt(intOrDefault(input.Limit, 50), 1),
-				"sync_interval_seconds": intOrDefault(input.SyncIntervalSeconds, 10),
-			},
-		}, nil
+		return nil, BadRequest("bluesky_account is not supported yet")
 	case "twitter_search":
 		query := strings.TrimSpace(input.Query)
 		if query == "" {
 			return nil, BadRequest("query is required")
 		}
 		return &SourcePayload{
-			Name:     firstNonEmpty(name, "X: "+truncate(query, 48)),
-			Type:     "twitter",
-			SyncMode: "poll",
+			Name:       firstNonEmpty(name, "X: "+truncate(query, 48)),
+			Type:       "twitter",
+			SyncMode:   "poll",
+			StreamKind: "search",
+			StreamKey:  query,
 			Config: map[string]any{
 				"mode":                  "search",
 				"query":                 query,
@@ -209,4 +236,45 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func clampInt(value, min, max int) int {
+	if value < min {
+		return min
+	}
+	if value > max {
+		return max
+	}
+	return value
+}
+
+func normalizeSpace(value string) string {
+	return strings.Join(strings.Fields(strings.TrimSpace(value)), " ")
+}
+
+func queryKeywords(query string) []string {
+	normalized := normalizeSpace(query)
+	if normalized == "" {
+		return nil
+	}
+	keywords := []string{strings.ToLower(normalized)}
+	for _, token := range strings.Fields(normalized) {
+		token = strings.ToLower(strings.TrimSpace(token))
+		if len(token) <= 2 {
+			continue
+		}
+		if !containsString(keywords, token) {
+			keywords = append(keywords, token)
+		}
+	}
+	return keywords
+}
+
+func containsString(values []string, needle string) bool {
+	for _, value := range values {
+		if value == needle {
+			return true
+		}
+	}
+	return false
 }

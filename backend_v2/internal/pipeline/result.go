@@ -4,14 +4,18 @@ import "context"
 
 // Task type constants — one queue per stage.
 const (
-	TaskFirstPass = "pipeline:first_pass"
-	TaskSearch    = "pipeline:search"
-	TaskEmbed     = "pipeline:embed"
-	TaskGraph     = "pipeline:graph"
+	TaskGlobalFirstPass = "pipeline:global_first_pass"
+	TaskTenantMatch     = "pipeline:tenant_match"
+	TaskFirstPass       = "pipeline:first_pass"
+	TaskSearch          = "pipeline:search"
+	TaskEmbed           = "pipeline:embed"
+	TaskGraph           = "pipeline:graph"
 )
 
 // Result discriminants — used by ResultHandler to route between stages.
 const (
+	ResultGlobalFirstPassDone   = "global_first_pass.done"
+	ResultTenantMatchDone       = "tenant_match.done"
 	ResultFirstPassSearchNeeded = "first_pass.search_needed"
 	ResultFirstPassEmbedReady   = "first_pass.embed_ready"
 	ResultSearchDone            = "search.done"

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -14,17 +15,18 @@ func NewSyncCycleRepository(pool *pgxpool.Pool) SyncCycleRepository {
 	return &pgSyncCycleRepo{pool: pool}
 }
 
-func (r *pgSyncCycleRepo) ListActiveBySource(ctx context.Context, sourceID string) ([]*SyncCycle, error) {
+func (r *pgSyncCycleRepo) ListActiveByProviderStream(ctx context.Context, providerStreamID string) ([]*SyncCycle, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id::text, source_id::text, kind, status, cursor, head_boundary, COALESCE(completion_reason, ''),
-		       last_picked_at, created_at, completed_at
+		SELECT id::text, COALESCE(provider_stream_id::text, ''), kind, status, cursor, head_boundary,
+		       last_hydrated_at, COALESCE(target_kind, ''), COALESCE(target_external_id, ''),
+		       COALESCE(completion_reason, ''), last_picked_at, created_at, completed_at
 		  FROM sync_cycles
-		 WHERE source_id = $1::uuid
+		 WHERE provider_stream_id = $1::uuid
 		   AND status IN ('active', 'running')
-		 ORDER BY created_at ASC
-	`, sourceID)
+		 ORDER BY COALESCE(last_hydrated_at, to_timestamp(0)) ASC, created_at ASC
+	`, providerStreamID)
 	if err != nil {
-		return nil, fmt.Errorf("ListActiveBySource: %w", err)
+		return nil, fmt.Errorf("ListActiveByProviderStream: %w", err)
 	}
 	defer rows.Close()
 
@@ -35,17 +37,20 @@ func (r *pgSyncCycleRepo) ListActiveBySource(ctx context.Context, sourceID strin
 		var headJSON []byte
 		if err := rows.Scan(
 			&cycle.ID,
-			&cycle.SourceID,
+			&cycle.ProviderStreamID,
 			&cycle.Kind,
 			&cycle.Status,
 			&cursorJSON,
 			&headJSON,
+			&cycle.LastHydratedAt,
+			&cycle.TargetKind,
+			&cycle.TargetExternalID,
 			&cycle.CompletionReason,
 			&cycle.LastPickedAt,
 			&cycle.CreatedAt,
 			&cycle.CompletedAt,
 		); err != nil {
-			return nil, fmt.Errorf("ListActiveBySource scan: %w", err)
+			return nil, fmt.Errorf("ListActiveByProviderStream scan: %w", err)
 		}
 		_ = json.Unmarshal(cursorJSON, &cycle.Cursor)
 		_ = json.Unmarshal(headJSON, &cycle.HeadBoundary)
@@ -67,9 +72,13 @@ func (r *pgSyncCycleRepo) Create(ctx context.Context, cycle *SyncCycle) error {
 		return fmt.Errorf("Create marshal head_boundary: %w", err)
 	}
 	_, err = r.pool.Exec(ctx, `
-		INSERT INTO sync_cycles (id, source_id, kind, status, cursor, head_boundary, completion_reason)
-		VALUES ($1::uuid, $2::uuid, $3, $4, $5::jsonb, $6::jsonb, NULLIF($7, ''))
-	`, cycle.ID, cycle.SourceID, cycle.Kind, cycle.Status, cursor, head, cycle.CompletionReason)
+		INSERT INTO sync_cycles (
+			id, provider_stream_id, kind, status, cursor, head_boundary, last_hydrated_at,
+			target_kind, target_external_id, completion_reason
+		)
+		VALUES ($1::uuid, NULLIF($2, '')::uuid, $3, $4, $5::jsonb, $6::jsonb, $7, $8, $9, NULLIF($10, ''))
+		ON CONFLICT DO NOTHING
+	`, cycle.ID, cycle.ProviderStreamID, cycle.Kind, cycle.Status, cursor, head, cycle.LastHydratedAt, cycle.TargetKind, cycle.TargetExternalID, cycle.CompletionReason)
 	if err != nil {
 		return fmt.Errorf("Create: %w", err)
 	}
@@ -89,7 +98,7 @@ func (r *pgSyncCycleRepo) MarkRunning(ctx context.Context, id string) error {
 	return nil
 }
 
-func (r *pgSyncCycleRepo) UpdateProgress(ctx context.Context, id string, cursor map[string]any, headBoundary map[string]any) error {
+func (r *pgSyncCycleRepo) UpdateProgress(ctx context.Context, id string, cursor map[string]any, headBoundary map[string]any, lastHydratedAt *time.Time) error {
 	cursorPayload, err := json.Marshal(nonNilMap(cursor))
 	if err != nil {
 		return fmt.Errorf("UpdateProgress marshal cursor: %w", err)
@@ -102,12 +111,13 @@ func (r *pgSyncCycleRepo) UpdateProgress(ctx context.Context, id string, cursor 
 		UPDATE sync_cycles
 		SET status = 'active',
 		    cursor = $2::jsonb,
+		    last_hydrated_at = COALESCE($4, last_hydrated_at),
 		    head_boundary = CASE
 		        WHEN head_boundary = '{}'::jsonb AND $3::jsonb <> '{}'::jsonb THEN $3::jsonb
 		        ELSE head_boundary
 		    END
 		WHERE id = $1::uuid
-	`, id, cursorPayload, headPayload)
+	`, id, cursorPayload, headPayload, lastHydratedAt)
 	if err != nil {
 		return fmt.Errorf("UpdateProgress: %w", err)
 	}
@@ -134,6 +144,10 @@ func (r *pgSyncCycleRepo) Complete(ctx context.Context, id string, headBoundary 
 	_, err = r.pool.Exec(ctx, `
 		UPDATE sync_cycles
 		SET status = 'complete',
+		    last_hydrated_at = CASE
+		        WHEN kind = 'hydration' THEN now()
+		        ELSE last_hydrated_at
+		    END,
 		    head_boundary = CASE
 		        WHEN head_boundary = '{}'::jsonb AND $2::jsonb <> '{}'::jsonb THEN $2::jsonb
 		        ELSE head_boundary

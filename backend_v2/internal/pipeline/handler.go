@@ -15,9 +15,10 @@ import (
 // first_pass → (optional search) → embed → graph → persist.
 // Adding a new pipeline variant means implementing a new ResultHandler — no other changes.
 type FullPipelineHandler struct {
-	enqueuer Enqueuer
-	repo     db.RecordRepository
-	insights chan<- string
+	enqueuer    Enqueuer
+	repo        db.RecordRepository
+	enrichments db.SourceItemEnrichmentRepository
+	insights    chan<- string
 }
 
 func NewFullPipelineHandler(
@@ -26,6 +27,11 @@ func NewFullPipelineHandler(
 	insights chan<- string,
 ) *FullPipelineHandler {
 	return &FullPipelineHandler{enqueuer: enqueuer, repo: repo, insights: insights}
+}
+
+func (h *FullPipelineHandler) WithSourceItemEnrichments(repo db.SourceItemEnrichmentRepository) *FullPipelineHandler {
+	h.enrichments = repo
+	return h
 }
 
 func (h *FullPipelineHandler) OnDone(ctx context.Context, result Result) error {
@@ -42,6 +48,14 @@ func (h *FullPipelineHandler) OnDone(ctx context.Context, result Result) error {
 	}
 
 	switch result.Type {
+	case ResultGlobalFirstPassDone:
+		log.Info("orchestrator: global enrichment complete, persisting")
+		return h.persistSourceItemEnrichment(ctx, log, result.Payload)
+
+	case ResultTenantMatchDone:
+		log.Info("orchestrator: tenant matching complete")
+		return nil
+
 	case ResultFirstPassSearchNeeded:
 		log.Info("orchestrator: routing to search")
 		return h.enqueue(ctx, TaskSearch, result.RecordID, result.Payload)
@@ -65,6 +79,41 @@ func (h *FullPipelineHandler) OnDone(ctx context.Context, result Result) error {
 	default:
 		return fmt.Errorf("orchestrator: unknown result type %q", result.Type)
 	}
+}
+
+func (h *FullPipelineHandler) persistSourceItemEnrichment(ctx context.Context, log *slog.Logger, payload []byte) error {
+	if h.enrichments == nil {
+		return fmt.Errorf("source item enrichment repository not configured")
+	}
+	var p SourceItemPayload
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return fmt.Errorf("persist source item enrichment: unmarshal: %w", err)
+	}
+	if err := h.enrichments.Save(ctx, &db.SourceItemEnrichment{
+		SourceItemID:          p.SourceItemID,
+		SourceRevision:        p.SourceRevision,
+		Summary:               p.Summary,
+		Entities:              p.Entities,
+		Topics:                p.Topics,
+		KeyClaims:             p.KeyClaims,
+		LowConfidenceEntities: p.LowConfidenceEntities,
+		Status:                "ready",
+	}); err != nil {
+		return err
+	}
+	matchPayload, err := json.Marshal(TenantMatchPayload{
+		SourceItemID:   p.SourceItemID,
+		CorrelationID:  p.CorrelationID,
+		SourceRevision: p.SourceRevision,
+	})
+	if err != nil {
+		return fmt.Errorf("persist source item enrichment: marshal tenant match payload: %w", err)
+	}
+	if err := h.enqueue(ctx, TaskTenantMatch, p.SourceItemID, matchPayload); err != nil {
+		return err
+	}
+	log.Info("orchestrator: source item enrichment persisted", "source_item_id", p.SourceItemID, "source_revision", p.SourceRevision)
+	return nil
 }
 
 func (h *FullPipelineHandler) enqueue(ctx context.Context, taskType string, recordID string, payload []byte) error {
@@ -121,16 +170,16 @@ func (h *FullPipelineHandler) persist(ctx context.Context, log *slog.Logger, pay
 	}
 
 	a := &db.CompletedRecord{
-		ID:         p.RecordID,
-		ExternalID: p.ExternalID,
-		SourceID:   p.SourceID,
-		Type:       p.Type,
-		Label:      p.Label,
-		Content:    p.Content,
-		SourceURL:  p.SourceURL,
-		Metadata:   p.Metadata,
-		Enrichment: enrichment,
-		Embedding:  p.Embedding,
+		ID:             p.RecordID,
+		ExternalID:     p.ExternalID,
+		SourceRevision: p.SourceRevision,
+		Type:           p.Type,
+		Label:          p.Label,
+		Content:        p.Content,
+		SourceURL:      p.SourceURL,
+		Metadata:       p.Metadata,
+		Enrichment:     enrichment,
+		Embedding:      p.Embedding,
 	}
 
 	if err := h.repo.SaveComplete(ctx, a); err != nil {
