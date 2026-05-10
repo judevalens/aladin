@@ -30,6 +30,13 @@ Required Aladin backend env:
 - `NANGO_SECRET_KEY`
 - `NANGO_GOOGLE_PROVIDER_CONFIG_KEY`
 
+Print shell-safe exports from `backend_v2/.env`:
+
+```sh
+make env-nango
+eval "$(make env-nango)"
+```
+
 ## Connect Flow
 
 1. User is authenticated in Aladin through the normal HttpOnly session cookie.
