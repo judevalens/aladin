@@ -5,12 +5,15 @@ import com.jvp.aladin_compose.features.app.artifactpane.WorkPaneProducer
 import com.jvp.aladin_compose.features.app.browser.DocumentBrowserEvent
 import com.jvp.aladin_compose.features.app.browser.DocumentBrowserProducer
 import com.jvp.aladin_compose.features.app.sidebar.SidebarProducer
+import com.jvp.aladin_compose.service.AuthenticatedUser
 import com.slack.circuit.runtime.CircuitContext
 import com.slack.circuit.runtime.Navigator
 import com.slack.circuit.runtime.presenter.Presenter
 import com.slack.circuit.runtime.screen.Screen
 
 class AppPresenter(
+    private val user: AuthenticatedUser,
+    private val onLogout: () -> Unit,
     private val appNavigationProducer: AppNavigationProducer,
     private val sidebarProducer: SidebarProducer,
     private val documentBrowserProducer: DocumentBrowserProducer,
@@ -35,6 +38,7 @@ class AppPresenter(
         val sidebar =
             sidebarProducer.produce(
                 selectedDestination = navigation.destination,
+                userEmail = user.email,
                 canCreateArtifact = true,
                 onNavigate = {
                     navigation.eventSink(AppNavigationEvent.Navigate(it))
@@ -42,6 +46,7 @@ class AppPresenter(
                 onCreateFolder = { browser.eventSink(DocumentBrowserEvent.CreateFolder) },
                 onCreateArtifact = { browser.eventSink(DocumentBrowserEvent.CreateArtifact) },
                 onCreateVoice = { browser.eventSink(DocumentBrowserEvent.CreateVoiceArtifact) },
+                onLogout = onLogout,
             )
 
         val artifactPane =
@@ -59,14 +64,22 @@ class AppPresenter(
             )
 
         return AppState(
+            user = user,
             navigation = navigation,
             sidebar = sidebar,
             browser = browser,
             artifactPane = artifactPane,
+            eventSink = { event ->
+                when (event) {
+                    AppEvent.Logout -> onLogout()
+                }
+            },
         )
     }
 
     class Factory(
+        private val user: AuthenticatedUser,
+        private val onLogout: () -> Unit,
         private val appNavigationProducer: AppNavigationProducer,
         private val sidebarProducer: SidebarProducer,
         private val documentBrowserProducer: DocumentBrowserProducer,
@@ -76,6 +89,8 @@ class AppPresenter(
             return when (screen) {
                 AppScreen ->
                     AppPresenter(
+                        user = user,
+                        onLogout = onLogout,
                         appNavigationProducer = appNavigationProducer,
                         sidebarProducer = sidebarProducer,
                         documentBrowserProducer = documentBrowserProducer,

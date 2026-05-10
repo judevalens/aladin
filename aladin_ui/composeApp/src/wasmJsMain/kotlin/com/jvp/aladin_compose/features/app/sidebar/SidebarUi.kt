@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.AutoGraph
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Home
@@ -23,7 +24,6 @@ import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.sharp.Add
 import androidx.compose.material.icons.sharp.ExpandMore
-import androidx.compose.material.icons.sharp.Settings
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -219,17 +219,35 @@ fun AppSidebar(
 
         Spacer(Modifier.weight(1f))
 
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                "signed in",
+                color = AladinColor.InkMuted,
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = FontFamily.Monospace,
+            )
+            Text(
+                state.userEmail,
+                color = AladinColor.InkSecondary,
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+            )
+        }
+
         SidebarNavItem(
-            label = "Settings",
+            label = "Sign out",
             icon = {
                 Icon(
-                    imageVector = Icons.Sharp.Settings,
-                    contentDescription = "Settings",
+                    imageVector = Icons.AutoMirrored.Outlined.Logout,
+                    contentDescription = "Sign out",
                     tint = AladinColor.InkMuted,
                 )
             },
             active = false,
-            onClick = {},
+            onClick = { state.eventSink(SidebarEvent.Logout) },
         )
     }
 }

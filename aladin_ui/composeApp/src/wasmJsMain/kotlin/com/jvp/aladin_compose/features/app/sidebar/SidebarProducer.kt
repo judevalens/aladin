@@ -7,16 +7,19 @@ interface SidebarProducer {
     @Composable
     fun produce(
         selectedDestination: NavDestination,
+        userEmail: String,
         canCreateArtifact: Boolean,
         onNavigate: (NavDestination) -> Unit,
         onCreateFolder: () -> Unit,
         onCreateArtifact: () -> Unit,
         onCreateVoice: () -> Unit,
+        onLogout: () -> Unit,
     ): SidebarState
 }
 
 data class SidebarState(
     val selectedDestination: NavDestination,
+    val userEmail: String,
     val canCreateArtifact: Boolean,
     val eventSink: (SidebarEvent) -> Unit,
 )
@@ -29,20 +32,25 @@ sealed interface SidebarEvent {
     data object CreateArtifact : SidebarEvent
 
     data object CreateVoice : SidebarEvent
+
+    data object Logout : SidebarEvent
 }
 
 class SidebarProducerImpl : SidebarProducer {
     @Composable
     override fun produce(
         selectedDestination: NavDestination,
+        userEmail: String,
         canCreateArtifact: Boolean,
         onNavigate: (NavDestination) -> Unit,
         onCreateFolder: () -> Unit,
         onCreateArtifact: () -> Unit,
         onCreateVoice: () -> Unit,
+        onLogout: () -> Unit,
     ): SidebarState {
         return SidebarState(
             selectedDestination = selectedDestination,
+            userEmail = userEmail,
             canCreateArtifact = canCreateArtifact,
             eventSink = { event ->
                 when (event) {
@@ -50,6 +58,7 @@ class SidebarProducerImpl : SidebarProducer {
                     SidebarEvent.CreateFolder -> onCreateFolder()
                     SidebarEvent.CreateArtifact -> onCreateArtifact()
                     SidebarEvent.CreateVoice -> onCreateVoice()
+                    SidebarEvent.Logout -> onLogout()
                 }
             },
         )

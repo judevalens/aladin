@@ -14,9 +14,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.sp
-import com.jvp.aladin_compose.api.ApiClient
-import com.jvp.aladin_compose.api.AuthRequest
-import com.jvp.aladin_compose.api.AuthUser
 import com.jvp.aladin_compose.features.app.AppNavigationProducerImpl
 import com.jvp.aladin_compose.features.app.AppPresenter
 import com.jvp.aladin_compose.features.app.AppScreen
@@ -34,6 +31,8 @@ import com.jvp.aladin_compose.features.auth.AuthUiState
 import com.jvp.aladin_compose.repo.ApiFolderRepository
 import com.jvp.aladin_compose.repo.ArtifactRepositoryImpl
 import com.jvp.aladin_compose.repo.doa.InMemoryArtifactDoa
+import com.jvp.aladin_compose.service.AuthServiceImpl
+import com.jvp.aladin_compose.service.AuthenticatedUser
 import com.jvp.aladin_compose.service.BrowserVoiceCaptureService
 import com.jvp.aladin_compose.service.PageDocumentSyncerImpl
 import com.jvp.aladin_compose.service.web.PageEditorBridgeImpl
@@ -47,7 +46,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun CircuitApp() {
     val scope = rememberCoroutineScope()
-    var currentUser by remember { mutableStateOf<AuthUser?>(null) }
+    val authService = remember { AuthServiceImpl() }
+    var currentUser by remember { mutableStateOf<AuthenticatedUser?>(null) }
     var checkingAuth by remember { mutableStateOf(true) }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -57,7 +57,7 @@ fun CircuitApp() {
 
     LaunchedEffect(Unit) {
         try {
-            currentUser = ApiClient.me().user
+            currentUser = authService.currentUser()
         } catch (e: CancellationException) {
             throw e
         } catch (_: Throwable) {
@@ -65,46 +65,6 @@ fun CircuitApp() {
         } finally {
             checkingAuth = false
         }
-    }
-
-    val circuit = remember {
-        val folderRepository = ApiFolderRepository()
-        val artifactRepository = ArtifactRepositoryImpl(InMemoryArtifactDoa())
-        val pageEditorBridge = PageEditorBridgeImpl()
-        val pageDocumentSyncer = PageDocumentSyncerImpl(artifactRepository, scope)
-        val voiceCaptureService = BrowserVoiceCaptureService()
-        Circuit.Builder()
-            .addPresenterFactory(
-                AppPresenter.Factory(
-                    appNavigationProducer = AppNavigationProducerImpl(),
-                    sidebarProducer = SidebarProducerImpl(),
-                    documentBrowserProducer =
-                        DocumentBrowserProducerImpl(
-                            folderRepository = folderRepository,
-                            artifactRepository = artifactRepository,
-                            voiceCaptureService = voiceCaptureService,
-                            scope = scope,
-                        ),
-                    artifactPaneProducer =
-                        WorkPaneProducerImpl(
-                            artifactRepository = artifactRepository,
-                            pageStateProducer =
-                                PageStateProducerImpl(
-                                    artifactRepository = artifactRepository,
-                                    pageDocumentSyncer = pageDocumentSyncer,
-                                    scope = scope,
-                                    pageEditorBridge = pageEditorBridge,
-                                ),
-                            linkStateProducer =
-                                LinkStateProducerImpl(artifactRepository = artifactRepository),
-                            voiceStateProducer =
-                                VoiceStateProducerImpl(artifactRepository = artifactRepository),
-                            pageEditorBridge = pageEditorBridge,
-                        ),
-                )
-            )
-            .addUiFactory(AppUiFactory())
-            .build()
     }
 
     if (checkingAuth) {
@@ -117,7 +77,8 @@ fun CircuitApp() {
         return
     }
 
-    if (currentUser == null) {
+    val user = currentUser
+    if (user == null) {
         AuthUi(
             state =
                 AuthUiState(
@@ -150,11 +111,11 @@ fun CircuitApp() {
                                         try {
                                             val response =
                                                 if (authMode == AuthMode.Login) {
-                                                    ApiClient.login(AuthRequest(email, password))
+                                                    authService.login(email, password)
                                                 } else {
-                                                    ApiClient.register(AuthRequest(email, password))
+                                                    authService.register(email, password)
                                                 }
-                                            currentUser = response.user
+                                            currentUser = response
                                             password = ""
                                         } catch (e: CancellationException) {
                                             throw e
@@ -171,6 +132,63 @@ fun CircuitApp() {
                 )
         )
         return
+    }
+
+    val circuit = remember(user.id) {
+        val folderRepository = ApiFolderRepository()
+        val artifactRepository = ArtifactRepositoryImpl(InMemoryArtifactDoa())
+        val pageEditorBridge = PageEditorBridgeImpl()
+        val pageDocumentSyncer = PageDocumentSyncerImpl(artifactRepository, scope)
+        val voiceCaptureService = BrowserVoiceCaptureService()
+        Circuit.Builder()
+            .addPresenterFactory(
+                AppPresenter.Factory(
+                    user = user,
+                    onLogout = {
+                        scope.launch {
+                            try {
+                                authService.logout()
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (_: Throwable) {
+                                // Local auth state should still reset if the server session is already gone.
+                            } finally {
+                                currentUser = null
+                                password = ""
+                                authError = null
+                                authMode = AuthMode.Login
+                            }
+                        }
+                    },
+                    appNavigationProducer = AppNavigationProducerImpl(),
+                    sidebarProducer = SidebarProducerImpl(),
+                    documentBrowserProducer =
+                        DocumentBrowserProducerImpl(
+                            folderRepository = folderRepository,
+                            artifactRepository = artifactRepository,
+                            voiceCaptureService = voiceCaptureService,
+                            scope = scope,
+                        ),
+                    artifactPaneProducer =
+                        WorkPaneProducerImpl(
+                            artifactRepository = artifactRepository,
+                            pageStateProducer =
+                                PageStateProducerImpl(
+                                    artifactRepository = artifactRepository,
+                                    pageDocumentSyncer = pageDocumentSyncer,
+                                    scope = scope,
+                                    pageEditorBridge = pageEditorBridge,
+                                ),
+                            linkStateProducer =
+                                LinkStateProducerImpl(artifactRepository = artifactRepository),
+                            voiceStateProducer =
+                                VoiceStateProducerImpl(artifactRepository = artifactRepository),
+                            pageEditorBridge = pageEditorBridge,
+                        ),
+                )
+            )
+            .addUiFactory(AppUiFactory())
+            .build()
     }
 
     CircuitCompositionLocals(circuit) { CircuitContent(AppScreen) }
