@@ -15,10 +15,11 @@ import (
 // first_pass → (optional search) → embed → graph → persist.
 // Adding a new pipeline variant means implementing a new ResultHandler — no other changes.
 type FullPipelineHandler struct {
-	enqueuer Enqueuer
-	repo     db.RecordRepository
-	matches  db.TenantItemMatchRepository
-	insights chan<- string
+	enqueuer        Enqueuer
+	repo            db.RecordRepository
+	matches         db.TenantItemMatchRepository
+	insightEnqueuer InsightEnqueuer
+	insights        chan<- string
 }
 
 func NewFullPipelineHandler(
@@ -31,6 +32,15 @@ func NewFullPipelineHandler(
 
 func (h *FullPipelineHandler) WithTenantItemMatches(repo db.TenantItemMatchRepository) *FullPipelineHandler {
 	h.matches = repo
+	return h
+}
+
+type InsightEnqueuer interface {
+	EnqueueInsightGeneration(ctx context.Context, kgID string, recordID string, sourceRevision int64, correlationID string, generatorKeys []string) error
+}
+
+func (h *FullPipelineHandler) WithInsightEnqueuer(enqueuer InsightEnqueuer) *FullPipelineHandler {
+	h.insightEnqueuer = enqueuer
 	return h
 }
 
@@ -54,7 +64,7 @@ func (h *FullPipelineHandler) OnDone(ctx context.Context, result Result) error {
 
 	case ResultTenantMatchDone:
 		log.Info("orchestrator: tenant matching complete")
-		return nil
+		return h.enqueueInsightTriggers(ctx, log, result.Payload)
 
 	case ResultFirstPassSearchNeeded:
 		log.Info("orchestrator: routing to search")
@@ -79,6 +89,32 @@ func (h *FullPipelineHandler) OnDone(ctx context.Context, result Result) error {
 	default:
 		return fmt.Errorf("orchestrator: unknown result type %q", result.Type)
 	}
+}
+
+func (h *FullPipelineHandler) enqueueInsightTriggers(ctx context.Context, log *slog.Logger, payload []byte) error {
+	if h.insightEnqueuer == nil {
+		return nil
+	}
+	var p TenantMatchPayload
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return fmt.Errorf("tenant match insights: unmarshal: %w", err)
+	}
+	for _, trigger := range p.InsightTriggers {
+		if trigger.KgID == "" {
+			continue
+		}
+		recordID := firstNonEmpty(trigger.RecordID, p.RecordID)
+		sourceRevision := trigger.SourceRevision
+		if sourceRevision == 0 {
+			sourceRevision = p.SourceRevision
+		}
+		correlationID := firstNonEmpty(trigger.CorrelationID, p.CorrelationID)
+		if err := h.insightEnqueuer.EnqueueInsightGeneration(ctx, trigger.KgID, recordID, sourceRevision, correlationID, trigger.GeneratorKeys); err != nil {
+			return fmt.Errorf("tenant match insights: enqueue: %w", err)
+		}
+		log.Info("orchestrator: insight generation enqueued", "kg_id", trigger.KgID, "record_id", recordID, "source_revision", sourceRevision)
+	}
+	return nil
 }
 
 func (h *FullPipelineHandler) persistGlobalRecordEnrichment(ctx context.Context, log *slog.Logger, payload []byte) error {
@@ -198,4 +234,13 @@ func (h *FullPipelineHandler) persist(ctx context.Context, log *slog.Logger, pay
 		"external_id", p.ExternalID,
 	)
 	return nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }

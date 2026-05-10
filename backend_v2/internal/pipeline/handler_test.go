@@ -82,6 +82,37 @@ func (f *fakeTenantItemMatchRepo) Save(ctx context.Context, match *db.TenantItem
 	return nil
 }
 
+type fakeInsightEnqueuer struct {
+	calls []insightCall
+	err   error
+}
+
+type insightCall struct {
+	kgID           string
+	recordID       string
+	sourceRevision int64
+	correlationID  string
+	generatorKeys  []string
+}
+
+func (f *fakeInsightEnqueuer) EnqueueInsightGeneration(
+	ctx context.Context,
+	kgID string,
+	recordID string,
+	sourceRevision int64,
+	correlationID string,
+	generatorKeys []string,
+) error {
+	f.calls = append(f.calls, insightCall{
+		kgID:           kgID,
+		recordID:       recordID,
+		sourceRevision: sourceRevision,
+		correlationID:  correlationID,
+		generatorKeys:  append([]string(nil), generatorKeys...),
+	})
+	return f.err
+}
+
 func TestFullPipelineHandlerRoutesFirstPassSearchNeeded(t *testing.T) {
 	t.Parallel()
 
@@ -304,5 +335,46 @@ func TestFullPipelineHandlerSkipsTenantMatchForStaleGlobalEnrichment(t *testing.
 	}
 	if len(enq.stageCalls) != 0 {
 		t.Fatalf("EnqueueStage calls = %d, want 0 for stale enrichment", len(enq.stageCalls))
+	}
+}
+
+func TestFullPipelineHandlerEnqueuesInsightTriggers(t *testing.T) {
+	t.Parallel()
+
+	insights := &fakeInsightEnqueuer{}
+	h := NewFullPipelineHandler(&fakeEnqueuer{}, &fakeRecordRepo{}, make(chan string, 1)).
+		WithInsightEnqueuer(insights)
+
+	payload, err := json.Marshal(TenantMatchPayload{
+		RecordID:       "record-7",
+		CorrelationID:  "corr-7",
+		SourceRevision: 9,
+		InsightTriggers: []InsightTrigger{{
+			KgID:           "kg-7",
+			RecordID:       "record-7",
+			SourceRevision: 9,
+			CorrelationID:  "corr-7",
+			GeneratorKeys:  []string{"topic_trend"},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	err = h.OnDone(context.Background(), Result{
+		Type:          ResultTenantMatchDone,
+		TaskType:      TaskTenantMatch,
+		RecordID:      "record-7",
+		CorrelationID: "corr-7",
+		Payload:       payload,
+	})
+	if err != nil {
+		t.Fatalf("OnDone returned error: %v", err)
+	}
+	if len(insights.calls) != 1 {
+		t.Fatalf("insight enqueue calls = %d, want 1", len(insights.calls))
+	}
+	if got := insights.calls[0]; got.kgID != "kg-7" || got.recordID != "record-7" || got.sourceRevision != 9 {
+		t.Fatalf("insight enqueue = %+v", got)
 	}
 }

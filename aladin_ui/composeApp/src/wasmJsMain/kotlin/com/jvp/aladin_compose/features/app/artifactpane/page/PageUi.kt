@@ -1,12 +1,16 @@
 package com.jvp.aladin_compose.features.app.artifactpane.page
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.unit.dp
 import com.jvp.aladin_compose.service.web.PageEditorBridge
 import com.jvp.aladin_compose.service.web.WebWidget
 import com.jvp.aladin_compose.ui_lib.AladinColor
@@ -25,17 +29,29 @@ fun PageUi(
     pageEditorBridge: PageEditorBridge,
     modifier: Modifier = Modifier,
 ) {
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(
+        modifier =
+            modifier.fillMaxSize()
+                .background(AladinColor.Canvas)
+                .padding(1.dp),
+    ) {
         if (state.isLoaded) {
-            WebWidget(
-                pageId = state.pageId,
-                initialMarkdown = state.initialMarkdown,
-                isEditable = state.isEditable,
-                onDocumentUpdated = onDocumentUpdated,
-                onFileUploadRequested = onFileUploadRequested,
-                pageEditorBridge = pageEditorBridge,
-                modifier = Modifier.fillMaxSize(),
-            )
+            Box(
+                modifier =
+                    Modifier.fillMaxSize()
+                        .clipToBounds()
+                        .background(AladinColor.Canvas),
+            ) {
+                WebWidget(
+                    pageId = state.pageId,
+                    initialMarkdown = state.initialMarkdown,
+                    isEditable = state.isEditable,
+                    onDocumentUpdated = onDocumentUpdated,
+                    onFileUploadRequested = onFileUploadRequested,
+                    pageEditorBridge = pageEditorBridge,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         } else {
             Text(
                 text = if (state.loadError == null) "Loading document..." else "Document failed to load.",

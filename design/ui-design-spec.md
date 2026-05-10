@@ -93,6 +93,21 @@ Current contrast defaults:
 - Save, upload, and load feedback should feel like document metadata rather than an alert system. Errors should be visible and retryable without adding modal friction.
 - JS specialist surfaces should visually integrate with the Kotlin shell. Avoid duplicate chrome inside the embedded surface when the shell already provides tabs, breadcrumbs, status, or utility actions.
 
+## Sources Workspace
+
+- Sources should read as a calm source library for the workspace, not a dashboard or CRUD settings table.
+- Prefer language like `live inputs`, `sources`, `feeds`, `health`, and `last refresh` over backend sync jargon.
+- The primary Sources surface should have two layers:
+  1. an overview band that explains what the area does and summarizes the source set
+  2. a scan-friendly card list where each source can be understood without a second pane
+- The Sources area should stay visually light. Prefer spacing, alignment, and thin dividers over stacking bordered containers inside bordered containers.
+- Do not use a permanent split inspector with its own independent scroll region for this surface.
+- Source rows/cards should feel editorial and self-contained: provider mark, clear title, one-line source description, compact status pills, and a quiet open-detail affordance.
+- Opening a source should use a modal detail sheet that keeps focus on one object without forcing side-by-side comparison.
+- Source detail should stay user-meaningful: what the source tracks, whether it looks healthy, last refresh, and recent activity. Avoid exposing internal-only mechanics like thresholds or backend policy fields.
+- Empty Sources states should explain why streams matter to the workspace, not just that the list is empty.
+- Add-stream flows should read like provider setup, not a generic modal form. The key user action is defining the upstream stream identity; cadence and matching remain backend-owned.
+
 ## Interaction
 
 - Hover state: light gray.

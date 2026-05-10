@@ -114,21 +114,22 @@ func main() {
 	// LLM clients
 	enricher := llm.NewOpenAIEnricher(cfg.OpenAIAPIKey)
 	embedder := llm.NewOpenAIEmbedder(cfg.OpenAIAPIKey)
-	relevanceJudge := llm.NewOpenAIRelevanceJudge(cfg.OpenAIAPIKey)
 
 	// Insight worker
 	insightCh := make(chan string, 256)
-	gen := insights.NewGenerator(insightRepo, pool)
+	gen := insights.NewGenerator(insightRepo, recordRepo, pool)
 	insightWorker := insights.NewWorker(gen, insightCh)
 	insightWorker.Start(ctx)
+	insightEnqueuer := insights.NewAsynqEnqueuer(asynqClient)
 
 	// Pipeline
 	pipelineEnqueuer := pipeline.NewAsynqEnqueuer(asynqClient)
 	handler := pipeline.NewFullPipelineHandler(pipelineEnqueuer, recordRepo, insightCh).
-		WithTenantItemMatches(tenantItemMatchRepo)
+		WithTenantItemMatches(tenantItemMatchRepo).
+		WithInsightEnqueuer(insightEnqueuer)
 	orch := pipeline.NewOrchestrator(handler)
 	orch.Add(workers.NewGlobalFirstPassWorker(enricher, openaiLimiter))
-	orch.Add(workers.NewTenantMatchWorker(recordRepo, sourceSubscriptionRepo, tenantItemMatchRepo, relevanceJudge))
+	orch.Add(workers.NewTenantMatchWorker(recordRepo, providerStreamRepo, sourceSubscriptionRepo, tenantItemMatchRepo))
 	orch.Add(workers.NewFirstPassWorker(enricher, openaiLimiter))
 	orch.Add(workers.NewSearchWorker(cachedSearcher))
 	orch.Add(workers.NewEmbedWorker(embedder, openaiLimiter))
@@ -137,6 +138,7 @@ func main() {
 	// Mux
 	mux := asynq.NewServeMux()
 	orch.Register(mux)
+	insights.RegisterGenerateHandler(mux, gen)
 
 	// Sync orchestrator
 	seenStore := isync.NewRedisSeenStore(redisClient)
@@ -156,6 +158,7 @@ func main() {
 		pipeline.TaskSearch:          5,
 		pipeline.TaskEmbed:           3,
 		pipeline.TaskGraph:           5,
+		insights.TaskGenerate:        5,
 	}
 	for name, weight := range syncOrchestrator.Queues() {
 		queues[name] = weight

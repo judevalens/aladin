@@ -5,31 +5,41 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"aladin/backend_v2/internal/db"
-	"aladin/backend_v2/internal/llm"
 	"aladin/backend_v2/internal/pipeline"
 )
 
 type TenantMatchWorker struct {
-	records db.RecordRepository
-	subs    db.SourceSubscriptionRepository
-	matches db.TenantItemMatchRepository
-	judge   llm.RelevanceJudge
+	records  db.RecordRepository
+	streams  db.ProviderStreamRepository
+	subs     db.SourceSubscriptionRepository
+	matches  db.TenantItemMatchRepository
+	deciders map[string]RecordRelevanceDecider
 }
 
 func NewTenantMatchWorker(
 	records db.RecordRepository,
+	streams db.ProviderStreamRepository,
 	subs db.SourceSubscriptionRepository,
 	matches db.TenantItemMatchRepository,
-	judge llm.RelevanceJudge,
+	deciders ...RecordRelevanceDecider,
 ) *TenantMatchWorker {
+	if len(deciders) == 0 {
+		deciders = []RecordRelevanceDecider{NewPolicyRelevanceDecider()}
+	}
+	byKey := make(map[string]RecordRelevanceDecider, len(deciders))
+	for _, decider := range deciders {
+		if decider != nil {
+			byKey[decider.Key()] = decider
+		}
+	}
 	return &TenantMatchWorker{
-		records: records,
-		subs:    subs,
-		matches: matches,
-		judge:   judge,
+		records:  records,
+		streams:  streams,
+		subs:     subs,
+		matches:  matches,
+		deciders: byKey,
 	}
 }
 
@@ -57,69 +67,64 @@ func (w *TenantMatchWorker) Run(ctx context.Context, raw []byte) pipeline.Result
 	if err != nil {
 		return tenantMatchErrResult(p, pipeline.ErrTransient{Cause: fmt.Errorf("load record: %w", err)})
 	}
+	stream, err := w.streams.GetByID(ctx, record.ProviderStreamID)
+	if err != nil {
+		return tenantMatchErrResult(p, pipeline.ErrTransient{Cause: fmt.Errorf("load provider stream: %w", err)})
+	}
 	subs, err := w.subs.ListActiveByProviderStream(ctx, record.ProviderStreamID)
 	if err != nil {
 		return tenantMatchErrResult(p, pipeline.ErrTransient{Cause: fmt.Errorf("load subscriptions: %w", err)})
 	}
 
 	matched := 0
+	triggersByKG := make(map[string]*pipeline.InsightTrigger)
 	for _, sub := range subs {
 		if record.OwnerUserID != nil && *record.OwnerUserID != sub.UserID {
 			continue
 		}
-		intentMatched := subscriptionIntentMatches(sub.Policy, record)
-		// KG overlap should be resolved by a graph-backed collaborator later. Keep the
-		// match-source contract explicit so this worker does not pretend it queried KG.
-		if !intentMatched {
+		input := BuildRecordRelevanceInput(record, sub, stream)
+		decision, ok, err := w.decide(ctx, input, log)
+		if err != nil {
+			return tenantMatchErrResult(p, pipeline.ErrTransient{Cause: fmt.Errorf("decide relevance: %w", err)})
+		}
+		if !ok {
 			continue
-		}
-		relevance := &llm.RelevanceResult{
-			Relevant:   true,
-			Confidence: 0.65,
-			Reason:     "matched active source subscription intent",
-		}
-		if w.judge != nil {
-			var err error
-			relevance, err = w.judge.JudgeRelevance(ctx, llm.RelevanceInput{
-				SubscriptionName: sub.Name,
-				Policy:           sub.Policy,
-				ItemTitle:        record.Title,
-				ItemSummary:      record.Enrichment.Summary,
-				ItemEntities:     record.Enrichment.Entities,
-				ItemTopics:       record.Enrichment.Topics,
-			})
-			if err != nil {
-				return tenantMatchErrResult(p, pipeline.ErrTransient{Cause: fmt.Errorf("judge relevance: %w", err)})
-			}
-		}
-
-		status := "not_relevant"
-		if relevance.Relevant {
-			status = "relevant"
 		}
 		match := &db.TenantItemMatch{
 			SubscriptionID:  sub.ID,
 			RecordID:        record.ID,
 			SourceRevision:  record.SourceRevision,
-			MatchSource:     "intent",
-			RelevanceStatus: status,
-			RelevanceScore:  &relevance.Confidence,
-			RelevanceReason: relevance.Reason,
+			MatchSource:     decision.MatchSource,
+			RelevanceStatus: string(decision.Status),
+			RelevanceScore:  &decision.Score,
+			RelevanceReason: decision.Reason,
 		}
-		if !relevance.Relevant {
-			if err := w.matches.Save(ctx, match); err != nil {
-				return tenantMatchErrResult(p, pipeline.ErrTransient{Cause: fmt.Errorf("save tenant match: %w", err)})
-			}
-			continue
-		}
-
 		if err := w.matches.Save(ctx, match); err != nil {
 			return tenantMatchErrResult(p, pipeline.ErrTransient{Cause: fmt.Errorf("save tenant match: %w", err)})
 		}
+		if decision.Status != RelevanceRelevant {
+			continue
+		}
 		matched++
+		trigger := triggersByKG[sub.KgID]
+		if trigger == nil {
+			trigger = &pipeline.InsightTrigger{
+				KgID:           sub.KgID,
+				RecordID:       record.ID,
+				SourceRevision: record.SourceRevision,
+				CorrelationID:  p.CorrelationID,
+			}
+			triggersByKG[sub.KgID] = trigger
+		}
+		trigger.SubscriptionIDs = appendUnique(trigger.SubscriptionIDs, sub.ID)
+		trigger.GeneratorKeys = appendUnique(trigger.GeneratorKeys, input.Policy.InsightGenerators...)
 	}
 
 	log.Info("tenant_match: complete", "subscription_count", len(subs), "matched_count", matched)
+	p.InsightTriggers = make([]pipeline.InsightTrigger, 0, len(triggersByKG))
+	for _, trigger := range triggersByKG {
+		p.InsightTriggers = append(p.InsightTriggers, *trigger)
+	}
 	payload, _ := json.Marshal(p)
 	return pipeline.Result{
 		Type:          pipeline.ResultTenantMatchDone,
@@ -128,6 +133,36 @@ func (w *TenantMatchWorker) Run(ctx context.Context, raw []byte) pipeline.Result
 		RecordID:      p.RecordID,
 		CorrelationID: p.CorrelationID,
 	}
+}
+
+func (w *TenantMatchWorker) decide(ctx context.Context, input RecordRelevanceInput, log *slog.Logger) (RecordRelevanceDecision, bool, error) {
+	keys := input.Policy.Deciders
+	if len(keys) == 0 {
+		keys = []string{DefaultRelevanceDeciderKey}
+	}
+	for _, key := range keys {
+		decider := w.deciders[key]
+		if decider == nil {
+			log.Warn("tenant_match: unknown relevance decider", "decider", key)
+			continue
+		}
+		decision, err := decider.Decide(ctx, input)
+		if err != nil {
+			return RecordRelevanceDecision{}, false, err
+		}
+		switch decision.Status {
+		case RelevanceRelevant, RelevanceNotRelevant:
+			if decision.MatchSource == "" {
+				decision.MatchSource = decider.Key()
+			}
+			return decision, true, nil
+		case RelevanceNoDecision:
+			continue
+		default:
+			log.Warn("tenant_match: invalid relevance decision status", "decider", key, "status", decision.Status)
+		}
+	}
+	return RecordRelevanceDecision{}, false, nil
 }
 
 func tenantMatchErrResult(p pipeline.TenantMatchPayload, err error) pipeline.Result {
@@ -139,41 +174,20 @@ func tenantMatchErrResult(p pipeline.TenantMatchPayload, err error) pipeline.Res
 	}
 }
 
-func subscriptionIntentMatches(policy map[string]any, record *db.Record) bool {
-	if len(policy) == 0 {
-		return true
+func appendUnique(values []string, next ...string) []string {
+	seen := make(map[string]struct{}, len(values)+len(next))
+	for _, value := range values {
+		seen[value] = struct{}{}
 	}
-	haystack := strings.ToLower(strings.Join(append([]string{
-		record.Title,
-		record.ContentExcerpt,
-		record.ContextExcerpt,
-		record.Enrichment.Summary,
-	}, append(record.Enrichment.Entities, record.Enrichment.Topics...)...), " "))
-	for _, key := range []string{"keywords", "topics", "entities", "domains"} {
-		for _, token := range policyStrings(policy[key]) {
-			if token != "" && strings.Contains(haystack, strings.ToLower(token)) {
-				return true
-			}
+	for _, value := range next {
+		if value == "" {
+			continue
 		}
-	}
-	return false
-}
-
-func policyStrings(value any) []string {
-	switch v := value.(type) {
-	case string:
-		return []string{v}
-	case []string:
-		return v
-	case []any:
-		out := make([]string, 0, len(v))
-		for _, item := range v {
-			if s, ok := item.(string); ok {
-				out = append(out, s)
-			}
+		if _, ok := seen[value]; ok {
+			continue
 		}
-		return out
-	default:
-		return nil
+		values = append(values, value)
+		seen[value] = struct{}{}
 	}
+	return values
 }

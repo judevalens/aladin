@@ -2,15 +2,41 @@ package com.jvp.aladin_compose.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -25,7 +51,6 @@ import com.jvp.aladin_compose.api.SourceCreateRequest
 import com.jvp.aladin_compose.features.app.AppOverlayContent
 import com.jvp.aladin_compose.ui_lib.AladinColor
 import com.jvp.aladin_compose.ui_lib.AladinInteractionDefaults
-import com.jvp.aladin_compose.ui_lib.EmptyState
 import com.jvp.aladin_compose.ui_lib.ErrorState
 import com.jvp.aladin_compose.ui_lib.LoadingState
 import com.jvp.aladin_compose.ui_lib.aladinClickable
@@ -53,7 +78,11 @@ fun SourcesScreen(setAppOverlay: ((AppOverlayContent?) -> Unit)? = null) {
     }
 
     suspend fun load() {
-        if (sources.isEmpty()) loading = true else refreshing = true
+        if (sources.isEmpty()) {
+            loading = true
+        } else {
+            refreshing = true
+        }
         error = null
         yield()
         try {
@@ -73,40 +102,7 @@ fun SourcesScreen(setAppOverlay: ((AppOverlayContent?) -> Unit)? = null) {
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column {
-                Text(
-                    "Streams",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = AladinColor.Ink
-                )
-                Text(
-                    "${sources.size} subscribed",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = AladinColor.InkMuted
-                )
-            }
-            StreamDialogButton(label = "+ Add Stream", enabled = true, primary = true) {
-                setOverlay {
-                    AddStreamDialog(
-                        onDismiss = { setOverlay(null) },
-                        onCreated = {
-                            setOverlay(null)
-                            scope.launch { load() }
-                        },
-                    )
-                }
-            }
-        }
-
+    Column(modifier = Modifier.fillMaxSize().background(AladinColor.Canvas)) {
         if (refreshing) {
             LinearProgressIndicator(
                 modifier = Modifier.fillMaxWidth(),
@@ -118,39 +114,54 @@ fun SourcesScreen(setAppOverlay: ((AppOverlayContent?) -> Unit)? = null) {
         when {
             loading -> LoadingState()
             error != null -> ErrorState(error!!) { scope.launch { load() } }
-            sources.isEmpty() -> EmptyState("No streams yet. Subscribe to one to start matching live items.")
-            else -> {
-                LazyColumn(
-                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    items(sources, key = { it.id }) { source ->
-                        SourceCard(
-                            source = source,
-                            onDelete = {
-                                setOverlay {
-                                    RemoveStreamDialog(
-                                        source = source,
-                                        onDismiss = { setOverlay(null) },
-                                        onRemove = {
-                                            scope.launch {
-                                                try {
-                                                    ApiClient.deleteSource(source.id)
-                                                    load()
-                                                } catch (_: Exception) {
-                                                } finally {
-                                                    setOverlay(null)
-                                                }
-                                            }
-                                        },
-                                    )
-                                }
-                            },
-                        )
-                    }
-                }
-            }
+            sources.isEmpty() ->
+                EmptySourcesState(
+                    onAddStream = {
+                        setOverlay {
+                            AddStreamDialog(
+                                onDismiss = { setOverlay(null) },
+                                onCreated = {
+                                    setOverlay(null)
+                                    scope.launch { load() }
+                                },
+                            )
+                        }
+                    },
+                )
+            else ->
+                SourcesWorkspace(
+                    sources = sources,
+                    onAddStream = {
+                        setOverlay {
+                            AddStreamDialog(
+                                onDismiss = { setOverlay(null) },
+                                onCreated = {
+                                    setOverlay(null)
+                                    scope.launch { load() }
+                                },
+                            )
+                        }
+                    },
+                    onOpenSource = { source ->
+                        setOverlay {
+                            SourceDetailsDialog(
+                                source = source,
+                                onDismiss = { setOverlay(null) },
+                                onRemoveSource = {
+                                    scope.launch {
+                                        try {
+                                            ApiClient.deleteSource(source.id)
+                                            load()
+                                        } catch (_: Exception) {
+                                        } finally {
+                                            setOverlay(null)
+                                        }
+                                    }
+                                },
+                            )
+                        }
+                    },
+                )
         }
     }
 
@@ -158,55 +169,469 @@ fun SourcesScreen(setAppOverlay: ((AppOverlayContent?) -> Unit)? = null) {
 }
 
 @Composable
-private fun SourceCard(source: Source, onDelete: () -> Unit) {
-    Box(
-        modifier =
-            Modifier.fillMaxWidth()
-                .border(1.dp, AladinColor.Border, RoundedCornerShape(6.dp))
-                .background(AladinColor.Panel, RoundedCornerShape(6.dp))
-                .padding(14.dp)
+private fun SourcesWorkspace(
+    sources: List<Source>,
+    onAddStream: () -> Unit,
+    onOpenSource: (Source) -> Unit,
+) {
+    val activeCount = sources.count { it.syncState.isOperational() }
+    val firstFetchCount = sources.count { it.lastSyncedAt == null }
+    val providerCount = sources.map { it.type }.distinct().size
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        OverviewPanel(
+            totalCount = sources.size,
+            activeCount = activeCount,
+            firstFetchCount = firstFetchCount,
+            providerCount = providerCount,
+            onAddStream = onAddStream,
+        )
+
+        StreamCardGallery(
+            sources = sources,
+            onOpenSource = onOpenSource,
+            modifier = Modifier.fillMaxSize(),
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun OverviewPanel(
+    totalCount: Int,
+    activeCount: Int,
+    firstFetchCount: Int,
+    providerCount: Int,
+    onAddStream: () -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.Top,
+        ) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(
+                    "Live inputs",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = AladinColor.Ink,
+                )
+                Text(
+                    "A workspace-level index of the feeds and searches currently bringing in new material.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = AladinColor.InkSecondary,
+                )
+                Text(
+                    "Open any source card to inspect what it tracks and whether it looks healthy.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = AladinColor.InkMuted,
+                )
+            }
+            StreamDialogButton(label = "+ Add Stream", enabled = true, primary = true, onClick = onAddStream)
+        }
+
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            OverviewMetricCard("Subscribed", totalCount.toString(), "sources currently feeding this workspace")
+            OverviewMetricCard("Healthy", activeCount.toString(), "sources reporting a live or active state")
+            OverviewMetricCard("Pending", firstFetchCount.toString(), "sources still waiting on a first refresh")
+            OverviewMetricCard("Providers", providerCount.toString(), "upstream systems represented here")
+        }
+    }
+}
+
+@Composable
+private fun OverviewMetricCard(label: String, value: String, description: String) {
+    Column(
+        modifier = Modifier.width(178.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            label.uppercase(),
+            style = MaterialTheme.typography.labelMedium,
+            color = AladinColor.CodeText,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            value,
+            style = MaterialTheme.typography.titleMedium,
+            color = AladinColor.Ink,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            description,
+            style = MaterialTheme.typography.bodySmall,
+            color = AladinColor.InkMuted,
+        )
+    }
+}
+
+@Composable
+private fun StreamCardGallery(
+    sources: List<Source>,
+    onOpenSource: (Source) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                "Sources",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = AladinColor.Ink,
+            )
+            Text(
+                "Each source is a compact feed object. Open one for health and detail.",
+                style = MaterialTheme.typography.bodySmall,
+                color = AladinColor.InkMuted,
+            )
+        }
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = 320.dp),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                start = 2.dp,
+                end = 2.dp,
+                top = 12.dp,
+                bottom = 24.dp,
+            ),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            items(sources, key = { it.id }) { source ->
+                SourceCard(
+                    source = source,
+                    onClick = { onOpenSource(source) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SourceCard(source: Source, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier =
+            modifier
+                .heightIn(min = 188.dp)
+                .border(1.dp, AladinColor.Border, RoundedCornerShape(6.dp))
+                .aladinClickable(
+                    shape = RoundedCornerShape(6.dp),
+                    colors =
+                        AladinInteractionDefaults.colors(
+                            rest = AladinColor.Panel,
+                            hovered = AladinColor.RowHover,
+                            pressed = AladinColor.RowSelected,
+                        ),
+                    onClick = onClick,
+                )
+                .padding(16.dp),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top,
             ) {
-                SourceTypeIcon(source.type)
-                Column {
-                    Text(
-                        source.name,
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Medium,
-                        color = AladinColor.Ink
-                    )
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        SyncStateBadge(source.syncState)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.Top,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    SourceTypeIcon(source.type)
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text(
-                            source.streamSummary(),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = AladinColor.InkMuted
+                            source.name,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = AladinColor.Ink,
                         )
-                        if (source.lastSyncedAt != null) {
-                            Text(
-                                "last refresh ${source.lastSyncedAt.take(10)}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = AladinColor.InkMuted
-                            )
-                        }
+                        Text(
+                            source.descriptionLine(),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = AladinColor.InkSecondary,
+                        )
                     }
                 }
+                FreshnessBadge(source)
             }
-            StreamDialogButton(label = "Remove", enabled = true, primary = false) {
-                onDelete()
+
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                MetadataPill(source.providerLabel())
+                MetadataPill(source.healthLabel())
+                MetadataPill(source.lastRefreshSummary())
             }
+
+            Spacer(Modifier.weight(1f))
+
+            Text(
+                "View details",
+                style = MaterialTheme.typography.labelMedium,
+                color = AladinColor.CodeText,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SourceDetailsDialog(
+    source: Source,
+    onDismiss: () -> Unit,
+    onRemoveSource: () -> Unit,
+) {
+    Box(
+        modifier =
+            Modifier.fillMaxSize()
+                .background(Color(0x66000000))
+                .aladinClickable(
+                    shape = RoundedCornerShape(0.dp),
+                    colors =
+                        AladinInteractionDefaults.colors(
+                            rest = Color.Transparent,
+                            hovered = Color.Transparent,
+                            pressed = Color.Transparent,
+                        ),
+                    onClick = onDismiss,
+                ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier =
+                Modifier.width(640.dp)
+                    .aladinClickable(
+                        shape = RoundedCornerShape(6.dp),
+                        colors =
+                            AladinInteractionDefaults.colors(
+                                rest = Color.Transparent,
+                                hovered = Color.Transparent,
+                                pressed = Color.Transparent,
+                            ),
+                        onClick = {},
+                    )
+                    .border(1.dp, AladinColor.Divider, RoundedCornerShape(6.dp))
+                    .background(AladinColor.Panel, RoundedCornerShape(6.dp))
+                    .verticalScroll(rememberScrollState()),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 18.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        source.providerLabel().uppercase(),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = AladinColor.CodeText,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        source.name,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = AladinColor.Ink,
+                    )
+                    Text(
+                        source.descriptionLine(),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = AladinColor.InkSecondary,
+                    )
+                }
+                Text(
+                    "ESC",
+                    modifier =
+                        Modifier.border(1.dp, AladinColor.Border, RoundedCornerShape(4.dp))
+                            .background(AladinColor.CommandSurface, RoundedCornerShape(4.dp))
+                            .aladinClickable(
+                                shape = RoundedCornerShape(4.dp),
+                                colors =
+                                    AladinInteractionDefaults.colors(
+                                        rest = Color.Transparent,
+                                        hovered = AladinColor.ControlHover,
+                                        pressed = AladinColor.ControlPressed,
+                                    ),
+                                onClick = onDismiss,
+                            )
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                    color = AladinColor.CodeText,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+
+            HorizontalDivider(color = AladinColor.Divider)
+
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(22.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FreshnessBadge(source)
+                    MetadataPill(source.healthLabel())
+                    MetadataPill(source.lastRefreshSummary())
+                }
+
+                DetailsCard(
+                    title = "About this source",
+                    body = source.detailsDescription(),
+                )
+
+                DetailsCard(
+                    title = "Health status",
+                    body = source.healthNarrative(),
+                )
+
+                DetailsCard(
+                    title = "Recent activity",
+                    body = source.activityNarrative(),
+                )
+
+                SourceFactsCard(source = source)
+            }
+
+            HorizontalDivider(color = AladinColor.Divider)
+
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "This only affects this workspace subscription.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = AladinColor.InkMuted,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    StreamDialogButton(label = "Close", enabled = true, primary = false, onClick = onDismiss)
+                    StreamDialogButton(label = "Remove source", enabled = true, primary = false, onClick = onRemoveSource)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DetailsCard(title: String, body: String) {
+    Column(
+        modifier =
+            Modifier.fillMaxWidth()
+                .border(1.dp, AladinColor.Border, RoundedCornerShape(6.dp))
+                .background(AladinColor.Canvas, RoundedCornerShape(6.dp))
+                .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = AladinColor.Ink,
+        )
+        Text(
+            body,
+            style = MaterialTheme.typography.bodySmall,
+            color = AladinColor.InkSecondary,
+        )
+    }
+}
+
+@Composable
+private fun SourceFactsCard(source: Source) {
+    Column(
+        modifier =
+            Modifier.fillMaxWidth()
+                .border(1.dp, AladinColor.Border, RoundedCornerShape(6.dp))
+                .background(AladinColor.Canvas, RoundedCornerShape(6.dp)),
+    ) {
+        SourceFactRow("Provider", source.providerLabel())
+        HorizontalDivider(color = AladinColor.Divider)
+        SourceFactRow("Feed", source.streamSummary())
+        HorizontalDivider(color = AladinColor.Divider)
+        SourceFactRow("Created", source.createdAt.humanDate())
+        HorizontalDivider(color = AladinColor.Divider)
+        SourceFactRow("Last refresh", source.lastRefreshSummary())
+    }
+}
+
+@Composable
+private fun SourceFactRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Top,
+    ) {
+        Text(
+            label.uppercase(),
+            style = MaterialTheme.typography.labelMedium,
+            color = AladinColor.CodeText,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Spacer(Modifier.width(16.dp))
+        Text(
+            value,
+            style = MaterialTheme.typography.bodySmall,
+            color = AladinColor.Ink,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+@Composable
+private fun EmptySourcesState(onAddStream: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Column(
+            modifier =
+                Modifier.width(560.dp)
+                    .border(1.dp, AladinColor.Divider, RoundedCornerShape(6.dp))
+                    .background(AladinColor.Panel, RoundedCornerShape(6.dp))
+                    .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalAlignment = Alignment.Start,
+        ) {
+            Text(
+                "No live inputs yet",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = AladinColor.Ink,
+            )
+            Text(
+                "Sources are how this workspace stays fed. Add a search or feed once, then come back here to understand what each source is tracking.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = AladinColor.InkSecondary,
+            )
+            StreamDialogButton(label = "+ Add Stream", enabled = true, primary = true, onClick = onAddStream)
         }
     }
 }
@@ -222,6 +647,117 @@ private fun Source.streamSummary(): String =
 
 private fun Map<String, JsonElement>.string(key: String): String? =
     (this[key] as? JsonPrimitive)?.contentOrNull
+
+private fun Source.providerLabel(): String =
+    when (type) {
+        "bluesky" -> "Bluesky"
+        "hackernews" -> "Hacker News"
+        "reddit" -> "Reddit"
+        "twitter" -> "X"
+        else -> type.replaceFirstChar { it.uppercase() }
+    }
+
+private fun Source.syncStateDisplay(): String =
+    when (syncState) {
+        "running", "syncing", "active" -> "active"
+        "queued" -> "queued"
+        "idle" -> "idle"
+        else -> syncState
+    }
+
+private fun Source.syncStateNarrative(): String =
+    when (syncState) {
+        "running", "syncing", "active" -> "Healthy"
+        "queued" -> "Queued"
+        "idle" -> "Idle"
+        else -> syncState.replaceFirstChar { it.uppercase() }
+    }
+
+private fun Source.healthNarrative(): String =
+    when {
+        lastSyncedAt == null -> "This source has been added, but Aladin has not recorded a first refresh yet."
+        syncState.isOperational() -> "This source looks healthy and has refreshed recently enough to feel active."
+        syncState == "queued" -> "This source is configured and waiting on the next refresh cycle."
+        else -> "This source is connected, but it is not currently reporting an active refresh state."
+    }
+
+private fun Source.lastRefreshSummary(): String =
+    lastSyncedAt?.humanDate()?.let { "refreshed $it" } ?: "awaiting first refresh"
+
+private fun String.humanDate(): String = take(10)
+
+private fun String.isOperational(): Boolean =
+    this == "running" || this == "syncing" || this == "active"
+
+private fun Source.healthLabel(): String = syncStateNarrative()
+
+private fun Source.descriptionLine(): String =
+    when (type) {
+        "bluesky" -> "Tracking Bluesky posts for ${config.string("query") ?: "a search query"}."
+        "hackernews" -> "Following the ${config.string("feed") ?: "topstories"} Hacker News feed."
+        "reddit" -> "Watching posts from r/${config.string("subreddit") ?: "subreddit"}."
+        "twitter" -> "Tracking X posts for ${config.string("query") ?: "a search query"}."
+        else -> "A provider source feeding this workspace."
+    }
+
+private fun Source.detailsDescription(): String =
+    when (type) {
+        "bluesky" -> "This source follows the Bluesky search `${config.string("query") ?: "top posts"}` and brings matching posts into the workspace feed."
+        "hackernews" -> "This source follows the Hacker News `${config.string("feed") ?: "topstories"}` feed and surfaces new items here as they arrive."
+        "reddit" -> "This source watches r/${config.string("subreddit") ?: "subreddit"} and brings new posts into the workspace feed."
+        "twitter" -> "This source follows the X search `${config.string("query") ?: "query"}` and surfaces matching posts here."
+        else -> "This source is connected to an upstream provider and contributes new material to the workspace."
+    }
+
+private fun Source.activityNarrative(): String =
+    when {
+        lastSyncedAt == null -> "The source was added on ${createdAt.humanDate()} and is still waiting for its first recorded refresh."
+        syncState.isOperational() -> "The source was added on ${createdAt.humanDate()} and last refreshed on ${lastSyncedAt.humanDate()}, which suggests it is currently feeding new material as expected."
+        else -> "The source was added on ${createdAt.humanDate()} and last refreshed on ${lastSyncedAt.humanDate()}, but it does not currently look active."
+    }
+
+@Composable
+private fun MetadataPill(label: String) {
+    val shape = RoundedCornerShape(5.dp)
+    Box(
+        modifier =
+            Modifier.border(1.dp, AladinColor.Border, shape)
+                .background(AladinColor.PanelMuted, shape)
+                .padding(horizontal = 8.dp, vertical = 5.dp),
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = AladinColor.CodeText,
+        )
+    }
+}
+
+@Composable
+private fun FreshnessBadge(source: Source) {
+    val (label, background, foreground) =
+        when {
+            source.lastSyncedAt == null -> Triple("New", AladinColor.CommandSurface, AladinColor.CodeText)
+            source.syncState.isOperational() -> Triple("Healthy", AladinColor.ControlHover, AladinColor.Ink)
+            source.syncState == "queued" -> Triple("Queued", AladinColor.CommandSurface, AladinColor.InkSecondary)
+            else -> Triple("Needs review", AladinColor.CommandSurface, AladinColor.Ink)
+        }
+    val shape = RoundedCornerShape(5.dp)
+
+    Box(
+        modifier =
+            Modifier.border(1.dp, AladinColor.Border, shape)
+                .background(background, shape)
+                .padding(horizontal = 8.dp, vertical = 5.dp),
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = foreground,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
 
 @Composable
 private fun RemoveStreamDialog(source: Source, onDismiss: () -> Unit, onRemove: () -> Unit) {

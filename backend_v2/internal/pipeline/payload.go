@@ -59,7 +59,17 @@ type GlobalRecordPayload struct {
 }
 
 type TenantMatchPayload struct {
-	RecordID       string `json:"record_id"`
-	CorrelationID  string `json:"correlation_id"`
-	SourceRevision int64  `json:"source_revision"`
+	RecordID        string           `json:"record_id"`
+	CorrelationID   string           `json:"correlation_id"`
+	SourceRevision  int64            `json:"source_revision"`
+	InsightTriggers []InsightTrigger `json:"insight_triggers,omitempty"`
+}
+
+type InsightTrigger struct {
+	KgID            string   `json:"kg_id"`
+	RecordID        string   `json:"record_id"`
+	SourceRevision  int64    `json:"source_revision"`
+	CorrelationID   string   `json:"correlation_id"`
+	SubscriptionIDs []string `json:"subscription_ids,omitempty"`
+	GeneratorKeys   []string `json:"generator_keys,omitempty"`
 }
