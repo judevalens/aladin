@@ -1,39 +1,56 @@
 package com.jvp.aladin_compose.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.border
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.jvp.aladin_compose.api.ApiClient
 import com.jvp.aladin_compose.api.Source
 import com.jvp.aladin_compose.api.SourceCreateRequest
-import com.jvp.aladin_compose.ui_lib.AladinDark
+import com.jvp.aladin_compose.features.app.AppOverlayContent
+import com.jvp.aladin_compose.ui_lib.AladinColor
+import com.jvp.aladin_compose.ui_lib.AladinInteractionDefaults
 import com.jvp.aladin_compose.ui_lib.EmptyState
 import com.jvp.aladin_compose.ui_lib.ErrorState
 import com.jvp.aladin_compose.ui_lib.LoadingState
+import com.jvp.aladin_compose.ui_lib.aladinClickable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.yield
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
 @Composable
-fun SourcesScreen() {
-
+fun SourcesScreen(setAppOverlay: ((AppOverlayContent?) -> Unit)? = null) {
     val scope = rememberCoroutineScope()
     var sources by remember { mutableStateOf<List<Source>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var refreshing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var showAddDialog by remember { mutableStateOf(false) }
-    var deleteConfirm by remember { mutableStateOf<Source?>(null) }
+    var localOverlay by remember { mutableStateOf<AppOverlayContent?>(null) }
+
+    fun setOverlay(content: AppOverlayContent?) {
+        if (setAppOverlay != null) {
+            setAppOverlay(content)
+        } else {
+            localOverlay = content
+        }
+    }
 
     suspend fun load() {
         if (sources.isEmpty()) loading = true else refreshing = true
@@ -50,6 +67,11 @@ fun SourcesScreen() {
     }
 
     LaunchedEffect(Unit) { load() }
+    DisposableEffect(setAppOverlay) {
+        onDispose {
+            setAppOverlay?.invoke(null)
+        }
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
@@ -61,38 +83,42 @@ fun SourcesScreen() {
         ) {
             Column {
                 Text(
-                    "Sources",
+                    "Streams",
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = AladinColor.Ink
                 )
                 Text(
-                    "${sources.size} connected",
+                    "${sources.size} subscribed",
                     style = MaterialTheme.typography.bodySmall,
-                    color = AladinDark.TextMuted
+                    color = AladinColor.InkMuted
                 )
             }
-            Button(
-                onClick = { showAddDialog = true },
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-            ) {
-                Text("+ Add Source", style = MaterialTheme.typography.labelMedium)
+            StreamDialogButton(label = "+ Add Stream", enabled = true, primary = true) {
+                setOverlay {
+                    AddStreamDialog(
+                        onDismiss = { setOverlay(null) },
+                        onCreated = {
+                            setOverlay(null)
+                            scope.launch { load() }
+                        },
+                    )
+                }
             }
         }
 
         if (refreshing) {
             LinearProgressIndicator(
                 modifier = Modifier.fillMaxWidth(),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.surface
+                color = AladinColor.Ink,
+                trackColor = AladinColor.Divider
             )
         }
 
         when {
             loading -> LoadingState()
             error != null -> ErrorState(error!!) { scope.launch { load() } }
-            sources.isEmpty() -> EmptyState("No sources yet. Add one to start syncing.")
+            sources.isEmpty() -> EmptyState("No streams yet. Subscribe to one to start matching live items.")
             else -> {
                 LazyColumn(
                     contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp),
@@ -100,58 +126,48 @@ fun SourcesScreen() {
                     modifier = Modifier.fillMaxSize()
                 ) {
                     items(sources, key = { it.id }) { source ->
-                        SourceCard(source = source, onDelete = { deleteConfirm = source })
+                        SourceCard(
+                            source = source,
+                            onDelete = {
+                                setOverlay {
+                                    RemoveStreamDialog(
+                                        source = source,
+                                        onDismiss = { setOverlay(null) },
+                                        onRemove = {
+                                            scope.launch {
+                                                try {
+                                                    ApiClient.deleteSource(source.id)
+                                                    load()
+                                                } catch (_: Exception) {
+                                                } finally {
+                                                    setOverlay(null)
+                                                }
+                                            }
+                                        },
+                                    )
+                                }
+                            },
+                        )
                     }
                 }
             }
         }
     }
 
-    if (showAddDialog) {
-        AddSourceDialog(
-            onDismiss = { showAddDialog = false },
-            onCreated = {
-                showAddDialog = false
-                scope.launch { load() }
-            }
-        )
-    }
-
-    deleteConfirm?.let { source ->
-        AlertDialog(
-            onDismissRequest = { deleteConfirm = null },
-            title = { Text("Delete source?") },
-            text = { Text("\"${source.name}\" and its synced data will be removed.") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        scope.launch {
-                            try {
-                                ApiClient.deleteSource(source.id)
-                                load()
-                            } catch (_: Exception) {}
-                            deleteConfirm = null
-                        }
-                    }
-                ) { Text("Delete", color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = {
-                TextButton(onClick = { deleteConfirm = null }) { Text("Cancel") }
-            },
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
-    }
+    localOverlay?.invoke()
 }
 
 @Composable
 private fun SourceCard(source: Source, onDelete: () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(10.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    Box(
+        modifier =
+            Modifier.fillMaxWidth()
+                .border(1.dp, AladinColor.Border, RoundedCornerShape(6.dp))
+                .background(AladinColor.Panel, RoundedCornerShape(6.dp))
+                .padding(14.dp)
     ) {
         Row(
-            modifier = Modifier.padding(16.dp).fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -166,25 +182,107 @@ private fun SourceCard(source: Source, onDelete: () -> Unit) {
                         source.name,
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = AladinColor.Ink
                     )
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         SyncStateBadge(source.syncState)
+                        Text(
+                            source.streamSummary(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = AladinColor.InkMuted
+                        )
                         if (source.lastSyncedAt != null) {
                             Text(
-                                "last sync ${source.lastSyncedAt.take(10)}",
+                                "last refresh ${source.lastSyncedAt.take(10)}",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = AladinDark.TextMuted
+                                color = AladinColor.InkMuted
                             )
                         }
                     }
                 }
             }
-            TextButton(onClick = onDelete) {
-                Text("Remove", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelMedium)
+            StreamDialogButton(label = "Remove", enabled = true, primary = false) {
+                onDelete()
+            }
+        }
+    }
+}
+
+private fun Source.streamSummary(): String =
+    when (type) {
+        "bluesky" -> "search: ${config.string("query") ?: "top posts"}"
+        "hackernews" -> "feed: ${config.string("feed") ?: "topstories"}"
+        "reddit" -> "r/${config.string("subreddit") ?: "subreddit"}"
+        "twitter" -> "search: ${config.string("query") ?: "query"}"
+        else -> config.string("mode") ?: "provider stream"
+    }
+
+private fun Map<String, JsonElement>.string(key: String): String? =
+    (this[key] as? JsonPrimitive)?.contentOrNull
+
+@Composable
+private fun RemoveStreamDialog(source: Source, onDismiss: () -> Unit, onRemove: () -> Unit) {
+    Box(
+        modifier =
+            Modifier.fillMaxSize()
+                .background(Color(0x66000000))
+                .aladinClickable(
+                    shape = RoundedCornerShape(0.dp),
+                    colors =
+                        AladinInteractionDefaults.colors(
+                            rest = Color.Transparent,
+                            hovered = Color.Transparent,
+                            pressed = Color.Transparent,
+                        ),
+                    onClick = onDismiss,
+                ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier =
+                Modifier.width(430.dp)
+                    .aladinClickable(
+                        shape = RoundedCornerShape(6.dp),
+                        colors =
+                            AladinInteractionDefaults.colors(
+                                rest = Color.Transparent,
+                                hovered = Color.Transparent,
+                                pressed = Color.Transparent,
+                            ),
+                        onClick = {},
+                    )
+                    .border(1.dp, AladinColor.Ink, RoundedCornerShape(6.dp))
+                    .background(AladinColor.Panel, RoundedCornerShape(6.dp)),
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    "Remove stream subscription?",
+                    color = AladinColor.Ink,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    "\"${source.name}\" will stop matching new items for this workspace. The shared provider stream can still be used elsewhere.",
+                    color = AladinColor.InkSecondary,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            HorizontalDivider(color = AladinColor.Divider)
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    StreamDialogButton(label = "Cancel", enabled = true, primary = false, onClick = onDismiss)
+                    StreamDialogButton(label = "Remove", enabled = true, primary = true, onClick = onRemove)
+                }
             }
         }
     }
@@ -192,30 +290,32 @@ private fun SourceCard(source: Source, onDelete: () -> Unit) {
 
 @Composable
 private fun SourceTypeIcon(type: String) {
-    val (label, bg) = when (type) {
-        "reddit" -> Pair("r/", MaterialTheme.colorScheme.primaryContainer)
-        "bluesky" -> Pair("bsky", MaterialTheme.colorScheme.surface)
-        "twitter" -> Pair("X", MaterialTheme.colorScheme.surface)
-        else -> Pair(type.take(2).uppercase(), MaterialTheme.colorScheme.surface)
+    val label = when (type) {
+        "reddit" -> "r/"
+        "bluesky" -> "bsky"
+        "twitter" -> "X"
+        "hackernews" -> "HN"
+        else -> type.take(2).uppercase()
     }
     Box(
         modifier = Modifier
             .size(36.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(bg),
+            .clip(RoundedCornerShape(5.dp))
+            .border(1.dp, AladinColor.Border, RoundedCornerShape(5.dp))
+            .background(AladinColor.CommandSurface, RoundedCornerShape(5.dp)),
         contentAlignment = Alignment.Center
     ) {
-        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = AladinColor.CodeText, fontWeight = FontWeight.Bold)
     }
 }
 
 @Composable
 private fun SyncStateBadge(state: String) {
     val (color, label) = when (state) {
-        "syncing", "running", "active" -> Pair(MaterialTheme.colorScheme.tertiary, "active")
-        "queued" -> Pair(MaterialTheme.colorScheme.tertiaryFixed, "queued")
-        "idle" -> Pair(AladinDark.TextMuted, "idle")
-        else -> Pair(AladinDark.TextMuted, state)
+        "syncing", "running", "active" -> Pair(AladinColor.Ink, "active")
+        "queued" -> Pair(AladinColor.CodeText, "queued")
+        "idle" -> Pair(AladinColor.InkMuted, "idle")
+        else -> Pair(AladinColor.InkMuted, state)
     }
     Row(
         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -231,201 +331,323 @@ private fun SyncStateBadge(state: String) {
     }
 }
 
-// ── Add Source Dialog ─────────────────────────────────────────────────────────
+// ── Add Stream Dialog ─────────────────────────────────────────────────────────
 
-private enum class SourceKind(val key: String, val label: String) {
-    Reddit("reddit_subreddit", "Reddit"),
-    BlueskySearch("bluesky_search", "Bluesky Search"),
-    BlueskyAccount("bluesky_account", "Bluesky Account"),
-    Twitter("twitter_search", "X / Twitter"),
+private enum class StreamProvider(
+    val label: String,
+    val eyebrow: String,
+    val description: String,
+    val enabled: Boolean,
+) {
+    Bluesky(
+        "Bluesky",
+        "Search",
+        "Top posts from a Bluesky search query.",
+        true,
+    ),
+    HackerNews(
+        "Hacker News",
+        "Feed",
+        "Global feed stream support is next.",
+        false,
+    ),
+    Reddit(
+        "Reddit",
+        "Subreddit",
+        "Paused while provider limits are restrictive.",
+        false,
+    ),
+    X(
+        "X",
+        "Search",
+        "Search streams are planned.",
+        false,
+    ),
 }
 
 @Composable
-private fun AddSourceDialog(onDismiss: () -> Unit, onCreated: () -> Unit) {
+private fun AddStreamDialog(onDismiss: () -> Unit, onCreated: () -> Unit) {
     val scope = rememberCoroutineScope()
-    var kind by remember { mutableStateOf(SourceKind.Reddit) }
-    var name by remember { mutableStateOf("") }
+    var provider by remember { mutableStateOf(StreamProvider.Bluesky) }
     var creating by remember { mutableStateOf(false) }
     var err by remember { mutableStateOf<String?>(null) }
-
-    // Reddit fields
-    var subreddit by remember { mutableStateOf("") }
-    var minScore by remember { mutableStateOf("10") }
-    var topComments by remember { mutableStateOf("5") }
-    var sort by remember { mutableStateOf("new") }
-    var includeComments by remember { mutableStateOf(true) }
-
-    // Bluesky/Twitter fields
     var query by remember { mutableStateOf("") }
-    var handle by remember { mutableStateOf("") }
-    var limit by remember { mutableStateOf("50") }
-    var minLikes by remember { mutableStateOf("5") }
-    var maxResults by remember { mutableStateOf("25") }
+    val addEnabled = !creating && provider == StreamProvider.Bluesky
 
-    fun resetFields() {
-        subreddit = ""; query = ""; handle = ""; name = ""
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Add Source", color = MaterialTheme.colorScheme.onSurface) },
-        text = {
+    Box(
+        modifier =
+            Modifier.fillMaxSize()
+                .background(Color(0x66000000))
+                .aladinClickable(
+                    shape = RoundedCornerShape(0.dp),
+                    colors =
+                        AladinInteractionDefaults.colors(
+                            rest = Color.Transparent,
+                            hovered = Color.Transparent,
+                            pressed = Color.Transparent,
+                        ),
+                    onClick = onDismiss,
+                ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier =
+                Modifier.width(520.dp)
+                    .height(560.dp)
+                    .aladinClickable(
+                        shape = RoundedCornerShape(6.dp),
+                        colors =
+                            AladinInteractionDefaults.colors(
+                                rest = Color.Transparent,
+                                hovered = Color.Transparent,
+                                pressed = Color.Transparent,
+                            ),
+                        onClick = {},
+                    )
+                    .border(1.dp, AladinColor.Ink, RoundedCornerShape(6.dp))
+                    .background(AladinColor.Panel, RoundedCornerShape(6.dp)),
+        ) {
             Column(
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-                modifier = Modifier.width(420.dp)
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
             ) {
-                // Kind selector
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text(
+                            "Add Stream",
+                            color = AladinColor.Ink,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            "Subscribe once. Let the backend handle fetch policy.",
+                            color = AladinColor.InkMuted,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    Text(
+                        "ESC",
+                        modifier =
+                            Modifier.border(1.dp, AladinColor.Border, RoundedCornerShape(4.dp))
+                                .background(AladinColor.CommandSurface, RoundedCornerShape(4.dp))
+                                .aladinClickable(
+                                    shape = RoundedCornerShape(4.dp),
+                                    colors =
+                                        AladinInteractionDefaults.colors(
+                                            rest = Color.Transparent,
+                                            hovered = AladinColor.ControlHover,
+                                            pressed = AladinColor.ControlPressed,
+                                        ),
+                                    onClick = onDismiss,
+                                )
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                        color = AladinColor.CodeText,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
+
+            HorizontalDivider(color = AladinColor.Divider)
+
+            Column(
+                verticalArrangement = Arrangement.spacedBy(18.dp),
+                modifier =
+                    Modifier.weight(1f)
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 22.dp, vertical = 18.dp),
+            ) {
+                DialogSectionLabel("Source")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SourceKind.entries.forEach { k ->
-                        KindChip(k.label, kind == k) { kind = k; resetFields(); err = null }
+                    StreamProvider.entries.forEach { option ->
+                        SourceTab(
+                            provider = option,
+                            selected = provider == option,
+                            onClick = {
+                                provider = option
+                                err = null
+                            },
+                            modifier = Modifier.weight(1f),
+                        )
                     }
                 }
 
-                // Common: display name
-                FormField(
-                    label = "Display name (optional)",
-                    value = name,
-                    placeholder = "Leave blank for auto",
-                    onChange = { name = it }
+                Column(
+                    modifier =
+                        Modifier.fillMaxWidth()
+                            .border(1.dp, AladinColor.Border, RoundedCornerShape(6.dp))
+                            .background(AladinColor.Canvas, RoundedCornerShape(6.dp))
+                            .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(13.dp),
+                ) {
+                    Text(
+                        provider.description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = AladinColor.InkSecondary,
+                    )
+
+                    if (provider == StreamProvider.Bluesky) {
+                        FormField(
+                            label = "Search query",
+                            value = query,
+                            placeholder = "ai agents",
+                            onChange = { query = it; err = null },
+                        )
+                    } else {
+                        UnsupportedProviderNotice(provider)
+                    }
+                }
+
+                Text(
+                    "The query identifies the shared provider stream. Refresh cadence, result limits, dedupe, and matching are backend-owned.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = AladinColor.InkMuted,
                 )
 
-                // Per-kind fields
-                when (kind) {
-                    SourceKind.Reddit -> {
-                        FormField("Subreddit", subreddit, "MachineLearning", { subreddit = it; err = null })
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            FormField("Min score", minScore, "10", { minScore = it }, Modifier.weight(1f),
-                                keyboardType = KeyboardType.Number)
-                            FormField("Top comments", topComments, "5", { topComments = it }, Modifier.weight(1f),
-                                keyboardType = KeyboardType.Number)
-                        }
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text("Sort", style = MaterialTheme.typography.labelSmall, color = AladinDark.TextMuted)
-                                Spacer(Modifier.height(4.dp))
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    listOf("new", "hot", "top").forEach { s ->
-                                        MiniChip(s, sort == s) { sort = s }
-                                    }
-                                }
-                            }
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Checkbox(
-                                    checked = includeComments,
-                                    onCheckedChange = { includeComments = it },
-                                    colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary)
-                                )
-                                Text("Comments", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                    }
-
-                    SourceKind.BlueskySearch -> {
-                        FormField("Search query", query, "open source intelligence", { query = it; err = null })
-                        FormField("Items per sync", limit, "50", { limit = it },
-                            keyboardType = KeyboardType.Number)
-                    }
-
-                    SourceKind.BlueskyAccount -> {
-                        FormField("Handle", handle, "alice.bsky.social", { handle = it; err = null })
-                        FormField("Items per sync", limit, "50", { limit = it },
-                            keyboardType = KeyboardType.Number)
-                    }
-
-                    SourceKind.Twitter -> {
-                        FormField("Search query", query, "knowledge graph OR vector db", { query = it; err = null })
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            FormField("Min likes", minLikes, "5", { minLikes = it }, Modifier.weight(1f),
-                                keyboardType = KeyboardType.Number)
-                            FormField("Max results", maxResults, "25", { maxResults = it }, Modifier.weight(1f),
-                                keyboardType = KeyboardType.Number)
-                        }
-                    }
-                }
-
                 if (err != null) {
-                    Text(err!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    Text(err!!, color = AladinColor.Ink, style = MaterialTheme.typography.bodySmall)
                 }
             }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    scope.launch {
-                        creating = true
-                        err = null
-                        try {
-                            val req = when (kind) {
-                                SourceKind.Reddit -> {
-                                    if (subreddit.isBlank()) { err = "Subreddit is required"; return@launch }
-                                    SourceCreateRequest(
-                                        kind = kind.key,
-                                        name = name.trimOrNull(),
-                                        subreddit = subreddit.trim().removePrefix("r/"),
-                                        minScore = minScore.toIntOrNull() ?: 10,
-                                        includeComments = includeComments,
-                                        topComments = topComments.toIntOrNull() ?: 5,
-                                        sort = sort,
-                                    )
-                                }
-                                SourceKind.BlueskySearch -> {
-                                    if (query.isBlank()) { err = "Query is required"; return@launch }
-                                    SourceCreateRequest(
-                                        kind = kind.key,
-                                        name = name.trimOrNull(),
-                                        query = query.trim(),
-                                        limit = limit.toIntOrNull() ?: 50,
-                                    )
-                                }
-                                SourceKind.BlueskyAccount -> {
-                                    if (handle.isBlank()) { err = "Handle is required"; return@launch }
-                                    SourceCreateRequest(
-                                        kind = kind.key,
-                                        name = name.trimOrNull(),
-                                        handle = handle.trim().removePrefix("@"),
-                                        limit = limit.toIntOrNull() ?: 50,
-                                    )
-                                }
-                                SourceKind.Twitter -> {
-                                    if (query.isBlank()) { err = "Query is required"; return@launch }
-                                    SourceCreateRequest(
-                                        kind = kind.key,
-                                        name = name.trimOrNull(),
-                                        query = query.trim(),
-                                        minLikes = minLikes.toIntOrNull() ?: 5,
-                                        maxResults = maxResults.toIntOrNull() ?: 25,
-                                    )
+
+            HorizontalDivider(color = AladinColor.Divider)
+
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Provider stream subscription",
+                    color = AladinColor.CodeText,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    StreamDialogButton(label = "Cancel", enabled = !creating, primary = false, onClick = onDismiss)
+                    StreamDialogButton(
+                        label = if (creating) "Adding..." else "Add stream",
+                        enabled = addEnabled,
+                        primary = true,
+                        onClick = {
+                            scope.launch {
+                                creating = true
+                                err = null
+                                try {
+                                    if (provider != StreamProvider.Bluesky) {
+                                        err = "${provider.label} streams are not supported yet"
+                                        return@launch
+                                    }
+                                    if (query.isBlank()) {
+                                        err = "Search query is required"
+                                        return@launch
+                                    }
+                                    val req =
+                                        SourceCreateRequest(
+                                            kind = "bluesky_search",
+                                            query = query.trim(),
+                                        )
+                                    ApiClient.createSource(req)
+                                    onCreated()
+                                } catch (e: Exception) {
+                                    err = e.message ?: "Failed to create stream"
+                                } finally {
+                                    creating = false
                                 }
                             }
-                            ApiClient.createSource(req)
-                            onCreated()
-                        } catch (e: Exception) {
-                            err = e.message ?: "Failed to create source"
-                        } finally {
-                            creating = false
-                        }
-                    }
-                },
-                enabled = !creating,
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-            ) {
-                Text(if (creating) "Adding…" else "Add")
+                        },
+                    )
+                }
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        },
-        containerColor = MaterialTheme.colorScheme.surfaceVariant
+        }
+    }
+}
+
+@Composable
+private fun DialogSectionLabel(label: String) {
+    Text(
+        label.uppercase(),
+        style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.35.sp),
+        color = AladinColor.CodeText,
+        fontWeight = FontWeight.SemiBold,
     )
 }
 
-private fun String.trimOrNull(): String? = trim().ifBlank { null }
+@Composable
+private fun SourceTab(
+    provider: StreamProvider,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(5.dp)
+    Box(
+        modifier =
+            modifier.height(68.dp)
+                .border(1.dp, if (selected) AladinColor.InkSurface else AladinColor.Border, shape)
+                .background(
+                    when {
+                        selected -> AladinColor.InkSurface
+                        provider.enabled -> AladinColor.Panel
+                        else -> AladinColor.PanelMuted
+                    },
+                    shape,
+                )
+                .aladinClickable(
+                    shape = shape,
+                    colors =
+                        AladinInteractionDefaults.colors(
+                            rest = Color.Transparent,
+                            hovered = if (selected) AladinColor.InkSurfaceHover else AladinColor.ControlHover,
+                            pressed = if (selected) AladinColor.InkSurfaceHover else AladinColor.ControlPressed,
+                        ),
+                    onClick = onClick,
+                )
+                .padding(horizontal = 10.dp, vertical = 9.dp),
+    ) {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                provider.eyebrow.uppercase(),
+                style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.25.sp),
+                color = if (selected) AladinColor.OnInkSurface.copy(alpha = 0.72f) else AladinColor.InkMuted,
+            )
+            Text(
+                provider.label,
+                style = MaterialTheme.typography.labelMedium,
+                color =
+                    when {
+                        selected -> AladinColor.OnInkSurface
+                        provider.enabled -> AladinColor.Ink
+                        else -> AladinColor.InkDisabled
+                    },
+                fontWeight = FontWeight.Medium,
+            )
+        }
+    }
+}
+
+@Composable
+private fun UnsupportedProviderNotice(provider: StreamProvider) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            "Not wired yet",
+            style = MaterialTheme.typography.labelMedium,
+            color = AladinColor.Ink,
+            fontWeight = FontWeight.Medium,
+        )
+        Text(
+            "${provider.label} will reuse this same subscription surface once the backend stream is ready.",
+            style = MaterialTheme.typography.bodySmall,
+            color = AladinColor.InkMuted,
+        )
+    }
+}
 
 @Composable
 private fun FormField(
@@ -434,56 +656,92 @@ private fun FormField(
     placeholder: String,
     onChange: (String) -> Unit,
     modifier: Modifier = Modifier,
-    keyboardType: KeyboardType = KeyboardType.Text,
 ) {
     Column(modifier = modifier) {
-        Text(label, style = MaterialTheme.typography.labelSmall, color = AladinDark.TextMuted)
-        Spacer(Modifier.height(4.dp))
-        OutlinedTextField(
+        Text(
+            label.uppercase(),
+            style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.35.sp),
+            color = AladinColor.CodeText,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Spacer(Modifier.height(6.dp))
+        BasicTextField(
             value = value,
             onValueChange = onChange,
-            placeholder = { Text(placeholder, color = AladinDark.TextMuted) },
             singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-            keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outline
-            )
+            textStyle =
+                TextStyle(
+                    color = AladinColor.Ink,
+                    fontSize = 14.sp,
+                    lineHeight = 21.sp,
+                    fontWeight = FontWeight.Medium,
+                ),
+            modifier =
+                Modifier.fillMaxWidth()
+                    .height(38.dp)
+                    .border(1.dp, AladinColor.Border, RoundedCornerShape(5.dp))
+                    .background(AladinColor.CommandSurface, RoundedCornerShape(5.dp))
+                    .padding(horizontal = 10.dp, vertical = 9.dp),
+            decorationBox = { innerTextField ->
+                Box(contentAlignment = Alignment.CenterStart) {
+                    if (value.isEmpty()) {
+                        Text(
+                            placeholder,
+                            color = AladinColor.InkMuted,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    innerTextField()
+                }
+            },
         )
     }
 }
 
 @Composable
-private fun KindChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(6.dp),
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+private fun StreamDialogButton(label: String, enabled: Boolean, primary: Boolean, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(5.dp)
+    Box(
+        modifier =
+            Modifier.height(32.dp)
+                .background(
+                    when {
+                        !enabled -> AladinColor.ControlHover
+                        primary -> AladinColor.InkSurface
+                        else -> AladinColor.Panel
+                    },
+                    shape,
+                )
+                .border(1.dp, if (primary) AladinColor.InkSurface else AladinColor.Border, shape)
+                .then(
+                    if (enabled) {
+                        Modifier.aladinClickable(
+                            shape = shape,
+                            colors =
+                                AladinInteractionDefaults.colors(
+                                    rest = Color.Transparent,
+                                    hovered = if (primary) AladinColor.InkSurfaceHover else AladinColor.ControlHover,
+                                    pressed = if (primary) AladinColor.InkSurfaceHover else AladinColor.ControlPressed,
+                                ),
+                            onClick = onClick,
+                        )
+                    } else {
+                        Modifier
+                    }
+                )
+                .padding(horizontal = 13.dp),
+        contentAlignment = Alignment.Center,
     ) {
         Text(
             label,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-            style = MaterialTheme.typography.labelSmall,
-            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
-@Composable
-private fun MiniChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(4.dp),
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
-    ) {
-        Text(
-            label,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            style = MaterialTheme.typography.labelSmall,
-            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+            color =
+                when {
+                    !enabled -> AladinColor.InkDisabled
+                    primary -> AladinColor.OnInkSurface
+                    else -> AladinColor.InkSecondary
+                },
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Medium,
         )
     }
 }

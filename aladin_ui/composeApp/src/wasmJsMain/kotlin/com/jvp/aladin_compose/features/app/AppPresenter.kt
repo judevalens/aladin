@@ -5,13 +5,13 @@ import com.jvp.aladin_compose.features.app.artifactpane.WorkPaneProducer
 import com.jvp.aladin_compose.features.app.browser.DocumentBrowserEvent
 import com.jvp.aladin_compose.features.app.browser.DocumentBrowserProducer
 import com.jvp.aladin_compose.features.app.sidebar.SidebarProducer
-import com.jvp.aladin_compose.model.NavDestination
 import com.slack.circuit.runtime.CircuitContext
 import com.slack.circuit.runtime.Navigator
 import com.slack.circuit.runtime.presenter.Presenter
 import com.slack.circuit.runtime.screen.Screen
 
 class AppPresenter(
+    private val appNavigationProducer: AppNavigationProducer,
     private val sidebarProducer: SidebarProducer,
     private val documentBrowserProducer: DocumentBrowserProducer,
     private val artifactPaneProducer: WorkPaneProducer,
@@ -20,7 +20,7 @@ class AppPresenter(
     @Composable
     override fun present(): AppState {
 
-        var destination by remember { mutableStateOf(NavDestination.Home) }
+        val navigation = appNavigationProducer.produce()
         var activeArtifactId by remember { mutableStateOf<String?>(null) }
         var openArtifactIds by remember { mutableStateOf<List<String>>(emptyList()) }
 
@@ -34,9 +34,11 @@ class AppPresenter(
 
         val sidebar =
             sidebarProducer.produce(
-                selectedDestination = destination,
+                selectedDestination = navigation.destination,
                 canCreateArtifact = true,
-                onNavigate = { destination = it },
+                onNavigate = {
+                    navigation.eventSink(AppNavigationEvent.Navigate(it))
+                },
                 onCreateFolder = { browser.eventSink(DocumentBrowserEvent.CreateFolder) },
                 onCreateArtifact = { browser.eventSink(DocumentBrowserEvent.CreateArtifact) },
                 onCreateVoice = { browser.eventSink(DocumentBrowserEvent.CreateVoiceArtifact) },
@@ -56,10 +58,16 @@ class AppPresenter(
                 },
             )
 
-        return AppState(sidebar = sidebar, browser = browser, artifactPane = artifactPane)
+        return AppState(
+            navigation = navigation,
+            sidebar = sidebar,
+            browser = browser,
+            artifactPane = artifactPane,
+        )
     }
 
     class Factory(
+        private val appNavigationProducer: AppNavigationProducer,
         private val sidebarProducer: SidebarProducer,
         private val documentBrowserProducer: DocumentBrowserProducer,
         private val artifactPaneProducer: WorkPaneProducer,
@@ -68,6 +76,7 @@ class AppPresenter(
             return when (screen) {
                 AppScreen ->
                     AppPresenter(
+                        appNavigationProducer = appNavigationProducer,
                         sidebarProducer = sidebarProducer,
                         documentBrowserProducer = documentBrowserProducer,
                         artifactPaneProducer = artifactPaneProducer,

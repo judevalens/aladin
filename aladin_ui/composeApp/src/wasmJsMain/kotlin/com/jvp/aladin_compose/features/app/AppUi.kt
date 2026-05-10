@@ -1,6 +1,7 @@
 package com.jvp.aladin_compose.features.app
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -18,9 +20,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.FocusManager
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
@@ -57,12 +67,50 @@ private class AppUi : Ui<AppState> {
     @Composable
     override fun Content(state: AppState, modifier: Modifier) {
         var overlayMenu by remember { mutableStateOf<BrowserRowMenuRequest?>(null) }
+        var sourcesOverlay by remember { mutableStateOf<AppOverlayContent?>(null) }
+        val rootFocusRequester = remember { FocusRequester() }
         val focusManager = LocalFocusManager.current
+
+        fun dismissTopOverlay(): Boolean {
+            sourcesOverlay?.let {
+                sourcesOverlay = null
+                return true
+            }
+            state.browser.activeVoiceCapture?.let {
+                state.browser.eventSink(DocumentBrowserEvent.CancelVoiceCapture)
+                return true
+            }
+            state.browser.activeRename?.let { rename ->
+                state.browser.eventSink(DocumentBrowserEvent.CancelRename(rename.rowId))
+                return true
+            }
+            overlayMenu?.let {
+                overlayMenu = null
+                return true
+            }
+            return false
+        }
+
+        fun handleShortcut(event: AppShortcutEvent): Boolean =
+            when (event) {
+                AppShortcutEvent.DismissTopOverlay -> dismissTopOverlay()
+            }
+
+        LaunchedEffect(Unit) { rootFocusRequester.requestFocus() }
+
+        LaunchedEffect(state.navigation.destination) {
+            if (state.navigation.destination != NavDestination.Sources) {
+                sourcesOverlay = null
+            }
+        }
 
         Box(
             modifier =
                 modifier.fillMaxSize()
                     .clearFocusOnAppTap(focusManager)
+                    .focusRequester(rootFocusRequester)
+                    .focusable()
+                    .onPreviewKeyEvent { event -> handleAppKeyEvent(event, ::handleShortcut) }
                     .background(AladinColor.Canvas),
         ) {
             Row(modifier = Modifier.fillMaxSize()) {
@@ -73,7 +121,7 @@ private class AppUi : Ui<AppState> {
                 )
                 VerticalDivider(color = AladinColor.Divider, thickness = DividerThickness)
                 PaneTwo(
-                    destination = state.sidebar.selectedDestination,
+                    destination = state.navigation.destination,
                     browser = state.browser,
                     onOpenRowMenu = { overlayMenu = it },
                     onDismissRowMenu = { overlayMenu = null },
@@ -81,20 +129,24 @@ private class AppUi : Ui<AppState> {
                 VerticalDivider(color = AladinColor.Divider, thickness = DividerThickness)
                 Row(modifier = Modifier.weight(1f)) {
                     PaneThree(
-                        destination = state.sidebar.selectedDestination,
+                        destination = state.navigation.destination,
                         state = state.artifactPane,
+                        setSourcesOverlay = { sourcesOverlay = it },
                     )
                 }
             }
 
             if (overlayMenu != null ||
                 state.browser.activeRename != null ||
-                state.browser.activeVoiceCapture != null
+                state.browser.activeVoiceCapture != null ||
+                sourcesOverlay != null
             ) {
                 AppOverlayViewport(
                     request = overlayMenu,
                     onDismiss = { overlayMenu = null },
                     browser = state.browser,
+                    sourcesOverlay = sourcesOverlay,
+                    onShortcut = ::handleShortcut,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -109,17 +161,32 @@ private fun Modifier.clearFocusOnAppTap(focusManager: FocusManager): Modifier =
         }
     }
 
+private fun handleAppKeyEvent(
+    event: KeyEvent,
+    onShortcut: (AppShortcutEvent) -> Boolean,
+): Boolean {
+    if (event.type != KeyEventType.KeyDown) return false
+    return when (event.key) {
+        Key.Escape -> onShortcut(AppShortcutEvent.DismissTopOverlay)
+        else -> false
+    }
+}
+
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun AppOverlayViewport(
     request: BrowserRowMenuRequest?,
     onDismiss: () -> Unit,
     browser: DocumentBrowserState,
+    sourcesOverlay: AppOverlayContent?,
+    onShortcut: (AppShortcutEvent) -> Boolean,
     modifier: Modifier = Modifier,
 ) {
     val currentRequest by rememberUpdatedState(request)
     val currentOnDismiss by rememberUpdatedState(onDismiss)
     val currentBrowser by rememberUpdatedState(browser)
+    val currentSourcesOverlay by rememberUpdatedState(sourcesOverlay)
+    val currentOnShortcut by rememberUpdatedState(onShortcut)
 
     WebElementView(
         modifier = modifier,
@@ -134,11 +201,19 @@ private fun AppOverlayViewport(
 
                 window.requestAnimationFrame {
                     ComposeViewport(this) {
+                        val overlayFocusRequester = remember { FocusRequester() }
+                        LaunchedEffect(Unit) { overlayFocusRequester.requestFocus() }
                         Box(
                             modifier =
-                                Modifier.fillMaxSize().drawBehind {
-                                    drawRect(color = Color.Transparent, blendMode = BlendMode.Clear)
-                                }
+                                Modifier.fillMaxSize()
+                                    .focusRequester(overlayFocusRequester)
+                                    .focusable()
+                                    .onPreviewKeyEvent { event ->
+                                        handleAppKeyEvent(event, currentOnShortcut)
+                                    }
+                                    .drawBehind {
+                                        drawRect(color = Color.Transparent, blendMode = BlendMode.Clear)
+                                    }
                         ) {
                             currentRequest?.let {
                                 Box(modifier = Modifier.fillMaxSize()) {
@@ -220,6 +295,7 @@ private fun AppOverlayViewport(
                                     },
                                 )
                             }
+                            currentSourcesOverlay?.invoke()
                         }
                     }
                 }
@@ -273,6 +349,7 @@ private fun PaneTwo(
 private fun androidx.compose.foundation.layout.RowScope.PaneThree(
     destination: NavDestination,
     state: ArtifactPaneState,
+    setSourcesOverlay: (AppOverlayContent?) -> Unit,
 ) {
     when (destination) {
         NavDestination.Home,
@@ -288,7 +365,7 @@ private fun androidx.compose.foundation.layout.RowScope.PaneThree(
 
         NavDestination.Sources ->
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                SourcesScreen()
+                SourcesScreen(setAppOverlay = setSourcesOverlay)
             }
 
         NavDestination.Graph ->

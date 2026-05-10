@@ -11,12 +11,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.jvp.aladin_compose.model.NavDestination
 import com.jvp.aladin_compose.ui_lib.AladinColor
 
 val DividerThickness = 0.5.dp
@@ -32,6 +37,8 @@ val RailMarkerHeight = 18.dp
 val RailMarkerWidth = 2.dp
 val WorkspaceMaxWidth = 980.dp
 val WorkspaceChromeMaxWidth = 1120.dp
+
+typealias AppOverlayContent = @Composable () -> Unit
 
 @Composable
 fun AladinToolbarField(text: String, modifier: Modifier = Modifier) {
@@ -90,4 +97,37 @@ fun AladinPanel(
                 .background(AladinColor.Panel, RoundedCornerShape(SharpRadius)),
         content = content,
     )
+}
+
+interface AppNavigationProducer {
+    @Composable fun produce(): AppNavigationState
+}
+
+data class AppNavigationState(
+    val destination: NavDestination,
+    val eventSink: (AppNavigationEvent) -> Unit,
+)
+
+sealed interface AppNavigationEvent {
+    data class Navigate(val destination: NavDestination) : AppNavigationEvent
+}
+
+class AppNavigationProducerImpl : AppNavigationProducer {
+    @Composable
+    override fun produce(): AppNavigationState {
+        var destination by remember { mutableStateOf(NavDestination.Home) }
+
+        return AppNavigationState(
+            destination = destination,
+            eventSink = { event ->
+                when (event) {
+                    is AppNavigationEvent.Navigate -> destination = event.destination
+                }
+            },
+        )
+    }
+}
+
+sealed interface AppShortcutEvent {
+    data object DismissTopOverlay : AppShortcutEvent
 }

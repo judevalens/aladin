@@ -3,6 +3,7 @@ package com.jvp.aladin_compose.app
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import com.jvp.aladin_compose.features.app.AppNavigationProducerImpl
 import com.jvp.aladin_compose.features.app.AppPresenter
 import com.jvp.aladin_compose.features.app.AppScreen
 import com.jvp.aladin_compose.features.app.AppUiFactory
@@ -34,6 +35,7 @@ fun CircuitApp() {
         Circuit.Builder()
             .addPresenterFactory(
                 AppPresenter.Factory(
+                    appNavigationProducer = AppNavigationProducerImpl(),
                     sidebarProducer = SidebarProducerImpl(),
                     documentBrowserProducer =
                         DocumentBrowserProducerImpl(
