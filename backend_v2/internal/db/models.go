@@ -37,7 +37,7 @@ type SyncCycle struct {
 	ID               string
 	ProviderStreamID string
 	Kind             string         // refresh | hydration | backfill
-	Status           string         // active | running | complete | closed
+	Status           string         // active | running | complete | closed | failed
 	Cursor           map[string]any // pagination continuation state
 	HeadBoundary     map[string]any // newest claimed boundary for this cycle
 	LastHydratedAt   *time.Time

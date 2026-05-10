@@ -107,6 +107,16 @@ func (r *integrationCycleRepo) MarkActive(ctx context.Context, id string) error 
 	return nil
 }
 
+func (r *integrationCycleRepo) MarkFailed(ctx context.Context, id string, completionReason string) error {
+	r.updateCycle(id, func(c *db.SyncCycle) {
+		c.Status = syncpkg.CycleStatusFailed
+		c.CompletionReason = completionReason
+		now := time.Now().UTC()
+		c.CompletedAt = &now
+	})
+	return nil
+}
+
 func (r *integrationCycleRepo) Complete(ctx context.Context, id string, headBoundary map[string]any, completionReason string) error {
 	r.completedIDs = append(r.completedIDs, id)
 	r.completedReasons = append(r.completedReasons, completionReason)

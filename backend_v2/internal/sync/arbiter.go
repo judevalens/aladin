@@ -15,6 +15,7 @@ const (
 	CycleStatusRunning  = "running"
 	CycleStatusComplete = "complete"
 	CycleStatusClosed   = "closed"
+	CycleStatusFailed   = "failed"
 )
 
 type DecisionAction string

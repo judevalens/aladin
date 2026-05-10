@@ -81,6 +81,8 @@ type fakeCycleRepo struct {
 	updatedCursors   []map[string]any
 	updatedHeads     []map[string]any
 	updatedHydrated  []*time.Time
+	failedIDs        []string
+	failedReasons    []string
 	completedIDs     []string
 	completedHeads   []map[string]any
 	completedReasons []string
@@ -147,6 +149,18 @@ func (f *fakeCycleRepo) MarkActive(ctx context.Context, id string) error {
 	return nil
 }
 
+func (f *fakeCycleRepo) MarkFailed(ctx context.Context, id string, completionReason string) error {
+	f.failedIDs = append(f.failedIDs, id)
+	f.failedReasons = append(f.failedReasons, completionReason)
+	f.updateCycle(id, func(c *db.SyncCycle) {
+		c.Status = CycleStatusFailed
+		c.CompletionReason = completionReason
+		now := time.Now().UTC()
+		c.CompletedAt = &now
+	})
+	return nil
+}
+
 func (f *fakeCycleRepo) Complete(ctx context.Context, id string, headBoundary map[string]any, completionReason string) error {
 	f.completedIDs = append(f.completedIDs, id)
 	f.completedHeads = append(f.completedHeads, headBoundary)
@@ -201,6 +215,15 @@ type fakeSourceItemRepo struct {
 	existingExternalIDs map[string]bool
 }
 
+type fakeResultHandler struct {
+	successJobs    []db.SyncJob
+	successResults []*Result
+	failureJobs    []db.SyncJob
+	failureErrs    []error
+	successErr     error
+	failureErr     error
+}
+
 type firstPassCall struct {
 	recordID   string
 	payload    []byte
@@ -248,6 +271,21 @@ func (f *fakeSourceItemRepo) Upsert(ctx context.Context, item *db.SourceItem) (*
 
 func (f *fakeSourceItemRepo) Get(ctx context.Context, id string) (*db.SourceItem, error) {
 	return nil, errors.New("not implemented")
+}
+
+func (f *fakeResultHandler) HandleSuccess(ctx context.Context, job db.SyncJob, result *Result) error {
+	f.successJobs = append(f.successJobs, job)
+	f.successResults = append(f.successResults, result)
+	return f.successErr
+}
+
+func (f *fakeResultHandler) HandleFailure(ctx context.Context, job db.SyncJob, executeErr error) error {
+	f.failureJobs = append(f.failureJobs, job)
+	f.failureErrs = append(f.failureErrs, executeErr)
+	if f.failureErr != nil {
+		return f.failureErr
+	}
+	return executeErr
 }
 
 func (f *fakeSyncer) Provider() string  { return f.sourceType }
@@ -303,6 +341,149 @@ func (f *fakeArbiter) Decide(stream *db.ProviderStream, cycles []*db.SyncCycle, 
 		return f.decideFn(stream, cycles, now)
 	}
 	return ChooseCycle(stream, cycles, now)
+}
+
+func TestHandlerDelegatesSuccessfulSyncResult(t *testing.T) {
+	t.Parallel()
+
+	wantResult := &Result{
+		Records: []*RawRecord{{
+			ExternalID: "post-1",
+			Type:       "post",
+			Label:      "Post 1",
+		}},
+	}
+	syncer := &fakeSyncer{
+		sourceType: "bluesky",
+		executeFn: func(ctx context.Context, job *db.SyncJob) (*Result, error) {
+			if job.ProviderStreamID != "stream-1" {
+				t.Fatalf("Execute got stream %q, want stream-1", job.ProviderStreamID)
+			}
+			return wantResult, nil
+		},
+	}
+	repo := &fakeSourceRepo{}
+	cycles := &fakeCycleRepo{}
+	handler := &fakeResultHandler{}
+	q := NewOrchestratorWithResultHandler(&fakeEnqueuer{}, repo, cycles, NewFreshnessFirstArbiter(), handler, syncer)
+
+	err := q.makeHandler(syncer)(context.Background(), syncTask(t, db.SyncJob{
+		Provider:         "bluesky",
+		ProviderStreamID: "stream-1",
+		JobType:          "fetch_posts",
+	}))
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(handler.successJobs) != 1 {
+		t.Fatalf("HandleSuccess calls = %d, want 1", len(handler.successJobs))
+	}
+	if handler.successJobs[0].ProviderStreamID != "stream-1" {
+		t.Fatalf("HandleSuccess job stream = %q, want stream-1", handler.successJobs[0].ProviderStreamID)
+	}
+	if handler.successResults[0] != wantResult {
+		t.Fatalf("HandleSuccess result pointer was not delegated")
+	}
+	if len(handler.failureJobs) != 0 {
+		t.Fatalf("HandleFailure called unexpectedly")
+	}
+	if len(repo.markStartedIDs) != 1 || repo.markStartedIDs[0] != "stream-1" {
+		t.Fatalf("MarkSyncStarted = %v, want [stream-1]", repo.markStartedIDs)
+	}
+}
+
+func TestHandlerDelegatesSyncFailure(t *testing.T) {
+	t.Parallel()
+
+	executeErr := errors.New("provider failed")
+	syncer := &fakeSyncer{
+		sourceType: "bluesky",
+		executeFn: func(ctx context.Context, job *db.SyncJob) (*Result, error) {
+			return nil, executeErr
+		},
+	}
+	repo := &fakeSourceRepo{}
+	cycles := &fakeCycleRepo{}
+	handler := &fakeResultHandler{}
+	q := NewOrchestratorWithResultHandler(&fakeEnqueuer{}, repo, cycles, NewFreshnessFirstArbiter(), handler, syncer)
+
+	err := q.makeHandler(syncer)(context.Background(), syncTask(t, db.SyncJob{
+		Provider:         "bluesky",
+		ProviderStreamID: "stream-1",
+		JobType:          "fetch_posts",
+	}))
+	if !errors.Is(err, executeErr) {
+		t.Fatalf("handler error = %v, want execute error", err)
+	}
+	if len(handler.failureJobs) != 1 {
+		t.Fatalf("HandleFailure calls = %d, want 1", len(handler.failureJobs))
+	}
+	if !errors.Is(handler.failureErrs[0], executeErr) {
+		t.Fatalf("HandleFailure err = %v, want execute error", handler.failureErrs[0])
+	}
+	if len(handler.successJobs) != 0 {
+		t.Fatalf("HandleSuccess called unexpectedly")
+	}
+	if len(repo.markFailedIDs) != 0 {
+		t.Fatalf("orchestrator marked stream failed directly: %v", repo.markFailedIDs)
+	}
+}
+
+func TestAsynqErrorHandlerMarksFinalSyncFailure(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeSourceRepo{}
+	cycles := &fakeCycleRepo{
+		cyclesBySource: map[string][]*db.SyncCycle{
+			"stream-1": {{
+				ID:               "cycle-1",
+				ProviderStreamID: "stream-1",
+				Status:           CycleStatusRunning,
+			}},
+		},
+	}
+	task := syncTask(t, db.SyncJob{
+		Provider:         "bluesky",
+		ProviderStreamID: "stream-1",
+		CycleID:          "cycle-1",
+		CorrelationID:    "corr-1",
+	})
+
+	handleAsynqTaskError(context.Background(), task, errors.New("provider failed"), 3, 3, true, repo, cycles)
+
+	if len(repo.markFailedIDs) != 1 || repo.markFailedIDs[0] != "stream-1" {
+		t.Fatalf("MarkSyncFailed = %v, want [stream-1]", repo.markFailedIDs)
+	}
+	if len(cycles.failedIDs) != 1 || cycles.failedIDs[0] != "cycle-1" {
+		t.Fatalf("MarkFailed cycles = %v, want [cycle-1]", cycles.failedIDs)
+	}
+	if got := cycles.failedReasons[0]; got != CompletionReasonTaskRetryExhausted {
+		t.Fatalf("failed reason = %q, want %q", got, CompletionReasonTaskRetryExhausted)
+	}
+	if got := cycles.cyclesBySource["stream-1"][0].Status; got != CycleStatusFailed {
+		t.Fatalf("cycle status = %q, want failed", got)
+	}
+}
+
+func TestAsynqErrorHandlerIgnoresNonFinalSyncFailure(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeSourceRepo{}
+	cycles := &fakeCycleRepo{}
+	task := syncTask(t, db.SyncJob{
+		Provider:         "bluesky",
+		ProviderStreamID: "stream-1",
+		CycleID:          "cycle-1",
+	})
+
+	handleAsynqTaskError(context.Background(), task, errors.New("provider failed"), 1, 3, true, repo, cycles)
+
+	if len(repo.markFailedIDs) != 0 {
+		t.Fatalf("MarkSyncFailed called before final retry: %v", repo.markFailedIDs)
+	}
+	if len(cycles.failedIDs) != 0 {
+		t.Fatalf("cycle MarkFailed called before final retry: %v", cycles.failedIDs)
+	}
 }
 
 func TestQueueClaimBatchBuildsJobsFromSyncer(t *testing.T) {

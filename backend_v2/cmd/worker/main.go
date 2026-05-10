@@ -144,7 +144,8 @@ func main() {
 	// Sync orchestrator
 	seenStore := isync.NewRedisSeenStore(redisClient)
 	syncEnqueuer := isync.NewAsynqEnqueuer(asynqClient)
-	syncOrchestrator := isync.NewOrchestrator(syncEnqueuer, providerStreamRepo, sourceItemRepo, cycleRepo, seenStore, isync.NewFreshnessFirstArbiter(),
+	syncResultHandler := isync.NewSourceItemResultHandler(syncEnqueuer, providerStreamRepo, sourceItemRepo, cycleRepo, seenStore)
+	syncOrchestrator := isync.NewOrchestratorWithResultHandler(syncEnqueuer, providerStreamRepo, cycleRepo, isync.NewFreshnessFirstArbiter(), syncResultHandler,
 		syncers.NewBlueskySyncer(seenStore),
 		syncers.NewHackerNewsSyncer(seenStore),
 		syncers.NewRedditSyncer(seenStore),
@@ -167,9 +168,7 @@ func main() {
 		Queues:         queues,
 		RetryDelayFunc: pipeline.RetryDelay,
 		IsFailure:      pipeline.IsFailure,
-		ErrorHandler: asynq.ErrorHandlerFunc(func(ctx context.Context, task *asynq.Task, err error) {
-			slog.Error("asynq task failed", "component", "worker", "task_type", task.Type(), "err", err)
-		}),
+		ErrorHandler:   isync.NewAsynqErrorHandler(providerStreamRepo, cycleRepo),
 	})
 
 	syncOrchestrator.RegisterHandlers(mux)

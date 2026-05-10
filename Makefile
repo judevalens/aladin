@@ -1,69 +1,44 @@
-.PHONY: dev backend frontend install db-up db-down db-migrate db-revision worker sync-reddit sync-twitter sync-insights worker-go api-go artifact-spa-build ops-status ops-errors ops-streams ops-queues ops-force-stream ops-reset-stuck-cycles
+.PHONY: help backend db-up db-down worker-go api-go artifact-spa-build ops-status ops-errors ops-streams ops-queues ops-force-stream ops-reset-stuck-cycles
 
-dev:
-	@$(MAKE) -j2 backend frontend
+help: ## List available make targets
+	@awk 'BEGIN {FS = ":.*## "; printf "Available targets:\n"} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-24s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-backend:
+backend: ## Run the Go backend API on port 8000
 	cd backend_v2 && API_ADDR=:8000 go run ./cmd/api
 
-frontend:
-	cd frontend && npm run dev
-
-install:
-	cd backend && poetry install
-	cd frontend && npm install
-
-db-up:
+db-up: ## Start local Docker infrastructure
 	docker compose up -d
 
-db-down:
+db-down: ## Stop local Docker infrastructure
 	docker compose down
 
-db-migrate:
-	cd backend && poetry run alembic upgrade head
-
-db-revision:
-	cd backend && poetry run alembic revision --autogenerate -m "$(msg)"
-
-worker:
-	cd backend && poetry run python run_worker.py
-
-sync-reddit:
-	cd backend && poetry run python run_sync.py reddit
-
-sync-twitter:
-	cd backend && poetry run python run_sync.py twitter
-
-sync-insights:
-	cd backend && poetry run python -c "from dotenv import load_dotenv; load_dotenv(); from app.pipeline.insight_worker import InsightWorker; InsightWorker().run_once()"
-
-worker-go:
+worker-go: ## Run the Go worker; optional CONCURRENCY=24
 	cd backend_v2 && WORKER_CONCURRENCY=$(or $(CONCURRENCY),16) go run ./cmd/worker
 
-api-go:
+api-go: ## Run the Go backend API
 	cd backend_v2 && go run ./cmd/api
 
-artifact-spa-build:
+artifact-spa-build: ## Build and copy the React artifact editor bundle
 	cd aladin_ui/composeApp/react-spa && npm install && npm run build
 	rm -rf aladin_ui/composeApp/src/wasmJsMain/resources/artifact-spa
 	mkdir -p aladin_ui/composeApp/src/wasmJsMain/resources/artifact-spa
 	cp aladin_ui/composeApp/react-spa/dist/artifact-spa.js aladin_ui/composeApp/src/wasmJsMain/resources/artifact-spa/artifact-spa.js
 	cp aladin_ui/composeApp/react-spa/dist/style.css aladin_ui/composeApp/src/wasmJsMain/resources/artifact-spa/style.css
 
-ops-status:
+ops-status: ## Show local ops dashboard
 	python3 scripts/ops/aladin_ops.py status
 
-ops-errors:
+ops-errors: ## Show Loki errors; optional WINDOW=1h
 	python3 scripts/ops/aladin_ops.py errors --window $(or $(WINDOW),15m)
 
-ops-streams:
+ops-streams: ## Show provider stream status
 	python3 scripts/ops/aladin_ops.py streams
 
-ops-queues:
+ops-queues: ## Show Asynq/Redis queue counts
 	python3 scripts/ops/aladin_ops.py queues
 
-ops-force-stream:
+ops-force-stream: ## Force one stream due; requires PROVIDER=... STREAM_KEY="..."
 	python3 scripts/ops/aladin_ops.py force-stream --provider "$(PROVIDER)" --stream-key "$(STREAM_KEY)"
 
-ops-reset-stuck-cycles:
+ops-reset-stuck-cycles: ## Close stale active/running cycles; optional AGE=30m
 	python3 scripts/ops/aladin_ops.py reset-stuck-cycles --age $(or $(AGE),30m)

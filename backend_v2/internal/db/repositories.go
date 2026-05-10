@@ -28,6 +28,7 @@ type SyncCycleRepository interface {
 	MarkRunning(ctx context.Context, id string) error
 	UpdateProgress(ctx context.Context, id string, cursor map[string]any, headBoundary map[string]any, lastHydratedAt *time.Time) error
 	MarkActive(ctx context.Context, id string) error
+	MarkFailed(ctx context.Context, id string, completionReason string) error
 	Complete(ctx context.Context, id string, headBoundary map[string]any, completionReason string) error
 }
 

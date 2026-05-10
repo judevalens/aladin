@@ -13,18 +13,16 @@ import (
 	"github.com/hibiken/asynq"
 
 	"aladin/backend_v2/internal/db"
-	"aladin/backend_v2/internal/pipeline"
 )
 
 // Orchestrator manages sync handler registration, job execution, and scheduler startup.
 type Orchestrator struct {
-	enqueuer    Enqueuer
-	streams     db.ProviderStreamRepository
-	sourceItems db.SourceItemRepository
-	cycles      db.SyncCycleRepository
-	seen        SeenStore
-	arbiter     Arbiter
-	syncers     map[string]Syncer
+	enqueuer      Enqueuer
+	streams       db.ProviderStreamRepository
+	cycles        db.SyncCycleRepository
+	arbiter       Arbiter
+	resultHandler SyncResultHandler
+	syncers       map[string]Syncer
 }
 
 func NewOrchestrator(
@@ -36,24 +34,32 @@ func NewOrchestrator(
 	arbiter Arbiter,
 	syncers ...Syncer,
 ) *Orchestrator {
+	handler := NewSourceItemResultHandler(enqueuer, streams, sourceItems, cycles, seen)
+	return NewOrchestratorWithResultHandler(enqueuer, streams, cycles, arbiter, handler, syncers...)
+}
+
+func NewOrchestratorWithResultHandler(
+	enqueuer Enqueuer,
+	streams db.ProviderStreamRepository,
+	cycles db.SyncCycleRepository,
+	arbiter Arbiter,
+	resultHandler SyncResultHandler,
+	syncers ...Syncer,
+) *Orchestrator {
 	m := make(map[string]Syncer, len(syncers))
 	for _, s := range syncers {
 		m[s.Provider()] = s
-	}
-	if seen == nil {
-		seen = NewNoopSeenStore()
 	}
 	if arbiter == nil {
 		arbiter = NewFreshnessFirstArbiter()
 	}
 	return &Orchestrator{
-		enqueuer:    enqueuer,
-		streams:     streams,
-		sourceItems: sourceItems,
-		cycles:      cycles,
-		seen:        seen,
-		arbiter:     arbiter,
-		syncers:     m,
+		enqueuer:      enqueuer,
+		streams:       streams,
+		cycles:        cycles,
+		arbiter:       arbiter,
+		resultHandler: resultHandler,
+		syncers:       m,
 	}
 }
 
@@ -261,10 +267,7 @@ func (q *Orchestrator) makeHandler(syncer Syncer) asynq.HandlerFunc {
 		result, err := syncer.Execute(ctx, &job)
 		if err != nil {
 			log.Error("sync: execute failed", "err", err)
-			if mErr := q.markSyncFailed(ctx, job.ProviderStreamID); mErr != nil {
-				log.Error("sync: mark failed error", "err", mErr)
-			}
-			return err
+			return q.resultHandler.HandleFailure(ctx, job, err)
 		}
 
 		log.Info(
@@ -277,150 +280,7 @@ func (q *Orchestrator) makeHandler(syncer Syncer) asynq.HandlerFunc {
 			"head_boundary_keys", mapKeys(result.HeadBoundary),
 		)
 
-		// Accept records into durable source-item storage, then enqueue global enrichment.
-		// Any enqueue/upsert failure aborts the whole page so progress does not advance.
-		queued := 0
-		seenIDs := make([]string, 0, len(result.Records))
-		for _, a := range result.Records {
-			upserted, err := q.sourceItems.Upsert(ctx, sourceItemFromRecord(job, a))
-			if err != nil {
-				_ = q.markSyncFailed(ctx, job.ProviderStreamID)
-				log.Error("sync: upsert source item failed", "external_id", a.ExternalID, "err", err)
-				return fmt.Errorf("sync: upsert source item %s: %w", a.ExternalID, err)
-			}
-			if upserted.Changed {
-				payload, err := json.Marshal(pipeline.SourceItemPayload{
-					SourceItemID:     upserted.Item.ID,
-					CorrelationID:    job.CorrelationID,
-					ProviderStreamID: upserted.Item.ProviderStreamID,
-					Provider:         upserted.Item.Provider,
-					ExternalID:       upserted.Item.ExternalID,
-					SourceRevision:   upserted.Item.SourceRevision,
-					Type:             upserted.Item.Type,
-					Title:            upserted.Item.Title,
-					ContentExcerpt:   upserted.Item.ContentExcerpt,
-					ContextExcerpt:   upserted.Item.ContextExcerpt,
-					SourceURL:        upserted.Item.SourceURL,
-					Metadata:         upserted.Item.ProviderMetadata,
-				})
-				if err != nil {
-					return fmt.Errorf("sync: marshal source item payload: %w", err)
-				}
-				if err := q.enqueuer.EnqueueGlobalFirstPass(ctx, upserted.Item.ID, payload); err != nil {
-					_ = q.markSyncFailed(ctx, job.ProviderStreamID)
-					log.Error("sync: enqueue global first pass failed", "source_item_id", upserted.Item.ID, "external_id", a.ExternalID, "err", err)
-					return fmt.Errorf("sync: enqueue source item %s: %w", a.ExternalID, err)
-				}
-				queued++
-			}
-			seenIDs = append(seenIDs, a.ExternalID)
-		}
-		acceptedAt := time.Now().UTC()
-		for _, cycle := range result.NewCycles {
-			if cycle == nil {
-				continue
-			}
-			if cycle.ID == "" {
-				cycle.ID = uuid.NewString()
-			}
-			if cycle.ProviderStreamID == "" {
-				cycle.ProviderStreamID = job.ProviderStreamID
-			}
-			if cycle.Status == "" {
-				cycle.Status = CycleStatusActive
-			}
-			if cycle.CreatedAt.IsZero() {
-				cycle.CreatedAt = acceptedAt
-			}
-			if cycle.Kind == CycleKindHydration && cycle.LastHydratedAt == nil {
-				cycle.LastHydratedAt = &acceptedAt
-			}
-			if err := q.cycles.Create(ctx, cycle); err != nil {
-				log.Error(
-					"sync: create follow-up cycle failed",
-					"cycle_kind", cycle.Kind,
-					"target_kind", cycle.TargetKind,
-					"target_external_id", cycle.TargetExternalID,
-					"err", err,
-				)
-				return fmt.Errorf("sync: create follow-up cycle: %w", err)
-			}
-			log.Info(
-				"sync: follow-up cycle created",
-				"cycle_kind", cycle.Kind,
-				"target_kind", cycle.TargetKind,
-				"target_external_id", cycle.TargetExternalID,
-				"last_hydrated_at", cycle.LastHydratedAt,
-			)
-		}
-		if err := q.seen.MarkSeen(ctx, job.ProviderStreamID, seenIDs); err != nil {
-			log.Error("sync: mark seen failed", "seen_count", len(seenIDs), "err", err)
-			return fmt.Errorf("sync: mark seen: %w", err)
-		}
-		log.Info("sync: records accepted for ingestion", "queued", queued, "marked_seen", len(seenIDs), "total", len(result.Records))
-
-		// After each page, return the provider stream to the scheduler.
-		// HasMore=true → MarkSyncPage (idle, no last_synced_at update, cursor persisted)
-		//              → scheduler re-claims immediately alongside other streams (fairness)
-		// HasMore=false → MarkSynced (idle, last_synced_at stamped, cycle complete)
-		if result.HasMore {
-			if job.CycleID != "" {
-				cursor := mergeState(job.Payload, result.CursorUpdates)
-				var lastHydratedAt *time.Time
-				if selectedCycleKind(job) == CycleKindHydration {
-					lastHydratedAt = &acceptedAt
-				}
-				if err := q.cycles.UpdateProgress(ctx, job.CycleID, cursor, result.HeadBoundary, lastHydratedAt); err != nil {
-					log.Error("sync: update cycle progress failed", "err", err)
-					return fmt.Errorf("sync: update cycle progress: %w", err)
-				}
-				log.Info(
-					"sync: cycle progress updated",
-					"cursor_keys", mapKeys(cursor),
-					"head_boundary_keys", mapKeys(result.HeadBoundary),
-				)
-			}
-			if err := q.markSyncPage(ctx, job.ProviderStreamID, result.ProviderStreamUpdates); err != nil {
-				log.Error("sync: mark sync page failed", "err", err)
-				return fmt.Errorf("sync: mark sync page: %w", err)
-			}
-			log.Info(
-				"sync: page accepted, returning provider stream to scheduler",
-				"provider_stream_update_keys", mapKeys(result.ProviderStreamUpdates),
-				"cursor_update_keys", mapKeys(result.CursorUpdates),
-			)
-		} else {
-			reason := result.CompletionReason
-			if reason == "" {
-				reason = CompletionReasonExhausted
-			}
-			if job.CycleID != "" {
-				if err := q.cycles.Complete(ctx, job.CycleID, result.HeadBoundary, reason); err != nil {
-					log.Error("sync: complete cycle failed", "err", err)
-					return fmt.Errorf("sync: complete cycle: %w", err)
-				}
-				log.Info(
-					"sync: cycle completed",
-					"completion_reason", reason,
-					"head_boundary_keys", mapKeys(result.HeadBoundary),
-				)
-			}
-			if job.CycleID != "" && selectedCycleKind(job) == CycleKindHydration {
-				if err := q.markSyncPage(ctx, job.ProviderStreamID, result.ProviderStreamUpdates); err != nil {
-					log.Error("sync: mark hydration page complete failed", "err", err)
-					return fmt.Errorf("sync: mark hydration page complete: %w", err)
-				}
-				log.Info("sync: hydration provider stream turn complete", "completion_reason", reason, "provider_stream_update_keys", mapKeys(result.ProviderStreamUpdates))
-			} else {
-				if err := q.markSynced(ctx, job.ProviderStreamID, result.ProviderStreamUpdates); err != nil {
-					log.Error("sync: mark synced failed", "err", err)
-					return fmt.Errorf("sync: mark synced: %w", err)
-				}
-				log.Info("sync: provider stream marked synced", "completion_reason", reason, "provider_stream_update_keys", mapKeys(result.ProviderStreamUpdates))
-			}
-		}
-
-		return nil
+		return q.resultHandler.HandleSuccess(ctx, job, result)
 	}
 }
 
@@ -448,57 +308,6 @@ func mapKeys(m map[string]any) []string {
 	return keys
 }
 
-func selectedCycleKind(job db.SyncJob) string {
-	if kind, _ := job.Payload["cycle_kind"].(string); kind != "" {
-		return kind
-	}
-	return CycleKindRefresh
-}
-
-func mergeState(base map[string]any, updates map[string]any) map[string]any {
-	merged := make(map[string]any, len(base)+len(updates))
-	for k, v := range base {
-		merged[k] = v
-	}
-	for k, v := range updates {
-		merged[k] = v
-	}
-	return merged
-}
-
-func sourceItemFromRecord(job db.SyncJob, record *RawRecord) *db.SourceItem {
-	itemID := uuid.NewSHA1(uuid.NameSpaceURL, []byte(job.Provider+":"+record.ExternalID)).String()
-	title := record.Label
-	if title == "" {
-		title = record.ExternalID
-	}
-	return &db.SourceItem{
-		ID:               itemID,
-		ProviderStreamID: job.ProviderStreamID,
-		Provider:         job.Provider,
-		ExternalID:       record.ExternalID,
-		Type:             record.Type,
-		Title:            title,
-		SourceURL:        record.SourceURL,
-		ContentExcerpt:   record.Content,
-		ContextExcerpt:   record.EnrichmentContent,
-		SourceRevision:   record.SourceRevision,
-		ProviderMetadata: record.Metadata,
-	}
-}
-
 func (q *Orchestrator) markSyncStarted(ctx context.Context, id string) error {
 	return q.streams.MarkSyncStarted(ctx, id)
-}
-
-func (q *Orchestrator) markSyncFailed(ctx context.Context, id string) error {
-	return q.streams.MarkSyncFailed(ctx, id)
-}
-
-func (q *Orchestrator) markSyncPage(ctx context.Context, id string, configUpdates map[string]any) error {
-	return q.streams.MarkSyncPage(ctx, id, configUpdates)
-}
-
-func (q *Orchestrator) markSynced(ctx context.Context, id string, configUpdates map[string]any) error {
-	return q.streams.MarkSynced(ctx, id, configUpdates)
 }

@@ -136,6 +136,20 @@ func (r *pgSyncCycleRepo) MarkActive(ctx context.Context, id string) error {
 	return nil
 }
 
+func (r *pgSyncCycleRepo) MarkFailed(ctx context.Context, id string, completionReason string) error {
+	_, err := r.pool.Exec(ctx, `
+		UPDATE sync_cycles
+		SET status = 'failed',
+		    completion_reason = NULLIF($2, ''),
+		    completed_at = now()
+		WHERE id = $1::uuid
+	`, id, completionReason)
+	if err != nil {
+		return fmt.Errorf("MarkFailed: %w", err)
+	}
+	return nil
+}
+
 func (r *pgSyncCycleRepo) Complete(ctx context.Context, id string, headBoundary map[string]any, completionReason string) error {
 	headPayload, err := json.Marshal(nonNilMap(headBoundary))
 	if err != nil {
