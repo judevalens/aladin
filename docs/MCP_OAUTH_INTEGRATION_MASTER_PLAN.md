@@ -197,6 +197,10 @@ cd aladin_ui
 
 Create the auth foundation MCP needs without using env-only static tokens.
 
+### Status
+
+Implemented in `00023_integration_tokens.sql`, `AuthService`, `PostgresAuthRepository`, and `/api/integration-tokens`.
+
 ### Proposed Data Model
 
 ```sql
@@ -231,16 +235,20 @@ Token rules:
 
 ### Acceptance Criteria
 
-- MCP can authenticate through DB-backed bearer tokens.
-- Token scopes are available in the resolved principal.
-- Duplicate/invalid tokens fail safely with `401`.
-- No MCP token lives only in `.env`.
+- MCP can authenticate through DB-backed bearer tokens. Implemented through `AuthService.ResolveBearerToken`.
+- Token scopes are available in the resolved principal. Implemented.
+- Duplicate/invalid tokens fail safely with `401`. Implemented at service resolution boundary.
+- No MCP token lives only in `.env`. Implemented.
 
 ## Milestone 3 — Capability Enforcement
 
 ### Goal
 
 Prevent external actors from receiving full app access by default.
+
+### Status
+
+Partially implemented. The generic helpers exist and artifact operations enforce `artifacts:read` / `artifacts:write`. The MCP server still needs to call `ResolveBearerToken` and inject the resolved principal.
 
 ### Work
 
@@ -253,9 +261,9 @@ Prevent external actors from receiving full app access by default.
 
 ### Acceptance Criteria
 
-- A token with only `artifacts:read` cannot create/update notes.
-- A token with `artifacts:read/write` can use notes tools.
-- Authorization failures return MCP tool errors, not panics.
+- A token with only `artifacts:read` cannot create/update notes. Implemented at `ArtifactService`.
+- A token with `artifacts:read/write` can use notes tools. Ready for MCP tools.
+- Authorization failures return MCP tool errors, not panics. Pending MCP tool layer.
 
 ## Milestone 4 — Nango-Backed Provider Connections
 

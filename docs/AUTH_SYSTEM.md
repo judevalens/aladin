@@ -2,7 +2,7 @@
 
 ## Status
 
-Thin email/password auth foundation implemented.
+Email/password auth and the MCP-ready integration-token foundation are implemented.
 
 Aladin currently uses backend-owned opaque sessions stored in Postgres and sent to the browser as an `HttpOnly` cookie. This is intentionally simple: it establishes a real user boundary before OAuth/private-source work without committing the app to JWTs or a full identity provider.
 
@@ -65,6 +65,23 @@ Emails remain unique. Passwords are never stored directly.
 
 The browser receives only the raw opaque session token. The database stores a SHA-256 hash of that token.
 
+### `integration_tokens`
+
+Migration `00023_integration_tokens.sql` adds DB-backed bearer tokens for MCP and future personal API access:
+
+- `user_id`
+- `name`
+- `token_hash`
+- `scopes`
+- `status`
+- `expires_at`
+- `revoked_at`
+- `created_at`
+- `updated_at`
+- `last_used_at`
+
+The raw token is shown only once at creation. The database stores only `sha256(token)`.
+
 ## Passwords
 
 Password hashing lives in `backend_v2/internal/service/password.go`.
@@ -97,6 +114,45 @@ Cookie settings:
 
 Logout revokes the current session by setting `revoked_at`.
 
+## Integration Tokens
+
+Integration tokens are intended for MCP servers and other external actors that should act for a user without receiving a browser session.
+
+Management routes require a normal browser session:
+
+- `GET /api/integration-tokens`
+- `POST /api/integration-tokens`
+- `POST /api/integration-tokens/{id}/revoke`
+
+Token creation accepts:
+
+```json
+{
+  "name": "Claude Code",
+  "scopes": ["artifacts:read", "artifacts:write"],
+  "expiresAt": "2026-06-01T00:00:00Z"
+}
+```
+
+`expiresAt` is optional. Returned raw tokens use the `aladin_it_` prefix and are not recoverable later.
+
+Supported scopes:
+
+- `artifacts:read`
+- `artifacts:write`
+- `sources:read`
+- `sources:write`
+- `insights:read`
+- `*`
+
+`AuthService.ResolveBearerToken(ctx, rawToken)` resolves a valid token into:
+
+```text
+Principal{UserID, ActorType: "integration_token", ActorID, Email, Scopes}
+```
+
+This is the method the MCP auth middleware should call.
+
 ## API Routes
 
 Public auth routes:
@@ -108,6 +164,12 @@ Public auth routes:
 Protected auth route:
 
 - `GET /api/auth/me`
+
+Protected integration-token routes:
+
+- `GET /api/integration-tokens`
+- `POST /api/integration-tokens`
+- `POST /api/integration-tokens/{id}/revoke`
 
 Health/dev routes remain public:
 
@@ -138,8 +200,14 @@ The context helpers live in `backend_v2/internal/service/auth.go`:
 
 - `WithCurrentUser(ctx, user)`
 - `CurrentUserFromContext(ctx)`
+- `WithPrincipal(ctx, principal)`
+- `PrincipalFromContext(ctx)`
+- `RequirePrincipal(ctx)`
+- `RequireScope(ctx, scope)`
 
-Application services should use `CurrentUserFromContext` instead of hardcoded user ids when behavior is user-owned.
+Application services should use `RequirePrincipal` or `RequireScope` instead of hardcoded user ids when behavior is user-owned.
+
+Browser-session principals are treated as full app access for now. Integration-token principals must carry the required scope. Artifact operations now enforce `artifacts:read` or `artifacts:write`, which is the scope boundary MCP note tools will rely on.
 
 ## Current User Usage
 
@@ -240,6 +308,6 @@ The explicit `GOCACHE` keeps Go test artifacts inside the workspace when macOS c
 - Add logout affordance in the app shell.
 - Move artifact/page/file ownership off the default dev user.
 - Add password reset and email verification if this becomes external-user facing.
-- Add OAuth state and credential storage model.
+- Add the MCP server transport and note tools on top of `ResolveBearerToken`.
 - Add session cleanup for expired/revoked sessions.
 - Replace the Wasm fetch shim if Ktor exposes credential configuration in the target.

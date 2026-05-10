@@ -13,6 +13,9 @@ func (s *Server) registerAuthRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/auth/login", s.handleAuthLogin)
 	mux.HandleFunc("POST /api/auth/logout", s.handleAuthLogout)
 	mux.HandleFunc("GET /api/auth/me", s.handleAuthMe)
+	mux.HandleFunc("GET /api/integration-tokens", s.handleIntegrationTokensList)
+	mux.HandleFunc("POST /api/integration-tokens", s.handleIntegrationTokensCreate)
+	mux.HandleFunc("POST /api/integration-tokens/{id}/revoke", s.handleIntegrationTokensRevoke)
 }
 
 type authRequest struct {
@@ -22,6 +25,12 @@ type authRequest struct {
 
 type authResponse struct {
 	User coreservice.CurrentUser `json:"user"`
+}
+
+type integrationTokenRequest struct {
+	Name      string     `json:"name"`
+	Scopes    []string   `json:"scopes"`
+	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
 }
 
 func (s *Server) handleAuthRegister(w http.ResponseWriter, r *http.Request) {
@@ -78,11 +87,62 @@ func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, authResponse{User: user})
 }
 
+func (s *Server) handleIntegrationTokensList(w http.ResponseWriter, r *http.Request) {
+	tokens, err := s.deps.Auth().ListIntegrationTokens(r.Context())
+	if err != nil {
+		writeAuthManagementError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"tokens": tokens})
+}
+
+func (s *Server) handleIntegrationTokensCreate(w http.ResponseWriter, r *http.Request) {
+	var input integrationTokenRequest
+	if err := readJSON(r, &input); err != nil {
+		writeDecodeError(w, r, err)
+		return
+	}
+	created, err := s.deps.Auth().CreateIntegrationToken(r.Context(), coreservice.IntegrationTokenInput{
+		Name:      input.Name,
+		Scopes:    input.Scopes,
+		ExpiresAt: input.ExpiresAt,
+	})
+	if err != nil {
+		writeAuthManagementError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, created)
+}
+
+func (s *Server) handleIntegrationTokensRevoke(w http.ResponseWriter, r *http.Request) {
+	if err := s.deps.Auth().RevokeIntegrationToken(r.Context(), r.PathValue("id")); err != nil {
+		writeAuthManagementError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
 func writeAuthError(w http.ResponseWriter, r *http.Request, err error) {
 	var requestErr coreservice.BadRequest
 	switch {
 	case errors.Is(err, coreservice.ErrUnauthenticated):
 		writeAPIError(w, r, http.StatusUnauthorized, categoryBadRequest, "Invalid email or password", err)
+	case errors.As(err, &requestErr):
+		writeAPIError(w, r, http.StatusBadRequest, categoryBadRequest, err.Error(), err)
+	default:
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
+	}
+}
+
+func writeAuthManagementError(w http.ResponseWriter, r *http.Request, err error) {
+	var requestErr coreservice.BadRequest
+	switch {
+	case errors.Is(err, coreservice.ErrUnauthenticated):
+		writeAPIError(w, r, http.StatusUnauthorized, categoryBadRequest, "Unauthenticated", err)
+	case errors.Is(err, coreservice.ErrForbidden):
+		writeAPIError(w, r, http.StatusForbidden, categoryBadRequest, "Forbidden", err)
+	case errors.Is(err, coreservice.ErrNotFound):
+		writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Not found", err)
 	case errors.As(err, &requestErr):
 		writeAPIError(w, r, http.StatusBadRequest, categoryBadRequest, err.Error(), err)
 	default:

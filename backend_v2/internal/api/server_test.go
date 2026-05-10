@@ -410,6 +410,43 @@ func TestAuthMiddlewareInjectsCurrentUser(t *testing.T) {
 	}
 }
 
+func TestIntegrationTokensCreate(t *testing.T) {
+	t.Parallel()
+
+	server := NewWithDependencies(":0", app.StaticDependencies{AuthSvc: &fakeAuthService{}})
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/integration-tokens",
+		strings.NewReader(`{"name":"Claude","scopes":["artifacts:read","artifacts:write"]}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: artifactservice.SessionCookieName, Value: "valid"})
+	rec := httptest.NewRecorder()
+
+	server.httpServer.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "aladin_it_test") {
+		t.Fatalf("body = %s, want one-time raw token", rec.Body.String())
+	}
+}
+
+func TestIntegrationTokensRequireUserSession(t *testing.T) {
+	t.Parallel()
+
+	server := NewWithDependencies(":0", app.StaticDependencies{AuthSvc: &fakeAuthService{}})
+	req := httptest.NewRequest(http.MethodGet, "/api/integration-tokens", nil)
+	rec := httptest.NewRecorder()
+
+	server.httpServer.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusUnauthorized, rec.Body.String())
+	}
+}
+
 func TestProviderConnectionsRequireAuth(t *testing.T) {
 	t.Parallel()
 
@@ -554,6 +591,37 @@ func (f *fakeAuthService) CurrentUser(_ context.Context, token string) (artifact
 		return artifactservice.CurrentUser{}, artifactservice.ErrUnauthenticated
 	}
 	return artifactservice.CurrentUser{ID: "user-1", Email: "user@example.com"}, nil
+}
+
+func (f *fakeAuthService) CreateIntegrationToken(context.Context, artifactservice.IntegrationTokenInput) (artifactservice.CreatedIntegrationToken, error) {
+	return artifactservice.CreatedIntegrationToken{
+		Token: "aladin_it_test",
+		IntegrationToken: artifactservice.IntegrationToken{
+			ID:     "token-1",
+			Name:   "Claude",
+			Scopes: []string{artifactservice.ScopeArtifactsRead, artifactservice.ScopeArtifactsWrite},
+			Status: "active",
+		},
+	}, nil
+}
+
+func (f *fakeAuthService) ListIntegrationTokens(context.Context) ([]artifactservice.IntegrationToken, error) {
+	return []artifactservice.IntegrationToken{
+		{
+			ID:     "token-1",
+			Name:   "Claude",
+			Scopes: []string{artifactservice.ScopeArtifactsRead},
+			Status: "active",
+		},
+	}, nil
+}
+
+func (f *fakeAuthService) RevokeIntegrationToken(context.Context, string) error {
+	return nil
+}
+
+func (f *fakeAuthService) ResolveBearerToken(context.Context, string) (artifactservice.Principal, error) {
+	return artifactservice.Principal{}, artifactservice.ErrUnauthenticated
 }
 
 func (f *fakeProviderConnectionService) ListProviders(context.Context) ([]artifactservice.ProviderDescriptor, error) {
