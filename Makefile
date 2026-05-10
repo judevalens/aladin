@@ -16,7 +16,13 @@ nango-up: ## Start local Nango self-hosted services
 	eval "$$(python3 scripts/ops/read_env_keys.py --env backend_v2/.env)" && docker compose -f docker-compose.nango.yml up -d
 
 nango-ensure: ## Ensure local Nango self-hosted services are running
-	@eval "$$(python3 scripts/ops/read_env_keys.py --env backend_v2/.env)" && docker compose -f docker-compose.nango.yml up -d
+	@eval "$$(python3 scripts/ops/read_env_keys.py --env backend_v2/.env)" && \
+	if [ "$$(docker compose -f docker-compose.nango.yml ps --status running -q nango-server | wc -l | tr -d ' ')" = "1" ]; then \
+		echo "Nango is already running."; \
+	else \
+		echo "Starting Nango..."; \
+		docker compose -f docker-compose.nango.yml up -d; \
+	fi
 
 nango-down: ## Stop local Nango self-hosted services
 	docker compose -f docker-compose.nango.yml down
