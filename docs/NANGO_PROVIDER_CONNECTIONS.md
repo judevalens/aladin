@@ -18,6 +18,8 @@ make nango-down
 
 The compose file is `docker-compose.nango.yml`. It intentionally uses separate Nango Postgres and Redis containers so Nango schema and runtime state do not couple to Aladin's own database.
 
+`make backend` and `make worker-go` both run `nango-ensure` first. That target loads Nango env keys from `backend_v2/.env` and starts the Nango compose stack before starting the API or worker.
+
 Required Nango env:
 
 - `NANGO_ENCRYPTION_KEY`
