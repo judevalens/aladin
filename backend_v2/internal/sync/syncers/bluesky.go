@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	blueskyAPI      = "https://public.api.bsky.app/xrpc"
+	blueskyAPI      = "https://api.bsky.app/xrpc"
 	blueskyRate     = 30
 	blueskyPageSize = 50
 
@@ -260,10 +260,7 @@ func (s blueskyCycleState) limit() int {
 func blueskyLabel(post blueskyPostView) string {
 	text := strings.Join(strings.Fields(post.Record.Text), " ")
 	if text != "" {
-		if len(text) > 80 {
-			return text[:77] + "..."
-		}
-		return text
+		return truncateRunes(text, 80)
 	}
 	if post.Author.DisplayName != "" {
 		return post.Author.DisplayName
@@ -272,6 +269,20 @@ func blueskyLabel(post blueskyPostView) string {
 		return post.Author.Handle
 	}
 	return post.URI
+}
+
+func truncateRunes(value string, max int) string {
+	if max <= 0 {
+		return ""
+	}
+	runes := []rune(value)
+	if len(runes) <= max {
+		return value
+	}
+	if max <= 3 {
+		return string(runes[:max])
+	}
+	return string(runes[:max-3]) + "..."
 }
 
 func blueskyPostURL(post blueskyPostView) string {

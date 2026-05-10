@@ -49,6 +49,31 @@ func (f *fakeRecordRepo) ExistsExternal(ctx context.Context, sourceID string, ex
 	return nil, errors.New("not implemented")
 }
 
+type fakeTenantItemMatchRepo struct {
+	attached []attachedTenantRecord
+}
+
+type attachedTenantRecord struct {
+	subscriptionID string
+	sourceItemID   string
+	revision       int64
+	recordID       string
+}
+
+func (f *fakeTenantItemMatchRepo) Save(ctx context.Context, match *db.TenantItemMatch) error {
+	return nil
+}
+
+func (f *fakeTenantItemMatchRepo) AttachRecord(ctx context.Context, subscriptionID string, sourceItemID string, sourceRevision int64, recordID string) error {
+	f.attached = append(f.attached, attachedTenantRecord{
+		subscriptionID: subscriptionID,
+		sourceItemID:   sourceItemID,
+		revision:       sourceRevision,
+		recordID:       recordID,
+	})
+	return nil
+}
+
 func TestFullPipelineHandlerRoutesFirstPassSearchNeeded(t *testing.T) {
 	t.Parallel()
 
@@ -140,8 +165,9 @@ func TestFullPipelineHandlerPersistsCompletedRecord(t *testing.T) {
 	t.Parallel()
 
 	repo := &fakeRecordRepo{}
+	matches := &fakeTenantItemMatchRepo{}
 	insights := make(chan string, 1)
-	h := NewFullPipelineHandler(&fakeEnqueuer{}, repo, insights)
+	h := NewFullPipelineHandler(&fakeEnqueuer{}, repo, insights).WithTenantItemMatches(matches)
 
 	payload, err := json.Marshal(RecordPayload{
 		RecordID:       "record-5",
@@ -153,12 +179,16 @@ func TestFullPipelineHandlerPersistsCompletedRecord(t *testing.T) {
 		Label:          "label",
 		Content:        "content",
 		SourceURL:      "https://example.com",
-		Metadata:       map[string]any{"score": float64(7)},
-		Summary:        "summary",
-		Entities:       []string{"entity"},
-		Topics:         []string{"topic"},
-		KeyClaims:      []string{"claim"},
-		Embedding:      []float32{1, 2, 3},
+		Metadata: map[string]any{
+			"score":               float64(7),
+			"source_subscription": "subscription-5",
+			"source_item_id":      "source-item-5",
+		},
+		Summary:   "summary",
+		Entities:  []string{"entity"},
+		Topics:    []string{"topic"},
+		KeyClaims: []string{"claim"},
+		Embedding: []float32{1, 2, 3},
 	})
 	if err != nil {
 		t.Fatalf("json.Marshal returned error: %v", err)
@@ -182,6 +212,12 @@ func TestFullPipelineHandlerPersistsCompletedRecord(t *testing.T) {
 	}
 	if repo.saved[0].SourceRevision != 42 {
 		t.Fatalf("saved source revision = %d, want 42", repo.saved[0].SourceRevision)
+	}
+	if len(matches.attached) != 1 {
+		t.Fatalf("AttachRecord calls = %d, want 1", len(matches.attached))
+	}
+	if got := matches.attached[0]; got.subscriptionID != "subscription-5" || got.sourceItemID != "source-item-5" || got.revision != 42 || got.recordID != "record-5" {
+		t.Fatalf("AttachRecord call = %+v", got)
 	}
 	select {
 	case kgID := <-insights:

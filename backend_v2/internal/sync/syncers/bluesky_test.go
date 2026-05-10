@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/sync"
@@ -199,5 +200,23 @@ func TestBlueskyExecuteEmitsURIAndProvenance(t *testing.T) {
 	}
 	if got := record.Metadata["created_at"]; got != "2026-04-03T12:00:00Z" {
 		t.Fatalf("metadata.created_at = %v, want post created timestamp", got)
+	}
+}
+
+func TestBlueskyLabelTruncatesWithoutSplittingUTF8(t *testing.T) {
+	t.Parallel()
+
+	var post blueskyPostView
+	post.Record.Text = strings.Repeat("a", 76) + "… trailing"
+
+	label := blueskyLabel(post)
+	if !utf8.ValidString(label) {
+		t.Fatalf("label is invalid UTF-8: %q", label)
+	}
+	if len([]rune(label)) != 80 {
+		t.Fatalf("label rune length = %d, want 80", len([]rune(label)))
+	}
+	if !strings.HasSuffix(label, "...") {
+		t.Fatalf("label = %q, want ellipsis suffix", label)
 	}
 }

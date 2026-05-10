@@ -18,6 +18,7 @@ type FullPipelineHandler struct {
 	enqueuer    Enqueuer
 	repo        db.RecordRepository
 	enrichments db.SourceItemEnrichmentRepository
+	matches     db.TenantItemMatchRepository
 	insights    chan<- string
 }
 
@@ -31,6 +32,11 @@ func NewFullPipelineHandler(
 
 func (h *FullPipelineHandler) WithSourceItemEnrichments(repo db.SourceItemEnrichmentRepository) *FullPipelineHandler {
 	h.enrichments = repo
+	return h
+}
+
+func (h *FullPipelineHandler) WithTenantItemMatches(repo db.TenantItemMatchRepository) *FullPipelineHandler {
+	h.matches = repo
 	return h
 }
 
@@ -185,6 +191,16 @@ func (h *FullPipelineHandler) persist(ctx context.Context, log *slog.Logger, pay
 	if err := h.repo.SaveComplete(ctx, a); err != nil {
 		log.Error("orchestrator: save failed", "err", err)
 		return err
+	}
+	if h.matches != nil {
+		subscriptionID, _ := p.Metadata["source_subscription"].(string)
+		sourceItemID, _ := p.Metadata["source_item_id"].(string)
+		if subscriptionID != "" && sourceItemID != "" {
+			if err := h.matches.AttachRecord(ctx, subscriptionID, sourceItemID, p.SourceRevision, p.RecordID); err != nil {
+				log.Error("orchestrator: attach tenant match record failed", "err", err)
+				return err
+			}
+		}
 	}
 
 	select {

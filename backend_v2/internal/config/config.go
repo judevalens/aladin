@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 )
 
 type APIConfig struct {
@@ -18,6 +19,7 @@ type WorkerConfig struct {
 	Neo4jURI     string
 	Neo4jUser    string
 	Neo4jPass    string
+	Concurrency  int
 }
 
 func LoadAPI() (APIConfig, error) {
@@ -56,6 +58,7 @@ func LoadWorker() (WorkerConfig, error) {
 		Neo4jURI:     os.Getenv("NEO4J_URI"),
 		Neo4jUser:    os.Getenv("NEO4J_USER"),
 		Neo4jPass:    os.Getenv("NEO4J_PASS"),
+		Concurrency:  optionalInt("WORKER_CONCURRENCY", 16),
 	}, nil
 }
 
@@ -73,4 +76,16 @@ func optional(key, fallback string) string {
 		return fallback
 	}
 	return v
+}
+
+func optionalInt(key string, fallback int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(v)
+	if err != nil || parsed <= 0 {
+		return fallback
+	}
+	return parsed
 }

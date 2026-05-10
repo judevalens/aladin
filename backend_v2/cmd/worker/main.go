@@ -127,7 +127,8 @@ func main() {
 	// Pipeline
 	pipelineEnqueuer := pipeline.NewAsynqEnqueuer(asynqClient)
 	handler := pipeline.NewFullPipelineHandler(pipelineEnqueuer, recordRepo, insightCh).
-		WithSourceItemEnrichments(sourceItemEnrichmentRepo)
+		WithSourceItemEnrichments(sourceItemEnrichmentRepo).
+		WithTenantItemMatches(tenantItemMatchRepo)
 	orch := pipeline.NewOrchestrator(handler)
 	orch.Add(workers.NewGlobalFirstPassWorker(enricher, openaiLimiter))
 	orch.Add(workers.NewTenantMatchWorker(sourceItemRepo, sourceItemEnrichmentRepo, sourceSubscriptionRepo, tenantItemMatchRepo, pipelineEnqueuer, relevanceJudge))
@@ -162,6 +163,7 @@ func main() {
 		queues[name] = weight
 	}
 	asynqServer := asynq.NewServer(redisOpt, asynq.Config{
+		Concurrency:    cfg.Concurrency,
 		Queues:         queues,
 		RetryDelayFunc: pipeline.RetryDelay,
 		IsFailure:      pipeline.IsFailure,
@@ -184,7 +186,7 @@ func main() {
 		asynqServer.Shutdown()
 	}()
 
-	slog.Info("aladin worker running — ctrl+c to stop", "component", "worker")
+	slog.Info("aladin worker running — ctrl+c to stop", "component", "worker", "concurrency", cfg.Concurrency)
 	<-ctx.Done()
 	slog.Info("shutting down", "component", "worker")
 }

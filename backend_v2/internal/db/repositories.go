@@ -57,4 +57,5 @@ type SourceSubscriptionRepository interface {
 
 type TenantItemMatchRepository interface {
 	Save(ctx context.Context, match *TenantItemMatch) error
+	AttachRecord(ctx context.Context, subscriptionID string, sourceItemID string, sourceRevision int64, recordID string) error
 }

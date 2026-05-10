@@ -294,3 +294,18 @@ func (r *pgTenantItemMatchRepo) Save(ctx context.Context, m *TenantItemMatch) er
 	}
 	return nil
 }
+
+func (r *pgTenantItemMatchRepo) AttachRecord(ctx context.Context, subscriptionID string, sourceItemID string, sourceRevision int64, recordID string) error {
+	_, err := r.pool.Exec(ctx, `
+		UPDATE tenant_item_matches
+		SET record_id = $4,
+		    updated_at = now()
+		WHERE subscription_id = $1::uuid
+		  AND source_item_id = $2
+		  AND source_revision = $3
+	`, subscriptionID, sourceItemID, sourceRevision, recordID)
+	if err != nil {
+		return fmt.Errorf("TenantItemMatch AttachRecord: %w", err)
+	}
+	return nil
+}

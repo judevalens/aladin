@@ -126,6 +126,10 @@ func (w *TenantMatchWorker) Run(ctx context.Context, raw []byte) pipeline.Result
 		}
 
 		recordID := uuid.NewSHA1(uuid.NameSpaceURL, []byte(sub.ID+":"+item.ID+":"+fmt.Sprint(item.SourceRevision))).String()
+		if err := w.matches.Save(ctx, match); err != nil {
+			return tenantMatchErrResult(p, pipeline.ErrTransient{Cause: fmt.Errorf("save tenant match: %w", err)})
+		}
+
 		recordPayload, err := json.Marshal(pipeline.RecordPayload{
 			RecordID:       recordID,
 			CorrelationID:  p.CorrelationID,
@@ -155,11 +159,6 @@ func (w *TenantMatchWorker) Run(ctx context.Context, raw []byte) pipeline.Result
 		}
 		if err := w.enqueuer.EnqueueStage(ctx, pipeline.TaskEmbed, recordID, recordPayload); err != nil {
 			return tenantMatchErrResult(p, pipeline.ErrTransient{Cause: fmt.Errorf("enqueue tenant record: %w", err)})
-		}
-
-		match.RecordID = &recordID
-		if err := w.matches.Save(ctx, match); err != nil {
-			return tenantMatchErrResult(p, pipeline.ErrTransient{Cause: fmt.Errorf("save tenant match: %w", err)})
 		}
 		matched++
 	}

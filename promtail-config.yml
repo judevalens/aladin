@@ -22,8 +22,14 @@ scrape_configs:
           expressions:
             ts: time
             level: level
+            component: component
+            task_type: task_type
+            provider: provider
       - timestamp:
           source: ts
           format: RFC3339Nano
       - labels:
           level:
+          component:
+          task_type:
+          provider:
