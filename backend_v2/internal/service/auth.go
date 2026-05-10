@@ -22,11 +22,24 @@ var ErrUnauthenticated = errors.New("unauthenticated")
 
 type authContextKey string
 
-const currentUserContextKey authContextKey = "current_user"
+const principalContextKey authContextKey = "principal"
+
+const (
+	ActorTypeUserSession      = "user_session"
+	ActorTypeIntegrationToken = "integration_token"
+)
 
 type CurrentUser struct {
 	ID    string `json:"id"`
 	Email string `json:"email"`
+}
+
+type Principal struct {
+	UserID    string
+	ActorType string
+	ActorID   string
+	Email     string
+	Scopes    []string
 }
 
 type AuthService interface {
@@ -185,11 +198,40 @@ func hashSessionToken(token string) string {
 	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
 
+func NewUserSessionPrincipal(user CurrentUser) Principal {
+	return Principal{
+		UserID:    user.ID,
+		ActorType: ActorTypeUserSession,
+		ActorID:   user.ID,
+		Email:     user.Email,
+	}
+}
+
+func WithPrincipal(ctx context.Context, principal Principal) context.Context {
+	return context.WithValue(ctx, principalContextKey, principal)
+}
+
+func PrincipalFromContext(ctx context.Context) (Principal, bool) {
+	principal, ok := ctx.Value(principalContextKey).(Principal)
+	return principal, ok
+}
+
+func RequirePrincipal(ctx context.Context) (Principal, error) {
+	principal, ok := PrincipalFromContext(ctx)
+	if !ok || strings.TrimSpace(principal.UserID) == "" {
+		return Principal{}, ErrUnauthenticated
+	}
+	return principal, nil
+}
+
 func WithCurrentUser(ctx context.Context, user CurrentUser) context.Context {
-	return context.WithValue(ctx, currentUserContextKey, user)
+	return WithPrincipal(ctx, NewUserSessionPrincipal(user))
 }
 
 func CurrentUserFromContext(ctx context.Context) (CurrentUser, bool) {
-	user, ok := ctx.Value(currentUserContextKey).(CurrentUser)
-	return user, ok
+	principal, ok := PrincipalFromContext(ctx)
+	if !ok || strings.TrimSpace(principal.UserID) == "" {
+		return CurrentUser{}, false
+	}
+	return CurrentUser{ID: principal.UserID, Email: principal.Email}, true
 }

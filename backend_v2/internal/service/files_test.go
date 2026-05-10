@@ -14,7 +14,7 @@ func TestFileServiceUpload(t *testing.T) {
 	store := &fakeFileStore{}
 	service := NewFileService(repo, store)
 
-	rec, err := service.Upload(context.Background(), FileUploadInput{Filename: "memo.txt"}, bytes.NewBufferString("hello"))
+	rec, err := service.Upload(testPrincipalContext(), FileUploadInput{Filename: "memo.txt"}, bytes.NewBufferString("hello"))
 	if err != nil {
 		t.Fatalf("Upload error: %v", err)
 	}
@@ -39,7 +39,7 @@ func TestFileServiceResource(t *testing.T) {
 		&fakeFileStore{path: "/tmp/file-blob.txt"},
 	)
 
-	resource, err := service.Resource(context.Background(), "file-1")
+	resource, err := service.Resource(testPrincipalContext(), "file-1")
 	if err != nil {
 		t.Fatalf("Resource error: %v", err)
 	}

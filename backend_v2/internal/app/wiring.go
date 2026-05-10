@@ -89,7 +89,7 @@ func NewDependencies(pool *pgxpool.Pool) Dependencies {
 	authRepo := repo.NewAuthPostgres(pool)
 	sourceRepo := repo.NewSourcePostgres(pool)
 	recordRepo := repo.NewRecordPostgres(pool)
-	artifactRepo := repo.NewArtifactsPostgres(pool, defaultUserID)
+	artifactRepo := repo.NewArtifactsPostgres(pool)
 	artifactFiles := repo.NewFilesystemArtifactStore(uploadDir(), audioDir())
 	feedRepo := repo.NewFeedPostgres(pool)
 	insightRepo := repo.NewInsightPostgres(pool)

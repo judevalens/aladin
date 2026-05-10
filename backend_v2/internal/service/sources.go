@@ -65,38 +65,38 @@ func NewSourceService(repo SourceRepository) *DefaultSourceService {
 }
 
 func (s *DefaultSourceService) List(ctx context.Context) ([]SourceRecord, error) {
-	user, ok := CurrentUserFromContext(ctx)
-	if !ok {
+	principal, err := RequirePrincipal(ctx)
+	if err != nil {
 		return nil, ErrUnauthenticated
 	}
-	if _, err := s.repo.EnsureUserAndGraph(ctx, user.ID); err != nil {
+	if _, err := s.repo.EnsureUserAndGraph(ctx, principal.UserID); err != nil {
 		return nil, err
 	}
-	return s.repo.List(ctx, user.ID)
+	return s.repo.List(ctx, principal.UserID)
 }
 
 func (s *DefaultSourceService) Create(ctx context.Context, input SourceCreateInput) (SourceRecord, error) {
-	user, ok := CurrentUserFromContext(ctx)
-	if !ok {
+	principal, err := RequirePrincipal(ctx)
+	if err != nil {
 		return SourceRecord{}, ErrUnauthenticated
 	}
 	payload, err := buildSourcePayload(input)
 	if err != nil {
 		return SourceRecord{}, err
 	}
-	kgID, err := s.repo.EnsureUserAndGraph(ctx, user.ID)
+	kgID, err := s.repo.EnsureUserAndGraph(ctx, principal.UserID)
 	if err != nil {
 		return SourceRecord{}, err
 	}
-	return s.repo.Create(ctx, newID(""), user.ID, kgID, payload)
+	return s.repo.Create(ctx, newID(""), principal.UserID, kgID, payload)
 }
 
 func (s *DefaultSourceService) Delete(ctx context.Context, id string) error {
-	user, ok := CurrentUserFromContext(ctx)
-	if !ok {
+	principal, err := RequirePrincipal(ctx)
+	if err != nil {
 		return ErrUnauthenticated
 	}
-	return s.repo.Delete(ctx, id, user.ID)
+	return s.repo.Delete(ctx, id, principal.UserID)
 }
 
 func buildSourcePayload(input SourceCreateInput) (*SourcePayload, error) {

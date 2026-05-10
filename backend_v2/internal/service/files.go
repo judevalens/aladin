@@ -48,6 +48,9 @@ func NewFileService(repo FileRepository, store FileStore) *DefaultFileService {
 }
 
 func (s *DefaultFileService) Upload(ctx context.Context, input FileUploadInput, body io.Reader) (FileRecord, error) {
+	if _, err := RequirePrincipal(ctx); err != nil {
+		return FileRecord{}, err
+	}
 	filename := strings.TrimSpace(input.Filename)
 	if filename == "" {
 		return FileRecord{}, BadRequest("filename is required")
@@ -69,6 +72,9 @@ func (s *DefaultFileService) Upload(ctx context.Context, input FileUploadInput, 
 }
 
 func (s *DefaultFileService) Resource(ctx context.Context, id string) (FileResource, error) {
+	if _, err := RequirePrincipal(ctx); err != nil {
+		return FileResource{}, err
+	}
 	if strings.TrimSpace(id) == "" {
 		return FileResource{}, ErrNotFound
 	}

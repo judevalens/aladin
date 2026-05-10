@@ -166,7 +166,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 		if err == nil && strings.TrimSpace(cookie.Value) != "" {
 			user, authErr := s.deps.Auth().CurrentUser(r.Context(), cookie.Value)
 			if authErr == nil {
-				next.ServeHTTP(w, r.WithContext(coreservice.WithCurrentUser(r.Context(), user)))
+				next.ServeHTTP(w, r.WithContext(coreservice.WithPrincipal(r.Context(), coreservice.NewUserSessionPrincipal(user))))
 				return
 			}
 		}

@@ -13,16 +13,16 @@ import (
 )
 
 type PostgresArtifactRepository struct {
-	pool   *pgxpool.Pool
-	userID string
+	pool *pgxpool.Pool
 }
 
-func NewArtifactsPostgres(pool *pgxpool.Pool, userID string) *PostgresArtifactRepository {
-	return &PostgresArtifactRepository{pool: pool, userID: userID}
+func NewArtifactsPostgres(pool *pgxpool.Pool) *PostgresArtifactRepository {
+	return &PostgresArtifactRepository{pool: pool}
 }
 
 func (r *PostgresArtifactRepository) ListArtifacts(ctx context.Context, params artifactservice.ArtifactListParams) ([]artifactservice.ArtifactResponse, error) {
-	if err := r.ensureDefaultUser(ctx); err != nil {
+	userID, err := r.userID(ctx)
+	if err != nil {
 		return nil, err
 	}
 	query := `
@@ -35,7 +35,7 @@ func (r *PostgresArtifactRepository) ListArtifacts(ctx context.Context, params a
 		  LEFT JOIN page_documents p ON p.artifact_id = a.id
 		 WHERE a.user_id = $1::uuid
 	`
-	args := []any{r.userID}
+	args := []any{userID}
 	if params.FolderID == nil {
 		query += ` AND n.parent_id IS NULL`
 	} else {
@@ -62,7 +62,8 @@ func (r *PostgresArtifactRepository) ListArtifacts(ctx context.Context, params a
 }
 
 func (r *PostgresArtifactRepository) GetArtifact(ctx context.Context, id string) (artifactservice.ArtifactResponse, error) {
-	if err := r.ensureDefaultUser(ctx); err != nil {
+	userID, err := r.userID(ctx)
+	if err != nil {
 		return artifactservice.ArtifactResponse{}, err
 	}
 	row := r.pool.QueryRow(ctx, `
@@ -74,12 +75,13 @@ func (r *PostgresArtifactRepository) GetArtifact(ctx context.Context, id string)
 		  LEFT JOIN tree_nodes n ON n.artifact_id = a.id AND n.user_id = a.user_id AND n.kind = 'artifact'
 		  LEFT JOIN page_documents p ON p.artifact_id = a.id
 		 WHERE a.id = $1 AND a.user_id = $2::uuid
-	`, id, r.userID)
+	`, id, userID)
 	return scanArtifactResponse(row)
 }
 
 func (r *PostgresArtifactRepository) CreateArtifact(ctx context.Context, rec artifactservice.ArtifactResponse) error {
-	if err := r.ensureDefaultUser(ctx); err != nil {
+	userID, err := r.userID(ctx)
+	if err != nil {
 		return err
 	}
 	createdAt, err := time.Parse(time.RFC3339, rec.CreatedAt)
@@ -97,11 +99,15 @@ func (r *PostgresArtifactRepository) CreateArtifact(ctx context.Context, rec art
 		) VALUES (
 		    $1, $2::uuid, $3, $4, $5, $6, $7, $8::jsonb, $9, $10
 		)
-	`, rec.ID, r.userID, rec.Type, rec.Title, rec.Content, rec.Summary, rec.SourceURL, string(metadata), createdAt, updatedAt)
+	`, rec.ID, userID, rec.Type, rec.Title, rec.Content, rec.Summary, rec.SourceURL, string(metadata), createdAt, updatedAt)
 	return err
 }
 
 func (r *PostgresArtifactRepository) UpdateArtifact(ctx context.Context, id string, patch artifactservice.ArtifactPatch) error {
+	userID, err := r.userID(ctx)
+	if err != nil {
+		return err
+	}
 	metadataJSON := any(nil)
 	if patch.Metadata != nil {
 		raw, _ := json.Marshal(*patch.Metadata)
@@ -117,7 +123,7 @@ func (r *PostgresArtifactRepository) UpdateArtifact(ctx context.Context, id stri
 		       metadata = COALESCE($8::jsonb, metadata),
 		       updated_at = now()
 		 WHERE id = $1 AND user_id = $2::uuid
-	`, id, r.userID, patch.Type, patch.Title, patch.Content, patch.Summary, patch.SourceURL, metadataJSON)
+	`, id, userID, patch.Type, patch.Title, patch.Content, patch.Summary, patch.SourceURL, metadataJSON)
 	if err != nil {
 		return err
 	}
@@ -128,7 +134,7 @@ func (r *PostgresArtifactRepository) UpdateArtifact(ctx context.Context, id stri
 }
 
 func (r *PostgresArtifactRepository) CreatePageDocument(ctx context.Context, artifactID string, markdown string) error {
-	if err := r.ensureDefaultUser(ctx); err != nil {
+	if _, err := r.userID(ctx); err != nil {
 		return err
 	}
 	_, err := r.pool.Exec(ctx, `
@@ -140,7 +146,8 @@ func (r *PostgresArtifactRepository) CreatePageDocument(ctx context.Context, art
 }
 
 func (r *PostgresArtifactRepository) SavePageDocument(ctx context.Context, artifactID string, markdown string) error {
-	if err := r.ensureDefaultUser(ctx); err != nil {
+	userID, err := r.userID(ctx)
+	if err != nil {
 		return err
 	}
 	tx, err := r.pool.Begin(ctx)
@@ -165,7 +172,7 @@ func (r *PostgresArtifactRepository) SavePageDocument(ctx context.Context, artif
 		   SET content = $3,
 		       updated_at = now()
 		 WHERE id = $1 AND user_id = $2::uuid
-	`, artifactID, r.userID, markdown)
+	`, artifactID, userID, markdown)
 	if err != nil {
 		return err
 	}
@@ -177,7 +184,8 @@ func (r *PostgresArtifactRepository) SavePageDocument(ctx context.Context, artif
 }
 
 func (r *PostgresArtifactRepository) SavePageDocumentRevision(ctx context.Context, artifactID string, markdown string, revision int64) error {
-	if err := r.ensureDefaultUser(ctx); err != nil {
+	userID, err := r.userID(ctx)
+	if err != nil {
 		return err
 	}
 	tx, err := r.pool.Begin(ctx)
@@ -210,7 +218,7 @@ func (r *PostgresArtifactRepository) SavePageDocumentRevision(ctx context.Contex
 				   AND a.user_id = $2::uuid
 				   AND a.type = 'page'
 			)
-		`, artifactID, r.userID).Scan(&exists); err != nil {
+		`, artifactID, userID).Scan(&exists); err != nil {
 			return err
 		}
 		if !exists {
@@ -226,7 +234,7 @@ func (r *PostgresArtifactRepository) SavePageDocumentRevision(ctx context.Contex
 		 WHERE id = $1
 		   AND user_id = $2::uuid
 		   AND type = 'page'
-	`, artifactID, r.userID, markdown)
+	`, artifactID, userID, markdown)
 	if err != nil {
 		return err
 	}
@@ -238,10 +246,14 @@ func (r *PostgresArtifactRepository) SavePageDocumentRevision(ctx context.Contex
 }
 
 func (r *PostgresArtifactRepository) DeleteArtifact(ctx context.Context, id string) error {
+	userID, err := r.userID(ctx)
+	if err != nil {
+		return err
+	}
 	tag, err := r.pool.Exec(ctx, `
 		DELETE FROM artifacts
 		 WHERE id = $1 AND user_id = $2::uuid
-	`, id, r.userID)
+	`, id, userID)
 	if err != nil {
 		return err
 	}
@@ -252,7 +264,8 @@ func (r *PostgresArtifactRepository) DeleteArtifact(ctx context.Context, id stri
 }
 
 func (r *PostgresArtifactRepository) ListFolders(ctx context.Context, parentID *string) ([]artifactservice.FolderNode, error) {
-	if err := r.ensureDefaultUser(ctx); err != nil {
+	userID, err := r.userID(ctx)
+	if err != nil {
 		return nil, err
 	}
 	query := `
@@ -261,7 +274,7 @@ func (r *PostgresArtifactRepository) ListFolders(ctx context.Context, parentID *
 		 WHERE user_id = $1::uuid
 		   AND kind = 'folder'
 	`
-	args := []any{r.userID}
+	args := []any{userID}
 	if parentID == nil {
 		query += ` AND parent_id IS NULL`
 	} else {
@@ -287,7 +300,8 @@ func (r *PostgresArtifactRepository) ListFolders(ctx context.Context, parentID *
 }
 
 func (r *PostgresArtifactRepository) ListAllFolders(ctx context.Context) ([]artifactservice.FolderNode, error) {
-	if err := r.ensureDefaultUser(ctx); err != nil {
+	userID, err := r.userID(ctx)
+	if err != nil {
 		return nil, err
 	}
 	rows, err := r.pool.Query(ctx, `
@@ -296,7 +310,7 @@ func (r *PostgresArtifactRepository) ListAllFolders(ctx context.Context) ([]arti
 		 WHERE user_id = $1::uuid
 		   AND kind = 'folder'
 		 ORDER BY position ASC, created_at ASC
-	`, r.userID)
+	`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -314,7 +328,8 @@ func (r *PostgresArtifactRepository) ListAllFolders(ctx context.Context) ([]arti
 }
 
 func (r *PostgresArtifactRepository) ListAllBrowserNodes(ctx context.Context) ([]artifactservice.BrowserTreeFlatNode, error) {
-	if err := r.ensureDefaultUser(ctx); err != nil {
+	userID, err := r.userID(ctx)
+	if err != nil {
 		return nil, err
 	}
 	rows, err := r.pool.Query(ctx, `
@@ -334,7 +349,7 @@ func (r *PostgresArtifactRepository) ListAllBrowserNodes(ctx context.Context) ([
 		  LEFT JOIN artifacts a ON a.id = n.artifact_id AND a.user_id = n.user_id
 		 WHERE n.user_id = $1::uuid
 		 ORDER BY COALESCE(n.parent_id, ''), n.position ASC, n.created_at ASC, n.id ASC
-	`, r.userID)
+	`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -361,32 +376,35 @@ func (r *PostgresArtifactRepository) ListAllBrowserNodes(ctx context.Context) ([
 }
 
 func (r *PostgresArtifactRepository) NextNodePosition(ctx context.Context, parentID *string) (int64, error) {
-	if err := r.ensureDefaultUser(ctx); err != nil {
+	userID, err := r.userID(ctx)
+	if err != nil {
 		return 0, err
 	}
 	var next int64
-	err := r.pool.QueryRow(ctx, `
+	err = r.pool.QueryRow(ctx, `
 		SELECT COALESCE(MAX(position), 0) + 1
 		  FROM tree_nodes
 		 WHERE user_id = $1::uuid
 		   AND parent_id IS NOT DISTINCT FROM $2
-	`, r.userID, parentID).Scan(&next)
+	`, userID, parentID).Scan(&next)
 	return next, err
 }
 
 func (r *PostgresArtifactRepository) CreateTreeNode(ctx context.Context, node artifactservice.TreeNodeRecord) error {
-	if err := r.ensureDefaultUser(ctx); err != nil {
+	userID, err := r.userID(ctx)
+	if err != nil {
 		return err
 	}
-	_, err := r.pool.Exec(ctx, `
+	_, err = r.pool.Exec(ctx, `
 		INSERT INTO tree_nodes (id, user_id, parent_id, kind, title, artifact_id, position, created_at, updated_at)
 		VALUES ($1, $2::uuid, $3, $4, $5, $6, $7, now(), now())
-	`, node.ID, r.userID, node.ParentID, node.Kind, node.Title, node.ArtifactID, node.Position)
+	`, node.ID, userID, node.ParentID, node.Kind, node.Title, node.ArtifactID, node.Position)
 	return err
 }
 
 func (r *PostgresArtifactRepository) UpdateArtifactNodeParent(ctx context.Context, artifactID string, parentID *string) error {
-	if err := r.ensureDefaultUser(ctx); err != nil {
+	userID, err := r.userID(ctx)
+	if err != nil {
 		return err
 	}
 	position, err := r.NextNodePosition(ctx, parentID)
@@ -401,7 +419,7 @@ func (r *PostgresArtifactRepository) UpdateArtifactNodeParent(ctx context.Contex
 		 WHERE id = $1
 		   AND user_id = $2::uuid
 		   AND kind = 'artifact'
-	`, artifactID, r.userID, parentID, position)
+	`, artifactID, userID, parentID, position)
 	if err != nil {
 		return err
 	}
@@ -412,7 +430,8 @@ func (r *PostgresArtifactRepository) UpdateArtifactNodeParent(ctx context.Contex
 }
 
 func (r *PostgresArtifactRepository) UpdateFolderTitle(ctx context.Context, id string, title string) error {
-	if err := r.ensureDefaultUser(ctx); err != nil {
+	userID, err := r.userID(ctx)
+	if err != nil {
 		return err
 	}
 	tag, err := r.pool.Exec(ctx, `
@@ -422,7 +441,7 @@ func (r *PostgresArtifactRepository) UpdateFolderTitle(ctx context.Context, id s
 		 WHERE id = $1
 		   AND user_id = $2::uuid
 		   AND kind = 'folder'
-	`, id, r.userID, title)
+	`, id, userID, title)
 	if err != nil {
 		return err
 	}
@@ -433,16 +452,17 @@ func (r *PostgresArtifactRepository) UpdateFolderTitle(ctx context.Context, id s
 }
 
 func (r *PostgresArtifactRepository) GetFolder(ctx context.Context, id string) (artifactservice.FolderNode, error) {
-	if err := r.ensureDefaultUser(ctx); err != nil {
+	userID, err := r.userID(ctx)
+	if err != nil {
 		return artifactservice.FolderNode{}, err
 	}
 	var node artifactservice.FolderNode
-	err := r.pool.QueryRow(ctx, `
+	err = r.pool.QueryRow(ctx, `
 		SELECT id, parent_id, title
 		  FROM tree_nodes
 		 WHERE id = $1 AND user_id = $2::uuid
 		   AND kind = 'folder'
-	`, id, r.userID).Scan(&node.ID, &node.ParentID, &node.Title)
+	`, id, userID).Scan(&node.ID, &node.ParentID, &node.Title)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return artifactservice.FolderNode{}, artifactservice.ErrNotFound
 	}
@@ -453,7 +473,8 @@ func (r *PostgresArtifactRepository) GetFolder(ctx context.Context, id string) (
 }
 
 func (r *PostgresArtifactRepository) FolderBreadcrumbs(ctx context.Context, id string) ([]artifactservice.BreadcrumbItem, error) {
-	if err := r.ensureDefaultUser(ctx); err != nil {
+	userID, err := r.userID(ctx)
+	if err != nil {
 		return nil, err
 	}
 	rows, err := r.pool.Query(ctx, `
@@ -470,7 +491,7 @@ func (r *PostgresArtifactRepository) FolderBreadcrumbs(ctx context.Context, id s
 		SELECT id, title
 		  FROM chain
 		 ORDER BY depth DESC
-	`, id, r.userID)
+	`, id, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -489,13 +510,12 @@ func (r *PostgresArtifactRepository) FolderBreadcrumbs(ctx context.Context, id s
 	return items, rows.Err()
 }
 
-func (r *PostgresArtifactRepository) ensureDefaultUser(ctx context.Context) error {
-	_, err := r.pool.Exec(ctx, `
-		INSERT INTO users (id, email, created_at)
-		VALUES ($1::uuid, 'dev@aladin.local', now())
-		ON CONFLICT (id) DO NOTHING
-	`, r.userID)
-	return err
+func (r *PostgresArtifactRepository) userID(ctx context.Context) (string, error) {
+	principal, err := artifactservice.RequirePrincipal(ctx)
+	if err != nil {
+		return "", err
+	}
+	return principal.UserID, nil
 }
 
 func scanArtifactResponse(row scanner) (artifactservice.ArtifactResponse, error) {

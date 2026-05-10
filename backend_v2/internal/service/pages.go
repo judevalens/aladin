@@ -42,6 +42,9 @@ func NewPageService(repo PageRepository, realtime ...RealtimeEventService) *Defa
 }
 
 func (s *DefaultPageService) Get(ctx context.Context, id string) (PageDocument, error) {
+	if _, err := RequirePrincipal(ctx); err != nil {
+		return PageDocument{}, err
+	}
 	rec, err := s.pageArtifact(ctx, id)
 	if err != nil {
 		return PageDocument{}, err
@@ -50,6 +53,9 @@ func (s *DefaultPageService) Get(ctx context.Context, id string) (PageDocument, 
 }
 
 func (s *DefaultPageService) Save(ctx context.Context, id string, input PageSaveInput) (PageDocument, error) {
+	if _, err := RequirePrincipal(ctx); err != nil {
+		return PageDocument{}, err
+	}
 	if _, err := s.pageArtifact(ctx, id); err != nil {
 		return PageDocument{}, err
 	}

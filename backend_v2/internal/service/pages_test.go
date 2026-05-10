@@ -1,7 +1,6 @@
 package service
 
 import (
-	"context"
 	"errors"
 	"testing"
 )
@@ -24,7 +23,7 @@ func TestPageServiceGetLoadsPageDocument(t *testing.T) {
 	}
 	svc := NewPageService(repo)
 
-	page, err := svc.Get(context.Background(), "artifact-1")
+	page, err := svc.Get(testPrincipalContext(), "artifact-1")
 	if err != nil {
 		t.Fatalf("Get error: %v", err)
 	}
@@ -52,7 +51,7 @@ func TestPageServiceSavePersistsMarkdown(t *testing.T) {
 	}
 	svc := NewPageService(repo)
 
-	page, err := svc.Save(context.Background(), "artifact-1", PageSaveInput{Content: "", Revision: 1})
+	page, err := svc.Save(testPrincipalContext(), "artifact-1", PageSaveInput{Content: "", Revision: 1})
 	if err != nil {
 		t.Fatalf("Save error: %v", err)
 	}
@@ -79,7 +78,7 @@ func TestPageServiceSaveRejectsStaleRevision(t *testing.T) {
 	}
 	svc := NewPageService(repo)
 
-	_, err := svc.Save(context.Background(), "artifact-1", PageSaveInput{
+	_, err := svc.Save(testPrincipalContext(), "artifact-1", PageSaveInput{
 		Content:  "stale",
 		Revision: 3,
 	})
@@ -103,7 +102,7 @@ func TestPageServiceRejectsNonPageArtifacts(t *testing.T) {
 	}
 	svc := NewPageService(repo)
 
-	if _, err := svc.Get(context.Background(), "artifact-1"); !errors.Is(err, ErrNotFound) {
+	if _, err := svc.Get(testPrincipalContext(), "artifact-1"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Get error = %v, want ErrNotFound", err)
 	}
 }

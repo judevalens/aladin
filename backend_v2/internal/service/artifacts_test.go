@@ -15,7 +15,7 @@ func TestArtifactServiceCreatePageDefaultsAndTrims(t *testing.T) {
 	repo := &fakeArtifactRepository{}
 	svc := NewArtifactService(repo, &fakeArtifactFiles{})
 
-	rec, err := svc.Create(context.Background(), ArtifactPayload{
+	rec, err := svc.Create(testPrincipalContext(), ArtifactPayload{
 		Type:    "page",
 		Content: "  Rivian supply chain memo  ",
 		Summary: &summary,
@@ -31,11 +31,23 @@ func TestArtifactServiceCreatePageDefaultsAndTrims(t *testing.T) {
 	}
 }
 
+func TestArtifactServiceRequiresPrincipal(t *testing.T) {
+	t.Parallel()
+
+	svc := NewArtifactService(&fakeArtifactRepository{}, &fakeArtifactFiles{})
+	if _, err := svc.Create(context.Background(), ArtifactPayload{Type: "page", Title: "Memo"}); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("Create error = %v, want ErrUnauthenticated", err)
+	}
+	if _, err := svc.BrowserTree(context.Background()); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("BrowserTree error = %v, want ErrUnauthenticated", err)
+	}
+}
+
 func TestArtifactServiceCreateLinkRequiresSourceURL(t *testing.T) {
 	t.Parallel()
 
 	svc := NewArtifactService(&fakeArtifactRepository{}, &fakeArtifactFiles{})
-	_, err := svc.Create(context.Background(), ArtifactPayload{Type: "link", Title: "Saved"})
+	_, err := svc.Create(testPrincipalContext(), ArtifactPayload{Type: "link", Title: "Saved"})
 	if err == nil {
 		t.Fatal("Create error = nil, want BadRequest")
 	}
@@ -49,13 +61,13 @@ func TestArtifactServiceEmptyIDsAreNotFound(t *testing.T) {
 	t.Parallel()
 
 	svc := NewArtifactService(&fakeArtifactRepository{}, &fakeArtifactFiles{})
-	if _, err := svc.Get(context.Background(), " "); !errors.Is(err, ErrNotFound) {
+	if _, err := svc.Get(testPrincipalContext(), " "); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Get error = %v, want ErrNotFound", err)
 	}
-	if _, err := svc.Update(context.Background(), " ", ArtifactPatch{}); !errors.Is(err, ErrNotFound) {
+	if _, err := svc.Update(testPrincipalContext(), " ", ArtifactPatch{}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Update error = %v, want ErrNotFound", err)
 	}
-	if err := svc.Delete(context.Background(), " "); !errors.Is(err, ErrNotFound) {
+	if err := svc.Delete(testPrincipalContext(), " "); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Delete error = %v, want ErrNotFound", err)
 	}
 }
@@ -66,7 +78,7 @@ func TestArtifactServiceUploadCreatesArtifactRecord(t *testing.T) {
 	repo := &fakeArtifactRepository{}
 	svc := NewArtifactService(repo, &fakeArtifactFiles{})
 
-	rec, err := svc.Upload(context.Background(), ArtifactUploadInput{
+	rec, err := svc.Upload(testPrincipalContext(), ArtifactUploadInput{
 		Type:     "file",
 		Filename: "memo.txt",
 	}, strings.NewReader("hello"))
@@ -94,7 +106,7 @@ func TestArtifactServiceFolderTreeBuildsHierarchy(t *testing.T) {
 	}
 	svc := NewArtifactService(repo, &fakeArtifactFiles{})
 
-	tree, err := svc.FolderTree(context.Background())
+	tree, err := svc.FolderTree(testPrincipalContext())
 	if err != nil {
 		t.Fatalf("FolderTree error: %v", err)
 	}
@@ -121,7 +133,7 @@ func TestArtifactServiceBrowserTreeBuildsMixedHierarchy(t *testing.T) {
 	}
 	svc := NewArtifactService(repo, &fakeArtifactFiles{})
 
-	tree, err := svc.BrowserTree(context.Background())
+	tree, err := svc.BrowserTree(testPrincipalContext())
 	if err != nil {
 		t.Fatalf("BrowserTree error: %v", err)
 	}
@@ -257,3 +269,12 @@ func (f *fakeArtifactFiles) SaveResource(kind string, filename string, body io.R
 }
 
 func (f *fakeArtifactFiles) ResourcePath(string) (string, error) { return "", ErrNotFound }
+
+func testPrincipalContext() context.Context {
+	return WithPrincipal(context.Background(), Principal{
+		UserID:    "00000000-0000-0000-0000-000000000001",
+		ActorType: ActorTypeUserSession,
+		ActorID:   "00000000-0000-0000-0000-000000000001",
+		Email:     "test@aladin.local",
+	})
+}

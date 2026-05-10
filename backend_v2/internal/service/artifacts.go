@@ -71,6 +71,9 @@ func NewArtifactService(repo ArtifactRepository, files ArtifactFileStore, realti
 }
 
 func (s *DefaultArtifactService) List(ctx context.Context, params ArtifactListParams) ([]ArtifactResponse, error) {
+	if _, err := RequirePrincipal(ctx); err != nil {
+		return nil, err
+	}
 	if params.FolderID != nil {
 		params.FolderID = TrimStringPtr(params.FolderID)
 		if params.FolderID != nil {
@@ -83,6 +86,9 @@ func (s *DefaultArtifactService) List(ctx context.Context, params ArtifactListPa
 }
 
 func (s *DefaultArtifactService) BrowserTree(ctx context.Context) ([]BrowserTreeNode, error) {
+	if _, err := RequirePrincipal(ctx); err != nil {
+		return nil, err
+	}
 	nodes, err := s.repo.ListAllBrowserNodes(ctx)
 	if err != nil {
 		return nil, err
@@ -125,6 +131,9 @@ func (s *DefaultArtifactService) BrowserTree(ctx context.Context) ([]BrowserTree
 }
 
 func (s *DefaultArtifactService) Get(ctx context.Context, id string) (ArtifactResponse, error) {
+	if _, err := RequirePrincipal(ctx); err != nil {
+		return ArtifactResponse{}, err
+	}
 	if strings.TrimSpace(id) == "" {
 		return ArtifactResponse{}, ErrNotFound
 	}
@@ -132,6 +141,9 @@ func (s *DefaultArtifactService) Get(ctx context.Context, id string) (ArtifactRe
 }
 
 func (s *DefaultArtifactService) Create(ctx context.Context, payload ArtifactPayload) (ArtifactResponse, error) {
+	if _, err := RequirePrincipal(ctx); err != nil {
+		return ArtifactResponse{}, err
+	}
 	artifactType := strings.TrimSpace(payload.Type)
 	if artifactType == "" {
 		artifactType = "page"
@@ -213,6 +225,9 @@ func (s *DefaultArtifactService) Create(ctx context.Context, payload ArtifactPay
 }
 
 func (s *DefaultArtifactService) Update(ctx context.Context, id string, patch ArtifactPatch) (ArtifactResponse, error) {
+	if _, err := RequirePrincipal(ctx); err != nil {
+		return ArtifactResponse{}, err
+	}
 	if strings.TrimSpace(id) == "" {
 		return ArtifactResponse{}, ErrNotFound
 	}
@@ -295,6 +310,9 @@ func (s *DefaultArtifactService) Update(ctx context.Context, id string, patch Ar
 }
 
 func (s *DefaultArtifactService) Delete(ctx context.Context, id string) error {
+	if _, err := RequirePrincipal(ctx); err != nil {
+		return err
+	}
 	if strings.TrimSpace(id) == "" {
 		return ErrNotFound
 	}
@@ -306,6 +324,9 @@ func (s *DefaultArtifactService) Delete(ctx context.Context, id string) error {
 }
 
 func (s *DefaultArtifactService) Upload(ctx context.Context, input ArtifactUploadInput, body io.Reader) (ArtifactResponse, error) {
+	if _, err := RequirePrincipal(ctx); err != nil {
+		return ArtifactResponse{}, err
+	}
 	artifactType := strings.TrimSpace(input.Type)
 	if artifactType != "voice" && artifactType != "file" {
 		return ArtifactResponse{}, BadRequest("type must be one of: voice, file")
@@ -392,6 +413,9 @@ func (s *DefaultArtifactService) Resource(ctx context.Context, id string) (Artif
 }
 
 func (s *DefaultArtifactService) ListFolders(ctx context.Context, parentID *string) ([]FolderNode, error) {
+	if _, err := RequirePrincipal(ctx); err != nil {
+		return nil, err
+	}
 	parentID = TrimStringPtr(parentID)
 	if parentID != nil {
 		if _, err := s.repo.GetFolder(ctx, *parentID); err != nil {
@@ -402,6 +426,9 @@ func (s *DefaultArtifactService) ListFolders(ctx context.Context, parentID *stri
 }
 
 func (s *DefaultArtifactService) FolderTree(ctx context.Context) ([]FolderTreeNode, error) {
+	if _, err := RequirePrincipal(ctx); err != nil {
+		return nil, err
+	}
 	folders, err := s.repo.ListAllFolders(ctx)
 	if err != nil {
 		return nil, err
@@ -440,6 +467,9 @@ func (s *DefaultArtifactService) FolderTree(ctx context.Context) ([]FolderTreeNo
 }
 
 func (s *DefaultArtifactService) CreateFolder(ctx context.Context, title string, parentID *string) (FolderNode, error) {
+	if _, err := RequirePrincipal(ctx); err != nil {
+		return FolderNode{}, err
+	}
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return FolderNode{}, BadRequest("title is required")
@@ -474,6 +504,9 @@ func (s *DefaultArtifactService) CreateFolder(ctx context.Context, title string,
 }
 
 func (s *DefaultArtifactService) UpdateFolder(ctx context.Context, id string, patch FolderPatch) (FolderNode, error) {
+	if _, err := RequirePrincipal(ctx); err != nil {
+		return FolderNode{}, err
+	}
 	if strings.TrimSpace(id) == "" {
 		return FolderNode{}, ErrNotFound
 	}
@@ -496,6 +529,9 @@ func (s *DefaultArtifactService) UpdateFolder(ctx context.Context, id string, pa
 }
 
 func (s *DefaultArtifactService) GetFolder(ctx context.Context, id string) (FolderNode, error) {
+	if _, err := RequirePrincipal(ctx); err != nil {
+		return FolderNode{}, err
+	}
 	if strings.TrimSpace(id) == "" {
 		return FolderNode{}, ErrNotFound
 	}
@@ -503,6 +539,9 @@ func (s *DefaultArtifactService) GetFolder(ctx context.Context, id string) (Fold
 }
 
 func (s *DefaultArtifactService) FolderBreadcrumbs(ctx context.Context, id string) ([]BreadcrumbItem, error) {
+	if _, err := RequirePrincipal(ctx); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(id) == "" {
 		return nil, ErrNotFound
 	}
