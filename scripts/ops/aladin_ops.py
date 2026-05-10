@@ -182,11 +182,12 @@ def db_report(ctx: dict[str, Any]) -> None:
         return
     count_sql = """
         SELECT 'provider_streams', COUNT(*) FROM provider_streams
-        UNION ALL SELECT 'source_items', COUNT(*) FROM source_items
-        UNION ALL SELECT 'source_item_enrichments', COUNT(*) FROM source_item_enrichments
+        UNION ALL SELECT 'records', COUNT(*) FROM records
+        UNION ALL SELECT 'records_enriched', COUNT(*) FROM records WHERE enrichment IS NOT NULL AND enrichment <> '{}'::jsonb
+        UNION ALL SELECT 'records_with_key_claims', COUNT(*) FROM records WHERE enrichment ? 'key_claims'
+        UNION ALL SELECT 'records_with_search_context', COUNT(*) FROM records WHERE enrichment ? 'search_context'
         UNION ALL SELECT 'source_subscriptions', COUNT(*) FROM source_subscriptions
         UNION ALL SELECT 'tenant_item_matches', COUNT(*) FROM tenant_item_matches
-        UNION ALL SELECT 'records', COUNT(*) FROM records
         UNION ALL SELECT 'sync_cycles_live', COUNT(*) FROM sync_cycles WHERE status IN ('active', 'running')
         ORDER BY 1;
     """

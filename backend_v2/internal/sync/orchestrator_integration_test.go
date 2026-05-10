@@ -144,7 +144,7 @@ type integrationSeenStore struct {
 	known map[string]bool
 }
 
-func (s *integrationSeenStore) Seen(ctx context.Context, sourceID string, externalIDs []string) (map[string]bool, error) {
+func (s *integrationSeenStore) Seen(ctx context.Context, providerStreamID string, externalIDs []string) (map[string]bool, error) {
 	out := make(map[string]bool, len(externalIDs))
 	for _, id := range externalIDs {
 		if s.known[id] {
@@ -154,7 +154,7 @@ func (s *integrationSeenStore) Seen(ctx context.Context, sourceID string, extern
 	return out, nil
 }
 
-func (s *integrationSeenStore) MarkSeen(ctx context.Context, sourceID string, externalIDs []string) error {
+func (s *integrationSeenStore) MarkSeen(ctx context.Context, providerStreamID string, externalIDs []string) error {
 	for _, id := range externalIDs {
 		s.known[id] = true
 	}
@@ -167,19 +167,27 @@ func (e *integrationEnqueuer) EnqueueSync(ctx context.Context, queueName, taskTy
 	return nil
 }
 
-func (e *integrationEnqueuer) EnqueueGlobalFirstPass(ctx context.Context, sourceItemID string, payload []byte) error {
+func (e *integrationEnqueuer) EnqueueGlobalFirstPass(ctx context.Context, recordID string, payload []byte) error {
 	return nil
 }
 
-type integrationSourceItemRepo struct{}
+type integrationRecordRepo struct{}
 
-func (r *integrationSourceItemRepo) Upsert(ctx context.Context, item *db.SourceItem) (*db.SourceItemUpsertResult, error) {
-	cp := *item
-	return &db.SourceItemUpsertResult{Item: &cp, Changed: true, Inserted: true}, nil
+func (r *integrationRecordRepo) SaveComplete(ctx context.Context, a *db.CompletedRecord) error {
+	return nil
 }
 
-func (r *integrationSourceItemRepo) Get(ctx context.Context, id string) (*db.SourceItem, error) {
+func (r *integrationRecordRepo) UpsertCanonical(ctx context.Context, record *db.Record) (*db.RecordUpsertResult, error) {
+	cp := *record
+	return &db.RecordUpsertResult{Record: &cp, Changed: true, Inserted: true}, nil
+}
+
+func (r *integrationRecordRepo) Get(ctx context.Context, id string) (*db.Record, error) {
 	return nil, nil
+}
+
+func (r *integrationRecordRepo) SaveEnrichment(ctx context.Context, enrichment *db.RecordEnrichment) (bool, error) {
+	return true, nil
 }
 
 type redditFlowFixture struct {
@@ -302,7 +310,7 @@ func TestOrchestratorWithRealRedditSyncerRefreshTakesOverThenOlderCycleResumes(t
 	}
 	seen := &integrationSeenStore{known: map[string]bool{"t3_seen-1": true}}
 	reddit := syncers.NewRedditSyncerWithClient(loadFixtureRedditClient(t, "reddit_refresh_takeover_flow.json"), seen)
-	orch := syncpkg.NewOrchestrator(&integrationEnqueuer{}, sources, &integrationSourceItemRepo{}, cycles, seen, syncpkg.NewFreshnessFirstArbiter(), reddit)
+	orch := syncpkg.NewOrchestrator(&integrationEnqueuer{}, sources, &integrationRecordRepo{}, cycles, seen, syncpkg.NewFreshnessFirstArbiter(), reddit)
 	mux := asynq.NewServeMux()
 	orch.RegisterHandlers(mux)
 

@@ -192,7 +192,7 @@ func redditThreadChild(kind string, id string, title string, selftext string, bo
 	return child
 }
 
-func (f fakeSeenStore) Seen(ctx context.Context, sourceID string, externalIDs []string) (map[string]bool, error) {
+func (f fakeSeenStore) Seen(ctx context.Context, providerStreamID string, externalIDs []string) (map[string]bool, error) {
 	out := make(map[string]bool, len(externalIDs))
 	for _, id := range externalIDs {
 		if f.known[id] {
@@ -202,7 +202,7 @@ func (f fakeSeenStore) Seen(ctx context.Context, sourceID string, externalIDs []
 	return out, nil
 }
 
-func (f fakeSeenStore) MarkSeen(ctx context.Context, sourceID string, externalIDs []string) error {
+func (f fakeSeenStore) MarkSeen(ctx context.Context, providerStreamID string, externalIDs []string) error {
 	return nil
 }
 

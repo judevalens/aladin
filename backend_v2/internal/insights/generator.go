@@ -53,13 +53,14 @@ func (g *Generator) findTrendInsights(ctx context.Context, kgID string) ([]*db.I
 	rows, err := g.pool.Query(ctx, `
 		SELECT
 			topic,
-			count(*)        AS mention_count,
-			array_agg(a.id) AS record_ids
+			count(DISTINCT a.id)        AS mention_count,
+			array_agg(DISTINCT a.id)    AS record_ids
 		FROM records a
 		JOIN tenant_item_matches tim ON tim.record_id = a.id
 		JOIN source_subscriptions ss ON ss.id = tim.subscription_id
 		CROSS JOIN LATERAL jsonb_array_elements_text(a.enrichment->'topics') AS topic
 		WHERE ss.kg_id = $1::uuid
+		  AND tim.relevance_status = 'relevant'
 		  AND a.created_at >= now() - interval '24 hours'
 		  AND a.enrichment IS NOT NULL
 		GROUP BY topic

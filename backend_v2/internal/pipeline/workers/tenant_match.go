@@ -7,37 +7,29 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/google/uuid"
-
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/llm"
 	"aladin/backend_v2/internal/pipeline"
 )
 
 type TenantMatchWorker struct {
-	items       db.SourceItemRepository
-	enrichments db.SourceItemEnrichmentRepository
-	subs        db.SourceSubscriptionRepository
-	matches     db.TenantItemMatchRepository
-	enqueuer    pipeline.Enqueuer
-	judge       llm.RelevanceJudge
+	records db.RecordRepository
+	subs    db.SourceSubscriptionRepository
+	matches db.TenantItemMatchRepository
+	judge   llm.RelevanceJudge
 }
 
 func NewTenantMatchWorker(
-	items db.SourceItemRepository,
-	enrichments db.SourceItemEnrichmentRepository,
+	records db.RecordRepository,
 	subs db.SourceSubscriptionRepository,
 	matches db.TenantItemMatchRepository,
-	enqueuer pipeline.Enqueuer,
 	judge llm.RelevanceJudge,
 ) *TenantMatchWorker {
 	return &TenantMatchWorker{
-		items:       items,
-		enrichments: enrichments,
-		subs:        subs,
-		matches:     matches,
-		enqueuer:    enqueuer,
-		judge:       judge,
+		records: records,
+		subs:    subs,
+		matches: matches,
+		judge:   judge,
 	}
 }
 
@@ -56,30 +48,26 @@ func (w *TenantMatchWorker) Run(ctx context.Context, raw []byte) pipeline.Result
 	log := slog.With(
 		"component", "pipeline",
 		"stage", "tenant_match",
-		"source_item_id", p.SourceItemID,
+		"record_id", p.RecordID,
 		"source_revision", p.SourceRevision,
 		"correlation_id", p.CorrelationID,
 	)
 
-	item, err := w.items.Get(ctx, p.SourceItemID)
+	record, err := w.records.Get(ctx, p.RecordID)
 	if err != nil {
-		return tenantMatchErrResult(p, pipeline.ErrTransient{Cause: fmt.Errorf("load source item: %w", err)})
+		return tenantMatchErrResult(p, pipeline.ErrTransient{Cause: fmt.Errorf("load record: %w", err)})
 	}
-	enrichment, err := w.enrichments.Get(ctx, p.SourceItemID, p.SourceRevision)
-	if err != nil {
-		return tenantMatchErrResult(p, pipeline.ErrTransient{Cause: fmt.Errorf("load enrichment: %w", err)})
-	}
-	subs, err := w.subs.ListActiveByProviderStream(ctx, item.ProviderStreamID)
+	subs, err := w.subs.ListActiveByProviderStream(ctx, record.ProviderStreamID)
 	if err != nil {
 		return tenantMatchErrResult(p, pipeline.ErrTransient{Cause: fmt.Errorf("load subscriptions: %w", err)})
 	}
 
 	matched := 0
 	for _, sub := range subs {
-		if item.OwnerUserID != nil && *item.OwnerUserID != sub.UserID {
+		if record.OwnerUserID != nil && *record.OwnerUserID != sub.UserID {
 			continue
 		}
-		intentMatched := subscriptionIntentMatches(sub.Policy, item, enrichment)
+		intentMatched := subscriptionIntentMatches(sub.Policy, record)
 		// KG overlap should be resolved by a graph-backed collaborator later. Keep the
 		// match-source contract explicit so this worker does not pretend it queried KG.
 		if !intentMatched {
@@ -95,10 +83,10 @@ func (w *TenantMatchWorker) Run(ctx context.Context, raw []byte) pipeline.Result
 			relevance, err = w.judge.JudgeRelevance(ctx, llm.RelevanceInput{
 				SubscriptionName: sub.Name,
 				Policy:           sub.Policy,
-				ItemTitle:        item.Title,
-				ItemSummary:      enrichment.Summary,
-				ItemEntities:     enrichment.Entities,
-				ItemTopics:       enrichment.Topics,
+				ItemTitle:        record.Title,
+				ItemSummary:      record.Enrichment.Summary,
+				ItemEntities:     record.Enrichment.Entities,
+				ItemTopics:       record.Enrichment.Topics,
 			})
 			if err != nil {
 				return tenantMatchErrResult(p, pipeline.ErrTransient{Cause: fmt.Errorf("judge relevance: %w", err)})
@@ -111,8 +99,8 @@ func (w *TenantMatchWorker) Run(ctx context.Context, raw []byte) pipeline.Result
 		}
 		match := &db.TenantItemMatch{
 			SubscriptionID:  sub.ID,
-			SourceItemID:    item.ID,
-			SourceRevision:  item.SourceRevision,
+			RecordID:        record.ID,
+			SourceRevision:  record.SourceRevision,
 			MatchSource:     "intent",
 			RelevanceStatus: status,
 			RelevanceScore:  &relevance.Confidence,
@@ -125,40 +113,8 @@ func (w *TenantMatchWorker) Run(ctx context.Context, raw []byte) pipeline.Result
 			continue
 		}
 
-		recordID := uuid.NewSHA1(uuid.NameSpaceURL, []byte(sub.ID+":"+item.ID+":"+fmt.Sprint(item.SourceRevision))).String()
 		if err := w.matches.Save(ctx, match); err != nil {
 			return tenantMatchErrResult(p, pipeline.ErrTransient{Cause: fmt.Errorf("save tenant match: %w", err)})
-		}
-
-		recordPayload, err := json.Marshal(pipeline.RecordPayload{
-			RecordID:       recordID,
-			CorrelationID:  p.CorrelationID,
-			KgID:           sub.KgID,
-			SourceID:       sub.ID,
-			ExternalID:     item.ExternalID,
-			SourceRevision: item.SourceRevision,
-			Type:           item.Type,
-			Label:          item.Title,
-			Content:        item.ContentExcerpt,
-			SourceURL:      item.SourceURL,
-			Metadata: map[string]any{
-				"provider":            item.Provider,
-				"provider_stream_id":  item.ProviderStreamID,
-				"source_item_id":      item.ID,
-				"source_subscription": sub.ID,
-				"source_revision":     item.SourceRevision,
-			},
-			Summary:               enrichment.Summary,
-			Entities:              enrichment.Entities,
-			Topics:                enrichment.Topics,
-			KeyClaims:             enrichment.KeyClaims,
-			LowConfidenceEntities: enrichment.LowConfidenceEntities,
-		})
-		if err != nil {
-			return tenantMatchErrResult(p, pipeline.ErrPermanent{Cause: fmt.Errorf("marshal tenant record payload: %w", err)})
-		}
-		if err := w.enqueuer.EnqueueStage(ctx, pipeline.TaskEmbed, recordID, recordPayload); err != nil {
-			return tenantMatchErrResult(p, pipeline.ErrTransient{Cause: fmt.Errorf("enqueue tenant record: %w", err)})
 		}
 		matched++
 	}
@@ -169,7 +125,7 @@ func (w *TenantMatchWorker) Run(ctx context.Context, raw []byte) pipeline.Result
 		Type:          pipeline.ResultTenantMatchDone,
 		TaskType:      pipeline.TaskTenantMatch,
 		Payload:       payload,
-		RecordID:      p.SourceItemID,
+		RecordID:      p.RecordID,
 		CorrelationID: p.CorrelationID,
 	}
 }
@@ -178,35 +134,27 @@ func tenantMatchErrResult(p pipeline.TenantMatchPayload, err error) pipeline.Res
 	return pipeline.Result{
 		TaskType:      pipeline.TaskTenantMatch,
 		Err:           err,
-		RecordID:      p.SourceItemID,
+		RecordID:      p.RecordID,
 		CorrelationID: p.CorrelationID,
 	}
 }
 
-func subscriptionIntentMatches(policy map[string]any, item *db.SourceItem, enrichment *db.SourceItemEnrichment) bool {
-	if len(policy) == 0 || onlyLegacyPolicy(policy) {
+func subscriptionIntentMatches(policy map[string]any, record *db.Record) bool {
+	if len(policy) == 0 {
 		return true
 	}
 	haystack := strings.ToLower(strings.Join(append([]string{
-		item.Title,
-		item.ContentExcerpt,
-		item.ContextExcerpt,
-		enrichment.Summary,
-	}, append(enrichment.Entities, enrichment.Topics...)...), " "))
+		record.Title,
+		record.ContentExcerpt,
+		record.ContextExcerpt,
+		record.Enrichment.Summary,
+	}, append(record.Enrichment.Entities, record.Enrichment.Topics...)...), " "))
 	for _, key := range []string{"keywords", "topics", "entities", "domains"} {
 		for _, token := range policyStrings(policy[key]) {
 			if token != "" && strings.Contains(haystack, strings.ToLower(token)) {
 				return true
 			}
 		}
-	}
-	return false
-}
-
-func onlyLegacyPolicy(policy map[string]any) bool {
-	if len(policy) == 1 {
-		_, ok := policy["legacy_source_id"]
-		return ok
 	}
 	return false
 }

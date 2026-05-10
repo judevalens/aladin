@@ -19,8 +19,14 @@ func (r *PostgresSystemRepository) Ready(ctx context.Context) error {
 func (r *PostgresSystemRepository) WorkerStatus(ctx context.Context) (map[string]any, error) {
 	var pendingPipeline int
 	if err := r.pool.QueryRow(ctx, `
-		SELECT COUNT(*) FROM records WHERE status IN ('pending', 'enriched', 'embedded')
+		SELECT COUNT(*) FROM records WHERE status IN ('pending', 'captured')
 	`).Scan(&pendingPipeline); err != nil {
+		return nil, err
+	}
+	var enrichedRecords int
+	if err := r.pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM records WHERE status = 'enriched'
+	`).Scan(&enrichedRecords); err != nil {
 		return nil, err
 	}
 	var activeCycles int
@@ -31,7 +37,7 @@ func (r *PostgresSystemRepository) WorkerStatus(ctx context.Context) (map[string
 	}
 	return map[string]any{
 		"pipeline": map[string]any{
-			"enriched":  0,
+			"enriched":  enrichedRecords,
 			"embedded":  0,
 			"promoted":  0,
 			"errors":    0,

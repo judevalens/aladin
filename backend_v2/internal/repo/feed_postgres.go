@@ -29,10 +29,11 @@ func (r *PostgresFeedRepository) List(ctx context.Context, params coreservice.Fe
 		        0
 		    ) AS signal_score
 		  FROM records a
-		  LEFT JOIN LATERAL (
+		  JOIN LATERAL (
 		      SELECT subscription_id
 		        FROM tenant_item_matches
 		       WHERE record_id = a.id
+		         AND relevance_status = 'relevant'
 		       ORDER BY updated_at DESC
 		       LIMIT 1
 		  ) tim ON TRUE
@@ -94,7 +95,7 @@ func (r *PostgresFeedRepository) List(ctx context.Context, params coreservice.Fe
 		items = append(items, item)
 	}
 
-	countQuery := `SELECT COUNT(*) FROM records a LEFT JOIN LATERAL (SELECT subscription_id FROM tenant_item_matches WHERE record_id = a.id ORDER BY updated_at DESC LIMIT 1) tim ON TRUE LEFT JOIN source_subscriptions ss ON ss.id = tim.subscription_id LEFT JOIN provider_streams ps ON ps.id = ss.provider_stream_id WHERE a.status != 'superseded' AND a.user_status IS DISTINCT FROM 'dismissed'`
+	countQuery := `SELECT COUNT(*) FROM records a JOIN LATERAL (SELECT subscription_id FROM tenant_item_matches WHERE record_id = a.id AND relevance_status = 'relevant' ORDER BY updated_at DESC LIMIT 1) tim ON TRUE LEFT JOIN source_subscriptions ss ON ss.id = tim.subscription_id LEFT JOIN provider_streams ps ON ps.id = ss.provider_stream_id WHERE a.status != 'superseded' AND a.user_status IS DISTINCT FROM 'dismissed'`
 	countArgs := []any{}
 	countPos := 1
 	if params.SourceType != "" {
@@ -120,9 +121,14 @@ func (r *PostgresFeedRepository) List(ctx context.Context, params coreservice.Fe
 func (r *PostgresFeedRepository) Topics(ctx context.Context) ([]string, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT DISTINCT jsonb_array_elements_text(enrichment->'topics') AS topic
-		  FROM records
-		 WHERE enrichment IS NOT NULL
-		   AND status != 'superseded'
+		  FROM records a
+		 WHERE a.enrichment IS NOT NULL
+		   AND a.status != 'superseded'
+		   AND EXISTS (
+		       SELECT 1 FROM tenant_item_matches tim
+		        WHERE tim.record_id = a.id
+		          AND tim.relevance_status = 'relevant'
+		   )
 		 ORDER BY topic
 		 LIMIT 100
 	`)

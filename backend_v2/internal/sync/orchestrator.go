@@ -28,13 +28,13 @@ type Orchestrator struct {
 func NewOrchestrator(
 	enqueuer Enqueuer,
 	streams db.ProviderStreamRepository,
-	sourceItems db.SourceItemRepository,
+	records db.RecordRepository,
 	cycles db.SyncCycleRepository,
 	seen SeenStore,
 	arbiter Arbiter,
 	syncers ...Syncer,
 ) *Orchestrator {
-	handler := NewSourceItemResultHandler(enqueuer, streams, sourceItems, cycles, seen)
+	handler := NewRecordResultHandler(enqueuer, streams, records, cycles, seen)
 	return NewOrchestratorWithResultHandler(enqueuer, streams, cycles, arbiter, handler, syncers...)
 }
 

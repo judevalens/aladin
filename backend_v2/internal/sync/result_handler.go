@@ -20,37 +20,37 @@ type SyncResultHandler interface {
 	HandleFailure(ctx context.Context, job db.SyncJob, executeErr error) error
 }
 
-// SourceItemResultHandler is the default provider-stream result handler. It
-// turns syncer records into source_items, enqueues global enrichment, and only
+// RecordResultHandler is the default provider-stream result handler. It
+// turns syncer records into canonical records, enqueues global enrichment, and only
 // advances stream/cycle progress after that durable handoff succeeds.
-type SourceItemResultHandler struct {
-	enqueuer    Enqueuer
-	streams     db.ProviderStreamRepository
-	sourceItems db.SourceItemRepository
-	cycles      db.SyncCycleRepository
-	seen        SeenStore
+type RecordResultHandler struct {
+	enqueuer Enqueuer
+	streams  db.ProviderStreamRepository
+	records  db.RecordRepository
+	cycles   db.SyncCycleRepository
+	seen     SeenStore
 }
 
-func NewSourceItemResultHandler(
+func NewRecordResultHandler(
 	enqueuer Enqueuer,
 	streams db.ProviderStreamRepository,
-	sourceItems db.SourceItemRepository,
+	records db.RecordRepository,
 	cycles db.SyncCycleRepository,
 	seen SeenStore,
-) *SourceItemResultHandler {
+) *RecordResultHandler {
 	if seen == nil {
 		seen = NewNoopSeenStore()
 	}
-	return &SourceItemResultHandler{
-		enqueuer:    enqueuer,
-		streams:     streams,
-		sourceItems: sourceItems,
-		cycles:      cycles,
-		seen:        seen,
+	return &RecordResultHandler{
+		enqueuer: enqueuer,
+		streams:  streams,
+		records:  records,
+		cycles:   cycles,
+		seen:     seen,
 	}
 }
 
-func (h *SourceItemResultHandler) HandleFailure(ctx context.Context, job db.SyncJob, executeErr error) error {
+func (h *RecordResultHandler) HandleFailure(ctx context.Context, job db.SyncJob, executeErr error) error {
 	log := syncResultLog(job)
 	if mErr := h.streams.MarkSyncFailed(ctx, job.ProviderStreamID); mErr != nil {
 		log.Error("sync: mark failed error", "err", mErr)
@@ -58,7 +58,7 @@ func (h *SourceItemResultHandler) HandleFailure(ctx context.Context, job db.Sync
 	return executeErr
 }
 
-func (h *SourceItemResultHandler) HandleSuccess(ctx context.Context, job db.SyncJob, result *Result) error {
+func (h *RecordResultHandler) HandleSuccess(ctx context.Context, job db.SyncJob, result *Result) error {
 	log := syncResultLog(job)
 
 	queued, seenIDs, err := h.acceptRecords(ctx, log, job, result.Records)
@@ -83,7 +83,7 @@ func (h *SourceItemResultHandler) HandleSuccess(ctx context.Context, job db.Sync
 	return h.handleCompletion(ctx, log, job, result)
 }
 
-func (h *SourceItemResultHandler) acceptRecords(
+func (h *RecordResultHandler) acceptRecords(
 	ctx context.Context,
 	log *slog.Logger,
 	job db.SyncJob,
@@ -92,34 +92,34 @@ func (h *SourceItemResultHandler) acceptRecords(
 	queued := 0
 	seenIDs := make([]string, 0, len(records))
 	for _, record := range records {
-		upserted, err := h.sourceItems.Upsert(ctx, sourceItemFromRecord(job, record))
+		upserted, err := h.records.UpsertCanonical(ctx, canonicalRecordFromRaw(job, record))
 		if err != nil {
 			_ = h.streams.MarkSyncFailed(ctx, job.ProviderStreamID)
-			log.Error("sync: upsert source item failed", "external_id", record.ExternalID, "err", err)
-			return queued, seenIDs, fmt.Errorf("sync: upsert source item %s: %w", record.ExternalID, err)
+			log.Error("sync: upsert canonical record failed", "external_id", record.ExternalID, "err", err)
+			return queued, seenIDs, fmt.Errorf("sync: upsert canonical record %s: %w", record.ExternalID, err)
 		}
 		if upserted.Changed {
-			payload, err := json.Marshal(pipeline.SourceItemPayload{
-				SourceItemID:     upserted.Item.ID,
+			payload, err := json.Marshal(pipeline.GlobalRecordPayload{
+				RecordID:         upserted.Record.ID,
 				CorrelationID:    job.CorrelationID,
-				ProviderStreamID: upserted.Item.ProviderStreamID,
-				Provider:         upserted.Item.Provider,
-				ExternalID:       upserted.Item.ExternalID,
-				SourceRevision:   upserted.Item.SourceRevision,
-				Type:             upserted.Item.Type,
-				Title:            upserted.Item.Title,
-				ContentExcerpt:   upserted.Item.ContentExcerpt,
-				ContextExcerpt:   upserted.Item.ContextExcerpt,
-				SourceURL:        upserted.Item.SourceURL,
-				Metadata:         upserted.Item.ProviderMetadata,
+				ProviderStreamID: upserted.Record.ProviderStreamID,
+				Provider:         upserted.Record.Provider,
+				ExternalID:       upserted.Record.ExternalID,
+				SourceRevision:   upserted.Record.SourceRevision,
+				Type:             upserted.Record.Type,
+				Title:            upserted.Record.Title,
+				ContentExcerpt:   upserted.Record.ContentExcerpt,
+				ContextExcerpt:   upserted.Record.ContextExcerpt,
+				SourceURL:        upserted.Record.SourceURL,
+				Metadata:         upserted.Record.ProviderMetadata,
 			})
 			if err != nil {
-				return queued, seenIDs, fmt.Errorf("sync: marshal source item payload: %w", err)
+				return queued, seenIDs, fmt.Errorf("sync: marshal global record payload: %w", err)
 			}
-			if err := h.enqueuer.EnqueueGlobalFirstPass(ctx, upserted.Item.ID, payload); err != nil {
+			if err := h.enqueuer.EnqueueGlobalFirstPass(ctx, upserted.Record.ID, payload); err != nil {
 				_ = h.streams.MarkSyncFailed(ctx, job.ProviderStreamID)
-				log.Error("sync: enqueue global first pass failed", "source_item_id", upserted.Item.ID, "external_id", record.ExternalID, "err", err)
-				return queued, seenIDs, fmt.Errorf("sync: enqueue source item %s: %w", record.ExternalID, err)
+				log.Error("sync: enqueue global first pass failed", "record_id", upserted.Record.ID, "external_id", record.ExternalID, "err", err)
+				return queued, seenIDs, fmt.Errorf("sync: enqueue canonical record %s: %w", record.ExternalID, err)
 			}
 			queued++
 		}
@@ -128,7 +128,7 @@ func (h *SourceItemResultHandler) acceptRecords(
 	return queued, seenIDs, nil
 }
 
-func (h *SourceItemResultHandler) createFollowUpCycles(
+func (h *RecordResultHandler) createFollowUpCycles(
 	ctx context.Context,
 	log *slog.Logger,
 	job db.SyncJob,
@@ -175,7 +175,7 @@ func (h *SourceItemResultHandler) createFollowUpCycles(
 	return nil
 }
 
-func (h *SourceItemResultHandler) handlePageProgress(
+func (h *RecordResultHandler) handlePageProgress(
 	ctx context.Context,
 	log *slog.Logger,
 	job db.SyncJob,
@@ -210,7 +210,7 @@ func (h *SourceItemResultHandler) handlePageProgress(
 	return nil
 }
 
-func (h *SourceItemResultHandler) handleCompletion(
+func (h *RecordResultHandler) handleCompletion(
 	ctx context.Context,
 	log *slog.Logger,
 	job db.SyncJob,
@@ -276,14 +276,14 @@ func mergeState(base map[string]any, updates map[string]any) map[string]any {
 	return merged
 }
 
-func sourceItemFromRecord(job db.SyncJob, record *RawRecord) *db.SourceItem {
-	itemID := uuid.NewSHA1(uuid.NameSpaceURL, []byte(job.Provider+":"+record.ExternalID)).String()
+func canonicalRecordFromRaw(job db.SyncJob, record *RawRecord) *db.Record {
+	recordID := uuid.NewSHA1(uuid.NameSpaceURL, []byte(job.Provider+":"+record.ExternalID)).String()
 	title := record.Label
 	if title == "" {
 		title = record.ExternalID
 	}
-	return &db.SourceItem{
-		ID:               itemID,
+	return &db.Record{
+		ID:               recordID,
 		ProviderStreamID: job.ProviderStreamID,
 		Provider:         job.Provider,
 		ExternalID:       record.ExternalID,

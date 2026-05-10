@@ -103,7 +103,7 @@ func TestFirstPassWorkerReturnsSearchNeeded(t *testing.T) {
 	}
 }
 
-func TestGlobalFirstPassWorkerEnrichesSourceItem(t *testing.T) {
+func TestGlobalFirstPassWorkerEnrichesRecord(t *testing.T) {
 	t.Parallel()
 
 	w := NewGlobalFirstPassWorker(&fakeEnricher{
@@ -115,8 +115,8 @@ func TestGlobalFirstPassWorkerEnrichesSourceItem(t *testing.T) {
 		},
 	}, ratelimit.New(1000))
 
-	raw, _ := json.Marshal(pipeline.SourceItemPayload{
-		SourceItemID:     "source-item-1",
+	raw, _ := json.Marshal(pipeline.GlobalRecordPayload{
+		RecordID:         "record-1",
 		ProviderStreamID: "stream-1",
 		Type:             "post",
 		ContentExcerpt:   "raw post excerpt",
@@ -130,7 +130,7 @@ func TestGlobalFirstPassWorkerEnrichesSourceItem(t *testing.T) {
 	if result.Type != pipeline.ResultGlobalFirstPassDone {
 		t.Fatalf("result.Type = %q, want %q", result.Type, pipeline.ResultGlobalFirstPassDone)
 	}
-	var payload pipeline.SourceItemPayload
+	var payload pipeline.GlobalRecordPayload
 	if err := json.Unmarshal(result.Payload, &payload); err != nil {
 		t.Fatalf("unmarshal result payload: %v", err)
 	}

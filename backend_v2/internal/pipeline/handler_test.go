@@ -36,8 +36,11 @@ func (f *fakeEnqueuer) EnqueueStage(ctx context.Context, taskType, recordID stri
 }
 
 type fakeRecordRepo struct {
-	saved []*db.CompletedRecord
-	err   error
+	saved       []*db.CompletedRecord
+	enrichments []*db.RecordEnrichment
+	records     map[string]*db.Record
+	err         error
+	stale       bool
 }
 
 func (f *fakeRecordRepo) SaveComplete(ctx context.Context, a *db.CompletedRecord) error {
@@ -45,32 +48,37 @@ func (f *fakeRecordRepo) SaveComplete(ctx context.Context, a *db.CompletedRecord
 	return f.err
 }
 
-func (f *fakeRecordRepo) ExistsExternal(ctx context.Context, sourceID string, externalIDs []string) (map[string]bool, error) {
+func (f *fakeRecordRepo) UpsertCanonical(ctx context.Context, record *db.Record) (*db.RecordUpsertResult, error) {
+	if f.records == nil {
+		f.records = make(map[string]*db.Record)
+	}
+	f.records[record.ID] = record
+	return &db.RecordUpsertResult{Record: record, Changed: true, Inserted: true}, nil
+}
+
+func (f *fakeRecordRepo) Get(ctx context.Context, id string) (*db.Record, error) {
+	if f.records != nil {
+		if record := f.records[id]; record != nil {
+			return record, nil
+		}
+	}
 	return nil, errors.New("not implemented")
 }
 
-type fakeTenantItemMatchRepo struct {
-	attached []attachedTenantRecord
+func (f *fakeRecordRepo) SaveEnrichment(ctx context.Context, e *db.RecordEnrichment) (bool, error) {
+	f.enrichments = append(f.enrichments, e)
+	if f.err != nil {
+		return false, f.err
+	}
+	return !f.stale, nil
 }
 
-type attachedTenantRecord struct {
-	subscriptionID string
-	sourceItemID   string
-	revision       int64
-	recordID       string
+type fakeTenantItemMatchRepo struct {
+	saved []*db.TenantItemMatch
 }
 
 func (f *fakeTenantItemMatchRepo) Save(ctx context.Context, match *db.TenantItemMatch) error {
-	return nil
-}
-
-func (f *fakeTenantItemMatchRepo) AttachRecord(ctx context.Context, subscriptionID string, sourceItemID string, sourceRevision int64, recordID string) error {
-	f.attached = append(f.attached, attachedTenantRecord{
-		subscriptionID: subscriptionID,
-		sourceItemID:   sourceItemID,
-		revision:       sourceRevision,
-		recordID:       recordID,
-	})
+	f.saved = append(f.saved, match)
 	return nil
 }
 
@@ -172,7 +180,6 @@ func TestFullPipelineHandlerPersistsCompletedRecord(t *testing.T) {
 	payload, err := json.Marshal(RecordPayload{
 		RecordID:       "record-5",
 		KgID:           "kg-5",
-		SourceID:       "source-5",
 		ExternalID:     "ext-5",
 		SourceRevision: 42,
 		Type:           "post",
@@ -180,9 +187,7 @@ func TestFullPipelineHandlerPersistsCompletedRecord(t *testing.T) {
 		Content:        "content",
 		SourceURL:      "https://example.com",
 		Metadata: map[string]any{
-			"score":               float64(7),
-			"source_subscription": "subscription-5",
-			"source_item_id":      "source-item-5",
+			"score": float64(7),
 		},
 		Summary:   "summary",
 		Entities:  []string{"entity"},
@@ -213,12 +218,6 @@ func TestFullPipelineHandlerPersistsCompletedRecord(t *testing.T) {
 	if repo.saved[0].SourceRevision != 42 {
 		t.Fatalf("saved source revision = %d, want 42", repo.saved[0].SourceRevision)
 	}
-	if len(matches.attached) != 1 {
-		t.Fatalf("AttachRecord calls = %d, want 1", len(matches.attached))
-	}
-	if got := matches.attached[0]; got.subscriptionID != "subscription-5" || got.sourceItemID != "source-item-5" || got.revision != 42 || got.recordID != "record-5" {
-		t.Fatalf("AttachRecord call = %+v", got)
-	}
 	select {
 	case kgID := <-insights:
 		if kgID != "kg-5" {
@@ -226,5 +225,84 @@ func TestFullPipelineHandlerPersistsCompletedRecord(t *testing.T) {
 		}
 	default:
 		t.Fatal("expected insight signal")
+	}
+}
+
+func TestFullPipelineHandlerPersistsGlobalRecordEnrichment(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeRecordRepo{}
+	enq := &fakeEnqueuer{}
+	h := NewFullPipelineHandler(enq, repo, make(chan string, 1))
+
+	payload, err := json.Marshal(GlobalRecordPayload{
+		RecordID:       "record-6",
+		CorrelationID:  "corr-6",
+		SourceRevision: 7,
+		Summary:        "summary",
+		Entities:       []string{"entity"},
+		Topics:         []string{"topic"},
+		KeyClaims:      []string{"claim"},
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	err = h.OnDone(context.Background(), Result{
+		Type:          ResultGlobalFirstPassDone,
+		TaskType:      TaskGlobalFirstPass,
+		RecordID:      "record-6",
+		CorrelationID: "corr-6",
+		Payload:       payload,
+	})
+	if err != nil {
+		t.Fatalf("OnDone returned error: %v", err)
+	}
+	if len(repo.enrichments) != 1 {
+		t.Fatalf("SaveEnrichment calls = %d, want 1", len(repo.enrichments))
+	}
+	if got := repo.enrichments[0]; got.RecordID != "record-6" || got.SourceRevision != 7 || got.Summary != "summary" {
+		t.Fatalf("saved enrichment = %+v", got)
+	}
+	if len(enq.stageCalls) != 1 {
+		t.Fatalf("EnqueueStage calls = %d, want tenant match enqueue", len(enq.stageCalls))
+	}
+	if got := enq.stageCalls[0]; got.taskType != TaskTenantMatch || got.recordID != "record-6" {
+		t.Fatalf("tenant match enqueue = %+v", got)
+	}
+}
+
+func TestFullPipelineHandlerSkipsTenantMatchForStaleGlobalEnrichment(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeRecordRepo{stale: true}
+	enq := &fakeEnqueuer{}
+	h := NewFullPipelineHandler(enq, repo, make(chan string, 1))
+
+	payload, err := json.Marshal(GlobalRecordPayload{
+		RecordID:       "record-stale",
+		CorrelationID:  "corr-stale",
+		SourceRevision: 1,
+		Summary:        "old summary",
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	err = h.OnDone(context.Background(), Result{
+		Type:          ResultGlobalFirstPassDone,
+		TaskType:      TaskGlobalFirstPass,
+		RecordID:      "record-stale",
+		CorrelationID: "corr-stale",
+		Payload:       payload,
+	})
+	if err != nil {
+		t.Fatalf("OnDone returned error: %v", err)
+	}
+	if len(repo.enrichments) != 1 {
+		t.Fatalf("SaveEnrichment calls = %d, want 1", len(repo.enrichments))
+	}
+	if len(enq.stageCalls) != 0 {
+		t.Fatalf("EnqueueStage calls = %d, want 0 for stale enrichment", len(enq.stageCalls))
 	}
 }

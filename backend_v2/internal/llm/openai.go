@@ -49,7 +49,7 @@ var relevanceSchema = map[string]any{
 	"properties": map[string]any{
 		"relevant": map[string]any{
 			"type":        "boolean",
-			"description": "Whether this source item is relevant to the subscription intent.",
+			"description": "Whether this record is relevant to the subscription intent.",
 		},
 		"confidence": map[string]any{
 			"type":        "number",
@@ -146,7 +146,7 @@ func (j *OpenAIRelevanceJudge) JudgeRelevance(ctx context.Context, input Relevan
 	resp, err := j.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Model: openai.ChatModelGPT4oMini,
 		Messages: []openai.ChatCompletionMessageParamUnion{
-			openai.SystemMessage("You judge whether a globally enriched source item is useful for a user's subscribed research stream. Be conservative."),
+			openai.SystemMessage("You judge whether a globally enriched record is useful for a user's subscribed research stream. Be conservative."),
 			openai.UserMessage(fmt.Sprintf(
 				"Subscription: %s\nPolicy: %s\n\nItem title: %s\nSummary: %s\nEntities: %v\nTopics: %v",
 				input.SubscriptionName,

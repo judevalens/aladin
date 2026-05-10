@@ -26,18 +26,18 @@ func (w *GlobalFirstPassWorker) TaskType() string { return pipeline.TaskGlobalFi
 func (w *GlobalFirstPassWorker) Concurrency() int { return 10 }
 
 func (w *GlobalFirstPassWorker) Run(ctx context.Context, raw []byte) pipeline.Result {
-	var p pipeline.SourceItemPayload
+	var p pipeline.GlobalRecordPayload
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return pipeline.Result{
 			TaskType: pipeline.TaskGlobalFirstPass,
-			Err:      pipeline.ErrPermanent{Cause: fmt.Errorf("unmarshal source item payload: %w", err)},
+			Err:      pipeline.ErrPermanent{Cause: fmt.Errorf("unmarshal global record payload: %w", err)},
 		}
 	}
 
 	log := slog.With(
 		"component", "pipeline",
 		"stage", "global_first_pass",
-		"source_item_id", p.SourceItemID,
+		"record_id", p.RecordID,
 		"provider_stream_id", p.ProviderStreamID,
 		"correlation_id", p.CorrelationID,
 	)
@@ -48,16 +48,16 @@ func (w *GlobalFirstPassWorker) Run(ctx context.Context, raw []byte) pipeline.Re
 		content = strings.TrimSpace(p.ContentExcerpt)
 	}
 	if content == "" {
-		return sourceItemErrResult(p, pipeline.ErrPermanent{Cause: fmt.Errorf("missing source item content")})
+		return globalRecordErrResult(p, pipeline.ErrPermanent{Cause: fmt.Errorf("missing record content")})
 	}
 	if err := w.limiter.Wait(ctx); err != nil {
-		return sourceItemErrResult(p, pipeline.ErrTransient{Cause: err})
+		return globalRecordErrResult(p, pipeline.ErrTransient{Cause: err})
 	}
 
 	result, err := w.enricher.Enrich(ctx, content, p.Type)
 	if err != nil {
 		log.Error("global_first_pass: enrich failed", "err", err)
-		return sourceItemErrResult(p, pipeline.ErrTransient{Cause: fmt.Errorf("enrich: %w", err)})
+		return globalRecordErrResult(p, pipeline.ErrTransient{Cause: fmt.Errorf("enrich: %w", err)})
 	}
 
 	p.Summary = result.Summary
@@ -68,7 +68,7 @@ func (w *GlobalFirstPassWorker) Run(ctx context.Context, raw []byte) pipeline.Re
 
 	payload, err := json.Marshal(p)
 	if err != nil {
-		return sourceItemErrResult(p, pipeline.ErrPermanent{Cause: err})
+		return globalRecordErrResult(p, pipeline.ErrPermanent{Cause: err})
 	}
 
 	log.Info("global_first_pass: complete",
@@ -80,16 +80,16 @@ func (w *GlobalFirstPassWorker) Run(ctx context.Context, raw []byte) pipeline.Re
 		Type:          pipeline.ResultGlobalFirstPassDone,
 		TaskType:      pipeline.TaskGlobalFirstPass,
 		Payload:       payload,
-		RecordID:      p.SourceItemID,
+		RecordID:      p.RecordID,
 		CorrelationID: p.CorrelationID,
 	}
 }
 
-func sourceItemErrResult(p pipeline.SourceItemPayload, err error) pipeline.Result {
+func globalRecordErrResult(p pipeline.GlobalRecordPayload, err error) pipeline.Result {
 	return pipeline.Result{
 		TaskType:      pipeline.TaskGlobalFirstPass,
 		Err:           err,
-		RecordID:      p.SourceItemID,
+		RecordID:      p.RecordID,
 		CorrelationID: p.CorrelationID,
 	}
 }

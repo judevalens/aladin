@@ -12,7 +12,7 @@ const (
 	CompletionReasonCold        = "cold"
 )
 
-// RawRecord is returned by a syncer and normalized into source_items.
+// RawRecord is returned by a syncer and normalized into canonical records.
 type RawRecord struct {
 	ExternalID        string
 	ParentExternalID  string

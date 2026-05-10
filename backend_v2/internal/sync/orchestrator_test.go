@@ -209,10 +209,12 @@ type fakeEnqueuer struct {
 	failExternalID  string
 }
 
-type fakeSourceItemRepo struct {
-	upserted            []*db.SourceItem
+type fakeRecordRepo struct {
+	upserted            []*db.Record
 	upsertErr           error
 	existingExternalIDs map[string]bool
+	records             map[string]*db.Record
+	enrichments         []*db.RecordEnrichment
 }
 
 type fakeResultHandler struct {
@@ -234,13 +236,13 @@ func (f *fakeEnqueuer) EnqueueSync(ctx context.Context, queueName, taskType stri
 	return nil
 }
 
-func (f *fakeEnqueuer) EnqueueGlobalFirstPass(ctx context.Context, sourceItemID string, payload []byte) error {
-	return f.enqueueGlobal(sourceItemID, payload)
+func (f *fakeEnqueuer) EnqueueGlobalFirstPass(ctx context.Context, recordID string, payload []byte) error {
+	return f.enqueueGlobal(recordID, payload)
 }
 
 func (f *fakeEnqueuer) enqueueGlobal(recordID string, payload []byte) error {
 	call := firstPassCall{recordID: recordID, payload: append([]byte(nil), payload...)}
-	var rec pipeline.SourceItemPayload
+	var rec pipeline.GlobalRecordPayload
 	if err := json.Unmarshal(payload, &rec); err == nil {
 		call.externalID = rec.ExternalID
 	}
@@ -257,20 +259,38 @@ func (f *fakeEnqueuer) enqueueGlobal(recordID string, payload []byte) error {
 	return nil
 }
 
-func (f *fakeSourceItemRepo) Upsert(ctx context.Context, item *db.SourceItem) (*db.SourceItemUpsertResult, error) {
+func (f *fakeRecordRepo) SaveComplete(ctx context.Context, a *db.CompletedRecord) error {
+	return errors.New("not implemented")
+}
+
+func (f *fakeRecordRepo) UpsertCanonical(ctx context.Context, record *db.Record) (*db.RecordUpsertResult, error) {
 	if f.upsertErr != nil {
 		return nil, f.upsertErr
 	}
-	cp := *item
+	cp := *record
 	f.upserted = append(f.upserted, &cp)
-	if f.existingExternalIDs != nil && f.existingExternalIDs[item.ExternalID] {
-		return &db.SourceItemUpsertResult{Item: &cp, Changed: false, Inserted: false, IsStale: true}, nil
+	if f.records == nil {
+		f.records = make(map[string]*db.Record)
 	}
-	return &db.SourceItemUpsertResult{Item: &cp, Changed: true, Inserted: true}, nil
+	f.records[record.ID] = &cp
+	if f.existingExternalIDs != nil && f.existingExternalIDs[record.ExternalID] {
+		return &db.RecordUpsertResult{Record: &cp, Changed: false, Inserted: false, IsStale: true}, nil
+	}
+	return &db.RecordUpsertResult{Record: &cp, Changed: true, Inserted: true}, nil
 }
 
-func (f *fakeSourceItemRepo) Get(ctx context.Context, id string) (*db.SourceItem, error) {
+func (f *fakeRecordRepo) Get(ctx context.Context, id string) (*db.Record, error) {
+	if f.records != nil {
+		if record := f.records[id]; record != nil {
+			return record, nil
+		}
+	}
 	return nil, errors.New("not implemented")
+}
+
+func (f *fakeRecordRepo) SaveEnrichment(ctx context.Context, enrichment *db.RecordEnrichment) (bool, error) {
+	f.enrichments = append(f.enrichments, enrichment)
+	return true, nil
 }
 
 func (f *fakeResultHandler) HandleSuccess(ctx context.Context, job db.SyncJob, result *Result) error {
@@ -306,11 +326,11 @@ func (f *fakeSyncer) Execute(ctx context.Context, job *db.SyncJob) (*Result, err
 	return nil, errors.New("not implemented")
 }
 
-func (f *fakeSeenStore) Seen(ctx context.Context, sourceID string, externalIDs []string) (map[string]bool, error) {
+func (f *fakeSeenStore) Seen(ctx context.Context, providerStreamID string, externalIDs []string) (map[string]bool, error) {
 	return map[string]bool{}, nil
 }
 
-func (f *fakeSeenStore) MarkSeen(ctx context.Context, sourceID string, externalIDs []string) error {
+func (f *fakeSeenStore) MarkSeen(ctx context.Context, providerStreamID string, externalIDs []string) error {
 	cp := append([]string(nil), externalIDs...)
 	f.marked = append(f.marked, cp)
 	return f.markErr
@@ -518,7 +538,7 @@ func TestQueueClaimBatchBuildsJobsFromSyncer(t *testing.T) {
 		},
 	}
 
-	q := NewOrchestrator(&fakeEnqueuer{}, repo, &fakeSourceItemRepo{}, &fakeCycleRepo{}, NewNoopSeenStore(), NewFreshnessFirstArbiter(), syncer)
+	q := NewOrchestrator(&fakeEnqueuer{}, repo, &fakeRecordRepo{}, &fakeCycleRepo{}, NewNoopSeenStore(), NewFreshnessFirstArbiter(), syncer)
 
 	jobs, err := q.ClaimBatch(context.Background(), 10)
 	if err != nil {
@@ -544,7 +564,7 @@ func TestQueueClaimBatchMarksUnsupportedSourcesFailed(t *testing.T) {
 			Provider: "hackernews",
 		}},
 	}
-	q := NewOrchestrator(&fakeEnqueuer{}, repo, &fakeSourceItemRepo{}, &fakeCycleRepo{}, NewNoopSeenStore(), NewFreshnessFirstArbiter())
+	q := NewOrchestrator(&fakeEnqueuer{}, repo, &fakeRecordRepo{}, &fakeCycleRepo{}, NewNoopSeenStore(), NewFreshnessFirstArbiter())
 
 	jobs, err := q.ClaimBatch(context.Background(), 10)
 	if err != nil {
@@ -573,7 +593,7 @@ func TestQueueClaimBatchMarksBuildJobFailuresFailed(t *testing.T) {
 			return nil, errors.New("bad config")
 		},
 	}
-	q := NewOrchestrator(&fakeEnqueuer{}, repo, &fakeSourceItemRepo{}, &fakeCycleRepo{}, NewNoopSeenStore(), NewFreshnessFirstArbiter(), syncer)
+	q := NewOrchestrator(&fakeEnqueuer{}, repo, &fakeRecordRepo{}, &fakeCycleRepo{}, NewNoopSeenStore(), NewFreshnessFirstArbiter(), syncer)
 
 	jobs, err := q.ClaimBatch(context.Background(), 10)
 	if err != nil {
@@ -624,7 +644,7 @@ func TestQueueClaimBatchContinuesExistingActiveCycleWhenRefreshNotDue(t *testing
 		},
 	}
 
-	q := NewOrchestrator(&fakeEnqueuer{}, repo, &fakeSourceItemRepo{}, cycles, NewNoopSeenStore(), NewFreshnessFirstArbiter(), syncer)
+	q := NewOrchestrator(&fakeEnqueuer{}, repo, &fakeRecordRepo{}, cycles, NewNoopSeenStore(), NewFreshnessFirstArbiter(), syncer)
 
 	jobs, err := q.ClaimBatch(context.Background(), 10)
 	if err != nil {
@@ -662,7 +682,7 @@ func TestQueueMarksAcceptedRecordsSeenAfterEnqueue(t *testing.T) {
 		},
 	}
 
-	q := NewOrchestrator(&fakeEnqueuer{}, repo, &fakeSourceItemRepo{}, cycles, seen, NewFreshnessFirstArbiter(), syncer)
+	q := NewOrchestrator(&fakeEnqueuer{}, repo, &fakeRecordRepo{}, cycles, seen, NewFreshnessFirstArbiter(), syncer)
 	handler := q.makeHandler(syncer)
 
 	payload, err := json.Marshal(db.SyncJob{
@@ -716,7 +736,7 @@ func TestQueueEnqueueFailureOnFirstRecordBlocksProgress(t *testing.T) {
 		},
 	}
 
-	q := NewOrchestrator(enqueuer, repo, &fakeSourceItemRepo{}, cycles, seen, NewFreshnessFirstArbiter(), syncer)
+	q := NewOrchestrator(enqueuer, repo, &fakeRecordRepo{}, cycles, seen, NewFreshnessFirstArbiter(), syncer)
 	err := q.makeHandler(syncer)(context.Background(), syncTask(t, db.SyncJob{
 		CycleID:          "cycle-1",
 		ProviderStreamID: "source-1",
@@ -759,7 +779,7 @@ func TestQueueEnqueueFailureAfterPartialPageBlocksProgressAndRetryIsStable(t *te
 		},
 	}
 
-	q := NewOrchestrator(enqueuer, repo, &fakeSourceItemRepo{}, cycles, seen, NewFreshnessFirstArbiter(), syncer)
+	q := NewOrchestrator(enqueuer, repo, &fakeRecordRepo{}, cycles, seen, NewFreshnessFirstArbiter(), syncer)
 	task := syncTask(t, db.SyncJob{
 		CycleID:          "cycle-1",
 		ProviderStreamID: "source-1",
@@ -812,7 +832,7 @@ func TestQueueExecuteFailureDoesNotEnqueueOrAdvance(t *testing.T) {
 		},
 	}
 
-	q := NewOrchestrator(enqueuer, repo, &fakeSourceItemRepo{}, cycles, seen, NewFreshnessFirstArbiter(), syncer)
+	q := NewOrchestrator(enqueuer, repo, &fakeRecordRepo{}, cycles, seen, NewFreshnessFirstArbiter(), syncer)
 	err := q.makeHandler(syncer)(context.Background(), syncTask(t, db.SyncJob{
 		CycleID:          "cycle-1",
 		ProviderStreamID: "source-1",
@@ -832,14 +852,14 @@ func TestQueueExecuteFailureDoesNotEnqueueOrAdvance(t *testing.T) {
 	}
 }
 
-func TestQueueExistingSourceItemSkipsGlobalFirstPassEnqueue(t *testing.T) {
+func TestQueueExistingRecordSkipsGlobalFirstPassEnqueue(t *testing.T) {
 	t.Parallel()
 
 	repo := &fakeSourceRepo{}
 	cycles := &fakeCycleRepo{}
 	seen := &fakeSeenStore{}
 	enqueuer := &fakeEnqueuer{}
-	items := &fakeSourceItemRepo{existingExternalIDs: map[string]bool{"bsky-1": true}}
+	items := &fakeRecordRepo{existingExternalIDs: map[string]bool{"bsky-1": true}}
 	syncer := &fakeSyncer{
 		sourceType: "bluesky",
 		executeFn: func(ctx context.Context, job *db.SyncJob) (*Result, error) {
@@ -869,7 +889,7 @@ func TestQueueExistingSourceItemSkipsGlobalFirstPassEnqueue(t *testing.T) {
 		t.Fatalf("EnqueueGlobalFirstPass calls = %d, want 0", len(enqueuer.firstPassCalls))
 	}
 	if len(items.upserted) != 1 {
-		t.Fatalf("source item upserts = %d, want 1 existence check", len(items.upserted))
+		t.Fatalf("record upserts = %d, want 1 existence check", len(items.upserted))
 	}
 	if len(repo.markSyncedIDs) != 1 || repo.markSyncedIDs[0] != "stream-1" {
 		t.Fatalf("MarkSynced calls = %v, want [stream-1]", repo.markSyncedIDs)
@@ -898,7 +918,7 @@ func TestQueueMarkSeenFailureBlocksProgress(t *testing.T) {
 		},
 	}
 
-	q := NewOrchestrator(enqueuer, repo, &fakeSourceItemRepo{}, cycles, seen, NewFreshnessFirstArbiter(), syncer)
+	q := NewOrchestrator(enqueuer, repo, &fakeRecordRepo{}, cycles, seen, NewFreshnessFirstArbiter(), syncer)
 	err := q.makeHandler(syncer)(context.Background(), syncTask(t, db.SyncJob{
 		CycleID:          "cycle-1",
 		ProviderStreamID: "source-1",
@@ -955,7 +975,7 @@ func TestQueueRetryProducesStablePayloadWithProvenance(t *testing.T) {
 		},
 	}
 
-	q := NewOrchestrator(enqueuer, repo, &fakeSourceItemRepo{}, cycles, seen, NewFreshnessFirstArbiter(), syncer)
+	q := NewOrchestrator(enqueuer, repo, &fakeRecordRepo{}, cycles, seen, NewFreshnessFirstArbiter(), syncer)
 	task := syncTask(t, db.SyncJob{
 		CorrelationID:    "corr-1",
 		CycleID:          "cycle-1",
@@ -981,7 +1001,7 @@ func TestQueueRetryProducesStablePayloadWithProvenance(t *testing.T) {
 		t.Fatalf("payload changed across retry:\nfirst=%s\nsecond=%s", enqueuer.firstPassCalls[0].payload, enqueuer.firstPassCalls[1].payload)
 	}
 
-	var queued pipeline.SourceItemPayload
+	var queued pipeline.GlobalRecordPayload
 	if err := json.Unmarshal(enqueuer.firstPassCalls[0].payload, &queued); err != nil {
 		t.Fatalf("unmarshal queued payload: %v", err)
 	}
@@ -1028,7 +1048,7 @@ func TestQueueFollowUpCycleCreateFailureBlocksProgress(t *testing.T) {
 		},
 	}
 
-	q := NewOrchestrator(enqueuer, repo, &fakeSourceItemRepo{}, cycles, seen, NewFreshnessFirstArbiter(), syncer)
+	q := NewOrchestrator(enqueuer, repo, &fakeRecordRepo{}, cycles, seen, NewFreshnessFirstArbiter(), syncer)
 	err := q.makeHandler(syncer)(context.Background(), syncTask(t, db.SyncJob{
 		CycleID:          "cycle-1",
 		ProviderStreamID: "source-1",
@@ -1073,7 +1093,7 @@ func TestQueueCreatesHydrationCyclesAfterRecordsAccepted(t *testing.T) {
 		},
 	}
 
-	q := NewOrchestrator(enqueuer, repo, &fakeSourceItemRepo{}, cycles, seen, NewFreshnessFirstArbiter(), syncer)
+	q := NewOrchestrator(enqueuer, repo, &fakeRecordRepo{}, cycles, seen, NewFreshnessFirstArbiter(), syncer)
 	err := q.makeHandler(syncer)(context.Background(), syncTask(t, db.SyncJob{
 		CycleID:          "cycle-1",
 		ProviderStreamID: "source-1",
@@ -1167,7 +1187,7 @@ func TestQueueClaimBatchUsesInjectedArbiter(t *testing.T) {
 		},
 	}
 
-	q := NewOrchestrator(&fakeEnqueuer{}, repo, &fakeSourceItemRepo{}, &fakeCycleRepo{}, NewNoopSeenStore(), arbiter, syncer)
+	q := NewOrchestrator(&fakeEnqueuer{}, repo, &fakeRecordRepo{}, &fakeCycleRepo{}, NewNoopSeenStore(), arbiter, syncer)
 
 	jobs, err := q.ClaimBatch(context.Background(), 1)
 	if err != nil {
@@ -1274,7 +1294,7 @@ func TestOverlappingCyclesNewerCycleCompletesThenOlderCycleResumes(t *testing.T)
 		},
 	}
 
-	orch := NewOrchestrator(&fakeEnqueuer{}, repo, &fakeSourceItemRepo{}, cycles, seen, NewFreshnessFirstArbiter(), syncer)
+	orch := NewOrchestrator(&fakeEnqueuer{}, repo, &fakeRecordRepo{}, cycles, seen, NewFreshnessFirstArbiter(), syncer)
 
 	jobs, err := orch.ClaimBatch(context.Background(), 1)
 	if err != nil {
@@ -1414,7 +1434,7 @@ func TestRefreshCycleTakesOverForTwoPagesThenOlderCycleContinues(t *testing.T) {
 		},
 	}
 
-	orch := NewOrchestrator(&fakeEnqueuer{}, repo, &fakeSourceItemRepo{}, cycles, seen, NewFreshnessFirstArbiter(), syncer)
+	orch := NewOrchestrator(&fakeEnqueuer{}, repo, &fakeRecordRepo{}, cycles, seen, NewFreshnessFirstArbiter(), syncer)
 
 	jobs, err := orch.ClaimBatch(context.Background(), 1)
 	if err != nil {

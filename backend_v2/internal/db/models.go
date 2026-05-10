@@ -77,19 +77,24 @@ type Insight struct {
 
 // CompletedRecord is written to PG in a single INSERT when the pipeline finishes.
 type CompletedRecord struct {
-	ID             string
-	ExternalID     string
-	SourceRevision int64
-	Type           string
-	Label          string
-	Content        string
-	SourceURL      string
-	Metadata       map[string]any
-	Enrichment     []byte    // JSON
-	Embedding      []float32 // pgvector
+	ID               string
+	Provider         string
+	ProviderStreamID string
+	OwnerUserID      *string
+	ExternalID       string
+	SourceRevision   int64
+	Type             string
+	Label            string
+	Content          string
+	SourceURL        string
+	Metadata         map[string]any
+	Enrichment       []byte    // JSON
+	Embedding        []float32 // pgvector
 }
 
-type SourceItem struct {
+// Record is a canonical captured object. It is not tenant-owned; tenant-specific
+// relevance and state live in tenant_item_matches and downstream signal tables.
+type Record struct {
 	ID                string
 	ProviderStreamID  string
 	Provider          string
@@ -106,17 +111,20 @@ type SourceItem struct {
 	HydrationMetadata map[string]any
 	FetchedAt         time.Time
 	HydratedAt        *time.Time
+	CreatedAt         time.Time
+	Status            string
+	Enrichment        RecordEnrichment
 }
 
-type SourceItemUpsertResult struct {
-	Item     *SourceItem
+type RecordUpsertResult struct {
+	Record   *Record
 	Changed  bool
 	IsStale  bool
 	Inserted bool
 }
 
-type SourceItemEnrichment struct {
-	SourceItemID          string
+type RecordEnrichment struct {
+	RecordID              string
 	SourceRevision        int64
 	Summary               string
 	Entities              []string
@@ -140,14 +148,13 @@ type SourceSubscription struct {
 
 type TenantItemMatch struct {
 	SubscriptionID  string
-	SourceItemID    string
+	RecordID        string
 	SourceRevision  int64
 	MatchSource     string
 	OverlapEntities []string
 	RelevanceStatus string
 	RelevanceScore  *float64
 	RelevanceReason string
-	RecordID        *string
 }
 
 // EmbeddedRecord is passed to the GraphPromoter after pipeline completion.

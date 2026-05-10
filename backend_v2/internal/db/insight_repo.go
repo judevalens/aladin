@@ -56,6 +56,7 @@ func (r *pgKnowledgeGraphRepo) GetIDsWithEnrichedRecords(ctx context.Context) ([
 		JOIN tenant_item_matches tim ON tim.record_id = a.id
 		JOIN source_subscriptions ss ON ss.id = tim.subscription_id
 		WHERE a.enrichment IS NOT NULL
+		  AND tim.relevance_status = 'relevant'
 		  AND a.status NOT IN ('superseded', 'dismissed')
 	`)
 	if err != nil {

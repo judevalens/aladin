@@ -8,6 +8,9 @@ import (
 type RecordRepository interface {
 	// SaveComplete writes a fully-processed record to PG in one shot.
 	SaveComplete(ctx context.Context, a *CompletedRecord) error
+	UpsertCanonical(ctx context.Context, record *Record) (*RecordUpsertResult, error)
+	Get(ctx context.Context, id string) (*Record, error)
+	SaveEnrichment(ctx context.Context, enrichment *RecordEnrichment) (bool, error)
 }
 
 type ProviderStreamRepository interface {
@@ -41,16 +44,6 @@ type KnowledgeGraphRepository interface {
 	GetIDsWithEnrichedRecords(ctx context.Context) ([]string, error)
 }
 
-type SourceItemRepository interface {
-	Upsert(ctx context.Context, item *SourceItem) (*SourceItemUpsertResult, error)
-	Get(ctx context.Context, id string) (*SourceItem, error)
-}
-
-type SourceItemEnrichmentRepository interface {
-	Save(ctx context.Context, enrichment *SourceItemEnrichment) error
-	Get(ctx context.Context, sourceItemID string, sourceRevision int64) (*SourceItemEnrichment, error)
-}
-
 type SourceSubscriptionRepository interface {
 	ListActiveByProviderStream(ctx context.Context, providerStreamID string) ([]*SourceSubscription, error)
 	Ensure(ctx context.Context, sub *SourceSubscription) (*SourceSubscription, error)
@@ -58,5 +51,4 @@ type SourceSubscriptionRepository interface {
 
 type TenantItemMatchRepository interface {
 	Save(ctx context.Context, match *TenantItemMatch) error
-	AttachRecord(ctx context.Context, subscriptionID string, sourceItemID string, sourceRevision int64, recordID string) error
 }

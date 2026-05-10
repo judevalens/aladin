@@ -15,11 +15,10 @@ import (
 // first_pass → (optional search) → embed → graph → persist.
 // Adding a new pipeline variant means implementing a new ResultHandler — no other changes.
 type FullPipelineHandler struct {
-	enqueuer    Enqueuer
-	repo        db.RecordRepository
-	enrichments db.SourceItemEnrichmentRepository
-	matches     db.TenantItemMatchRepository
-	insights    chan<- string
+	enqueuer Enqueuer
+	repo     db.RecordRepository
+	matches  db.TenantItemMatchRepository
+	insights chan<- string
 }
 
 func NewFullPipelineHandler(
@@ -28,11 +27,6 @@ func NewFullPipelineHandler(
 	insights chan<- string,
 ) *FullPipelineHandler {
 	return &FullPipelineHandler{enqueuer: enqueuer, repo: repo, insights: insights}
-}
-
-func (h *FullPipelineHandler) WithSourceItemEnrichments(repo db.SourceItemEnrichmentRepository) *FullPipelineHandler {
-	h.enrichments = repo
-	return h
 }
 
 func (h *FullPipelineHandler) WithTenantItemMatches(repo db.TenantItemMatchRepository) *FullPipelineHandler {
@@ -56,7 +50,7 @@ func (h *FullPipelineHandler) OnDone(ctx context.Context, result Result) error {
 	switch result.Type {
 	case ResultGlobalFirstPassDone:
 		log.Info("orchestrator: global enrichment complete, persisting")
-		return h.persistSourceItemEnrichment(ctx, log, result.Payload)
+		return h.persistGlobalRecordEnrichment(ctx, log, result.Payload)
 
 	case ResultTenantMatchDone:
 		log.Info("orchestrator: tenant matching complete")
@@ -87,16 +81,13 @@ func (h *FullPipelineHandler) OnDone(ctx context.Context, result Result) error {
 	}
 }
 
-func (h *FullPipelineHandler) persistSourceItemEnrichment(ctx context.Context, log *slog.Logger, payload []byte) error {
-	if h.enrichments == nil {
-		return fmt.Errorf("source item enrichment repository not configured")
-	}
-	var p SourceItemPayload
+func (h *FullPipelineHandler) persistGlobalRecordEnrichment(ctx context.Context, log *slog.Logger, payload []byte) error {
+	var p GlobalRecordPayload
 	if err := json.Unmarshal(payload, &p); err != nil {
-		return fmt.Errorf("persist source item enrichment: unmarshal: %w", err)
+		return fmt.Errorf("persist global record enrichment: unmarshal: %w", err)
 	}
-	if err := h.enrichments.Save(ctx, &db.SourceItemEnrichment{
-		SourceItemID:          p.SourceItemID,
+	persisted, err := h.repo.SaveEnrichment(ctx, &db.RecordEnrichment{
+		RecordID:              p.RecordID,
 		SourceRevision:        p.SourceRevision,
 		Summary:               p.Summary,
 		Entities:              p.Entities,
@@ -104,21 +95,26 @@ func (h *FullPipelineHandler) persistSourceItemEnrichment(ctx context.Context, l
 		KeyClaims:             p.KeyClaims,
 		LowConfidenceEntities: p.LowConfidenceEntities,
 		Status:                "ready",
-	}); err != nil {
+	})
+	if err != nil {
 		return err
 	}
+	if !persisted {
+		log.Info("orchestrator: skipped stale global record enrichment", "record_id", p.RecordID, "source_revision", p.SourceRevision)
+		return nil
+	}
 	matchPayload, err := json.Marshal(TenantMatchPayload{
-		SourceItemID:   p.SourceItemID,
+		RecordID:       p.RecordID,
 		CorrelationID:  p.CorrelationID,
 		SourceRevision: p.SourceRevision,
 	})
 	if err != nil {
-		return fmt.Errorf("persist source item enrichment: marshal tenant match payload: %w", err)
+		return fmt.Errorf("persist global record enrichment: marshal tenant match payload: %w", err)
 	}
-	if err := h.enqueue(ctx, TaskTenantMatch, p.SourceItemID, matchPayload); err != nil {
+	if err := h.enqueue(ctx, TaskTenantMatch, p.RecordID, matchPayload); err != nil {
 		return err
 	}
-	log.Info("orchestrator: source item enrichment persisted", "source_item_id", p.SourceItemID, "source_revision", p.SourceRevision)
+	log.Info("orchestrator: global record enrichment persisted", "record_id", p.RecordID, "source_revision", p.SourceRevision)
 	return nil
 }
 
@@ -192,17 +188,6 @@ func (h *FullPipelineHandler) persist(ctx context.Context, log *slog.Logger, pay
 		log.Error("orchestrator: save failed", "err", err)
 		return err
 	}
-	if h.matches != nil {
-		subscriptionID, _ := p.Metadata["source_subscription"].(string)
-		sourceItemID, _ := p.Metadata["source_item_id"].(string)
-		if subscriptionID != "" && sourceItemID != "" {
-			if err := h.matches.AttachRecord(ctx, subscriptionID, sourceItemID, p.SourceRevision, p.RecordID); err != nil {
-				log.Error("orchestrator: attach tenant match record failed", "err", err)
-				return err
-			}
-		}
-	}
-
 	select {
 	case h.insights <- p.KgID:
 	default:
@@ -211,7 +196,6 @@ func (h *FullPipelineHandler) persist(ctx context.Context, log *slog.Logger, pay
 	log.Info("orchestrator: record persisted",
 		"correlation_id", p.CorrelationID,
 		"external_id", p.ExternalID,
-		"source_id", p.SourceID,
 	)
 	return nil
 }

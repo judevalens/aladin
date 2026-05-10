@@ -84,8 +84,6 @@ func main() {
 	recordRepo := db.NewRecordRepository(pool)
 	providerStreamRepo := db.NewProviderStreamRepository(pool)
 	cycleRepo := db.NewSyncCycleRepository(pool)
-	sourceItemRepo := db.NewSourceItemRepository(pool)
-	sourceItemEnrichmentRepo := db.NewSourceItemEnrichmentRepository(pool)
 	sourceSubscriptionRepo := db.NewSourceSubscriptionRepository(pool)
 	tenantItemMatchRepo := db.NewTenantItemMatchRepository(pool)
 	insightRepo := db.NewInsightRepository(pool)
@@ -127,11 +125,10 @@ func main() {
 	// Pipeline
 	pipelineEnqueuer := pipeline.NewAsynqEnqueuer(asynqClient)
 	handler := pipeline.NewFullPipelineHandler(pipelineEnqueuer, recordRepo, insightCh).
-		WithSourceItemEnrichments(sourceItemEnrichmentRepo).
 		WithTenantItemMatches(tenantItemMatchRepo)
 	orch := pipeline.NewOrchestrator(handler)
 	orch.Add(workers.NewGlobalFirstPassWorker(enricher, openaiLimiter))
-	orch.Add(workers.NewTenantMatchWorker(sourceItemRepo, sourceItemEnrichmentRepo, sourceSubscriptionRepo, tenantItemMatchRepo, pipelineEnqueuer, relevanceJudge))
+	orch.Add(workers.NewTenantMatchWorker(recordRepo, sourceSubscriptionRepo, tenantItemMatchRepo, relevanceJudge))
 	orch.Add(workers.NewFirstPassWorker(enricher, openaiLimiter))
 	orch.Add(workers.NewSearchWorker(cachedSearcher))
 	orch.Add(workers.NewEmbedWorker(embedder, openaiLimiter))
@@ -144,7 +141,7 @@ func main() {
 	// Sync orchestrator
 	seenStore := isync.NewRedisSeenStore(redisClient)
 	syncEnqueuer := isync.NewAsynqEnqueuer(asynqClient)
-	syncResultHandler := isync.NewSourceItemResultHandler(syncEnqueuer, providerStreamRepo, sourceItemRepo, cycleRepo, seenStore)
+	syncResultHandler := isync.NewRecordResultHandler(syncEnqueuer, providerStreamRepo, recordRepo, cycleRepo, seenStore)
 	syncOrchestrator := isync.NewOrchestratorWithResultHandler(syncEnqueuer, providerStreamRepo, cycleRepo, isync.NewFreshnessFirstArbiter(), syncResultHandler,
 		syncers.NewBlueskySyncer(seenStore),
 		syncers.NewHackerNewsSyncer(seenStore),

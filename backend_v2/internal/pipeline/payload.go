@@ -10,7 +10,6 @@ type RecordPayload struct {
 	RecordID       string `json:"record_id"`
 	CorrelationID  string `json:"correlation_id"`
 	KgID           string `json:"kg_id"`
-	SourceID       string `json:"source_id"`
 	ExternalID     string `json:"external_id"`
 	SourceRevision int64  `json:"source_revision,omitempty"`
 
@@ -36,10 +35,10 @@ type RecordPayload struct {
 	Embedding []float32 `json:"embedding,omitempty"`
 }
 
-// SourceItemPayload is the global provider-cache enrichment envelope.
+// GlobalRecordPayload is the global canonical-record enrichment envelope.
 // It is intentionally tenant-free: tenant matching starts after this payload is enriched.
-type SourceItemPayload struct {
-	SourceItemID     string         `json:"source_item_id"`
+type GlobalRecordPayload struct {
+	RecordID         string         `json:"record_id"`
 	CorrelationID    string         `json:"correlation_id"`
 	ProviderStreamID string         `json:"provider_stream_id"`
 	Provider         string         `json:"provider"`
@@ -60,7 +59,7 @@ type SourceItemPayload struct {
 }
 
 type TenantMatchPayload struct {
-	SourceItemID   string `json:"source_item_id"`
+	RecordID       string `json:"record_id"`
 	CorrelationID  string `json:"correlation_id"`
 	SourceRevision int64  `json:"source_revision"`
 }
