@@ -12,9 +12,6 @@ make ops-queues
 make ops-force-stream PROVIDER=bluesky STREAM_KEY="ai agents"
 make ops-reset-stuck-cycles AGE=30m
 make worker-go CONCURRENCY=24
-make nango-up
-make nango-logs
-make nango-down
 ```
 
 The direct CLI is:
@@ -46,7 +43,7 @@ It also shells out to local tools when present:
 
 Missing tools or unavailable services should degrade one section at a time. `ops-status` is expected to keep printing whatever it can.
 
-Nango runs through a separate compose file:
+Nango Cloud is the default provider-connection backend. Optional self-hosted Nango experiments run through a separate compose file:
 
 ```sh
 make nango-up
@@ -54,7 +51,7 @@ make nango-logs
 make nango-down
 ```
 
-Nango uses its own Postgres and Redis containers and requires `NANGO_ENCRYPTION_KEY` plus `NANGO_SECRET_KEY` in the environment. See `docs/NANGO_PROVIDER_CONNECTIONS.md`.
+Self-hosted Nango uses its own Postgres and Redis containers and requires `NANGO_ENCRYPTION_KEY` plus `NANGO_SECRET_KEY` in the environment. See `docs/NANGO_PROVIDER_CONNECTIONS.md`.
 
 ## Safety Rules
 

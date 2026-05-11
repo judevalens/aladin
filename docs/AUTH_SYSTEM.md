@@ -289,7 +289,7 @@ This auth layer is the trusted user binding that OAuth needs.
 
 For provider connections:
 
-- Aladin uses Nango free self-hosted as the default credential backend for supported providers.
+- Aladin uses Nango Cloud as the default credential backend for supported providers.
 - Provider tokens live in Nango; Aladin stores only `provider_connections` refs tied to `user_id`.
 - Product code depends on `ProviderConnectionService`, not Nango directly.
 - Nango is used for Auth/credential/proxy responsibilities only; Aladin keeps ingestion, scheduling, records, matching, and insights.

@@ -73,8 +73,8 @@ func LoadWorker() (WorkerConfig, error) {
 
 func LoadProviderConnections() ProviderConnectionConfig {
 	return ProviderConnectionConfig{
-		NangoBaseURL:                 optional("NANGO_BASE_URL", "http://localhost:3003"),
-		NangoConnectBaseURL:          optional("NANGO_CONNECT_BASE_URL", "http://localhost:3009"),
+		NangoBaseURL:                 optional("NANGO_BASE_URL", "https://api.nango.dev"),
+		NangoConnectBaseURL:          optional("NANGO_CONNECT_BASE_URL", "https://connect.nango.dev"),
 		NangoSecretKey:               os.Getenv("NANGO_SECRET_KEY"),
 		NangoGoogleProviderConfigKey: os.Getenv("NANGO_GOOGLE_PROVIDER_CONFIG_KEY"),
 	}

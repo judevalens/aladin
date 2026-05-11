@@ -273,11 +273,11 @@ Code-ready for MCP. The generic helpers exist, artifact/page/file operations enf
 
 ### Goal
 
-Use Nango free self-hosted as the default provider-connection backend for supported integrations. Aladin keeps users, sessions, source subscriptions, provider streams, records, matching, and insights. Nango owns OAuth authorization, credential storage, token refresh, and proxy/token retrieval.
+Use Nango Cloud as the default provider-connection backend for supported integrations. Aladin keeps users, sessions, source subscriptions, provider streams, records, matching, and insights. Nango owns OAuth authorization, credential storage, token refresh, and proxy/token retrieval.
 
 ### Status
 
-Code-ready. The Nango-backed service boundary, local provider connection refs, Docker setup, and API routes are implemented. Manual Google/Nango credential smoke remains external setup, not a blocker for MCP readiness.
+Code-ready. The Nango-backed service boundary, local provider connection refs, and API routes are implemented. Manual Google/Nango credential smoke remains external setup, not a blocker for MCP readiness.
 
 The stable product boundary is `ProviderConnectionService`, not Nango directly. This keeps source syncers insulated if we later replace Nango or add a local provider backend.
 
@@ -567,7 +567,7 @@ This order lets MCP ship before full OAuth while still using the same long-term 
 - MCP SDK transport APIs may shift; pin the module version once implemented.
 - Search over page content will be basic until full-text or embedding search is introduced.
 - Scope enforcement can become noisy if implemented too granularly too early.
-- Nango self-hosting adds operational surface area; keep it isolated behind `ProviderConnectionService`.
+- Nango provider dependency adds operational surface area; keep it isolated behind `ProviderConnectionService` so Cloud, self-hosted, or a local backend remain swappable.
 
 ## Deferred Decisions
 

@@ -1,9 +1,9 @@
-.PHONY: help backend db-up db-down nango-up nango-down nango-logs nango-ensure env-nango worker-go api-go artifact-spa-build ops-status ops-errors ops-streams ops-queues ops-force-stream ops-reset-stuck-cycles
+.PHONY: help backend db-up db-down nango-up nango-down nango-logs env-nango worker-go api-go artifact-spa-build ops-status ops-errors ops-streams ops-queues ops-force-stream ops-reset-stuck-cycles
 
 help: ## List available make targets
 	@awk 'BEGIN {FS = ":.*## "; printf "Available targets:\n"} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-24s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-backend: nango-ensure ## Run the Go backend API on port 8000
+backend: ## Run the Go backend API on port 8000
 	eval "$$(python3 scripts/ops/read_env_keys.py --env backend_v2/.env)" && cd backend_v2 && API_ADDR=:8000 go run ./cmd/api
 
 db-up: ## Start local Docker infrastructure
@@ -15,15 +15,6 @@ db-down: ## Stop local Docker infrastructure
 nango-up: ## Start local Nango self-hosted services
 	eval "$$(python3 scripts/ops/read_env_keys.py --env backend_v2/.env)" && docker compose -f docker-compose.nango.yml up -d
 
-nango-ensure: ## Ensure local Nango self-hosted services are running
-	@eval "$$(python3 scripts/ops/read_env_keys.py --env backend_v2/.env)" && \
-	if [ "$$(docker compose -f docker-compose.nango.yml ps --status running -q nango-server | wc -l | tr -d ' ')" = "1" ]; then \
-		echo "Nango is already running."; \
-	else \
-		echo "Starting Nango..."; \
-		docker compose -f docker-compose.nango.yml up -d; \
-	fi
-
 nango-down: ## Stop local Nango self-hosted services
 	docker compose -f docker-compose.nango.yml down
 
@@ -33,7 +24,7 @@ nango-logs: ## Tail local Nango logs
 env-nango: ## Print Nango env exports from backend_v2/.env
 	@python3 scripts/ops/read_env_keys.py --env backend_v2/.env
 
-worker-go: nango-ensure ## Run the Go worker; optional CONCURRENCY=24
+worker-go: ## Run the Go worker; optional CONCURRENCY=24
 	eval "$$(python3 scripts/ops/read_env_keys.py --env backend_v2/.env)" && cd backend_v2 && WORKER_CONCURRENCY=$(or $(CONCURRENCY),16) go run ./cmd/worker
 
 api-go: ## Run the Go backend API
