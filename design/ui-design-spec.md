@@ -39,7 +39,7 @@ Current contrast defaults:
 
 ## Components
 
-- Navigation items use near-black selected states with light foreground and a small light active marker. This anchors the shell and matches the high-contrast management-modal direction.
+- Navigation items use near-black selected states with light foreground and no extra side marker. The filled item itself carries selection.
 - Browser rows use the shared `aladinClickable` interaction layer.
 - Selected browser artifact rows use near-black selected states with light foreground. Folder rows remain unselected even when focused or expanded.
 - Dense browser rows should avoid boxed folder glyphs. Prefer hierarchy from indentation, chevrons, icon weight, and text contrast.
@@ -58,11 +58,12 @@ Current contrast defaults:
 
 - Keep the three-pane desktop shell: app rail, browser pane, workspace pane.
 - The workspace pane is an artifact/work pane. It can contain an artifact tab rail, a context rail, and the active artifact surface.
-- The app rail is icon-only and should read like a compact command rail, not a separate dark navigation product. It uses the muted pane surface, high-contrast selected states, light active foreground, and a thin light active marker.
+- The app rail is icon-only and should read like a compact command rail, not a separate dark navigation product. It uses the muted pane surface, high-contrast selected states, and light active foreground without an added active bar.
 - Selected app rail/sidebar destinations use `InkSurface` with `OnInkSurface` foreground. Inactive destinations stay quiet on the muted pane surface.
 - The brand mark should be quiet and utility-like: bordered or command-surface treatment, monospace `A`, and visually distinct from destination selection.
-- The top toolbar should remain quiet and low-contrast, but it can breathe when there is no bottom divider: right-aligned command search plus separate lightweight creation actions.
+- The top toolbar should remain quiet overall, but command controls can carry stronger monochrome contrast: right-aligned command search plus separate lightweight creation actions.
 - Search should read as a command input, not a generic form field. Avoid boxed grouped action clusters unless the actions become a real segmented control.
+- Command/search fields may use a stronger near-black border and monospace prompt mark to reinforce the monochrome terminal-grade direction without turning the field into a dark block.
 - Major pane dividers should be thin and structural, not decorative.
 - Workspace content should feel like a document/research surface. Prefer section dividers and editorial spacing over large empty bordered cards when content is sparse.
 - Page save/load/upload status belongs in the artifact context rail, after breadcrumb/path text and before utility icons. Do not add a third status bar inside the page body.
@@ -74,11 +75,12 @@ Current contrast defaults:
 - The model supports unbounded nesting, but pane 2 should not indent forever or use horizontal scrolling as the primary deep-tree behavior.
 - Use scoped drill-in navigation for deep nesting: folders at visual levels 0 and 1 expand inline; folders at visual level 2 open as the new browser scope.
 - Pane 2 uses a local scope breadcrumb, not the selected object breadcrumb. It identifies the current browser scope and uses a back chevron to move one scope up.
+- Browser scope headers may use a compact near-black surface with light breadcrumb text. This is workspace chrome, not object selection, and should stay shallow in height.
 - The full selected-object breadcrumb belongs in the workspace pane above the open folder/artifact title. It provides absolute orientation and jump navigation for the selected object.
 - Use `depth` for visual indentation inside the current scope instead of recursively nesting composables. This preserves virtualization and keeps deep trees predictable.
 - Folder-like rows use chevrons plus bare icons. Do not wrap folder icons in boxed glyph backgrounds.
 - Artifact rows should stay compact: title plus one muted metadata line. Long summaries belong in the workspace pane, not the browser row.
-- Folder rows behave as navigation/expansion controls and should not render selected-fill styling. Artifact rows use soft gray fill, dark foreground, and a thin active marker when they match the active workspace artifact.
+- Folder rows behave as navigation/expansion controls and should not render selected-fill styling. Artifact rows use near-black fill with light foreground when they match the active workspace artifact; do not add a separate side marker.
 - Workspace breadcrumbs remain visible as selected-object path context and jump controls. They should not replace browser expansion state, and they should not use selected-fill styling.
 - Browser scope breadcrumbs show the current local browser scope; the browser itself shows that scope and its local descendants.
 - Browser filters have been removed from the top of pane 2. Reintroduce filters only after the filtering model is redesigned.
@@ -91,6 +93,7 @@ Current contrast defaults:
 
 - The artifact/work pane should coordinate open artifacts through a compact tab rail.
 - Active artifact tabs use the high-contrast selected state. Inactive tabs remain light and quiet.
+- The tab rail can use the muted pane surface to separate workspace chrome from the light document canvas. Context rails may use stronger dark borders, but the editor/document body remains light.
 - The context rail provides selected-object orientation through breadcrumbs/path text, page metadata, and utility actions.
 - The active artifact surface should be type-specific: page editor, link viewer, voice/file viewer, graph surface, or future specialist surface.
 - Pages should use the broad document/editor canvas. Compact source-like artifacts such as links, voice notes, and files should render as centered artifact objects when the inspector is closed.

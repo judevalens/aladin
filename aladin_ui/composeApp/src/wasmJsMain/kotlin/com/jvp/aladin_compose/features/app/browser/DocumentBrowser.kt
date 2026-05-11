@@ -246,13 +246,16 @@ private fun BrowserScopeBreadcrumbRow(state: DocumentBrowserState) {
     Row(
         modifier =
             Modifier.fillMaxWidth()
+                .border(1.dp, AladinColor.InkSurface, RoundedCornerShape(ControlRadius))
+                .background(AladinColor.InkSurface, RoundedCornerShape(ControlRadius))
                 .aladinClickable(
                     enabled = state.canNavigateScopeBack,
                     shape = RoundedCornerShape(ControlRadius),
                     colors =
                         AladinInteractionDefaults.colors(
-                            hovered = AladinColor.ControlHover,
-                            pressed = AladinColor.ControlPressed,
+                            rest = Color.Transparent,
+                            hovered = AladinColor.InkSurfaceHover,
+                            pressed = AladinColor.InkSurfaceHover,
                         ),
                     onClick = {
                         state.eventSink(DocumentBrowserEvent.NavigateScope(state.scopeBackTargetId))
@@ -269,7 +272,7 @@ private fun BrowserScopeBreadcrumbRow(state: DocumentBrowserState) {
             Icon(
                 imageVector = Icons.AutoMirrored.Sharp.NavigateBefore,
                 contentDescription = null,
-                tint = AladinColor.InkMuted,
+                tint = AladinColor.OnInkSurface,
                 modifier = Modifier.size(BrowserIconSize),
             )
         }
@@ -277,7 +280,7 @@ private fun BrowserScopeBreadcrumbRow(state: DocumentBrowserState) {
             if (index > 0) {
                 Text(
                     "/",
-                    color = AladinColor.InkMuted,
+                    color = AladinColor.OnInkSurface.copy(alpha = 0.5f),
                     style = MaterialTheme.typography.labelMedium,
                 )
             }
@@ -285,7 +288,7 @@ private fun BrowserScopeBreadcrumbRow(state: DocumentBrowserState) {
                 is BreadcrumbSegment.Crumb ->
                     Text(
                         segment.item.label,
-                        color = AladinColor.InkSecondary,
+                        color = AladinColor.OnInkSurface,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
@@ -294,7 +297,7 @@ private fun BrowserScopeBreadcrumbRow(state: DocumentBrowserState) {
                 BreadcrumbSegment.Ellipsis ->
                     Text(
                         "...",
-                        color = AladinColor.InkMuted,
+                        color = AladinColor.OnInkSurface.copy(alpha = 0.7f),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                     )

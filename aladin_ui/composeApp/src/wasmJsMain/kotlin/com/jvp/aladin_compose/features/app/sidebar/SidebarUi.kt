@@ -49,8 +49,6 @@ import com.jvp.aladin_compose.features.app.BrowserRowMenuSection
 import com.jvp.aladin_compose.features.app.ControlRadius
 import com.jvp.aladin_compose.features.app.DividerThickness
 import com.jvp.aladin_compose.features.app.RailIconSize
-import com.jvp.aladin_compose.features.app.RailMarkerHeight
-import com.jvp.aladin_compose.features.app.RailMarkerWidth
 import com.jvp.aladin_compose.features.app.SharpRadius
 import com.jvp.aladin_compose.features.app.SidebarBrandHeight
 import com.jvp.aladin_compose.features.app.SidebarCreateHeight
@@ -120,17 +118,17 @@ fun AppSidebar(
             Box(
                 modifier =
                     Modifier.size(28.dp)
-                        .background(AladinColor.ControlHover, RoundedCornerShape(SharpRadius))
+                        .background(AladinColor.InkSurface, RoundedCornerShape(SharpRadius))
                         .border(
                             DividerThickness,
-                            AladinColor.Divider,
+                            AladinColor.InkSurface,
                             RoundedCornerShape(SharpRadius),
                         ),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     "A",
-                    color = AladinColor.Ink,
+                    color = AladinColor.OnInkSurface,
                     style = MaterialTheme.typography.labelLarge,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
@@ -285,15 +283,6 @@ private fun SidebarNavItem(
                     onClick = onClick,
                 )
     ) {
-        if (active) {
-            Box(
-                modifier =
-                    Modifier.align(Alignment.CenterStart)
-                        .width(RailMarkerWidth)
-                        .height(RailMarkerHeight)
-                        .background(AladinColor.OnInkSurface, RoundedCornerShape(999.dp))
-            )
-        }
         Row(
             modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),

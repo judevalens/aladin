@@ -132,7 +132,7 @@ fun RowScope.ArtifactPane(
 @Composable
 private fun WorkspaceTabRail(content: @Composable ColumnScope.() -> Unit) {
     Column(
-        modifier = Modifier.fillMaxWidth().background(AladinColor.Canvas),
+        modifier = Modifier.fillMaxWidth().background(AladinColor.PanelMuted),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         content()
@@ -161,7 +161,7 @@ private fun WorkspaceContextRail(
         modifier =
             Modifier.fillMaxWidth()
                 .background(AladinColor.Panel)
-                .border(DividerThickness, AladinColor.Divider)
+                .border(DividerThickness, AladinColor.InkSurface)
                 .padding(horizontal = 14.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
