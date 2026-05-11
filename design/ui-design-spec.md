@@ -46,6 +46,13 @@ Current contrast defaults:
 - Pane-level browser filters are deferred; do not add top filter controls until the filtering model is redesigned.
 - Panels should feel like document/workspace surfaces, not cards.
 - Buttons should look custom and monochrome, not Material-filled or ripple-driven.
+- Management modals are allowed to use stronger black/white contrast than the normal workspace. Use this for structural app decisions such as integrations, provider accounts, permissions, and future settings-like workflows.
+- Wide management modals should feel like focused app screens, not test dialogs: full-screen overlay viewport, centered wide sheet, clear title band, one structural vertical divider when needed, and one primary content area with a detail pane.
+- In management modals, selected objects may use `InkSurface` with `OnInkSurface` foreground so selection is legible from across the modal. This is stronger than normal browser selection by design.
+- Do not make enabled, disabled, and future objects look identical. Available/selected cards get stronger contrast; coming-later or unavailable cards should be visibly muted before reading status text.
+- Card grids inside management modals should use card boundaries for scanability, but avoid nested boxes inside boxes. The card hierarchy should be simple: header row, body, optional footer.
+- Status should be legible at a glance. Avoid relying on a tiny pill as the only differentiator between live and unavailable objects.
+- Tags used for capabilities or scopes should not look like buttons unless they are interactive. Prefer plain text tags under an explicit section label.
 
 ## Shell Layout
 
@@ -107,6 +114,10 @@ Current contrast defaults:
 - Source detail should stay user-meaningful: what the source tracks, whether it looks healthy, last refresh, and recent activity. Avoid exposing internal-only mechanics like thresholds or backend policy fields.
 - Empty Sources states should explain why streams matter to the workspace, not just that the list is empty.
 - Add-stream flows should read like provider setup, not a generic modal form. The key user action is defining the upstream stream identity; cadence and matching remain backend-owned.
+- Third-party account/provider management should not live as a permanent section in the Sources pane. Use a standard `Integrations` action that opens a wide management modal.
+- The Integrations modal is the canonical high-contrast management pattern: provider card grid on the left, selected provider detail/actions on the right, fixed header, and a single scroll container for the provider grid.
+- Provider cards should make state obvious before reading copy. Connectable or connected providers read as active; unavailable/future providers read muted; selected providers use a strong near-black selected surface.
+- Provider detail panes should avoid repeating status badges already visible in the selected card. Lead with provider identity and the primary state explanation, then capabilities/scopes, connection model, and actions.
 
 ## Interaction
 

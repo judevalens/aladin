@@ -2,7 +2,7 @@
 
 ## Summary
 
-Connected Accounts is the setup surface for private provider credentials. It lives in Sources because provider connections enable future private streams, but it is separate from stream subscriptions. Nango stores supported provider credentials; Aladin stores only local connection references.
+Connected Accounts is the setup surface for private provider credentials. It is launched from Sources because provider connections enable future private streams, but it is not a permanent section inside the Sources pane. Nango stores supported provider credentials; Aladin stores only local connection references.
 
 ## Current Scope
 
@@ -21,11 +21,17 @@ Connected Accounts is the setup surface for private provider credentials. It liv
 
 ## UI Behavior
 
-- Sources shows a `Connected accounts` section above live streams.
-- Google renders as the primary account row when the provider catalog is available.
-- Disabled providers render as compact coming-later pills.
-- The connect flow opens an app-level centered modal, starts Nango Connect, opens the returned link, and lets the user check/sync the connection after returning.
+- Sources exposes a standard `Integrations` action near the Add Stream action.
+- The `Integrations` action opens a wide app-level management modal, not a small test dialog and not an embedded panel.
+- The modal uses the high-contrast management pattern from `design/ui-design-spec.md`: fixed title band, provider card grid on the left, selected provider detail/actions on the right.
+- Google renders as the first connectable provider card when the provider catalog is available.
+- Disabled/future providers render as muted cards so unavailable state is visible before reading status text.
+- Selected provider cards use a strong near-black selected surface with light foreground.
+- The detail pane does not repeat the card status badge. It leads with provider identity, primary state explanation, capabilities/scopes, connection model, and actions.
+- Capability/scopes are plain tags under an explicit section label; they should not look like clickable buttons.
+- The connect flow starts Nango Connect, opens the returned link, and lets the user check/sync the connection after returning.
 - Disconnect is available for connected providers.
+- The provider grid should have a single scroll container. Avoid wrapping lazy grids in another vertical scroll container.
 
 ## Verification
 

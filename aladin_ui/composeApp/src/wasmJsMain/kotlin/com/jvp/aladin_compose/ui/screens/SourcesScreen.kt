@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -140,10 +141,11 @@ fun SourcesScreen(setAppOverlay: ((AppOverlayContent?) -> Unit)? = null) {
                             )
                         }
                     },
-                    onOpenProvider = { provider ->
+                    onOpenIntegrations = {
                         setOverlay {
-                            ProviderConnectionDialog(
-                                provider = provider,
+                            IntegrationsManagerDialog(
+                                providers = providers,
+                                providerError = providerError,
                                 onDismiss = { setOverlay(null) },
                                 onChanged = {
                                     setOverlay(null)
@@ -184,12 +186,13 @@ private fun SourcesWorkspace(
     providers: List<ProviderConnectionProvider>,
     providerError: String?,
     onAddStream: () -> Unit,
-    onOpenProvider: (ProviderConnectionProvider) -> Unit,
+    onOpenIntegrations: () -> Unit,
     onOpenSource: (Source) -> Unit,
 ) {
     val activeCount = sources.count { it.syncState.isOperational() }
     val firstFetchCount = sources.count { it.lastSyncedAt == null }
     val providerCount = sources.map { it.type }.distinct().size
+    val connectedAccountCount = providers.count { it.connected }
 
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp),
@@ -201,12 +204,8 @@ private fun SourcesWorkspace(
             firstFetchCount = firstFetchCount,
             providerCount = providerCount,
             onAddStream = onAddStream,
-        )
-
-        ConnectedAccountsPanel(
-            providers = providers,
-            providerError = providerError,
-            onOpenProvider = onOpenProvider,
+            onManageIntegrations = onOpenIntegrations,
+            connectedAccountCount = connectedAccountCount,
         )
 
         if (sources.isEmpty()) {
@@ -229,6 +228,8 @@ private fun OverviewPanel(
     firstFetchCount: Int,
     providerCount: Int,
     onAddStream: () -> Unit,
+    onManageIntegrations: () -> Unit,
+    connectedAccountCount: Int,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -260,7 +261,15 @@ private fun OverviewPanel(
                     color = AladinColor.InkMuted,
                 )
             }
-            StreamDialogButton(label = "+ Add Stream", enabled = true, primary = true, onClick = onAddStream)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                StreamDialogButton(
+                    label = "Integrations ($connectedAccountCount)",
+                    enabled = true,
+                    primary = false,
+                    onClick = onManageIntegrations,
+                )
+                StreamDialogButton(label = "+ Add Stream", enabled = true, primary = true, onClick = onAddStream)
+            }
         }
 
         FlowRow(
@@ -301,75 +310,205 @@ private fun OverviewMetricCard(label: String, value: String, description: String
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ConnectedAccountsPanel(
-    providers: List<ProviderConnectionProvider>,
-    providerError: String?,
-    onOpenProvider: (ProviderConnectionProvider) -> Unit,
+private fun ProviderCard(
+    provider: ProviderConnectionProvider,
+    selected: Boolean,
+    onClick: () -> Unit,
 ) {
-    val primaryProviders = providers.filter { it.provider == "google" || it.available || it.connected }
-    val comingSoonProviders = providers.filter { it !in primaryProviders }
-
+    val shape = RoundedCornerShape(5.dp)
+    val active = provider.available || provider.connected
     Column(
         modifier =
-            Modifier.fillMaxWidth()
-                .border(1.dp, AladinColor.Border, RoundedCornerShape(6.dp))
-                .background(AladinColor.Panel, RoundedCornerShape(6.dp))
-                .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+            Modifier.heightIn(min = 150.dp)
+                .border(
+                    width = if (selected) 2.dp else 1.dp,
+                    color =
+                        when {
+                            selected -> AladinColor.Ink
+                            active -> AladinColor.Border
+                            else -> AladinColor.Divider
+                        },
+                    shape = shape,
+                )
+                .background(
+                    when {
+                        selected -> AladinColor.InkSurface
+                        active -> AladinColor.Panel
+                        else -> AladinColor.PanelMuted
+                    },
+                    shape,
+                )
+                .aladinClickable(
+                    shape = shape,
+                    colors =
+                        AladinInteractionDefaults.colors(
+                            rest = Color.Transparent,
+                            hovered = if (selected) AladinColor.InkSurfaceHover else AladinColor.RowHover,
+                            pressed = AladinColor.ControlPressed,
+                        ),
+                    onClick = onClick,
+                )
+                .padding(if (selected) 13.dp else 14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.Top,
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.weight(1f)) {
-                Text(
-                    "Connected accounts",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = AladinColor.Ink,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    "Private provider access lives here. Google is the first smoke-test path; other integrations stay visible but disabled.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = AladinColor.InkMuted,
-                )
-            }
-            MetadataPill("${providers.count { it.connected }} connected")
+            ProviderIcon(provider.provider, subdued = !active, selected = selected)
+            ProviderStatusLabel(provider)
         }
-
-        if (providerError != null) {
-            Text(providerError, style = MaterialTheme.typography.bodySmall, color = AladinColor.Ink)
-        }
-
-        if (primaryProviders.isEmpty() && providerError == null) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
-                "Provider catalog unavailable. Check that the backend is running.",
+                provider.label,
+                style = MaterialTheme.typography.titleSmall,
+                color = if (selected) AladinColor.OnInkSurface else if (active) AladinColor.Ink else AladinColor.InkMuted,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                provider.description.ifBlank { "Provider connection." },
                 style = MaterialTheme.typography.bodySmall,
-                color = AladinColor.InkMuted,
+                color =
+                    when {
+                        selected -> AladinColor.OnInkSurface.copy(alpha = 0.74f)
+                        active -> AladinColor.InkSecondary
+                        else -> AladinColor.InkMuted
+                    },
+                maxLines = 2,
             )
         }
-
-        primaryProviders.forEach { provider ->
-            ProviderAccountRow(
-                provider = provider,
-                enabled = true,
-                onClick = { onOpenProvider(provider) },
+        Spacer(Modifier.weight(1f))
+        if (active) {
+            Text(
+                provider.category.ifBlank { provider.backend }.uppercase(),
+                style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.25.sp),
+                color = if (selected) AladinColor.OnInkSurface.copy(alpha = 0.68f) else AladinColor.CodeText,
+                fontWeight = FontWeight.SemiBold,
             )
         }
+    }
+}
 
-        if (comingSoonProviders.isNotEmpty()) {
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun IntegrationsManagerDialog(
+    providers: List<ProviderConnectionProvider>,
+    providerError: String?,
+    onDismiss: () -> Unit,
+    onChanged: () -> Unit,
+) {
+    var selectedProviderId by remember(providers) {
+        mutableStateOf(
+            providers.firstOrNull { it.connected }?.provider
+                ?: providers.firstOrNull { it.provider == "google" }?.provider
+                ?: providers.firstOrNull()?.provider
+        )
+    }
+    val selectedProvider =
+        providers.firstOrNull { it.provider == selectedProviderId } ?: providers.firstOrNull()
+
+    Box(
+        modifier =
+            Modifier.fillMaxSize()
+                .background(Color(0x66000000))
+                .aladinClickable(
+                    shape = RoundedCornerShape(0.dp),
+                    colors =
+                        AladinInteractionDefaults.colors(
+                            rest = Color.Transparent,
+                            hovered = Color.Transparent,
+                            pressed = Color.Transparent,
+                        ),
+                    onClick = onDismiss,
+                ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier =
+                Modifier.width(980.dp)
+                    .height(680.dp)
+                    .aladinClickable(
+                        shape = RoundedCornerShape(6.dp),
+                        colors =
+                            AladinInteractionDefaults.colors(
+                                rest = Color.Transparent,
+                                hovered = Color.Transparent,
+                                pressed = Color.Transparent,
+                            ),
+                        onClick = {},
+                    )
+                    .border(1.dp, AladinColor.Ink, RoundedCornerShape(6.dp))
+                    .background(AladinColor.Panel, RoundedCornerShape(6.dp)),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 18.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top,
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Integrations",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = AladinColor.Ink,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        "Manage third-party account connections. Available providers are emphasized; planned providers stay muted.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = AladinColor.InkMuted,
+                    )
+                }
+                StreamDialogButton(label = "Close", enabled = true, primary = false, onClick = onDismiss)
+            }
+
             HorizontalDivider(color = AladinColor.Divider)
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                DialogSectionLabel("Coming later")
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+
+            Row(modifier = Modifier.fillMaxSize()) {
+                Column(
+                    modifier =
+                        Modifier.width(610.dp)
+                            .fillMaxHeight()
+                            .padding(22.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    comingSoonProviders.forEach { provider ->
-                        ProviderPill(provider = provider, onClick = { onOpenProvider(provider) })
+                    if (providerError != null) {
+                        Text(providerError, style = MaterialTheme.typography.bodySmall, color = AladinColor.Ink)
+                    }
+                    ProviderGroupHeader(
+                        title = "Available now",
+                        description = "Configured providers you can connect or manage.",
+                    )
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(minSize = 176.dp),
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 6.dp),
+                    ) {
+                        items(providers, key = { it.provider }) { provider ->
+                            ProviderCard(
+                                provider = provider,
+                                selected = provider.provider == selectedProvider?.provider,
+                                onClick = { selectedProviderId = provider.provider },
+                            )
+                        }
+                    }
+                    if (providers.isEmpty() && providerError == null) {
+                        Text(
+                            "Provider catalog unavailable. Check that the backend is running.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = AladinColor.InkMuted,
+                        )
+                    }
+                }
+
+                VerticalProviderDivider()
+
+                Box(modifier = Modifier.weight(1f).fillMaxSize().padding(22.dp)) {
+                    if (selectedProvider != null) {
+                        ProviderDetailPane(provider = selectedProvider, onChanged = onChanged)
                     }
                 }
             }
@@ -378,112 +517,199 @@ private fun ConnectedAccountsPanel(
 }
 
 @Composable
-private fun ProviderAccountRow(
-    provider: ProviderConnectionProvider,
-    enabled: Boolean,
-    onClick: () -> Unit,
-) {
-    val shape = RoundedCornerShape(5.dp)
-    Row(
-        modifier =
-            Modifier.fillMaxWidth()
-                .border(1.dp, AladinColor.Border, shape)
-                .background(AladinColor.Canvas, shape)
-                .aladinClickable(
-                    shape = shape,
-                    colors =
-                        AladinInteractionDefaults.colors(
-                            rest = Color.Transparent,
-                            hovered = if (enabled) AladinColor.RowHover else Color.Transparent,
-                            pressed = if (enabled) AladinColor.ControlPressed else Color.Transparent,
-                        ),
-                    onClick = onClick,
-                )
-                .padding(14.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Row(
-            modifier = Modifier.weight(1f),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.Top,
-        ) {
-            ProviderIcon(provider.provider)
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        provider.label,
-                        style = MaterialTheme.typography.titleSmall,
-                        color = AladinColor.Ink,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    MetadataPill(provider.category.ifBlank { provider.backend })
-                }
-                Text(
-                    provider.description.ifBlank { "Connect this provider to make private sources available." },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = AladinColor.InkSecondary,
-                )
-                if (provider.grantedScopes.isNotEmpty()) {
-                    Text(
-                        "Granted: ${provider.grantedScopes.take(3).joinToString(", ")}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = AladinColor.InkMuted,
-                    )
-                }
-            }
-        }
-        StreamDialogButton(
-            label =
-                when {
-                    provider.connected -> "Manage"
-                    provider.available -> "Connect"
-                    else -> "Unavailable"
-                },
-            enabled = enabled,
-            primary = provider.available && !provider.connected,
-            onClick = onClick,
-        )
-    }
+private fun VerticalProviderDivider() {
+    Box(modifier = Modifier.width(1.dp).fillMaxSize().background(AladinColor.Divider))
 }
 
 @Composable
-private fun ProviderPill(provider: ProviderConnectionProvider, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(5.dp)
-    Row(
-        modifier =
-            Modifier.border(1.dp, AladinColor.Border, shape)
-                .background(AladinColor.PanelMuted, shape)
-                .aladinClickable(
-                    shape = shape,
-                    colors =
-                        AladinInteractionDefaults.colors(
-                            rest = Color.Transparent,
-                            hovered = AladinColor.ControlHover,
-                            pressed = AladinColor.ControlPressed,
-                        ),
-                    onClick = onClick,
-                )
-                .padding(horizontal = 9.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+private fun ProviderGroupHeader(title: String, description: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Text(
-            provider.label,
-            style = MaterialTheme.typography.labelSmall,
-            color = AladinColor.InkSecondary,
-            fontWeight = FontWeight.Medium,
+            title.uppercase(),
+            style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.35.sp),
+            color = AladinColor.CodeText,
+            fontWeight = FontWeight.SemiBold,
         )
         Text(
-            "planned",
-            style = MaterialTheme.typography.labelSmall,
+            description,
+            style = MaterialTheme.typography.bodySmall,
             color = AladinColor.InkMuted,
         )
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ProviderIcon(provider: String) {
+private fun ProviderDetailPane(provider: ProviderConnectionProvider, onChanged: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var working by remember(provider.provider) { mutableStateOf(false) }
+    var checking by remember(provider.provider) { mutableStateOf(false) }
+    var err by remember(provider.provider) { mutableStateOf<String?>(null) }
+    var openedConnect by remember(provider.provider) { mutableStateOf(false) }
+
+    Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            ProviderIcon(provider.provider, subdued = !provider.available && !provider.connected, selected = false)
+            Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                Text(
+                    provider.label,
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = AladinColor.Ink,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    provider.connectionStatusCopy(),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = AladinColor.InkSecondary,
+                )
+            }
+        }
+
+        HorizontalDivider(color = AladinColor.Divider)
+
+        if (provider.capabilities.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                DialogSectionLabel("Capabilities")
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(9.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    provider.capabilities.forEach { capability -> ProviderCapabilityTag(capability) }
+                }
+            }
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            DialogSectionLabel("Connection model")
+            Text(
+                if (provider.available || provider.connected) {
+                    "Aladin creates a Nango Connect session. Nango owns provider credentials and refresh. Aladin stores only a local connection reference."
+                } else {
+                    "This provider is visible in the catalog, but no local provider config is enabled yet."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = AladinColor.InkSecondary,
+            )
+        }
+
+        if (provider.grantedScopes.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                DialogSectionLabel("Granted scopes")
+                Text(
+                    provider.grantedScopes.joinToString(", "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = AladinColor.InkSecondary,
+                )
+            }
+        }
+
+        if (openedConnect && !provider.connected) {
+            Text(
+                "After finishing the Nango window, return here and check the connection.",
+                style = MaterialTheme.typography.bodySmall,
+                color = AladinColor.CodeText,
+            )
+        }
+
+        err?.let { Text(it, color = AladinColor.Ink, style = MaterialTheme.typography.bodySmall) }
+
+        Spacer(Modifier.weight(1f))
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (provider.connected && provider.connectionId != null) {
+                StreamDialogButton(
+                    label = if (working) "Disconnecting..." else "Disconnect",
+                    enabled = !working && !checking,
+                    primary = false,
+                    onClick = {
+                        scope.launch {
+                            working = true
+                            err = null
+                            try {
+                                ApiClient.disconnectProviderConnection(provider.connectionId)
+                                onChanged()
+                            } catch (e: Exception) {
+                                err = e.message ?: "Failed to disconnect ${provider.label}"
+                            } finally {
+                                working = false
+                            }
+                        }
+                    },
+                )
+            }
+            if (provider.available && !provider.connected) {
+                StreamDialogButton(
+                    label = if (working) "Opening..." else "Connect with Nango",
+                    enabled = !working && !checking,
+                    primary = true,
+                    onClick = {
+                        scope.launch {
+                            working = true
+                            err = null
+                            try {
+                                val session = ApiClient.startProviderConnect(provider.provider)
+                                openUrl(session.connectLink)
+                                openedConnect = true
+                            } catch (e: Exception) {
+                                err = e.message ?: "Failed to start ${provider.label} connection"
+                            } finally {
+                                working = false
+                            }
+                        }
+                    },
+                )
+                StreamDialogButton(
+                    label = if (checking) "Checking..." else "Check connection",
+                    enabled = !working && !checking,
+                    primary = false,
+                    onClick = {
+                        scope.launch {
+                            checking = true
+                            err = null
+                            try {
+                                ApiClient.syncProviderConnections()
+                                onChanged()
+                            } catch (e: Exception) {
+                                err = e.message ?: "Failed to sync provider connections"
+                            } finally {
+                                checking = false
+                            }
+                        }
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProviderStatusLabel(provider: ProviderConnectionProvider) {
+    val (label, color) =
+        when {
+            provider.connected -> "Connected" to AladinColor.CodeText
+            provider.available -> "Available" to AladinColor.Ink
+            provider.comingSoon -> "Later" to AladinColor.InkMuted
+            else -> "Off" to AladinColor.InkMuted
+        }
+    Text(
+        label.uppercase(),
+        style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.35.sp),
+        color = color,
+        fontWeight = FontWeight.SemiBold,
+    )
+}
+
+@Composable
+private fun ProviderCapabilityTag(label: String) {
+    Text(
+        label,
+        style = MaterialTheme.typography.bodySmall,
+        color = AladinColor.InkSecondary,
+    )
+}
+
+@Composable
+private fun ProviderIcon(provider: String, subdued: Boolean, selected: Boolean) {
     val label =
         when (provider) {
             "google" -> "G"
@@ -502,11 +728,36 @@ private fun ProviderIcon(provider: String) {
         modifier =
             Modifier.size(34.dp)
                 .clip(RoundedCornerShape(5.dp))
-                .border(1.dp, AladinColor.Border, RoundedCornerShape(5.dp))
-                .background(AladinColor.CommandSurface, RoundedCornerShape(5.dp)),
+                .border(
+                    1.dp,
+                    when {
+                        selected -> AladinColor.OnInkSurface.copy(alpha = 0.42f)
+                        subdued -> AladinColor.Divider
+                        else -> AladinColor.Border
+                    },
+                    RoundedCornerShape(5.dp),
+                )
+                .background(
+                    when {
+                        selected -> AladinColor.OnInkSurface.copy(alpha = 0.12f)
+                        subdued -> AladinColor.PanelMuted
+                        else -> AladinColor.CommandSurface
+                    },
+                    RoundedCornerShape(5.dp),
+                ),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, style = MaterialTheme.typography.labelSmall, color = AladinColor.CodeText, fontWeight = FontWeight.Bold)
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color =
+                when {
+                    selected -> AladinColor.OnInkSurface
+                    subdued -> AladinColor.InkMuted
+                    else -> AladinColor.CodeText
+                },
+            fontWeight = FontWeight.Bold,
+        )
     }
 }
 
@@ -792,206 +1043,6 @@ private fun SourceDetailsDialog(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     StreamDialogButton(label = "Close", enabled = true, primary = false, onClick = onDismiss)
                     StreamDialogButton(label = "Remove source", enabled = true, primary = false, onClick = onRemoveSource)
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun ProviderConnectionDialog(
-    provider: ProviderConnectionProvider,
-    onDismiss: () -> Unit,
-    onChanged: () -> Unit,
-) {
-    val scope = rememberCoroutineScope()
-    var working by remember { mutableStateOf(false) }
-    var checking by remember { mutableStateOf(false) }
-    var err by remember { mutableStateOf<String?>(null) }
-    var openedConnect by remember { mutableStateOf(false) }
-
-    Box(
-        modifier =
-            Modifier.fillMaxSize()
-                .background(Color(0x66000000))
-                .aladinClickable(
-                    shape = RoundedCornerShape(0.dp),
-                    colors =
-                        AladinInteractionDefaults.colors(
-                            rest = Color.Transparent,
-                            hovered = Color.Transparent,
-                            pressed = Color.Transparent,
-                        ),
-                    onClick = onDismiss,
-                ),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            modifier =
-                Modifier.width(560.dp)
-                    .aladinClickable(
-                        shape = RoundedCornerShape(6.dp),
-                        colors =
-                            AladinInteractionDefaults.colors(
-                                rest = Color.Transparent,
-                                hovered = Color.Transparent,
-                                pressed = Color.Transparent,
-                            ),
-                        onClick = {},
-                    )
-                    .border(1.dp, AladinColor.Ink, RoundedCornerShape(6.dp))
-                    .background(AladinColor.Panel, RoundedCornerShape(6.dp)),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 18.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top,
-            ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.Top,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    ProviderIcon(provider.provider)
-                    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                        Text(
-                            "Connect ${provider.label}",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = AladinColor.Ink,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Text(
-                            provider.connectionStatusCopy(),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = AladinColor.InkMuted,
-                        )
-                    }
-                }
-                MetadataPill(provider.providerStatusLabel())
-            }
-
-            HorizontalDivider(color = AladinColor.Divider)
-
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(22.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                Text(
-                    provider.description.ifBlank { "This provider is part of the private-source connection layer." },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = AladinColor.InkSecondary,
-                )
-
-                if (provider.capabilities.isNotEmpty()) {
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        provider.capabilities.forEach { capability -> MetadataPill(capability) }
-                    }
-                }
-
-                DetailsCard(
-                    title = "How this works",
-                    body =
-                        if (provider.available || provider.connected) {
-                            "Aladin creates a Nango Connect session, Nango stores provider credentials, then Aladin syncs a local connection reference. Raw provider tokens do not live in Aladin."
-                        } else {
-                            "This provider is visible in the catalog so the account surface is already shaped for it, but the backend does not expose a connectable provider config yet."
-                        },
-                )
-
-                if (openedConnect && !provider.connected) {
-                    Text(
-                        "After finishing the Nango window, return here and check the connection.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = AladinColor.CodeText,
-                    )
-                }
-
-                err?.let {
-                    Text(it, color = AladinColor.Ink, style = MaterialTheme.typography.bodySmall)
-                }
-            }
-
-            HorizontalDivider(color = AladinColor.Divider)
-
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 14.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    if (provider.connected) "Connected account" else "Provider connection",
-                    color = AladinColor.CodeText,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    StreamDialogButton(label = "Close", enabled = !working && !checking, primary = false, onClick = onDismiss)
-                    if (provider.connected && provider.connectionId != null) {
-                        StreamDialogButton(
-                            label = if (working) "Disconnecting..." else "Disconnect",
-                            enabled = !working && !checking,
-                            primary = false,
-                            onClick = {
-                                scope.launch {
-                                    working = true
-                                    err = null
-                                    try {
-                                        ApiClient.disconnectProviderConnection(provider.connectionId)
-                                        onChanged()
-                                    } catch (e: Exception) {
-                                        err = e.message ?: "Failed to disconnect ${provider.label}"
-                                    } finally {
-                                        working = false
-                                    }
-                                }
-                            },
-                        )
-                    }
-                    if (provider.available && !provider.connected) {
-                        StreamDialogButton(
-                            label = if (working) "Opening..." else "Open Nango",
-                            enabled = !working && !checking,
-                            primary = true,
-                            onClick = {
-                                scope.launch {
-                                    working = true
-                                    err = null
-                                    try {
-                                        val session = ApiClient.startProviderConnect(provider.provider)
-                                        openUrl(session.connectLink)
-                                        openedConnect = true
-                                    } catch (e: Exception) {
-                                        err = e.message ?: "Failed to start ${provider.label} connection"
-                                    } finally {
-                                        working = false
-                                    }
-                                }
-                            },
-                        )
-                        StreamDialogButton(
-                            label = if (checking) "Checking..." else "Check connection",
-                            enabled = !working && !checking,
-                            primary = false,
-                            onClick = {
-                                scope.launch {
-                                    checking = true
-                                    err = null
-                                    try {
-                                        ApiClient.syncProviderConnections()
-                                        onChanged()
-                                    } catch (e: Exception) {
-                                        err = e.message ?: "Failed to sync provider connections"
-                                    } finally {
-                                        checking = false
-                                    }
-                                }
-                            },
-                        )
-                    }
                 }
             }
         }
