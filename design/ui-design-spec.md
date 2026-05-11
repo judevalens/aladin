@@ -93,7 +93,7 @@ Current contrast defaults:
 
 - The artifact/work pane should coordinate open artifacts through a compact tab rail.
 - Active artifact tabs use the high-contrast selected state. Inactive tabs remain light and quiet.
-- The tab rail can use the muted pane surface to separate workspace chrome from the light document canvas. Context rails may use stronger dark borders, but the editor/document body remains light.
+- The tab rail should stay white; the divider/context chrome already provides separation. Avoid adding another muted band above the document surface.
 - The context rail provides selected-object orientation through breadcrumbs/path text, page metadata, and utility actions.
 - The active artifact surface should be type-specific: page editor, link viewer, voice/file viewer, graph surface, or future specialist surface.
 - Pages should use the broad document/editor canvas. Compact source-like artifacts such as links, voice notes, and files should render as centered artifact objects when the inspector is closed.
