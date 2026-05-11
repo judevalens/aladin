@@ -75,7 +75,7 @@ Current contrast defaults:
 - The model supports unbounded nesting, but pane 2 should not indent forever or use horizontal scrolling as the primary deep-tree behavior.
 - Use scoped drill-in navigation for deep nesting: folders at visual levels 0 and 1 expand inline; folders at visual level 2 open as the new browser scope.
 - Pane 2 uses a local scope breadcrumb, not the selected object breadcrumb. It identifies the current browser scope and uses a back chevron to move one scope up.
-- Browser scope headers should stay light: command-surface background, subtle border, warm black/muted breadcrumb text. This is workspace chrome, not object selection.
+- Browser scope headers should stay light and unboxed: no bordered pill around the root/folder breadcrumb. Use muted breadcrumb text and hover feedback only when it is navigable.
 - The full selected-object breadcrumb belongs in the workspace pane above the open folder/artifact title. It provides absolute orientation and jump navigation for the selected object.
 - Use `depth` for visual indentation inside the current scope instead of recursively nesting composables. This preserves virtualization and keeps deep trees predictable.
 - Folder-like rows use chevrons plus bare icons. Do not wrap folder icons in boxed glyph backgrounds.

@@ -246,8 +246,6 @@ private fun BrowserScopeBreadcrumbRow(state: DocumentBrowserState) {
     Row(
         modifier =
             Modifier.fillMaxWidth()
-                .border(1.dp, AladinColor.Border, RoundedCornerShape(ControlRadius))
-                .background(AladinColor.CommandSurface, RoundedCornerShape(ControlRadius))
                 .aladinClickable(
                     enabled = state.canNavigateScopeBack,
                     shape = RoundedCornerShape(ControlRadius),
