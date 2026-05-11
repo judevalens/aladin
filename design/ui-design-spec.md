@@ -92,7 +92,7 @@ Current contrast defaults:
 ## Artifact Workspace
 
 - The artifact/work pane should coordinate open artifacts through a compact tab rail.
-- Active artifact tabs use the high-contrast selected state. Inactive tabs remain light and quiet.
+- Active artifact tabs use a white surface with a warm black border and stronger text weight. Do not use filled selected tabs.
 - The tab rail should stay white; the divider/context chrome already provides separation. Avoid adding another muted band above the document surface.
 - The context rail provides selected-object orientation through breadcrumbs/path text, page metadata, and utility actions.
 - The active artifact surface should be type-specific: page editor, link viewer, voice/file viewer, graph surface, or future specialist surface.

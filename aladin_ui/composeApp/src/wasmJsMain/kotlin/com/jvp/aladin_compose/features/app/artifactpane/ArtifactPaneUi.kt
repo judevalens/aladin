@@ -428,10 +428,17 @@ private fun WorkspaceDocumentRail(
                                     AladinInteractionDefaults.colors(
                                         hovered = AladinColor.ControlHover,
                                         pressed = AladinColor.ControlPressed,
-                                        selected = AladinColor.RowSelected,
+                                        selected = AladinColor.Canvas,
                                         selectedHovered = AladinColor.ControlPressed,
                                     ),
                                 onClick = { onActivateArtifact(artifact.id) },
+                            )
+                            .then(
+                                if (active) {
+                                    Modifier.border(DividerThickness, AladinColor.Ink, shape)
+                                } else {
+                                    Modifier
+                                }
                             )
                             .padding(horizontal = 12.dp, vertical = 12.dp),
                 ) {
