@@ -48,16 +48,16 @@ object AladinColor {
     val Divider = Color(0xFFE7E7E2)
     val Border = Color(0xFFD8D8D2)
 
-    val Ink = Color(0xFF111111)
+    val Ink = Color(0xFF1B1A17)
     val InkSecondary = Color(0xFF4F4F4A)
     val InkMuted = Color(0xFF7C7C75)
     val InkDisabled = Color(0xFFB2B2AA)
 
-    val InkSurface = Color(0xFF151515)
-    val InkSurfaceHover = Color(0xFF0D0D0D)
-    val OnInkSurface = Color(0xFFF7F7F4)
+    val InkSurface = Color(0xFF24231F)
+    val InkSurfaceHover = Color(0xFF1B1A17)
+    val OnInkSurface = Color(0xFFFAFAF6)
 
-    val ActiveMarker = Color(0xFF111111)
+    val ActiveMarker = Ink
     val CommandSurface = Color(0xFFF5F5F2)
     val CodeText = Color(0xFF32322E)
 }

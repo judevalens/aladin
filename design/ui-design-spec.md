@@ -11,11 +11,11 @@ The current shell direction is a minimal three-pane workspace: a compact app rai
 - Color is charcoal, near-black, white, one restrained off-white, and neutral gray only.
 - Product code should use `AladinColor` tokens, not Material-style surface roles.
 - Core tokens are `Canvas`, `Panel`, `PanelMuted`, `RowHover`, `RowSelected`, `ControlHover`, `ControlPressed`, `Divider`, `Border`, `Ink`, `InkSecondary`, `InkMuted`, `InkDisabled`, `ActiveMarker`, `CommandSurface`, and `CodeText`.
-- `Ink` is charcoal/near-black for primary text. `InkSurface` is used for selected rail items, active artifact tabs, active artifact browser rows, management-modal selections, and compact high-contrast controls.
+- `Ink` is a gentle warm black for primary text and accent marks, never pure black. `InkSurface` is reserved for compact high-contrast controls and modal emphasis.
 - Terminal precision tokens are `ActiveMarker`, `CommandSurface`, and `CodeText`; use them for row markers, command/search affordances, metadata, and small technical labels.
-- Dark contrast tokens are `InkSurface`, `InkSurfaceHover`, and `OnInkSurface`; use them for structural active states that should be legible across the workspace.
-- Shell navigation stays light-theme-first, but selected navigation uses compact near-black contrast with light foreground.
-- Content/browser selection should now use high-contrast selected states for active artifacts only. Folder rows remain navigational and should not show selected-fill styling.
+- Dark contrast tokens are `InkSurface`, `InkSurfaceHover`, and `OnInkSurface`; use them sparingly for compact controls, not broad chrome surfaces.
+- Shell navigation stays light-theme-first. Selected navigation should use light selected fills plus warm black text/borders, not dark rail blocks.
+- Content/browser selection should use light selected fills with warm black accent marks for active artifacts only. Folder rows remain navigational and should not show selected-fill styling.
 - Secondary hover/pressed states use grayscale fills, never tinted color.
 - Dividers are very thin and structural.
 - Surfaces should ladder cleanly: white canvas, one restrained off-white panel family, then grayscale state tones. Avoid multiple creamy almost-whites.
@@ -24,9 +24,9 @@ The current shell direction is a minimal three-pane workspace: a compact app rai
 
 Current contrast defaults:
 
-- `Ink` is charcoal/near-black for primary text.
-- `InkSurface` is near-black for selected rail fills and brand surfaces.
-- `InkSurfaceHover` is slightly darker than `InkSurface` for selected hover/press feedback.
+- `Ink` is warm near-black for primary text and accent marks.
+- `InkSurface` is gentle near-black for compact action fills and modal emphasis.
+- `InkSurfaceHover` is slightly darker than `InkSurface` for selected hover/press feedback, but still not pure black.
 - `OnInkSurface` is near-white, not pure white, for selected foreground text/icons.
 - `CodeText` is used for compact metadata and command-like affordances.
 
@@ -39,9 +39,9 @@ Current contrast defaults:
 
 ## Components
 
-- Navigation items use near-black selected states with light foreground and no extra side marker. The filled item itself carries selection.
+- Navigation items use light selected fills with warm black text and a thin black border. Do not add an extra side marker.
 - Browser rows use the shared `aladinClickable` interaction layer.
-- Selected browser artifact rows use near-black selected states with light foreground. Folder rows remain unselected even when focused or expanded.
+- Selected browser artifact rows use light selected fills with a warm black accent marker. Folder rows remain unselected even when focused or expanded.
 - Dense browser rows should avoid boxed folder glyphs. Prefer hierarchy from indentation, chevrons, icon weight, and text contrast.
 - Pane-level browser filters are deferred; do not add top filter controls until the filtering model is redesigned.
 - Panels should feel like document/workspace surfaces, not cards. The document/editor body stays light even as selected structural chrome becomes higher contrast.
@@ -58,8 +58,8 @@ Current contrast defaults:
 
 - Keep the three-pane desktop shell: app rail, browser pane, workspace pane.
 - The workspace pane is an artifact/work pane. It can contain an artifact tab rail, a context rail, and the active artifact surface.
-- The app rail is icon-only and should read like a compact command rail, not a separate dark navigation product. It uses the muted pane surface, high-contrast selected states, and light active foreground without an added active bar.
-- Selected app rail/sidebar destinations use `InkSurface` with `OnInkSurface` foreground. Inactive destinations stay quiet on the muted pane surface.
+- The app rail is icon-only and should read like a compact command rail, not a separate dark navigation product. It uses the muted pane surface, light selected states, and warm black active foreground without an added active bar.
+- Selected app rail/sidebar destinations use `RowSelected` with warm black foreground and border. Inactive destinations stay quiet on the muted pane surface.
 - The brand mark should be quiet and utility-like: bordered or command-surface treatment, monospace `A`, and visually distinct from destination selection.
 - The top toolbar should remain quiet overall, but command controls can carry stronger monochrome contrast: right-aligned command search plus separate lightweight creation actions.
 - Search should read as a command input, not a generic form field. Avoid boxed grouped action clusters unless the actions become a real segmented control.
@@ -75,12 +75,12 @@ Current contrast defaults:
 - The model supports unbounded nesting, but pane 2 should not indent forever or use horizontal scrolling as the primary deep-tree behavior.
 - Use scoped drill-in navigation for deep nesting: folders at visual levels 0 and 1 expand inline; folders at visual level 2 open as the new browser scope.
 - Pane 2 uses a local scope breadcrumb, not the selected object breadcrumb. It identifies the current browser scope and uses a back chevron to move one scope up.
-- Browser scope headers may use a compact near-black surface with light breadcrumb text. This is workspace chrome, not object selection, and should stay shallow in height.
+- Browser scope headers should stay light: command-surface background, subtle border, warm black/muted breadcrumb text. This is workspace chrome, not object selection.
 - The full selected-object breadcrumb belongs in the workspace pane above the open folder/artifact title. It provides absolute orientation and jump navigation for the selected object.
 - Use `depth` for visual indentation inside the current scope instead of recursively nesting composables. This preserves virtualization and keeps deep trees predictable.
 - Folder-like rows use chevrons plus bare icons. Do not wrap folder icons in boxed glyph backgrounds.
 - Artifact rows should stay compact: title plus one muted metadata line. Long summaries belong in the workspace pane, not the browser row.
-- Folder rows behave as navigation/expansion controls and should not render selected-fill styling. Artifact rows use near-black fill with light foreground when they match the active workspace artifact; do not add a separate side marker.
+- Folder rows behave as navigation/expansion controls and should not render selected-fill styling. Artifact rows use light selected fill plus warm black text/marker when they match the active workspace artifact.
 - Workspace breadcrumbs remain visible as selected-object path context and jump controls. They should not replace browser expansion state, and they should not use selected-fill styling.
 - Browser scope breadcrumbs show the current local browser scope; the browser itself shows that scope and its local descendants.
 - Browser filters have been removed from the top of pane 2. Reintroduce filters only after the filtering model is redesigned.
@@ -128,7 +128,7 @@ Current contrast defaults:
 
 - Hover state: light gray.
 - Pressed state: slightly stronger gray unless the component is already selected.
-- Selected state: near-black surface plus light foreground for shell navigation, active artifact tabs, active artifact browser rows, and management-modal selections. Use soft gray only for less-important local selection states.
+- Selected state: light selected surface plus warm black text, border, or marker for normal workspace chrome. Reserve gentle near-black fills for compact primary actions and management-modal emphasis.
 - Disabled state: muted text on light gray.
 - Avoid Material ripples unless intentionally reintroduced for a specific control.
 

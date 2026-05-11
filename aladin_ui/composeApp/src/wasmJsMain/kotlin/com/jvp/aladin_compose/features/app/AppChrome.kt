@@ -45,8 +45,8 @@ fun AladinToolbarField(text: String, modifier: Modifier = Modifier) {
     Box(
         modifier =
             modifier
-                .border(DividerThickness, AladinColor.InkSurface, RoundedCornerShape(ControlRadius))
-                .background(AladinColor.Panel, RoundedCornerShape(ControlRadius))
+                .border(DividerThickness, AladinColor.Border, RoundedCornerShape(ControlRadius))
+                .background(AladinColor.CommandSurface, RoundedCornerShape(ControlRadius))
                 .padding(horizontal = 14.dp, vertical = 9.dp),
         contentAlignment = Alignment.CenterStart,
     ) {

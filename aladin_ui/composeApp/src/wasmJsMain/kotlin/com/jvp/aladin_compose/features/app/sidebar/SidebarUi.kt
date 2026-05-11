@@ -118,17 +118,17 @@ fun AppSidebar(
             Box(
                 modifier =
                     Modifier.size(28.dp)
-                        .background(AladinColor.InkSurface, RoundedCornerShape(SharpRadius))
+                        .background(AladinColor.Panel, RoundedCornerShape(SharpRadius))
                         .border(
                             DividerThickness,
-                            AladinColor.InkSurface,
+                            AladinColor.Ink,
                             RoundedCornerShape(SharpRadius),
                         ),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     "A",
-                    color = AladinColor.OnInkSurface,
+                    color = AladinColor.Ink,
                     style = MaterialTheme.typography.labelLarge,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
@@ -204,7 +204,7 @@ fun AppSidebar(
                             imageVector = icon,
                             contentDescription = destination.name,
                             tint =
-                                if (destination == state.selectedDestination) AladinColor.OnInkSurface
+                                if (destination == state.selectedDestination) AladinColor.Ink
                                 else AladinColor.InkMuted,
                             modifier = Modifier.size(RailIconSize),
                         )
@@ -266,21 +266,29 @@ private fun SidebarNavItem(
     active: Boolean,
     onClick: () -> Unit,
 ) {
+    val shape = RoundedCornerShape(SharpRadius)
     Box(
         modifier =
             Modifier.fillMaxWidth()
                 .height(SidebarNavItemHeight)
                 .aladinClickable(
                     selected = active,
-                    shape = RoundedCornerShape(SharpRadius),
+                    shape = shape,
                     colors =
                         AladinInteractionDefaults.colors(
                             hovered = AladinColor.ControlHover,
                             pressed = AladinColor.ControlPressed,
-                            selected = AladinColor.InkSurface,
-                            selectedHovered = AladinColor.InkSurfaceHover,
+                            selected = AladinColor.RowSelected,
+                            selectedHovered = AladinColor.ControlPressed,
                         ),
                     onClick = onClick,
+                )
+                .then(
+                    if (active) {
+                        Modifier.border(DividerThickness, AladinColor.Ink, shape)
+                    } else {
+                        Modifier
+                    }
                 )
     ) {
         Row(
@@ -291,7 +299,7 @@ private fun SidebarNavItem(
             icon()
             Text(
                 label,
-                color = if (active) AladinColor.OnInkSurface else AladinColor.InkSecondary,
+                color = if (active) AladinColor.Ink else AladinColor.InkSecondary,
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
             )

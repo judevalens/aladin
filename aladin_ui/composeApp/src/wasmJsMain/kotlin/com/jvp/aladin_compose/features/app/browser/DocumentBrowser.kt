@@ -246,16 +246,16 @@ private fun BrowserScopeBreadcrumbRow(state: DocumentBrowserState) {
     Row(
         modifier =
             Modifier.fillMaxWidth()
-                .border(1.dp, AladinColor.InkSurface, RoundedCornerShape(ControlRadius))
-                .background(AladinColor.InkSurface, RoundedCornerShape(ControlRadius))
+                .border(1.dp, AladinColor.Border, RoundedCornerShape(ControlRadius))
+                .background(AladinColor.CommandSurface, RoundedCornerShape(ControlRadius))
                 .aladinClickable(
                     enabled = state.canNavigateScopeBack,
                     shape = RoundedCornerShape(ControlRadius),
                     colors =
                         AladinInteractionDefaults.colors(
                             rest = Color.Transparent,
-                            hovered = AladinColor.InkSurfaceHover,
-                            pressed = AladinColor.InkSurfaceHover,
+                            hovered = AladinColor.ControlHover,
+                            pressed = AladinColor.ControlPressed,
                         ),
                     onClick = {
                         state.eventSink(DocumentBrowserEvent.NavigateScope(state.scopeBackTargetId))
@@ -272,7 +272,7 @@ private fun BrowserScopeBreadcrumbRow(state: DocumentBrowserState) {
             Icon(
                 imageVector = Icons.AutoMirrored.Sharp.NavigateBefore,
                 contentDescription = null,
-                tint = AladinColor.OnInkSurface,
+                tint = AladinColor.InkMuted,
                 modifier = Modifier.size(BrowserIconSize),
             )
         }
@@ -280,7 +280,7 @@ private fun BrowserScopeBreadcrumbRow(state: DocumentBrowserState) {
             if (index > 0) {
                 Text(
                     "/",
-                    color = AladinColor.OnInkSurface.copy(alpha = 0.5f),
+                    color = AladinColor.InkMuted,
                     style = MaterialTheme.typography.labelMedium,
                 )
             }
@@ -288,7 +288,7 @@ private fun BrowserScopeBreadcrumbRow(state: DocumentBrowserState) {
                 is BreadcrumbSegment.Crumb ->
                     Text(
                         segment.item.label,
-                        color = AladinColor.OnInkSurface,
+                        color = AladinColor.InkSecondary,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
@@ -297,7 +297,7 @@ private fun BrowserScopeBreadcrumbRow(state: DocumentBrowserState) {
                 BreadcrumbSegment.Ellipsis ->
                     Text(
                         "...",
-                        color = AladinColor.OnInkSurface.copy(alpha = 0.7f),
+                        color = AladinColor.InkMuted,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                     )
@@ -326,8 +326,8 @@ private fun BrowserArtifactRow(
                     colors =
                         AladinInteractionDefaults.colors(
                             hovered = AladinColor.ControlHover,
-                            selected = AladinColor.InkSurface,
-                            selectedHovered = AladinColor.InkSurfaceHover,
+                            selected = AladinColor.RowSelected,
+                            selectedHovered = AladinColor.ControlPressed,
                         ),
                     onDoubleClick = onStartRename,
                     onClick = onClick,
@@ -361,7 +361,7 @@ private fun BrowserArtifactRow(
 private fun BrowserRowTitle(title: String, selected: Boolean) {
     Text(
         title,
-        color = if (selected) AladinColor.OnInkSurface else AladinColor.Ink,
+        color = if (selected) AladinColor.Ink else AladinColor.Ink,
         fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
@@ -777,7 +777,7 @@ fun ArtifactGlyph(kind: ArtifactKind, selected: Boolean = false) {
         modifier =
             Modifier.size(BrowserGlyphSize)
                 .background(
-                    if (selected) AladinColor.OnInkSurface.copy(alpha = 0.14f) else AladinColor.ControlHover,
+                    if (selected) AladinColor.ControlPressed else AladinColor.ControlHover,
                     RoundedCornerShape(SharpRadius),
                 ),
         contentAlignment = Alignment.Center,
@@ -789,7 +789,7 @@ fun ArtifactGlyph(kind: ArtifactKind, selected: Boolean = false) {
                 ArtifactKind.Voice -> "V"
                 ArtifactKind.File -> "F"
             },
-            color = if (selected) AladinColor.OnInkSurface else AladinColor.InkSecondary,
+            color = if (selected) AladinColor.Ink else AladinColor.InkSecondary,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.SemiBold,
         )

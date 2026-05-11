@@ -161,7 +161,7 @@ private fun WorkspaceContextRail(
         modifier =
             Modifier.fillMaxWidth()
                 .background(AladinColor.Panel)
-                .border(DividerThickness, AladinColor.InkSurface)
+                .border(DividerThickness, AladinColor.Divider)
                 .padding(horizontal = 14.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -428,8 +428,8 @@ private fun WorkspaceDocumentRail(
                                     AladinInteractionDefaults.colors(
                                         hovered = AladinColor.ControlHover,
                                         pressed = AladinColor.ControlPressed,
-                                        selected = AladinColor.InkSurface,
-                                        selectedHovered = AladinColor.InkSurfaceHover,
+                                        selected = AladinColor.RowSelected,
+                                        selectedHovered = AladinColor.ControlPressed,
                                     ),
                                 onClick = { onActivateArtifact(artifact.id) },
                             )
@@ -437,14 +437,14 @@ private fun WorkspaceDocumentRail(
                 ) {
                     Text(
                         artifact.title,
-                        color = if (active) AladinColor.OnInkSurface else AladinColor.Ink,
+                        color = AladinColor.Ink,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
                     )
                     Icon(
                         imageVector = Icons.Sharp.Close,
                         contentDescription = "Close tab",
-                        tint = if (active) AladinColor.OnInkSurface else AladinColor.Ink,
+                        tint = if (active) AladinColor.InkSecondary else AladinColor.Ink,
                         modifier =
                             Modifier.aladinClickable(
                                 enabled = true,
