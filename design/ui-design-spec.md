@@ -41,7 +41,7 @@ Current contrast defaults:
 
 - Navigation items use light selected fills with warm black text and a thin black border. Do not add an extra side marker.
 - Browser rows use the shared `aladinClickable` interaction layer.
-- Selected browser artifact rows use light selected fills with a warm black accent marker. Folder rows remain unselected even when focused or expanded.
+- Selected browser artifact rows use light selected fills with stronger text/icon weight only. Do not add side bars or extra selection markers. Folder rows remain unselected even when focused or expanded.
 - Dense browser rows should avoid boxed folder glyphs. Prefer hierarchy from indentation, chevrons, icon weight, and text contrast.
 - Pane-level browser filters are deferred; do not add top filter controls until the filtering model is redesigned.
 - Panels should feel like document/workspace surfaces, not cards. The document/editor body stays light even as selected structural chrome becomes higher contrast.

@@ -72,7 +72,6 @@ private val BrowserScopeHeaderVerticalPadding = 7.dp
 private val BrowserGlyphSize = 32.dp
 private val BrowserIconSize = 15.dp
 private val BrowserChevronSize = 16.dp
-private val BrowserMarkerHeight = 20.dp
 private val BrowserIndent = 16.dp
 private val RenameSheetWidth = 368.dp
 private val RenameInputHeight = 38.dp
@@ -337,7 +336,6 @@ private fun BrowserArtifactRow(
         horizontalArrangement = Arrangement.spacedBy(BrowserRowContentGap),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        RowSelectionMarker(selected = selected)
         ArtifactGlyph(artifact.kind, selected = selected)
         Column(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.weight(1f)) {
             BrowserRowTitle(title = artifact.title, selected = selected)
@@ -673,7 +671,6 @@ private fun BrowserFolderRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(BrowserRowContentGap),
     ) {
-        RowSelectionMarker(selected = false)
         ExpandToggle(
             expanded = expanded,
             expandable = expandable,
@@ -739,19 +736,6 @@ private fun ExpandToggle(
             modifier = Modifier.size(14.dp),
         )
     }
-}
-
-@Composable
-private fun RowSelectionMarker(selected: Boolean) {
-    Box(
-        modifier =
-            Modifier.width(2.dp)
-                .height(BrowserMarkerHeight)
-                .background(
-                    if (selected) AladinColor.OnInkSurface else Color.Transparent,
-                    RoundedCornerShape(999.dp),
-                )
-    )
 }
 
 private fun treeIndent(depth: Int) = BrowserIndent * depth
