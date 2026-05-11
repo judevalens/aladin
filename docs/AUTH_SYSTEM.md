@@ -153,6 +153,15 @@ Principal{UserID, ActorType: "integration_token", ActorID, Email, Scopes}
 
 This is the method the MCP auth middleware should call.
 
+`ResolveBearerPrincipal(ctx, auth, authorizationHeader)` is the reusable transport helper for MCP and future bearer-auth entry points. It parses `Authorization: Bearer <token>`, resolves the integration token, and returns a scoped `Principal`.
+
+Pre-MCP local smoke flow:
+
+1. Log in through the app or `POST /api/auth/login` so the browser/client has `aladin_session`.
+2. Create a token with `POST /api/integration-tokens` and scopes `["artifacts:read", "artifacts:write"]`.
+3. Use the one-time `token` value as the future MCP bearer credential.
+4. Revoke with `POST /api/integration-tokens/{id}/revoke` when done.
+
 ## API Routes
 
 Public auth routes:
@@ -204,22 +213,23 @@ The context helpers live in `backend_v2/internal/service/auth.go`:
 - `PrincipalFromContext(ctx)`
 - `RequirePrincipal(ctx)`
 - `RequireScope(ctx, scope)`
+- `ResolveBearerPrincipal(ctx, auth, authorizationHeader)`
 
 Application services should use `RequirePrincipal` or `RequireScope` instead of hardcoded user ids when behavior is user-owned.
 
-Browser-session principals are treated as full app access for now. Integration-token principals must carry the required scope. Artifact operations now enforce `artifacts:read` or `artifacts:write`, which is the scope boundary MCP note tools will rely on.
+Browser-session principals are treated as full app access for now. Integration-token principals must carry the required scope. Artifact, page, and file operations now enforce `artifacts:read` or `artifacts:write`, which is the scope boundary MCP note tools will rely on.
 
 ## Current User Usage
 
-The source service is now user-scoped:
+The source service is user-scoped:
 
 - `SourceService.List`
 - `SourceService.Create`
 - `SourceService.Delete`
 
-These read the current user from context and pass `user.ID` to the repository. This is the first user-owned slice because private-source/OAuth work needs correct ownership.
+These read the current user from context and pass `user.ID` to the repository. Workspace artifact/page/file repositories also resolve user ownership from `Principal` in context.
 
-Some older workspace services still use the default dev user in wiring. That is intentional for this pass. They should be moved slice-by-slice when the ownership semantics are clear.
+`defaultUserID` remains only as a dev/system fallback for current realtime key resolution and seeded local data. It is not the request ownership source for artifact/page/file operations.
 
 ## Client Flow
 

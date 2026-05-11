@@ -73,6 +73,29 @@ func TestCreateIntegrationTokenStoresHashAndReturnsRawTokenOnce(t *testing.T) {
 	}
 }
 
+func TestIntegrationTokenCannotManageIntegrationTokens(t *testing.T) {
+	t.Parallel()
+
+	svc := NewAuthService(&fakeAuthRepo{}, NewPasswordHasher())
+	ctx := WithPrincipal(context.Background(), Principal{
+		UserID:    "user-1",
+		ActorType: ActorTypeIntegrationToken,
+		ActorID:   "token-1",
+		Email:     "user@example.com",
+		Scopes:    []string{ScopeArtifactsRead, ScopeArtifactsWrite},
+	})
+
+	if _, err := svc.CreateIntegrationToken(ctx, IntegrationTokenInput{Name: "Nested", Scopes: []string{ScopeArtifactsRead}}); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("CreateIntegrationToken integration actor error = %v, want forbidden", err)
+	}
+	if _, err := svc.ListIntegrationTokens(ctx); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("ListIntegrationTokens integration actor error = %v, want forbidden", err)
+	}
+	if err := svc.RevokeIntegrationToken(ctx, "token-2"); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("RevokeIntegrationToken integration actor error = %v, want forbidden", err)
+	}
+}
+
 func TestResolveBearerTokenReturnsIntegrationPrincipal(t *testing.T) {
 	t.Parallel()
 
@@ -95,6 +118,48 @@ func TestResolveBearerTokenReturnsIntegrationPrincipal(t *testing.T) {
 	}
 	if !repo.touched {
 		t.Fatal("ResolveBearerToken did not touch token usage")
+	}
+}
+
+func TestResolveBearerTokenRejectsUnknownToken(t *testing.T) {
+	t.Parallel()
+
+	svc := NewAuthService(&fakeAuthRepo{}, NewPasswordHasher())
+	if _, err := svc.ResolveBearerToken(context.Background(), "unknown"); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("ResolveBearerToken error = %v, want unauthenticated", err)
+	}
+}
+
+func TestResolveBearerPrincipalParsesAuthorizationHeader(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeAuthRepo{
+		principalRecord: IntegrationTokenPrincipalRecord{
+			ID:     "token-1",
+			UserID: "user-1",
+			Email:  "user@example.com",
+			Scopes: []string{ScopeArtifactsRead},
+		},
+	}
+	svc := NewAuthService(repo, NewPasswordHasher())
+
+	principal, err := ResolveBearerPrincipal(context.Background(), svc, "Bearer aladin_it_raw")
+	if err != nil {
+		t.Fatalf("ResolveBearerPrincipal error: %v", err)
+	}
+	if principal.ActorType != ActorTypeIntegrationToken {
+		t.Fatalf("actor type = %q, want integration_token", principal.ActorType)
+	}
+}
+
+func TestResolveBearerPrincipalRejectsMalformedAuthorizationHeader(t *testing.T) {
+	t.Parallel()
+
+	svc := NewAuthService(&fakeAuthRepo{}, NewPasswordHasher())
+	for _, header := range []string{"", "Basic abc", "Bearer", "Bearer a b"} {
+		if _, err := ResolveBearerPrincipal(context.Background(), svc, header); !errors.Is(err, ErrUnauthenticated) {
+			t.Fatalf("ResolveBearerPrincipal(%q) error = %v, want unauthenticated", header, err)
+		}
 	}
 }
 

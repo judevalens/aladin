@@ -106,3 +106,29 @@ func TestPageServiceRejectsNonPageArtifacts(t *testing.T) {
 		t.Fatalf("Get error = %v, want ErrNotFound", err)
 	}
 }
+
+func TestPageServiceReadOnlyTokenCannotSave(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeArtifactRepository{
+		artifactByID: map[string]ArtifactResponse{
+			"artifact-1": {
+				ID:        "artifact-1",
+				Type:      "page",
+				Title:     "Memo",
+				Content:   "# Hello",
+				Revision:  1,
+				UpdatedAt: "2026-05-01T00:00:00Z",
+			},
+		},
+	}
+	svc := NewPageService(repo)
+	ctx := testIntegrationPrincipalContext(ScopeArtifactsRead)
+
+	if _, err := svc.Get(ctx, "artifact-1"); err != nil {
+		t.Fatalf("Get read-only error = %v, want nil", err)
+	}
+	if _, err := svc.Save(ctx, "artifact-1", PageSaveInput{Content: "changed", Revision: 2}); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("Save read-only error = %v, want ErrForbidden", err)
+	}
+}

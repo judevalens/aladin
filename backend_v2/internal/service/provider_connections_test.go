@@ -72,6 +72,22 @@ func TestProviderConnectionStartConnectSendsTagsAndAllowedIntegration(t *testing
 	}
 }
 
+func TestProviderConnectionStartConnectRejectsUnavailableBackend(t *testing.T) {
+	t.Parallel()
+
+	svc := NewProviderConnectionService(
+		&fakeProviderConnectionRepo{},
+		[]ProviderDefinition{{Provider: "google", Label: "Google", Backend: "nango", ProviderConfigKey: "google-dev"}},
+		[]ProviderConnectionBackend{&fakeProviderConnectionBackend{available: false}},
+	)
+
+	_, err := svc.StartConnect(testProviderConnectionPrincipalContext(), StartProviderConnectInput{Provider: "google"})
+	var requestErr BadRequest
+	if !errors.As(err, &requestErr) {
+		t.Fatalf("StartConnect error = %v, want BadRequest", err)
+	}
+}
+
 func TestProviderConnectionSyncIsUserScopedAndIdempotent(t *testing.T) {
 	t.Parallel()
 

@@ -229,6 +229,19 @@ func writeAPIError(w http.ResponseWriter, r *http.Request, status int, category 
 	writeJSON(w, status, map[string]string{"error": publicMessage})
 }
 
+func writeAccessError(w http.ResponseWriter, r *http.Request, err error) bool {
+	switch {
+	case errors.Is(err, coreservice.ErrUnauthenticated):
+		writeAPIError(w, r, http.StatusUnauthorized, categoryBadRequest, "Unauthenticated", err)
+		return true
+	case errors.Is(err, coreservice.ErrForbidden):
+		writeAPIError(w, r, http.StatusForbidden, categoryBadRequest, "Forbidden", err)
+		return true
+	default:
+		return false
+	}
+}
+
 func writeDecodeError(w http.ResponseWriter, r *http.Request, err error) {
 	slog.Error(
 		"api: request decode failed",

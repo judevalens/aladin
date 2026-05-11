@@ -397,6 +397,17 @@ func RequireScope(ctx context.Context, scope string) error {
 	return nil
 }
 
+func ResolveBearerPrincipal(ctx context.Context, auth AuthService, authorizationHeader string) (Principal, error) {
+	if auth == nil {
+		return Principal{}, ErrUnauthenticated
+	}
+	parts := strings.Fields(strings.TrimSpace(authorizationHeader))
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+		return Principal{}, ErrUnauthenticated
+	}
+	return auth.ResolveBearerToken(ctx, parts[1])
+}
+
 func WithCurrentUser(ctx context.Context, user CurrentUser) context.Context {
 	return WithPrincipal(ctx, NewUserSessionPrincipal(user))
 }

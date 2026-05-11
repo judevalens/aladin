@@ -144,6 +144,10 @@ MCP notes v1 should require:
 
 Services that create or read user-owned data should get ownership from request context, not constructor-level default user ids.
 
+### Status
+
+Code-ready for MCP. `Principal` is implemented, API auth middleware injects browser-session principals, source subscriptions are user-scoped, and workspace artifact/page/file operations resolve ownership from request context. `defaultUserID` remains only as a dev/system fallback for realtime keys and seeded local data.
+
 ### Work
 
 - Keep current browser auth as the user session model.
@@ -163,10 +167,10 @@ Services that create or read user-owned data should get ownership from request c
 
 ### Acceptance Criteria
 
-- A protected request has one trusted user id in context.
-- Source APIs no longer rely on default dev user.
-- Artifact creation can be made user-owned without changing MCP design.
-- Tests can inject a principal without constructing full HTTP auth.
+- A protected request has one trusted user id in context. Implemented.
+- Source APIs no longer rely on default dev user. Implemented.
+- Artifact/page/file operations resolve request ownership from `Principal`. Implemented.
+- Tests can inject a principal without constructing full HTTP auth. Implemented.
 
 ### Implementation Plan
 
@@ -199,7 +203,7 @@ Create the auth foundation MCP needs without using env-only static tokens.
 
 ### Status
 
-Implemented in `00023_integration_tokens.sql`, `AuthService`, `PostgresAuthRepository`, and `/api/integration-tokens`.
+Code-ready. Implemented in `00023_integration_tokens.sql`, `AuthService`, `PostgresAuthRepository`, and `/api/integration-tokens`.
 
 ### Proposed Data Model
 
@@ -248,7 +252,7 @@ Prevent external actors from receiving full app access by default.
 
 ### Status
 
-Partially implemented. The generic helpers exist and artifact operations enforce `artifacts:read` / `artifacts:write`. The MCP server still needs to call `ResolveBearerToken` and inject the resolved principal.
+Code-ready for MCP. The generic helpers exist, artifact/page/file operations enforce `artifacts:read` / `artifacts:write`, and API routes map forbidden scope failures to `403`. The MCP server still needs to call `ResolveBearerPrincipal`, inject the resolved principal, and translate tool-level authorization failures into MCP errors.
 
 ### Work
 
@@ -261,7 +265,7 @@ Partially implemented. The generic helpers exist and artifact operations enforce
 
 ### Acceptance Criteria
 
-- A token with only `artifacts:read` cannot create/update notes. Implemented at `ArtifactService`.
+- A token with only `artifacts:read` cannot create/update notes. Implemented at artifact/page/file services.
 - A token with `artifacts:read/write` can use notes tools. Ready for MCP tools.
 - Authorization failures return MCP tool errors, not panics. Pending MCP tool layer.
 
@@ -270,6 +274,10 @@ Partially implemented. The generic helpers exist and artifact operations enforce
 ### Goal
 
 Use Nango free self-hosted as the default provider-connection backend for supported integrations. Aladin keeps users, sessions, source subscriptions, provider streams, records, matching, and insights. Nango owns OAuth authorization, credential storage, token refresh, and proxy/token retrieval.
+
+### Status
+
+Code-ready. The Nango-backed service boundary, local provider connection refs, Docker setup, and API routes are implemented. Manual Google/Nango credential smoke remains external setup, not a blocker for MCP readiness.
 
 The stable product boundary is `ProviderConnectionService`, not Nango directly. This keeps source syncers insulated if we later replace Nango or add a local provider backend.
 
@@ -336,12 +344,44 @@ The frontend starts Nango Connect through Aladin, then calls sync after the Conn
 
 ### Acceptance Criteria
 
-- Nango starts locally through Docker.
-- Aladin can create a Nango connect session for Google.
-- Aladin stores only provider connection refs, never raw provider tokens.
-- Sync is idempotent and user-scoped.
-- Disconnect marks the local connection inactive and disables dependent owner-scoped streams.
-- Threads is deferred because Nango does not support it today.
+- Nango starts locally through Docker. Implemented via local compose/Make setup.
+- Aladin can create a Nango connect session for Google. Code-ready, pending real credentials for manual smoke.
+- Aladin stores only provider connection refs, never raw provider tokens. Implemented.
+- Sync is idempotent and user-scoped. Implemented and tested with fakes.
+- Disconnect marks the local connection inactive and disables dependent owner-scoped streams. Implemented and tested.
+- Threads is deferred because Nango does not support it today. Documented.
+
+## Milestone 5 — MCP Readiness Hardening
+
+### Goal
+
+Finish the auth and documentation seams needed before adding the MCP server transport or tools.
+
+### Status
+
+Code-ready. No MCP binary, SDK dependency, or tools are introduced in this milestone.
+
+### Work
+
+- Add reusable bearer authorization resolution:
+  - `ResolveBearerPrincipal(ctx, auth, authorizationHeader)`
+  - accepts `Authorization: Bearer <integration token>`
+  - rejects missing or malformed headers as unauthenticated
+- Ensure integration token management remains browser-session-only.
+- Ensure API-facing artifact/page/file routes map forbidden scope failures to `403`.
+- Document the pre-MCP flow:
+  - browser login
+  - create integration token
+  - use the one-time token as future MCP bearer credential
+  - revoke when done
+
+### Acceptance Criteria
+
+- Bearer helper resolves valid integration tokens into scoped principals.
+- Missing/malformed bearer headers fail safely.
+- Read-only integration tokens can read artifacts/pages/files but cannot write.
+- Integration tokens cannot create/list/revoke integration tokens.
+- `go test ./...` passes.
 
 ## Milestone 6 — MCP Notes Server
 
@@ -509,14 +549,15 @@ Make auth/integration state visible and controllable from the app.
 
 ## Recommended Build Order
 
-1. Add `Principal` model and scope helpers.
-2. Move artifact/page/folder ownership to current user.
-3. Add DB-backed integration tokens.
-4. Add MCP server with notes tools backed by integration tokens.
-5. Add Nango-backed provider connection refs.
-6. Prove Google connect through Nango.
-7. Add private-source sync using provider connections.
-8. Add management UI for tokens and connected accounts.
+1. Add `Principal` model and scope helpers. Done.
+2. Move artifact/page/file ownership to current user context. Done for MCP readiness.
+3. Add DB-backed integration tokens. Done.
+4. Add Nango-backed provider connection refs. Done.
+5. Harden bearer auth and scope enforcement for MCP readiness. Done.
+6. Add MCP server with notes tools backed by integration tokens. Next.
+7. Prove Google connect through Nango with real credentials.
+8. Add private-source sync using provider connections.
+9. Add management UI for tokens and connected accounts.
 
 This order lets MCP ship before full OAuth while still using the same long-term auth architecture.
 

@@ -447,6 +447,60 @@ func TestIntegrationTokensRequireUserSession(t *testing.T) {
 	}
 }
 
+func TestArtifactForbiddenMapsToHTTP403(t *testing.T) {
+	t.Parallel()
+
+	server := NewWithDependencies(":0", app.StaticDependencies{
+		AuthSvc:      &fakeAuthService{},
+		ArtifactsSvc: &fakeArtifactService{err: artifactservice.ErrForbidden},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/browser/tree", nil)
+	req.AddCookie(&http.Cookie{Name: artifactservice.SessionCookieName, Value: "valid"})
+	rec := httptest.NewRecorder()
+
+	server.httpServer.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
+func TestPageForbiddenMapsToHTTP403(t *testing.T) {
+	t.Parallel()
+
+	server := NewWithDependencies(":0", app.StaticDependencies{
+		AuthSvc:  &fakeAuthService{},
+		PagesSvc: &fakePageService{err: artifactservice.ErrForbidden},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/pages/artifact-1", nil)
+	req.AddCookie(&http.Cookie{Name: artifactservice.SessionCookieName, Value: "valid"})
+	rec := httptest.NewRecorder()
+
+	server.httpServer.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
+func TestFileForbiddenMapsToHTTP403(t *testing.T) {
+	t.Parallel()
+
+	server := NewWithDependencies(":0", app.StaticDependencies{
+		AuthSvc:  &fakeAuthService{},
+		FilesSvc: &fakeFileService{err: artifactservice.ErrForbidden},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/files/file-1/resource", nil)
+	req.AddCookie(&http.Cookie{Name: artifactservice.SessionCookieName, Value: "valid"})
+	rec := httptest.NewRecorder()
+
+	server.httpServer.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
 func TestProviderConnectionsRequireAuth(t *testing.T) {
 	t.Parallel()
 
@@ -552,16 +606,19 @@ type fakeArtifactService struct {
 	uploadInput        *artifactservice.ArtifactUploadInput
 	resource           artifactservice.ArtifactResource
 	createdFolderTitle string
+	err                error
 }
 
 type fakePageService struct {
 	page  artifactservice.PageDocument
 	saved *artifactservice.PageSaveInput
+	err   error
 }
 
 type fakeFileService struct {
 	uploadInput *artifactservice.FileUploadInput
 	resource    artifactservice.FileResource
+	err         error
 }
 
 type fakeAuthService struct{}
@@ -651,16 +708,25 @@ func (f *fakeProviderConnectionService) GetConnectionCredentials(context.Context
 }
 
 func (f *fakePageService) Get(context.Context, string) (artifactservice.PageDocument, error) {
+	if f.err != nil {
+		return artifactservice.PageDocument{}, f.err
+	}
 	return f.page, nil
 }
 
 func (f *fakePageService) Save(_ context.Context, _ string, input artifactservice.PageSaveInput) (artifactservice.PageDocument, error) {
+	if f.err != nil {
+		return artifactservice.PageDocument{}, f.err
+	}
 	copyInput := input
 	f.saved = &copyInput
 	return f.page, nil
 }
 
 func (f *fakeFileService) Upload(_ context.Context, input artifactservice.FileUploadInput, body io.Reader) (artifactservice.FileRecord, error) {
+	if f.err != nil {
+		return artifactservice.FileRecord{}, f.err
+	}
 	_, _ = io.ReadAll(body)
 	copyInput := input
 	f.uploadInput = &copyInput
@@ -672,37 +738,61 @@ func (f *fakeFileService) Upload(_ context.Context, input artifactservice.FileUp
 }
 
 func (f *fakeFileService) Resource(context.Context, string) (artifactservice.FileResource, error) {
+	if f.err != nil {
+		return artifactservice.FileResource{}, f.err
+	}
 	return f.resource, nil
 }
 
 func (f *fakeArtifactService) List(_ context.Context, params artifactservice.ArtifactListParams) ([]artifactservice.ArtifactResponse, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
 	copyParams := params
 	f.listParams = &copyParams
 	return f.list, nil
 }
 
 func (f *fakeArtifactService) BrowserTree(context.Context) ([]artifactservice.BrowserTreeNode, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
 	return f.browserTree, nil
 }
 
 func (f *fakeArtifactService) Get(context.Context, string) (artifactservice.ArtifactResponse, error) {
+	if f.err != nil {
+		return artifactservice.ArtifactResponse{}, f.err
+	}
 	return artifactservice.ArtifactResponse{}, artifactservice.ErrNotFound
 }
 
 func (f *fakeArtifactService) Create(_ context.Context, payload artifactservice.ArtifactPayload) (artifactservice.ArtifactResponse, error) {
+	if f.err != nil {
+		return artifactservice.ArtifactResponse{}, f.err
+	}
 	f.created = append(f.created, payload)
 	return artifactservice.ArtifactResponse{ID: "artifact-created", Type: payload.Type, FolderID: payload.FolderID, Title: payload.Title, Content: payload.Content, Metadata: map[string]any{}}, nil
 }
 
 func (f *fakeArtifactService) Update(context.Context, string, artifactservice.ArtifactPatch) (artifactservice.ArtifactResponse, error) {
+	if f.err != nil {
+		return artifactservice.ArtifactResponse{}, f.err
+	}
 	return artifactservice.ArtifactResponse{}, artifactservice.ErrNotFound
 }
 
 func (f *fakeArtifactService) Delete(context.Context, string) error {
+	if f.err != nil {
+		return f.err
+	}
 	return artifactservice.ErrNotFound
 }
 
 func (f *fakeArtifactService) Upload(_ context.Context, input artifactservice.ArtifactUploadInput, body io.Reader) (artifactservice.ArtifactResponse, error) {
+	if f.err != nil {
+		return artifactservice.ArtifactResponse{}, f.err
+	}
 	_, _ = io.ReadAll(body)
 	copyInput := input
 	f.uploadInput = &copyInput
@@ -710,31 +800,52 @@ func (f *fakeArtifactService) Upload(_ context.Context, input artifactservice.Ar
 }
 
 func (f *fakeArtifactService) Resource(context.Context, string) (artifactservice.ArtifactResource, error) {
+	if f.err != nil {
+		return artifactservice.ArtifactResource{}, f.err
+	}
 	return f.resource, nil
 }
 
 func (f *fakeArtifactService) ListFolders(context.Context, *string) ([]artifactservice.FolderNode, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
 	return nil, nil
 }
 
 func (f *fakeArtifactService) FolderTree(context.Context) ([]artifactservice.FolderTreeNode, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
 	return f.folderTree, nil
 }
 
 func (f *fakeArtifactService) CreateFolder(_ context.Context, title string, parentID *string) (artifactservice.FolderNode, error) {
+	if f.err != nil {
+		return artifactservice.FolderNode{}, f.err
+	}
 	f.createdFolderTitle = title
 	return artifactservice.FolderNode{ID: "folder-1", ParentID: parentID, Title: title}, nil
 }
 
 func (f *fakeArtifactService) UpdateFolder(context.Context, string, artifactservice.FolderPatch) (artifactservice.FolderNode, error) {
+	if f.err != nil {
+		return artifactservice.FolderNode{}, f.err
+	}
 	return artifactservice.FolderNode{}, artifactservice.ErrNotFound
 }
 
 func (f *fakeArtifactService) GetFolder(context.Context, string) (artifactservice.FolderNode, error) {
+	if f.err != nil {
+		return artifactservice.FolderNode{}, f.err
+	}
 	return artifactservice.FolderNode{}, artifactservice.ErrNotFound
 }
 
 func (f *fakeArtifactService) FolderBreadcrumbs(context.Context, string) ([]artifactservice.BreadcrumbItem, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
 	return nil, nil
 }
 

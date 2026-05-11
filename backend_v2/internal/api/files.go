@@ -27,6 +27,9 @@ func (s *Server) handleFilesUpload(w http.ResponseWriter, r *http.Request) {
 		Filename: header.Filename,
 	}, file)
 	if err != nil {
+		if writeAccessError(w, r, err) {
+			return
+		}
 		var requestErr artifactservice.BadRequest
 		if errors.As(err, &requestErr) {
 			writeAPIError(w, r, http.StatusBadRequest, categoryBadRequest, err.Error(), err)
@@ -41,6 +44,9 @@ func (s *Server) handleFilesUpload(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleFilesResource(w http.ResponseWriter, r *http.Request) {
 	resource, err := s.deps.Files().Resource(r.Context(), r.PathValue("id"))
 	if err != nil {
+		if writeAccessError(w, r, err) {
+			return
+		}
 		if errors.Is(err, artifactservice.ErrNotFound) {
 			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "File resource not found", err)
 			return

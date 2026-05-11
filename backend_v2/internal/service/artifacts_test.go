@@ -43,6 +43,26 @@ func TestArtifactServiceRequiresPrincipal(t *testing.T) {
 	}
 }
 
+func TestArtifactServiceReadOnlyTokenCannotWrite(t *testing.T) {
+	t.Parallel()
+
+	svc := NewArtifactService(&fakeArtifactRepository{}, &fakeArtifactFiles{})
+	ctx := testIntegrationPrincipalContext(ScopeArtifactsRead)
+
+	if _, err := svc.BrowserTree(ctx); err != nil {
+		t.Fatalf("BrowserTree read-only error = %v, want nil", err)
+	}
+	if _, err := svc.Create(ctx, ArtifactPayload{Type: "page", Title: "Memo"}); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("Create read-only error = %v, want ErrForbidden", err)
+	}
+	if err := svc.Delete(ctx, "artifact-1"); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("Delete read-only error = %v, want ErrForbidden", err)
+	}
+	if _, err := svc.CreateFolder(ctx, "Folder", nil); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("CreateFolder read-only error = %v, want ErrForbidden", err)
+	}
+}
+
 func TestArtifactServiceCreateLinkRequiresSourceURL(t *testing.T) {
 	t.Parallel()
 
@@ -276,5 +296,15 @@ func testPrincipalContext() context.Context {
 		ActorType: ActorTypeUserSession,
 		ActorID:   "00000000-0000-0000-0000-000000000001",
 		Email:     "test@aladin.local",
+	})
+}
+
+func testIntegrationPrincipalContext(scopes ...string) context.Context {
+	return WithPrincipal(context.Background(), Principal{
+		UserID:    "00000000-0000-0000-0000-000000000001",
+		ActorType: ActorTypeIntegrationToken,
+		ActorID:   "token-1",
+		Email:     "test@aladin.local",
+		Scopes:    scopes,
 	})
 }

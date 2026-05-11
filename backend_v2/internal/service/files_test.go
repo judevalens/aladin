@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"testing"
 )
@@ -45,6 +46,25 @@ func TestFileServiceResource(t *testing.T) {
 	}
 	if resource.Path != "/tmp/file-blob.txt" {
 		t.Fatalf("path = %q, want /tmp/file-blob.txt", resource.Path)
+	}
+}
+
+func TestFileServiceReadOnlyTokenCannotUpload(t *testing.T) {
+	t.Parallel()
+
+	service := NewFileService(
+		&fakeFileRepository{
+			record: FileRecord{ID: "file-1", StorageKey: "file/file-blob.txt"},
+		},
+		&fakeFileStore{path: "/tmp/file-blob.txt"},
+	)
+	ctx := testIntegrationPrincipalContext(ScopeArtifactsRead)
+
+	if _, err := service.Resource(ctx, "file-1"); err != nil {
+		t.Fatalf("Resource read-only error = %v, want nil", err)
+	}
+	if _, err := service.Upload(ctx, FileUploadInput{Filename: "memo.txt"}, bytes.NewBufferString("hello")); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("Upload read-only error = %v, want ErrForbidden", err)
 	}
 }
 

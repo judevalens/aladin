@@ -31,6 +31,9 @@ func (s *Server) registerArtifactRoutes(mux *http.ServeMux) {
 func (s *Server) handleBrowserTree(w http.ResponseWriter, r *http.Request) {
 	out, err := s.deps.Artifacts().BrowserTree(r.Context())
 	if err != nil {
+		if writeAccessError(w, r, err) {
+			return
+		}
 		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
 		return
 	}
@@ -43,6 +46,9 @@ func (s *Server) handleArtifactsList(w http.ResponseWriter, r *http.Request) {
 	}
 	out, err := s.deps.Artifacts().List(r.Context(), params)
 	if err != nil {
+		if writeAccessError(w, r, err) {
+			return
+		}
 		if errors.Is(err, artifactservice.ErrNotFound) {
 			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Folder not found", err)
 			return
@@ -56,6 +62,9 @@ func (s *Server) handleArtifactsList(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleArtifactsGet(w http.ResponseWriter, r *http.Request) {
 	rec, err := s.deps.Artifacts().Get(r.Context(), r.PathValue("id"))
 	if err != nil {
+		if writeAccessError(w, r, err) {
+			return
+		}
 		if errors.Is(err, artifactservice.ErrNotFound) {
 			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Artifact not found", err)
 			return
@@ -74,6 +83,9 @@ func (s *Server) handleArtifactsCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	rec, err := s.deps.Artifacts().Create(r.Context(), payload)
 	if err != nil {
+		if writeAccessError(w, r, err) {
+			return
+		}
 		if errors.Is(err, artifactservice.ErrNotFound) {
 			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Folder not found", err)
 			return
@@ -97,6 +109,9 @@ func (s *Server) handleArtifactsUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	rec, err := s.deps.Artifacts().Update(r.Context(), r.PathValue("id"), patch)
 	if err != nil {
+		if writeAccessError(w, r, err) {
+			return
+		}
 		if errors.Is(err, artifactservice.ErrNotFound) {
 			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Artifact or folder not found", err)
 			return
@@ -114,6 +129,9 @@ func (s *Server) handleArtifactsUpdate(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleArtifactsDelete(w http.ResponseWriter, r *http.Request) {
 	if err := s.deps.Artifacts().Delete(r.Context(), r.PathValue("id")); err != nil {
+		if writeAccessError(w, r, err) {
+			return
+		}
 		if errors.Is(err, artifactservice.ErrNotFound) {
 			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Artifact not found", err)
 			return
@@ -144,6 +162,9 @@ func (s *Server) handleArtifactsUpload(w http.ResponseWriter, r *http.Request) {
 		FolderID: folderID,
 	}, file)
 	if err != nil {
+		if writeAccessError(w, r, err) {
+			return
+		}
 		if errors.Is(err, artifactservice.ErrNotFound) {
 			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Folder not found", err)
 			return
@@ -162,6 +183,9 @@ func (s *Server) handleArtifactsUpload(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleArtifactsResource(w http.ResponseWriter, r *http.Request) {
 	resource, err := s.deps.Artifacts().Resource(r.Context(), r.PathValue("id"))
 	if err != nil {
+		if writeAccessError(w, r, err) {
+			return
+		}
 		if errors.Is(err, artifactservice.ErrNotFound) {
 			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Artifact resource not found", err)
 			return
@@ -188,6 +212,9 @@ func (s *Server) handleArtifactsResource(w http.ResponseWriter, r *http.Request)
 func (s *Server) handleFoldersList(w http.ResponseWriter, r *http.Request) {
 	out, err := s.deps.Artifacts().ListFolders(r.Context(), stringQueryPtr(r, "parentId"))
 	if err != nil {
+		if writeAccessError(w, r, err) {
+			return
+		}
 		if errors.Is(err, artifactservice.ErrNotFound) {
 			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Folder not found", err)
 			return
@@ -201,6 +228,9 @@ func (s *Server) handleFoldersList(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleFoldersTree(w http.ResponseWriter, r *http.Request) {
 	out, err := s.deps.Artifacts().FolderTree(r.Context())
 	if err != nil {
+		if writeAccessError(w, r, err) {
+			return
+		}
 		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
 		return
 	}
@@ -218,6 +248,9 @@ func (s *Server) handleFoldersCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	folder, err := s.deps.Artifacts().CreateFolder(r.Context(), body.Title, body.ParentID)
 	if err != nil {
+		if writeAccessError(w, r, err) {
+			return
+		}
 		if errors.Is(err, artifactservice.ErrNotFound) {
 			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Folder not found", err)
 			return
@@ -236,6 +269,9 @@ func (s *Server) handleFoldersCreate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleFoldersGet(w http.ResponseWriter, r *http.Request) {
 	folder, err := s.deps.Artifacts().GetFolder(r.Context(), r.PathValue("id"))
 	if err != nil {
+		if writeAccessError(w, r, err) {
+			return
+		}
 		if errors.Is(err, artifactservice.ErrNotFound) {
 			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Folder not found", err)
 			return
@@ -254,6 +290,9 @@ func (s *Server) handleFoldersUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	folder, err := s.deps.Artifacts().UpdateFolder(r.Context(), r.PathValue("id"), patch)
 	if err != nil {
+		if writeAccessError(w, r, err) {
+			return
+		}
 		if errors.Is(err, artifactservice.ErrNotFound) {
 			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Folder not found", err)
 			return
@@ -272,6 +311,9 @@ func (s *Server) handleFoldersUpdate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleFoldersBreadcrumbs(w http.ResponseWriter, r *http.Request) {
 	items, err := s.deps.Artifacts().FolderBreadcrumbs(r.Context(), r.PathValue("id"))
 	if err != nil {
+		if writeAccessError(w, r, err) {
+			return
+		}
 		if errors.Is(err, artifactservice.ErrNotFound) {
 			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Folder not found", err)
 			return

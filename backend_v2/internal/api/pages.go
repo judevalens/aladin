@@ -15,6 +15,9 @@ func (s *Server) registerPageRoutes(mux *http.ServeMux) {
 func (s *Server) handlePagesGet(w http.ResponseWriter, r *http.Request) {
 	page, err := s.deps.Pages().Get(r.Context(), r.PathValue("id"))
 	if err != nil {
+		if writeAccessError(w, r, err) {
+			return
+		}
 		if errors.Is(err, pageservice.ErrNotFound) {
 			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Page not found", err)
 			return
@@ -33,6 +36,9 @@ func (s *Server) handlePagesSave(w http.ResponseWriter, r *http.Request) {
 	}
 	page, err := s.deps.Pages().Save(r.Context(), r.PathValue("id"), payload)
 	if err != nil {
+		if writeAccessError(w, r, err) {
+			return
+		}
 		if errors.Is(err, pageservice.ErrNotFound) {
 			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Page not found", err)
 			return
