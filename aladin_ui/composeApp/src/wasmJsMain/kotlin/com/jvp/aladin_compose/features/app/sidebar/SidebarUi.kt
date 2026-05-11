@@ -278,17 +278,10 @@ private fun SidebarNavItem(
                         AladinInteractionDefaults.colors(
                             hovered = AladinColor.ControlHover,
                             pressed = AladinColor.ControlPressed,
-                            selected = AladinColor.RowSelected,
+                            selected = AladinColor.RowSelectedStrong,
                             selectedHovered = AladinColor.ControlPressed,
                         ),
                     onClick = onClick,
-                )
-                .then(
-                    if (active) {
-                        Modifier.border(DividerThickness, AladinColor.Ink, shape)
-                    } else {
-                        Modifier
-                    }
                 )
     ) {
         Row(

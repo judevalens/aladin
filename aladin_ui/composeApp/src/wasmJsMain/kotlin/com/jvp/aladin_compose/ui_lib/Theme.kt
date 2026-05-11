@@ -42,6 +42,7 @@ object AladinColor {
 
     val RowHover = Color(0xFFF3F3F0)
     val RowSelected = Color(0xFFEDEDE9)
+    val RowSelectedStrong = Color(0xFFE2E2DC)
     val ControlHover = Color(0xFFF2F2EF)
     val ControlPressed = Color(0xFFE6E6E1)
 

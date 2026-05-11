@@ -10,11 +10,11 @@ The current shell direction is a minimal three-pane workspace: a compact app rai
 
 - Color is charcoal, near-black, white, one restrained off-white, and neutral gray only.
 - Product code should use `AladinColor` tokens, not Material-style surface roles.
-- Core tokens are `Canvas`, `Panel`, `PanelMuted`, `RowHover`, `RowSelected`, `ControlHover`, `ControlPressed`, `Divider`, `Border`, `Ink`, `InkSecondary`, `InkMuted`, `InkDisabled`, `ActiveMarker`, `CommandSurface`, and `CodeText`.
+- Core tokens are `Canvas`, `Panel`, `PanelMuted`, `RowHover`, `RowSelected`, `RowSelectedStrong`, `ControlHover`, `ControlPressed`, `Divider`, `Border`, `Ink`, `InkSecondary`, `InkMuted`, `InkDisabled`, `ActiveMarker`, `CommandSurface`, and `CodeText`.
 - `Ink` is a gentle warm black for primary text and accent marks, never pure black. `InkSurface` is reserved for compact high-contrast controls and modal emphasis.
 - Terminal precision tokens are `ActiveMarker`, `CommandSurface`, and `CodeText`; use them for row markers, command/search affordances, metadata, and small technical labels.
 - Dark contrast tokens are `InkSurface`, `InkSurfaceHover`, and `OnInkSurface`; use them sparingly for compact controls, not broad chrome surfaces.
-- Shell navigation stays light-theme-first. Selected navigation should use light selected fills plus warm black text/borders, not dark rail blocks.
+- Shell navigation stays light-theme-first. Selected navigation should use a defined light-gray fill plus warm black text, not borders or dark rail blocks.
 - Content/browser selection should use light selected fills with warm black accent marks for active artifacts only. Folder rows remain navigational and should not show selected-fill styling.
 - Secondary hover/pressed states use grayscale fills, never tinted color.
 - Dividers are very thin and structural.
@@ -39,7 +39,7 @@ Current contrast defaults:
 
 ## Components
 
-- Navigation items use light selected fills with warm black text and a thin black border. Do not add an extra side marker.
+- Navigation items use `RowSelectedStrong` with warm black text. Do not add an outline or extra side marker.
 - Browser rows use the shared `aladinClickable` interaction layer.
 - Selected browser artifact rows use light selected fills with stronger text/icon weight only. Do not add side bars or extra selection markers. Folder rows remain unselected even when focused or expanded.
 - Dense browser rows should avoid boxed folder glyphs. Prefer hierarchy from indentation, chevrons, icon weight, and text contrast.
@@ -59,7 +59,7 @@ Current contrast defaults:
 - Keep the three-pane desktop shell: app rail, browser pane, workspace pane.
 - The workspace pane is an artifact/work pane. It can contain an artifact tab rail, a context rail, and the active artifact surface.
 - The app rail is icon-only and should read like a compact command rail, not a separate dark navigation product. It uses the muted pane surface, light selected states, and warm black active foreground without an added active bar.
-- Selected app rail/sidebar destinations use `RowSelected` with warm black foreground and border. Inactive destinations stay quiet on the muted pane surface.
+- Selected app rail/sidebar destinations use `RowSelectedStrong` with warm black foreground. Inactive destinations stay quiet on the muted pane surface.
 - The brand mark should be quiet and utility-like: bordered or command-surface treatment, monospace `A`, and visually distinct from destination selection.
 - The top toolbar should remain quiet overall, but command controls can carry stronger monochrome contrast: right-aligned command search plus separate lightweight creation actions.
 - Search should read as a command input, not a generic form field. Avoid boxed grouped action clusters unless the actions become a real segmented control.
