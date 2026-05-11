@@ -110,6 +110,31 @@ object ApiClient {
             .body()
     }
 
+    suspend fun getProviderConnectionProviders(): ProviderConnectionProvidersResponse =
+        call("GET /api/provider-connections/providers") {
+            httpClient.get("$BASE_URL/api/provider-connections/providers").body()
+        }
+
+    suspend fun startProviderConnect(provider: String): ProviderConnectSession =
+        call("POST /api/provider-connections/{provider}/connect") {
+            httpClient.post("$BASE_URL/api/provider-connections/$provider/connect").body()
+        }
+
+    suspend fun syncProviderConnections(): ProviderConnectionListResponse =
+        call("POST /api/provider-connections/sync") {
+            httpClient.post("$BASE_URL/api/provider-connections/sync").body()
+        }
+
+    suspend fun getProviderConnections(): ProviderConnectionListResponse =
+        call("GET /api/provider-connections") {
+            httpClient.get("$BASE_URL/api/provider-connections").body()
+        }
+
+    suspend fun disconnectProviderConnection(id: String) =
+        call("POST /api/provider-connections/{id}/disconnect") {
+            httpClient.post("$BASE_URL/api/provider-connections/$id/disconnect")
+        }
+
     suspend fun getFolders(parentId: String? = null): List<FolderRecord> =
         call("GET /api/folders") {
             httpClient

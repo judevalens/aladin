@@ -12,8 +12,23 @@ func TestProviderConnectionListProvidersHidesUnavailableDetails(t *testing.T) {
 	svc := NewProviderConnectionService(
 		&fakeProviderConnectionRepo{},
 		[]ProviderDefinition{
-			{Provider: "google", Label: "Google", Backend: "nango", ProviderConfigKey: "google-dev"},
-			{Provider: "slack", Label: "Slack", Backend: "nango", ProviderConfigKey: ""},
+			{
+				Provider:          "google",
+				Label:             "Google",
+				Backend:           "nango",
+				ProviderConfigKey: "google-dev",
+				Description:       "Connect Google",
+				Category:          "Workspace",
+				Capabilities:      []string{"Gmail"},
+			},
+			{
+				Provider:    "slack",
+				Label:       "Slack",
+				Backend:     "nango",
+				Description: "Connect Slack",
+				Category:    "Communication",
+				ComingSoon:  true,
+			},
 		},
 		[]ProviderConnectionBackend{&fakeProviderConnectionBackend{available: true}},
 	)
@@ -30,6 +45,15 @@ func TestProviderConnectionListProvidersHidesUnavailableDetails(t *testing.T) {
 	}
 	if providers[1].Available {
 		t.Fatalf("slack available = true, want false without provider config key")
+	}
+	if providers[0].Description != "Connect Google" || providers[0].Category != "Workspace" {
+		t.Fatalf("google metadata = %#v, want UI-safe catalog metadata", providers[0])
+	}
+	if len(providers[0].Capabilities) != 1 || providers[0].Capabilities[0] != "Gmail" {
+		t.Fatalf("google capabilities = %#v, want Gmail", providers[0].Capabilities)
+	}
+	if !providers[1].ComingSoon {
+		t.Fatalf("slack coming soon = false, want true")
 	}
 }
 
@@ -82,6 +106,22 @@ func TestProviderConnectionStartConnectRejectsUnavailableBackend(t *testing.T) {
 	)
 
 	_, err := svc.StartConnect(testProviderConnectionPrincipalContext(), StartProviderConnectInput{Provider: "google"})
+	var requestErr BadRequest
+	if !errors.As(err, &requestErr) {
+		t.Fatalf("StartConnect error = %v, want BadRequest", err)
+	}
+}
+
+func TestProviderConnectionStartConnectRejectsUnconfiguredProvider(t *testing.T) {
+	t.Parallel()
+
+	svc := NewProviderConnectionService(
+		&fakeProviderConnectionRepo{},
+		[]ProviderDefinition{{Provider: "slack", Label: "Slack", Backend: "nango", ComingSoon: true}},
+		[]ProviderConnectionBackend{&fakeProviderConnectionBackend{available: true}},
+	)
+
+	_, err := svc.StartConnect(testProviderConnectionPrincipalContext(), StartProviderConnectInput{Provider: "slack"})
 	var requestErr BadRequest
 	if !errors.As(err, &requestErr) {
 		t.Fatalf("StartConnect error = %v, want BadRequest", err)

@@ -11,6 +11,15 @@ import (
 const (
 	ProviderConnectionBackendNango = "nango"
 	ProviderGoogle                 = "google"
+	ProviderMicrosoft              = "microsoft"
+	ProviderSlack                  = "slack"
+	ProviderNotion                 = "notion"
+	ProviderGitHub                 = "github"
+	ProviderLinear                 = "linear"
+	ProviderDiscord                = "discord"
+	ProviderDropbox                = "dropbox"
+	ProviderAtlassian              = "atlassian"
+	ProviderFigma                  = "figma"
 )
 
 type ProviderConnectionService interface {
@@ -43,6 +52,10 @@ type ProviderDescriptor struct {
 	Label             string   `json:"label"`
 	Backend           string   `json:"backend"`
 	ProviderConfigKey string   `json:"providerConfigKey"`
+	Description       string   `json:"description"`
+	Category          string   `json:"category"`
+	Capabilities      []string `json:"capabilities"`
+	ComingSoon        bool     `json:"comingSoon"`
 	Available         bool     `json:"available"`
 	Connected         bool     `json:"connected"`
 	ConnectionID      *string  `json:"connectionId,omitempty"`
@@ -54,6 +67,10 @@ type ProviderDefinition struct {
 	Label             string
 	Backend           string
 	ProviderConfigKey string
+	Description       string
+	Category          string
+	Capabilities      []string
+	ComingSoon        bool
 }
 
 type StartProviderConnectInput struct {
@@ -163,6 +180,10 @@ func (s *DefaultProviderConnectionService) ListProviders(ctx context.Context) ([
 			Label:             def.Label,
 			Backend:           def.Backend,
 			ProviderConfigKey: def.ProviderConfigKey,
+			Description:       def.Description,
+			Category:          def.Category,
+			Capabilities:      append([]string{}, def.Capabilities...),
+			ComingSoon:        def.ComingSoon,
 			Available:         strings.TrimSpace(def.ProviderConfigKey) != "" && backend != nil && backend.Available(),
 			GrantedScopes:     []string{},
 		}

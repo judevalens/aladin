@@ -6,6 +6,8 @@ M2 provider-connection foundation.
 
 Aladin uses Nango free self-hosted for OAuth/provider authorization and credential storage for supported providers. Aladin does not store raw provider tokens. It stores local `provider_connections` references and resolves usable credentials through `ProviderConnectionService`.
 
+Google is the only enabled provider for the first smoke test. The backend provider catalog also exposes popular future providers as disabled/coming later so the UI can prove the account-management shape without pretending those providers are ready.
+
 ## Local Stack
 
 Nango runs separately from the main Aladin Docker stack:
@@ -31,6 +33,8 @@ Required Aladin backend env:
 - `NANGO_CONNECT_BASE_URL`, default `http://localhost:3009`
 - `NANGO_SECRET_KEY`
 - `NANGO_GOOGLE_PROVIDER_CONFIG_KEY`
+
+The visible provider catalog currently includes Google, Microsoft, Slack, Notion, GitHub, Linear, Discord, Dropbox, Atlassian, and Figma. Only Google receives a provider config key in v1; the others return `available=false` and cannot start Connect.
 
 Print shell-safe exports from `backend_v2/.env`:
 

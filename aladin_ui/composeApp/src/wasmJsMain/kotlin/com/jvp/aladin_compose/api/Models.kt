@@ -74,6 +74,56 @@ data class SourceCreateRequest(
 )
 
 @Serializable
+data class ProviderConnectionProvider(
+    val provider: String,
+    val label: String,
+    val backend: String,
+    val providerConfigKey: String = "",
+    val description: String = "",
+    val category: String = "",
+    val capabilities: List<String> = emptyList(),
+    val comingSoon: Boolean = false,
+    val available: Boolean = false,
+    val connected: Boolean = false,
+    val connectionId: String? = null,
+    val grantedScopes: List<String> = emptyList(),
+)
+
+@Serializable
+data class ProviderConnectionProvidersResponse(
+    val providers: List<ProviderConnectionProvider> = emptyList(),
+)
+
+@Serializable
+data class ProviderConnectionRecord(
+    val id: String,
+    val provider: String,
+    val backend: String,
+    val providerConfigKey: String,
+    val externalConnectionId: String,
+    val status: String,
+    val grantedScopes: List<String> = emptyList(),
+    val metadata: Map<String, JsonElement> = emptyMap(),
+    val createdAt: String,
+    val updatedAt: String,
+    val disconnectedAt: String? = null,
+)
+
+@Serializable
+data class ProviderConnectionListResponse(
+    val connections: List<ProviderConnectionRecord> = emptyList(),
+)
+
+@Serializable
+data class ProviderConnectSession(
+    val connectSessionToken: String,
+    val connectLink: String,
+    val expiresAt: String? = null,
+    val nangoBaseUrl: String,
+    val nangoConnectBaseUrl: String,
+)
+
+@Serializable
 data class Insight(
     val id: String,
     val type: String,
