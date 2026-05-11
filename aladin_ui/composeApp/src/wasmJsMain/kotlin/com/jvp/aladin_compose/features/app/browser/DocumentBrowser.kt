@@ -323,8 +323,8 @@ private fun BrowserArtifactRow(
                     colors =
                         AladinInteractionDefaults.colors(
                             hovered = AladinColor.ControlHover,
-                            selected = AladinColor.RowSelected,
-                            selectedHovered = AladinColor.ControlPressed,
+                            selected = AladinColor.InkSurface,
+                            selectedHovered = AladinColor.InkSurfaceHover,
                         ),
                     onDoubleClick = onStartRename,
                     onClick = onClick,
@@ -358,7 +358,7 @@ private fun BrowserArtifactRow(
 private fun BrowserRowTitle(title: String, selected: Boolean) {
     Text(
         title,
-        color = AladinColor.Ink,
+        color = if (selected) AladinColor.OnInkSurface else AladinColor.Ink,
         fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
@@ -747,7 +747,7 @@ private fun RowSelectionMarker(selected: Boolean) {
             Modifier.width(2.dp)
                 .height(BrowserMarkerHeight)
                 .background(
-                    if (selected) AladinColor.ActiveMarker else Color.Transparent,
+                    if (selected) AladinColor.OnInkSurface else Color.Transparent,
                     RoundedCornerShape(999.dp),
                 )
     )
@@ -774,7 +774,7 @@ fun ArtifactGlyph(kind: ArtifactKind, selected: Boolean = false) {
         modifier =
             Modifier.size(BrowserGlyphSize)
                 .background(
-                    if (selected) AladinColor.ControlPressed else AladinColor.ControlHover,
+                    if (selected) AladinColor.OnInkSurface.copy(alpha = 0.14f) else AladinColor.ControlHover,
                     RoundedCornerShape(SharpRadius),
                 ),
         contentAlignment = Alignment.Center,
@@ -786,7 +786,7 @@ fun ArtifactGlyph(kind: ArtifactKind, selected: Boolean = false) {
                 ArtifactKind.Voice -> "V"
                 ArtifactKind.File -> "F"
             },
-            color = if (selected) AladinColor.Ink else AladinColor.InkSecondary,
+            color = if (selected) AladinColor.OnInkSurface else AladinColor.InkSecondary,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.SemiBold,
         )

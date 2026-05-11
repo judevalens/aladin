@@ -227,11 +227,14 @@ private fun WorkspaceUtilityIcon(
     Box(
         modifier =
             Modifier.size(26.dp).aladinClickable(
+                selected = isActive,
                 shape = RoundedCornerShape(SharpRadius),
                 colors =
                     AladinInteractionDefaults.colors(
                         hovered = AladinColor.ControlHover,
                         pressed = AladinColor.ControlPressed,
+                        selected = AladinColor.InkSurface,
+                        selectedHovered = AladinColor.InkSurfaceHover,
                     ),
                 onClick = onClick,
             ),
@@ -240,7 +243,7 @@ private fun WorkspaceUtilityIcon(
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
-            tint = if (isActive) AladinColor.Ink else AladinColor.InkSecondary,
+            tint = if (isActive) AladinColor.OnInkSurface else AladinColor.InkSecondary,
             modifier = Modifier.size(15.dp),
         )
     }
@@ -425,8 +428,8 @@ private fun WorkspaceDocumentRail(
                                     AladinInteractionDefaults.colors(
                                         hovered = AladinColor.ControlHover,
                                         pressed = AladinColor.ControlPressed,
-                                        selected = AladinColor.RowSelected,
-                                        selectedHovered = AladinColor.ControlHover,
+                                        selected = AladinColor.InkSurface,
+                                        selectedHovered = AladinColor.InkSurfaceHover,
                                     ),
                                 onClick = { onActivateArtifact(artifact.id) },
                             )
@@ -434,14 +437,14 @@ private fun WorkspaceDocumentRail(
                 ) {
                     Text(
                         artifact.title,
-                        color = AladinColor.Ink,
+                        color = if (active) AladinColor.OnInkSurface else AladinColor.Ink,
                         style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Medium,
+                        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
                     )
                     Icon(
                         imageVector = Icons.Sharp.Close,
                         contentDescription = "Close tab",
-                        tint = AladinColor.Ink,
+                        tint = if (active) AladinColor.OnInkSurface else AladinColor.Ink,
                         modifier =
                             Modifier.aladinClickable(
                                 enabled = true,

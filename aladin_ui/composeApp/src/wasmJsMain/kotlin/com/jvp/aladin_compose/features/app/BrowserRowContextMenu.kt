@@ -104,7 +104,7 @@ fun BrowserRowContextMenu(
                 tint =
                     when {
                         !enabled -> AladinColor.InkDisabled
-                        selected -> AladinColor.InkSecondary
+                        selected -> AladinColor.OnInkSurface
                         else -> AladinColor.InkMuted
                     },
                 modifier = Modifier.size(MenuIconSize),

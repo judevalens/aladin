@@ -206,7 +206,7 @@ fun AppSidebar(
                             imageVector = icon,
                             contentDescription = destination.name,
                             tint =
-                                if (destination == state.selectedDestination) AladinColor.Ink
+                                if (destination == state.selectedDestination) AladinColor.OnInkSurface
                                 else AladinColor.InkMuted,
                             modifier = Modifier.size(RailIconSize),
                         )
@@ -279,8 +279,8 @@ private fun SidebarNavItem(
                         AladinInteractionDefaults.colors(
                             hovered = AladinColor.ControlHover,
                             pressed = AladinColor.ControlPressed,
-                            selected = AladinColor.RowSelected,
-                            selectedHovered = AladinColor.ControlPressed,
+                            selected = AladinColor.InkSurface,
+                            selectedHovered = AladinColor.InkSurfaceHover,
                         ),
                     onClick = onClick,
                 )
@@ -291,7 +291,7 @@ private fun SidebarNavItem(
                     Modifier.align(Alignment.CenterStart)
                         .width(RailMarkerWidth)
                         .height(RailMarkerHeight)
-                        .background(AladinColor.ActiveMarker, RoundedCornerShape(999.dp))
+                        .background(AladinColor.OnInkSurface, RoundedCornerShape(999.dp))
             )
         }
         Row(
@@ -302,7 +302,7 @@ private fun SidebarNavItem(
             icon()
             Text(
                 label,
-                color = if (active) AladinColor.Ink else AladinColor.InkSecondary,
+                color = if (active) AladinColor.OnInkSurface else AladinColor.InkSecondary,
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
             )

@@ -2,7 +2,7 @@
 
 ## Direction
 
-Aladin should feel like a minimal editorial workspace with terminal-grade precision: calm, dense where it needs to be, and exact. The interface should use a white canvas, one restrained off-white surface family, charcoal ink, thin structural dividers, compact command controls, and sparse near-black active cues while avoiding default Material softness, colorful accents, and generic SaaS card treatment.
+Aladin should feel like a minimal editorial workspace with terminal-grade precision: calm, dense where it needs to be, and exact. The interface should use a white canvas, one restrained off-white surface family, charcoal ink, thin structural dividers, compact command controls, and decisive near-black active states while avoiding default Material softness, colorful accents, and generic SaaS card treatment.
 
 The current shell direction is a minimal three-pane workspace: a compact app rail, an expandable browser tree, and a broad document/workspace pane. The UI should feel like an operating surface for research artifacts, not a generic note app or Material dashboard.
 
@@ -11,11 +11,11 @@ The current shell direction is a minimal three-pane workspace: a compact app rai
 - Color is charcoal, near-black, white, one restrained off-white, and neutral gray only.
 - Product code should use `AladinColor` tokens, not Material-style surface roles.
 - Core tokens are `Canvas`, `Panel`, `PanelMuted`, `RowHover`, `RowSelected`, `ControlHover`, `ControlPressed`, `Divider`, `Border`, `Ink`, `InkSecondary`, `InkMuted`, `InkDisabled`, `ActiveMarker`, `CommandSurface`, and `CodeText`.
-- `Ink` is charcoal/near-black for primary text. `InkSurface` is reserved for selected rail items, brand surfaces, and compact high-contrast controls.
+- `Ink` is charcoal/near-black for primary text. `InkSurface` is used for selected rail items, active artifact tabs, active artifact browser rows, management-modal selections, and compact high-contrast controls.
 - Terminal precision tokens are `ActiveMarker`, `CommandSurface`, and `CodeText`; use them for row markers, command/search affordances, metadata, and small technical labels.
-- Dark contrast tokens are `InkSurface`, `InkSurfaceHover`, and `OnInkSurface`; use them sparingly for active rail items and compact dark controls.
+- Dark contrast tokens are `InkSurface`, `InkSurfaceHover`, and `OnInkSurface`; use them for structural active states that should be legible across the workspace.
 - Shell navigation stays light-theme-first, but selected navigation uses compact near-black contrast with light foreground.
-- Content/browser selection should usually use soft gray selected rows, dark text, and a thin dark active marker. Avoid large or tall dark slabs in the browser.
+- Content/browser selection should now use high-contrast selected states for active artifacts only. Folder rows remain navigational and should not show selected-fill styling.
 - Secondary hover/pressed states use grayscale fills, never tinted color.
 - Dividers are very thin and structural.
 - Surfaces should ladder cleanly: white canvas, one restrained off-white panel family, then grayscale state tones. Avoid multiple creamy almost-whites.
@@ -39,12 +39,12 @@ Current contrast defaults:
 
 ## Components
 
-- Navigation items use quiet soft selected states with dark icons and a thin active marker. Reserve near-black fills for compact command buttons or moments that need stronger commitment.
+- Navigation items use near-black selected states with light foreground and a small light active marker. This anchors the shell and matches the high-contrast management-modal direction.
 - Browser rows use the shared `aladinClickable` interaction layer.
-- Selected browser rows use a soft selected surface plus a thin dark marker. Rail selection may remain dark because it anchors the shell.
+- Selected browser artifact rows use near-black selected states with light foreground. Folder rows remain unselected even when focused or expanded.
 - Dense browser rows should avoid boxed folder glyphs. Prefer hierarchy from indentation, chevrons, icon weight, and text contrast.
 - Pane-level browser filters are deferred; do not add top filter controls until the filtering model is redesigned.
-- Panels should feel like document/workspace surfaces, not cards.
+- Panels should feel like document/workspace surfaces, not cards. The document/editor body stays light even as selected structural chrome becomes higher contrast.
 - Buttons should look custom and monochrome, not Material-filled or ripple-driven.
 - Management modals are allowed to use stronger black/white contrast than the normal workspace. Use this for structural app decisions such as integrations, provider accounts, permissions, and future settings-like workflows.
 - Wide management modals should feel like focused app screens, not test dialogs: full-screen overlay viewport, centered wide sheet, clear title band, one structural vertical divider when needed, and one primary content area with a detail pane.
@@ -58,7 +58,8 @@ Current contrast defaults:
 
 - Keep the three-pane desktop shell: app rail, browser pane, workspace pane.
 - The workspace pane is an artifact/work pane. It can contain an artifact tab rail, a context rail, and the active artifact surface.
-- The app rail is icon-only and should read like a compact command rail, not a separate dark navigation product. It uses the muted pane surface, soft selected states, dark active icons, and a thin active marker.
+- The app rail is icon-only and should read like a compact command rail, not a separate dark navigation product. It uses the muted pane surface, high-contrast selected states, light active foreground, and a thin light active marker.
+- Selected app rail/sidebar destinations use `InkSurface` with `OnInkSurface` foreground. Inactive destinations stay quiet on the muted pane surface.
 - The brand mark should be quiet and utility-like: bordered or command-surface treatment, monospace `A`, and visually distinct from destination selection.
 - The top toolbar should remain quiet and low-contrast, but it can breathe when there is no bottom divider: right-aligned command search plus separate lightweight creation actions.
 - Search should read as a command input, not a generic form field. Avoid boxed grouped action clusters unless the actions become a real segmented control.
@@ -89,6 +90,7 @@ Current contrast defaults:
 ## Artifact Workspace
 
 - The artifact/work pane should coordinate open artifacts through a compact tab rail.
+- Active artifact tabs use the high-contrast selected state. Inactive tabs remain light and quiet.
 - The context rail provides selected-object orientation through breadcrumbs/path text, page metadata, and utility actions.
 - The active artifact surface should be type-specific: page editor, link viewer, voice/file viewer, graph surface, or future specialist surface.
 - Pages should use the broad document/editor canvas. Compact source-like artifacts such as links, voice notes, and files should render as centered artifact objects when the inspector is closed.
@@ -123,7 +125,7 @@ Current contrast defaults:
 
 - Hover state: light gray.
 - Pressed state: slightly stronger gray unless the component is already selected.
-- Selected state: soft gray surface plus dark active marker for browser rows and rail items. Near-black surfaces are reserved for compact primary/command controls.
+- Selected state: near-black surface plus light foreground for shell navigation, active artifact tabs, active artifact browser rows, and management-modal selections. Use soft gray only for less-important local selection states.
 - Disabled state: muted text on light gray.
 - Avoid Material ripples unless intentionally reintroduced for a specific control.
 
