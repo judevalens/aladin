@@ -15,9 +15,10 @@ Required Aladin backend env:
 - `NANGO_BASE_URL`, default `https://api.nango.dev`
 - `NANGO_CONNECT_BASE_URL`, default `https://connect.nango.dev`
 - `NANGO_SECRET_KEY`
+- `NANGO_WEBHOOK_SIGNING_KEY`
 - `NANGO_GOOGLE_PROVIDER_CONFIG_KEY`
 
-`NANGO_SECRET_KEY` is the Nango environment secret key from Nango Cloud. `NANGO_GOOGLE_PROVIDER_CONFIG_KEY` is the integration key configured in Nango, for example `google` or `gmail`.
+`NANGO_SECRET_KEY` is the Nango environment secret key from Nango Cloud. `NANGO_WEBHOOK_SIGNING_KEY` is the Environment Settings > Webhooks signing key used to verify `X-Nango-Hmac-Sha256`. `NANGO_GOOGLE_PROVIDER_CONFIG_KEY` is the integration key configured in Nango, for example `google-mail`.
 
 Google OAuth callback URLs should use the exact callback URL shown by Nango Cloud for that integration. Do not use the self-hosted localhost callback for cloud integrations.
 
@@ -37,10 +38,23 @@ eval "$(make env-nango)"
    - `end_user_email`
    - `aladin_user_id`
 4. Frontend opens Nango Connect UI with the returned session token/link.
-5. After Connect succeeds or closes, frontend calls `POST /api/provider-connections/sync`.
-6. Aladin lists Nango connections tagged with the current user id and upserts local `provider_connections` refs.
+5. Nango sends an auth creation webhook to `POST /api/provider-connections/nango/webhook`.
+6. Aladin verifies `X-Nango-Hmac-Sha256`, reads the `aladin_user_id` / `end_user_id` tag, and upserts a local `provider_connections` ref.
+7. `POST /api/provider-connections/sync` remains as a manual repair/reconciliation fallback.
 
-M2 uses explicit sync/reconciliation instead of Nango webhooks.
+Configure the webhook URL in Nango Environment Settings and enable new connection creation webhooks. For local testing, expose the backend through ngrok or another webhook forwarding service.
+
+`make backend` and `make worker-go` run `make ngrok-ensure` first. If `ngrok` is installed, this reuses or starts an HTTP tunnel to `localhost:8000` and prints the webhook URL to configure in Nango:
+
+```sh
+make backend
+```
+
+Disable local tunnel startup with:
+
+```env
+NGROK_AUTOSTART=0
+```
 
 ## Optional Self-Hosted Fallback
 
@@ -59,6 +73,7 @@ NANGO_BASE_URL=http://localhost:3003
 NANGO_CONNECT_BASE_URL=http://localhost:3009
 NANGO_ENCRYPTION_KEY=<base64-encoded 32-byte key>
 NANGO_SECRET_KEY=<uuid-v4 secret key>
+NANGO_WEBHOOK_SIGNING_KEY=<webhook signing key>
 ```
 
 Nango self-hosted uses its own Postgres and Redis containers. Keep them separate from Aladin's database and Redis.

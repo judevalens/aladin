@@ -336,11 +336,12 @@ Supported providers use `NangoProviderConnectionBackend`. Unsupported providers 
 
 - `GET /api/provider-connections/providers`
 - `POST /api/provider-connections/{provider}/connect`
+- `POST /api/provider-connections/nango/webhook`
 - `POST /api/provider-connections/sync`
 - `GET /api/provider-connections`
 - `POST /api/provider-connections/{connectionId}/disconnect`
 
-The frontend starts Nango Connect through Aladin, then calls sync after the Connect UI succeeds or closes. M2 does not rely on Nango webhooks.
+The frontend starts Nango Connect through Aladin. Nango auth-creation webhooks are the primary persistence path for completed integrations; explicit sync remains as a manual repair/reconciliation fallback.
 
 ### Acceptance Criteria
 

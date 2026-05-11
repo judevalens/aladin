@@ -27,6 +27,7 @@ type ProviderConnectionConfig struct {
 	NangoBaseURL                 string
 	NangoConnectBaseURL          string
 	NangoSecretKey               string
+	NangoWebhookSigningKey       string
 	NangoGoogleProviderConfigKey string
 }
 
@@ -76,6 +77,7 @@ func LoadProviderConnections() ProviderConnectionConfig {
 		NangoBaseURL:                 optional("NANGO_BASE_URL", "https://api.nango.dev"),
 		NangoConnectBaseURL:          optional("NANGO_CONNECT_BASE_URL", "https://connect.nango.dev"),
 		NangoSecretKey:               os.Getenv("NANGO_SECRET_KEY"),
+		NangoWebhookSigningKey:       os.Getenv("NANGO_WEBHOOK_SIGNING_KEY"),
 		NangoGoogleProviderConfigKey: os.Getenv("NANGO_GOOGLE_PROVIDER_CONFIG_KEY"),
 	}
 }

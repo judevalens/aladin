@@ -2,6 +2,10 @@ package service
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -29,6 +33,7 @@ type ProviderConnectionService interface {
 	ListConnections(context.Context) ([]ProviderConnection, error)
 	Disconnect(context.Context, string) error
 	GetConnectionCredentials(context.Context, ProviderCredentialRequest) (ProviderCredentials, error)
+	HandleNangoWebhook(context.Context, NangoWebhookInput) error
 }
 
 type ProviderConnectionRepository interface {
@@ -111,6 +116,23 @@ type ProviderBackendConnection struct {
 	Metadata             map[string]any
 }
 
+type NangoWebhookInput struct {
+	RawBody   []byte
+	Signature string
+}
+
+type nangoWebhookPayload struct {
+	Type              string         `json:"type"`
+	Operation         string         `json:"operation"`
+	Success           bool           `json:"success"`
+	ConnectionID      string         `json:"connectionId"`
+	Provider          string         `json:"provider"`
+	ProviderConfigKey string         `json:"providerConfigKey"`
+	Tags              map[string]any `json:"tags"`
+	EndUser           map[string]any `json:"endUser"`
+	Error             map[string]any `json:"error"`
+}
+
 type ProviderCredentialRequest struct {
 	ConnectionID string
 	ForceRefresh bool
@@ -137,15 +159,25 @@ type ProviderConnectBackendInput struct {
 }
 
 type DefaultProviderConnectionService struct {
-	repo        ProviderConnectionRepository
-	definitions []ProviderDefinition
-	backends    map[string]ProviderConnectionBackend
+	repo                   ProviderConnectionRepository
+	definitions            []ProviderDefinition
+	backends               map[string]ProviderConnectionBackend
+	nangoWebhookSigningKey string
+}
+
+type ProviderConnectionOption func(*DefaultProviderConnectionService)
+
+func WithNangoWebhookSigningKey(key string) ProviderConnectionOption {
+	return func(s *DefaultProviderConnectionService) {
+		s.nangoWebhookSigningKey = strings.TrimSpace(key)
+	}
 }
 
 func NewProviderConnectionService(
 	repo ProviderConnectionRepository,
 	definitions []ProviderDefinition,
 	backends []ProviderConnectionBackend,
+	options ...ProviderConnectionOption,
 ) *DefaultProviderConnectionService {
 	backendByKey := make(map[string]ProviderConnectionBackend, len(backends))
 	for _, backend := range backends {
@@ -153,7 +185,13 @@ func NewProviderConnectionService(
 			backendByKey[backend.Key()] = backend
 		}
 	}
-	return &DefaultProviderConnectionService{repo: repo, definitions: definitions, backends: backendByKey}
+	service := &DefaultProviderConnectionService{repo: repo, definitions: definitions, backends: backendByKey}
+	for _, option := range options {
+		if option != nil {
+			option(service)
+		}
+	}
+	return service
 }
 
 func (s *DefaultProviderConnectionService) ListProviders(ctx context.Context) ([]ProviderDescriptor, error) {
@@ -248,14 +286,16 @@ func (s *DefaultProviderConnectionService) SyncConnections(ctx context.Context, 
 			if !ok {
 				continue
 			}
+			metadata := nonNilMap(remote.Metadata)
+			metadata["remote_provider"] = remote.Provider
 			saved, err := s.repo.UpsertProviderConnection(ctx, principal.UserID, ProviderConnection{
-				Provider:             fallbackString(remote.Provider, def.Provider),
-				Backend:              fallbackString(remote.Backend, def.Backend),
+				Provider:             def.Provider,
+				Backend:              def.Backend,
 				ProviderConfigKey:    remote.ProviderConfigKey,
 				ExternalConnectionID: remote.ExternalConnectionID,
 				Status:               "active",
 				GrantedScopes:        remote.GrantedScopes,
-				Metadata:             nonNilMap(remote.Metadata),
+				Metadata:             metadata,
 			})
 			if err != nil {
 				return nil, err
@@ -264,6 +304,54 @@ func (s *DefaultProviderConnectionService) SyncConnections(ctx context.Context, 
 		}
 	}
 	return out, nil
+}
+
+func (s *DefaultProviderConnectionService) HandleNangoWebhook(ctx context.Context, input NangoWebhookInput) error {
+	if err := s.verifyNangoWebhookSignature(input.RawBody, input.Signature); err != nil {
+		return err
+	}
+
+	var payload nangoWebhookPayload
+	if err := json.Unmarshal(input.RawBody, &payload); err != nil {
+		return BadRequest("invalid nango webhook payload")
+	}
+	if payload.Type != "auth" || payload.Operation != "creation" || !payload.Success {
+		return nil
+	}
+	if strings.TrimSpace(payload.ConnectionID) == "" || strings.TrimSpace(payload.ProviderConfigKey) == "" {
+		return BadRequest("nango webhook missing connection id or provider config key")
+	}
+
+	userID := nangoWebhookUserID(payload)
+	if strings.TrimSpace(userID) == "" {
+		return BadRequest("nango webhook missing user tag")
+	}
+	def, ok := s.providerDefinitionByConfigKey(payload.ProviderConfigKey)
+	if !ok {
+		return nil
+	}
+	metadata := map[string]any{
+		"remote_provider": payload.Provider,
+		"tags":            nonNilMap(payload.Tags),
+		"webhook_type":    payload.Type,
+		"webhook_op":      payload.Operation,
+	}
+	if len(payload.EndUser) > 0 {
+		metadata["endUser"] = payload.EndUser
+	}
+	if len(payload.Error) > 0 {
+		metadata["error"] = payload.Error
+	}
+	_, err := s.repo.UpsertProviderConnection(ctx, userID, ProviderConnection{
+		Provider:             def.Provider,
+		Backend:              def.Backend,
+		ProviderConfigKey:    payload.ProviderConfigKey,
+		ExternalConnectionID: payload.ConnectionID,
+		Status:               "active",
+		GrantedScopes:        []string{},
+		Metadata:             metadata,
+	})
+	return err
 }
 
 func (s *DefaultProviderConnectionService) ListConnections(ctx context.Context) ([]ProviderConnection, error) {
@@ -339,6 +427,60 @@ func (s *DefaultProviderConnectionService) resolveProvider(provider string) (Pro
 		}
 	}
 	return ProviderDefinition{}, nil, ErrNotFound
+}
+
+func (s *DefaultProviderConnectionService) providerDefinitionByConfigKey(providerConfigKey string) (ProviderDefinition, bool) {
+	providerConfigKey = strings.TrimSpace(providerConfigKey)
+	if providerConfigKey == "" {
+		return ProviderDefinition{}, false
+	}
+	for _, def := range s.definitions {
+		if def.ProviderConfigKey == providerConfigKey {
+			return def, true
+		}
+	}
+	return ProviderDefinition{}, false
+}
+
+func (s *DefaultProviderConnectionService) verifyNangoWebhookSignature(rawBody []byte, signature string) error {
+	signingKey := strings.TrimSpace(s.nangoWebhookSigningKey)
+	if signingKey == "" {
+		return providerConnectionError("nango webhook signing key is not configured", nil)
+	}
+	signature = strings.TrimSpace(signature)
+	if signature == "" {
+		return ErrForbidden
+	}
+	mac := hmac.New(sha256.New, []byte(signingKey))
+	_, _ = mac.Write(rawBody)
+	expected := hex.EncodeToString(mac.Sum(nil))
+	if !hmac.Equal([]byte(expected), []byte(signature)) {
+		return ErrForbidden
+	}
+	return nil
+}
+
+func nangoWebhookUserID(payload nangoWebhookPayload) string {
+	if value := stringFromAnyMap(payload.Tags, "aladin_user_id"); value != "" {
+		return value
+	}
+	if value := stringFromAnyMap(payload.Tags, "end_user_id"); value != "" {
+		return value
+	}
+	if value := stringFromAnyMap(payload.EndUser, "endUserId"); value != "" {
+		return value
+	}
+	return stringFromAnyMap(payload.EndUser, "end_user_id")
+}
+
+func stringFromAnyMap(values map[string]any, key string) string {
+	if values == nil {
+		return ""
+	}
+	if value, ok := values[key].(string); ok {
+		return strings.TrimSpace(value)
+	}
+	return ""
 }
 
 func nonNilMap(value map[string]any) map[string]any {

@@ -2,6 +2,9 @@ package service
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"testing"
 )
@@ -136,7 +139,7 @@ func TestProviderConnectionSyncIsUserScopedAndIdempotent(t *testing.T) {
 		available: true,
 		connections: []ProviderBackendConnection{
 			{
-				Provider:             "google",
+				Provider:             "google-mail",
 				Backend:              "nango",
 				ProviderConfigKey:    "google-dev",
 				ExternalConnectionID: "nango-user-1-google",
@@ -158,6 +161,12 @@ func TestProviderConnectionSyncIsUserScopedAndIdempotent(t *testing.T) {
 	}
 	if len(repo.connections) != 1 {
 		t.Fatalf("repo connections len = %d, want 1", len(repo.connections))
+	}
+	if repo.connections["conn-1"].Provider != "google" {
+		t.Fatalf("saved provider = %q, want canonical google", repo.connections["conn-1"].Provider)
+	}
+	if repo.connections["conn-1"].Metadata["remote_provider"] != "google-mail" {
+		t.Fatalf("remote provider metadata = %#v, want google-mail", repo.connections["conn-1"].Metadata["remote_provider"])
 	}
 	if backend.listPrincipal.UserID != "user-1" {
 		t.Fatalf("list principal = %q, want user-1", backend.listPrincipal.UserID)
@@ -199,6 +208,60 @@ func TestProviderConnectionDisconnectMarksInactive(t *testing.T) {
 	if repo.disableStreamsForConnectionID != "conn-1" {
 		t.Fatalf("disabled streams for = %q, want conn-1", repo.disableStreamsForConnectionID)
 	}
+}
+
+func TestProviderConnectionNangoWebhookImportsConnection(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeProviderConnectionRepo{}
+	svc := NewProviderConnectionService(
+		repo,
+		[]ProviderDefinition{{Provider: "google", Label: "Google", Backend: "nango", ProviderConfigKey: "google-mail"}},
+		[]ProviderConnectionBackend{&fakeProviderConnectionBackend{available: true}},
+		WithNangoWebhookSigningKey("signing-key"),
+	)
+	body := []byte(`{"type":"auth","operation":"creation","success":true,"connectionId":"nango-conn","provider":"google-mail","providerConfigKey":"google-mail","tags":{"aladin_user_id":"user-1","end_user_email":"admin@email.com"}}`)
+
+	if err := svc.HandleNangoWebhook(context.Background(), NangoWebhookInput{
+		RawBody:   body,
+		Signature: testNangoWebhookSignature("signing-key", body),
+	}); err != nil {
+		t.Fatalf("HandleNangoWebhook error = %v", err)
+	}
+	if len(repo.connections) != 1 {
+		t.Fatalf("repo connections len = %d, want 1", len(repo.connections))
+	}
+	saved := repo.connections["conn-1"]
+	if saved.UserID != "user-1" || saved.Provider != "google" || saved.ProviderConfigKey != "google-mail" || saved.ExternalConnectionID != "nango-conn" {
+		t.Fatalf("saved connection = %#v, want canonical google connection", saved)
+	}
+	if saved.Metadata["remote_provider"] != "google-mail" {
+		t.Fatalf("remote provider metadata = %#v, want google-mail", saved.Metadata["remote_provider"])
+	}
+}
+
+func TestProviderConnectionNangoWebhookRejectsBadSignature(t *testing.T) {
+	t.Parallel()
+
+	svc := NewProviderConnectionService(
+		&fakeProviderConnectionRepo{},
+		[]ProviderDefinition{{Provider: "google", Label: "Google", Backend: "nango", ProviderConfigKey: "google-mail"}},
+		nil,
+		WithNangoWebhookSigningKey("signing-key"),
+	)
+	err := svc.HandleNangoWebhook(context.Background(), NangoWebhookInput{
+		RawBody:   []byte(`{"type":"auth"}`),
+		Signature: "not-valid",
+	})
+	if !errors.Is(err, ErrForbidden) {
+		t.Fatalf("HandleNangoWebhook error = %v, want ErrForbidden", err)
+	}
+}
+
+func testNangoWebhookSignature(key string, body []byte) string {
+	mac := hmac.New(sha256.New, []byte(key))
+	_, _ = mac.Write(body)
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 func testProviderConnectionPrincipalContext() context.Context {

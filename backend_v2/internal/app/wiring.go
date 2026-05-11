@@ -122,6 +122,7 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		providerConnectionRepo,
 		providerCatalog(providerConfig),
 		[]coreservice.ProviderConnectionBackend{nangoBackend},
+		coreservice.WithNangoWebhookSigningKey(providerConfig.NangoWebhookSigningKey),
 	)
 
 	return wiring{

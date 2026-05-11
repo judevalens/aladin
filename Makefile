@@ -1,9 +1,9 @@
-.PHONY: help backend db-up db-down nango-up nango-down nango-logs env-nango worker-go api-go artifact-spa-build ops-status ops-errors ops-streams ops-queues ops-force-stream ops-reset-stuck-cycles
+.PHONY: help backend db-up db-down nango-up nango-down nango-logs env-nango ngrok-ensure worker-go api-go artifact-spa-build ops-status ops-errors ops-streams ops-queues ops-force-stream ops-reset-stuck-cycles
 
 help: ## List available make targets
 	@awk 'BEGIN {FS = ":.*## "; printf "Available targets:\n"} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-24s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-backend: ## Run the Go backend API on port 8000
+backend: ngrok-ensure ## Run the Go backend API on port 8000
 	eval "$$(python3 scripts/ops/read_env_keys.py --env backend_v2/.env)" && cd backend_v2 && API_ADDR=:8000 go run ./cmd/api
 
 db-up: ## Start local Docker infrastructure
@@ -24,7 +24,10 @@ nango-logs: ## Tail local Nango logs
 env-nango: ## Print Nango env exports from backend_v2/.env
 	@python3 scripts/ops/read_env_keys.py --env backend_v2/.env
 
-worker-go: ## Run the Go worker; optional CONCURRENCY=24
+ngrok-ensure: ## Ensure an ngrok tunnel for local Nango webhooks
+	@python3 scripts/ops/ngrok_ensure.py --env backend_v2/.env --port 8000
+
+worker-go: ngrok-ensure ## Run the Go worker; optional CONCURRENCY=24
 	eval "$$(python3 scripts/ops/read_env_keys.py --env backend_v2/.env)" && cd backend_v2 && WORKER_CONCURRENCY=$(or $(CONCURRENCY),16) go run ./cmd/worker
 
 api-go: ## Run the Go backend API

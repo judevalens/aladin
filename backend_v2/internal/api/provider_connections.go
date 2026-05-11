@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"io"
 	"net/http"
 
 	coreservice "aladin/backend_v2/internal/service"
@@ -13,6 +14,7 @@ func (s *Server) registerProviderConnectionRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/provider-connections/sync", s.handleProviderConnectionSync)
 	mux.HandleFunc("GET /api/provider-connections", s.handleProviderConnectionList)
 	mux.HandleFunc("POST /api/provider-connections/{id}/disconnect", s.handleProviderConnectionDisconnect)
+	mux.HandleFunc("POST /api/provider-connections/nango/webhook", s.handleProviderConnectionNangoWebhook)
 }
 
 func (s *Server) handleProviderConnectionProviders(w http.ResponseWriter, r *http.Request) {
@@ -62,11 +64,29 @@ func (s *Server) handleProviderConnectionDisconnect(w http.ResponseWriter, r *ht
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
+func (s *Server) handleProviderConnectionNangoWebhook(w http.ResponseWriter, r *http.Request) {
+	rawBody, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		writeProviderConnectionError(w, r, coreservice.BadRequest("invalid webhook body"))
+		return
+	}
+	if err := s.deps.ProviderConnections().HandleNangoWebhook(r.Context(), coreservice.NangoWebhookInput{
+		RawBody:   rawBody,
+		Signature: r.Header.Get("X-Nango-Hmac-Sha256"),
+	}); err != nil {
+		writeProviderConnectionError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
 func writeProviderConnectionError(w http.ResponseWriter, r *http.Request, err error) {
 	var requestErr coreservice.BadRequest
 	switch {
 	case errors.Is(err, coreservice.ErrUnauthenticated):
 		writeAPIError(w, r, http.StatusUnauthorized, categoryBadRequest, "Unauthenticated", err)
+	case errors.Is(err, coreservice.ErrForbidden):
+		writeAPIError(w, r, http.StatusForbidden, categoryBadRequest, "Forbidden", err)
 	case errors.Is(err, coreservice.ErrNotFound):
 		writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Not found", err)
 	case errors.As(err, &requestErr):

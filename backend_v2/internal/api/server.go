@@ -188,6 +188,9 @@ func isPublicRoute(r *http.Request) bool {
 	if path == "/api/auth/register" || path == "/api/auth/login" || path == "/api/auth/logout" {
 		return true
 	}
+	if path == "/api/provider-connections/nango/webhook" {
+		return true
+	}
 	return false
 }
 

@@ -15,7 +15,8 @@ Connected Accounts is the setup surface for private provider credentials. It is 
 
 - `GET /api/provider-connections/providers` returns UI-safe provider descriptors: provider id, label, backend, config key, description, category, capabilities, availability, connection state, and coming-soon status.
 - `POST /api/provider-connections/{provider}/connect` starts a provider connect session for available providers only.
-- `POST /api/provider-connections/sync` reconciles Nango connections into Aladin connection refs after the user completes Nango Connect.
+- `POST /api/provider-connections/nango/webhook` receives verified Nango auth creation webhooks and persists local connection refs.
+- `POST /api/provider-connections/sync` reconciles Nango connections into Aladin connection refs as a manual fallback.
 - `GET /api/provider-connections` lists active local refs.
 - `POST /api/provider-connections/{connectionId}/disconnect` disconnects the local ref and calls the provider backend where supported.
 

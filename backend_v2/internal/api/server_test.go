@@ -597,6 +597,28 @@ func TestProviderConnectionsSync(t *testing.T) {
 	}
 }
 
+func TestProviderConnectionsNangoWebhookIsPublic(t *testing.T) {
+	t.Parallel()
+
+	service := &fakeProviderConnectionService{}
+	server := NewWithDependencies(":0", app.StaticDependencies{
+		AuthSvc:                &fakeAuthService{},
+		ProviderConnectionsSvc: service,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/provider-connections/nango/webhook", strings.NewReader(`{"type":"auth"}`))
+	req.Header.Set("X-Nango-Hmac-Sha256", "signature")
+	rec := httptest.NewRecorder()
+
+	server.httpServer.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if service.webhookSignature != "signature" || !strings.Contains(string(service.webhookBody), `"type":"auth"`) {
+		t.Fatalf("webhook input = %q %q, want raw body and signature", service.webhookSignature, string(service.webhookBody))
+	}
+}
+
 type fakeArtifactService struct {
 	list               []artifactservice.ArtifactResponse
 	listParams         *artifactservice.ArtifactListParams
@@ -624,11 +646,13 @@ type fakeFileService struct {
 type fakeAuthService struct{}
 
 type fakeProviderConnectionService struct {
-	providers     []artifactservice.ProviderDescriptor
-	connections   []artifactservice.ProviderConnection
-	session       artifactservice.ProviderConnectSession
-	startProvider string
-	syncCalls     int
+	providers        []artifactservice.ProviderDescriptor
+	connections      []artifactservice.ProviderConnection
+	session          artifactservice.ProviderConnectSession
+	startProvider    string
+	syncCalls        int
+	webhookBody      []byte
+	webhookSignature string
 }
 
 func (f *fakeAuthService) Register(context.Context, artifactservice.AuthCredentials, string) (artifactservice.AuthSession, error) {
@@ -705,6 +729,12 @@ func (f *fakeProviderConnectionService) Disconnect(context.Context, string) erro
 
 func (f *fakeProviderConnectionService) GetConnectionCredentials(context.Context, artifactservice.ProviderCredentialRequest) (artifactservice.ProviderCredentials, error) {
 	return artifactservice.ProviderCredentials{}, nil
+}
+
+func (f *fakeProviderConnectionService) HandleNangoWebhook(_ context.Context, input artifactservice.NangoWebhookInput) error {
+	f.webhookBody = input.RawBody
+	f.webhookSignature = input.Signature
+	return nil
 }
 
 func (f *fakePageService) Get(context.Context, string) (artifactservice.PageDocument, error) {

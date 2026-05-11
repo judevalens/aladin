@@ -148,8 +148,7 @@ fun SourcesScreen(setAppOverlay: ((AppOverlayContent?) -> Unit)? = null) {
                                 providerError = providerError,
                                 onDismiss = { setOverlay(null) },
                                 onChanged = {
-                                    setOverlay(null)
-                                    scope.launch { load() }
+                                    load()
                                 },
                             )
                         }
@@ -320,9 +319,10 @@ private fun ProviderCard(
     val active = provider.available || provider.connected
     Column(
         modifier =
-            Modifier.heightIn(min = 150.dp)
+            Modifier.fillMaxWidth()
+                .height(158.dp)
                 .border(
-                    width = if (selected) 2.dp else 1.dp,
+                    width = 1.dp,
                     color =
                         when {
                             selected -> AladinColor.Ink
@@ -349,7 +349,7 @@ private fun ProviderCard(
                         ),
                     onClick = onClick,
                 )
-                .padding(if (selected) 13.dp else 14.dp),
+                .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(
@@ -397,7 +397,7 @@ private fun IntegrationsManagerDialog(
     providers: List<ProviderConnectionProvider>,
     providerError: String?,
     onDismiss: () -> Unit,
-    onChanged: () -> Unit,
+    onChanged: suspend () -> Unit,
 ) {
     var selectedProviderId by remember(providers) {
         mutableStateOf(
@@ -540,7 +540,7 @@ private fun ProviderGroupHeader(title: String, description: String) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ProviderDetailPane(provider: ProviderConnectionProvider, onChanged: () -> Unit) {
+private fun ProviderDetailPane(provider: ProviderConnectionProvider, onChanged: suspend () -> Unit) {
     val scope = rememberCoroutineScope()
     var working by remember(provider.provider) { mutableStateOf(false) }
     var checking by remember(provider.provider) { mutableStateOf(false) }
@@ -605,7 +605,7 @@ private fun ProviderDetailPane(provider: ProviderConnectionProvider, onChanged: 
 
         if (openedConnect && !provider.connected) {
             Text(
-                "After finishing the Nango window, return here and check the connection.",
+                "After Nango finishes, Aladin will persist the connection from the Nango webhook. Use Check connection if you need to reconcile manually.",
                 style = MaterialTheme.typography.bodySmall,
                 color = AladinColor.CodeText,
             )
