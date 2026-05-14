@@ -1,10 +1,13 @@
-.PHONY: help backend db-up db-down nango-up nango-down nango-logs env-nango ngrok-ensure worker-go api-go artifact-spa-build ops-status ops-errors ops-streams ops-queues ops-force-stream ops-reset-stuck-cycles
+.PHONY: help backend mcp db-up db-down nango-up nango-down nango-logs env-nango ngrok-ensure worker-go api-go artifact-spa-build ops-status ops-errors ops-streams ops-queues ops-force-stream ops-reset-stuck-cycles
 
 help: ## List available make targets
 	@awk 'BEGIN {FS = ":.*## "; printf "Available targets:\n"} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-24s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 backend: ngrok-ensure ## Run the Go backend API on port 8000
 	eval "$$(python3 scripts/ops/read_env_keys.py --env backend_v2/.env)" && cd backend_v2 && API_ADDR=:8000 go run ./cmd/api
+
+mcp: ## Run the MCP page server on port 8090
+	eval "$$(python3 scripts/ops/read_env_keys.py --env backend_v2/.env)" && cd backend_v2 && MCP_HTTP_ADDR=:8090 go run ./cmd/mcp
 
 db-up: ## Start local Docker infrastructure
 	docker compose up -d

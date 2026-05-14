@@ -783,6 +783,13 @@ func (f *fakeArtifactService) List(_ context.Context, params artifactservice.Art
 	return f.list, nil
 }
 
+func (f *fakeArtifactService) SearchPages(context.Context, artifactservice.PageSearchParams) ([]artifactservice.ArtifactResponse, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.list, nil
+}
+
 func (f *fakeArtifactService) BrowserTree(context.Context) ([]artifactservice.BrowserTreeNode, error) {
 	if f.err != nil {
 		return nil, f.err

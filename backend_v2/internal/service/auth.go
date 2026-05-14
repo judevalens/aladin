@@ -14,6 +14,7 @@ import (
 
 const (
 	SessionCookieName = "aladin_session"
+	SessionHeaderName = "X-Aladin-Session"
 	sessionByteLength = 32
 	sessionTTL        = 30 * 24 * time.Hour
 )

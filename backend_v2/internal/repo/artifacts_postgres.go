@@ -61,6 +61,46 @@ func (r *PostgresArtifactRepository) ListArtifacts(ctx context.Context, params a
 	return out, rows.Err()
 }
 
+func (r *PostgresArtifactRepository) SearchPageArtifacts(ctx context.Context, params artifactservice.PageSearchParams) ([]artifactservice.ArtifactResponse, error) {
+	userID, err := r.userID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	query := "%" + params.Query + "%"
+	rows, err := r.pool.Query(ctx, `
+		SELECT a.id, n.parent_id, a.type, a.title,
+		       COALESCE(p.markdown, a.content) AS content,
+		       a.summary, a.source_url, a.metadata, a.created_at, a.updated_at,
+		       COALESCE(p.revision, 0) AS revision
+		  FROM artifacts a
+		  LEFT JOIN tree_nodes n ON n.artifact_id = a.id AND n.user_id = a.user_id AND n.kind = 'artifact'
+		  LEFT JOIN page_documents p ON p.artifact_id = a.id
+		 WHERE a.user_id = $1::uuid
+		   AND a.type = 'page'
+		   AND (
+		       a.title ILIKE $2
+		       OR COALESCE(a.summary, '') ILIKE $2
+		       OR COALESCE(p.markdown, a.content, '') ILIKE $2
+		   )
+		 ORDER BY a.updated_at DESC, a.created_at DESC
+		 LIMIT $3
+	`, userID, query, params.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]artifactservice.ArtifactResponse, 0)
+	for rows.Next() {
+		rec, err := scanArtifactResponse(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rec)
+	}
+	return out, rows.Err()
+}
+
 func (r *PostgresArtifactRepository) GetArtifact(ctx context.Context, id string) (artifactservice.ArtifactResponse, error) {
 	userID, err := r.userID(ctx)
 	if err != nil {

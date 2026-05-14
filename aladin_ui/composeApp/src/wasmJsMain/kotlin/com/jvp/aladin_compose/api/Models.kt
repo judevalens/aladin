@@ -21,6 +21,35 @@ data class AuthResponse(
 )
 
 @Serializable
+data class IntegrationToken(
+    val id: String,
+    val name: String,
+    val scopes: List<String> = emptyList(),
+    val status: String,
+    val expiresAt: String? = null,
+    val createdAt: String,
+    val lastUsedAt: String? = null,
+)
+
+@Serializable
+data class IntegrationTokenListResponse(
+    val tokens: List<IntegrationToken> = emptyList(),
+)
+
+@Serializable
+data class IntegrationTokenCreateRequest(
+    val name: String,
+    val scopes: List<String>,
+    val expiresAt: String? = null,
+)
+
+@Serializable
+data class CreatedIntegrationToken(
+    val token: String,
+    val integrationToken: IntegrationToken,
+)
+
+@Serializable
 data class FeedItem(
     val id: String,
     val type: String,

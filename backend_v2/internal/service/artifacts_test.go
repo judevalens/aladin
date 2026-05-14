@@ -63,6 +63,32 @@ func TestArtifactServiceReadOnlyTokenCannotWrite(t *testing.T) {
 	}
 }
 
+func TestArtifactServiceSearchPagesValidatesAndClamps(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeArtifactRepository{
+		searchResults: []ArtifactResponse{{ID: "page-1", Type: "page", Title: "Match"}},
+	}
+	svc := NewArtifactService(repo, &fakeArtifactFiles{})
+
+	if _, err := svc.SearchPages(testIntegrationPrincipalContext(ScopeArtifactsWrite), PageSearchParams{Query: "memo"}); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("SearchPages without read scope error = %v, want ErrForbidden", err)
+	}
+	if _, err := svc.SearchPages(testPrincipalContext(), PageSearchParams{Query: "   "}); err == nil {
+		t.Fatal("SearchPages empty query error = nil, want BadRequest")
+	}
+	results, err := svc.SearchPages(testPrincipalContext(), PageSearchParams{Query: "  memo  ", Limit: 500})
+	if err != nil {
+		t.Fatalf("SearchPages error: %v", err)
+	}
+	if len(results) != 1 || results[0].ID != "page-1" {
+		t.Fatalf("results = %#v, want fake search result", results)
+	}
+	if repo.searchParams == nil || repo.searchParams.Query != "memo" || repo.searchParams.Limit != 50 {
+		t.Fatalf("search params = %#v, want trimmed query and clamped limit", repo.searchParams)
+	}
+}
+
 func TestArtifactServiceCreateLinkRequiresSourceURL(t *testing.T) {
 	t.Parallel()
 
@@ -171,10 +197,18 @@ type fakeArtifactRepository struct {
 	pageContentByID  map[string]string
 	folders          []FolderNode
 	browserNodes     []BrowserTreeFlatNode
+	searchResults    []ArtifactResponse
+	searchParams     *PageSearchParams
 }
 
 func (f *fakeArtifactRepository) ListArtifacts(context.Context, ArtifactListParams) ([]ArtifactResponse, error) {
 	return nil, nil
+}
+
+func (f *fakeArtifactRepository) SearchPageArtifacts(_ context.Context, params PageSearchParams) ([]ArtifactResponse, error) {
+	copyParams := params
+	f.searchParams = &copyParams
+	return f.searchResults, nil
 }
 
 func (f *fakeArtifactRepository) GetArtifact(_ context.Context, id string) (ArtifactResponse, error) {

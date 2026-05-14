@@ -12,6 +12,11 @@ type APIConfig struct {
 	ProviderConnections ProviderConnectionConfig
 }
 
+type MCPConfig struct {
+	DatabaseURL string
+	HTTPAddr    string
+}
+
 type WorkerConfig struct {
 	DatabaseURL  string
 	RedisURL     string
@@ -29,6 +34,17 @@ type ProviderConnectionConfig struct {
 	NangoSecretKey               string
 	NangoWebhookSigningKey       string
 	NangoGoogleProviderConfigKey string
+}
+
+func LoadMCP() (MCPConfig, error) {
+	databaseURL, err := require("DATABASE_URL")
+	if err != nil {
+		return MCPConfig{}, err
+	}
+	return MCPConfig{
+		DatabaseURL: databaseURL,
+		HTTPAddr:    optional("MCP_HTTP_ADDR", ":8090"),
+	}, nil
 }
 
 func LoadAPI() (APIConfig, error) {

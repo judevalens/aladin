@@ -47,10 +47,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jvp.aladin_compose.api.ApiClient
+import com.jvp.aladin_compose.api.CreatedIntegrationToken
+import com.jvp.aladin_compose.api.IntegrationToken
+import com.jvp.aladin_compose.api.IntegrationTokenCreateRequest
 import com.jvp.aladin_compose.api.ProviderConnectionProvider
 import com.jvp.aladin_compose.api.Source
 import com.jvp.aladin_compose.api.SourceCreateRequest
 import com.jvp.aladin_compose.features.app.AppOverlayContent
+import com.jvp.aladin_compose.copyTextToClipboard
 import com.jvp.aladin_compose.openUrl
 import com.jvp.aladin_compose.ui_lib.AladinColor
 import com.jvp.aladin_compose.ui_lib.AladinInteractionDefaults
@@ -408,6 +412,7 @@ private fun IntegrationsManagerDialog(
     }
     val selectedProvider =
         providers.firstOrNull { it.provider == selectedProviderId } ?: providers.firstOrNull()
+    var section by remember { mutableStateOf(IntegrationManagerSection.ConnectedAccounts) }
 
     Box(
         modifier =
@@ -459,58 +464,428 @@ private fun IntegrationsManagerDialog(
                         style = MaterialTheme.typography.bodySmall,
                         color = AladinColor.InkMuted,
                     )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        IntegrationSectionTab(
+                            label = "Connected Accounts",
+                            selected = section == IntegrationManagerSection.ConnectedAccounts,
+                            onClick = { section = IntegrationManagerSection.ConnectedAccounts },
+                        )
+                        IntegrationSectionTab(
+                            label = "Agent Access",
+                            selected = section == IntegrationManagerSection.AgentAccess,
+                            onClick = { section = IntegrationManagerSection.AgentAccess },
+                        )
+                    }
                 }
                 StreamDialogButton(label = "Close", enabled = true, primary = false, onClick = onDismiss)
             }
 
             HorizontalDivider(color = AladinColor.Divider)
 
-            Row(modifier = Modifier.fillMaxSize()) {
-                Column(
-                    modifier =
-                        Modifier.width(610.dp)
-                            .fillMaxHeight()
-                            .padding(22.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
-                ) {
-                    if (providerError != null) {
-                        Text(providerError, style = MaterialTheme.typography.bodySmall, color = AladinColor.Ink)
+            when (section) {
+                IntegrationManagerSection.ConnectedAccounts -> {
+                    Row(modifier = Modifier.fillMaxSize()) {
+                        Column(
+                            modifier =
+                                Modifier.width(610.dp)
+                                    .fillMaxHeight()
+                                    .padding(22.dp),
+                            verticalArrangement = Arrangement.spacedBy(14.dp),
+                        ) {
+                            if (providerError != null) {
+                                Text(providerError, style = MaterialTheme.typography.bodySmall, color = AladinColor.Ink)
+                            }
+                            ProviderGroupHeader(
+                                title = "Available now",
+                                description = "Configured providers you can connect or manage.",
+                            )
+                            LazyVerticalGrid(
+                                columns = GridCells.Adaptive(minSize = 176.dp),
+                                modifier = Modifier.weight(1f).fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 6.dp),
+                            ) {
+                                items(providers, key = { it.provider }) { provider ->
+                                    ProviderCard(
+                                        provider = provider,
+                                        selected = provider.provider == selectedProvider?.provider,
+                                        onClick = { selectedProviderId = provider.provider },
+                                    )
+                                }
+                            }
+                            if (providers.isEmpty() && providerError == null) {
+                                Text(
+                                    "Provider catalog unavailable. Check that the backend is running.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = AladinColor.InkMuted,
+                                )
+                            }
+                        }
+
+                        VerticalProviderDivider()
+
+                        Box(modifier = Modifier.weight(1f).fillMaxSize().padding(22.dp)) {
+                            if (selectedProvider != null) {
+                                ProviderDetailPane(provider = selectedProvider, onChanged = onChanged)
+                            }
+                        }
                     }
-                    ProviderGroupHeader(
-                        title = "Available now",
-                        description = "Configured providers you can connect or manage.",
+                }
+                IntegrationManagerSection.AgentAccess -> AgentAccessPane(modifier = Modifier.fillMaxSize())
+            }
+        }
+    }
+}
+
+private enum class IntegrationManagerSection {
+    ConnectedAccounts,
+    AgentAccess,
+}
+
+@Composable
+private fun IntegrationSectionTab(label: String, selected: Boolean, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(5.dp)
+    Box(
+        modifier =
+            Modifier.height(30.dp)
+                .background(if (selected) AladinColor.InkSurface else Color.Transparent, shape)
+                .aladinClickable(
+                    shape = shape,
+                    colors =
+                        AladinInteractionDefaults.colors(
+                            rest = Color.Transparent,
+                            hovered = if (selected) AladinColor.InkSurfaceHover else AladinColor.ControlHover,
+                            pressed = if (selected) AladinColor.InkSurfaceHover else AladinColor.ControlPressed,
+                        ),
+                    onClick = onClick,
+                )
+                .padding(horizontal = 11.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (selected) AladinColor.OnInkSurface else AladinColor.InkSecondary,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AgentAccessPane(modifier: Modifier = Modifier) {
+    val scope = rememberCoroutineScope()
+    var tokens by remember { mutableStateOf<List<IntegrationToken>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var creating by remember { mutableStateOf(false) }
+    var tokenName by remember { mutableStateOf("Claude Code") }
+    var created by remember { mutableStateOf<CreatedIntegrationToken?>(null) }
+    var copied by remember { mutableStateOf(false) }
+    var revokingTokenId by remember { mutableStateOf<String?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    suspend fun loadTokens() {
+        loading = true
+        error = null
+        try {
+            tokens = ApiClient.getIntegrationTokens().tokens
+        } catch (e: Exception) {
+            error = e.message ?: "Failed to load integration tokens"
+        } finally {
+            loading = false
+        }
+    }
+
+    LaunchedEffect(Unit) { loadTokens() }
+
+    Row(modifier = modifier) {
+        Column(
+            modifier = Modifier.weight(1f).fillMaxHeight().padding(22.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            ProviderGroupHeader(
+                title = "Agent tokens",
+                description = "DB-backed bearer tokens for MCP clients and local agents.",
+            )
+            if (error != null) {
+                Text(error!!, style = MaterialTheme.typography.bodySmall, color = AladinColor.Ink)
+            }
+            when {
+                loading ->
+                    Text(
+                        "Loading tokens...",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = AladinColor.InkMuted,
                     )
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 176.dp),
-                        modifier = Modifier.weight(1f).fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 6.dp),
+                tokens.isEmpty() ->
+                    AgentAccessEmptyState()
+                else ->
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(0.dp),
                     ) {
-                        items(providers, key = { it.provider }) { provider ->
-                            ProviderCard(
-                                provider = provider,
-                                selected = provider.provider == selectedProvider?.provider,
-                                onClick = { selectedProviderId = provider.provider },
+                        items(tokens, key = { it.id }) { token ->
+                            IntegrationTokenRow(
+                                token = token,
+                                revoking = revokingTokenId == token.id,
+                                onRevoke = {
+                                    scope.launch {
+                                        revokingTokenId = token.id
+                                        error = null
+                                        try {
+                                            ApiClient.revokeIntegrationToken(token.id)
+                                            loadTokens()
+                                        } catch (e: Exception) {
+                                            error = e.message ?: "Failed to revoke token"
+                                        } finally {
+                                            revokingTokenId = null
+                                        }
+                                    }
+                                },
                             )
                         }
                     }
-                    if (providers.isEmpty() && providerError == null) {
-                        Text(
-                            "Provider catalog unavailable. Check that the backend is running.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = AladinColor.InkMuted,
-                        )
-                    }
-                }
+            }
+        }
 
-                VerticalProviderDivider()
+        VerticalProviderDivider()
 
-                Box(modifier = Modifier.weight(1f).fillMaxSize().padding(22.dp)) {
-                    if (selectedProvider != null) {
-                        ProviderDetailPane(provider = selectedProvider, onChanged = onChanged)
-                    }
+        Column(
+            modifier =
+                Modifier.width(390.dp)
+                    .fillMaxHeight()
+                    .verticalScroll(rememberScrollState())
+                    .padding(22.dp),
+            verticalArrangement = Arrangement.spacedBy(13.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text(
+                    "MCP setup",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = AladinColor.Ink,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    "Create a bearer token for the local MCP server.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = AladinColor.InkSecondary,
+                )
+            }
+
+            AgentAccessFact("Endpoint", "http://localhost:8090/mcp")
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                DialogSectionLabel("Recommended scopes")
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text("artifacts:read", style = MaterialTheme.typography.bodySmall, color = AladinColor.InkSecondary)
+                    Text("artifacts:write", style = MaterialTheme.typography.bodySmall, color = AladinColor.InkSecondary)
                 }
+            }
+
+            HorizontalDivider(color = AladinColor.Divider)
+
+            FormField(
+                label = "Token name",
+                value = tokenName,
+                placeholder = "Claude Code",
+                onChange = {
+                    tokenName = it
+                    error = null
+                },
+            )
+            StreamDialogButton(
+                label = if (creating) "Creating..." else "Create MCP Token",
+                enabled = !creating && tokenName.trim().isNotEmpty(),
+                primary = true,
+                onClick = {
+                    scope.launch {
+                        val name = tokenName.trim()
+                        if (name.isEmpty()) {
+                            error = "Token name is required"
+                            return@launch
+                        }
+                        creating = true
+                        error = null
+                        copied = false
+                        try {
+                            val response =
+                                ApiClient.createIntegrationToken(
+                                    IntegrationTokenCreateRequest(
+                                        name = name,
+                                        scopes = listOf("artifacts:read", "artifacts:write"),
+                                    )
+                                )
+                            created = response
+                            tokens =
+                                listOf(response.integrationToken) +
+                                    tokens.filterNot { it.id == response.integrationToken.id }
+                        } catch (e: Exception) {
+                            error = e.message ?: "Failed to create MCP token"
+                        } finally {
+                            creating = false
+                        }
+                    }
+                },
+            )
+
+            created?.let { createdToken ->
+                CreatedTokenBlock(
+                    name = createdToken.integrationToken.name,
+                    token = createdToken.token,
+                    copied = copied,
+                    onCopy = {
+                        copyTextToClipboard(createdToken.token)
+                        copied = true
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AgentAccessEmptyState() {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+        Text(
+            "No agent tokens yet",
+            style = MaterialTheme.typography.titleSmall,
+            color = AladinColor.Ink,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            "Create one from the setup panel. The raw token is shown once, then only metadata remains here.",
+            style = MaterialTheme.typography.bodySmall,
+            color = AladinColor.InkMuted,
+        )
+    }
+}
+
+@Composable
+private fun IntegrationTokenRow(token: IntegrationToken, revoking: Boolean, onRevoke: () -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 13.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top,
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.weight(1f)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        token.name,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = AladinColor.Ink,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        token.status.uppercase(),
+                        style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.25.sp),
+                        color = if (token.status == "active") AladinColor.CodeText else AladinColor.InkMuted,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                Text(
+                    token.scopes.joinToString(", ").ifBlank { "No scopes" },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = AladinColor.InkSecondary,
+                )
+                Text(
+                    "Created ${token.createdAt.humanDate()} · Last used ${token.lastUsedAt?.humanDate() ?: "never"} · Expires ${token.expiresAt?.humanDate() ?: "never"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = AladinColor.InkMuted,
+                )
+            }
+            if (token.status == "active") {
+                StreamDialogButton(
+                    label = if (revoking) "Revoking..." else "Revoke",
+                    enabled = !revoking,
+                    primary = false,
+                    onClick = onRevoke,
+                )
+            }
+        }
+        HorizontalDivider(color = AladinColor.Divider)
+    }
+}
+
+@Composable
+private fun AgentAccessFact(label: String, value: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        DialogSectionLabel(label)
+        Text(
+            value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = AladinColor.CodeText,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
+@Composable
+private fun CreatedTokenBlock(name: String, token: String, copied: Boolean, onCopy: () -> Unit) {
+    Column(
+        modifier =
+            Modifier.fillMaxWidth()
+                .border(1.dp, AladinColor.InkSurface, RoundedCornerShape(6.dp))
+                .background(AladinColor.CommandSurface, RoundedCornerShape(6.dp))
+                .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top,
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.weight(1f)) {
+                Text(
+                    "One-time token reveal",
+                    style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.35.sp),
+                    color = AladinColor.CodeText,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    name,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = AladinColor.Ink,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            Text(
+                "temporary",
+                style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.25.sp),
+                color = AladinColor.InkMuted,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        Text(
+            "Copy \"$name\" now. It will not be shown again.",
+            style = MaterialTheme.typography.bodySmall,
+            color = AladinColor.InkSecondary,
+        )
+        Box(
+            modifier =
+                Modifier.fillMaxWidth()
+                    .background(AladinColor.Panel, RoundedCornerShape(5.dp))
+                    .border(1.dp, AladinColor.Divider, RoundedCornerShape(5.dp))
+                    .padding(horizontal = 9.dp, vertical = 7.dp),
+        ) {
+            Text(
+                token,
+                style = MaterialTheme.typography.labelMedium,
+                color = AladinColor.CodeText,
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            StreamDialogButton(label = "Copy ${name.take(18)} token", enabled = true, primary = true, onClick = onCopy)
+            if (copied) {
+                Text(
+                    "Copied",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = AladinColor.CodeText,
+                )
             }
         }
     }

@@ -2,13 +2,13 @@
 
 ## Status
 
-Planning document.
+Living implementation plan.
 
 Aladin now has the beginning of a real auth boundary: email/password login, opaque browser sessions, and current-user context propagation for source subscriptions. The next strategic step is to make external integrations first-class instead of bolting MCP or OAuth onto the side.
 
 This plan defines the dependency order for adding:
 
-- MCP servers for agent-authored notes
+- MCP servers for agent-authored pages
 - OAuth/private provider accounts such as Gmail, Threads, Google Drive, and future social APIs
 - DB-backed integration tokens
 - capability-scoped external actors
@@ -23,13 +23,13 @@ Aladin should become a durable workspace that external agents can write to and r
 
 Near-term example:
 
-> Claude/Codex creates a markdown note in Aladin through MCP, and the note appears in the existing workspace UI as a normal page artifact with agent metadata.
+> Claude/Codex creates a markdown page in Aladin through MCP, and the page appears in the existing workspace UI as a normal page artifact with agent metadata.
 
 Longer-term:
 
 - Gmail sync runs against a user-owned OAuth credential.
 - Threads keyword search runs against a user-owned OAuth credential and quota.
-- MCP agents can create, update, and search notes without full app privileges.
+- MCP agents can create, update, and search pages without full app privileges.
 - Private-source ingestion, agent writing, and future copilot actions all use the same ownership and permission boundary.
 
 ## Core Principle
@@ -266,7 +266,7 @@ Code-ready for MCP. The generic helpers exist, artifact/page/file operations enf
 ### Acceptance Criteria
 
 - A token with only `artifacts:read` cannot create/update notes. Implemented at artifact/page/file services.
-- A token with `artifacts:read/write` can use notes tools. Ready for MCP tools.
+- A token with `artifacts:read/write` can use page tools. Ready for MCP tools.
 - Authorization failures return MCP tool errors, not panics. Pending MCP tool layer.
 
 ## Milestone 4 — Nango-Backed Provider Connections
@@ -384,11 +384,11 @@ Code-ready. No MCP binary, SDK dependency, or tools are introduced in this miles
 - Integration tokens cannot create/list/revoke integration tokens.
 - `go test ./...` passes.
 
-## Milestone 6 — MCP Notes Server
+## Milestone 6 — MCP Page Server
 
 ### Goal
 
-Add an MCP server that lets external agents author and read Aladin notes through existing artifact services.
+Add an MCP server that lets external agents read browser structure and author/read Aladin pages through existing artifact services.
 
 ### Binary
 
@@ -443,28 +443,37 @@ The MCP auth middleware resolves the token to a principal and injects it into co
 
 ### Tools
 
-Use product language `note`, but store as page artifacts for v1.
-
-Important: current artifact type semantics are `page`, `link`, `voice`, and `file`. Do not add a new `note` artifact type just for MCP.
+Use product language `page`. Current artifact type semantics are `page`, `link`, `voice`, and `file`; MCP must not add a new `note` artifact type.
 
 Tools:
 
-- `create_note(title, content, folder_id?, summary?, tags?, agent?)`
-- `update_note(id, content?, title?, summary?, tags?)`
-- `get_note(id)`
-- `list_notes(folder_id?, limit?)`
-- `search_notes(query, limit?)`
+- `get_browser_tree()`
+- `list_folders(parent_id?)`
+- `create_page(title, content, folder_id?, summary?, tags?, agent?)`
+- `update_page(id, title?, content?, folder_id?, summary?, tags?, agent?)`
+- `get_page(id)`
+- `list_pages(folder_id?, limit?)`
+- `search_pages(query, limit?)`
 
-Defer `delete_note` unless it is clearly safe. Agent delete is a sharper capability than create/update.
+Do not expose delete, source/Gmail tools, provider credentials, prompts, or MCP resources in M6.
 
 ### Tool Rules
 
-- `create_note` calls `ArtifactService.Create` with `Type: "page"`.
-- `update_note` first loads the artifact and rejects non-page artifacts.
-- `get_note` rejects non-page artifacts.
-- `list_notes` returns page artifacts only.
-- `search_notes` searches page artifacts only.
-- Tool handlers require `artifacts:read` or `artifacts:write`.
+- `get_browser_tree`, `list_folders`, `get_page`, `list_pages`, and `search_pages` require `artifacts:read`.
+- `create_page` and `update_page` require `artifacts:write`.
+- `create_page` calls `ArtifactService.Create` with `Type: "page"`.
+- `update_page` first loads the artifact and rejects non-page artifacts.
+- `get_page` rejects non-page artifacts.
+- `list_pages` returns page artifacts only.
+- `search_pages` searches page titles, summaries, and markdown content only.
+- Tool handlers rely on existing service-level `RequireScope` enforcement.
+
+### Local Flow
+
+1. Log in through the browser app or `POST /api/auth/login`.
+2. Create an integration token with `POST /api/integration-tokens` and scopes `["artifacts:read", "artifacts:write"]`.
+3. Start the MCP server with `go run ./cmd/mcp` from `backend_v2`.
+4. Configure the MCP client with `http://localhost:8090/mcp` and `Authorization: Bearer <integration-token>`.
 
 ### Agent Metadata
 
@@ -486,10 +495,10 @@ No schema change for v1. Promote to a column only if indexing/filtering by agent
 
 - MCP server starts independently from API.
 - Invalid bearer token is rejected.
-- Token missing `artifacts:write` cannot create/update notes.
-- `create_note` produces a normal page artifact visible in the UI.
+- Token missing `artifacts:write` cannot create/update pages.
+- `create_page` produces a normal page artifact visible in the UI.
 - Agent metadata is stored in `artifacts.metadata`.
-- `get_note`/`update_note` reject link/voice/file artifacts.
+- `get_page`/`update_page` reject link/voice/file artifacts.
 
 ## Milestone 7 — Private Source Sync
 
@@ -555,7 +564,7 @@ Make auth/integration state visible and controllable from the app.
 3. Add DB-backed integration tokens. Done.
 4. Add Nango-backed provider connection refs. Done.
 5. Harden bearer auth and scope enforcement for MCP readiness. Done.
-6. Add MCP server with notes tools backed by integration tokens. Next.
+6. Add MCP server with page tools backed by integration tokens. Implemented.
 7. Prove Google connect through Nango with real credentials.
 8. Add private-source sync using provider connections.
 9. Add management UI for tokens and connected accounts.
@@ -574,7 +583,7 @@ This order lets MCP ship before full OAuth while still using the same long-term 
 
 - Whether integration tokens should be user-created only or also system-created.
 - Whether MCP should expose resources in addition to tools.
-- Whether agent-authored notes need a dedicated UI marker.
+- Whether agent-authored pages need a dedicated UI marker.
 - Whether delete should be exposed to MCP agents.
 - Whether Threads should be implemented as a local backend or added to Nango when support exists.
 - Whether browser sessions eventually use the same `Principal` struct internally.

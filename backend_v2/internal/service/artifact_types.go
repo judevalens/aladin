@@ -82,6 +82,11 @@ type ArtifactListParams struct {
 	FolderID *string
 }
 
+type PageSearchParams struct {
+	Query string
+	Limit int
+}
+
 type ArtifactUploadInput struct {
 	Type     string
 	Filename string

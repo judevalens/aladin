@@ -9,6 +9,7 @@ import (
 
 type ArtifactService interface {
 	List(context.Context, ArtifactListParams) ([]ArtifactResponse, error)
+	SearchPages(context.Context, PageSearchParams) ([]ArtifactResponse, error)
 	BrowserTree(context.Context) ([]BrowserTreeNode, error)
 	Get(context.Context, string) (ArtifactResponse, error)
 	Create(context.Context, ArtifactPayload) (ArtifactResponse, error)
@@ -26,6 +27,7 @@ type ArtifactService interface {
 
 type ArtifactRepository interface {
 	ListArtifacts(context.Context, ArtifactListParams) ([]ArtifactResponse, error)
+	SearchPageArtifacts(context.Context, PageSearchParams) ([]ArtifactResponse, error)
 	GetArtifact(context.Context, string) (ArtifactResponse, error)
 	CreateArtifact(context.Context, ArtifactResponse) error
 	UpdateArtifact(context.Context, string, ArtifactPatch) error
@@ -83,6 +85,23 @@ func (s *DefaultArtifactService) List(ctx context.Context, params ArtifactListPa
 		}
 	}
 	return s.repo.ListArtifacts(ctx, params)
+}
+
+func (s *DefaultArtifactService) SearchPages(ctx context.Context, params PageSearchParams) ([]ArtifactResponse, error) {
+	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
+		return nil, err
+	}
+	params.Query = strings.TrimSpace(params.Query)
+	if params.Query == "" {
+		return nil, BadRequest("query is required")
+	}
+	if params.Limit <= 0 {
+		params.Limit = 20
+	}
+	if params.Limit > 50 {
+		params.Limit = 50
+	}
+	return s.repo.SearchPageArtifacts(ctx, params)
 }
 
 func (s *DefaultArtifactService) BrowserTree(ctx context.Context) ([]BrowserTreeNode, error) {

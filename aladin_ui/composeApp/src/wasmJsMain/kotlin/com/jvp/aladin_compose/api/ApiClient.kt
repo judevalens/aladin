@@ -56,6 +56,26 @@ object ApiClient {
         httpClient.get("$BASE_URL/api/auth/me").body()
     }
 
+    suspend fun getIntegrationTokens(): IntegrationTokenListResponse =
+        call("GET /api/integration-tokens") {
+            httpClient.get("$BASE_URL/api/integration-tokens").body()
+        }
+
+    suspend fun createIntegrationToken(req: IntegrationTokenCreateRequest): CreatedIntegrationToken =
+        call("POST /api/integration-tokens") {
+            httpClient
+                .post("$BASE_URL/api/integration-tokens") {
+                    contentType(ContentType.Application.Json)
+                    setBody(req)
+                }
+                .body()
+        }
+
+    suspend fun revokeIntegrationToken(id: String) =
+        call("POST /api/integration-tokens/{id}/revoke") {
+            httpClient.post("$BASE_URL/api/integration-tokens/$id/revoke")
+        }
+
     suspend fun getFeed(
         limit: Int = 50,
         offset: Int = 0,

@@ -155,12 +155,13 @@ This is the method the MCP auth middleware should call.
 
 `ResolveBearerPrincipal(ctx, auth, authorizationHeader)` is the reusable transport helper for MCP and future bearer-auth entry points. It parses `Authorization: Bearer <token>`, resolves the integration token, and returns a scoped `Principal`.
 
-Pre-MCP local smoke flow:
+MCP local smoke flow:
 
 1. Log in through the app or `POST /api/auth/login` so the browser/client has `aladin_session`.
 2. Create a token with `POST /api/integration-tokens` and scopes `["artifacts:read", "artifacts:write"]`.
-3. Use the one-time `token` value as the future MCP bearer credential.
-4. Revoke with `POST /api/integration-tokens/{id}/revoke` when done.
+3. Start the MCP server with `go run ./cmd/mcp` from `backend_v2`.
+4. Configure the MCP client with `http://localhost:8090/mcp` and the one-time `token` value as the bearer credential.
+5. Revoke with `POST /api/integration-tokens/{id}/revoke` when done.
 
 ## API Routes
 
@@ -217,7 +218,7 @@ The context helpers live in `backend_v2/internal/service/auth.go`:
 
 Application services should use `RequirePrincipal` or `RequireScope` instead of hardcoded user ids when behavior is user-owned.
 
-Browser-session principals are treated as full app access for now. Integration-token principals must carry the required scope. Artifact, page, and file operations now enforce `artifacts:read` or `artifacts:write`, which is the scope boundary MCP note tools will rely on.
+Browser-session principals are treated as full app access for now. Integration-token principals must carry the required scope. Artifact, page, and file operations now enforce `artifacts:read` or `artifacts:write`, which is the scope boundary MCP page tools rely on.
 
 ## Current User Usage
 
@@ -318,6 +319,6 @@ The explicit `GOCACHE` keeps Go test artifacts inside the workspace when macOS c
 - Add logout affordance in the app shell.
 - Move artifact/page/file ownership off the default dev user.
 - Add password reset and email verification if this becomes external-user facing.
-- Add the MCP server transport and note tools on top of `ResolveBearerToken`.
+- Add the MCP server transport and page tools on top of `ResolveBearerToken`.
 - Add session cleanup for expired/revoked sessions.
 - Replace the Wasm fetch shim if Ktor exposes credential configuration in the target.
