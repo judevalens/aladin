@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -56,15 +57,15 @@ export function SourcesScreen() {
   const providerCount = new Set(sources.map((source) => source.type)).size;
 
   return (
-    <div className="flex h-full flex-col bg-aladin-canvas">
-      <div className="border-b border-aladin-divider px-6 py-5">
+    <div className="flex h-full flex-col bg-white">
+      <div className="border-b border-gray-300 px-6 py-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-2">
-            <h1 className="text-3xl font-semibold tracking-[-0.04em] text-aladin-ink">
-              Live inputs
+            <h1 className="text-2xl font-semibold text-black">
+              Sources
             </h1>
-            <p className="max-w-3xl text-sm leading-6 text-aladin-ink-secondary">
-              A workspace-level index of the feeds and searches currently bringing in new material.
+            <p className="max-w-3xl text-sm leading-6 text-gray-700">
+              Streams and connected services that feed new material into this workspace.
             </p>
           </div>
           <div className="flex gap-2">
@@ -84,13 +85,13 @@ export function SourcesScreen() {
 
       <ScrollArea className="min-h-0 flex-1 px-6 py-6">
         {sourcesQuery.isLoading ? (
-          <p className="text-sm text-aladin-ink-secondary">Loading sources…</p>
+          <p className="text-sm text-gray-700">Loading sources…</p>
         ) : sources.length === 0 ? (
-          <div className="flex items-center justify-between rounded-sharp border border-aladin-border bg-aladin-panel p-5">
+          <div className="flex items-center justify-between border border-gray-300 bg-white p-5">
             <div className="space-y-1">
-              <h2 className="text-xl font-semibold text-aladin-ink">No live streams yet</h2>
-              <p className="text-sm leading-6 text-aladin-ink-muted">
-                Add a Bluesky search stream to start feeding the global record pipeline.
+              <h2 className="text-xl font-semibold text-black">No live streams yet</h2>
+              <p className="text-sm leading-6 text-gray-500">
+                Add a source to start bringing new material into the workspace.
               </p>
             </div>
             <Button onClick={() => setAddOpen(true)}>+ Add Stream</Button>
@@ -100,17 +101,17 @@ export function SourcesScreen() {
             {sources.map((source) => (
               <button
                 key={source.id}
-                className="min-h-[188px] rounded-sharp border border-aladin-border bg-aladin-panel p-4 text-left transition-colors hover:bg-aladin-row-hover"
+                className="min-h-[188px] border border-gray-300 bg-white p-4 text-left transition-colors hover:bg-gray-100"
                 onClick={() => setSelectedSource(source)}
                 type="button"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="space-y-1.5">
-                    <div className="inline-flex items-center gap-2 rounded-full border border-aladin-divider bg-aladin-panel-muted px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-aladin-code-text">
+                    <div className="inline-flex items-center gap-2 border border-gray-300 bg-gray-50 px-2.5 py-1 text-xs text-gray-500">
                       {providerLabel(source)}
                     </div>
-                    <h3 className="text-lg font-semibold text-aladin-ink">{source.name}</h3>
-                    <p className="text-sm leading-6 text-aladin-ink-secondary">
+                    <h3 className="text-lg font-semibold text-black">{source.name}</h3>
+                    <p className="text-sm leading-6 text-gray-700">
                       {descriptionLine(source)}
                     </p>
                   </div>
@@ -120,7 +121,7 @@ export function SourcesScreen() {
                   <Pill>{healthLabel(source)}</Pill>
                   <Pill>{lastRefreshSummary(source)}</Pill>
                 </div>
-                <div className="mt-6 inline-flex items-center gap-2 text-sm font-medium text-aladin-code-text">
+                <div className="mt-6 inline-flex items-center gap-2 text-sm font-medium text-gray-600">
                   View details
                   <ArrowUpRight className="h-4 w-4" />
                 </div>
@@ -167,12 +168,12 @@ export function SourcesScreen() {
 
 function MetricCard({ label, value, description }: { label: string; value: string; description: string }) {
   return (
-    <div className="space-y-1 rounded-sharp border border-aladin-divider bg-aladin-panel px-4 py-4">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-aladin-code-text">
+    <div className="space-y-1 border border-gray-300 bg-white px-4 py-4">
+      <div className="text-xs text-gray-500">
         {label}
       </div>
-      <div className="text-2xl font-semibold text-aladin-ink">{value}</div>
-      <div className="text-sm leading-6 text-aladin-ink-muted">{description}</div>
+      <div className="text-2xl font-semibold text-black">{value}</div>
+      <div className="text-sm leading-6 text-gray-500">{description}</div>
     </div>
   );
 }
@@ -188,7 +189,7 @@ function FreshnessBadge({ source }: { source: Source }) {
 
 function Pill({ children }: { children: ReactNode }) {
   return (
-    <div className="rounded-full border border-aladin-divider bg-aladin-panel-muted px-2.5 py-1 text-xs text-aladin-ink-secondary">
+    <div className="border border-gray-300 bg-white px-2.5 py-1 text-xs text-gray-700">
       {children}
     </div>
   );
@@ -233,22 +234,20 @@ function AddStreamDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[min(92vw,640px)]">
         <DialogHeader>
-          <DialogTitle>Provider stream subscription</DialogTitle>
-          <DialogDescription>
-            The current backend supports a Bluesky search stream here. Keep the spike aligned with the existing source contract.
-          </DialogDescription>
+          <DialogTitle>Add source</DialogTitle>
+          <DialogDescription>Create a new search stream for this workspace.</DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 px-6">
+        <DialogBody className="space-y-4 pb-4">
           <div className="space-y-2">
-            <label className="text-xs font-semibold uppercase tracking-[0.2em] text-aladin-code-text">
+            <label className="text-xs text-gray-500">
               Provider
             </label>
-            <div className="rounded-control border border-aladin-border bg-aladin-panel-muted px-3 py-2 text-sm text-aladin-ink">
+            <div className="border border-gray-300 bg-white px-3 py-2 text-sm text-black">
               Bluesky search
             </div>
           </div>
           <div className="space-y-2">
-            <label className="text-xs font-semibold uppercase tracking-[0.2em] text-aladin-code-text">
+            <label className="text-xs text-gray-500">
               Query
             </label>
             <Input
@@ -259,7 +258,7 @@ function AddStreamDialog({
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <label className="text-xs font-semibold uppercase tracking-[0.2em] text-aladin-code-text">
+              <label className="text-xs text-gray-500">
                 Display title
               </label>
               <Input
@@ -269,18 +268,18 @@ function AddStreamDialog({
               />
             </div>
             <div className="space-y-2">
-              <label className="text-xs font-semibold uppercase tracking-[0.2em] text-aladin-code-text">
+              <label className="text-xs text-gray-500">
                 Limit
               </label>
               <Input value={limit} onChange={(event) => setLimit(event.target.value)} />
             </div>
           </div>
           {errorMessage ? (
-            <div className="rounded-control border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <div className="border border-gray-300 bg-white px-3 py-2 text-sm text-black">
               {errorMessage}
             </div>
           ) : null}
-        </div>
+        </DialogBody>
         <DialogFooter>
           <Button variant="secondary" onClick={() => onOpenChange(false)}>
             Cancel
@@ -370,22 +369,23 @@ function IntegrationsDialog({
         <DialogHeader>
           <DialogTitle>Integrations</DialogTitle>
           <DialogDescription>
-            Manage third-party account connections and create MCP bearer tokens for local agents.
+            Manage connected accounts and local agent access.
           </DialogDescription>
         </DialogHeader>
-        <Tabs defaultValue="connected" className="px-6 pb-6">
+        <DialogBody className="pb-0">
+          <Tabs defaultValue="connected" className="flex min-h-0 flex-1 flex-col pb-6">
           <TabsList>
             <TabsTrigger value="connected">Connected Accounts</TabsTrigger>
             <TabsTrigger value="tokens">Agent Access</TabsTrigger>
           </TabsList>
           <TabsContent value="connected" className="mt-4">
-            <div className="grid min-h-[520px] gap-0 rounded-sharp border border-aladin-divider bg-aladin-panel lg:grid-cols-[1.2fr_0.8fr]">
-              <div className="border-b border-aladin-divider p-5 lg:border-b-0 lg:border-r">
+            <div className="grid min-h-[520px] gap-0 border border-gray-300 bg-white lg:grid-cols-[1.2fr_0.8fr]">
+              <div className="border-b border-gray-300 p-5 lg:border-b-0 lg:border-r">
                 <div className="mb-4 space-y-1">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-aladin-code-text">
+                  <div className="text-xs text-gray-500">
                     Available now
                   </div>
-                  <p className="text-sm text-aladin-ink-muted">
+                  <p className="text-sm text-gray-500">
                     Configured providers you can connect or manage.
                   </p>
                 </div>
@@ -394,12 +394,12 @@ function IntegrationsDialog({
                     <button
                       key={provider.provider}
                       className={cn(
-                        "min-h-[150px] rounded-sharp border p-4 text-left transition-colors",
+                        "min-h-[150px] border p-4 text-left transition-colors",
                         provider.provider === selectedProvider?.provider
-                          ? "border-aladin-ink bg-aladin-ink-surface text-aladin-onInkSurface"
+                          ? "border-black bg-black text-white"
                           : provider.available || provider.connected
-                            ? "border-aladin-border bg-aladin-panel text-aladin-ink hover:bg-aladin-row-hover"
-                            : "border-aladin-divider bg-aladin-panel-muted text-aladin-ink-muted",
+                            ? "border-gray-300 bg-white text-black hover:bg-gray-100"
+                            : "border-gray-300 bg-gray-50 text-gray-500",
                       )}
                       onClick={() => setSelectedProviderId(provider.provider)}
                       type="button"
@@ -415,7 +415,7 @@ function IntegrationsDialog({
                           {provider.connected ? "Connected" : provider.available ? "Available" : "Later"}
                         </Badge>
                       </div>
-                      <div className="mt-5 text-[11px] font-semibold uppercase tracking-[0.22em] opacity-70">
+                      <div className="mt-5 text-xs text-gray-500">
                         {provider.category || provider.backend}
                       </div>
                     </button>
@@ -427,15 +427,15 @@ function IntegrationsDialog({
                 {selectedProvider ? (
                   <div className="flex h-full flex-col gap-5">
                     <div className="space-y-2">
-                      <h3 className="text-2xl font-semibold tracking-[-0.03em] text-aladin-ink">
+                      <h3 className="text-2xl font-semibold text-black">
                         {selectedProvider.label}
                       </h3>
-                      <p className="text-sm leading-6 text-aladin-ink-secondary">
+                      <p className="text-sm leading-6 text-gray-700">
                         {selectedProvider.connected
-                          ? "This account is already connected. Use disconnect to remove the local connection reference."
+                          ? "This account is already connected."
                           : selectedProvider.available
-                            ? "Aladin creates a Nango Connect session. Nango owns provider credentials and refresh."
-                            : "This provider is visible in the catalog, but no local provider config is enabled yet."}
+                            ? "Start a new connection for this provider."
+                            : "This provider is visible here, but not available yet."}
                       </p>
                     </div>
 
@@ -449,10 +449,10 @@ function IntegrationsDialog({
 
                     {selectedProvider.grantedScopes.length > 0 ? (
                       <div className="space-y-2">
-                        <div className="text-xs font-semibold uppercase tracking-[0.2em] text-aladin-code-text">
+                        <div className="text-xs text-gray-500">
                           Granted scopes
                         </div>
-                        <p className="text-sm text-aladin-ink-secondary">
+                        <p className="text-sm text-gray-700">
                           {selectedProvider.grantedScopes.join(", ")}
                         </p>
                       </div>
@@ -490,26 +490,26 @@ function IntegrationsDialog({
                     </div>
                   </div>
                 ) : (
-                  <p className="text-sm text-aladin-ink-muted">No provider catalog available.</p>
+                  <p className="text-sm text-gray-500">No provider catalog available.</p>
                 )}
               </div>
             </div>
           </TabsContent>
           <TabsContent value="tokens" className="mt-4">
-            <div className="grid min-h-[520px] gap-0 rounded-sharp border border-aladin-divider bg-aladin-panel lg:grid-cols-[1.1fr_0.9fr]">
-              <div className="border-b border-aladin-divider p-5 lg:border-b-0 lg:border-r">
+            <div className="grid min-h-[520px] gap-0 border border-gray-300 bg-white lg:grid-cols-[1.1fr_0.9fr]">
+              <div className="border-b border-gray-300 p-5 lg:border-b-0 lg:border-r">
                 <div className="mb-4 space-y-1">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-aladin-code-text">
+                  <div className="text-xs text-gray-500">
                     Agent tokens
                   </div>
-                  <p className="text-sm text-aladin-ink-muted">
-                    DB-backed bearer tokens for MCP clients and local agents.
+                  <p className="text-sm text-gray-500">
+                    Bearer tokens for local MCP clients and agents.
                   </p>
                 </div>
                 <ScrollArea className="h-[420px] pr-4">
                   <div className="space-y-0">
                     {(tokensQuery.data ?? []).length === 0 ? (
-                      <div className="rounded-sharp border border-dashed border-aladin-border bg-aladin-panel-muted p-4 text-sm text-aladin-ink-muted">
+                      <div className="border border-dashed border-gray-300 bg-white p-4 text-sm text-gray-500">
                         No agent tokens yet.
                       </div>
                     ) : (
@@ -527,21 +527,21 @@ function IntegrationsDialog({
               </div>
               <div className="space-y-4 p-5">
                 <div className="space-y-1">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-aladin-code-text">
+                  <div className="text-xs text-gray-500">
                     MCP setup
                   </div>
-                  <p className="text-sm text-aladin-ink-muted">
-                    Create a bearer token for the local MCP server.
+                  <p className="text-sm text-gray-500">
+                    Create a token for the local MCP server.
                   </p>
                 </div>
-                <div className="rounded-sharp border border-aladin-divider bg-aladin-panel-muted p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.2em] text-aladin-code-text">
+                <div className="border border-gray-300 bg-white p-4">
+                  <div className="text-xs text-gray-500">
                     Endpoint
                   </div>
-                  <div className="mt-2 font-mono text-sm text-aladin-code-text">http://localhost:8090/mcp</div>
+                  <div className="mt-2 font-mono text-sm text-gray-600">http://localhost:8090/mcp</div>
                 </div>
-                <div className="rounded-sharp border border-aladin-divider bg-aladin-panel-muted p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.2em] text-aladin-code-text">
+                <div className="border border-gray-300 bg-white p-4">
+                  <div className="text-xs text-gray-500">
                     Recommended scopes
                   </div>
                   <div className="mt-2 flex flex-wrap gap-2">
@@ -550,7 +550,7 @@ function IntegrationsDialog({
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-semibold uppercase tracking-[0.2em] text-aladin-code-text">
+                  <label className="text-xs text-gray-500">
                     Token name
                   </label>
                   <Input value={tokenName} onChange={(event) => setTokenName(event.target.value)} />
@@ -563,14 +563,14 @@ function IntegrationsDialog({
                   {tokenCreateMutation.isPending ? "Creating…" : "Create MCP Token"}
                 </Button>
                 {createdToken ? (
-                  <div className="space-y-3 rounded-sharp border border-aladin-ink bg-aladin-command-surface p-4">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-aladin-code-text">
+                  <div className="space-y-3 border border-gray-300 bg-white p-4">
+                    <div className="text-xs text-gray-500">
                       One-time token reveal
                     </div>
-                    <div className="text-sm text-aladin-ink-secondary">
+                    <div className="text-sm text-gray-700">
                       Copy this now. It will not be shown again.
                     </div>
-                    <pre className="overflow-auto rounded-control border border-aladin-divider bg-aladin-panel p-3 text-xs text-aladin-code-text">
+                    <pre className="overflow-auto border border-gray-300 bg-white p-3 text-xs text-gray-600">
                       {createdToken}
                     </pre>
                   </div>
@@ -578,7 +578,8 @@ function IntegrationsDialog({
               </div>
             </div>
           </TabsContent>
-        </Tabs>
+          </Tabs>
+        </DialogBody>
       </DialogContent>
     </Dialog>
   );
@@ -594,17 +595,17 @@ function IntegrationTokenRow({
   onRevoke: () => void;
 }) {
   return (
-    <div className="border-b border-aladin-divider py-4 last:border-b-0">
+    <div className="border-b border-gray-300 py-4 last:border-b-0">
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
-            <div className="font-semibold text-aladin-ink">{token.name}</div>
+            <div className="font-semibold text-black">{token.name}</div>
             <Badge variant={token.status === "active" ? "default" : "muted"}>
               {token.status}
             </Badge>
           </div>
-          <div className="text-sm text-aladin-ink-secondary">{token.scopes.join(", ") || "No scopes"}</div>
-          <div className="text-sm text-aladin-ink-muted">
+          <div className="text-sm text-gray-700">{token.scopes.join(", ") || "No scopes"}</div>
+          <div className="text-sm text-gray-500">
             Created {formatHumanDate(token.createdAt)} · Last used {formatHumanDate(token.lastUsedAt)} · Expires {formatHumanDate(token.expiresAt)}
           </div>
         </div>
@@ -644,7 +645,7 @@ function SourceDetailsDialog({
               <DialogTitle>{source.name}</DialogTitle>
               <DialogDescription>{descriptionLine(source)}</DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 px-6">
+            <DialogBody className="space-y-4 pb-4">
               <div className="flex flex-wrap gap-2">
                 <FreshnessBadge source={source} />
                 <Pill>{healthLabel(source)}</Pill>
@@ -656,8 +657,8 @@ function SourceDetailsDialog({
                 <FactCard label="Sync mode" value={titleCase(source.syncMode)} />
                 <FactCard label="Last synced" value={formatRelativeTime(source.lastSyncedAt)} />
               </div>
-              <div className="rounded-sharp border border-aladin-divider bg-aladin-panel-muted p-4">
-                <div className="text-xs font-semibold uppercase tracking-[0.2em] text-aladin-code-text">
+              <div className="border border-gray-300 bg-white p-4">
+                <div className="text-xs text-gray-500">
                   Config snapshot
                 </div>
                 <Textarea
@@ -666,7 +667,7 @@ function SourceDetailsDialog({
                   value={JSON.stringify(source.config, null, 2)}
                 />
               </div>
-            </div>
+            </DialogBody>
             <DialogFooter>
               <Button
                 variant="destructive"
@@ -686,9 +687,9 @@ function SourceDetailsDialog({
 
 function FactCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-sharp border border-aladin-divider bg-aladin-panel p-4">
-      <div className="text-xs font-semibold uppercase tracking-[0.2em] text-aladin-code-text">{label}</div>
-      <div className="mt-2 text-sm text-aladin-ink-secondary">{value}</div>
+    <div className="border border-gray-300 bg-white p-4">
+      <div className="text-xs text-gray-500">{label}</div>
+      <div className="mt-2 text-sm text-gray-700">{value}</div>
     </div>
   );
 }

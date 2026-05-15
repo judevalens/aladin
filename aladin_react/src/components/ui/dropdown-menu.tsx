@@ -1,5 +1,4 @@
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
-import { Check, ChevronRight } from "lucide-react";
 import * as React from "react";
 import { cn } from "@/shared/lib/utils";
 
@@ -18,7 +17,7 @@ export const DropdownMenuContent = React.forwardRef<
       ref={ref}
       sideOffset={sideOffset}
       className={cn(
-        "z-50 min-w-[12rem] overflow-hidden rounded-control border border-aladin-border bg-aladin-panel p-1 text-aladin-ink shadow-panel",
+        "z-50 min-w-[12rem] overflow-hidden border border-gray-300 bg-white p-1 text-black shadow-none",
         className,
       )}
       {...props}
@@ -34,7 +33,7 @@ export const DropdownMenuItem = React.forwardRef<
   <DropdownMenuPrimitive.Item
     ref={ref}
     className={cn(
-      "relative flex cursor-default select-none items-center rounded-sm px-3 py-2 text-sm outline-none transition-colors focus:bg-aladin-control-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+      "relative flex cursor-default select-none items-center px-3 py-2 text-sm outline-none transition-colors focus:bg-gray-100 data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
       inset && "pl-8",
       className,
     )}
@@ -46,14 +45,14 @@ DropdownMenuItem.displayName = DropdownMenuPrimitive.Item.displayName;
 export function DropdownMenuLabel({ className, inset, ...props }: React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Label> & { inset?: boolean }) {
   return (
     <DropdownMenuPrimitive.Label
-      className={cn("px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-aladin-code-text", inset && "pl-8", className)}
+      className={cn("px-3 py-2 text-xs font-medium text-gray-500", inset && "pl-8", className)}
       {...props}
     />
   );
 }
 
 export function DropdownMenuSeparator({ className, ...props }: React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Separator>) {
-  return <DropdownMenuPrimitive.Separator className={cn("-mx-1 my-1 h-px bg-aladin-divider", className)} {...props} />;
+  return <DropdownMenuPrimitive.Separator className={cn("-mx-1 my-1 h-px bg-gray-300", className)} {...props} />;
 }
 
 export const DropdownMenuSubTrigger = React.forwardRef<
@@ -63,14 +62,14 @@ export const DropdownMenuSubTrigger = React.forwardRef<
   <DropdownMenuPrimitive.SubTrigger
     ref={ref}
     className={cn(
-      "flex cursor-default select-none items-center rounded-sm px-3 py-2 text-sm outline-none focus:bg-aladin-control-hover",
+      "flex cursor-default select-none items-center px-3 py-2 text-sm outline-none focus:bg-gray-100",
       inset && "pl-8",
       className,
     )}
     {...props}
   >
     {children}
-    <ChevronRight className="ml-auto h-4 w-4" />
+    <span className="ml-auto text-gray-500">›</span>
   </DropdownMenuPrimitive.SubTrigger>
 ));
 DropdownMenuSubTrigger.displayName = DropdownMenuPrimitive.SubTrigger.displayName;
@@ -81,7 +80,7 @@ export const DropdownMenuSubContent = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DropdownMenuPrimitive.SubContent
     ref={ref}
-    className={cn("z-50 min-w-[12rem] rounded-control border border-aladin-border bg-aladin-panel p-1 shadow-panel", className)}
+    className={cn("z-50 min-w-[12rem] border border-gray-300 bg-white p-1 shadow-none", className)}
     {...props}
   />
 ));
@@ -93,13 +92,13 @@ export const DropdownMenuCheckboxItem = React.forwardRef<
 >(({ className, children, checked, ...props }, ref) => (
   <DropdownMenuPrimitive.CheckboxItem
     ref={ref}
-    className={cn("relative flex select-none items-center rounded-sm py-2 pl-8 pr-3 text-sm outline-none focus:bg-aladin-control-hover", className)}
+    className={cn("relative flex select-none items-center py-2 pl-8 pr-3 text-sm outline-none focus:bg-gray-100", className)}
     checked={checked}
     {...props}
   >
     <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
       <DropdownMenuPrimitive.ItemIndicator>
-        <Check className="h-4 w-4" />
+        <span className="text-xs text-black">✓</span>
       </DropdownMenuPrimitive.ItemIndicator>
     </span>
     {children}

@@ -3,8 +3,6 @@ import {
   ChevronDown,
   ChevronRight,
   Ellipsis,
-  FolderPlus,
-  NotebookText,
 } from "lucide-react";
 import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
@@ -16,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { AladinPanel, AladinToolbarField } from "@/components/ui/aladin";
+import { AladinPanel } from "@/components/ui/aladin";
 import {
   ancestorFolderIds,
   buildBrowserRows,
@@ -81,15 +79,15 @@ export function BrowserPane({ activeArtifactId }: BrowserPaneProps) {
 
   if (browserTreeQuery.isLoading) {
     return (
-      <section className="flex w-[360px] flex-col bg-aladin-canvas">
-        <div className="p-4 text-sm text-aladin-ink-secondary">Loading browser tree…</div>
+      <section className="flex w-[352px] flex-col bg-white">
+        <div className="p-4 text-sm text-gray-700">Loading browser tree…</div>
       </section>
     );
   }
 
   if (browserTreeQuery.error) {
     return (
-      <section className="flex w-[360px] flex-col bg-aladin-canvas p-4">
+      <section className="flex w-[352px] flex-col bg-white p-4">
         <AladinPanel className="p-4 text-sm text-red-700">
           {browserTreeQuery.error instanceof Error
             ? browserTreeQuery.error.message
@@ -100,9 +98,8 @@ export function BrowserPane({ activeArtifactId }: BrowserPaneProps) {
   }
 
   return (
-    <section className="flex w-[360px] flex-col bg-aladin-canvas">
-      <div className="space-y-3 border-b border-aladin-divider px-4 py-4">
-        <AladinToolbarField text="Search or jump..." />
+    <section className="flex w-[352px] flex-col bg-white">
+      <div className="space-y-3 border-b border-gray-300 px-4 py-4">
         <div className="flex items-center gap-2">
           <Button
             variant="secondary"
@@ -112,8 +109,10 @@ export function BrowserPane({ activeArtifactId }: BrowserPaneProps) {
           >
             Back
           </Button>
-          <div className="min-w-0 flex-1 truncate text-xs font-medium uppercase tracking-[0.2em] text-aladin-code-text">
-            {scopeBreadcrumbs.map((crumb) => crumb.label).join(" / ")}
+          <div className="min-w-0 flex-1 truncate text-xs text-gray-500">
+            {scopeBreadcrumbs.length > 0
+              ? scopeBreadcrumbs.map((crumb) => crumb.label).join(" / ")
+              : "All items"}
           </div>
         </div>
       </div>
@@ -126,16 +125,16 @@ export function BrowserPane({ activeArtifactId }: BrowserPaneProps) {
               <div key={row.id} className="group">
                 <div
                   className={cn(
-                    "flex items-center gap-2 rounded-control px-2 py-1.5 text-sm",
+                    "flex items-center gap-2 px-2 py-1.5 text-sm",
                     isActiveArtifact
-                      ? "bg-aladin-row-selected text-aladin-ink"
-                      : "text-aladin-ink-secondary hover:bg-aladin-row-hover hover:text-aladin-ink",
+                      ? "bg-gray-100 text-black"
+                      : "text-gray-700 hover:bg-gray-100 hover:text-black",
                   )}
                   style={{ paddingLeft: `${row.depth * 16 + 8}px` }}
                 >
                   {row.kind === "folder" ? (
                     <button
-                      className="flex h-6 w-6 items-center justify-center rounded-sm hover:bg-aladin-control-hover"
+                      className="flex h-6 w-6 items-center justify-center hover:bg-gray-100"
                       onClick={() => {
                         if (row.scopeCandidate && row.folderId) {
                           dispatch({
@@ -171,7 +170,7 @@ export function BrowserPane({ activeArtifactId }: BrowserPaneProps) {
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <button
-                        className="flex h-7 w-7 items-center justify-center rounded-sm text-aladin-ink-muted opacity-0 transition-opacity hover:bg-aladin-control-hover hover:text-aladin-ink group-hover:opacity-100"
+                        className="flex h-7 w-7 items-center justify-center text-gray-500 opacity-0 transition-opacity hover:bg-gray-100 hover:text-black group-hover:opacity-100"
                         type="button"
                       >
                         <Ellipsis className="h-4 w-4" />
@@ -193,13 +192,11 @@ export function BrowserPane({ activeArtifactId }: BrowserPaneProps) {
                               })
                             }
                           >
-                            <FolderPlus className="mr-2 h-4 w-4" />
                             Rename folder
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={() => createFolderMutation.mutate(row.folderId!)}
                           >
-                            <FolderPlus className="mr-2 h-4 w-4" />
                             New folder here
                           </DropdownMenuItem>
                           <DropdownMenuItem
@@ -210,7 +207,6 @@ export function BrowserPane({ activeArtifactId }: BrowserPaneProps) {
                               })
                             }
                           >
-                            <NotebookText className="mr-2 h-4 w-4" />
                             New note here
                           </DropdownMenuItem>
                         </>
@@ -247,8 +243,8 @@ export function BrowserPane({ activeArtifactId }: BrowserPaneProps) {
             );
           })}
           {rows.length === 0 ? (
-            <div className="px-3 py-6 text-sm text-aladin-ink-muted">
-              No rows in this scope yet.
+            <div className="px-3 py-6 text-sm text-gray-500">
+              Nothing in this section yet.
             </div>
           ) : null}
         </div>

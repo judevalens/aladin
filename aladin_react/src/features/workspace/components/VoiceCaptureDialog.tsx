@@ -1,9 +1,9 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Mic, Square, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -122,15 +122,13 @@ export function VoiceCaptureDialog() {
     >
       <DialogContent className="w-[min(92vw,640px)]">
         <DialogHeader>
-          <DialogTitle>New voice artifact</DialogTitle>
-          <DialogDescription>
-            Record in-browser, then upload the resulting audio as a voice artifact.
-          </DialogDescription>
+          <DialogTitle>New voice note</DialogTitle>
+          <DialogDescription>Record audio, review it, then save it to the workspace.</DialogDescription>
         </DialogHeader>
         {draft ? (
-          <div className="space-y-4 px-6">
+          <DialogBody className="space-y-4 pb-4">
             <div className="space-y-2">
-              <label className="text-xs font-semibold uppercase tracking-[0.2em] text-aladin-code-text">
+              <label className="text-xs text-gray-500">
                 Title
               </label>
               <Input
@@ -144,7 +142,7 @@ export function VoiceCaptureDialog() {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-xs font-semibold uppercase tracking-[0.2em] text-aladin-code-text">
+              <label className="text-xs text-gray-500">
                 Notes
               </label>
               <Textarea
@@ -158,27 +156,27 @@ export function VoiceCaptureDialog() {
               />
             </div>
 
-            <div className="rounded-sharp border border-aladin-border bg-aladin-panel-muted p-4">
+            <div className="border border-gray-300 bg-white p-4">
               {draft.phase === "recording" ? (
-                <div className="flex items-center gap-3 text-sm text-aladin-ink-secondary">
+                <div className="flex items-center gap-3 text-sm text-gray-700">
                   <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
                   Recording in progress…
                 </div>
               ) : draft.audioUrl ? (
                 <audio className="w-full" controls src={draft.audioUrl} />
               ) : (
-                <p className="text-sm text-aladin-ink-muted">
+                <p className="text-sm text-gray-500">
                   No audio captured yet. Start recording to create a preview.
                 </p>
               )}
             </div>
 
             {permissionError || draft.errorMessage ? (
-              <div className="rounded-control border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
+              <div className="border border-gray-300 bg-white px-3 py-2 text-sm text-black">
                 {permissionError ?? draft.errorMessage}
               </div>
             ) : null}
-          </div>
+          </DialogBody>
         ) : null}
         <DialogFooter>
           <Button variant="secondary" onClick={() => dispatch({ type: "close-voice-draft" })}>
@@ -186,12 +184,10 @@ export function VoiceCaptureDialog() {
           </Button>
           {draft?.phase === "recording" ? (
             <Button variant="destructive" onClick={stopRecording}>
-              <Square className="h-4 w-4" />
               Stop recording
             </Button>
           ) : (
             <Button variant="secondary" onClick={startRecording}>
-              <Mic className="h-4 w-4" />
               {draft?.audioUrl ? "Record again" : "Start recording"}
             </Button>
           )}
@@ -199,8 +195,7 @@ export function VoiceCaptureDialog() {
             onClick={() => uploadMutation.mutate()}
             disabled={uploadMutation.isPending || !draft?.audioBlob}
           >
-            <Upload className="h-4 w-4" />
-            {uploadMutation.isPending ? "Saving…" : "Save voice artifact"}
+            {uploadMutation.isPending ? "Saving…" : "Save voice note"}
           </Button>
         </DialogFooter>
       </DialogContent>

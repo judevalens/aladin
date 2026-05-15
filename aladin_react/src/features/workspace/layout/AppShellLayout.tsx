@@ -1,8 +1,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { LogOut } from "lucide-react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { api } from "@/shared/api/client";
-import { sessionQueryKey, useSessionQuery } from "@/features/auth/use-session-query";
+import {
+  sessionQueryKey,
+  useSessionQuery,
+} from "@/features/auth/use-session-query";
 import { WorkspaceShellProvider } from "@/features/workspace/workspace-state";
 import { Sidebar } from "@/features/workspace/sidebar/Sidebar";
 
@@ -31,7 +33,7 @@ export function AppShellLayout() {
 
   return (
     <WorkspaceShellProvider>
-      <div className="flex h-screen bg-aladin-canvas text-aladin-ink">
+      <div className="flex h-screen bg-white text-black">
         <Sidebar
           selectedDestination={routeDestination(location.pathname)}
           userEmail={sessionQuery.data?.email ?? "signed in"}
@@ -39,17 +41,11 @@ export function AppShellLayout() {
           onLogout={() => logoutMutation.mutate()}
           logoutPending={logoutMutation.isPending}
         />
-        <div className="w-px bg-aladin-divider" />
+        <div className="w-px bg-gray-300" />
         <main className="flex min-w-0 flex-1 overflow-hidden">
           <Outlet />
         </main>
       </div>
-      {logoutMutation.isPending ? (
-        <div className="pointer-events-none fixed bottom-4 right-4 flex items-center gap-2 rounded-control border border-aladin-border bg-aladin-panel px-3 py-2 text-sm text-aladin-ink-secondary shadow-panel">
-          <LogOut className="h-4 w-4" />
-          Signing out…
-        </div>
-      ) : null}
     </WorkspaceShellProvider>
   );
 }

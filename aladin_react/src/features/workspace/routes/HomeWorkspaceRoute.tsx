@@ -14,7 +14,7 @@ export function HomeWorkspaceRoute(_props: HomeWorkspaceRouteProps) {
   return (
     <>
       <BrowserPane activeArtifactId={state.activeArtifactId} />
-      <div className="w-px bg-aladin-divider" />
+      <div className="w-px bg-gray-300" />
       <WorkPane />
       <RenameDialog />
       <VoiceCaptureDialog />

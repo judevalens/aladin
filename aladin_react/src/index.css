@@ -1,56 +1,33 @@
-@import "@blocknote/core/fonts/inter.css";
 @import "@blocknote/shadcn/style.css";
 @import "tailwindcss";
 
 @source "./**/*.{ts,tsx}";
+@source "../node_modules/@blocknote/shadcn/dist/**/*.{js,cjs}";
 
 :root {
   --background: 0 0% 100%;
-  --foreground: 36 11% 10%;
-  --card: 48 20% 99%;
-  --card-foreground: 36 11% 10%;
-  --popover: 48 20% 99%;
-  --popover-foreground: 36 11% 10%;
-  --primary: 36 11% 10%;
-  --primary-foreground: 48 27% 98%;
-  --secondary: 48 12% 95%;
-  --secondary-foreground: 36 11% 10%;
-  --muted: 48 12% 95%;
-  --muted-foreground: 50 2% 46%;
-  --accent: 48 12% 95%;
-  --accent-foreground: 36 11% 10%;
-  --destructive: 0 72% 50%;
-  --destructive-foreground: 48 27% 98%;
-  --border: 45 8% 82%;
-  --input: 45 8% 82%;
-  --ring: 36 11% 10%;
-  --radius: 0.5rem;
-
-  --aladin-canvas: #ffffff;
-  --aladin-panel: #fcfcfb;
-  --aladin-panel-muted: #f5f5f2;
-  --aladin-row-hover: #f3f3f0;
-  --aladin-row-selected: #edede9;
-  --aladin-row-selected-strong: #e2e2dc;
-  --aladin-control-hover: #f2f2ef;
-  --aladin-control-pressed: #e6e6e1;
-  --aladin-divider: #e7e7e2;
-  --aladin-border: #d8d8d2;
-  --aladin-ink: #1b1a17;
-  --aladin-ink-secondary: #4f4f4a;
-  --aladin-ink-muted: #7c7c75;
-  --aladin-ink-disabled: #b2b2aa;
-  --aladin-ink-surface: #24231f;
-  --aladin-ink-surface-hover: #1b1a17;
-  --aladin-on-ink-surface: #fafaf6;
-  --aladin-active-marker: #1b1a17;
-  --aladin-command-surface: #f5f5f2;
-  --aladin-code-text: #32322e;
+  --foreground: 0 0% 7%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 7%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 7%;
+  --primary: 0 0% 8%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 0 0% 95%;
+  --secondary-foreground: 0 0% 12%;
+  --muted: 0 0% 95%;
+  --muted-foreground: 0 0% 42%;
+  --accent: 0 0% 94%;
+  --accent-foreground: 0 0% 12%;
+  --destructive: 0 0% 16%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 0 0% 84%;
+  --input: 0 0% 84%;
+  --ring: 0 0% 10%;
+  --radius: 0.125rem;
 }
 
 @theme inline {
-  --font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
   --color-card: hsl(var(--card));
@@ -84,11 +61,11 @@ body,
 
 body {
   margin: 0;
-  background: var(--aladin-canvas);
-  color: var(--aladin-ink);
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  background: #ffffff;
+  color: #111111;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  line-height: 1.6;
 }
 
 button,
@@ -103,20 +80,6 @@ a {
   text-decoration: none;
 }
 
-.bn-container[data-color-scheme="light"] {
-  --bn-colors-editor-background: var(--aladin-panel);
-  --bn-colors-editor-text: var(--aladin-ink);
-  --bn-colors-menu-background: var(--aladin-panel);
-  --bn-colors-menu-text: var(--aladin-ink);
-  --bn-colors-tooltip-background: var(--aladin-ink-surface);
-  --bn-colors-tooltip-text: var(--aladin-on-ink-surface);
-  --bn-colors-hovered-background: var(--aladin-row-hover);
-  --bn-colors-selected-background: var(--aladin-row-selected);
-  --bn-colors-border: var(--aladin-divider);
-  --bn-border-radius: 6px;
-  --bn-font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-}
-
-.bn-container .bn-editor {
-  min-height: 420px;
+.editor-scroll {
+  scrollbar-gutter: stable;
 }

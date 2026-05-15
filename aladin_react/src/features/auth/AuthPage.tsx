@@ -1,5 +1,4 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { LoaderCircle } from "lucide-react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -51,18 +50,18 @@ export function AuthPage({ mode }: AuthPageProps) {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-aladin-canvas p-6">
-      <Card className="w-full max-w-md border-aladin-border bg-aladin-panel shadow-panel">
+    <div className="flex min-h-screen items-center justify-center bg-white p-6">
+      <Card className="w-full max-w-md border-gray-300 bg-white">
         <CardHeader className="space-y-3">
-          <div className="inline-flex h-10 w-10 items-center justify-center rounded-sharp border border-aladin-ink bg-aladin-panel text-lg font-bold text-aladin-ink">
+          <div className="inline-flex h-10 w-10 items-center justify-center border border-gray-300 bg-white text-lg font-semibold text-black">
             A
           </div>
           <div className="space-y-1">
-            <CardTitle className="text-3xl font-semibold tracking-[-0.04em] text-aladin-ink">
+            <CardTitle className="text-2xl font-semibold text-black">
               {mode === "login" ? "Welcome back" : "Create workspace access"}
             </CardTitle>
-            <CardDescription className="text-sm leading-6 text-aladin-ink-secondary">
-              Use the same cookie-backed session model as the current Aladin client.
+            <CardDescription className="text-sm leading-6 text-gray-700">
+              Sign in with your existing workspace account.
             </CardDescription>
           </div>
         </CardHeader>
@@ -75,13 +74,13 @@ export function AuthPage({ mode }: AuthPageProps) {
             }}
           >
             <div className="space-y-2">
-              <label className="text-xs font-medium uppercase tracking-[0.2em] text-aladin-code-text">
+              <label className="text-xs text-gray-500">
                 Email
               </label>
               <Input value={email} onChange={(event) => setEmail(event.target.value)} type="email" required />
             </div>
             <div className="space-y-2">
-              <label className="text-xs font-medium uppercase tracking-[0.2em] text-aladin-code-text">
+              <label className="text-xs text-gray-500">
                 Password
               </label>
               <Input
@@ -92,14 +91,14 @@ export function AuthPage({ mode }: AuthPageProps) {
               />
             </div>
             {errorMessage ? (
-              <div className="rounded-control border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
+              <div className="border border-gray-300 bg-white px-3 py-2 text-sm text-black">
                 {errorMessage}
               </div>
             ) : null}
             <Button className="w-full" disabled={authMutation.isPending}>
               {authMutation.isPending ? (
                 <>
-                  <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+                  <span className="mr-2 h-4 w-4 animate-spin rounded-full border-[1.5px] border-current border-r-transparent" />
                   {mode === "login" ? "Signing in" : "Creating account"}
                 </>
               ) : mode === "login" ? (
@@ -109,10 +108,10 @@ export function AuthPage({ mode }: AuthPageProps) {
               )}
             </Button>
           </form>
-          <div className="mt-5 text-sm text-aladin-ink-secondary">
+          <div className="mt-5 text-sm text-gray-700">
             {mode === "login" ? "Need an account?" : "Already have an account?"}{" "}
             <Link
-              className="font-medium text-aladin-ink underline underline-offset-4"
+              className="font-medium text-black underline underline-offset-4"
               to={mode === "login" ? "/register" : "/login"}
             >
               {mode === "login" ? "Register" : "Sign in"}

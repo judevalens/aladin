@@ -1,12 +1,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  AudioLines,
   Folder,
   GitGraph,
   Home,
   Network,
   LogOut,
-  NotebookText,
   Plus,
   Signal,
 } from "lucide-react";
@@ -102,14 +100,14 @@ export function Sidebar({
   };
 
   return (
-    <aside className="flex h-full w-sidebar flex-col gap-3 bg-aladin-panel-muted px-3.5 py-3.5">
-      <div className="flex h-9 items-center gap-2.5">
-        <div className="flex h-7 w-7 items-center justify-center rounded-sharp border border-aladin-ink bg-aladin-panel text-sm font-bold text-aladin-ink">
+    <aside className="flex h-full w-sidebar flex-col gap-4 bg-white px-4 py-4">
+      <div className="flex h-9 items-center gap-3">
+        <div className="flex h-7 w-7 items-center justify-center border border-gray-300 bg-white text-sm font-semibold text-black">
           A
         </div>
         <div className="space-y-0.5">
-          <div className="text-sm font-semibold text-aladin-ink">Aladin</div>
-          <div className="font-mono text-xs text-aladin-ink-muted">workspace</div>
+          <div className="text-sm font-semibold text-black">Aladin</div>
+          <div className="text-xs text-gray-500">local workspace</div>
         </div>
       </div>
 
@@ -117,34 +115,22 @@ export function Sidebar({
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="secondary" className="h-10 justify-between border-aladin-border bg-aladin-panel text-aladin-ink">
-            <span>Create</span>
+          <Button variant="secondary" className="h-10 justify-between">
+            <span>New</span>
             <Plus className="h-4 w-4" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-52">
           <DropdownMenuLabel>Create</DropdownMenuLabel>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => createFolderMutation.mutate()}>
-            <Folder className="mr-2 h-4 w-4" />
-            New folder
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => createArtifactMutation.mutate("note")}>
-            <NotebookText className="mr-2 h-4 w-4" />
-            New note
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => createArtifactMutation.mutate("link")}>
-            <Network className="mr-2 h-4 w-4" />
-            New link
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={openVoiceDraft}>
-            <AudioLines className="mr-2 h-4 w-4" />
-            New voice
-          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => createFolderMutation.mutate()}>New folder</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => createArtifactMutation.mutate("note")}>New note</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => createArtifactMutation.mutate("link")}>New link</DropdownMenuItem>
+          <DropdownMenuItem onClick={openVoiceDraft}>New voice note</DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <div className="mx-1 h-px bg-aladin-divider" />
+      <div className="mx-1 h-px bg-gray-300" />
 
       <nav className="flex flex-col gap-1">
         {navItems.map((item) => {
@@ -153,10 +139,10 @@ export function Sidebar({
           return (
             <button
               key={item.key}
-              className={`flex h-[38px] items-center gap-3 rounded-control px-3 text-sm transition-colors ${
+              className={`flex h-[38px] items-center gap-3 border px-3 text-sm transition-colors ${
                 active
-                  ? "bg-aladin-panel text-aladin-ink"
-                  : "text-aladin-ink-muted hover:bg-aladin-control-hover hover:text-aladin-ink"
+                  ? "border-gray-300 bg-white text-black"
+                  : "border-transparent text-gray-500 hover:bg-gray-100 hover:text-black"
               }`}
               onClick={() => onNavigate(item.path)}
               type="button"
@@ -168,15 +154,15 @@ export function Sidebar({
         })}
       </nav>
 
-      <div className="mt-auto space-y-2 px-2 py-1">
-        <div className="font-mono text-[11px] uppercase tracking-[0.2em] text-aladin-ink-muted">
-          signed in
+      <div className="mt-auto space-y-2 border-t border-gray-300 px-2 pt-4">
+        <div className="text-xs text-gray-500">
+          Signed in
         </div>
-        <div className="truncate text-sm text-aladin-ink-secondary">{userEmail}</div>
+        <div className="truncate text-sm text-gray-700">{userEmail}</div>
       </div>
 
       <button
-        className="flex h-[38px] items-center gap-3 rounded-control px-3 text-sm text-aladin-ink-muted transition-colors hover:bg-aladin-control-hover hover:text-aladin-ink disabled:opacity-50"
+        className="flex h-[38px] items-center gap-3 border border-transparent px-3 text-sm text-gray-500 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:text-black disabled:opacity-50"
         onClick={onLogout}
         type="button"
         disabled={logoutPending}

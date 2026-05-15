@@ -3,14 +3,14 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/shared/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-control text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap border text-sm font-medium transition-[background-color,color,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.985] disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
-        default: "bg-aladin-ink text-aladin-onInkSurface hover:bg-aladin-ink-surface-hover",
-        secondary: "border border-aladin-border bg-aladin-panel text-aladin-ink hover:bg-aladin-control-hover",
-        ghost: "text-aladin-ink-secondary hover:bg-aladin-control-hover hover:text-aladin-ink",
-        destructive: "bg-red-600 text-white hover:bg-red-700",
+        default: "bg-black text-white hover:bg-gray-800",
+        secondary: "border border-gray-300 bg-white text-black hover:bg-gray-100",
+        ghost: "text-gray-700 hover:bg-gray-100 hover:text-black",
+        destructive: "border border-black bg-black text-white hover:bg-gray-800",
       },
       size: {
         default: "h-10 px-4 py-2",

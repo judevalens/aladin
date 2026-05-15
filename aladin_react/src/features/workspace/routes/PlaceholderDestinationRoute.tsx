@@ -15,11 +15,11 @@ export function PlaceholderDestinationRoute({
 }: PlaceholderDestinationRouteProps) {
   return (
     <>
-      <section className="flex w-[360px] flex-col bg-aladin-canvas">
+      <section className="flex w-[352px] flex-col bg-white">
         <PlaceholderPane title={paneTitle} body={paneBody} className="h-full" />
       </section>
-      <div className="w-px bg-aladin-divider" />
-      <section className="flex min-w-0 flex-1 bg-aladin-canvas">
+      <div className="w-px bg-gray-300" />
+      <section className="flex min-w-0 flex-1 bg-white">
         <PlaceholderPane title={workTitle} body={workBody} className="h-full w-full" />
       </section>
     </>

@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -46,11 +47,9 @@ export function RenameDialog() {
       <DialogContent className="w-[min(92vw,520px)]">
         <DialogHeader>
           <DialogTitle>Rename {rename?.kind === "folder" ? "folder" : "artifact"}</DialogTitle>
-          <DialogDescription>
-            Keep the current browser tree structure and update the title in place.
-          </DialogDescription>
+          <DialogDescription>Update the title in place.</DialogDescription>
         </DialogHeader>
-        <div className="px-6">
+        <DialogBody className="pb-2">
           <Input
             autoFocus
             value={rename?.draftTitle ?? ""}
@@ -58,7 +57,7 @@ export function RenameDialog() {
               dispatch({ type: "set-rename-title", title: event.target.value })
             }
           />
-        </div>
+        </DialogBody>
         <DialogFooter>
           <Button variant="secondary" onClick={() => dispatch({ type: "cancel-rename" })}>
             Cancel

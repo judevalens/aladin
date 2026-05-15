@@ -17,7 +17,7 @@ function ProtectedLayout() {
 
   if (sessionQuery.isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-aladin-canvas text-sm text-aladin-ink-secondary">
+      <div className="flex min-h-screen items-center justify-center bg-white text-sm text-gray-700">
         Loading workspace…
       </div>
     );
@@ -54,9 +54,9 @@ export const router = createBrowserRouter([
             element: (
               <PlaceholderDestinationRoute
                 paneTitle="Signals"
-                paneBody="Signal stream is coming after folder and artifact flows."
+                paneBody="Signals will live here."
                 workTitle="Signals"
-                workBody="Signal triage will be wired once the first folder and artifact endpoints land."
+                workBody="Signal triage is not wired yet."
               />
             ),
           },
@@ -67,7 +67,7 @@ export const router = createBrowserRouter([
                 paneTitle="Graph"
                 paneBody="Graph will remain a workspace-wide context view."
                 workTitle="Graph"
-                workBody="Workspace-wide graph exploration will live here."
+                workBody="Workspace-wide graph exploration is not wired yet."
               />
             ),
           },
