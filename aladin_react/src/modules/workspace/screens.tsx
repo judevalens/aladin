@@ -9,14 +9,14 @@ import {
   useWorkPane,
   useWorkspaceShell,
 } from "@/modules/workspace/hooks/use-workspace";
+import { BrowserPaneView } from "@/modules/workspace/ui/browser-pane-view";
+import { RenameDialogView } from "@/modules/workspace/ui/rename-dialog-view";
+import { VoiceCaptureDialogView } from "@/modules/workspace/ui/voice-capture-dialog-view";
+import { WorkPaneView } from "@/modules/workspace/ui/work-pane-view";
 import {
-  BrowserPaneView,
   PlaceholderDestinationView,
-  RenameDialogView,
-  VoiceCaptureDialogView,
-  WorkPaneView,
   WorkspaceShellView,
-} from "@/modules/workspace/ui/workspace-views";
+} from "@/modules/workspace/ui/workspace-shell-view";
 import { PageEditorScreen } from "@/modules/pages/screens";
 
 export function WorkspaceShellLayoutScreen() {
