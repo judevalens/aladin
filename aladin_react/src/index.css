@@ -5,48 +5,60 @@
 @source "../node_modules/@blocknote/shadcn/dist/**/*.{js,cjs}";
 
 :root {
-  --background: 0 0% 100%;
-  --foreground: 0 0% 7%;
-  --card: 0 0% 100%;
-  --card-foreground: 0 0% 7%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 0 0% 7%;
-  --primary: 0 0% 8%;
-  --primary-foreground: 0 0% 100%;
-  --secondary: 0 0% 95%;
-  --secondary-foreground: 0 0% 12%;
-  --muted: 0 0% 95%;
-  --muted-foreground: 0 0% 42%;
-  --accent: 0 0% 94%;
-  --accent-foreground: 0 0% 12%;
-  --destructive: 0 0% 16%;
-  --destructive-foreground: 0 0% 100%;
-  --border: 0 0% 84%;
-  --input: 0 0% 84%;
-  --ring: 0 0% 10%;
-  --radius: 0.125rem;
+  --canvas: #f7f7f7;
+  --surface-soft: #ffffff;
+  --surface-card: #f3f3f3;
+  --surface-strong: #ebebeb;
+  --surface-dark: #202020;
+  --hairline: #e4e4e4;
+  --hairline-soft: #efefef;
+  --ink: #111111;
+  --body: #3f3f46;
+  --muted: #616161;
+  --muted-soft: #8b8b8b;
+  --on-dark: #ffffff;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --error: #ef4444;
+
+  --background: var(--canvas);
+  --foreground: var(--ink);
+  --card: var(--surface-soft);
+  --card-foreground: var(--ink);
+  --popover: #ffffff;
+  --popover-foreground: var(--ink);
+  --primary: var(--surface-dark);
+  --primary-foreground: var(--on-dark);
+  --secondary: var(--surface-card);
+  --secondary-foreground: var(--ink);
+  --accent: var(--surface-soft);
+  --accent-foreground: var(--ink);
+  --destructive: var(--surface-dark);
+  --destructive-foreground: var(--on-dark);
+  --border: var(--hairline);
+  --input: var(--hairline);
+  --ring: var(--surface-dark);
+  --radius: 0.625rem;
 }
 
 @theme inline {
-  --color-background: hsl(var(--background));
-  --color-foreground: hsl(var(--foreground));
-  --color-card: hsl(var(--card));
-  --color-card-foreground: hsl(var(--card-foreground));
-  --color-popover: hsl(var(--popover));
-  --color-popover-foreground: hsl(var(--popover-foreground));
-  --color-primary: hsl(var(--primary));
-  --color-primary-foreground: hsl(var(--primary-foreground));
-  --color-secondary: hsl(var(--secondary));
-  --color-secondary-foreground: hsl(var(--secondary-foreground));
-  --color-muted: hsl(var(--muted));
-  --color-muted-foreground: hsl(var(--muted-foreground));
-  --color-accent: hsl(var(--accent));
-  --color-accent-foreground: hsl(var(--accent-foreground));
-  --color-destructive: hsl(var(--destructive));
-  --color-destructive-foreground: hsl(var(--destructive-foreground));
-  --color-border: hsl(var(--border));
-  --color-input: hsl(var(--input));
-  --color-ring: hsl(var(--ring));
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
 }
 
 * {
@@ -61,11 +73,18 @@ body,
 
 body {
   margin: 0;
-  background: #ffffff;
-  color: #111111;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family:
+    Inter,
+    "IBM Plex Sans",
+    "Helvetica Neue",
+    Arial,
+    sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   line-height: 1.6;
+  text-rendering: optimizeLegibility;
 }
 
 button,
@@ -78,6 +97,68 @@ select {
 a {
   color: inherit;
   text-decoration: none;
+}
+
+.app-canvas {
+  background: var(--canvas);
+}
+
+.panel-soft {
+  border: 1px solid var(--hairline);
+  border-radius: 0;
+  background: var(--surface-soft);
+}
+
+.panel-white {
+  border: 1px solid var(--hairline);
+  border-radius: 0;
+  background: var(--surface-soft);
+}
+
+.hairline-divider {
+  background: var(--hairline);
+}
+
+.eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.section-title {
+  font-size: clamp(2rem, 3vw, 3.25rem);
+  font-weight: 600;
+  line-height: 1.04;
+  letter-spacing: -0.05em;
+  color: var(--ink);
+}
+
+.section-copy {
+  max-width: 42rem;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--body);
+}
+
+.metric-card {
+  border: 1px solid var(--hairline);
+  border-radius: 0;
+  background: var(--surface-soft);
+}
+
+.scrollbar-hidden {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
+
+.scroll-viewport-pad {
+  scrollbar-gutter: stable both-edges;
 }
 
 .editor-scroll {

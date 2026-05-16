@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	artifactservice "aladin/backend_v2/internal/service"
 
@@ -410,6 +411,98 @@ func TestAuthMiddlewareInjectsCurrentUser(t *testing.T) {
 	}
 }
 
+func TestAuthMiddlewareInjectsCurrentUserFromBearerSession(t *testing.T) {
+	t.Parallel()
+
+	server := NewWithDependencies(":0", app.StaticDependencies{AuthSvc: &fakeAuthService{}})
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	req.Header.Set("Authorization", "Bearer desktop-valid")
+	rec := httptest.NewRecorder()
+
+	server.httpServer.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "user@example.com") {
+		t.Fatalf("body = %s, want current user", rec.Body.String())
+	}
+}
+
+func TestDesktopAuthLoginReturnsBearerSession(t *testing.T) {
+	t.Parallel()
+
+	server := NewWithDependencies(":0", app.StaticDependencies{
+		AuthSvc: &fakeAuthService{
+			loginSession: artifactservice.AuthSession{
+				User:      artifactservice.CurrentUser{ID: "desktop-user", Email: "desktop@example.com"},
+				Token:     "desktop-token",
+				ExpiresAt: mustTime(t, "2026-06-01T00:00:00Z"),
+			},
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/desktop/login", strings.NewReader(`{"email":"desktop@example.com","password":"password123"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	server.httpServer.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if rec.Header().Get("Set-Cookie") != "" {
+		t.Fatalf("set-cookie = %q, want no cookie for desktop auth", rec.Header().Get("Set-Cookie"))
+	}
+	if !strings.Contains(rec.Body.String(), `"token":"desktop-token"`) {
+		t.Fatalf("body = %s, want desktop token", rec.Body.String())
+	}
+}
+
+func TestDesktopAuthRegisterReturnsBearerSession(t *testing.T) {
+	t.Parallel()
+
+	server := NewWithDependencies(":0", app.StaticDependencies{
+		AuthSvc: &fakeAuthService{
+			registerSession: artifactservice.AuthSession{
+				User:      artifactservice.CurrentUser{ID: "desktop-user", Email: "desktop@example.com"},
+				Token:     "desktop-register-token",
+				ExpiresAt: mustTime(t, "2026-06-01T00:00:00Z"),
+			},
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/desktop/register", strings.NewReader(`{"email":"desktop@example.com","password":"password123"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	server.httpServer.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"token":"desktop-register-token"`) {
+		t.Fatalf("body = %s, want desktop token", rec.Body.String())
+	}
+}
+
+func TestAuthLogoutRevokesBearerSession(t *testing.T) {
+	t.Parallel()
+
+	auth := &fakeAuthService{}
+	server := NewWithDependencies(":0", app.StaticDependencies{AuthSvc: auth})
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
+	req.Header.Set("Authorization", "Bearer desktop-valid")
+	rec := httptest.NewRecorder()
+
+	server.httpServer.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if auth.logoutToken != "desktop-valid" {
+		t.Fatalf("logout token = %q, want desktop-valid", auth.logoutToken)
+	}
+}
+
 func TestIntegrationTokensCreate(t *testing.T) {
 	t.Parallel()
 
@@ -643,7 +736,11 @@ type fakeFileService struct {
 	err         error
 }
 
-type fakeAuthService struct{}
+type fakeAuthService struct {
+	loginSession    artifactservice.AuthSession
+	registerSession artifactservice.AuthSession
+	logoutToken     string
+}
 
 type fakeProviderConnectionService struct {
 	providers        []artifactservice.ProviderDescriptor
@@ -656,14 +753,25 @@ type fakeProviderConnectionService struct {
 }
 
 func (f *fakeAuthService) Register(context.Context, artifactservice.AuthCredentials, string) (artifactservice.AuthSession, error) {
-	return artifactservice.AuthSession{}, nil
+	if f.registerSession.User.ID != "" {
+		return f.registerSession, nil
+	}
+	return artifactservice.AuthSession{
+		User: artifactservice.CurrentUser{ID: "user-registered", Email: "registered@example.com"},
+	}, nil
 }
 
 func (f *fakeAuthService) Login(context.Context, artifactservice.AuthCredentials, string) (artifactservice.AuthSession, error) {
-	return artifactservice.AuthSession{}, nil
+	if f.loginSession.User.ID != "" {
+		return f.loginSession, nil
+	}
+	return artifactservice.AuthSession{
+		User: artifactservice.CurrentUser{ID: "user-1", Email: "user@example.com"},
+	}, nil
 }
 
-func (f *fakeAuthService) Logout(context.Context, string) error {
+func (f *fakeAuthService) Logout(_ context.Context, token string) error {
+	f.logoutToken = token
 	return nil
 }
 
@@ -701,7 +809,15 @@ func (f *fakeAuthService) RevokeIntegrationToken(context.Context, string) error 
 	return nil
 }
 
-func (f *fakeAuthService) ResolveBearerToken(context.Context, string) (artifactservice.Principal, error) {
+func (f *fakeAuthService) ResolveBearerToken(_ context.Context, token string) (artifactservice.Principal, error) {
+	if token == "desktop-valid" {
+		return artifactservice.Principal{
+			UserID:    "user-1",
+			ActorType: artifactservice.ActorTypeUserSession,
+			ActorID:   "user-1",
+			Email:     "user@example.com",
+		}, nil
+	}
 	return artifactservice.Principal{}, artifactservice.ErrUnauthenticated
 }
 
@@ -735,6 +851,16 @@ func (f *fakeProviderConnectionService) HandleNangoWebhook(_ context.Context, in
 	f.webhookBody = input.RawBody
 	f.webhookSignature = input.Signature
 	return nil
+}
+
+func mustTime(t *testing.T, value string) time.Time {
+	t.Helper()
+
+	parsed, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		t.Fatalf("time.Parse(%q): %v", value, err)
+	}
+	return parsed
 }
 
 func (f *fakePageService) Get(context.Context, string) (artifactservice.PageDocument, error) {

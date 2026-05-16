@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { BrowserTreeNode } from "@/shared/api/models";
 import {
-  ancestorFolderIdsForArtifact,
+  ancestorFolderIds,
   buildBrowserRows,
   nextArtifactTitle,
   nextFolderTitle,
-} from "@/features/workspace/browser-tree";
+} from "@/modules/workspace/domain";
 
 const tree: BrowserTreeNode[] = [
   {
@@ -42,8 +42,8 @@ describe("browser tree helpers", () => {
     expect(rows.map((row) => row.title)).toEqual(["Root", "Existing", "Nested"]);
   });
 
-  it("derives ancestor folder ids for artifact lookup", () => {
-    expect(ancestorFolderIdsForArtifact(tree, "artifact-1")).toEqual(["folder-root"]);
+  it("derives ancestor folder ids for a scoped folder", () => {
+    expect(ancestorFolderIds(tree, "folder-nested")).toEqual(["folder-root", "folder-nested"]);
   });
 
   it("increments generated titles inside a folder scope", () => {

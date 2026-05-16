@@ -10,6 +10,8 @@ export interface AuthUser {
 
 export interface AuthResponse {
   user: AuthUser;
+  token?: string;
+  expiresAt?: string | null;
 }
 
 export interface IntegrationToken {

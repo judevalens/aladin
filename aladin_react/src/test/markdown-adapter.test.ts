@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   exportEditorToMarkdown,
   loadMarkdownIntoEditor,
-} from "@/features/pages/markdown-adapter";
+} from "@/modules/pages/editor/markdown-adapter";
 
 describe("markdown adapter", () => {
   it("loads markdown into BlockNote and exports it back", async () => {

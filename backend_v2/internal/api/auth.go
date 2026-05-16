@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	coreservice "aladin/backend_v2/internal/service"
@@ -11,6 +12,8 @@ import (
 func (s *Server) registerAuthRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/auth/register", s.handleAuthRegister)
 	mux.HandleFunc("POST /api/auth/login", s.handleAuthLogin)
+	mux.HandleFunc("POST /api/auth/desktop/register", s.handleDesktopAuthRegister)
+	mux.HandleFunc("POST /api/auth/desktop/login", s.handleDesktopAuthLogin)
 	mux.HandleFunc("POST /api/auth/logout", s.handleAuthLogout)
 	mux.HandleFunc("GET /api/auth/me", s.handleAuthMe)
 	mux.HandleFunc("GET /api/integration-tokens", s.handleIntegrationTokensList)
@@ -25,6 +28,12 @@ type authRequest struct {
 
 type authResponse struct {
 	User coreservice.CurrentUser `json:"user"`
+}
+
+type desktopAuthResponse struct {
+	User      coreservice.CurrentUser `json:"user"`
+	Token     string                  `json:"token"`
+	ExpiresAt time.Time               `json:"expiresAt"`
 }
 
 type integrationTokenRequest struct {
@@ -69,10 +78,55 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, authResponse{User: session.User})
 }
 
+func (s *Server) handleDesktopAuthRegister(w http.ResponseWriter, r *http.Request) {
+	var input authRequest
+	if err := readJSON(r, &input); err != nil {
+		writeDecodeError(w, r, err)
+		return
+	}
+	session, err := s.deps.Auth().Register(r.Context(), coreservice.AuthCredentials{
+		Email:    input.Email,
+		Password: input.Password,
+	}, r.UserAgent())
+	if err != nil {
+		writeAuthError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, desktopAuthResponse{
+		User:      session.User,
+		Token:     session.Token,
+		ExpiresAt: session.ExpiresAt,
+	})
+}
+
+func (s *Server) handleDesktopAuthLogin(w http.ResponseWriter, r *http.Request) {
+	var input authRequest
+	if err := readJSON(r, &input); err != nil {
+		writeDecodeError(w, r, err)
+		return
+	}
+	session, err := s.deps.Auth().Login(r.Context(), coreservice.AuthCredentials{
+		Email:    input.Email,
+		Password: input.Password,
+	}, r.UserAgent())
+	if err != nil {
+		writeAuthError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, desktopAuthResponse{
+		User:      session.User,
+		Token:     session.Token,
+		ExpiresAt: session.ExpiresAt,
+	})
+}
+
 func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie(coreservice.SessionCookieName)
 	if err == nil {
 		_ = s.deps.Auth().Logout(r.Context(), cookie.Value)
+	}
+	if token := bearerTokenFromAuthorizationHeader(r.Header.Get("Authorization")); token != "" {
+		_ = s.deps.Auth().Logout(r.Context(), token)
 	}
 	clearSessionCookie(w, r)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -174,6 +228,14 @@ func clearSessionCookie(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 		Secure:   isSecureRequest(r),
 	})
+}
+
+func bearerTokenFromAuthorizationHeader(value string) string {
+	parts := strings.Fields(strings.TrimSpace(value))
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+		return ""
+	}
+	return parts[1]
 }
 
 func isSecureRequest(r *http.Request) bool {

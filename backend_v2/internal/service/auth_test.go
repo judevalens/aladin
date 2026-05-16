@@ -121,6 +121,26 @@ func TestResolveBearerTokenReturnsIntegrationPrincipal(t *testing.T) {
 	}
 }
 
+func TestResolveBearerTokenReturnsUserSessionPrincipal(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeAuthRepo{
+		sessionUser: CurrentUser{ID: "user-1", Email: "user@example.com"},
+	}
+	svc := NewAuthService(repo, NewPasswordHasher())
+
+	principal, err := svc.ResolveBearerToken(context.Background(), "desktop-session-token")
+	if err != nil {
+		t.Fatalf("ResolveBearerToken error: %v", err)
+	}
+	if principal.ActorType != ActorTypeUserSession || principal.ActorID != "user-1" {
+		t.Fatalf("principal = %#v, want user session actor", principal)
+	}
+	if !repo.sessionTouched {
+		t.Fatal("ResolveBearerToken did not touch session usage")
+	}
+}
+
 func TestResolveBearerTokenRejectsUnknownToken(t *testing.T) {
 	t.Parallel()
 
@@ -183,7 +203,9 @@ func TestRequireScopeHonorsIntegrationTokenScopes(t *testing.T) {
 type fakeAuthRepo struct {
 	created         IntegrationTokenRecord
 	principalRecord IntegrationTokenPrincipalRecord
+	sessionUser     CurrentUser
 	touched         bool
+	sessionTouched  bool
 }
 
 func (r *fakeAuthRepo) CreateUser(context.Context, string, string) (CurrentUser, error) {
@@ -195,7 +217,10 @@ func (r *fakeAuthRepo) GetUserByEmail(context.Context, string) (AuthUserRecord, 
 }
 
 func (r *fakeAuthRepo) GetUserBySessionTokenHash(context.Context, string, time.Time) (CurrentUser, error) {
-	return CurrentUser{}, ErrUnauthenticated
+	if r.sessionUser.ID == "" {
+		return CurrentUser{}, ErrUnauthenticated
+	}
+	return r.sessionUser, nil
 }
 
 func (r *fakeAuthRepo) CreateSession(context.Context, AuthSessionRecord) error {
@@ -207,6 +232,7 @@ func (r *fakeAuthRepo) RevokeSession(context.Context, string) error {
 }
 
 func (r *fakeAuthRepo) TouchSession(context.Context, string) error {
+	r.sessionTouched = true
 	return nil
 }
 

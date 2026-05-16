@@ -271,6 +271,16 @@ func (s *AuthServiceImpl) ResolveBearerToken(ctx context.Context, token string) 
 		return Principal{}, ErrUnauthenticated
 	}
 	tokenHash := hashSessionToken(token)
+
+	user, err := s.repo.GetUserBySessionTokenHash(ctx, tokenHash, s.now().UTC())
+	if err == nil {
+		_ = s.repo.TouchSession(ctx, tokenHash)
+		return NewUserSessionPrincipal(user), nil
+	}
+	if err != nil && !errors.Is(err, ErrUnauthenticated) {
+		return Principal{}, err
+	}
+
 	rec, err := s.repo.GetIntegrationTokenByHash(ctx, tokenHash, s.now().UTC())
 	if err != nil {
 		return Principal{}, ErrUnauthenticated

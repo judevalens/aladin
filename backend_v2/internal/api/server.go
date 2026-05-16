@@ -171,6 +171,13 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 				return
 			}
 		}
+		if authorization := strings.TrimSpace(r.Header.Get("Authorization")); authorization != "" {
+			principal, authErr := coreservice.ResolveBearerPrincipal(r.Context(), s.deps.Auth(), authorization)
+			if authErr == nil {
+				next.ServeHTTP(w, r.WithContext(coreservice.WithPrincipal(r.Context(), principal)))
+				return
+			}
+		}
 
 		if isPublicRoute(r) {
 			next.ServeHTTP(w, r)
@@ -186,6 +193,9 @@ func isPublicRoute(r *http.Request) bool {
 		return true
 	}
 	if path == "/api/auth/register" || path == "/api/auth/login" || path == "/api/auth/logout" {
+		return true
+	}
+	if path == "/api/auth/desktop/register" || path == "/api/auth/desktop/login" {
 		return true
 	}
 	if path == "/api/provider-connections/nango/webhook" {
