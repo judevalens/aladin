@@ -12,7 +12,7 @@ Strategic anchor: [Aladin Product Vision](../docs/ALADIN_PRODUCT_VISION.md).
 
 ## Current Direction
 
-Aladin is now centered on a Kotlin/Wasm workspace shell with specialist JS surfaces mounted where browser tooling is strongest. Product logic, sync state, repositories, and orchestration stay in Kotlin and Go. React/TypeScript surfaces should remain thin rendering/input adapters.
+Aladin is now centered on the React workspace shell in `aladin_react`, with Go owning the backend, worker, MCP, and persistence layers. Frontend product work should assume React/TypeScript is the primary surface.
 
 The current foundation is shifting from a monolithic app surface toward composable workspace subsystems:
 
@@ -30,7 +30,7 @@ This roadmap replaces the older pipeline-first phase ordering with the current a
 
 Build the main desktop-style workspace shell and split the former god app surface into composed feature slices.
 
-- ✅ Kotlin/Wasm + Compose Multiplatform shell
+- ✅ React workspace shell established as the primary frontend
 - ✅ Circuit presenter entrypoint with producer-based decomposition
 - ✅ Three-pane workspace direction: app rail, browser pane, artifact/work pane
 - ✅ Sidebar producer and UI split
@@ -205,7 +205,7 @@ Keep web iteration fast, but preserve the path to a desktop app.
 
 - 💭 continue web-first development for iteration speed
 - 💭 evaluate Tauri wrapping for native desktop distribution
-- 💭 keep Kotlin/Wasm shell and JS specialist surfaces as the app architecture
+- 💭 continue consolidating product UI direction around the React shell
 - 💭 avoid moving business logic into React/Electron/Tauri layers
 
 ---

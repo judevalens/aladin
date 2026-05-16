@@ -3,10 +3,72 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useAppComposition } from "@/app/composition/app-composition";
 import { useAppStore } from "@/app/state/store";
 import { useShellSession } from "@/modules/auth/hooks/use-auth";
-import type { BrowserTreeRow } from "@/modules/workspace/domain";
+import type { BreadcrumbView, BrowserTreeRow, RenameDraft } from "@/modules/workspace/domain";
+import type { Artifact, VoiceCaptureDraft } from "@/shared/api/models";
 import { useObservableState } from "@/shared/flow/use-observable-state";
 
-export function useWorkspaceShell() {
+export type WorkspaceDestination = "home" | "folders" | "sources" | "signals" | "graph";
+
+export interface WorkspaceShellResult {
+  selectedDestination: WorkspaceDestination;
+  userEmail: string;
+  logoutPending: boolean;
+  createPending: boolean;
+  onNavigate: (path: string) => void;
+  onLogout: () => Promise<void>;
+  onCreateFolder: () => Promise<void>;
+  onCreateNote: () => Promise<void>;
+  onCreateLink: () => Promise<void>;
+  onCreateVoice: () => void;
+}
+
+export interface BrowserPaneResult {
+  loading: boolean;
+  errorMessage: string | null;
+  rows: BrowserTreeRow[];
+  breadcrumb: BreadcrumbView;
+  activeArtifactId: string | null;
+  expandedFolderIds: string[];
+  onNavigateToScope: (folderId: string | null) => void;
+  onFolderPrimaryAction: (row: BrowserTreeRow) => void;
+  onSelectFolder: (folderId: string) => void;
+  onOpenArtifact: (artifactId: string) => void;
+  onStartRenameFolder: (folderId: string, title: string) => void;
+  onStartRenameArtifact: (artifactId: string, title: string) => void;
+  onCreateFolderHere: (folderId: string) => void;
+  onCreateNoteHere: (folderId: string) => void;
+}
+
+export interface WorkPaneResult {
+  openArtifacts: Artifact[];
+  activeArtifact: Artifact | null;
+  statusPath: string[];
+  inspectorOpen: boolean;
+  onActivateArtifact: (artifactId: string) => void;
+  onCloseArtifact: (artifactId: string) => void;
+  onToggleInspector: () => void;
+}
+
+export interface RenameDialogResult {
+  rename: RenameDraft | null;
+  pending: boolean;
+  onDraftTitleChange: (title: string) => void;
+  onCancel: () => void;
+  onSave: () => Promise<void>;
+}
+
+export interface VoiceDraftResult {
+  draft: VoiceCaptureDraft | null;
+  permissionError: string | null;
+  pending: boolean;
+  onStartRecording: () => Promise<void>;
+  onStopRecording: () => void;
+  onClose: () => void;
+  onPatchDraft: (patch: Partial<VoiceCaptureDraft>) => void;
+  onSave: () => Promise<void>;
+}
+
+export function useWorkspaceShell(): WorkspaceShellResult {
   const { services } = useAppComposition();
   const location = useLocation();
   const navigate = useNavigate();
@@ -76,14 +138,13 @@ export function useWorkspaceShell() {
   };
 }
 
-export function useBrowserPane() {
+export function useBrowserPane(): BrowserPaneResult {
   const { services } = useAppComposition();
   const workspace = useAppStore((state) => state.workspace);
   const openArtifact = useAppStore((state) => state.openArtifact);
   const setFocusedFolder = useAppStore((state) => state.setFocusedFolder);
   const toggleFolder = useAppStore((state) => state.toggleFolder);
   const navigateScope = useAppStore((state) => state.navigateScope);
-  const navigateScopeBack = useAppStore((state) => state.navigateScopeBack);
   const startRename = useAppStore((state) => state.startRename);
 
   const treeLoadable = useObservableState(
@@ -101,8 +162,8 @@ export function useBrowserPane() {
     () => services.workspace.buildWorkspaceRows(tree, workspace.scopeFolderId, workspace.expandedFolderIds),
     [services.workspace, tree, workspace.scopeFolderId, workspace.expandedFolderIds],
   );
-  const scopeBreadcrumbs = useMemo(
-    () => services.workspace.buildWorkspaceBreadcrumbs(tree, workspace.scopeFolderId),
+  const breadcrumb = useMemo(
+    () => services.workspace.buildWorkspaceBreadcrumbView(tree, workspace.scopeFolderId),
     [services.workspace, tree, workspace.scopeFolderId],
   );
 
@@ -110,11 +171,12 @@ export function useBrowserPane() {
     loading: treeLoadable.status === "loading" || treeLoadable.status === "idle",
     errorMessage: treeLoadable.errorMessage,
     rows,
-    breadcrumbs: scopeBreadcrumbs,
+    breadcrumb,
     activeArtifactId: workspace.activeArtifactId,
     expandedFolderIds: workspace.expandedFolderIds,
-    canNavigateBack: workspace.scopeBackStack.length > 0,
-    onNavigateBack: navigateScopeBack,
+    onNavigateToScope: (folderId: string | null) => {
+      navigateScope(folderId, true, services.workspace.folderAncestorIds(tree, folderId));
+    },
     onFolderPrimaryAction: (row: BrowserTreeRow) => {
       if (!row.folderId) return;
       if (row.scopeCandidate) {
@@ -155,16 +217,23 @@ export function useBrowserPane() {
   };
 }
 
-export function useWorkPane() {
+export function useWorkPane(): WorkPaneResult {
   const { services } = useAppComposition();
   const openArtifactIds = useAppStore((state) => state.workspace.openArtifactIds);
   const activeArtifactId = useAppStore((state) => state.workspace.activeArtifactId);
+  const inspectorOverrides = useAppStore((state) => state.workspace.inspectorOverrides);
   const activateArtifact = useAppStore((state) => state.activateArtifact);
   const closeArtifact = useAppStore((state) => state.closeArtifact);
+  const toggleInspector = useAppStore((state) => state.toggleInspector);
 
   const artifactCache = useObservableState(
     () => services.data.workspace.observeArtifacts(),
     () => services.data.workspace.getArtifactsSnapshot(),
+    [services.data.workspace],
+  );
+  const treeLoadable = useObservableState(
+    () => services.data.workspace.observeTree(),
+    () => services.data.workspace.getTreeSnapshot(),
     [services.data.workspace],
   );
 
@@ -180,15 +249,43 @@ export function useWorkPane() {
     (activeArtifactId ? artifactCache[activeArtifactId] : null) ??
     services.workspace.resolveOpenArtifacts(openArtifacts, activeArtifactId, null);
 
+  const statusPath = useMemo(() => {
+    if (!activeArtifact) return [];
+    const folderId = activeArtifact.folderId ?? null;
+    const ancestorIds = services.workspace.folderAncestorIds(treeLoadable.data, folderId);
+    const labels = ancestorIds
+      .map((id) => findFolderTitle(treeLoadable.data, id))
+      .filter((label): label is string => label !== null);
+    return [...labels, activeArtifact.title];
+  }, [activeArtifact, services.workspace, treeLoadable.data]);
+
+  const inspectorOpen = activeArtifact ? Boolean(inspectorOverrides[activeArtifact.id]) : false;
+
   return {
     openArtifacts,
     activeArtifact,
+    statusPath,
+    inspectorOpen,
     onActivateArtifact: activateArtifact,
     onCloseArtifact: closeArtifact,
+    onToggleInspector: () => {
+      if (activeArtifact) toggleInspector(activeArtifact.id);
+    },
   };
 }
 
-export function useRenameDialog() {
+function findFolderTitle(tree: import("@/shared/api/models").BrowserTreeNode[], folderId: string): string | null {
+  for (const node of tree) {
+    if (node.kind === "folder") {
+      if (node.id === folderId) return node.title;
+      const nested = findFolderTitle(node.children, folderId);
+      if (nested !== null) return nested;
+    }
+  }
+  return null;
+}
+
+export function useRenameDialog(): RenameDialogResult {
   const { services } = useAppComposition();
   const rename = useAppStore((state) => state.workspace.activeRename);
   const setRenameTitle = useAppStore((state) => state.setRenameTitle);
@@ -217,7 +314,7 @@ export function useRenameDialog() {
   };
 }
 
-export function useVoiceDraft() {
+export function useVoiceDraft(): VoiceDraftResult {
   const { services } = useAppComposition();
   const draft = useAppStore((state) => state.workspace.activeVoiceDraft);
   const patchVoiceDraft = useAppStore((state) => state.patchVoiceDraft);

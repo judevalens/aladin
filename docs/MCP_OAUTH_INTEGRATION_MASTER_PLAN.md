@@ -191,8 +191,8 @@ Code-ready for MCP. `Principal` is implemented, API auth middleware injects brow
 cd backend_v2
 GOCACHE=/Users/judepaulemon/Documents/aladin/backend_v2/.gocache go test ./...
 
-cd aladin_ui
-./gradlew :composeApp:compileKotlinWasmJs
+cd aladin_react
+npm run build
 ```
 
 ## Milestone 2 — Integration Token Model

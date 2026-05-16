@@ -1,4 +1,4 @@
-import type { ArtifactKind, BrowserTreeNode, BreadcrumbItem, VoiceCaptureDraft } from "@/shared/api/models";
+import type { ArtifactKind, BrowserTreeNode, VoiceCaptureDraft } from "@/shared/api/models";
 
 export interface RenameDraft {
   kind: "folder" | "artifact";
@@ -86,12 +86,79 @@ export function buildBrowserRows(
   return rows;
 }
 
-export function buildFolderBreadcrumbs(tree: BrowserTreeNode[], folderId: string | null): BreadcrumbItem[] {
-  if (folderId === null) {
-    return [{ id: null, label: "Folders" }];
+export interface BreadcrumbSibling {
+  id: string;
+  label: string;
+}
+
+export interface BreadcrumbCrumb {
+  kind: "root" | "folder" | "ellipsis";
+  id: string | null;
+  label: string;
+  siblings: BreadcrumbSibling[];
+}
+
+export interface BreadcrumbView {
+  crumbs: BreadcrumbCrumb[];
+  visible: BreadcrumbCrumb[];
+  hidden: BreadcrumbCrumb[];
+}
+
+const MAX_VISIBLE_CRUMBS = 3;
+
+export function buildBreadcrumbView(tree: BrowserTreeNode[], folderId: string | null): BreadcrumbView {
+  const topLevelFolders = tree.filter((node) => node.kind === "folder");
+  const rootCrumb: BreadcrumbCrumb = {
+    kind: "root",
+    id: null,
+    label: "root",
+    siblings: topLevelFolders.map((node) => ({ id: node.id, label: node.title })),
+  };
+
+  const ancestorChain = folderId ? folderAncestors(tree, folderId) : [];
+  const folderCrumbs: BreadcrumbCrumb[] = ancestorChain.map((node) => ({
+    kind: "folder",
+    id: node.id,
+    label: node.title,
+    siblings: folderSiblings(tree, node.id).map((sibling) => ({ id: sibling.id, label: sibling.title })),
+  }));
+
+  const crumbs: BreadcrumbCrumb[] = [rootCrumb, ...folderCrumbs];
+
+  if (crumbs.length <= MAX_VISIBLE_CRUMBS) {
+    return { crumbs, visible: crumbs, hidden: [] };
   }
-  const folderPath = folderAncestors(tree, folderId);
-  return [{ id: null, label: "Folders" }, ...folderPath.map((node) => ({ id: node.id, label: node.title }))];
+
+  const hidden = crumbs.slice(1, -1);
+  const ellipsisCrumb: BreadcrumbCrumb = {
+    kind: "ellipsis",
+    id: null,
+    label: "…",
+    siblings: hidden
+      .filter((crumb) => crumb.id !== null)
+      .map((crumb) => ({ id: crumb.id as string, label: crumb.label })),
+  };
+  const visible: BreadcrumbCrumb[] = [crumbs[0], ellipsisCrumb, crumbs[crumbs.length - 1]];
+  return { crumbs, visible, hidden };
+}
+
+export function folderSiblings(tree: BrowserTreeNode[], folderId: string): BrowserTreeNode[] {
+  const parent = folderParent(tree, folderId);
+  const scope = parent ? parent.children : tree;
+  return scope.filter((node) => node.kind === "folder" && node.id !== folderId);
+}
+
+export function folderParent(tree: BrowserTreeNode[], folderId: string): BrowserTreeNode | null {
+  function visit(nodes: BrowserTreeNode[], parent: BrowserTreeNode | null): BrowserTreeNode | null {
+    for (const node of nodes) {
+      if (node.kind !== "folder") continue;
+      if (node.id === folderId) return parent;
+      const found = visit(node.children, node);
+      if (found !== null) return found;
+    }
+    return null;
+  }
+  return visit(tree, null);
 }
 
 export function folderAncestors(tree: BrowserTreeNode[], folderId: string): BrowserTreeNode[] {

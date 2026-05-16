@@ -1,14 +1,19 @@
 import {
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Ellipsis,
   Folder,
   GitGraph,
   Home,
+  LineChart,
   LogOut,
   Network,
   Plus,
+  Search,
   Signal,
+  SlidersHorizontal,
+  Star,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
@@ -32,7 +37,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { AladinPanel, AladinToolbarField, PlaceholderPane } from "@/components/ui/aladin";
-import type { BrowserTreeRow, RenameDraft } from "@/modules/workspace/domain";
+import type { BreadcrumbCrumb, BreadcrumbView, BrowserTreeRow, RenameDraft } from "@/modules/workspace/domain";
 import type { Artifact, VoiceCaptureDraft } from "@/shared/api/models";
 import { cn } from "@/shared/lib/utils";
 
@@ -148,15 +153,106 @@ export function WorkspaceShellView({
   );
 }
 
+function BrowserBreadcrumb({
+  breadcrumb,
+  onNavigateToScope,
+}: {
+  breadcrumb: BreadcrumbView;
+  onNavigateToScope: (folderId: string | null) => void;
+}) {
+  const parentCrumb =
+    breadcrumb.crumbs.length >= 2 ? breadcrumb.crumbs[breadcrumb.crumbs.length - 2] : null;
+  return (
+    <nav className="flex min-w-0 items-center text-[12px] text-[#78716c]">
+      {parentCrumb ? (
+        <button
+          type="button"
+          aria-label="Up one level"
+          title={`Up to ${parentCrumb.label}`}
+          onClick={() => onNavigateToScope(parentCrumb.id)}
+          className="mr-1 flex h-5 w-5 items-center justify-center rounded text-[#78716c] hover:bg-[#ebebe8] hover:text-[#0a0a0a]"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" strokeWidth={2} />
+        </button>
+      ) : null}
+      {breadcrumb.visible.map((crumb, index) => {
+        const isLast = index === breadcrumb.visible.length - 1;
+        return (
+          <div key={`${crumb.kind}-${crumb.id ?? index}`} className="flex min-w-0 items-center">
+            <BreadcrumbSegment crumb={crumb} onNavigateToScope={onNavigateToScope} isCurrent={isLast} />
+            {!isLast ? <span className="mx-1 text-[#d6d3d1]">/</span> : null}
+          </div>
+        );
+      })}
+    </nav>
+  );
+}
+
+function BreadcrumbSegment({
+  crumb,
+  onNavigateToScope,
+  isCurrent,
+}: {
+  crumb: BreadcrumbCrumb;
+  onNavigateToScope: (folderId: string | null) => void;
+  isCurrent: boolean;
+}) {
+  const hasDestinations = crumb.kind === "ellipsis" ? crumb.siblings.length > 0 : true;
+  if (!hasDestinations) {
+    return (
+      <span
+        className={cn(
+          "max-w-[14ch] truncate px-1",
+          isCurrent ? "font-medium text-[#0a0a0a]" : "text-[#78716c]",
+        )}
+      >
+        {crumb.label}
+      </span>
+    );
+  }
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            "max-w-[14ch] truncate rounded px-1 py-0.5 hover:bg-[#ebebe8] hover:text-[#0a0a0a]",
+            isCurrent ? "font-medium text-[#0a0a0a]" : "text-[#78716c]",
+          )}
+        >
+          {crumb.label}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-52">
+        {crumb.kind !== "ellipsis" && !isCurrent ? (
+          <>
+            <DropdownMenuItem onClick={() => onNavigateToScope(crumb.id)}>
+              Go to {crumb.kind === "root" ? "root" : crumb.label}
+            </DropdownMenuItem>
+            {crumb.siblings.length > 0 ? <DropdownMenuSeparator /> : null}
+          </>
+        ) : null}
+        {crumb.siblings.map((sibling) => (
+          <DropdownMenuItem key={sibling.id} onClick={() => onNavigateToScope(sibling.id)}>
+            {sibling.label}
+          </DropdownMenuItem>
+        ))}
+        {crumb.kind !== "ellipsis" && crumb.siblings.length === 0 && isCurrent ? (
+          <DropdownMenuItem disabled>No sibling folders</DropdownMenuItem>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export function BrowserPaneView({
   loading,
   errorMessage,
-  breadcrumbs,
+  breadcrumb,
   rows,
   activeArtifactId,
   expandedFolderIds,
-  canNavigateBack,
-  onNavigateBack,
+  onNavigateToScope,
   onFolderPrimaryAction,
   onSelectFolder,
   onOpenArtifact,
@@ -167,12 +263,11 @@ export function BrowserPaneView({
 }: {
   loading: boolean;
   errorMessage: string | null;
-  breadcrumbs: Array<{ id?: string | null; label: string }>;
+  breadcrumb: BreadcrumbView;
   rows: BrowserTreeRow[];
   activeArtifactId: string | null;
   expandedFolderIds: string[];
-  canNavigateBack: boolean;
-  onNavigateBack: () => void;
+  onNavigateToScope: (folderId: string | null) => void;
   onFolderPrimaryAction: (row: BrowserTreeRow) => void;
   onSelectFolder: (folderId: string) => void;
   onOpenArtifact: (artifactId: string) => void;
@@ -199,15 +294,8 @@ export function BrowserPaneView({
 
   return (
     <section className="flex w-[300px] flex-col overflow-hidden border-r border-[#e7e5e4] bg-[#fafaf9] sm:w-[332px]">
-      <div className="border-b border-[#e7e5e4] px-3 py-3">
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" disabled={!canNavigateBack} onClick={onNavigateBack} className="px-2">
-            ← Back
-          </Button>
-          <div className="min-w-0 flex-1 truncate text-[12px] text-[#78716c]">
-            {breadcrumbs.length > 0 ? breadcrumbs.map((crumb) => crumb.label).join(" / ") : "All items"}
-          </div>
-        </div>
+      <div className="border-b border-[#e7e5e4] px-3 py-2.5">
+        <BrowserBreadcrumb breadcrumb={breadcrumb} onNavigateToScope={onNavigateToScope} />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto browser-pane-scroll">
         <div className="flex flex-col gap-0.5 px-2 py-2">
@@ -303,14 +391,20 @@ export function BrowserPaneView({
 export function WorkPaneView({
   openArtifacts,
   activeArtifact,
+  statusPath,
+  inspectorOpen,
   onActivateArtifact,
   onCloseArtifact,
+  onToggleInspector,
   children,
 }: {
   openArtifacts: Artifact[];
   activeArtifact: Artifact | null;
+  statusPath: string[];
+  inspectorOpen: boolean;
   onActivateArtifact: (artifactId: string) => void;
   onCloseArtifact: (artifactId: string) => void;
+  onToggleInspector: () => void;
   children: ReactNode;
 }) {
   return (
@@ -346,8 +440,80 @@ export function WorkPaneView({
           })}
         </div>
       </div>
+      {activeArtifact ? (
+        <WorkPaneStatusBar
+          path={statusPath}
+          inspectorOpen={inspectorOpen}
+          onToggleInspector={onToggleInspector}
+        />
+      ) : null}
       <div className="min-h-0 flex-1 bg-white">{children}</div>
     </section>
+  );
+}
+
+function WorkPaneStatusBar({
+  path,
+  inspectorOpen,
+  onToggleInspector,
+}: {
+  path: string[];
+  inspectorOpen: boolean;
+  onToggleInspector: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-3 border-b border-[#e7e5e4] bg-[#fafaf9] px-3.5 py-1.5">
+      <div className="min-w-0 flex-1 truncate text-[12px] text-[#78716c]">
+        {path.length > 0 ? path.join(" / ") : ""}
+      </div>
+      <div className="flex items-center gap-0.5">
+        <StatusUtilityIcon ariaLabel="Search document" onClick={() => undefined}>
+          <Search className="h-[15px] w-[15px]" strokeWidth={1.75} />
+        </StatusUtilityIcon>
+        <StatusUtilityIcon ariaLabel="Favorite document" onClick={() => undefined}>
+          <Star className="h-[15px] w-[15px]" strokeWidth={1.75} />
+        </StatusUtilityIcon>
+        <StatusUtilityIcon ariaLabel="Open graph context" onClick={() => undefined}>
+          <LineChart className="h-[15px] w-[15px]" strokeWidth={1.75} />
+        </StatusUtilityIcon>
+        <StatusUtilityIcon
+          ariaLabel="Toggle inspector"
+          isActive={inspectorOpen}
+          onClick={onToggleInspector}
+        >
+          <SlidersHorizontal className="h-[15px] w-[15px]" strokeWidth={1.75} />
+        </StatusUtilityIcon>
+      </div>
+    </div>
+  );
+}
+
+function StatusUtilityIcon({
+  ariaLabel,
+  isActive = false,
+  onClick,
+  children,
+}: {
+  ariaLabel: string;
+  isActive?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      title={ariaLabel}
+      onClick={onClick}
+      className={cn(
+        "flex h-6 w-6 items-center justify-center rounded transition-colors",
+        isActive
+          ? "bg-[#0a0a0a] text-white hover:bg-[#1f1f1f]"
+          : "text-[#78716c] hover:bg-[#ebebe8] hover:text-[#0a0a0a]",
+      )}
+    >
+      {children}
+    </button>
   );
 }
 

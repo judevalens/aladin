@@ -94,7 +94,7 @@ The first slice focuses on workspace metadata correctness: browser tree, artifac
 - Backend tests:
   - artifact/folder/page mutation paths publish expected workspace event type and resource key.
 - Compile checks:
-  - `./gradlew :composeApp:compileKotlinWasmJs`
+  - `cd aladin_react && npm run build`
   - `go test ./...` only if backend publish code changes.
 
 ## Assumptions

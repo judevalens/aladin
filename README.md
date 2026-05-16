@@ -1,42 +1,48 @@
-This is a Kotlin Multiplatform project targeting Web.
+This repository is now centered on the React frontend in `aladin_react` and the Go backend in `backend_v2`.
 
-* [/composeApp](./composeApp/src) is for code that will be shared across your Compose Multiplatform applications.
-  It contains several subfolders:
-  - [commonMain](./composeApp/src/commonMain/kotlin) is for code that’s common for all targets.
-  - Other folders are for Kotlin code that will be compiled for only the platform indicated in the folder name.
-    For example, if you want to use Apple’s CoreCrypto for the iOS part of your Kotlin app,
-    the [iosMain](./composeApp/src/iosMain/kotlin) folder would be the right place for such calls.
-    Similarly, if you want to edit the Desktop (JVM) specific part, the [jvmMain](./composeApp/src/jvmMain/kotlin)
-    folder is the appropriate location.
+## Main App Surfaces
 
-### Build and Run Web Application
+- `aladin_react/`
+  The primary product UI. This is the frontend to use for shell, workspace, auth, sources, pages, and general product work.
+- `backend_v2/`
+  The Go API, worker, MCP server, and persistence layer.
+- `aladin_ui/`
+  Legacy Kotlin/Compose code that may still exist in the repo, but it is no longer the primary frontend direction.
 
-To build and run the development version of the web app, use the run configuration from the run widget
-in your IDE's toolbar or run it directly from the terminal:
-- for the Wasm target (faster, modern browsers):
-  - on macOS/Linux
-    ```shell
-    ./gradlew :composeApp:wasmJsBrowserDevelopmentRun
-    ```
-  - on Windows
-    ```shell
-    .\gradlew.bat :composeApp:wasmJsBrowserDevelopmentRun
-    ```
-- for the JS target (slower, supports older browsers):
-  - on macOS/Linux
-    ```shell
-    ./gradlew :composeApp:jsBrowserDevelopmentRun
-    ```
-  - on Windows
-    ```shell
-    .\gradlew.bat :composeApp:jsBrowserDevelopmentRun
-    ```
+## Common Commands
 
----
+### React frontend
 
-Learn more about [Kotlin Multiplatform](https://www.jetbrains.com/help/kotlin-multiplatform-dev/get-started.html),
-[Compose Multiplatform](https://github.com/JetBrains/compose-multiplatform/#compose-multiplatform),
-[Kotlin/Wasm](https://kotl.in/wasm/)…
+```sh
+cd aladin_react
+npm install
+npm run dev
+```
 
-We would appreciate your feedback on Compose/Web and Kotlin/Wasm in the public Slack channel [#compose-web](https://slack-chats.kotlinlang.org/c/compose-web).
-If you face any issues, please report them on [YouTrack](https://youtrack.jetbrains.com/newIssue?project=CMP).
+Other useful commands:
+
+```sh
+cd aladin_react
+npm test
+npm run build
+```
+
+### Go backend
+
+```sh
+cd backend_v2
+go run ./cmd/api
+```
+
+### Worker
+
+```sh
+cd backend_v2
+go run ./cmd/worker
+```
+
+## Current Frontend Direction
+
+- React/TypeScript is the active UI surface.
+- New frontend work should target `aladin_react` unless there is a specific reason to touch a legacy surface.
+- Docs that still mention Kotlin/Wasm or Compose should be treated as historical unless they explicitly say otherwise.

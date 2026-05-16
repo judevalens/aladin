@@ -1,8 +1,8 @@
 import type { Artifact, BrowserTreeNode, VoiceCaptureDraft } from "@/shared/api/models";
 import {
   ancestorFolderIds,
+  buildBreadcrumbView,
   buildBrowserRows,
-  buildFolderBreadcrumbs,
   initialWorkspaceShellState,
   nextArtifactTitle,
   nextFolderTitle,
@@ -60,8 +60,8 @@ export function buildWorkspaceRows(
   return buildBrowserRows(tree, scopeFolderId, expandedFolderIds);
 }
 
-export function buildWorkspaceBreadcrumbs(tree: BrowserTreeNode[], folderId: string | null) {
-  return buildFolderBreadcrumbs(tree, folderId);
+export function buildWorkspaceBreadcrumbView(tree: BrowserTreeNode[], folderId: string | null) {
+  return buildBreadcrumbView(tree, folderId);
 }
 
 export function folderAncestorIds(tree: BrowserTreeNode[], folderId: string | null) {

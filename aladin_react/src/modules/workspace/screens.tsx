@@ -50,12 +50,11 @@ export function WorkspaceRouteScreen(_props: { destination: "home" | "folders" }
       <BrowserPaneView
         loading={browser.loading}
         errorMessage={browser.errorMessage}
-        breadcrumbs={browser.breadcrumbs}
+        breadcrumb={browser.breadcrumb}
         rows={browser.rows}
         activeArtifactId={browser.activeArtifactId}
         expandedFolderIds={browser.expandedFolderIds}
-        canNavigateBack={browser.canNavigateBack}
-        onNavigateBack={browser.onNavigateBack}
+        onNavigateToScope={browser.onNavigateToScope}
         onFolderPrimaryAction={browser.onFolderPrimaryAction}
         onSelectFolder={browser.onSelectFolder}
         onOpenArtifact={browser.onOpenArtifact}
@@ -67,8 +66,11 @@ export function WorkspaceRouteScreen(_props: { destination: "home" | "folders" }
       <WorkPaneView
         openArtifacts={workPane.openArtifacts}
         activeArtifact={workPane.activeArtifact}
+        statusPath={workPane.statusPath}
+        inspectorOpen={workPane.inspectorOpen}
         onActivateArtifact={workPane.onActivateArtifact}
         onCloseArtifact={workPane.onCloseArtifact}
+        onToggleInspector={workPane.onToggleInspector}
       >
         {!workPane.activeArtifact ? (
           <PlaceholderPane

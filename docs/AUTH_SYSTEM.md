@@ -234,7 +234,7 @@ These read the current user from context and pass `user.ID` to the repository. W
 
 ## Client Flow
 
-The Compose app has a root auth gate in `CircuitApp`.
+The React app has a root auth gate in its protected routing flow.
 
 Startup flow:
 
@@ -245,7 +245,8 @@ Startup flow:
 
 Auth UI lives in:
 
-- `aladin_ui/composeApp/src/wasmJsMain/kotlin/com/jvp/aladin_compose/features/auth/AuthUi.kt`
+- `aladin_react/src/modules/auth/ui/auth-view.tsx`
+- `aladin_react/src/modules/auth/screens.tsx`
 
 API models/methods live in:
 
@@ -254,15 +255,9 @@ API models/methods live in:
 
 ## Browser Credentials
 
-Because the backend runs on `localhost:8000` and the Wasm dev server runs on a different origin, API requests must include credentials.
+Because the backend runs on `localhost:8000` and the React dev server runs on a different origin during local development, API requests must include credentials.
 
-Ktor 3.1's Wasm JS client does not expose `configureRequest` in the currently compiled target, so `HttpClientFactory.kt` installs a small fetch shim:
-
-```text
-if request credentials are undefined, set credentials = "include"
-```
-
-This keeps cookies flowing for same-machine local development. If Ktor is upgraded and the Wasm target exposes request configuration directly, replace the shim with engine-level `credentials = include`.
+The React client is configured to send browser credentials so the session cookie flows during same-machine development.
 
 ## CORS
 
@@ -308,8 +303,8 @@ Current verification commands:
 cd backend_v2
 GOCACHE=/Users/judepaulemon/Documents/aladin/backend_v2/.gocache go test ./...
 
-cd aladin_ui
-./gradlew :composeApp:compileKotlinWasmJs
+cd aladin_react
+npm run build
 ```
 
 The explicit `GOCACHE` keeps Go test artifacts inside the workspace when macOS cache permissions block sandboxed runs.
@@ -321,4 +316,4 @@ The explicit `GOCACHE` keeps Go test artifacts inside the workspace when macOS c
 - Add password reset and email verification if this becomes external-user facing.
 - Add the MCP server transport and page tools on top of `ResolveBearerToken`.
 - Add session cleanup for expired/revoked sessions.
-- Replace the Wasm fetch shim if Ktor exposes credential configuration in the target.
+- Keep auth/session behavior aligned with the React app shell as frontend work continues there.
