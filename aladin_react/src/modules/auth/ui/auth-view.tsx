@@ -28,108 +28,101 @@ export function AuthView({
   return (
     <div className="app-canvas min-h-screen">
       <div className="grid min-h-screen lg:grid-cols-[1.1fr_0.9fr]">
-        <section className="flex min-h-[320px] flex-col justify-between overflow-hidden border-b border-[#e4e4e4] px-7 py-8 sm:px-10 sm:py-10 lg:min-h-full lg:border-b-0 lg:border-r">
-          <div className="space-y-8">
-            <div className="space-y-4">
-              <div className="inline-flex h-11 w-11 items-center justify-center rounded-[12px] border border-[#d9d6cf] bg-white text-lg font-semibold text-[#111111]">
+        <section className="flex min-h-[320px] flex-col justify-between overflow-hidden border-b border-[#e7e5e4] bg-[#fafaf9] px-10 py-12 sm:px-14 sm:py-16 lg:min-h-full lg:border-b-0 lg:border-r">
+          <div className="space-y-10">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-7 w-7 items-center justify-center rounded-md bg-[#18181b] text-[12px] font-semibold text-[#fafaf9]">
                 A
               </div>
-              <div className="space-y-3">
-                <div className="eyebrow">Knowledge workspace</div>
-                <h1 className="max-w-xl text-[2.5rem] font-semibold leading-[1.02] tracking-[-0.06em] text-[#111111] sm:text-[3.5rem]">
-                  Search, shape, and keep what matters.
-                </h1>
-                <p className="section-copy">
-                  Aladin gives your workspace a calmer place to collect documents, signals, notes, and connected
-                  context without losing retrieval speed.
-                </p>
-              </div>
+              <span className="text-[13px] font-semibold tracking-[-0.01em] text-[#0a0a0a]">Aladin</span>
             </div>
 
-            <div className="grid gap-4 border-t border-[#e4e4e4] pt-6 sm:grid-cols-3">
+            <div className="space-y-5">
+              <h1 className="max-w-xl text-[2.25rem] font-semibold leading-[1.08] tracking-[-0.03em] text-[#0a0a0a] sm:text-[2.625rem]">
+                Search, shape, and keep what matters.
+              </h1>
+              <p className="max-w-lg text-[14px] leading-[1.6] text-[#57534e]">
+                A calmer place to collect documents, signals, notes, and connected context — without losing retrieval speed.
+              </p>
+            </div>
+
+            <div className="grid gap-5 sm:grid-cols-3">
               {[
-                ["Structured search", "Ranked streams, filters, and document context stay close to the work."],
-                ["Connected notes", "Pages, links, and voice capture sit inside the same workspace memory."],
-                ["Local control", "Workspace access and agent tooling remain visible and deliberate."],
+                ["Structured search", "Ranked streams, filters, and document context."],
+                ["Connected notes", "Pages, links, and voice capture in one memory."],
+                ["Local control", "Workspace access and agent tooling stay visible."],
               ].map(([title, body]) => (
-                <div key={title} className="border-l border-[#e4e4e4] pl-4">
-                  <div className="text-sm font-semibold tracking-[-0.02em] text-[#111111]">{title}</div>
-                  <p className="mt-2 text-sm leading-6 text-[#52525b]">{body}</p>
+                <div key={title} className="space-y-1.5 border-t border-[#e7e5e4] pt-3">
+                  <div className="text-[12.5px] font-semibold tracking-[-0.005em] text-[#0a0a0a]">{title}</div>
+                  <p className="text-[12px] leading-[1.5] text-[#78716c]">{body}</p>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="mt-8 border-t border-[#e4e4e4] pt-5">
-            <div className="eyebrow">Workspace access</div>
-            <p className="mt-3 max-w-lg text-sm leading-7 text-[#3f3f46]">
-              Use the same account you already use for your local workspace. This pass changes the shell tone only;
-              authentication behavior and routes remain unchanged.
-            </p>
-          </div>
+          <p className="mt-10 max-w-lg text-[12px] leading-[1.55] text-[#a8a29e]">
+            Use the same account you already use for your local workspace.
+          </p>
         </section>
 
-        <section className="flex items-center bg-white px-7 py-8 sm:px-10 sm:py-10">
-          <div className="w-full max-w-xl">
-            <div className="space-y-2 border-b border-[#e4e4e4] pb-6">
-              <div className="eyebrow">{isLogin ? "Return to workspace" : "Create account"}</div>
-              <h2 className="text-[2rem] font-semibold leading-[1.04] tracking-[-0.05em] text-[#111111]">
-                {isLogin ? "Welcome back" : "Create workspace access"}
+        <section className="flex items-center justify-center bg-white px-7 py-12 sm:px-10">
+          <div className="w-full max-w-sm">
+            <div className="space-y-2">
+              <h2 className="text-[1.5rem] font-semibold leading-tight tracking-[-0.02em] text-[#0a0a0a]">
+                {isLogin ? "Welcome back" : "Create your account"}
               </h2>
-              <p className="max-w-md text-sm leading-7 text-[#52525b]">
+              <p className="text-[13px] leading-[1.55] text-[#78716c]">
                 {isLogin
-                  ? "Sign in to continue working across your notes, sources, and connected context."
-                  : "Create an account to open a new workspace session and start collecting material."}
+                  ? "Sign in to continue."
+                  : "Open a new workspace session."}
               </p>
             </div>
-            <div className="pt-7">
-              <form
-                className="space-y-5"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  onSubmit();
-                }}
-              >
-                <div className="space-y-2">
-                  <label className="eyebrow">Email</label>
-                  <Input value={email} onChange={(event) => onEmailChange(event.target.value)} type="email" required />
-                </div>
-                <div className="space-y-2">
-                  <label className="eyebrow">Password</label>
-                  <Input
-                    value={password}
-                    onChange={(event) => onPasswordChange(event.target.value)}
-                    type="password"
-                    required
-                  />
-                </div>
-                {errorMessage ? (
-                  <div className="rounded-[12px] border border-[#111111] bg-white px-4 py-3 text-sm leading-6 text-[#111111]">
-                    {errorMessage}
-                  </div>
-                ) : null}
-                <Button className="w-full" disabled={pending}>
-                  {pending ? (
-                    <>
-                      <span className="mr-2 h-4 w-4 animate-spin rounded-full border-[1.5px] border-current border-r-transparent" />
-                      {isLogin ? "Signing in" : "Creating account"}
-                    </>
-                  ) : isLogin ? (
-                    "Sign in"
-                  ) : (
-                    "Create account"
-                  )}
-                </Button>
-              </form>
-              <div className="mt-6 text-sm leading-7 text-[#52525b]">
-                {isLogin ? "Need an account?" : "Already have an account?"}{" "}
-                <Link
-                  className="font-medium text-[#111111] underline underline-offset-4"
-                  to={isLogin ? "/register" : "/login"}
-                >
-                  {isLogin ? "Register" : "Sign in"}
-                </Link>
+            <form
+              className="mt-7 space-y-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                onSubmit();
+              }}
+            >
+              <div className="space-y-1.5">
+                <label className="text-[12px] font-medium text-[#44403c]">Email</label>
+                <Input value={email} onChange={(event) => onEmailChange(event.target.value)} type="email" required />
               </div>
+              <div className="space-y-1.5">
+                <label className="text-[12px] font-medium text-[#44403c]">Password</label>
+                <Input
+                  value={password}
+                  onChange={(event) => onPasswordChange(event.target.value)}
+                  type="password"
+                  required
+                />
+              </div>
+              {errorMessage ? (
+                <div className="rounded-md border border-[#fecaca] bg-[#fef2f2] px-3 py-2 text-[12.5px] leading-[1.5] text-[#991b1b]">
+                  {errorMessage}
+                </div>
+              ) : null}
+              <Button className="w-full" disabled={pending}>
+                {pending ? (
+                  <>
+                    <span className="mr-2 h-3.5 w-3.5 animate-spin rounded-full border-[1.5px] border-current border-r-transparent" />
+                    {isLogin ? "Signing in" : "Creating account"}
+                  </>
+                ) : isLogin ? (
+                  "Sign in"
+                ) : (
+                  "Create account"
+                )}
+              </Button>
+            </form>
+            <div className="mt-5 text-[12.5px] text-[#78716c]">
+              {isLogin ? "Need an account?" : "Already have an account?"}{" "}
+              <Link
+                className="font-medium text-[#2563eb] hover:underline underline-offset-4"
+                to={isLogin ? "/register" : "/login"}
+              >
+                {isLogin ? "Register" : "Sign in"}
+              </Link>
             </div>
           </div>
         </section>

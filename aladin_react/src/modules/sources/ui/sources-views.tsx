@@ -32,7 +32,7 @@ export function SourcesRouteView({
 }) {
   return (
     <>
-      <section className="flex w-[352px] flex-col overflow-hidden border-r border-[#e4e4e4] bg-white">
+      <section className="flex w-[352px] flex-col overflow-hidden border-r border-[#e7e5e4] bg-white">
         <PlaceholderPane
           title="Sources"
           body="Connections, streams, and agent access for this workspace."
@@ -138,26 +138,26 @@ export function SourcesScreenView({
   formatSourceFacts: (source: Source) => Array<{ label: string; value: string }>;
 }) {
   return (
-    <div className="flex h-full flex-col bg-white">
-      <div className="border-b border-[#e4e4e4] bg-white px-6 py-6">
+    <div className="flex h-full flex-col bg-[#fafaf9]">
+      <div className="border-b border-[#e7e5e4] bg-white px-8 pt-8 pb-6">
         <div className="flex flex-wrap items-start justify-between gap-5">
-          <div className="space-y-3">
-            <div className="eyebrow">Workspace ingestion</div>
-            <h1 className="max-w-3xl text-[2.3rem] font-semibold leading-[1.04] tracking-[-0.05em] text-[#111111]">
-              Keep fresh material flowing into the workspace.
+          <div className="space-y-2">
+            <div className="eyebrow">Sources</div>
+            <h1 className="max-w-2xl text-[1.625rem] font-semibold leading-[1.15] tracking-[-0.02em] text-[#0a0a0a]">
+              Keep fresh material flowing in.
             </h1>
-            <p className="section-copy max-w-3xl">
-              Manage live search streams, connected providers, and local agent access from one calm control surface.
+            <p className="max-w-2xl text-[13.5px] leading-[1.6] text-[#57534e]">
+              Manage live search streams, connected providers, and local agent access.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" onClick={onOpenIntegrations}>
+            <Button variant="secondary" size="sm" onClick={onOpenIntegrations}>
               Integrations ({connectedCount})
             </Button>
-            <Button onClick={onOpenAddStream}>Add stream</Button>
+            <Button size="sm" onClick={onOpenAddStream}>Add stream</Button>
           </div>
         </div>
-        <div className="mt-6 grid gap-0 border-t border-[#e4e4e4] md:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-7 grid gap-px overflow-hidden rounded-md border border-[#e7e5e4] bg-[#e7e5e4] md:grid-cols-2 xl:grid-cols-4">
           {metrics.map((metric) => (
             <MetricCard
               key={metric.label}
@@ -171,48 +171,47 @@ export function SourcesScreenView({
 
       <ScrollArea className="min-h-0 flex-1">
         {loading ? (
-          <p className="px-6 py-6 text-sm leading-7 text-[#3f3f46]">Loading sources…</p>
+          <p className="px-8 py-6 text-[13px] text-[#78716c]">Loading sources…</p>
         ) : sources.length === 0 ? (
-          <div className="flex flex-col items-start justify-between gap-5 border-t border-[#e4e4e4] p-6 md:flex-row md:items-center">
-            <div className="space-y-2">
+          <div className="mx-8 my-6 flex flex-col items-start justify-between gap-5 rounded-md border border-dashed border-[#d6d3d1] bg-white p-6 md:flex-row md:items-center">
+            <div className="space-y-1.5">
               <div className="eyebrow">No live streams yet</div>
-              <h2 className="text-[1.65rem] font-semibold tracking-[-0.04em] text-[#111111]">
-                Bring the first stream into this workspace.
+              <h2 className="text-[1.125rem] font-semibold tracking-[-0.01em] text-[#0a0a0a]">
+                Bring in the first stream.
               </h2>
-              <p className="max-w-2xl text-sm leading-7 text-[#52525b]">
-                Add a source to start pulling new material into the workspace and keep retrieval grounded in fresh context.
+              <p className="max-w-xl text-[13px] leading-[1.6] text-[#57534e]">
+                Add a source to start pulling new material into the workspace.
               </p>
             </div>
-            <Button onClick={onOpenAddStream}>Add stream</Button>
+            <Button size="sm" onClick={onOpenAddStream}>Add stream</Button>
           </div>
         ) : (
-          <div className="grid gap-0 xl:grid-cols-2 2xl:grid-cols-3">
+          <div className="grid gap-3 p-6 md:grid-cols-2 xl:grid-cols-3">
             {sources.map((source) => (
               <button
                 key={source.id}
-                className="min-h-[220px] border-t border-[#e4e4e4] p-5 text-left transition-colors hover:bg-[#f3f3f3]"
+                className="group min-h-[176px] rounded-md border border-[#e7e5e4] bg-white p-4 text-left transition-all hover:border-[#d6d3d1] hover:shadow-[0_4px_12px_-4px_rgba(10,10,10,0.06)]"
                 onClick={() => onSelectSource(source.id)}
                 type="button"
               >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="space-y-3">
-                    <div className="inline-flex items-center gap-2 rounded-full border border-[#e4e4e4] bg-white px-3 py-1 text-xs text-[#6b7280]">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 space-y-2">
+                    <div className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-[#78716c]">
                       {providerLabel(source)}
                     </div>
-                    <div className="space-y-2">
-                      <h3 className="text-[1.25rem] font-semibold tracking-[-0.03em] text-[#111111]">{source.name}</h3>
-                      <p className="text-sm leading-7 text-[#3f3f46]">{descriptionLine(source)}</p>
+                    <div className="space-y-1">
+                      <h3 className="truncate text-[14px] font-semibold tracking-[-0.01em] text-[#0a0a0a]">{source.name}</h3>
+                      <p className="line-clamp-2 text-[12.5px] leading-[1.5] text-[#57534e]">{descriptionLine(source)}</p>
                     </div>
                   </div>
                   <Badge>{healthLabel(source)}</Badge>
                 </div>
-                <div className="mt-5 flex flex-wrap gap-2">
-                  <Pill>{healthLabel(source)}</Pill>
+                <div className="mt-4 flex flex-wrap gap-1.5">
                   <Pill>{lastRefreshSummary(source)}</Pill>
                 </div>
-                <div className="mt-8 inline-flex items-center gap-2 text-sm font-medium text-[#52525b]">
+                <div className="mt-4 inline-flex items-center gap-1 text-[12px] font-medium text-[#78716c] transition-colors group-hover:text-[#0a0a0a]">
                   View details
-                  <ArrowUpRight className="h-4 w-4" />
+                  <ArrowUpRight className="h-3.5 w-3.5" />
                 </div>
               </button>
             ))}
@@ -229,7 +228,7 @@ export function SourcesScreenView({
           <DialogBody className="space-y-5 pb-4">
             <div className="space-y-2">
               <label className="eyebrow">Provider</label>
-              <div className="rounded-[12px] border border-[#e7e5e0] bg-white px-4 py-3 text-sm text-[#111111]">
+              <div className="rounded-md border border-[#e7e5e4] bg-white px-4 py-3 text-sm text-[#0a0a0a]">
                 Bluesky search
               </div>
             </div>
@@ -256,7 +255,7 @@ export function SourcesScreenView({
               </div>
             </div>
             {streamErrorMessage ? (
-              <div className="rounded-[12px] border border-[#e7e5e0] bg-white px-4 py-3 text-sm leading-6 text-[#111111]">
+              <div className="rounded-md border border-[#e7e5e4] bg-white px-4 py-3 text-sm leading-6 text-[#0a0a0a]">
                 {streamErrorMessage}
               </div>
             ) : null}
@@ -288,11 +287,11 @@ export function SourcesScreenView({
                 <TabsTrigger value="tokens">Agent access</TabsTrigger>
               </TabsList>
               <TabsContent value="connected" className="mt-4">
-                <div className="grid min-h-[520px] gap-0 overflow-hidden rounded-[16px] border border-[#e4e4e4] bg-white lg:grid-cols-[1.2fr_0.8fr]">
-                  <div className="border-b border-[#e4e4e4] bg-white p-5 lg:border-b-0 lg:border-r">
+                <div className="grid min-h-[520px] gap-0 overflow-hidden rounded-lg border border-[#e7e5e4] bg-white lg:grid-cols-[1.2fr_0.8fr]">
+                  <div className="border-b border-[#e7e5e4] bg-white p-5 lg:border-b-0 lg:border-r">
                     <div className="mb-4 space-y-1">
                       <div className="eyebrow">Available now</div>
-                      <p className="text-sm leading-7 text-[#6b7280]">
+                      <p className="text-sm leading-7 text-[#78716c]">
                         Configured providers you can connect or manage.
                       </p>
                     </div>
@@ -301,12 +300,12 @@ export function SourcesScreenView({
                         <button
                           key={provider.provider}
                           className={cn(
-                            "rounded-[14px] border p-4 text-left transition-colors",
+                            "rounded-md border p-4 text-left transition-colors",
                             provider.provider === selectedProvider?.provider
-                                ? "border-[#ededed] bg-[#ededed] text-[#111111]"
+                                ? "border-[#ebebe8] bg-[#ebebe8] text-[#0a0a0a]"
                                 : provider.available || provider.connected
-                                ? "border-[#e4e4e4] bg-white text-[#111111] hover:bg-[#f3f3f3]"
-                                : "border-[#e4e4e4] bg-white text-[#8b8b92]",
+                                ? "border-[#e7e5e4] bg-white text-[#0a0a0a] hover:bg-[#f2f0ee]"
+                                : "border-[#e7e5e4] bg-white text-[#a8a29e]",
                           )}
                           onClick={() => onSelectProvider(provider.provider)}
                           type="button"
@@ -333,10 +332,10 @@ export function SourcesScreenView({
                       <div className="flex h-full flex-col gap-5">
                         <div className="space-y-2">
                           <div className="eyebrow">Provider detail</div>
-                          <h3 className="text-[1.8rem] font-semibold leading-[1.05] tracking-[-0.04em] text-[#111111]">
+                          <h3 className="text-[1.8rem] font-semibold leading-[1.05] tracking-[-0.04em] text-[#0a0a0a]">
                             {selectedProvider.label}
                           </h3>
-                          <p className="text-sm leading-7 text-[#3f3f46]">
+                          <p className="text-sm leading-7 text-[#44403c]">
                             {selectedProvider.connected
                               ? "This account is already connected."
                               : selectedProvider.available
@@ -354,9 +353,9 @@ export function SourcesScreenView({
                         ) : null}
 
                         {selectedProvider.grantedScopes.length > 0 ? (
-                        <div className="border-t border-[#e4e4e4] pt-4">
+                        <div className="border-t border-[#e7e5e4] pt-4">
                             <div className="eyebrow">Granted scopes</div>
-                            <p className="mt-2 text-sm leading-7 text-[#3f3f46]">
+                            <p className="mt-2 text-sm leading-7 text-[#44403c]">
                               {selectedProvider.grantedScopes.join(", ")}
                             </p>
                           </div>
@@ -394,24 +393,24 @@ export function SourcesScreenView({
                         </div>
                       </div>
                     ) : (
-                      <p className="text-sm leading-7 text-[#6b7280]">No provider catalog available.</p>
+                      <p className="text-sm leading-7 text-[#78716c]">No provider catalog available.</p>
                     )}
                   </div>
                 </div>
               </TabsContent>
               <TabsContent value="tokens" className="mt-4">
-                <div className="grid min-h-[520px] gap-0 overflow-hidden rounded-[16px] border border-[#e4e4e4] bg-white lg:grid-cols-[1.1fr_0.9fr]">
-                  <div className="border-b border-[#e4e4e4] bg-white p-5 lg:border-b-0 lg:border-r">
+                <div className="grid min-h-[520px] gap-0 overflow-hidden rounded-lg border border-[#e7e5e4] bg-white lg:grid-cols-[1.1fr_0.9fr]">
+                  <div className="border-b border-[#e7e5e4] bg-white p-5 lg:border-b-0 lg:border-r">
                     <div className="mb-4 space-y-1">
                       <div className="eyebrow">Agent tokens</div>
-                      <p className="text-sm leading-7 text-[#6b7280]">
+                      <p className="text-sm leading-7 text-[#78716c]">
                         Bearer tokens for local MCP clients and agents.
                       </p>
                     </div>
                     <ScrollArea className="h-[420px] pr-4">
                       <div className="space-y-3">
                         {tokens.length === 0 ? (
-                          <div className="rounded-[14px] border border-dashed border-[#e4e4e4] bg-white p-4 text-sm leading-7 text-[#6b7280]">
+                          <div className="rounded-md border border-dashed border-[#e7e5e4] bg-white p-4 text-sm leading-7 text-[#78716c]">
                             No agent tokens yet.
                           </div>
                         ) : (
@@ -430,15 +429,15 @@ export function SourcesScreenView({
                   <div className="space-y-4 bg-white p-5">
                     <div className="space-y-1">
                       <div className="eyebrow">MCP setup</div>
-                      <p className="text-sm leading-7 text-[#6b7280]">
+                      <p className="text-sm leading-7 text-[#78716c]">
                         Create a token for the local MCP server.
                       </p>
                     </div>
-                    <div className="border-t border-[#e4e4e4] pt-4">
+                    <div className="border-t border-[#e7e5e4] pt-4">
                       <div className="eyebrow">Endpoint</div>
-                      <div className="mt-2 font-mono text-sm text-[#3f3f46]">http://localhost:8090/mcp</div>
+                      <div className="mt-2 font-mono text-sm text-[#44403c]">http://localhost:8090/mcp</div>
                     </div>
-                    <div className="border-t border-[#e4e4e4] pt-4">
+                    <div className="border-t border-[#e7e5e4] pt-4">
                       <div className="eyebrow">Recommended scopes</div>
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Pill>artifacts:read</Pill>
@@ -457,12 +456,12 @@ export function SourcesScreenView({
                       {createTokenPending ? "Creating…" : "Create MCP token"}
                     </Button>
                     {createdToken ? (
-                      <div className="border-t border-[#e4e4e4] pt-4">
+                      <div className="border-t border-[#e7e5e4] pt-4">
                         <div className="eyebrow">One-time token reveal</div>
-                        <div className="mt-2 text-sm leading-7 text-[#3f3f46]">
+                        <div className="mt-2 text-sm leading-7 text-[#44403c]">
                           Copy this now. It will not be shown again.
                         </div>
-                        <pre className="mt-3 overflow-auto rounded-[12px] border border-[#e7e5e0] bg-white p-3 text-xs text-[#52525b]">
+                        <pre className="mt-3 overflow-auto rounded-md border border-[#e7e5e4] bg-white p-3 text-xs text-[#57534e]">
                           {createdToken}
                         </pre>
                       </div>
@@ -494,7 +493,7 @@ export function SourcesScreenView({
                     <FactCard key={fact.label} label={fact.label} value={fact.value} />
                   ))}
                 </div>
-                <div className="border-t border-[#e4e4e4] pt-4">
+                <div className="border-t border-[#e7e5e4] pt-4">
                   <div className="eyebrow">Config snapshot</div>
                   <Textarea
                     className="mt-3 min-h-[180px] font-mono text-xs"
@@ -519,17 +518,17 @@ export function SourcesScreenView({
 
 function MetricCard({ label, value, description }: { label: string; value: string; description: string }) {
   return (
-    <div className="metric-card border-t-0 border-l-0 px-5 py-5 md:[&:nth-child(2n)]:border-r-0 xl:[&:nth-child(4n)]:border-r-0">
+    <div className="bg-white px-5 py-4">
       <div className="eyebrow">{label}</div>
-      <div className="mt-3 text-[2rem] font-semibold leading-none tracking-[-0.04em] text-[#111111]">{value}</div>
-      <div className="mt-3 text-sm leading-7 text-[#6b7280]">{description}</div>
+      <div className="mt-2 text-[1.5rem] font-semibold leading-tight tracking-[-0.02em] text-[#0a0a0a] tabular-nums">{value}</div>
+      <div className="mt-1 text-[12px] leading-[1.45] text-[#78716c]">{description}</div>
     </div>
   );
 }
 
 function Pill({ children }: { children: ReactNode }) {
   return (
-    <div className="rounded-full border border-[#e4e4e4] bg-white px-3 py-1 text-xs text-[#52525b]">{children}</div>
+    <div className="inline-flex items-center rounded-full border border-[#e7e5e4] bg-[#fafaf9] px-2 py-0.5 text-[11px] text-[#57534e]">{children}</div>
   );
 }
 
@@ -543,15 +542,15 @@ function IntegrationTokenRow({
   onRevoke: () => void;
 }) {
   return (
-    <div className="border-t border-[#e4e4e4] py-4">
+    <div className="border-t border-[#e7e5e4] py-4">
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1.5">
           <div className="flex items-center gap-2">
-            <div className="font-semibold tracking-[-0.02em] text-[#111111]">{token.name}</div>
+            <div className="font-semibold tracking-[-0.02em] text-[#0a0a0a]">{token.name}</div>
             <Badge>{token.status}</Badge>
           </div>
-          <div className="text-sm leading-7 text-[#3f3f46]">{token.scopes.join(", ") || "No scopes"}</div>
-          <div className="text-sm leading-7 text-[#6b7280]">
+          <div className="text-sm leading-7 text-[#44403c]">{token.scopes.join(", ") || "No scopes"}</div>
+          <div className="text-sm leading-7 text-[#78716c]">
             Created {formatHumanDate(token.createdAt)} · Last used {formatHumanDate(token.lastUsedAt)} · Expires{" "}
             {formatHumanDate(token.expiresAt)}
           </div>
@@ -568,9 +567,9 @@ function IntegrationTokenRow({
 
 function FactCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="border-t border-[#e4e4e4] p-4">
+    <div className="border-t border-[#e7e5e4] p-4">
       <div className="eyebrow">{label}</div>
-      <div className="mt-2 text-sm leading-7 text-[#3f3f46]">{value}</div>
+      <div className="mt-2 text-sm leading-7 text-[#44403c]">{value}</div>
     </div>
   );
 }

@@ -3,20 +3,20 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/shared/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border text-sm font-semibold tracking-[-0.01em] transition-[background-color,color,border-color,transform] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.985] disabled:pointer-events-none disabled:opacity-50",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md border text-[13px] font-medium tracking-[-0.005em] transition-[background-color,color,border-color,box-shadow] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563eb]/40 focus-visible:border-[#2563eb] active:translate-y-[0.5px] disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
-        default: "border-[#202020] bg-[#202020] text-white hover:border-[#2d2d2d] hover:bg-[#2d2d2d]",
-        secondary: "border-[#e4e4e4] bg-white text-[#111111] hover:border-[#d6d6d6] hover:bg-[#f3f3f3]",
-        ghost: "border-transparent bg-transparent text-[#52525b] hover:bg-[#ececec] hover:text-[#111111]",
-        destructive: "border-[#202020] bg-[#202020] text-white hover:border-[#2d2d2d] hover:bg-[#2d2d2d]",
+        default: "border-[#18181b] bg-[#18181b] text-[#fafaf9] shadow-[0_1px_0_rgba(0,0,0,0.04)] hover:bg-[#27272a]",
+        secondary: "border-[#e7e5e4] bg-white text-[#0a0a0a] shadow-[0_1px_0_rgba(0,0,0,0.02)] hover:border-[#d6d3d1] hover:bg-[#f7f6f4]",
+        ghost: "border-transparent bg-transparent text-[#57534e] hover:bg-[#ececea] hover:text-[#0a0a0a]",
+        destructive: "border-[#dc2626] bg-white text-[#dc2626] hover:bg-[#fef2f2]",
       },
       size: {
-        default: "h-10 px-4 py-2",
-        sm: "h-8 px-3 text-xs",
-        lg: "h-11 px-6",
-        icon: "h-9 w-9 rounded-[8px]",
+        default: "h-9 px-3.5",
+        sm: "h-7 px-2.5 text-[12px]",
+        lg: "h-10 px-5",
+        icon: "h-8 w-8 rounded-md",
       },
     },
     defaultVariants: {

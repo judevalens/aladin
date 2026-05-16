@@ -32,13 +32,13 @@ export function AladinToolbarField({ text, className }: { text: string; classNam
   return (
     <div
       className={cn(
-        "flex items-center gap-3 rounded-[10px] border border-[#e4e4e4] bg-white px-3.5 py-2.5 text-sm text-[#52525b]",
+        "flex h-8 items-center gap-2 rounded-md border border-[#e7e5e4] bg-[#fafaf9] px-2.5 text-[12.5px] text-[#a8a29e] transition-colors hover:border-[#d6d3d1] hover:bg-white",
         className,
       )}
     >
-      <Search className="h-4 w-4 text-[#111111]" />
+      <Search className="h-3.5 w-3.5" strokeWidth={1.75} />
       <span className="min-w-0 flex-1 truncate">{text}</span>
-      <span className="eyebrow hidden sm:inline">Search</span>
+      <kbd className="hidden rounded border border-[#e7e5e4] bg-white px-1 text-[10px] font-medium text-[#a8a29e] sm:inline">⌘K</kbd>
     </div>
   );
 }
@@ -53,20 +53,12 @@ export function PlaceholderPane({
   className?: string;
 }) {
   return (
-    <div className={cn("flex h-full flex-col justify-between gap-8 bg-[#fcfcfb] px-8 py-8", className)}>
-      <div className="space-y-4">
-        <div className="eyebrow">Workspace</div>
-        <h2 className="max-w-xl text-[2rem] font-semibold leading-[1.06] tracking-[-0.04em] text-[#111111]">
-          {title}
-        </h2>
-        <p className="max-w-2xl text-sm leading-7 text-[#3f3f46]">{body}</p>
-      </div>
-      <div className="max-w-xl border-t border-[#e7e5e0] pt-5">
-        <div className="eyebrow">Next</div>
-        <p className="mt-3 text-sm leading-7 text-[#3f3f46]">
-          Open an item from the workspace rail or create a new note to start building connected knowledge.
-        </p>
-      </div>
+    <div className={cn("flex h-full flex-col justify-center gap-3 bg-[#fafaf9] px-8 py-12", className)}>
+      <div className="eyebrow">Workspace</div>
+      <h2 className="max-w-lg text-[1.375rem] font-semibold leading-[1.2] tracking-[-0.02em] text-[#0a0a0a]">
+        {title}
+      </h2>
+      <p className="max-w-md text-[13px] leading-[1.6] text-[#57534e]">{body}</p>
     </div>
   );
 }

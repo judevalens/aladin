@@ -30,7 +30,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { AladinPanel, AladinToolbarField, PlaceholderPane } from "@/components/ui/aladin";
 import type { BrowserTreeRow, RenameDraft } from "@/modules/workspace/domain";
@@ -69,28 +68,28 @@ export function WorkspaceShellView({
   children: ReactNode;
 }) {
   return (
-    <div className="app-canvas flex h-screen text-[#111111]">
-      <aside className="flex h-full w-[280px] shrink-0 border-r border-[#e4e4e4] bg-white sm:w-[304px] lg:w-sidebar">
+    <div className="app-canvas flex h-screen text-[#0a0a0a]">
+      <aside className="flex h-full w-[252px] shrink-0 border-r border-[#e7e5e4] bg-white sm:w-[272px] lg:w-sidebar">
         <div className="flex min-h-0 w-full flex-col">
-          <div className="border-b border-[#e4e4e4] px-4 py-4">
-            <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-[12px] border border-[#dedbd4] bg-white text-sm font-semibold text-[#111111]">
+          <div className="px-4 pt-5 pb-4">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-7 w-7 items-center justify-center rounded-md bg-[#18181b] text-[12px] font-semibold text-[#fafaf9]">
                 A
               </div>
-              <div className="min-w-0 space-y-1">
-                <div className="text-sm font-semibold tracking-[-0.02em] text-[#111111]">Aladin</div>
-                <div className="text-sm leading-6 text-[#52525b]">Local workspace memory for notes, sources, and signals.</div>
+              <div className="min-w-0">
+                <div className="text-[13px] font-semibold tracking-[-0.01em] text-[#0a0a0a]">Aladin</div>
+                <div className="text-[11px] leading-4 text-[#78716c]">Workspace memory</div>
               </div>
             </div>
           </div>
 
-          <div className="space-y-3 px-4 py-4">
-            <AladinToolbarField text="Search, jump, or reopen..." />
+          <div className="space-y-2 px-3">
+            <AladinToolbarField text="Search…" />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="default" className="w-full justify-between">
+                <Button variant="default" size="sm" className="w-full justify-between">
                   <span>New item</span>
-                  <Plus className="h-4 w-4" />
+                  <Plus className="h-3.5 w-3.5" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-52">
@@ -104,11 +103,9 @@ export function WorkspaceShellView({
             </DropdownMenu>
           </div>
 
-          <div className="hairline-divider h-px" />
-
-          <div className="space-y-3 px-4 py-4">
-            <div className="eyebrow">Browse</div>
-            <nav className="space-y-1">
+          <div className="mt-5 px-3">
+            <div className="eyebrow px-2 pb-2">Browse</div>
+            <nav className="space-y-0.5">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const active = item.key === selectedDestination;
@@ -116,32 +113,31 @@ export function WorkspaceShellView({
                   <button
                     key={item.key}
                     className={cn(
-                      "flex h-[42px] w-full items-center gap-3 rounded-[12px] px-3 text-sm transition-colors",
+                      "flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-[13px] transition-colors",
                       active
-                        ? "bg-[#ededed] text-[#111111]"
-                        : "text-[#52525b] hover:bg-[#f3f3f3] hover:text-[#111111]",
+                        ? "bg-[#ebebe8] font-medium text-[#0a0a0a]"
+                        : "text-[#57534e] hover:bg-[#f2f0ee] hover:text-[#0a0a0a]",
                     )}
                     onClick={() => onNavigate(item.path)}
                     type="button"
                   >
-                    <Icon className="h-[18px] w-[18px]" />
-                    <span className="font-medium">{item.label}</span>
+                    <Icon className="h-[15px] w-[15px]" strokeWidth={1.75} />
+                    <span>{item.label}</span>
                   </button>
                 );
               })}
             </nav>
           </div>
 
-          <div className="mt-auto border-t border-[#e4e4e4] px-4 py-4">
-            <div className="eyebrow">Signed in</div>
-            <div className="mt-3 truncate text-sm text-[#3f3f46]">{userEmail}</div>
+          <div className="mt-auto border-t border-[#e7e5e4] px-3 py-3">
+            <div className="truncate px-2 text-[12px] text-[#78716c]">{userEmail}</div>
             <button
-              className="mt-4 flex h-[40px] w-full items-center gap-3 rounded-[10px] px-3 text-sm text-[#52525b] transition-colors hover:bg-[#f3f3f3] hover:text-[#111111] disabled:opacity-50"
+              className="mt-1 flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-[13px] text-[#57534e] transition-colors hover:bg-[#f2f0ee] hover:text-[#0a0a0a] disabled:opacity-50"
               onClick={onLogout}
               type="button"
               disabled={logoutPending}
             >
-              <LogOut className="h-[18px] w-[18px]" />
+              <LogOut className="h-[15px] w-[15px]" strokeWidth={1.75} />
               <span>Sign out</span>
             </button>
           </div>
@@ -187,91 +183,82 @@ export function BrowserPaneView({
 }) {
   if (loading) {
     return (
-        <section className="flex w-[336px] flex-col overflow-hidden border-r border-[#e4e4e4] bg-white sm:w-[368px]">
-        <div className="p-5 text-sm text-[#3f3f46]">Loading browser tree…</div>
+        <section className="flex w-[336px] flex-col overflow-hidden border-r border-[#e7e5e4] bg-white sm:w-[368px]">
+        <div className="p-5 text-sm text-[#44403c]">Loading browser tree…</div>
       </section>
     );
   }
 
   if (errorMessage) {
     return (
-      <section className="flex w-[336px] flex-col overflow-hidden border-r border-[#e4e4e4] bg-white p-4 sm:w-[368px]">
-        <AladinPanel className="border-[#ef4444] bg-white p-4 text-sm text-[#b42318]">{errorMessage}</AladinPanel>
+      <section className="flex w-[336px] flex-col overflow-hidden border-r border-[#e7e5e4] bg-white p-4 sm:w-[368px]">
+        <AladinPanel className="border-[#ef4444] bg-white p-4 text-sm text-[#dc2626]">{errorMessage}</AladinPanel>
       </section>
     );
   }
 
   return (
-    <section className="flex w-[336px] flex-col overflow-hidden border-r border-[#e4e4e4] bg-white sm:w-[368px]">
-      <div className="border-b border-[#e4e4e4] bg-white px-4 py-4">
-        <div className="flex items-start gap-3">
-          <Button variant="secondary" size="sm" disabled={!canNavigateBack} onClick={onNavigateBack}>
-            Back
+    <section className="flex w-[300px] flex-col overflow-hidden border-r border-[#e7e5e4] bg-[#fafaf9] sm:w-[332px]">
+      <div className="border-b border-[#e7e5e4] px-3 py-3">
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" disabled={!canNavigateBack} onClick={onNavigateBack} className="px-2">
+            ← Back
           </Button>
-          <div className="min-w-0 flex-1">
-            <div className="eyebrow">Browser</div>
-            <div className="mt-2 truncate text-sm leading-6 text-[#52525b]">
-              {breadcrumbs.length > 0 ? breadcrumbs.map((crumb) => crumb.label).join(" / ") : "All items"}
-            </div>
+          <div className="min-w-0 flex-1 truncate text-[12px] text-[#78716c]">
+            {breadcrumbs.length > 0 ? breadcrumbs.map((crumb) => crumb.label).join(" / ") : "All items"}
           </div>
         </div>
       </div>
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="flex flex-col px-3 py-3">
+      <div className="min-h-0 flex-1 overflow-y-auto browser-pane-scroll">
+        <div className="flex flex-col gap-0.5 px-2 py-2">
           {rows.map((row) => {
             const isActiveArtifact = row.artifactId === activeArtifactId;
             const isExpanded = row.folderId ? expandedFolderIds.includes(row.folderId) : false;
             return (
               <div key={row.id} className="group">
-                <div
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (row.kind === "artifact" && row.artifactId) {
+                      onOpenArtifact(row.artifactId);
+                      return;
+                    }
+                    if (row.kind === "folder") {
+                      onFolderPrimaryAction(row);
+                    }
+                  }}
                   className={cn(
-                    "flex items-center gap-2 rounded-[10px] px-2 py-2 text-sm",
+                    "flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-[13px]",
                     isActiveArtifact
-                      ? "bg-[#ededed] text-[#111111]"
-                      : "text-[#52525b] hover:bg-[#f3f3f3] hover:text-[#111111]",
+                      ? "bg-[#ebebe8] font-medium text-[#0a0a0a]"
+                      : "text-[#44403c] hover:bg-[#f2f0ee] hover:text-[#0a0a0a]",
                   )}
-                  style={{ paddingLeft: `${row.depth * 16 + 8}px` }}
+                  style={{ paddingLeft: `${row.depth * 14 + 6}px` }}
                 >
                   {row.kind === "folder" ? (
-                    <button
-                      className="flex h-6 w-6 items-center justify-center rounded-[8px] hover:bg-[#f3f3f3]"
-                      onClick={() => onFolderPrimaryAction(row)}
-                      type="button"
-                    >
+                    <span className="flex h-5 w-5 items-center justify-center text-[#78716c]">
                       {row.scopeCandidate ? (
-                        <ChevronRight className="h-4 w-4" />
+                        <ChevronRight className="h-3.5 w-3.5" strokeWidth={2} />
                       ) : isExpanded ? (
-                        <ChevronDown className="h-4 w-4" />
+                        <ChevronDown className="h-3.5 w-3.5" strokeWidth={2} />
                       ) : (
-                        <ChevronRight className="h-4 w-4" />
+                        <ChevronRight className="h-3.5 w-3.5" strokeWidth={2} />
                       )}
-                    </button>
+                    </span>
                   ) : (
-                    <span className="w-6" />
+                    <span className="w-5" />
                   )}
-                  <button
-                    className="min-w-0 flex-1 truncate text-left"
-                    onClick={() => {
-                      if (row.kind === "artifact" && row.artifactId) {
-                        onOpenArtifact(row.artifactId);
-                        return;
-                      }
-                      if (row.folderId) {
-                        onSelectFolder(row.folderId);
-                      }
-                    }}
-                    type="button"
-                  >
-                    {row.title}
-                  </button>
+                  <span className="min-w-0 flex-1 truncate">{row.title}</span>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <button
-                        className="flex h-7 w-7 items-center justify-center rounded-[8px] text-[#6b7280] opacity-0 transition-opacity hover:bg-[#f3f3f3] hover:text-[#111111] group-hover:opacity-100"
-                        type="button"
+                      <span
+                        role="button"
+                        onClick={(e) => e.stopPropagation()}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        className="flex h-5 w-5 items-center justify-center rounded text-[#a8a29e] opacity-0 transition-opacity hover:bg-[#e7e5e4] hover:text-[#0a0a0a] group-hover:opacity-100"
                       >
-                        <Ellipsis className="h-4 w-4" />
-                      </button>
+                        <Ellipsis className="h-3.5 w-3.5" />
+                      </span>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-52">
                       {row.kind === "folder" && row.folderId ? (
@@ -300,15 +287,15 @@ export function BrowserPaneView({
                       ) : null}
                     </DropdownMenuContent>
                   </DropdownMenu>
-                </div>
+                </button>
               </div>
             );
           })}
           {rows.length === 0 ? (
-            <div className="px-3 py-8 text-sm leading-7 text-[#6b7280]">Nothing in this section yet.</div>
+            <div className="px-3 py-10 text-center text-[12px] text-[#a8a29e]">Nothing here yet.</div>
           ) : null}
         </div>
-      </ScrollArea>
+      </div>
     </section>
   );
 }
@@ -328,25 +315,25 @@ export function WorkPaneView({
 }) {
   return (
     <section className="flex min-w-0 flex-1 flex-col overflow-hidden bg-white">
-      <div className="border-b border-[#e4e4e4] bg-white px-4 py-3">
-        <div className="scrollbar-hidden flex min-w-0 gap-2 overflow-x-auto overflow-y-hidden">
+      <div className="border-b border-[#e7e5e4] bg-[#fafaf9] px-2 pt-1.5">
+        <div className="scrollbar-hidden flex min-w-0 items-end gap-0.5 overflow-x-auto overflow-y-hidden">
           {openArtifacts.map((artifact) => {
             const active = artifact.id === activeArtifact?.id;
             return (
               <button
                 key={artifact.id}
                 className={cn(
-                  "group flex h-[42px] items-center gap-2 rounded-[11px] border px-3 text-sm transition-colors",
+                  "group relative flex h-9 items-center gap-2 rounded-t-md border border-b-0 px-3 text-[12.5px] transition-colors",
                   active
-                    ? "border-[#ededed] bg-[#ededed] text-[#111111]"
-                    : "border-transparent bg-transparent text-[#52525b] hover:bg-[#f3f3f3] hover:text-[#111111]",
+                    ? "border-[#e7e5e4] bg-white font-medium text-[#0a0a0a] -mb-px"
+                    : "border-transparent bg-transparent text-[#78716c] hover:text-[#0a0a0a]",
                 )}
                 onClick={() => onActivateArtifact(artifact.id)}
                 type="button"
               >
-                <span className="max-w-[220px] truncate">{artifact.title}</span>
+                <span className="max-w-[200px] truncate">{artifact.title}</span>
                 <span
-                  className="rounded-[6px] px-1 text-xs text-current/70 transition-colors hover:bg-white hover:text-[#111111]"
+                  className="ml-1 flex h-4 w-4 items-center justify-center rounded text-[#a8a29e] transition-colors hover:bg-[#ececea] hover:text-[#0a0a0a]"
                   onClick={(event) => {
                     event.stopPropagation();
                     onCloseArtifact(artifact.id);
@@ -449,21 +436,21 @@ export function VoiceCaptureDialogView({
 
             <div className="panel-white bg-white p-4">
               {draft.phase === "recording" ? (
-                <div className="flex items-center gap-3 text-sm text-[#3f3f46]">
+                <div className="flex items-center gap-3 text-sm text-[#44403c]">
                   <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
                   Recording in progress…
                 </div>
               ) : draft.audioUrl ? (
                 <audio className="w-full" controls src={draft.audioUrl} />
               ) : (
-                <p className="text-sm leading-7 text-[#6b7280]">
+                <p className="text-sm leading-7 text-[#78716c]">
                   No audio captured yet. Start recording to create a preview.
                 </p>
               )}
             </div>
 
             {permissionError || draft.errorMessage ? (
-            <div className="rounded-[12px] border border-[#111111] bg-white px-4 py-3 text-sm leading-6 text-[#111111]">
+            <div className="rounded-[12px] border border-[#0a0a0a] bg-white px-4 py-3 text-sm leading-6 text-[#0a0a0a]">
               {permissionError ?? draft.errorMessage}
             </div>
             ) : null}
@@ -504,7 +491,7 @@ export function PlaceholderDestinationView({
 }) {
   return (
     <>
-      <section className="flex w-[336px] flex-col overflow-hidden border-r border-[#e4e4e4] bg-white sm:w-[368px]">
+      <section className="flex w-[336px] flex-col overflow-hidden border-r border-[#e7e5e4] bg-white sm:w-[368px]">
         <PlaceholderPane title={paneTitle} body={paneBody} className="h-full" />
       </section>
       <section className="min-w-0 flex-1 overflow-hidden bg-white">

@@ -5,27 +5,38 @@
 @source "../node_modules/@blocknote/shadcn/dist/**/*.{js,cjs}";
 
 :root {
-  --canvas: #f7f7f7;
+  /* canvas + surfaces */
+  --canvas: #fafaf9;
   --surface-soft: #ffffff;
-  --surface-card: #f3f3f3;
-  --surface-strong: #ebebeb;
-  --surface-dark: #202020;
-  --hairline: #e4e4e4;
-  --hairline-soft: #efefef;
-  --ink: #111111;
+  --surface-card: #f4f4f3;
+  --surface-strong: #ececea;
+  --surface-dark: #18181b;
+
+  /* lines + ink */
+  --hairline: #e7e5e4;
+  --hairline-soft: #efeeec;
+  --ink: #0a0a0a;
   --body: #3f3f46;
-  --muted: #616161;
-  --muted-soft: #8b8b8b;
-  --on-dark: #ffffff;
-  --success: #10b981;
-  --warning: #f59e0b;
-  --error: #ef4444;
+  --muted: #57534e;
+  --muted-soft: #a1a1aa;
+  --on-dark: #fafaf9;
+
+  /* interaction */
+  --hover: #f2f0ee;
+  --selected: #ebebe8;
+  --signal: #2563eb;
+  --signal-weak: rgba(37, 99, 235, 0.14);
+
+  /* status */
+  --success: #16a34a;
+  --warning: #d97706;
+  --error: #dc2626;
 
   --background: var(--canvas);
   --foreground: var(--ink);
   --card: var(--surface-soft);
   --card-foreground: var(--ink);
-  --popover: #ffffff;
+  --popover: var(--surface-soft);
   --popover-foreground: var(--ink);
   --primary: var(--surface-dark);
   --primary-foreground: var(--on-dark);
@@ -37,8 +48,8 @@
   --destructive-foreground: var(--on-dark);
   --border: var(--hairline);
   --input: var(--hairline);
-  --ring: var(--surface-dark);
-  --radius: 0.625rem;
+  --ring: var(--signal);
+  --radius: 0.5rem;
 }
 
 @theme inline {
@@ -76,15 +87,30 @@ body {
   background: var(--canvas);
   color: var(--ink);
   font-family:
-    Inter,
+    "Inter",
     "IBM Plex Sans",
+    -apple-system,
+    BlinkMacSystemFont,
     "Helvetica Neue",
     Arial,
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  line-height: 1.6;
+  line-height: 1.55;
+  letter-spacing: -0.005em;
   text-rendering: optimizeLegibility;
+  font-feature-settings: "ss01", "cv11";
+}
+
+:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::selection {
+  background: var(--signal-weak);
+  color: var(--ink);
 }
 
 button,
@@ -95,8 +121,12 @@ select {
 }
 
 a {
-  color: inherit;
+  color: var(--signal);
   text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .app-canvas {
@@ -105,13 +135,13 @@ a {
 
 .panel-soft {
   border: 1px solid var(--hairline);
-  border-radius: 0;
+  border-radius: var(--radius);
   background: var(--surface-soft);
 }
 
 .panel-white {
   border: 1px solid var(--hairline);
-  border-radius: 0;
+  border-radius: var(--radius);
   background: var(--surface-soft);
 }
 
@@ -120,25 +150,25 @@ a {
 }
 
 .eyebrow {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.11em;
   text-transform: uppercase;
   color: var(--muted);
 }
 
 .section-title {
-  font-size: clamp(2rem, 3vw, 3.25rem);
+  font-size: clamp(1.875rem, 2.6vw, 2.75rem);
   font-weight: 600;
-  line-height: 1.04;
-  letter-spacing: -0.05em;
+  line-height: 1.06;
+  letter-spacing: -0.035em;
   color: var(--ink);
 }
 
 .section-copy {
   max-width: 42rem;
-  font-size: 15px;
-  line-height: 1.7;
+  font-size: 14.5px;
+  line-height: 1.65;
   color: var(--body);
 }
 
@@ -163,4 +193,25 @@ a {
 
 .editor-scroll {
   scrollbar-gutter: stable;
+}
+
+.browser-pane-scroll {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: #d6d3d1 transparent;
+}
+.browser-pane-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+.browser-pane-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.browser-pane-scroll::-webkit-scrollbar-thumb {
+  background-color: #d6d3d1;
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.browser-pane-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: #a8a29e;
 }
