@@ -9,25 +9,19 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { useAddSourceDialogState } from "@/modules/sources/hooks/use-add-source-dialog-state";
 import type { AddSourceDialogProps } from "@/modules/sources/ui/sources-view-types";
 
 export function AddSourceDialog(props: AddSourceDialogProps) {
-  const {
+  const { open, onOpenChange, createSource } = props;
+  const state = useAddSourceDialogState({
     open,
-    streamQuery,
-    streamTitle,
-    streamLimit,
-    streamErrorMessage,
-    createSourcePending,
     onOpenChange,
-    onStreamQueryChange,
-    onStreamTitleChange,
-    onStreamLimitChange,
-    onCreateSource,
-  } = props;
+    createSource,
+  });
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={state.onOpenChange}>
       <DialogContent className="w-[min(92vw,640px)]">
         <DialogHeader>
           <DialogTitle>Add source</DialogTitle>
@@ -45,8 +39,8 @@ export function AddSourceDialog(props: AddSourceDialogProps) {
           <div className="space-y-2">
             <label className="eyebrow">Query</label>
             <Input
-              value={streamQuery}
-              onChange={(event) => onStreamQueryChange(event.target.value)}
+              value={state.streamQuery}
+              onChange={(event) => state.onStreamQueryChange(event.target.value)}
               placeholder="e.g. blocknote OR yjs"
             />
           </div>
@@ -54,34 +48,34 @@ export function AddSourceDialog(props: AddSourceDialogProps) {
             <div className="space-y-2">
               <label className="eyebrow">Display title</label>
               <Input
-                value={streamTitle}
-                onChange={(event) => onStreamTitleChange(event.target.value)}
+                value={state.streamTitle}
+                onChange={(event) => state.onStreamTitleChange(event.target.value)}
                 placeholder="Optional custom title"
               />
             </div>
             <div className="space-y-2">
               <label className="eyebrow">Limit</label>
               <Input
-                value={streamLimit}
-                onChange={(event) => onStreamLimitChange(event.target.value)}
+                value={state.streamLimit}
+                onChange={(event) => state.onStreamLimitChange(event.target.value)}
               />
             </div>
           </div>
-          {streamErrorMessage ? (
+          {state.streamErrorMessage ? (
             <div className="rounded-md border border-[#e7e5e4] bg-white px-4 py-3 text-sm leading-6 text-[#0a0a0a]">
-              {streamErrorMessage}
+              {state.streamErrorMessage}
             </div>
           ) : null}
         </DialogBody>
         <DialogFooter>
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>
+          <Button variant="secondary" onClick={() => state.onOpenChange(false)}>
             Cancel
           </Button>
           <Button
-            disabled={createSourcePending || streamQuery.trim().length === 0}
-            onClick={onCreateSource}
+            disabled={state.createSourcePending || state.streamQuery.trim().length === 0}
+            onClick={state.onCreateSource}
           >
-            {createSourcePending ? "Creating…" : "Create stream"}
+            {state.createSourcePending ? "Creating…" : "Create stream"}
           </Button>
         </DialogFooter>
       </DialogContent>

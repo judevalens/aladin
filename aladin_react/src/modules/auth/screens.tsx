@@ -9,18 +9,7 @@ export function AuthScreen({ mode }: { mode: "login" | "register" }) {
     return <Navigate to="/home" replace />;
   }
 
-  return (
-    <AuthView
-      mode={screen.mode}
-      email={screen.email}
-      password={screen.password}
-      errorMessage={screen.errorMessage}
-      pending={screen.pending}
-      onEmailChange={screen.setEmail}
-      onPasswordChange={screen.setPassword}
-      onSubmit={screen.submit}
-    />
-  );
+  return <AuthView state={screen} />;
 }
 
 export function ProtectedLayout() {

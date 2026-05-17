@@ -10,20 +10,10 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import type { RenameDraft } from "@/modules/workspace/domain";
+import type { RenameDialogState } from "@/modules/workspace/hooks/use-workspace";
 
-export function RenameDialogView({
-  rename,
-  pending,
-  onDraftTitleChange,
-  onCancel,
-  onSave,
-}: {
-  rename: RenameDraft | null;
-  pending: boolean;
-  onDraftTitleChange: (title: string) => void;
-  onCancel: () => void;
-  onSave: () => void;
-}) {
+export function RenameDialogView({ state }: { state: RenameDialogState }) {
+  const { rename, pending, onDraftTitleChange, onCancel, onSave } = state;
   return (
     <Dialog open={Boolean(rename)} onOpenChange={(open) => !open && onCancel()}>
       <DialogContent className="w-[min(92vw,520px)]">

@@ -13,22 +13,5 @@ export function PageEditorScreen({ pageId }: { pageId: string }) {
     return <div className="px-7 py-6 text-sm text-red-700">{screen.errorMessage}</div>;
   }
 
-  return (
-    <PageEditorView
-      title={screen.title}
-      message={screen.message}
-      revision={screen.revision}
-      saveState={screen.saveState}
-      statusClassName={screen.statusClassName}
-      pageId={screen.pageId}
-      initialMarkdown={screen.initialMarkdown}
-      editorMode={screen.editorMode}
-      blockNoteError={screen.blockNoteError}
-      editorBoundaryKey={screen.editorBoundaryKey}
-      onDraftChange={screen.onDraftChange}
-      onBlur={screen.onBlur}
-      onDriverError={screen.onDriverError}
-      onRetryRichEditor={screen.onRetryRichEditor}
-    />
-  );
+  return <PageEditorView state={screen} />;
 }

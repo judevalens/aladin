@@ -1,41 +1,25 @@
 import { BlockNotePageEditorDriver } from "@/modules/pages/editor/page-editor-driver";
-import type { PageEditorMode, PageSaveState } from "@/modules/pages/domain";
-
-interface PageEditorViewProps {
-  title: string;
-  message: string | null;
-  revision: number;
-  saveState: PageSaveState;
-  statusClassName: string;
-  pageId: string;
-  initialMarkdown: string;
-  editorMode: PageEditorMode;
-  blockNoteError: string | null;
-  editorBoundaryKey: number;
-  onDraftChange: (markdown: string) => void;
-  onBlur: () => void;
-  onDriverError: (error: unknown) => void;
-  onRetryRichEditor: () => void;
-}
+import type { PageScreenState } from "@/modules/pages/hooks/use-page-screen";
 
 export function PageEditorView({
-  title,
-  message,
-  revision,
-  statusClassName,
-  pageId,
-  initialMarkdown,
-  editorMode,
-  blockNoteError,
-  editorBoundaryKey,
-  onDraftChange,
-  onBlur,
-  onDriverError,
-  onRetryRichEditor,
-}: PageEditorViewProps) {
+  state,
+}: {
+  state: PageScreenState;
+}) {
+  const {
+    pageId,
+    initialMarkdown,
+    editorMode,
+    blockNoteError,
+    editorBoundaryKey,
+    onDraftChange,
+    onBlur,
+    onDriverError,
+    onRetryRichEditor,
+  } = state;
+
   return (
     <div className="flex h-full min-h-0 flex-col">
-
       <div className="min-h-0 flex-1 overflow-hidden">
         <div className="mx-auto flex h-full w-full max-w-workspace-max flex-col">
           <BlockNotePageEditorDriver

@@ -7,40 +7,27 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { AladinPanel } from "@/components/ui/aladin";
+import type { BrowserPaneState } from "@/modules/workspace/hooks/use-workspace";
 import type { BreadcrumbCrumb, BreadcrumbView, BrowserTreeRow } from "@/modules/workspace/domain";
 import { cn } from "@/shared/lib/utils";
 
-export function BrowserPaneView({
-  loading,
-  errorMessage,
-  breadcrumb,
-  rows,
-  activeArtifactId,
-  expandedFolderIds,
-  onNavigateToScope,
-  onFolderPrimaryAction,
-  onSelectFolder,
-  onOpenArtifact,
-  onStartRenameFolder,
-  onStartRenameArtifact,
-  onCreateFolderHere,
-  onCreateNoteHere,
-}: {
-  loading: boolean;
-  errorMessage: string | null;
-  breadcrumb: BreadcrumbView;
-  rows: BrowserTreeRow[];
-  activeArtifactId: string | null;
-  expandedFolderIds: string[];
-  onNavigateToScope: (folderId: string | null) => void;
-  onFolderPrimaryAction: (row: BrowserTreeRow) => void;
-  onSelectFolder: (folderId: string) => void;
-  onOpenArtifact: (artifactId: string) => void;
-  onStartRenameFolder: (folderId: string, title: string) => void;
-  onStartRenameArtifact: (artifactId: string, title: string) => void;
-  onCreateFolderHere: (folderId: string) => void;
-  onCreateNoteHere: (folderId: string) => void;
-}) {
+export function BrowserPaneView({ state }: { state: BrowserPaneState }) {
+  const {
+    loading,
+    errorMessage,
+    breadcrumb,
+    rows,
+    activeArtifactId,
+    expandedFolderIds,
+    onNavigateToScope,
+    onFolderPrimaryAction,
+    onOpenArtifact,
+    onStartRenameFolder,
+    onStartRenameArtifact,
+    onCreateFolderHere,
+    onCreateNoteHere,
+  } = state;
+
   if (loading) {
     return (
         <section className="flex w-[336px] flex-col overflow-hidden border-r border-[#e7e5e4] bg-white sm:w-[368px]">

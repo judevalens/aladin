@@ -1,8 +1,30 @@
 import { useEffect, useMemo } from "react";
 import { useAppComposition } from "@/app/composition/app-composition";
+import type { IntegrationToken, ProviderConnectionProvider, Source } from "@/shared/api/models";
 import { useObservableState } from "@/shared/flow/use-observable-state";
+import type { SourcesFormatters, SourcesMetric } from "@/modules/sources/ui/sources-view-types";
 
-export function useSourcesScreen() {
+export interface SourcesScreenState {
+  catalog: {
+    loading: boolean;
+    sources: Source[];
+    providers: ProviderConnectionProvider[];
+    tokens: IntegrationToken[];
+    connectedCount: number;
+    metrics: SourcesMetric[];
+  };
+  sourceActions: {
+    createSource: (input: {
+      query: string;
+      title: string;
+      limit: string;
+    }) => Promise<void>;
+    removeSource: (sourceId: string) => Promise<void>;
+  };
+  formatters: SourcesFormatters;
+}
+
+export function useSourcesScreen(): SourcesScreenState {
   const { services } = useAppComposition();
 
   const sourcesLoadable = useObservableState(
@@ -35,7 +57,7 @@ export function useSourcesScreen() {
   const providerCount = new Set(sources.map((source) => source.type)).size;
 
   const metrics = useMemo(
-    () => [
+    (): SourcesMetric[] => [
       {
         label: "Subscribed",
         value: String(sources.length),

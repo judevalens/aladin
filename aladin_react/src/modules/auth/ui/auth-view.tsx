@@ -1,28 +1,23 @@
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-
-interface AuthViewProps {
-  mode: "login" | "register";
-  email: string;
-  password: string;
-  errorMessage: string | null;
-  pending: boolean;
-  onEmailChange: (value: string) => void;
-  onPasswordChange: (value: string) => void;
-  onSubmit: () => void;
-}
+import type { AuthScreenState } from "@/modules/auth/hooks/use-auth";
 
 export function AuthView({
-  mode,
-  email,
-  password,
-  errorMessage,
-  pending,
-  onEmailChange,
-  onPasswordChange,
-  onSubmit,
-}: AuthViewProps) {
+  state,
+}: {
+  state: AuthScreenState;
+}) {
+  const {
+    mode,
+    email,
+    password,
+    errorMessage,
+    pending,
+    setEmail,
+    setPassword,
+    submit,
+  } = state;
   const isLogin = mode === "login";
 
   return (
@@ -81,18 +76,18 @@ export function AuthView({
               className="mt-7 space-y-4"
               onSubmit={(event) => {
                 event.preventDefault();
-                onSubmit();
+                submit();
               }}
             >
               <div className="space-y-1.5">
                 <label className="text-[12px] font-medium text-[#44403c]">Email</label>
-                <Input value={email} onChange={(event) => onEmailChange(event.target.value)} type="email" required />
+                <Input value={email} onChange={(event) => setEmail(event.target.value)} type="email" required />
               </div>
               <div className="space-y-1.5">
                 <label className="text-[12px] font-medium text-[#44403c]">Password</label>
                 <Input
                   value={password}
-                  onChange={(event) => onPasswordChange(event.target.value)}
+                  onChange={(event) => setPassword(event.target.value)}
                   type="password"
                   required
                 />

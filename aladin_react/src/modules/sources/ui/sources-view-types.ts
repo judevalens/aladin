@@ -31,16 +31,12 @@ export type SourcesOverviewProps = {
 
 export type AddSourceDialogProps = {
   open: boolean;
-  streamQuery: string;
-  streamTitle: string;
-  streamLimit: string;
-  streamErrorMessage: string | null;
-  createSourcePending: boolean;
   onOpenChange: (open: boolean) => void;
-  onStreamQueryChange: (value: string) => void;
-  onStreamTitleChange: (value: string) => void;
-  onStreamLimitChange: (value: string) => void;
-  onCreateSource: () => void;
+  createSource: (input: {
+    query: string;
+    title: string;
+    limit: string;
+  }) => Promise<void>;
 };
 
 export type IntegrationsDialogProps = {

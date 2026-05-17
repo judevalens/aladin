@@ -9,6 +9,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { AladinToolbarField, PlaceholderPane } from "@/components/ui/aladin";
+import type { WorkspaceShellState } from "@/modules/workspace/hooks/use-workspace";
 import { cn } from "@/shared/lib/utils";
 
 const navItems = [
@@ -20,28 +21,24 @@ const navItems = [
 ] as const;
 
 export function WorkspaceShellView({
-  selectedDestination,
-  userEmail,
-  logoutPending,
-  onNavigate,
-  onLogout,
-  onCreateFolder,
-  onCreateNote,
-  onCreateLink,
-  onCreateVoice,
+  state,
   children,
 }: {
-  selectedDestination: string;
-  userEmail: string;
-  logoutPending: boolean;
-  onNavigate: (path: string) => void;
-  onLogout: () => void;
-  onCreateFolder: () => void;
-  onCreateNote: () => void;
-  onCreateLink: () => void;
-  onCreateVoice: () => void;
+  state: WorkspaceShellState;
   children: ReactNode;
 }) {
+  const {
+    selectedDestination,
+    userEmail,
+    logoutPending,
+    onNavigate,
+    onLogout,
+    onCreateFolder,
+    onCreateNote,
+    onCreateLink,
+    onCreateVoice,
+  } = state;
+
   return (
     <div className="app-canvas flex h-screen border-t border-[#e7e5e4] bg-[#f5f5f4] text-[#0a0a0a]">
       <aside className="flex h-full w-[252px] shrink-0 border-r border-[#e7e5e4] bg-white sm:w-[272px] lg:w-sidebar">

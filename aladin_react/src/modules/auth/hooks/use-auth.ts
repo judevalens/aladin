@@ -3,7 +3,32 @@ import { NavigateFunction, useLocation, useNavigate } from "react-router-dom";
 import { useAppComposition } from "@/app/composition/app-composition";
 import { useObservableState } from "@/shared/flow/use-observable-state";
 
-export function useSession() {
+export interface SessionState {
+  isLoading: boolean;
+  data: Awaited<ReturnType<ReturnType<typeof useAppComposition>["services"]["auth"]["session"]["getSnapshot"]>>["user"] | null;
+  status: string;
+}
+
+export interface ShellSessionState {
+  userEmail: string;
+  logoutPending: boolean;
+  onLogout: () => Promise<void>;
+}
+
+export interface AuthScreenState {
+  mode: "login" | "register";
+  sessionReady: boolean;
+  sessionUser: SessionState["data"];
+  email: string;
+  password: string;
+  errorMessage: string | null;
+  pending: boolean;
+  setEmail: (value: string) => void;
+  setPassword: (value: string) => void;
+  submit: () => Promise<void>;
+}
+
+export function useSession(): SessionState {
   const { services } = useAppComposition();
 
   useEffect(() => {
@@ -23,7 +48,7 @@ export function useSession() {
   };
 }
 
-export function useShellSession(navigate: NavigateFunction) {
+export function useShellSession(navigate: NavigateFunction): ShellSessionState {
   const { services } = useAppComposition();
   const session = useSession();
   const [logoutPending, setLogoutPending] = useState(false);
@@ -43,7 +68,7 @@ export function useShellSession(navigate: NavigateFunction) {
   };
 }
 
-export function useAuthScreen(mode: "login" | "register") {
+export function useAuthScreen(mode: "login" | "register"): AuthScreenState {
   const { services } = useAppComposition();
   const navigate = useNavigate();
   const location = useLocation();

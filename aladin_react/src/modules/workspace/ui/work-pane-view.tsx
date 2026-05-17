@@ -1,27 +1,26 @@
 import { LineChart, Search, SlidersHorizontal, Star } from "lucide-react";
 import type { ReactNode } from "react";
+import type { WorkPaneState } from "@/modules/workspace/hooks/use-workspace";
 import type { Artifact } from "@/shared/api/models";
 import { cn } from "@/shared/lib/utils";
 
 export function WorkPaneView({
-  openArtifacts,
-  activeArtifact,
-  statusPath,
-  inspectorOpen,
-  onActivateArtifact,
-  onCloseArtifact,
-  onToggleInspector,
+  state,
   children,
 }: {
-  openArtifacts: Artifact[];
-  activeArtifact: Artifact | null;
-  statusPath: string[];
-  inspectorOpen: boolean;
-  onActivateArtifact: (artifactId: string) => void;
-  onCloseArtifact: (artifactId: string) => void;
-  onToggleInspector: () => void;
+  state: WorkPaneState;
   children: ReactNode;
 }) {
+  const {
+    openArtifacts,
+    activeArtifact,
+    statusPath,
+    inspectorOpen,
+    onActivateArtifact,
+    onCloseArtifact,
+    onToggleInspector,
+  } = state;
+
   return (
     <section className="flex min-w-0 flex-1 flex-col overflow-hidden bg-white">
       <div className="h-10 border-b border-[#e7e5e4] bg-[#fafaf9]">

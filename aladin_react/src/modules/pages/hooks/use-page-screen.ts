@@ -2,7 +2,27 @@ import { useCallback, useEffect, useMemo } from "react";
 import { useAppComposition } from "@/app/composition/app-composition";
 import { useObservableState } from "@/shared/flow/use-observable-state";
 
-export function usePageScreen(pageId: string) {
+export interface PageScreenState {
+  loading: boolean;
+  errorMessage: string | null;
+  title: string;
+  pageId: string;
+  initialMarkdown: string;
+  sessionReady: boolean;
+  saveState: import("@/modules/pages/domain").PageSaveState;
+  message: string | null;
+  revision: number;
+  editorMode: import("@/modules/pages/domain").PageEditorMode;
+  blockNoteError: string | null;
+  editorBoundaryKey: number;
+  statusClassName: string;
+  onDraftChange: (markdown: string) => void;
+  onBlur: () => void;
+  onDriverError: (error: unknown) => void;
+  onRetryRichEditor: () => void;
+}
+
+export function usePageScreen(pageId: string): PageScreenState {
   const { services } = useAppComposition();
 
   useEffect(() => {

@@ -9,7 +9,7 @@ import { useObservableState } from "@/shared/flow/use-observable-state";
 
 export type WorkspaceDestination = "home" | "folders" | "sources" | "signals" | "graph";
 
-export interface WorkspaceShellResult {
+export interface WorkspaceShellState {
   selectedDestination: WorkspaceDestination;
   userEmail: string;
   logoutPending: boolean;
@@ -22,7 +22,7 @@ export interface WorkspaceShellResult {
   onCreateVoice: () => void;
 }
 
-export interface BrowserPaneResult {
+export interface BrowserPaneState {
   loading: boolean;
   errorMessage: string | null;
   rows: BrowserTreeRow[];
@@ -39,7 +39,7 @@ export interface BrowserPaneResult {
   onCreateNoteHere: (folderId: string) => void;
 }
 
-export interface WorkPaneResult {
+export interface WorkPaneState {
   openArtifacts: Artifact[];
   activeArtifact: Artifact | null;
   statusPath: string[];
@@ -49,7 +49,7 @@ export interface WorkPaneResult {
   onToggleInspector: () => void;
 }
 
-export interface RenameDialogResult {
+export interface RenameDialogState {
   rename: RenameDraft | null;
   pending: boolean;
   onDraftTitleChange: (title: string) => void;
@@ -57,7 +57,7 @@ export interface RenameDialogResult {
   onSave: () => Promise<void>;
 }
 
-export interface VoiceDraftResult {
+export interface VoiceDraftState {
   draft: VoiceCaptureDraft | null;
   permissionError: string | null;
   pending: boolean;
@@ -68,7 +68,7 @@ export interface VoiceDraftResult {
   onSave: () => Promise<void>;
 }
 
-export function useWorkspaceShell(): WorkspaceShellResult {
+export function useWorkspaceShell(): WorkspaceShellState {
   const { services } = useAppComposition();
   const location = useLocation();
   const navigate = useNavigate();
@@ -138,7 +138,7 @@ export function useWorkspaceShell(): WorkspaceShellResult {
   };
 }
 
-export function useBrowserPane(): BrowserPaneResult {
+export function useBrowserPane(): BrowserPaneState {
   const { services } = useAppComposition();
   const workspace = useAppStore((state) => state.workspace);
   const openArtifact = useAppStore((state) => state.openArtifact);
@@ -217,7 +217,7 @@ export function useBrowserPane(): BrowserPaneResult {
   };
 }
 
-export function useWorkPane(): WorkPaneResult {
+export function useWorkPane(): WorkPaneState {
   const { services } = useAppComposition();
   const openArtifactIds = useAppStore((state) => state.workspace.openArtifactIds);
   const activeArtifactId = useAppStore((state) => state.workspace.activeArtifactId);
@@ -285,7 +285,7 @@ function findFolderTitle(tree: import("@/shared/api/models").BrowserTreeNode[], 
   return null;
 }
 
-export function useRenameDialog(): RenameDialogResult {
+export function useRenameDialog(): RenameDialogState {
   const { services } = useAppComposition();
   const rename = useAppStore((state) => state.workspace.activeRename);
   const setRenameTitle = useAppStore((state) => state.setRenameTitle);
@@ -314,7 +314,7 @@ export function useRenameDialog(): RenameDialogResult {
   };
 }
 
-export function useVoiceDraft(): VoiceDraftResult {
+export function useVoiceDraft(): VoiceDraftState {
   const { services } = useAppComposition();
   const draft = useAppStore((state) => state.workspace.activeVoiceDraft);
   const patchVoiceDraft = useAppStore((state) => state.patchVoiceDraft);

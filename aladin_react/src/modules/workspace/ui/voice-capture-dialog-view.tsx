@@ -10,27 +10,20 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import type { VoiceDraftState } from "@/modules/workspace/hooks/use-workspace";
 import type { VoiceCaptureDraft } from "@/shared/api/models";
 
-export function VoiceCaptureDialogView({
-  draft,
-  permissionError,
-  pending,
-  onClose,
-  onPatchDraft,
-  onStartRecording,
-  onStopRecording,
-  onSave,
-}: {
-  draft: VoiceCaptureDraft | null;
-  permissionError: string | null;
-  pending: boolean;
-  onClose: () => void;
-  onPatchDraft: (patch: Partial<VoiceCaptureDraft>) => void;
-  onStartRecording: () => void;
-  onStopRecording: () => void;
-  onSave: () => void;
-}) {
+export function VoiceCaptureDialogView({ state }: { state: VoiceDraftState }) {
+  const {
+    draft,
+    permissionError,
+    pending,
+    onClose,
+    onPatchDraft,
+    onStartRecording,
+    onStopRecording,
+    onSave,
+  } = state;
   return (
     <Dialog open={Boolean(draft)} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="w-[min(92vw,640px)]">
