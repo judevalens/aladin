@@ -10,11 +10,6 @@ describe("workspace store", () => {
       session: initialSessionState,
       workspace: initialWorkspaceShellState,
       pageSessions: {},
-      sourcesUi: {
-        addOpen: false,
-        integrationsOpen: false,
-        selectedSourceId: null,
-      },
     });
   });
 

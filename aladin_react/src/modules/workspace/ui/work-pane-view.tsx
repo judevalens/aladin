@@ -24,18 +24,18 @@ export function WorkPaneView({
 }) {
   return (
     <section className="flex min-w-0 flex-1 flex-col overflow-hidden bg-white">
-      <div className="border-b border-[#e7e5e4] bg-[#fafaf9] px-2 pt-1.5">
-        <div className="scrollbar-hidden flex min-w-0 items-end gap-0.5 overflow-x-auto overflow-y-hidden">
+      <div className="h-10 border-b border-[#e7e5e4] bg-[#fafaf9]">
+        <div className="scrollbar-hidden flex h-full min-w-0 overflow-x-auto overflow-y-hidden">
           {openArtifacts.map((artifact) => {
             const active = artifact.id === activeArtifact?.id;
             return (
               <button
                 key={artifact.id}
                 className={cn(
-                  "group relative flex h-9 items-center gap-2 rounded-t-md border border-b-0 px-3 text-[12.5px] transition-colors",
+                  "group relative flex h-full items-center gap-2 border-r px-4 text-[12.5px] transition-colors",
                   active
-                    ? "border-[#e7e5e4] bg-white font-medium text-[#0a0a0a] -mb-px"
-                    : "border-transparent bg-transparent text-[#78716c] hover:text-[#0a0a0a]",
+                    ? "border-[#e7e5e4] bg-white font-medium text-[#0a0a0a]"
+                    : "border-[#e7e5e4] bg-[#fafaf9] text-[#78716c] hover:bg-[#f5f5f4] hover:text-[#0a0a0a]",
                 )}
                 onClick={() => onActivateArtifact(artifact.id)}
                 type="button"

@@ -1,6 +1,5 @@
 import { Folder, GitGraph, Home, LogOut, Network, Plus, Signal } from "lucide-react";
 import type { ReactNode } from "react";
-import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -44,7 +43,7 @@ export function WorkspaceShellView({
   children: ReactNode;
 }) {
   return (
-    <div className="app-canvas flex h-screen text-[#0a0a0a]">
+    <div className="app-canvas flex h-screen border-t border-[#e7e5e4] bg-[#f5f5f4] text-[#0a0a0a]">
       <aside className="flex h-full w-[252px] shrink-0 border-r border-[#e7e5e4] bg-white sm:w-[272px] lg:w-sidebar">
         <div className="flex min-h-0 w-full flex-col">
           <div className="px-4 pt-5 pb-4">
@@ -63,10 +62,13 @@ export function WorkspaceShellView({
             <AladinToolbarField text="Search…" />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="default" size="sm" className="w-full justify-between">
+                <button
+                  type="button"
+                  className="flex h-9 w-full items-center justify-between rounded-md border border-[#18181b] bg-[#18181b] px-3 text-[12.5px] font-medium text-[#fafaf9] shadow-[0_1px_0_rgba(0,0,0,0.04)] transition-colors hover:bg-[#27272a]"
+                >
                   <span>New item</span>
                   <Plus className="h-3.5 w-3.5" />
-                </Button>
+                </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-52">
                 <DropdownMenuLabel>Create</DropdownMenuLabel>
@@ -119,7 +121,7 @@ export function WorkspaceShellView({
           </div>
         </div>
       </aside>
-      <main className="flex min-w-0 flex-1 overflow-hidden">{children}</main>
+      <main className="flex min-w-0 flex-1 overflow-hidden bg-white">{children}</main>
     </div>
   );
 }

@@ -59,7 +59,7 @@ export function BrowserPaneView({
 
   return (
     <section className="flex w-[300px] flex-col overflow-hidden border-r border-[#e7e5e4] bg-[#fafaf9] sm:w-[332px]">
-      <div className="border-b border-[#e7e5e4] px-3 py-2.5">
+      <div className="flex h-10 items-center border-b border-[#e7e5e4] px-3">
         <BrowserBreadcrumb breadcrumb={breadcrumb} onNavigateToScope={onNavigateToScope} />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto browser-pane-scroll">
@@ -163,14 +163,14 @@ function BrowserBreadcrumb({
   const parentCrumb =
     breadcrumb.crumbs.length >= 2 ? breadcrumb.crumbs[breadcrumb.crumbs.length - 2] : null;
   return (
-    <nav className="flex min-w-0 items-center text-[12px] text-[#78716c]">
+    <nav className="flex h-full min-w-0 items-center text-[12.5px] leading-none text-[#78716c]">
       {parentCrumb ? (
         <button
           type="button"
           aria-label="Up one level"
           title={`Up to ${parentCrumb.label}`}
           onClick={() => onNavigateToScope(parentCrumb.id)}
-          className="mr-1 flex h-5 w-5 items-center justify-center rounded text-[#78716c] hover:bg-[#ebebe8] hover:text-[#0a0a0a]"
+          className="mr-1 flex h-6 w-6 items-center justify-center rounded text-[#78716c] hover:bg-[#ebebe8] hover:text-[#0a0a0a]"
         >
           <ChevronLeft className="h-3.5 w-3.5" strokeWidth={2} />
         </button>
@@ -216,7 +216,7 @@ function BreadcrumbSegment({
         <button
           type="button"
           className={cn(
-            "max-w-[14ch] truncate rounded px-1 py-0.5 hover:bg-[#ebebe8] hover:text-[#0a0a0a]",
+            "max-w-[14ch] truncate rounded px-1 py-0.5 leading-none hover:bg-[#ebebe8] hover:text-[#0a0a0a]",
             isCurrent ? "font-medium text-[#0a0a0a]" : "text-[#78716c]",
           )}
         >
