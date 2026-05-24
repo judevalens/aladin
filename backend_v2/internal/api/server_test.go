@@ -923,6 +923,47 @@ func (f *fakeArtifactService) BrowserTree(context.Context) ([]artifactservice.Br
 	return f.browserTree, nil
 }
 
+func (f *fakeArtifactService) CreateBrowserNode(_ context.Context, input artifactservice.BrowserNodeCreateInput) (artifactservice.BrowserNodeCreateResponse, error) {
+	if f.err != nil {
+		return artifactservice.BrowserNodeCreateResponse{}, f.err
+	}
+	nodeID := "node-created"
+	if input.Kind == "artifact" {
+		artifactID := "artifact-created"
+		return artifactservice.BrowserNodeCreateResponse{
+			Node: artifactservice.BrowserNodeResponse{
+				ID:         nodeID,
+				ParentID:   input.ParentID,
+				Kind:       "artifact",
+				Title:      input.Title,
+				ArtifactID: &artifactID,
+				Position:   1,
+			},
+			Artifact: &artifactservice.ArtifactResponse{
+				ID:       artifactID,
+				Type:     input.Artifact.Type,
+				FolderID: input.ParentID,
+				Title:    input.Title,
+				Content:  input.Artifact.Content,
+				Metadata: map[string]any{},
+			},
+		}, nil
+	}
+	return artifactservice.BrowserNodeCreateResponse{
+		Node: artifactservice.BrowserNodeResponse{
+			ID:       nodeID,
+			ParentID: input.ParentID,
+			Kind:     "folder",
+			Title:    input.Title,
+			Position: 1,
+		},
+	}, nil
+}
+
+func (f *fakeArtifactService) DeleteBrowserNode(context.Context, string) error {
+	return nil
+}
+
 func (f *fakeArtifactService) Get(context.Context, string) (artifactservice.ArtifactResponse, error) {
 	if f.err != nil {
 		return artifactservice.ArtifactResponse{}, f.err
@@ -930,12 +971,23 @@ func (f *fakeArtifactService) Get(context.Context, string) (artifactservice.Arti
 	return artifactservice.ArtifactResponse{}, artifactservice.ErrNotFound
 }
 
-func (f *fakeArtifactService) Create(_ context.Context, payload artifactservice.ArtifactPayload) (artifactservice.ArtifactResponse, error) {
+func (f *fakeArtifactService) Create(_ context.Context, payload artifactservice.ArtifactPayload) (artifactservice.ArtifactCreateResponse, error) {
 	if f.err != nil {
-		return artifactservice.ArtifactResponse{}, f.err
+		return artifactservice.ArtifactCreateResponse{}, f.err
 	}
 	f.created = append(f.created, payload)
-	return artifactservice.ArtifactResponse{ID: "artifact-created", Type: payload.Type, FolderID: payload.FolderID, Title: payload.Title, Content: payload.Content, Metadata: map[string]any{}}, nil
+	artifactID := "artifact-created"
+	return artifactservice.ArtifactCreateResponse{
+		Artifact: artifactservice.ArtifactResponse{ID: artifactID, Type: payload.Type, FolderID: payload.FolderID, Title: payload.Title, Content: payload.Content, Metadata: map[string]any{}},
+		Node: artifactservice.BrowserNodeResponse{
+			ID:         artifactID,
+			ParentID:   payload.FolderID,
+			Kind:       "artifact",
+			Title:      payload.Title,
+			ArtifactID: &artifactID,
+			Position:   1,
+		},
+	}, nil
 }
 
 func (f *fakeArtifactService) Update(context.Context, string, artifactservice.ArtifactPatch) (artifactservice.ArtifactResponse, error) {

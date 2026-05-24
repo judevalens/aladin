@@ -41,11 +41,13 @@ func TestCreateAndUpdatePageToolUsePageTypeAndAgentMetadata(t *testing.T) {
 			Content:  "body",
 			Metadata: map[string]any{"kept": true},
 		},
-		createResult: service.ArtifactResponse{
-			ID:        "page-created",
-			Type:      "page",
-			Title:     "Created",
-			UpdatedAt: "2026-05-10T00:00:00Z",
+		createResult: service.ArtifactCreateResponse{
+			Artifact: service.ArtifactResponse{
+				ID:        "page-created",
+				Type:      "page",
+				Title:     "Created",
+				UpdatedAt: "2026-05-10T00:00:00Z",
+			},
 		},
 		updateResult: service.ArtifactResponse{
 			ID:        "page-1",
@@ -158,7 +160,7 @@ type fakeArtifactService struct {
 	browserTree   []service.BrowserTreeNode
 	folders       []service.FolderNode
 	getResult     service.ArtifactResponse
-	createResult  service.ArtifactResponse
+	createResult  service.ArtifactCreateResponse
 	updateResult  service.ArtifactResponse
 	createPayload service.ArtifactPayload
 	updatePatch   service.ArtifactPatch
@@ -189,6 +191,10 @@ func (f *fakeArtifactService) BrowserTree(ctx context.Context) ([]service.Browse
 	return f.browserTree, f.err
 }
 
+func (f *fakeArtifactService) DeleteBrowserNode(context.Context, string) error {
+	return nil
+}
+
 func (f *fakeArtifactService) Get(ctx context.Context, _ string) (service.ArtifactResponse, error) {
 	if err := service.RequireScope(ctx, service.ScopeArtifactsRead); err != nil {
 		return service.ArtifactResponse{}, err
@@ -196,15 +202,23 @@ func (f *fakeArtifactService) Get(ctx context.Context, _ string) (service.Artifa
 	return f.getResult, f.err
 }
 
-func (f *fakeArtifactService) Create(ctx context.Context, payload service.ArtifactPayload) (service.ArtifactResponse, error) {
+func (f *fakeArtifactService) Create(ctx context.Context, payload service.ArtifactPayload) (service.ArtifactCreateResponse, error) {
 	if err := service.RequireScope(ctx, service.ScopeArtifactsWrite); err != nil {
-		return service.ArtifactResponse{}, err
+		return service.ArtifactCreateResponse{}, err
 	}
 	f.createPayload = payload
-	if f.createResult.ID != "" {
+	if f.createResult.Artifact.ID != "" {
 		return f.createResult, f.err
 	}
-	return service.ArtifactResponse{ID: "page-created", Type: payload.Type, Title: payload.Title, Metadata: payload.Metadata}, f.err
+	return service.ArtifactCreateResponse{
+		Artifact: service.ArtifactResponse{
+			ID:       "page-created",
+			Type:     payload.Type,
+			Title:    payload.Title,
+			FolderID: payload.FolderID,
+			Metadata: payload.Metadata,
+		},
+	}, f.err
 }
 
 func (f *fakeArtifactService) Update(ctx context.Context, _ string, patch service.ArtifactPatch) (service.ArtifactResponse, error) {
@@ -255,4 +269,8 @@ func (f *fakeArtifactService) GetFolder(context.Context, string) (service.Folder
 
 func (f *fakeArtifactService) FolderBreadcrumbs(context.Context, string) ([]service.BreadcrumbItem, error) {
 	return nil, nil
+}
+
+func (f *fakeArtifactService) CreateBrowserNode(context.Context, service.BrowserNodeCreateInput) (service.BrowserNodeCreateResponse, error) {
+	return service.BrowserNodeCreateResponse{}, service.ErrForbidden
 }

@@ -143,6 +143,59 @@ func (r *PostgresArtifactRepository) CreateArtifact(ctx context.Context, rec art
 	return err
 }
 
+func (r *PostgresArtifactRepository) CreateArtifactGraph(ctx context.Context, rec artifactservice.ArtifactResponse, node artifactservice.TreeNodeRecord, pageMarkdown *string) error {
+	userID, err := r.userID(ctx)
+	if err != nil {
+		return err
+	}
+	createdAt, err := time.Parse(time.RFC3339, rec.CreatedAt)
+	if err != nil {
+		return err
+	}
+	updatedAt, err := time.Parse(time.RFC3339, rec.UpdatedAt)
+	if err != nil {
+		return err
+	}
+	metadata, _ := json.Marshal(rec.Metadata)
+
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO artifacts (
+		    id, user_id, type, title, content, summary, source_url, metadata, created_at, updated_at
+		) VALUES (
+		    $1, $2::uuid, $3, $4, $5, $6, $7, $8::jsonb, $9, $10
+		)
+	`, rec.ID, userID, rec.Type, rec.Title, rec.Content, rec.Summary, rec.SourceURL, string(metadata), createdAt, updatedAt); err != nil {
+		return err
+	}
+
+	if pageMarkdown != nil {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO page_documents (artifact_id, markdown, created_at, updated_at)
+			VALUES ($1, $2, now(), now())
+			ON CONFLICT (artifact_id) DO NOTHING
+		`, rec.ID, *pageMarkdown); err != nil {
+			return err
+		}
+	}
+
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO tree_nodes (id, user_id, parent_id, kind, title, artifact_id, position, created_at, updated_at)
+		VALUES ($1, $2::uuid, $3, $4, $5, $6, $7, now(), now())
+	`, node.ID, userID, node.ParentID, node.Kind, node.Title, node.ArtifactID, node.Position); err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
+}
+
 func (r *PostgresArtifactRepository) UpdateArtifact(ctx context.Context, id string, patch artifactservice.ArtifactPatch) error {
 	userID, err := r.userID(ctx)
 	if err != nil {
@@ -440,6 +493,75 @@ func (r *PostgresArtifactRepository) CreateTreeNode(ctx context.Context, node ar
 		VALUES ($1, $2::uuid, $3, $4, $5, $6, $7, now(), now())
 	`, node.ID, userID, node.ParentID, node.Kind, node.Title, node.ArtifactID, node.Position)
 	return err
+}
+
+func (r *PostgresArtifactRepository) DeleteBrowserNode(ctx context.Context, id string) error {
+	userID, err := r.userID(ctx)
+	if err != nil {
+		return err
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	rows, err := tx.Query(ctx, `
+		WITH RECURSIVE subtree AS (
+		    SELECT id, artifact_id
+		      FROM tree_nodes
+		     WHERE id = $1 AND user_id = $2::uuid
+		    UNION ALL
+		    SELECT n.id, n.artifact_id
+		      FROM tree_nodes n
+		      JOIN subtree s ON n.parent_id = s.id
+		     WHERE n.user_id = $2::uuid
+		)
+		SELECT artifact_id
+		  FROM subtree
+		 WHERE artifact_id IS NOT NULL
+	`, id, userID)
+	if err != nil {
+		return err
+	}
+	artifactIDs := make([]string, 0)
+	for rows.Next() {
+		var artifactID string
+		if err := rows.Scan(&artifactID); err != nil {
+			rows.Close()
+			return err
+		}
+		artifactIDs = append(artifactIDs, artifactID)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+
+	tag, err := tx.Exec(ctx, `
+		DELETE FROM tree_nodes
+		 WHERE id = $1 AND user_id = $2::uuid
+	`, id, userID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return artifactservice.ErrNotFound
+	}
+
+	for _, artifactID := range artifactIDs {
+		if _, err := tx.Exec(ctx, `
+			DELETE FROM artifacts
+			 WHERE id = $1 AND user_id = $2::uuid
+		`, artifactID, userID); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit(ctx)
 }
 
 func (r *PostgresArtifactRepository) UpdateArtifactNodeParent(ctx context.Context, artifactID string, parentID *string) error {

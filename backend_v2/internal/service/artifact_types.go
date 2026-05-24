@@ -14,7 +14,44 @@ type ArtifactResponse struct {
 	Revision  int64          `json:"-"`
 }
 
+type BrowserNodeResponse struct {
+	ID         string  `json:"id"`
+	ParentID   *string `json:"parentId,omitempty"`
+	Kind       string  `json:"kind"`
+	Title      string  `json:"title"`
+	ArtifactID *string `json:"artifactId,omitempty"`
+	Position   int64   `json:"position"`
+}
+
+type ArtifactCreateResponse struct {
+	Artifact ArtifactResponse    `json:"artifact"`
+	Node     BrowserNodeResponse `json:"node"`
+}
+
+type BrowserArtifactPayload struct {
+	ID        string         `json:"id,omitempty"`
+	Type      string         `json:"type"`
+	Content   string         `json:"content"`
+	Summary   *string        `json:"summary"`
+	SourceURL *string        `json:"sourceUrl"`
+	Metadata  map[string]any `json:"metadata"`
+}
+
+type BrowserNodeCreateInput struct {
+	ID       string                  `json:"id,omitempty"`
+	Kind     string                  `json:"kind"`
+	ParentID *string                 `json:"parentId,omitempty"`
+	Title    string                  `json:"title"`
+	Artifact *BrowserArtifactPayload `json:"artifact,omitempty"`
+}
+
+type BrowserNodeCreateResponse struct {
+	Node     BrowserNodeResponse `json:"node"`
+	Artifact *ArtifactResponse   `json:"artifact,omitempty"`
+}
+
 type ArtifactPayload struct {
+	ID        string         `json:"id,omitempty"`
 	Type      string         `json:"type"`
 	FolderID  *string        `json:"folderId,omitempty"`
 	Title     string         `json:"title"`

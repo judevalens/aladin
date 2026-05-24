@@ -12,6 +12,8 @@ import (
 
 func (s *Server) registerArtifactRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/browser/tree", s.handleBrowserTree)
+	mux.HandleFunc("POST /api/browser/nodes", s.handleBrowserNodesCreate)
+	mux.HandleFunc("DELETE /api/browser/nodes/{id}", s.handleBrowserNodesDelete)
 	mux.HandleFunc("GET /api/artifacts/", s.handleArtifactsList)
 	mux.HandleFunc("POST /api/artifacts/", s.handleArtifactsCreate)
 	mux.HandleFunc("POST /api/artifacts/upload", s.handleArtifactsUpload)
@@ -28,6 +30,32 @@ func (s *Server) registerArtifactRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/folders/{id}/breadcrumbs", s.handleFoldersBreadcrumbs)
 }
 
+func (s *Server) handleBrowserNodesCreate(w http.ResponseWriter, r *http.Request) {
+	var input artifactservice.BrowserNodeCreateInput
+	if err := readJSON(r, &input); err != nil {
+		writeDecodeError(w, r, err)
+		return
+	}
+	rec, err := s.deps.Artifacts().CreateBrowserNode(r.Context(), input)
+	if err != nil {
+		if writeAccessError(w, r, err) {
+			return
+		}
+		if errors.Is(err, artifactservice.ErrNotFound) {
+			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Folder not found", err)
+			return
+		}
+		var requestErr artifactservice.BadRequest
+		if errors.As(err, &requestErr) {
+			writeAPIError(w, r, http.StatusBadRequest, categoryBadRequest, err.Error(), err)
+			return
+		}
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, rec)
+}
+
 func (s *Server) handleBrowserTree(w http.ResponseWriter, r *http.Request) {
 	out, err := s.deps.Artifacts().BrowserTree(r.Context())
 	if err != nil {
@@ -38,6 +66,21 @@ func (s *Server) handleBrowserTree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handleBrowserNodesDelete(w http.ResponseWriter, r *http.Request) {
+	if err := s.deps.Artifacts().DeleteBrowserNode(r.Context(), r.PathValue("id")); err != nil {
+		if writeAccessError(w, r, err) {
+			return
+		}
+		if errors.Is(err, artifactservice.ErrNotFound) {
+			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Browser node not found", err)
+			return
+		}
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (s *Server) handleArtifactsList(w http.ResponseWriter, r *http.Request) {

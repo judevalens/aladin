@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { initialSessionState } from "@/app/state/session-slice";
 import { useAppStore } from "@/app/state/store";
-import { createDefaultPageSessionMeta } from "@/modules/pages/domain";
 import { initialWorkspaceShellState } from "@/modules/workspace/domain";
 
 describe("workspace store", () => {
@@ -9,7 +8,6 @@ describe("workspace store", () => {
     useAppStore.setState({
       session: initialSessionState,
       workspace: initialWorkspaceShellState,
-      pageSessions: {},
     });
   });
 
@@ -38,14 +36,34 @@ describe("workspace store", () => {
     expect(workspace.activeArtifactId).toBe("a3");
   });
 
-  it("creates and patches page session metadata without storing editor content", () => {
-    useAppStore.getState().ensurePageSession("page-1");
-    useAppStore.getState().setPageSaveState("page-1", "saving", "Saving…");
-    useAppStore.getState().setPageRevision("page-1", 7);
+  it("drills into a folder and restores the previous browser frame on pop", () => {
+    useAppStore.setState({
+      workspace: {
+        ...initialWorkspaceShellState,
+        browserRootFolderId: "folder-root",
+        browserScrollTop: 128,
+        expandedFolderIds: ["folder-a", "folder-b"],
+      },
+    });
 
-    const session = useAppStore.getState().pageSessions["page-1"] ?? createDefaultPageSessionMeta();
-    expect(session.saveState).toBe("saving");
-    expect(session.message).toBe("Saving…");
-    expect(session.revision).toBe(7);
+    useAppStore.getState().drillIntoFolder("folder-deep");
+    let workspace = useAppStore.getState().workspace;
+    expect(workspace.browserRootFolderId).toBe("folder-deep");
+    expect(workspace.expandedFolderIds).toEqual([]);
+    expect(workspace.browserScrollTop).toBe(0);
+    expect(workspace.browserFrameStack).toEqual([
+      {
+        rootFolderId: "folder-root",
+        expandedFolderIds: ["folder-a", "folder-b"],
+        scrollTop: 128,
+      },
+    ]);
+
+    useAppStore.getState().popBrowserFrame();
+    workspace = useAppStore.getState().workspace;
+    expect(workspace.browserRootFolderId).toBe("folder-root");
+    expect(workspace.expandedFolderIds).toEqual(["folder-a", "folder-b"]);
+    expect(workspace.browserScrollTop).toBe(128);
+    expect(workspace.browserFrameStack).toEqual([]);
   });
 });

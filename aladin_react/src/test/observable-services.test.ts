@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { AuthSessionService } from "@/services/auth/auth-session-service";
-import { WorkspaceDataService } from "@/services/workspace/workspace-data-service";
+import { WorkspaceSyncService } from "@/services/workspace/workspace-sync-service";
 import type { AuthRepo } from "@/repos/auth/auth-repo";
 import type { ArtifactRepo } from "@/repos/artifacts/artifact-repo";
 import type { WorkspaceRepo } from "@/repos/workspace/workspace-repo";
@@ -42,17 +42,23 @@ describe("observable services", () => {
       token: "desktop-token",
       expiresAt: "2026-05-16T00:00:00Z",
     });
-    expect(service.getSnapshot()).toEqual({
+    let sessionSnapshot = null;
+    const sessionSubscription = service.session().subscribe((next) => {
+      sessionSnapshot = next;
+    });
+    sessionSubscription.unsubscribe();
+    expect(sessionSnapshot).toEqual({
       status: "authenticated",
       user: { id: "user-1", email: "admin@email.com" },
     });
   });
 
-  it("deduplicates concurrent artifact loads for the same artifact id", async () => {
+  it("broadcasts the fetched artifact to all subscribers via artifactById", async () => {
     const workspaceRepo: WorkspaceRepo = {
       getBrowserTree: vi.fn(),
       createFolder: vi.fn(),
       renameFolder: vi.fn(),
+      createArtifact: vi.fn(),
     };
     const artifactRepo: ArtifactRepo = {
       getArtifact: vi.fn().mockImplementation(async (artifactId: string) => ({
@@ -67,25 +73,29 @@ describe("observable services", () => {
       renameArtifact: vi.fn(),
       uploadVoiceArtifact: vi.fn(),
     };
+    const service = new WorkspaceSyncService(workspaceRepo, artifactRepo);
 
-    const service = new WorkspaceDataService(workspaceRepo, artifactRepo);
-
-    await Promise.all([
-      service.ensureArtifactLoaded("artifact-1"),
-      service.ensureArtifactLoaded("artifact-1"),
-      service.ensureArtifactLoaded("artifact-1"),
-    ]);
-
-    expect(artifactRepo.getArtifact).toHaveBeenCalledTimes(1);
-    expect(service.getArtifactsSnapshot()).toEqual({
-      "artifact-1": {
-        id: "artifact-1",
-        folderId: "folder-1",
-        title: "Artifact one",
-        content: "hello",
-        kind: "note",
-        updatedLabel: "just now",
-      },
+    const emissions: unknown[] = [];
+    const subscription = service.artifactById("artifact-1").subscribe((next) => {
+      emissions.push(next);
     });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    subscription.unsubscribe();
+
+    expect(artifactRepo.getArtifact).toHaveBeenCalledWith("artifact-1");
+    expect(emissions).toEqual([
+      {
+        ok: true,
+        value: {
+          id: "artifact-1",
+          folderId: "folder-1",
+          title: "Artifact one",
+          content: "hello",
+          kind: "note",
+          updatedLabel: "just now",
+        },
+      },
+    ]);
   });
 });

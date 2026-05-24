@@ -1,38 +1,50 @@
+import { Navigate, createBrowserRouter } from "react-router-dom";
+import { ProtectedLayout } from "@/modules/auth/protected-layout";
+import { AuthUI } from "@/modules/auth/ui/auth-ui";
+import { BrowserPaneUI } from "@/modules/workspace/ui/browser-pane-ui";
+import { RenameDialogUI } from "@/modules/workspace/ui/rename-dialog-ui";
+import { VoiceCaptureDialogUI } from "@/modules/workspace/ui/voice-capture-dialog-ui";
+import { WorkPaneUI } from "@/modules/workspace/ui/work-pane-ui";
 import {
-  Navigate,
-  createBrowserRouter,
-} from "react-router-dom";
-import { AuthScreen, ProtectedLayout } from "@/modules/auth/screens";
-import {
-  WorkspacePlaceholderScreen,
-  WorkspaceRouteScreen,
-  WorkspaceShellLayoutScreen,
-} from "@/modules/workspace/screens";
-import { SourcesRouteScreen } from "@/modules/sources/screens";
+  PlaceholderDestinationUI,
+  WorkspaceShellUI,
+} from "@/modules/workspace/ui/workspace-shell-ui";
+import { SourcesRoute } from "@/modules/sources/sources-route";
+
+function WorkspaceRoute() {
+  return (
+    <>
+      <BrowserPaneUI />
+      <WorkPaneUI />
+      <RenameDialogUI />
+      <VoiceCaptureDialogUI />
+    </>
+  );
+}
 
 export const router = createBrowserRouter([
   {
     path: "/login",
-    element: <AuthScreen mode="login" />,
+    element: <AuthUI mode="login" />,
   },
   {
     path: "/register",
-    element: <AuthScreen mode="register" />,
+    element: <AuthUI mode="register" />,
   },
   {
     element: <ProtectedLayout />,
     children: [
       {
-        element: <WorkspaceShellLayoutScreen />,
+        element: <WorkspaceShellUI />,
         children: [
           { index: true, element: <Navigate to="/home" replace /> },
-          { path: "/home", element: <WorkspaceRouteScreen destination="home" /> },
-          { path: "/folders", element: <WorkspaceRouteScreen destination="folders" /> },
-          { path: "/sources", element: <SourcesRouteScreen /> },
+          { path: "/home", element: <WorkspaceRoute /> },
+          { path: "/folders", element: <WorkspaceRoute /> },
+          { path: "/sources", element: <SourcesRoute /> },
           {
             path: "/signals",
             element: (
-              <WorkspacePlaceholderScreen
+              <PlaceholderDestinationUI
                 paneTitle="Signals"
                 paneBody="Signals will live here."
                 workTitle="Signals"
@@ -43,7 +55,7 @@ export const router = createBrowserRouter([
           {
             path: "/graph",
             element: (
-              <WorkspacePlaceholderScreen
+              <PlaceholderDestinationUI
                 paneTitle="Graph"
                 paneBody="Graph will remain a workspace-wide context view."
                 workTitle="Graph"

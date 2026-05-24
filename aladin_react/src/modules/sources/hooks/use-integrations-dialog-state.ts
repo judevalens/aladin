@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useAppComposition } from "@/app/composition/app-composition";
 import { useObservableState } from "@/shared/flow/use-observable-state";
-import { ProviderConnectionProvider } from "@/shared/api/models";
+import type { IntegrationToken, ProviderConnectionProvider } from "@/shared/api/models";
 
 export interface IntegrationsState {
-  providers: any[];
-  tokens: any[];
+  providers: ProviderConnectionProvider[];
+  tokens: IntegrationToken[];
   selectedProvider: ProviderConnectionProvider;
   tokenName: string;
   createdToken: string | null;
@@ -43,29 +43,11 @@ export function useIntegrationsDialogState({
   const [createTokenPending, setCreateTokenPending] = useState(false);
   const [revokeTokenPending, setRevokeTokenPending] = useState(false);
 
-  const providersLoadable = useObservableState(
-    () => services.sources.catalog.observeProviders(),
-    () => services.sources.catalog.getProvidersSnapshot(),
-    [services.sources.catalog],
-  );
-  const tokensLoadable = useObservableState(
-    () => services.sources.catalog.observeTokens(),
-    () => services.sources.catalog.getTokensSnapshot(),
-    [services.sources.catalog],
-  );
-  const providers = providersLoadable.data;
-  const tokens = tokensLoadable.data;
-
-  useEffect(() => {
-    void services.sources.catalog.ensureProvidersLoaded();
-  }, [services.sources.catalog]);
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    void services.sources.catalog.ensureTokensLoaded();
-  }, [open, services.sources.catalog]);
+  const providersLoadable = useObservableState(services.sources.providers());
+  const tokensLoadable = useObservableState(services.sources.tokens());
+  const providers =
+    providersLoadable.status === "data" ? providersLoadable.value : [];
+  const tokens = tokensLoadable.status === "data" ? tokensLoadable.value : [];
 
   const selectedProvider =
     providers.find((provider) => provider.provider === selectedProviderId) ??
@@ -89,8 +71,7 @@ export function useIntegrationsDialogState({
     onConnectProvider: async (providerId: string) => {
       try {
         setConnectPending(true);
-        const session =
-          await services.sources.catalog.startProviderConnect(providerId);
+        const session = await services.sources.startProviderConnect(providerId);
         window.open(session.connectLink, "_blank", "noopener,noreferrer");
       } finally {
         setConnectPending(false);
@@ -99,7 +80,7 @@ export function useIntegrationsDialogState({
     onSyncProviders: async () => {
       try {
         setSyncPending(true);
-        await services.sources.catalog.syncProviders();
+        await services.sources.syncProviders();
       } finally {
         setSyncPending(false);
       }
@@ -107,7 +88,7 @@ export function useIntegrationsDialogState({
     onDisconnectProvider: async (connectionId: string) => {
       try {
         setDisconnectPending(true);
-        await services.sources.catalog.disconnectProvider(connectionId);
+        await services.sources.disconnectProvider(connectionId);
       } finally {
         setDisconnectPending(false);
       }
@@ -115,7 +96,7 @@ export function useIntegrationsDialogState({
     onCreateToken: async () => {
       try {
         setCreateTokenPending(true);
-        const response = await services.sources.catalog.createIntegrationToken({
+        const response = await services.sources.createIntegrationToken({
           name: tokenName.trim(),
           scopes: services.integrations.defaultIntegrationScopes(),
         });
@@ -127,7 +108,7 @@ export function useIntegrationsDialogState({
     onRevokeToken: async (tokenId: string) => {
       try {
         setRevokeTokenPending(true);
-        await services.sources.catalog.revokeIntegrationToken(tokenId);
+        await services.sources.revokeIntegrationToken(tokenId);
       } finally {
         setRevokeTokenPending(false);
       }

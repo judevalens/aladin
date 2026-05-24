@@ -61,18 +61,18 @@ export function createApiClient(
   return {
     resolveUrl: (path) => resolveUrl(runtimeConfig.apiBaseUrl, path),
     async fetch<T>(path: string, init?: RequestInit) {
-      const token = runtimeConfig.isDesktopApp ? sessionStore.getToken() : null;
+      const token = sessionStore.getToken();
       const headers = new Headers(init?.headers ?? undefined);
       if (!(init?.body instanceof FormData) && !headers.has("Content-Type")) {
         headers.set("Content-Type", "application/json");
       }
-      if (runtimeConfig.isDesktopApp && token && !headers.has("Authorization")) {
+      if (token && !headers.has("Authorization")) {
         headers.set("Authorization", `Bearer ${token}`);
       }
 
       const response = await fetch(resolveUrl(runtimeConfig.apiBaseUrl, path), {
         ...init,
-        credentials: runtimeConfig.isDesktopApp ? "omit" : "include",
+        credentials: "omit",
         headers,
       });
       return parseResponse<T>(response);

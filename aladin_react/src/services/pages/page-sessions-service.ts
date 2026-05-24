@@ -1,186 +1,110 @@
-import { BehaviorSubject, type Observable } from "rxjs";
-import type { PageRepo } from "@/repos/pages/page-repo";
-import {
-  PageSessionService as PageSessionLogic,
-  statusToneForPageSave,
-} from "@/services/pages/page-session-service";
+import { BehaviorSubject, Subscription, type Observable } from "rxjs";
 import type { PageEditorMode, PageSaveState } from "@/modules/pages/domain";
-import type { PageDocumentRecord } from "@/shared/api/models";
+import { PageSessionService as PageSessionLogic } from "@/services/pages/page-session-service";
+import type { PageDocumentService } from "@/services/pages/page-document-service";
 
-export interface PageScreenSnapshot {
+export interface PageSessionSnapshot {
   pageId: string;
-  loading: boolean;
-  errorMessage: string | null;
-  title: string;
-  initialMarkdown: string;
   sessionReady: boolean;
-  saveState: PageSaveState;
-  message: string | null;
-  revision: number;
+  initialMarkdown: string;
   editorMode: PageEditorMode;
   blockNoteError: string | null;
   editorBoundaryKey: number;
+  saveState: PageSaveState;
+  saveMessage: string | null;
 }
 
-function createInitialPageScreenSnapshot(pageId: string): PageScreenSnapshot {
+function initialSessionSnapshot(pageId: string): PageSessionSnapshot {
   return {
     pageId,
-    loading: true,
-    errorMessage: null,
-    title: "Untitled page",
-    initialMarkdown: "",
     sessionReady: false,
-    saveState: "idle",
-    message: null,
-    revision: 0,
+    initialMarkdown: "",
     editorMode: "blocknote",
     blockNoteError: null,
     editorBoundaryKey: 0,
+    saveState: "idle",
+    saveMessage: null,
   };
 }
 
 interface PageSessionEntry {
   logic: PageSessionLogic;
-  subject: BehaviorSubject<PageScreenSnapshot>;
+  subject: BehaviorSubject<PageSessionSnapshot>;
+  documentSub: Subscription | null;
   saveTimer: number | null;
   saveInFlight: boolean;
-  loadPromise: Promise<void> | null;
 }
 
 export class PageSessionsService {
   private readonly sessions = new Map<string, PageSessionEntry>();
 
-  constructor(private readonly pageRepo: PageRepo) {}
+  constructor(private readonly documents: PageDocumentService) {}
 
-  observePage(pageId: string): Observable<PageScreenSnapshot> {
-    return this.getOrCreate(pageId).subject.asObservable();
-  }
-
-  getPageSnapshot(pageId: string): PageScreenSnapshot {
-    return this.getOrCreate(pageId).subject.getValue();
-  }
-
-  getStatusTone(saveState: PageSaveState) {
-    return statusToneForPageSave(saveState);
-  }
-
-  async ensureLoaded(pageId: string) {
-    const session = this.getOrCreate(pageId);
-    const snapshot = session.subject.getValue();
-    if (snapshot.sessionReady || snapshot.loading && session.loadPromise) {
-      return session.loadPromise ?? Promise.resolve();
-    }
-
-    if (!session.loadPromise) {
-      session.subject.next({
-        ...snapshot,
-        loading: true,
-        errorMessage: null,
-      });
-      session.loadPromise = this.pageRepo
-        .getPage(pageId)
-        .then((record) => {
-          this.initializeSession(pageId, record);
-        })
-        .catch((error) => {
-          session.subject.next({
-            ...session.subject.getValue(),
-            loading: false,
-            errorMessage: error instanceof Error ? error.message : "Failed to load page.",
-          });
-          throw error;
-        })
-        .finally(() => {
-          session.loadPromise = null;
-        });
-    }
-
-    return session.loadPromise;
+  session(pageId: string): Observable<PageSessionSnapshot> {
+    return this.getOrCreate(pageId).subject;
   }
 
   updateDraft(pageId: string, markdown: string) {
-    const session = this.getOrCreate(pageId);
-    session.logic.setDraft(markdown);
-    session.subject.next({
-      ...session.subject.getValue(),
-      saveState: "idle",
-      message: "Draft",
-    });
+    const entry = this.getOrCreate(pageId);
+    entry.logic.setDraft(markdown);
     this.scheduleSave(pageId);
   }
 
   flushSave(pageId: string) {
-    const session = this.getOrCreate(pageId);
-    if (session.saveTimer !== null) {
-      window.clearTimeout(session.saveTimer);
-      session.saveTimer = null;
+    const entry = this.sessions.get(pageId);
+    if (!entry) return;
+    if (entry.saveTimer !== null) {
+      window.clearTimeout(entry.saveTimer);
+      entry.saveTimer = null;
     }
-    if (session.saveInFlight) {
-      return;
-    }
-    const request = session.logic.createSaveRequest();
-    if (!request) {
-      return;
-    }
+    if (entry.saveInFlight) return;
+    const request = entry.logic.createSaveRequest();
+    if (!request) return;
 
-    session.saveInFlight = true;
-    session.subject.next({
-      ...session.subject.getValue(),
-      saveState: "saving",
-      message: "Saving…",
-    });
+    entry.saveInFlight = true;
+    this.patchSession(pageId, { saveState: "saving", saveMessage: "Saving…" });
 
-    void this.pageRepo
-      .savePage(pageId, {
-        content: request.content,
-        revision: request.revision,
-      })
+    void this.documents
+      .savePage(pageId, request)
       .then((record) => {
-        const result = session.logic.handleSaveSuccess(record);
-        session.saveInFlight = false;
-        const current = session.subject.getValue();
-        session.subject.next({
-          ...current,
-          title: record.title,
-          revision: result.snapshot.revision,
+        const result = entry.logic.handleSaveSuccess(record);
+        entry.saveInFlight = false;
+        this.patchSession(pageId, {
           saveState: result.saveState,
-          message: result.message,
-          errorMessage: null,
+          saveMessage: result.message,
         });
         if (result.shouldReschedule) {
           this.scheduleSave(pageId, 250);
         }
       })
       .catch((error) => {
-        session.saveInFlight = false;
-        const result = session.logic.handleSaveError(error);
-        session.subject.next({
-          ...session.subject.getValue(),
-          revision: result.revision,
+        const result = entry.logic.handleSaveError(error);
+        entry.saveInFlight = false;
+        this.patchSession(pageId, {
           saveState: result.saveState,
-          message: result.message,
+          saveMessage: result.message,
         });
       });
   }
 
   setDriverError(pageId: string, error: unknown) {
-    const session = this.getOrCreate(pageId);
+    const entry = this.getOrCreate(pageId);
     const message =
-      error instanceof Error ? error.message : "BlockNote failed to initialize for this page.";
-    session.subject.next({
-      ...session.subject.getValue(),
-      initialMarkdown: session.logic.getDraft(),
+      error instanceof Error
+        ? error.message
+        : "BlockNote failed to initialize for this page.";
+    this.patchSession(pageId, {
+      initialMarkdown: entry.logic.getDraft(),
       editorMode: "markdown-fallback",
       blockNoteError: message,
     });
   }
 
   retryRichEditor(pageId: string) {
-    const session = this.getOrCreate(pageId);
-    const current = session.subject.getValue();
-    session.subject.next({
-      ...current,
-      initialMarkdown: session.logic.getDraft(),
+    const entry = this.getOrCreate(pageId);
+    const current = entry.subject.getValue();
+    this.patchSession(pageId, {
+      initialMarkdown: entry.logic.getDraft(),
       editorMode: "blocknote",
       blockNoteError: null,
       editorBoundaryKey: current.editorBoundaryKey + 1,
@@ -188,59 +112,59 @@ export class PageSessionsService {
   }
 
   disposePage(pageId: string) {
-    const session = this.sessions.get(pageId);
-    if (!session) {
-      return;
-    }
-    if (session.saveTimer !== null) {
-      window.clearTimeout(session.saveTimer);
+    const entry = this.sessions.get(pageId);
+    if (!entry) return;
+    if (entry.saveTimer !== null) {
+      window.clearTimeout(entry.saveTimer);
+      entry.saveTimer = null;
     }
     this.flushSave(pageId);
+    entry.documentSub?.unsubscribe();
+    entry.subject.complete();
+    this.sessions.delete(pageId);
   }
 
-  private initializeSession(pageId: string, record: PageDocumentRecord) {
-    const session = this.getOrCreate(pageId);
-    const snapshot = session.logic.initialize(record);
-    session.subject.next({
-      pageId,
-      loading: false,
-      errorMessage: null,
-      title: record.title,
-      initialMarkdown: snapshot.content,
-      sessionReady: true,
-      saveState: "idle",
-      message: null,
-      revision: snapshot.revision,
-      editorMode: "blocknote",
-      blockNoteError: null,
-      editorBoundaryKey: 0,
-    });
+  private patchSession(pageId: string, patch: Partial<PageSessionSnapshot>) {
+    const entry = this.sessions.get(pageId);
+    if (!entry) return;
+    entry.subject.next({ ...entry.subject.getValue(), ...patch });
   }
 
   private scheduleSave(pageId: string, delay = 900) {
-    const session = this.getOrCreate(pageId);
-    if (session.saveTimer !== null) {
-      window.clearTimeout(session.saveTimer);
+    const entry = this.getOrCreate(pageId);
+    if (entry.saveTimer !== null) {
+      window.clearTimeout(entry.saveTimer);
     }
-    session.saveTimer = window.setTimeout(() => {
+    entry.saveTimer = window.setTimeout(() => {
       this.flushSave(pageId);
     }, delay);
   }
 
-  private getOrCreate(pageId: string) {
+  private getOrCreate(pageId: string): PageSessionEntry {
     const existing = this.sessions.get(pageId);
-    if (existing) {
-      return existing;
-    }
+    if (existing) return existing;
 
     const entry: PageSessionEntry = {
       logic: new PageSessionLogic(),
-      subject: new BehaviorSubject<PageScreenSnapshot>(createInitialPageScreenSnapshot(pageId)),
+      subject: new BehaviorSubject<PageSessionSnapshot>(
+        initialSessionSnapshot(pageId),
+      ),
+      documentSub: null,
       saveTimer: null,
       saveInFlight: false,
-      loadPromise: null,
     };
     this.sessions.set(pageId, entry);
+
+    entry.documentSub = this.documents.document(pageId).subscribe((result) => {
+      if (!result.ok) return;
+      if (entry.subject.getValue().sessionReady) return;
+      const snapshot = entry.logic.initialize(result.value);
+      this.patchSession(pageId, {
+        sessionReady: true,
+        initialMarkdown: snapshot.content,
+      });
+    });
+
     return entry;
   }
 }

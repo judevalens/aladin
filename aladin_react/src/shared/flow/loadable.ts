@@ -1,39 +1,13 @@
-export type LoadableStatus = "idle" | "loading" | "ready" | "error";
+export type Loadable<T> =
+  | { status: "loading" }
+  | { status: "data"; value: T }
+  | { status: "error"; error: Error };
 
-export interface Loadable<T> {
-  status: LoadableStatus;
-  data: T;
-  errorMessage: string | null;
-}
+export const loading = <T>(): Loadable<T> => ({ status: "loading" });
 
-export function createIdleLoadable<T>(data: T): Loadable<T> {
-  return {
-    status: "idle",
-    data,
-    errorMessage: null,
-  };
-}
+export const data = <T>(value: T): Loadable<T> => ({ status: "data", value });
 
-export function createLoadingLoadable<T>(data: T): Loadable<T> {
-  return {
-    status: "loading",
-    data,
-    errorMessage: null,
-  };
-}
-
-export function createReadyLoadable<T>(data: T): Loadable<T> {
-  return {
-    status: "ready",
-    data,
-    errorMessage: null,
-  };
-}
-
-export function createErrorLoadable<T>(data: T, errorMessage: string): Loadable<T> {
-  return {
-    status: "error",
-    data,
-    errorMessage,
-  };
-}
+export const failed = <T>(error: Error): Loadable<T> => ({
+  status: "error",
+  error,
+});

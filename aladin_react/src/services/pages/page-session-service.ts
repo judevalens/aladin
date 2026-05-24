@@ -1,6 +1,5 @@
 import { ApiError } from "@/shared/api/client";
 import type { PageDocumentRecord } from "@/shared/api/models";
-import type { PageSaveState } from "@/modules/pages/domain";
 
 export interface PageSnapshot {
   content: string;
@@ -30,16 +29,6 @@ export function isAcknowledgedConflict(
       snapshot.revision >= pendingRevision &&
       snapshot.content === pendingMarkdown,
   );
-}
-
-export function statusToneForPageSave(saveState: PageSaveState) {
-  switch (saveState) {
-    case "conflict":
-    case "error":
-      return "border-red-300 bg-red-50 text-red-700";
-    default:
-      return "border-gray-300 bg-white text-gray-700";
-  }
 }
 
 export class PageSessionService {
@@ -82,14 +71,6 @@ export class PageSessionService {
 
   getDraft() {
     return this.draftMarkdown;
-  }
-
-  getRevision() {
-    return this.lastAcknowledgedRevision;
-  }
-
-  getStatusTone(saveState: PageSaveState) {
-    return statusToneForPageSave(saveState);
   }
 
   createSaveRequest() {

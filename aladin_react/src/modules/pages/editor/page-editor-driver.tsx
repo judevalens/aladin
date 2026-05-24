@@ -3,7 +3,11 @@ import { BlockNoteView } from "@blocknote/shadcn";
 import { Component, type ReactNode, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { PageEditorMode } from "@/modules/pages/domain";
-import { exportEditorToMarkdown, loadMarkdownIntoEditor } from "@/modules/pages/editor/markdown-adapter";
+import {
+  exportEditorToMarkdown,
+  loadMarkdownIntoEditor,
+} from "@/modules/pages/editor/markdown-adapter";
+import "@blocknote/shadcn/style.css";
 
 export interface PageEditorDriverProps {
   pageId: string;
@@ -85,9 +89,12 @@ export function BlockNotePageEditorDriver({
       <div className="flex min-h-[520px] flex-1 flex-col">
         <div className="flex items-center justify-between gap-4 border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           <div className="space-y-1">
-            <div className="font-medium">The rich editor is unavailable for this page.</div>
+            <div className="font-medium">
+              The rich editor is unavailable for this page.
+            </div>
             <div className="text-xs leading-5 text-amber-700">
-              {blockNoteError ?? "You can keep working in raw markdown for now."}
+              {blockNoteError ??
+                "You can keep working in raw markdown for now."}
             </div>
           </div>
           <Button variant="secondary" size="sm" onClick={onRetryRichEditor}>
@@ -109,8 +116,11 @@ export function BlockNotePageEditorDriver({
   }
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col" onBlurCapture={onBlur}>
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+    <div
+      className="relative flex min-h-0 flex-1 flex-col"
+      onBlurCapture={onBlur}
+    >
+      <div className="min-h-0 flex-1 overflow-y-auto px-8 py-4">
         <BlockNoteRuntimeBoundary
           key={`${pageId}:${editorBoundaryKey}`}
           onError={onDriverError}

@@ -191,10 +191,10 @@ func (t toolServer) createPage(ctx context.Context, _ *sdkmcp.CallToolRequest, i
 		return nil, createUpdatePageOutput{}, err
 	}
 	return nil, createUpdatePageOutput{
-		ID:        rec.ID,
-		Title:     rec.Title,
-		FolderID:  rec.FolderID,
-		UpdatedAt: rec.UpdatedAt,
+		ID:        rec.Artifact.ID,
+		Title:     rec.Artifact.Title,
+		FolderID:  rec.Artifact.FolderID,
+		UpdatedAt: rec.Artifact.UpdatedAt,
 	}, nil
 }
 

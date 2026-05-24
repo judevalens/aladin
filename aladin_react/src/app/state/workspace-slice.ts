@@ -9,9 +9,11 @@ export interface WorkspaceSlice {
   closeArtifact: (artifactId: string) => void;
   toggleInspector: (artifactId: string) => void;
   toggleFolder: (folderId: string) => void;
+  expandFolders: (folderIds: string[]) => void;
+  drillIntoFolder: (folderId: string) => void;
+  popBrowserFrame: () => void;
+  setBrowserScrollTop: (scrollTop: number) => void;
   setFocusedFolder: (folderId: string | null) => void;
-  navigateScope: (folderId: string | null, pushCurrent?: boolean, ancestorFolderIds?: string[]) => void;
-  navigateScopeBack: () => void;
   startRename: (draft: RenameDraft) => void;
   setRenameTitle: (title: string) => void;
   cancelRename: () => void;
@@ -76,6 +78,55 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice, [], [], Workspac
           : [...state.workspace.expandedFolderIds, folderId],
       },
     })),
+  expandFolders: (folderIds) =>
+    set((state) => ({
+      workspace: {
+        ...state.workspace,
+        expandedFolderIds: Array.from(
+          new Set([...state.workspace.expandedFolderIds, ...folderIds]),
+        ),
+      },
+    })),
+  drillIntoFolder: (folderId) =>
+    set((state) => ({
+      workspace: {
+        ...state.workspace,
+        browserFrameStack: [
+          ...state.workspace.browserFrameStack,
+          {
+            rootFolderId: state.workspace.browserRootFolderId,
+            expandedFolderIds: state.workspace.expandedFolderIds,
+            scrollTop: state.workspace.browserScrollTop,
+          },
+        ],
+        browserRootFolderId: folderId,
+        browserScrollTop: 0,
+        focusedFolderId: folderId,
+        expandedFolderIds: [],
+      },
+    })),
+  popBrowserFrame: () =>
+    set((state) => {
+      const previousFrame = state.workspace.browserFrameStack.at(-1);
+      if (!previousFrame) return state;
+      return {
+        workspace: {
+          ...state.workspace,
+          browserFrameStack: state.workspace.browserFrameStack.slice(0, -1),
+          browserRootFolderId: previousFrame.rootFolderId,
+          browserScrollTop: previousFrame.scrollTop,
+          focusedFolderId: previousFrame.rootFolderId,
+          expandedFolderIds: previousFrame.expandedFolderIds,
+        },
+      };
+    }),
+  setBrowserScrollTop: (scrollTop) =>
+    set((state) => ({
+      workspace: {
+        ...state.workspace,
+        browserScrollTop: scrollTop,
+      },
+    })),
   setFocusedFolder: (folderId) =>
     set((state) => ({
       workspace: {
@@ -83,37 +134,6 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice, [], [], Workspac
         focusedFolderId: folderId,
       },
     })),
-  navigateScope: (folderId, pushCurrent = false, ancestorFolderIds = []) =>
-    set((state) => ({
-      workspace: {
-        ...state.workspace,
-        scopeFolderId: folderId,
-        scopeBackStack: pushCurrent
-          ? [...state.workspace.scopeBackStack, state.workspace.scopeFolderId]
-          : state.workspace.scopeBackStack,
-        focusedFolderId: folderId,
-        expandedFolderIds:
-          ancestorFolderIds.length > 0
-            ? Array.from(new Set([...state.workspace.expandedFolderIds, ...ancestorFolderIds]))
-            : state.workspace.expandedFolderIds,
-      },
-    })),
-  navigateScopeBack: () =>
-    set((state) => {
-      if (state.workspace.scopeBackStack.length === 0) {
-        return state;
-      }
-      const scopeBackStack = [...state.workspace.scopeBackStack];
-      const folderId = scopeBackStack.pop() ?? null;
-      return {
-        workspace: {
-          ...state.workspace,
-          scopeBackStack,
-          scopeFolderId: folderId,
-          focusedFolderId: folderId,
-        },
-      };
-    }),
   startRename: (draft) =>
     set((state) => ({
       workspace: {

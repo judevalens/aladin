@@ -15,7 +15,7 @@ func TestArtifactServiceCreatePageDefaultsAndTrims(t *testing.T) {
 	repo := &fakeArtifactRepository{}
 	svc := NewArtifactService(repo, &fakeArtifactFiles{})
 
-	rec, err := svc.Create(testPrincipalContext(), ArtifactPayload{
+	result, err := svc.Create(testPrincipalContext(), ArtifactPayload{
 		Type:    "page",
 		Content: "  Rivian supply chain memo  ",
 		Summary: &summary,
@@ -23,6 +23,7 @@ func TestArtifactServiceCreatePageDefaultsAndTrims(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create error: %v", err)
 	}
+	rec := result.Artifact
 	if rec.ID == "" || !strings.HasPrefix(rec.ID, "artifact-") {
 		t.Fatalf("id = %q, want artifact-*", rec.ID)
 	}
@@ -232,6 +233,27 @@ func (f *fakeArtifactRepository) CreateArtifact(_ context.Context, rec ArtifactR
 	return nil
 }
 
+func (f *fakeArtifactRepository) CreateArtifactGraph(_ context.Context, rec ArtifactResponse, node TreeNodeRecord, pageMarkdown *string) error {
+	f.createdArtifacts = append(f.createdArtifacts, rec)
+	if pageMarkdown != nil {
+		if f.pageContentByID == nil {
+			f.pageContentByID = map[string]string{}
+		}
+		f.pageContentByID[rec.ID] = *pageMarkdown
+	}
+	artifactType := rec.Type
+	f.browserNodes = append(f.browserNodes, BrowserTreeFlatNode{
+		ID:           node.ID,
+		ParentID:     node.ParentID,
+		Kind:         node.Kind,
+		Title:        rec.Title,
+		ArtifactID:   node.ArtifactID,
+		ArtifactType: &artifactType,
+		Position:     node.Position,
+	})
+	return nil
+}
+
 func (f *fakeArtifactRepository) UpdateArtifact(context.Context, string, ArtifactPatch) error {
 	return nil
 }
@@ -296,6 +318,7 @@ func (f *fakeArtifactRepository) NextNodePosition(context.Context, *string) (int
 	return 1, nil
 }
 func (f *fakeArtifactRepository) CreateTreeNode(context.Context, TreeNodeRecord) error { return nil }
+func (f *fakeArtifactRepository) DeleteBrowserNode(context.Context, string) error      { return nil }
 func (f *fakeArtifactRepository) UpdateArtifactNodeParent(context.Context, string, *string) error {
 	return nil
 }

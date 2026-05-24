@@ -1,77 +1,53 @@
-import type { Artifact, BrowserTreeNode, VoiceCaptureDraft } from "@/shared/api/models";
-import {
-  ancestorFolderIds,
-  buildBreadcrumbView,
-  buildBrowserRows,
-  initialWorkspaceShellState,
-  nextArtifactTitle,
-  nextFolderTitle,
-  type WorkspaceShellState,
-} from "@/modules/workspace/domain";
+import type { Observable } from "rxjs";
+import type { ArtifactRepo } from "@/repos/artifacts/artifact-repo";
+import type { WorkspaceRepo } from "@/repos/workspace/workspace-repo";
+import type { Result } from "@/shared/flow/result";
+import type {
+  Artifact,
+  BrowserTreeNode,
+  UserArtifactCreateRequest,
+  VoiceCaptureDraft,
+} from "@/shared/api/models";
+import type { WorkspaceSyncService } from "@/services/workspace/workspace-sync-service";
 
-export function createWorkspaceInitialState(): WorkspaceShellState {
-  return initialWorkspaceShellState;
-}
+export class WorkspaceService {
+  constructor(
+    private readonly workspaceRepo: WorkspaceRepo,
+    private readonly artifactRepo: ArtifactRepo,
+    private readonly sync: WorkspaceSyncService,
+  ) {}
 
-export function resolveWorkspaceDestination(pathname: string) {
-  if (pathname.startsWith("/folders")) return "folders";
-  if (pathname.startsWith("/sources")) return "sources";
-  if (pathname.startsWith("/signals")) return "signals";
-  if (pathname.startsWith("/graph")) return "graph";
-  return "home";
-}
+  tree(): Observable<Result<BrowserTreeNode[]>> {
+    return this.sync.tree();
+  }
 
-export function createFolderCommand(tree: BrowserTreeNode[], folderId: string | null) {
-  return {
-    parentId: folderId,
-    title: nextFolderTitle(tree, folderId),
-  };
-}
+  artifactById(artifactId: string): Observable<Result<Artifact>> {
+    return this.sync.artifactById(artifactId);
+  }
 
-export function createArtifactCommand(
-  tree: BrowserTreeNode[],
-  folderId: string | null,
-  kind: "note" | "link",
-) {
-  return {
-    type: kind === "note" ? "page" : "link",
-    folderId,
-    title: nextArtifactTitle(tree, folderId, kind),
-    content: kind === "note" ? "New artifact" : "",
-    sourceUrl: kind === "link" ? "https://example.com" : undefined,
-  };
-}
+  async createFolder(input: { parentId?: string | null; title: string }) {
+    return this.workspaceRepo.createFolder(input);
+  }
 
-export function createVoiceDraft(tree: BrowserTreeNode[], folderId: string | null): VoiceCaptureDraft {
-  return {
-    folderId,
-    title: nextArtifactTitle(tree, folderId, "voice"),
-    description: "",
-    phase: "ready",
-    errorMessage: null,
-  };
-}
+  async renameFolder(folderId: string, title: string) {
+    return this.workspaceRepo.renameFolder(folderId, title);
+  }
 
-export function buildWorkspaceRows(
-  tree: BrowserTreeNode[],
-  scopeFolderId: string | null,
-  expandedFolderIds: string[],
-) {
-  return buildBrowserRows(tree, scopeFolderId, expandedFolderIds);
-}
+  refreshTree() {
+    return this.sync.refreshTree();
+  }
 
-export function buildWorkspaceBreadcrumbView(tree: BrowserTreeNode[], folderId: string | null) {
-  return buildBreadcrumbView(tree, folderId);
-}
+  async createArtifact(input: UserArtifactCreateRequest) {
+    return this.workspaceRepo.createArtifact(input);
+  }
 
-export function folderAncestorIds(tree: BrowserTreeNode[], folderId: string | null) {
-  return ancestorFolderIds(tree, folderId);
-}
+  async renameArtifact(artifactId: string, title: string) {
+    return this.artifactRepo.renameArtifact(artifactId, title);
+  }
 
-export function resolveOpenArtifacts(
-  openArtifacts: Artifact[],
-  activeArtifactId: string | null,
-  activeArtifact: Artifact | null | undefined,
-) {
-  return activeArtifact ?? openArtifacts.find((artifact) => artifact.id === activeArtifactId) ?? null;
+  async uploadVoiceArtifact(draft: VoiceCaptureDraft) {
+    const artifact = await this.artifactRepo.uploadVoiceArtifact(draft);
+    this.sync.publishArtifact(artifact);
+    return artifact;
+  }
 }

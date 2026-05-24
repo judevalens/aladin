@@ -22,22 +22,9 @@ export class AuthSessionService {
     private readonly desktopSessionStore: DesktopSessionStore,
   ) {}
 
-  observe(): Observable<AuthSessionSnapshot> {
-    return this.subject.asObservable();
-  }
-
-  getSnapshot(): AuthSessionSnapshot {
-    return this.subject.getValue();
-  }
-
-  async ensureBootstrapped() {
-    if (this.getSnapshot().status !== "booting") {
-      return;
-    }
-    if (!this.bootstrapPromise) {
-      this.bootstrapPromise = this.bootstrap();
-    }
-    await this.bootstrapPromise;
+  session(): Observable<AuthSessionSnapshot> {
+    this.bootstrapIfNeeded();
+    return this.subject;
   }
 
   async login(input: { email: string; password: string }) {
@@ -97,6 +84,15 @@ export class AuthSessionService {
       });
     } finally {
       this.bootstrapPromise = null;
+    }
+  }
+
+  private bootstrapIfNeeded() {
+    if (this.subject.getValue().status !== "booting") {
+      return;
+    }
+    if (!this.bootstrapPromise) {
+      this.bootstrapPromise = this.bootstrap();
     }
   }
 }

@@ -11,8 +11,10 @@ type ArtifactService interface {
 	List(context.Context, ArtifactListParams) ([]ArtifactResponse, error)
 	SearchPages(context.Context, PageSearchParams) ([]ArtifactResponse, error)
 	BrowserTree(context.Context) ([]BrowserTreeNode, error)
+	CreateBrowserNode(context.Context, BrowserNodeCreateInput) (BrowserNodeCreateResponse, error)
+	DeleteBrowserNode(context.Context, string) error
 	Get(context.Context, string) (ArtifactResponse, error)
-	Create(context.Context, ArtifactPayload) (ArtifactResponse, error)
+	Create(context.Context, ArtifactPayload) (ArtifactCreateResponse, error)
 	Update(context.Context, string, ArtifactPatch) (ArtifactResponse, error)
 	Delete(context.Context, string) error
 	Upload(context.Context, ArtifactUploadInput, io.Reader) (ArtifactResponse, error)
@@ -30,6 +32,7 @@ type ArtifactRepository interface {
 	SearchPageArtifacts(context.Context, PageSearchParams) ([]ArtifactResponse, error)
 	GetArtifact(context.Context, string) (ArtifactResponse, error)
 	CreateArtifact(context.Context, ArtifactResponse) error
+	CreateArtifactGraph(context.Context, ArtifactResponse, TreeNodeRecord, *string) error
 	UpdateArtifact(context.Context, string, ArtifactPatch) error
 	CreatePageDocument(context.Context, string, string) error
 	SavePageDocument(context.Context, string, string) error
@@ -39,6 +42,7 @@ type ArtifactRepository interface {
 	ListAllBrowserNodes(context.Context) ([]BrowserTreeFlatNode, error)
 	NextNodePosition(context.Context, *string) (int64, error)
 	CreateTreeNode(context.Context, TreeNodeRecord) error
+	DeleteBrowserNode(context.Context, string) error
 	UpdateArtifactNodeParent(context.Context, string, *string) error
 	UpdateFolderTitle(context.Context, string, string) error
 	GetFolder(context.Context, string) (FolderNode, error)
@@ -159,21 +163,21 @@ func (s *DefaultArtifactService) Get(ctx context.Context, id string) (ArtifactRe
 	return s.repo.GetArtifact(ctx, id)
 }
 
-func (s *DefaultArtifactService) Create(ctx context.Context, payload ArtifactPayload) (ArtifactResponse, error) {
+func (s *DefaultArtifactService) Create(ctx context.Context, payload ArtifactPayload) (ArtifactCreateResponse, error) {
 	if err := RequireScope(ctx, ScopeArtifactsWrite); err != nil {
-		return ArtifactResponse{}, err
+		return ArtifactCreateResponse{}, err
 	}
 	artifactType := strings.TrimSpace(payload.Type)
 	if artifactType == "" {
-		artifactType = "page"
+		return ArtifactCreateResponse{}, BadRequest("type is required")
 	}
 	if artifactType != "page" && artifactType != "link" {
-		return ArtifactResponse{}, BadRequest("type must be one of: page, link")
+		return ArtifactCreateResponse{}, BadRequest("type must be one of: page, link")
 	}
 	payload.FolderID = TrimStringPtr(payload.FolderID)
 	if payload.FolderID != nil {
 		if _, err := s.repo.GetFolder(ctx, *payload.FolderID); err != nil {
-			return ArtifactResponse{}, err
+			return ArtifactCreateResponse{}, err
 		}
 	}
 
@@ -187,23 +191,27 @@ func (s *DefaultArtifactService) Create(ctx context.Context, payload ArtifactPay
 			title = content
 		}
 		if title == "" {
-			return ArtifactResponse{}, BadRequest("title or content is required")
+			return ArtifactCreateResponse{}, BadRequest("title or content is required")
 		}
 		if content == "" {
 			content = title
 		}
 	case "link":
 		if sourceURL == nil {
-			return ArtifactResponse{}, BadRequest("sourceUrl is required")
+			return ArtifactCreateResponse{}, BadRequest("sourceUrl is required")
 		}
 		if title == "" {
-			return ArtifactResponse{}, BadRequest("title is required")
+			return ArtifactCreateResponse{}, BadRequest("title is required")
 		}
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
+	id := strings.TrimSpace(payload.ID)
+	if id == "" {
+		id = newID("artifact-")
+	}
 	rec := ArtifactResponse{
-		ID:        newID("artifact-"),
+		ID:        id,
 		Type:      artifactType,
 		FolderID:  payload.FolderID,
 		Title:     title,
@@ -217,30 +225,90 @@ func (s *DefaultArtifactService) Create(ctx context.Context, payload ArtifactPay
 	if rec.Metadata == nil {
 		rec.Metadata = map[string]any{}
 	}
-	if err := s.repo.CreateArtifact(ctx, rec); err != nil {
-		return ArtifactResponse{}, err
-	}
-	if artifactType == "page" {
-		if err := s.repo.CreatePageDocument(ctx, rec.ID, content); err != nil {
-			return ArtifactResponse{}, err
-		}
-	}
 	position, err := s.repo.NextNodePosition(ctx, payload.FolderID)
 	if err != nil {
-		return ArtifactResponse{}, err
+		return ArtifactCreateResponse{}, err
 	}
 	artifactID := rec.ID
-	if err := s.repo.CreateTreeNode(ctx, TreeNodeRecord{
+	node := TreeNodeRecord{
 		ID:         rec.ID,
 		ParentID:   payload.FolderID,
 		Kind:       "artifact",
 		ArtifactID: &artifactID,
 		Position:   position,
-	}); err != nil {
-		return ArtifactResponse{}, err
+	}
+	var pageMarkdown *string
+	if artifactType == "page" {
+		pageMarkdown = &content
+	}
+	if err := s.repo.CreateArtifactGraph(ctx, rec, node, pageMarkdown); err != nil {
+		return ArtifactCreateResponse{}, err
 	}
 	s.publishWorkspaceEvent(ctx, "artifact", rec.ID, "created", rec)
-	return rec, nil
+	return ArtifactCreateResponse{
+		Artifact: rec,
+		Node: BrowserNodeResponse{
+			ID:         node.ID,
+			ParentID:   node.ParentID,
+			Kind:       node.Kind,
+			Title:      rec.Title,
+			ArtifactID: node.ArtifactID,
+			Position:   node.Position,
+		},
+	}, nil
+}
+
+func (s *DefaultArtifactService) CreateBrowserNode(ctx context.Context, input BrowserNodeCreateInput) (BrowserNodeCreateResponse, error) {
+	if err := RequireScope(ctx, ScopeArtifactsWrite); err != nil {
+		return BrowserNodeCreateResponse{}, err
+	}
+	kind := strings.TrimSpace(input.Kind)
+	switch kind {
+	case "folder":
+		node, err := s.createFolderNode(ctx, input.ID, input.Title, input.ParentID)
+		if err != nil {
+			return BrowserNodeCreateResponse{}, err
+		}
+		return BrowserNodeCreateResponse{Node: node}, nil
+	case "artifact":
+		if input.Artifact == nil {
+			return BrowserNodeCreateResponse{}, BadRequest("artifact payload is required")
+		}
+		created, err := s.Create(ctx, ArtifactPayload{
+			Type:      input.Artifact.Type,
+			ID:        firstNonEmpty(input.Artifact.ID, input.ID),
+			FolderID:  input.ParentID,
+			Title:     input.Title,
+			Content:   input.Artifact.Content,
+			Summary:   input.Artifact.Summary,
+			SourceURL: input.Artifact.SourceURL,
+			Metadata:  input.Artifact.Metadata,
+		})
+		if err != nil {
+			return BrowserNodeCreateResponse{}, err
+		}
+		artifact := created.Artifact
+		return BrowserNodeCreateResponse{
+			Node:     created.Node,
+			Artifact: &artifact,
+		}, nil
+	default:
+		return BrowserNodeCreateResponse{}, BadRequest("kind must be one of: folder, artifact")
+	}
+}
+
+func (s *DefaultArtifactService) DeleteBrowserNode(ctx context.Context, id string) error {
+	if err := RequireScope(ctx, ScopeArtifactsWrite); err != nil {
+		return err
+	}
+	if strings.TrimSpace(id) == "" {
+		return ErrNotFound
+	}
+	if err := s.repo.DeleteBrowserNode(ctx, id); err != nil {
+		return err
+	}
+	s.publishWorkspaceEvent(ctx, "folder", id, "deleted", map[string]string{"id": id})
+	return nil
 }
 
 func (s *DefaultArtifactService) Update(ctx context.Context, id string, patch ArtifactPatch) (ArtifactResponse, error) {
@@ -387,21 +455,18 @@ func (s *DefaultArtifactService) Upload(ctx context.Context, input ArtifactUploa
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
-	if err := s.repo.CreateArtifact(ctx, rec); err != nil {
-		return ArtifactResponse{}, err
-	}
 	position, err := s.repo.NextNodePosition(ctx, input.FolderID)
 	if err != nil {
 		return ArtifactResponse{}, err
 	}
 	artifactID := rec.ID
-	if err := s.repo.CreateTreeNode(ctx, TreeNodeRecord{
+	if err := s.repo.CreateArtifactGraph(ctx, rec, TreeNodeRecord{
 		ID:         rec.ID,
 		ParentID:   input.FolderID,
 		Kind:       "artifact",
 		ArtifactID: &artifactID,
 		Position:   position,
-	}); err != nil {
+	}, nil); err != nil {
 		return ArtifactResponse{}, err
 	}
 	s.publishWorkspaceEvent(ctx, "artifact", rec.ID, "created", rec)
@@ -486,40 +551,58 @@ func (s *DefaultArtifactService) FolderTree(ctx context.Context) ([]FolderTreeNo
 }
 
 func (s *DefaultArtifactService) CreateFolder(ctx context.Context, title string, parentID *string) (FolderNode, error) {
-	if err := RequireScope(ctx, ScopeArtifactsWrite); err != nil {
+	node, err := s.createFolderNode(ctx, "", title, parentID)
+	if err != nil {
 		return FolderNode{}, err
+	}
+	return FolderNode{
+		ID:       node.ID,
+		ParentID: node.ParentID,
+		Title:    node.Title,
+	}, nil
+}
+
+func (s *DefaultArtifactService) createFolderNode(ctx context.Context, id string, title string, parentID *string) (BrowserNodeResponse, error) {
+	if err := RequireScope(ctx, ScopeArtifactsWrite); err != nil {
+		return BrowserNodeResponse{}, err
 	}
 	title = strings.TrimSpace(title)
 	if title == "" {
-		return FolderNode{}, BadRequest("title is required")
+		return BrowserNodeResponse{}, BadRequest("title is required")
 	}
 	parentID = TrimStringPtr(parentID)
 	if parentID != nil {
 		if _, err := s.repo.GetFolder(ctx, *parentID); err != nil {
-			return FolderNode{}, err
+			return BrowserNodeResponse{}, err
 		}
 	}
-	folder := FolderNode{
-		ID:       newID("folder-"),
-		ParentID: parentID,
-		Title:    title,
+	folderID := strings.TrimSpace(id)
+	if folderID == "" {
+		folderID = newID("folder-")
 	}
 	position, err := s.repo.NextNodePosition(ctx, parentID)
 	if err != nil {
-		return FolderNode{}, err
+		return BrowserNodeResponse{}, err
 	}
-	folderTitle := folder.Title
+	folderTitle := title
 	if err := s.repo.CreateTreeNode(ctx, TreeNodeRecord{
-		ID:       folder.ID,
+		ID:       folderID,
 		ParentID: parentID,
 		Kind:     "folder",
 		Title:    &folderTitle,
 		Position: position,
 	}); err != nil {
-		return FolderNode{}, err
+		return BrowserNodeResponse{}, err
 	}
-	s.publishWorkspaceEvent(ctx, "folder", folder.ID, "created", folder)
-	return folder, nil
+	folder := FolderNode{ID: folderID, ParentID: parentID, Title: title}
+	s.publishWorkspaceEvent(ctx, "folder", folderID, "created", folder)
+	return BrowserNodeResponse{
+		ID:       folderID,
+		ParentID: parentID,
+		Kind:     "folder",
+		Title:    title,
+		Position: position,
+	}, nil
 }
 
 func (s *DefaultArtifactService) UpdateFolder(ctx context.Context, id string, patch FolderPatch) (FolderNode, error) {
