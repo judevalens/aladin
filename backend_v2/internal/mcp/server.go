@@ -8,23 +8,52 @@ import (
 
 	"aladin/backend_v2/internal/app"
 	"aladin/backend_v2/internal/blocknote"
+	"aladin/backend_v2/internal/service"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// mcpInstructions teaches an LLM client (Claude Code, Codex, etc.) how to
+// drive the Aladin MCP surface. Kept as a constant so it shows up clearly
+// in code review when the contract changes.
+const mcpInstructions = `Aladin pages are ordered lists of blocks. Each block has:
+  - a stable id (string)
+  - a type (paragraph, heading, bulletListItem, codeBlock, etc.)
+  - a markdown rendering you can read and edit
+
+You always work in markdown. The server handles conversion to and from
+BlockNote's internal block format.
+
+Editing workflow:
+  1. get_page(id)            → see the block list with ids and per-block markdown
+  2. update_block(id, ...)   → replace one block's content
+  3. insert_blocks(...)      → add new blocks at a position relative to an id
+  4. delete_block(id)        → remove a block
+  5. update_page(id, ...)    → only when rewriting the whole document
+
+Prefer block-level operations for surgical edits. update_page wipes ids,
+breaks downstream references, and triggers a full re-index — use sparingly.
+
+Notes:
+  - update_block accepts markdown that may parse into multiple blocks (e.g.
+    a bullet list with three items becomes three blocks). The original id
+    is kept on the first produced block.
+  - Lists are individual blocks per item, not one block per list.
+  - When unsure of structure, get_page first.`
 
 type Server struct {
 	httpServer *http.Server
 	converter  blocknote.Converter
 }
 
-func New(addr string, deps app.Dependencies, converter blocknote.Converter) *Server {
+func New(addr string, deps app.Dependencies, pages service.PageDocumentService, converter blocknote.Converter) *Server {
 	server := sdkmcp.NewServer(&sdkmcp.Implementation{
 		Name:    "aladin-mcp",
 		Version: "0.1.0",
 	}, &sdkmcp.ServerOptions{
-		Instructions: "Read-only access to Aladin pages and folders. Write tools (create_page, update_page) are temporarily disabled during the BlockNote storage migration; they return an error. Block-level write tools land in M6.",
+		Instructions: mcpInstructions,
 	})
-	registerTools(server, deps.Artifacts(), converter)
+	registerTools(server, deps.Artifacts(), pages, converter)
 
 	streamable := sdkmcp.NewStreamableHTTPHandler(func(*http.Request) *sdkmcp.Server {
 		return server

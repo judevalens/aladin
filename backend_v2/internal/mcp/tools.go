@@ -13,24 +13,14 @@ import (
 
 const pageArtifactType = "page"
 
-// errMCPWritesDisabled is returned by create_page / update_page while M5 is
-// in flight. M6 re-enables them on top of the BlockNote converter sidecar
-// with proper markdown<->blocks conversion. Until then the safe default is
-// a clear failure rather than silently dropping the agent's content.
-var errMCPWritesDisabled = service.BadRequest(
-	"MCP write tools are temporarily disabled during the BlockNote storage migration; " +
-		"they will be re-enabled in M6 with block-level addressing. Use the web editor in the meantime.",
-)
-
 type toolServer struct {
 	artifacts service.ArtifactService
-	// converter is the markdown<->blocks bridge. M5 wires it in but only
-	// M6.6/M6.7 tools actually use it (block-level update / read paths).
+	pages     service.PageDocumentService
 	converter blocknote.Converter
 }
 
-func registerTools(server *sdkmcp.Server, artifacts service.ArtifactService, converter blocknote.Converter) {
-	tools := toolServer{artifacts: artifacts, converter: converter}
+func registerTools(server *sdkmcp.Server, artifacts service.ArtifactService, pages service.PageDocumentService, converter blocknote.Converter) {
+	tools := toolServer{artifacts: artifacts, pages: pages, converter: converter}
 
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "get_browser_tree",
@@ -42,15 +32,15 @@ func registerTools(server *sdkmcp.Server, artifacts service.ArtifactService, con
 	}, tools.listFolders)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "create_page",
-		Description: "[TEMPORARILY DISABLED — storage migration in flight; returns an error. Use the web editor; will be re-enabled with block-level addressing in M6.] Create an Aladin page in an optional folder.",
+		Description: "Create an Aladin page. The body is supplied as markdown and stored as BlockNote blocks; the server handles the conversion.",
 	}, tools.createPage)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "update_page",
-		Description: "[TEMPORARILY DISABLED — storage migration in flight; returns an error. Use the web editor; will be re-enabled with block-level addressing in M6.] Update an existing Aladin page.",
+		Description: "Full-document update of an Aladin page. Provide markdown to replace all blocks (wipes block ids — prefer update_block / insert_blocks / delete_block for surgical edits).",
 	}, tools.updatePage)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "get_page",
-		Description: "Read a single Aladin page. Returns a JSON array of BlockNote blocks in the `blocks` field.",
+		Description: "Read a single Aladin page. Returns each block with its stable id, type, props, and a markdown rendering you can read or pass back to update_block.",
 	}, tools.getPage)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "list_pages",
@@ -58,8 +48,20 @@ func registerTools(server *sdkmcp.Server, artifacts service.ArtifactService, con
 	}, tools.listPages)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "search_pages",
-		Description: "Search page titles, summaries, and markdown content.",
+		Description: "Search page titles, summaries, and page text content.",
 	}, tools.searchPages)
+	sdkmcp.AddTool(server, &sdkmcp.Tool{
+		Name:        "update_block",
+		Description: "Replace a single block by id with new content provided as markdown. The markdown may parse into multiple blocks; the first one inherits the original id.",
+	}, tools.updateBlock)
+	sdkmcp.AddTool(server, &sdkmcp.Tool{
+		Name:        "insert_blocks",
+		Description: "Insert one or more blocks at a position. Provide markdown for the new content. position is one of {after_id}, {before_id}, or {at: \"start\"|\"end\"}.",
+	}, tools.insertBlocks)
+	sdkmcp.AddTool(server, &sdkmcp.Tool{
+		Name:        "delete_block",
+		Description: "Delete a block by id. Refuses to remove the last block on a page.",
+	}, tools.deleteBlock)
 }
 
 type emptyInput struct{}
@@ -70,7 +72,7 @@ type listFoldersInput struct {
 
 type createPageInput struct {
 	Title    string      `json:"title"`
-	Content  string      `json:"content"`
+	Markdown string      `json:"markdown"`
 	FolderID *string     `json:"folder_id,omitempty"`
 	Summary  *string     `json:"summary,omitempty"`
 	Tags     []string    `json:"tags,omitempty"`
@@ -80,11 +82,37 @@ type createPageInput struct {
 type updatePageInput struct {
 	ID       string      `json:"id"`
 	Title    *string     `json:"title,omitempty"`
-	Content  *string     `json:"content,omitempty"`
+	Markdown *string     `json:"markdown,omitempty"`
 	FolderID *string     `json:"folder_id,omitempty"`
 	Summary  *string     `json:"summary,omitempty"`
 	Tags     []string    `json:"tags,omitempty"`
 	Agent    *agentInput `json:"agent,omitempty"`
+}
+
+type updateBlockInput struct {
+	PageID   string `json:"page_id"`
+	BlockID  string `json:"block_id"`
+	Markdown string `json:"markdown"`
+	Revision int64  `json:"revision,omitempty"`
+}
+
+type insertBlocksInput struct {
+	PageID   string                  `json:"page_id"`
+	Position insertBlocksPositionDTO `json:"position"`
+	Markdown string                  `json:"markdown"`
+	Revision int64                   `json:"revision,omitempty"`
+}
+
+type insertBlocksPositionDTO struct {
+	AfterID  *string `json:"after_id,omitempty"`
+	BeforeID *string `json:"before_id,omitempty"`
+	At       *string `json:"at,omitempty"`
+}
+
+type deleteBlockInput struct {
+	PageID   string `json:"page_id"`
+	BlockID  string `json:"block_id"`
+	Revision int64  `json:"revision,omitempty"`
 }
 
 type getPageInput struct {
@@ -119,12 +147,24 @@ type pageSummary struct {
 type pageDetail struct {
 	ID        string          `json:"id"`
 	Title     string          `json:"title"`
-	Blocks    json.RawMessage `json:"blocks"`
+	Blocks    []pageBlockView `json:"blocks"`
 	FolderID  *string         `json:"folder_id,omitempty"`
 	Summary   *string         `json:"summary,omitempty"`
 	Metadata  map[string]any  `json:"metadata,omitempty"`
+	Revision  int64           `json:"revision"`
 	CreatedAt string          `json:"created_at"`
 	UpdatedAt string          `json:"updated_at"`
+}
+
+// pageBlockView is the per-block payload an MCP client sees. The agent gets
+// the stable id (for targeting), the BlockNote type/props (for reasoning),
+// and a markdown rendering of the block (so it can read the content without
+// needing to understand BlockNote's inline-content schema).
+type pageBlockView struct {
+	ID       string          `json:"id"`
+	Type     string          `json:"type"`
+	Props    json.RawMessage `json:"props,omitempty"`
+	Markdown string          `json:"markdown"`
 }
 
 type folderOutput struct {
@@ -137,7 +177,28 @@ type createUpdatePageOutput struct {
 	ID        string  `json:"id"`
 	Title     string  `json:"title"`
 	FolderID  *string `json:"folder_id,omitempty"`
+	Revision  int64   `json:"revision"`
 	UpdatedAt string  `json:"updated_at"`
+}
+
+type updateBlockOutput struct {
+	PageID             string `json:"page_id"`
+	BlockID            string `json:"block_id"`
+	Revision           int64  `json:"revision"`
+	ReplacedBlockCount int    `json:"replaced_block_count"`
+}
+
+type insertBlocksOutput struct {
+	PageID          string   `json:"page_id"`
+	Revision        int64    `json:"revision"`
+	InsertedBlockIDs []string `json:"inserted_block_ids"`
+}
+
+type deleteBlockOutput struct {
+	PageID   string `json:"page_id"`
+	BlockID  string `json:"block_id"`
+	Revision int64  `json:"revision"`
+	Deleted  bool   `json:"deleted"`
 }
 
 type browserTreeNodeOutput struct {
@@ -191,18 +252,86 @@ func (t toolServer) listFolders(ctx context.Context, _ *sdkmcp.CallToolRequest, 
 	return nil, foldersOutput{Folders: out}, nil
 }
 
-func (t toolServer) createPage(ctx context.Context, _ *sdkmcp.CallToolRequest, _ createPageInput) (*sdkmcp.CallToolResult, createUpdatePageOutput, error) {
-	if err := service.RequireScope(ctx, service.ScopeArtifactsWrite); err != nil {
+func (t toolServer) createPage(ctx context.Context, _ *sdkmcp.CallToolRequest, input createPageInput) (*sdkmcp.CallToolResult, createUpdatePageOutput, error) {
+	if t.converter == nil {
+		return nil, createUpdatePageOutput{}, service.BadRequest("blocknote-converter is not configured; cannot translate markdown to blocks")
+	}
+	if strings.TrimSpace(input.Title) == "" {
+		return nil, createUpdatePageOutput{}, service.BadRequest("title is required")
+	}
+	blocks, err := t.converter.MDToBlocks(ctx, input.Markdown)
+	if err != nil {
 		return nil, createUpdatePageOutput{}, err
 	}
-	return nil, createUpdatePageOutput{}, errMCPWritesDisabled
+	metadata := mergePageMetadata(nil, input.Tags, input.Agent)
+	created, err := t.artifacts.Create(ctx, service.ArtifactPayload{
+		Type:     pageArtifactType,
+		FolderID: input.FolderID,
+		Title:    input.Title,
+		Blocks:   blocks,
+		Summary:  input.Summary,
+		Metadata: metadata,
+	})
+	if err != nil {
+		return nil, createUpdatePageOutput{}, err
+	}
+	return nil, createUpdatePageOutput{
+		ID:        created.Artifact.ID,
+		Title:     created.Artifact.Title,
+		FolderID:  created.Artifact.FolderID,
+		Revision:  created.Artifact.Revision,
+		UpdatedAt: created.Artifact.UpdatedAt,
+	}, nil
 }
 
-func (t toolServer) updatePage(ctx context.Context, _ *sdkmcp.CallToolRequest, _ updatePageInput) (*sdkmcp.CallToolResult, createUpdatePageOutput, error) {
-	if err := service.RequireScope(ctx, service.ScopeArtifactsWrite); err != nil {
+func (t toolServer) updatePage(ctx context.Context, _ *sdkmcp.CallToolRequest, input updatePageInput) (*sdkmcp.CallToolResult, createUpdatePageOutput, error) {
+	if strings.TrimSpace(input.ID) == "" {
+		return nil, createUpdatePageOutput{}, service.ErrNotFound
+	}
+	if input.Title == nil && input.Markdown == nil && input.FolderID == nil && input.Summary == nil && input.Tags == nil && input.Agent == nil {
+		return nil, createUpdatePageOutput{}, service.BadRequest("update_page requires at least one field")
+	}
+	current, err := t.artifacts.Get(ctx, input.ID)
+	if err != nil {
 		return nil, createUpdatePageOutput{}, err
 	}
-	return nil, createUpdatePageOutput{}, errMCPWritesDisabled
+	if err := requirePage(current); err != nil {
+		return nil, createUpdatePageOutput{}, err
+	}
+
+	patch := service.ArtifactPatch{
+		Title:    input.Title,
+		FolderID: input.FolderID,
+		Summary:  input.Summary,
+	}
+	if input.Markdown != nil {
+		if t.converter == nil {
+			return nil, createUpdatePageOutput{}, service.BadRequest("blocknote-converter is not configured; cannot translate markdown to blocks")
+		}
+		blocks, err := t.converter.MDToBlocks(ctx, *input.Markdown)
+		if err != nil {
+			return nil, createUpdatePageOutput{}, err
+		}
+		patch.Blocks = &blocks
+	}
+	if input.Tags != nil || input.Agent != nil {
+		merged := mergePageMetadata(current.Metadata, input.Tags, input.Agent)
+		patch.Metadata = &merged
+	}
+	updated, err := t.artifacts.Update(ctx, input.ID, patch)
+	if err != nil {
+		return nil, createUpdatePageOutput{}, err
+	}
+	if err := requirePage(updated); err != nil {
+		return nil, createUpdatePageOutput{}, err
+	}
+	return nil, createUpdatePageOutput{
+		ID:        updated.ID,
+		Title:     updated.Title,
+		FolderID:  updated.FolderID,
+		Revision:  updated.Revision,
+		UpdatedAt: updated.UpdatedAt,
+	}, nil
 }
 
 func (t toolServer) getPage(ctx context.Context, _ *sdkmcp.CallToolRequest, input getPageInput) (*sdkmcp.CallToolResult, pageOutput, error) {
@@ -213,7 +342,145 @@ func (t toolServer) getPage(ctx context.Context, _ *sdkmcp.CallToolRequest, inpu
 	if err := requirePage(rec); err != nil {
 		return nil, pageOutput{}, err
 	}
-	return nil, pageOutput{Page: toPageDetail(rec)}, nil
+	detail, err := t.renderPageDetail(ctx, rec)
+	if err != nil {
+		return nil, pageOutput{}, err
+	}
+	return nil, pageOutput{Page: detail}, nil
+}
+
+func (t toolServer) updateBlock(ctx context.Context, _ *sdkmcp.CallToolRequest, input updateBlockInput) (*sdkmcp.CallToolResult, updateBlockOutput, error) {
+	if t.converter == nil {
+		return nil, updateBlockOutput{}, service.BadRequest("blocknote-converter is not configured; cannot translate markdown to blocks")
+	}
+	if strings.TrimSpace(input.PageID) == "" {
+		return nil, updateBlockOutput{}, service.BadRequest("page_id is required")
+	}
+	if strings.TrimSpace(input.BlockID) == "" {
+		return nil, updateBlockOutput{}, service.BadRequest("block_id is required")
+	}
+	replacement, err := t.converter.MDToBlocks(ctx, input.Markdown)
+	if err != nil {
+		return nil, updateBlockOutput{}, err
+	}
+	rev, count, err := t.pages.ReplaceBlock(ctx, input.PageID, input.BlockID, replacement, input.Revision)
+	if err != nil {
+		return nil, updateBlockOutput{}, err
+	}
+	return nil, updateBlockOutput{
+		PageID:             input.PageID,
+		BlockID:            input.BlockID,
+		Revision:           rev,
+		ReplacedBlockCount: count,
+	}, nil
+}
+
+func (t toolServer) insertBlocks(ctx context.Context, _ *sdkmcp.CallToolRequest, input insertBlocksInput) (*sdkmcp.CallToolResult, insertBlocksOutput, error) {
+	if t.converter == nil {
+		return nil, insertBlocksOutput{}, service.BadRequest("blocknote-converter is not configured; cannot translate markdown to blocks")
+	}
+	if strings.TrimSpace(input.PageID) == "" {
+		return nil, insertBlocksOutput{}, service.BadRequest("page_id is required")
+	}
+	blocks, err := t.converter.MDToBlocks(ctx, input.Markdown)
+	if err != nil {
+		return nil, insertBlocksOutput{}, err
+	}
+	pos := service.BlockPosition{
+		AfterID:  input.Position.AfterID,
+		BeforeID: input.Position.BeforeID,
+		At:       input.Position.At,
+	}
+	rev, ids, err := t.pages.InsertBlocks(ctx, input.PageID, pos, blocks, input.Revision)
+	if err != nil {
+		return nil, insertBlocksOutput{}, err
+	}
+	return nil, insertBlocksOutput{
+		PageID:           input.PageID,
+		Revision:         rev,
+		InsertedBlockIDs: ids,
+	}, nil
+}
+
+func (t toolServer) deleteBlock(ctx context.Context, _ *sdkmcp.CallToolRequest, input deleteBlockInput) (*sdkmcp.CallToolResult, deleteBlockOutput, error) {
+	if strings.TrimSpace(input.PageID) == "" {
+		return nil, deleteBlockOutput{}, service.BadRequest("page_id is required")
+	}
+	if strings.TrimSpace(input.BlockID) == "" {
+		return nil, deleteBlockOutput{}, service.BadRequest("block_id is required")
+	}
+	rev, err := t.pages.DeleteBlock(ctx, input.PageID, input.BlockID, input.Revision)
+	if err != nil {
+		return nil, deleteBlockOutput{}, err
+	}
+	return nil, deleteBlockOutput{
+		PageID:   input.PageID,
+		BlockID:  input.BlockID,
+		Revision: rev,
+		Deleted:  true,
+	}, nil
+}
+
+func (t toolServer) renderPageDetail(ctx context.Context, rec service.ArtifactResponse) (pageDetail, error) {
+	parsed, err := blocknote.ParseBlocks(rec.Blocks)
+	if err != nil {
+		return pageDetail{}, err
+	}
+	views := make([]pageBlockView, len(parsed))
+	if len(parsed) > 0 {
+		blockArrays := make([]json.RawMessage, len(parsed))
+		for i, b := range parsed {
+			blockArrays[i] = json.RawMessage("[" + string(b.Raw) + "]")
+		}
+		var markdowns []string
+		if t.converter != nil {
+			markdowns, err = t.converter.BlocksToMDBatch(ctx, blockArrays)
+			if err != nil {
+				return pageDetail{}, err
+			}
+		} else {
+			markdowns = make([]string, len(parsed))
+		}
+		for i, b := range parsed {
+			views[i] = pageBlockView{
+				ID:    b.ID,
+				Type:  blockTypeOf(b.Raw),
+				Props: extractBlockProps(b.Raw),
+			}
+			if i < len(markdowns) {
+				views[i].Markdown = markdowns[i]
+			}
+		}
+	}
+	return pageDetail{
+		ID:        rec.ID,
+		Title:     rec.Title,
+		Blocks:    views,
+		FolderID:  rec.FolderID,
+		Summary:   rec.Summary,
+		Metadata:  rec.Metadata,
+		Revision:  rec.Revision,
+		CreatedAt: rec.CreatedAt,
+		UpdatedAt: rec.UpdatedAt,
+	}, nil
+}
+
+func blockTypeOf(raw json.RawMessage) string {
+	var probe struct {
+		Type string `json:"type"`
+	}
+	_ = json.Unmarshal(raw, &probe)
+	return probe.Type
+}
+
+func extractBlockProps(raw json.RawMessage) json.RawMessage {
+	var probe struct {
+		Props json.RawMessage `json:"props"`
+	}
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return nil
+	}
+	return probe.Props
 }
 
 func (t toolServer) listPages(ctx context.Context, _ *sdkmcp.CallToolRequest, input listPagesInput) (*sdkmcp.CallToolResult, pagesOutput, error) {
@@ -316,23 +583,6 @@ func toPageSummary(rec service.ArtifactResponse) pageSummary {
 	return pageSummary{
 		ID:        rec.ID,
 		Title:     rec.Title,
-		FolderID:  rec.FolderID,
-		Summary:   rec.Summary,
-		Metadata:  rec.Metadata,
-		CreatedAt: rec.CreatedAt,
-		UpdatedAt: rec.UpdatedAt,
-	}
-}
-
-func toPageDetail(rec service.ArtifactResponse) pageDetail {
-	blocks := rec.Blocks
-	if len(blocks) == 0 {
-		blocks = json.RawMessage(`[]`)
-	}
-	return pageDetail{
-		ID:        rec.ID,
-		Title:     rec.Title,
-		Blocks:    blocks,
 		FolderID:  rec.FolderID,
 		Summary:   rec.Summary,
 		Metadata:  rec.Metadata,

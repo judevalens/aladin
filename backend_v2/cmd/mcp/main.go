@@ -60,7 +60,8 @@ func main() {
 		slog.Info("mcp: converter reachable", "component", "mcp", "url", cfg.ConverterURL)
 	}
 
-	server := mcpserver.New(cfg.HTTPAddr, app.NewDependencies(pool), converter)
+	deps := app.NewDependencies(pool)
+	server := mcpserver.New(cfg.HTTPAddr, deps, deps.PageDocuments(), converter)
 
 	go func() {
 		<-ctx.Done()

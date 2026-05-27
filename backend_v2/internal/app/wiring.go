@@ -17,6 +17,7 @@ type Dependencies interface {
 	Records() coreservice.RecordService
 	Artifacts() coreservice.ArtifactService
 	Pages() coreservice.PageService
+	PageDocuments() coreservice.PageDocumentService
 	Files() coreservice.FileService
 	Feed() coreservice.FeedService
 	Insights() coreservice.InsightService
@@ -32,6 +33,7 @@ type StaticDependencies struct {
 	RecordsSvc             coreservice.RecordService
 	ArtifactsSvc           coreservice.ArtifactService
 	PagesSvc               coreservice.PageService
+	PageDocumentsSvc       coreservice.PageDocumentService
 	FilesSvc               coreservice.FileService
 	FeedSvc                coreservice.FeedService
 	InsightsSvc            coreservice.InsightService
@@ -46,9 +48,12 @@ func (d StaticDependencies) Sources() coreservice.SourceService     { return d.S
 func (d StaticDependencies) Records() coreservice.RecordService     { return d.RecordsSvc }
 func (d StaticDependencies) Artifacts() coreservice.ArtifactService { return d.ArtifactsSvc }
 func (d StaticDependencies) Pages() coreservice.PageService         { return d.PagesSvc }
-func (d StaticDependencies) Files() coreservice.FileService         { return d.FilesSvc }
-func (d StaticDependencies) Feed() coreservice.FeedService          { return d.FeedSvc }
-func (d StaticDependencies) Insights() coreservice.InsightService   { return d.InsightsSvc }
+func (d StaticDependencies) PageDocuments() coreservice.PageDocumentService {
+	return d.PageDocumentsSvc
+}
+func (d StaticDependencies) Files() coreservice.FileService       { return d.FilesSvc }
+func (d StaticDependencies) Feed() coreservice.FeedService        { return d.FeedSvc }
+func (d StaticDependencies) Insights() coreservice.InsightService { return d.InsightsSvc }
 func (d StaticDependencies) ProviderConnections() coreservice.ProviderConnectionService {
 	return d.ProviderConnectionsSvc
 }
@@ -66,6 +71,7 @@ type wiring struct {
 	records             coreservice.RecordService
 	artifacts           coreservice.ArtifactService
 	pages               coreservice.PageService
+	pageDocuments       coreservice.PageDocumentService
 	files               coreservice.FileService
 	feed                coreservice.FeedService
 	insights            coreservice.InsightService
@@ -80,9 +86,12 @@ func (w wiring) Sources() coreservice.SourceService     { return w.sources }
 func (w wiring) Records() coreservice.RecordService     { return w.records }
 func (w wiring) Artifacts() coreservice.ArtifactService { return w.artifacts }
 func (w wiring) Pages() coreservice.PageService         { return w.pages }
-func (w wiring) Files() coreservice.FileService         { return w.files }
-func (w wiring) Feed() coreservice.FeedService          { return w.feed }
-func (w wiring) Insights() coreservice.InsightService   { return w.insights }
+func (w wiring) PageDocuments() coreservice.PageDocumentService {
+	return w.pageDocuments
+}
+func (w wiring) Files() coreservice.FileService       { return w.files }
+func (w wiring) Feed() coreservice.FeedService        { return w.feed }
+func (w wiring) Insights() coreservice.InsightService { return w.insights }
 func (w wiring) ProviderConnections() coreservice.ProviderConnectionService {
 	return w.providerConnections
 }
@@ -130,6 +139,7 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		records:             coreservice.NewRecordService(recordRepo),
 		artifacts:           coreservice.NewArtifactService(artifactRepo, artifactFiles, realtime),
 		pages:               coreservice.NewPageService(artifactRepo, realtime),
+		pageDocuments:       coreservice.NewPageDocumentService(artifactRepo),
 		files:               coreservice.NewFileService(artifactRepo, artifactFiles),
 		feed:                coreservice.NewFeedService(feedRepo),
 		insights:            coreservice.NewInsightService(insightRepo),
