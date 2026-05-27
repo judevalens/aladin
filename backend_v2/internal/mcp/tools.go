@@ -161,10 +161,10 @@ type pageDetail struct {
 // and a markdown rendering of the block (so it can read the content without
 // needing to understand BlockNote's inline-content schema).
 type pageBlockView struct {
-	ID       string          `json:"id"`
-	Type     string          `json:"type"`
-	Props    json.RawMessage `json:"props,omitempty"`
-	Markdown string          `json:"markdown"`
+	ID       string         `json:"id"`
+	Type     string         `json:"type"`
+	Props    map[string]any `json:"props,omitempty"`
+	Markdown string         `json:"markdown"`
 }
 
 type folderOutput struct {
@@ -473,9 +473,9 @@ func blockTypeOf(raw json.RawMessage) string {
 	return probe.Type
 }
 
-func extractBlockProps(raw json.RawMessage) json.RawMessage {
+func extractBlockProps(raw json.RawMessage) map[string]any {
 	var probe struct {
-		Props json.RawMessage `json:"props"`
+		Props map[string]any `json:"props"`
 	}
 	if err := json.Unmarshal(raw, &probe); err != nil {
 		return nil

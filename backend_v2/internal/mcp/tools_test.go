@@ -255,8 +255,8 @@ func TestGetPage_ReturnsBlocksWithMarkdown(t *testing.T) {
 	if !strings.HasPrefix(out.Page.Blocks[0].Markdown, "rendered-") {
 		t.Fatalf("first block markdown = %q, want rendered-*", out.Page.Blocks[0].Markdown)
 	}
-	if string(out.Page.Blocks[0].Props) != `{"level":1}` {
-		t.Fatalf("props = %s, want level:1", string(out.Page.Blocks[0].Props))
+	if out.Page.Blocks[0].Props["level"] != float64(1) {
+		t.Fatalf("props = %#v, want level:1", out.Page.Blocks[0].Props)
 	}
 }
 
