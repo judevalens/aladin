@@ -2,7 +2,7 @@ use rusqlite::Connection;
 
 use super::DbResult;
 
-const CURRENT_VERSION: i32 = 7;
+const CURRENT_VERSION: i32 = 8;
 
 pub fn migrate(conn: &Connection) -> DbResult<()> {
     let version: i32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
@@ -26,6 +26,9 @@ pub fn migrate(conn: &Connection) -> DbResult<()> {
     }
     if version < 7 {
         conn.execute_batch(MIGRATION_V7)?;
+    }
+    if version < 8 {
+        conn.execute_batch(MIGRATION_V8)?;
     }
     conn.execute_batch(&format!("PRAGMA user_version = {CURRENT_VERSION};"))?;
     Ok(())
@@ -130,4 +133,18 @@ CREATE TABLE IF NOT EXISTS backend_events (
 );
 CREATE INDEX IF NOT EXISTS backend_events_status_updated_at ON backend_events(status, updated_at);
 CREATE INDEX IF NOT EXISTS backend_events_kind_updated_at ON backend_events(event_kind, updated_at);
+";
+
+// M7.1: page_content table — mirrors backend page_documents (blocks JSON +
+// revision). One row per page artifact; cascades on artifact delete.
+const MIGRATION_V8: &str = "
+CREATE TABLE IF NOT EXISTS page_content (
+    id TEXT PRIMARY KEY REFERENCES artifacts(id) ON DELETE CASCADE,
+    blocks TEXT NOT NULL DEFAULT '[]',
+    revision INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL,
+    sync_status TEXT NOT NULL DEFAULT 'SYNCED',
+    version INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS page_content_sync_status ON page_content(sync_status);
 ";
