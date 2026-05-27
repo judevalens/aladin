@@ -1,6 +1,7 @@
 pub mod artifacts;
 pub mod browser;
 pub mod outbox;
+pub mod page_content;
 pub mod pages;
 
 use rusqlite::types::Type;
