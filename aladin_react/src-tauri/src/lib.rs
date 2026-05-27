@@ -57,6 +57,7 @@ pub fn run() {
             page_cmd::db_upsert_page_metadata,
             page_cmd::db_get_page_content,
             page_cmd::db_upsert_page_content,
+            page_cmd::db_pull_page_content,
             page_cmd::db_clear_workspace,
             sync_cmd::sync_subscribe_data_events,
             sync_cmd::sync_set_session,

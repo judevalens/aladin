@@ -42,7 +42,7 @@ export function createAppComposition() {
       localSync,
     ),
     artifacts: createArtifactRepo(apis.artifacts, apiClient, local.repos.artifacts),
-    pages: createPageRepo(apiClient),
+    pages: createPageRepo(local.repos.artifacts),
     sources: createSourcesRepo(apiClient),
     integrations: createIntegrationRepo(apiClient),
   };

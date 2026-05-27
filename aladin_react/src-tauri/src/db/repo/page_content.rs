@@ -121,6 +121,38 @@ impl PageContentRepo {
         self.dao.get(conn, id)
     }
 
+    /// Cold-cache pull: fetch the page from the backend and upsert it into
+    /// local SQLite as SYNCED. Used by the editor the first time a page is
+    /// opened on this machine (the workspace tree only carries metadata).
+    pub fn pull(
+        &self,
+        db: &Db,
+        config: &SyncConfig,
+        id: &str,
+        updated_at_ms: i64,
+    ) -> DbResult<PageContentRow> {
+        let record = self
+            .api
+            .get_page(config, id)
+            .map_err(crate::db::DbError::Api)?;
+        db.with_tx(|tx| {
+            let row = PageContentRow {
+                id: record.id.clone(),
+                blocks: serde_json::to_string(&record.blocks)?,
+                revision: record.revision,
+                updated_at: updated_at_ms,
+                sync_status: SyncStatus::Synced,
+                version: self
+                    .dao
+                    .get(tx, &record.id)?
+                    .map(|r| r.version)
+                    .unwrap_or(0),
+            };
+            self.dao.upsert(tx, &row)?;
+            Ok(row)
+        })
+    }
+
     /// Local-first save: write the new blocks to SQLite as PENDING and
     /// enqueue an outbox mutation. The outbox processor drives the
     /// remote PATCH /api/pages/{id} call when ready.

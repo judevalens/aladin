@@ -75,3 +75,22 @@ export interface LocalArtifactMutationInput {
   updatedAt: number;
   mutationId: string;
 }
+
+export interface PageContentRow {
+  id: string;
+  /** JSON-encoded BlockNote document. Parsed on the way out of the repo. */
+  blocks: string;
+  revision: number;
+  updatedAt: number;
+  syncStatus: string;
+  version: number;
+}
+
+export interface LocalPageContentSaveInput {
+  id: string;
+  /** JSON-encoded BlockNote document. */
+  blocks: string;
+  revision: number;
+  updatedAt: number;
+  mutationId: string;
+}
