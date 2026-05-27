@@ -1,5 +1,6 @@
 pub mod artifacts;
 pub mod browser;
+pub mod pages;
 
 use thiserror::Error;
 

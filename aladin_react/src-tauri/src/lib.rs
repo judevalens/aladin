@@ -13,6 +13,7 @@ use crate::commands::{
 use crate::db::repo::{
     artifacts::ArtifactRepo,
     browser::{BrowserEventSubscriber, BrowserRepo},
+    page_content::PageContentRepo,
 };
 use crate::db::Db;
 use crate::events::DataEventHub;
@@ -29,6 +30,7 @@ pub fn run() {
             let sync = SyncHandle::default();
             sync.register_processor(std::sync::Arc::new(BrowserRepo::default()));
             sync.register_processor(std::sync::Arc::new(ArtifactRepo::default()));
+            sync.register_processor(std::sync::Arc::new(PageContentRepo::default()));
             sync.register_event_subscriber(std::sync::Arc::new(BrowserEventSubscriber::default()));
             sync.start_polling(db.clone(), events.clone());
             sync.start_realtime(db.clone(), events.clone());
