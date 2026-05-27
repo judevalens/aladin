@@ -80,6 +80,31 @@ export function createAppComposition() {
       workspaceSync.handleArtifactDeleted(event.payload.id);
       return;
     }
+    if (event.type === "pageContentChanged") {
+      // Realtime ingest of a page edit from another client (e.g. an MCP
+      // agent). Join the title onto the row from the local artifact
+      // cache, then publish into the page document stream so an open
+      // editor sees the new revision.
+      const row = event.payload;
+      let blocks: unknown[] = [];
+      try {
+        const parsed = JSON.parse(row.blocks);
+        if (Array.isArray(parsed)) blocks = parsed;
+      } catch {
+        // ignore — leave blocks empty and let the editor's next
+        // db_get_page_content fix it up.
+      }
+      void local.repos.artifacts.getById(row.id).then((artifact) => {
+        pageDocuments.applyExternalUpdate({
+          id: row.id,
+          title: artifact?.title ?? "",
+          blocks,
+          revision: row.revision,
+          updatedAt: new Date(row.updatedAt).toISOString(),
+        });
+      });
+      return;
+    }
   });
 
   const realtime = createRealtimeBoot({

@@ -3,7 +3,9 @@ use std::sync::{Arc, Mutex};
 use serde::Serialize;
 use tauri::ipc::Channel;
 
-use crate::db::repo::{artifacts::ArtifactRow, browser::BrowserNodeRow};
+use crate::db::repo::{
+    artifacts::ArtifactRow, browser::BrowserNodeRow, page_content::PageContentRow,
+};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", content = "payload", rename_all = "camelCase")]
@@ -13,6 +15,7 @@ pub enum DataEvent {
     BrowserNodeDeleted(EntityDeletedEvent),
     ArtifactChanged(ArtifactRow),
     ArtifactDeleted(EntityDeletedEvent),
+    PageContentChanged(PageContentRow),
 }
 
 #[derive(Debug, Clone, Serialize)]

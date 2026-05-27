@@ -24,4 +24,14 @@ export class PageDocumentService {
     this.stream.push(record);
     return record;
   }
+
+  /**
+   * Apply a server-pushed page record into the local stream so any open
+   * editor session can reconcile against the new revision. Called from
+   * the realtime event handler (M7.7) when a `pageContentChanged` event
+   * arrives — e.g. an MCP agent edited this page from another client.
+   */
+  applyExternalUpdate(record: PageDocumentRecord) {
+    this.stream.push(record);
+  }
 }

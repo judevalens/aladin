@@ -896,12 +896,16 @@ fn artifact_row_from_page_snapshot(
     updated_at: i64,
     current: &ArtifactRow,
 ) -> ArtifactRow {
+    // Post-M5: page content lives in page_content, not artifacts.content.
+    // The page.updated event still carries the title, so we refresh that
+    // (and updated_at) on the artifact row but leave content alone. The
+    // blocks payload is handled by the page_content event subscriber.
     ArtifactRow {
         id: current.id.clone(),
         folder_id: current.folder_id.clone(),
         title: payload.title.clone(),
         kind: current.kind.clone(),
-        content: Some(payload.content.clone()),
+        content: current.content.clone(),
         source_url: current.source_url.clone(),
         resource_url: current.resource_url.clone(),
         metadata_json: current.metadata_json.clone(),

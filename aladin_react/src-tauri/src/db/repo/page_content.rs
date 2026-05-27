@@ -11,7 +11,11 @@ use crate::{
         },
         Db, DbResult,
     },
-    events::DataEventHub,
+    events::{DataEvent, DataEventHub},
+    realtime::{
+        decode_page_snapshot_payload, BackendEventSubscription, EventSubscriber,
+        PayloadRegistration, ValidatedBackendEvent,
+    },
     sync::{OutboxProcessor, SyncConfig},
 };
 
@@ -306,4 +310,100 @@ fn map_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<PageContentRow> {
         sync_status: SyncStatus::from_db(&row.get::<_, String>(4)?, 4)?,
         version: row.get(5)?,
     })
+}
+
+/// EventSubscriber that handles `page.updated` events from the Go realtime
+/// stream and writes the new blocks into local SQLite. Skips the upsert if
+/// the local row is PENDING (the user has a dirtier draft about to flush
+/// via the outbox — we don't want to clobber their work).
+pub struct PageContentEventSubscriber {
+    repo: Arc<PageContentRepo>,
+}
+
+impl PageContentEventSubscriber {
+    pub fn new(repo: Arc<PageContentRepo>) -> Self {
+        Self { repo }
+    }
+}
+
+impl Default for PageContentEventSubscriber {
+    fn default() -> Self {
+        Self::new(Arc::new(PageContentRepo::default()))
+    }
+}
+
+impl EventSubscriber for PageContentEventSubscriber {
+    fn name(&self) -> &'static str {
+        "page_content"
+    }
+
+    fn subscriptions(&self) -> Vec<BackendEventSubscription> {
+        vec![BackendEventSubscription {
+            event_kind: Some("page.updated".to_string()),
+            stream: "workspace".to_string(),
+            resource_kind: "page".to_string(),
+            resource_id: "*".to_string(),
+            qualifiers: None,
+        }]
+    }
+
+    fn payload_registrations(&self) -> Vec<PayloadRegistration> {
+        vec![PayloadRegistration {
+            event_kind: "page.updated",
+            decoder: decode_page_snapshot_payload,
+        }]
+    }
+
+    fn handle(
+        &self,
+        db: &Db,
+        events: &DataEventHub,
+        _config: &SyncConfig,
+        event: &ValidatedBackendEvent,
+    ) -> DbResult<()> {
+        let crate::realtime::BackendEventPayload::PageSnapshot(payload) = &event.payload else {
+            return Ok(());
+        };
+        let updated_at_ms = event_updated_at_ms(payload.updated_at.as_deref());
+        let row = db.with_tx(|tx| {
+            let current = self.repo.dao.get(tx, &payload.id)?;
+            // Skip if the user has unflushed local edits — those would
+            // overwrite via the outbox anyway and we don't want to roll
+            // them back here.
+            if let Some(existing) = &current {
+                if existing.sync_status == SyncStatus::Pending {
+                    return Ok::<Option<PageContentRow>, crate::db::DbError>(None);
+                }
+                // If the incoming revision is stale, ignore.
+                if existing.revision > payload.revision {
+                    return Ok(None);
+                }
+            }
+            let row = PageContentRow {
+                id: payload.id.clone(),
+                blocks: serde_json::to_string(&payload.blocks)?,
+                revision: payload.revision,
+                updated_at: updated_at_ms,
+                sync_status: SyncStatus::Synced,
+                version: current.map(|r| r.version).unwrap_or(0),
+            };
+            self.repo.dao.upsert(tx, &row)?;
+            Ok(Some(row))
+        })?;
+        if let Some(row) = row {
+            events.emit(DataEvent::PageContentChanged(row));
+        }
+        Ok(())
+    }
+}
+
+/// Approximate millis for an event payload's updatedAt. The Tauri shell
+/// intentionally avoids a date-time dependency (see `updated_at_ms` in
+/// db/repo/browser.rs); for ordering purposes we treat the wall clock
+/// at receive time as good enough when we can't trivially parse.
+fn event_updated_at_ms(_iso: Option<&str>) -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
 }

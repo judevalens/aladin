@@ -94,9 +94,11 @@ pub struct TreeNodePayload {
 pub struct PageSnapshotPayload {
     pub id: String,
     pub title: String,
-    pub content: String,
-    #[serde(rename = "revision")]
-    pub _revision: i64,
+    /// Post-M5: the Go backend publishes BlockNote blocks JSON in this
+    /// field. We round-trip it opaquely.
+    #[serde(default)]
+    pub blocks: Value,
+    pub revision: i64,
     pub updated_at: Option<String>,
 }
 
