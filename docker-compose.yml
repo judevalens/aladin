@@ -66,6 +66,19 @@ services:
     depends_on:
       - loki
 
+  blocknote-converter:
+    build: ./services/blocknote-converter
+    container_name: aladin-blocknote-converter
+    ports:
+      - "3500:3500"
+    environment:
+      PORT: 3500
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3500/healthz"]
+      interval: 10s
+      timeout: 2s
+      retries: 5
+
 volumes:
   postgres_data:
   neo4j_data:
