@@ -28,16 +28,30 @@ export interface PageRepo {
 export function createPageRepo(artifacts: ArtifactRowRepo): PageRepo {
   return {
     async getPage(pageId) {
-      let row = await invoke<PageContentRow | null>("db_get_page_content", {
+      const row = await invoke<PageContentRow | null>("db_get_page_content", {
         id: pageId,
       });
-      if (!row) {
-        row = await invoke<PageContentRow>("db_pull_page_content", {
-          id: pageId,
-        });
-      }
       const artifact = await artifacts.getById(pageId);
-      return rowToRecord(row, artifact?.title ?? "");
+      if (row) {
+        return rowToRecord(row, artifact?.title ?? "");
+      }
+      // No local content row. Two cases:
+      //   1. Artifact is local and PENDING — this is a brand-new page
+      //      that hasn't flushed to the server yet. Pulling is doomed
+      //      (404 or connection refused if offline); start with an
+      //      empty document. The first save populates page_content
+      //      locally and the sync engine pushes it.
+      //   2. Artifact is SYNCED (or we don't have it locally) — we
+      //      genuinely need to fetch from the server. Surface pull
+      //      errors; the user can't safely edit a page whose canonical
+      //      content lives on a server we can't reach.
+      if (artifact && artifact.syncStatus === "PENDING") {
+        return emptyRecord(pageId, artifact?.title ?? "");
+      }
+      const pulled = await invoke<PageContentRow>("db_pull_page_content", {
+        id: pageId,
+      });
+      return rowToRecord(pulled, artifact?.title ?? "");
     },
     async savePage(pageId, input) {
       const saveInput: LocalPageContentSaveInput = {
@@ -53,6 +67,16 @@ export function createPageRepo(artifacts: ArtifactRowRepo): PageRepo {
       const artifact = await artifacts.getById(pageId);
       return rowToRecord(row, artifact?.title ?? "");
     },
+  };
+}
+
+function emptyRecord(id: string, title: string): PageDocumentRecord {
+  return {
+    id,
+    title,
+    blocks: [],
+    revision: 0,
+    updatedAt: new Date().toISOString(),
   };
 }
 
