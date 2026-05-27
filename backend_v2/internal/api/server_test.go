@@ -429,6 +429,26 @@ func TestAuthMiddlewareInjectsCurrentUserFromBearerSession(t *testing.T) {
 	}
 }
 
+func TestAuthMiddlewareInjectsCurrentUserFromRealtimeAccessToken(t *testing.T) {
+	t.Parallel()
+
+	server := &Server{deps: app.StaticDependencies{AuthSvc: &fakeAuthService{}}}
+	handler := server.authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := artifactservice.PrincipalFromContext(r.Context()); !ok {
+			t.Fatal("principal missing from request context")
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/api/events/ws?access_token=desktop-valid", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+}
+
 func TestDesktopAuthLoginReturnsBearerSession(t *testing.T) {
 	t.Parallel()
 

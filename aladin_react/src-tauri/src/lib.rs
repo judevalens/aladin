@@ -2,6 +2,7 @@ mod api;
 mod commands;
 mod db;
 mod events;
+mod realtime;
 mod sync;
 
 use tauri::Manager;
@@ -9,10 +10,13 @@ use tauri::Manager;
 use crate::commands::{
     artifacts as artifact_cmd, browser as browser_cmd, pages as page_cmd, sync as sync_cmd,
 };
-use crate::db::repo::{artifacts::ArtifactRepo, browser::BrowserRepo};
+use crate::db::repo::{
+    artifacts::ArtifactRepo,
+    browser::{BrowserEventSubscriber, BrowserRepo},
+};
 use crate::db::Db;
 use crate::events::DataEventHub;
-use crate::sync::SyncState;
+use crate::sync::SyncHandle;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -22,10 +26,12 @@ pub fn run() {
             let db_path = data_dir.join("aladin.sqlite");
             let db = Db::open(db_path).expect("failed to open local sqlite");
             let events = DataEventHub::default();
-            let sync = SyncState::default();
+            let sync = SyncHandle::default();
             sync.register_processor(std::sync::Arc::new(BrowserRepo::default()));
             sync.register_processor(std::sync::Arc::new(ArtifactRepo::default()));
+            sync.register_event_subscriber(std::sync::Arc::new(BrowserEventSubscriber::default()));
             sync.start_polling(db.clone(), events.clone());
+            sync.start_realtime(db.clone(), events.clone());
             app.manage(db);
             app.manage(events);
             app.manage(sync);

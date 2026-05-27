@@ -244,17 +244,21 @@ func (s *DefaultArtifactService) Create(ctx context.Context, payload ArtifactPay
 	if err := s.repo.CreateArtifactGraph(ctx, rec, node, pageMarkdown); err != nil {
 		return ArtifactCreateResponse{}, err
 	}
-	s.publishWorkspaceEvent(ctx, "artifact", rec.ID, "created", rec)
+	nodeResponse := BrowserNodeResponse{
+		ID:         node.ID,
+		ParentID:   node.ParentID,
+		Kind:       node.Kind,
+		Title:      rec.Title,
+		ArtifactID: node.ArtifactID,
+		Position:   node.Position,
+	}
+	s.publishWorkspaceEvent(ctx, "artifact", rec.ID, "created", WorkspaceTreeNodeEventPayload{
+		Node:     nodeResponse,
+		Artifact: &rec,
+	})
 	return ArtifactCreateResponse{
 		Artifact: rec,
-		Node: BrowserNodeResponse{
-			ID:         node.ID,
-			ParentID:   node.ParentID,
-			Kind:       node.Kind,
-			Title:      rec.Title,
-			ArtifactID: node.ArtifactID,
-			Position:   node.Position,
-		},
+		Node:     nodeResponse,
 	}, nil
 }
 
@@ -392,7 +396,10 @@ func (s *DefaultArtifactService) Update(ctx context.Context, id string, patch Ar
 	if err != nil {
 		return ArtifactResponse{}, err
 	}
-	s.publishWorkspaceEvent(ctx, "artifact", updated.ID, "updated", updated)
+	s.publishWorkspaceEvent(ctx, "artifact", updated.ID, "updated", WorkspaceTreeNodeEventPayload{
+		Node:     browserNodeEventFromArtifact(updated, 0),
+		Artifact: &updated,
+	})
 	return updated, nil
 }
 
@@ -460,16 +467,20 @@ func (s *DefaultArtifactService) Upload(ctx context.Context, input ArtifactUploa
 		return ArtifactResponse{}, err
 	}
 	artifactID := rec.ID
-	if err := s.repo.CreateArtifactGraph(ctx, rec, TreeNodeRecord{
+	node := TreeNodeRecord{
 		ID:         rec.ID,
 		ParentID:   input.FolderID,
 		Kind:       "artifact",
 		ArtifactID: &artifactID,
 		Position:   position,
-	}, nil); err != nil {
+	}
+	if err := s.repo.CreateArtifactGraph(ctx, rec, node, nil); err != nil {
 		return ArtifactResponse{}, err
 	}
-	s.publishWorkspaceEvent(ctx, "artifact", rec.ID, "created", rec)
+	s.publishWorkspaceEvent(ctx, "artifact", rec.ID, "created", WorkspaceTreeNodeEventPayload{
+		Node:     browserNodeEventFromArtifact(rec, position),
+		Artifact: &rec,
+	})
 	return rec, nil
 }
 
@@ -594,15 +605,17 @@ func (s *DefaultArtifactService) createFolderNode(ctx context.Context, id string
 	}); err != nil {
 		return BrowserNodeResponse{}, err
 	}
-	folder := FolderNode{ID: folderID, ParentID: parentID, Title: title}
-	s.publishWorkspaceEvent(ctx, "folder", folderID, "created", folder)
-	return BrowserNodeResponse{
+	node := BrowserNodeResponse{
 		ID:       folderID,
 		ParentID: parentID,
 		Kind:     "folder",
 		Title:    title,
 		Position: position,
-	}, nil
+	}
+	s.publishWorkspaceEvent(ctx, "folder", folderID, "created", WorkspaceTreeNodeEventPayload{
+		Node: node,
+	})
+	return node, nil
 }
 
 func (s *DefaultArtifactService) UpdateFolder(ctx context.Context, id string, patch FolderPatch) (FolderNode, error) {
@@ -626,7 +639,14 @@ func (s *DefaultArtifactService) UpdateFolder(ctx context.Context, id string, pa
 	if err != nil {
 		return FolderNode{}, err
 	}
-	s.publishWorkspaceEvent(ctx, "folder", updated.ID, "updated", updated)
+	s.publishWorkspaceEvent(ctx, "folder", updated.ID, "updated", WorkspaceTreeNodeEventPayload{
+		Node: BrowserNodeResponse{
+			ID:       updated.ID,
+			ParentID: updated.ParentID,
+			Kind:     "folder",
+			Title:    updated.Title,
+		},
+	})
 	return updated, nil
 }
 
@@ -658,10 +678,20 @@ func (s *DefaultArtifactService) publishWorkspaceEvent(ctx context.Context, reso
 		return
 	}
 	_ = s.realtime.Publish(ctx, PublishTarget{
-		TenantID:     DefaultRealtimeTenantID,
 		Stream:       WorkspaceStream,
 		ResourceKind: resourceKind,
 		ResourceID:   resourceID,
 		Operation:    operation,
 	}, payload)
+}
+
+func browserNodeEventFromArtifact(rec ArtifactResponse, position int64) BrowserNodeResponse {
+	return BrowserNodeResponse{
+		ID:         rec.ID,
+		ParentID:   rec.FolderID,
+		Kind:       "artifact",
+		Title:      rec.Title,
+		ArtifactID: &rec.ID,
+		Position:   position,
+	}
 }

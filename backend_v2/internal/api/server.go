@@ -114,6 +114,10 @@ func (r *statusRecorder) WriteHeader(status int) {
 	r.ResponseWriter.WriteHeader(status)
 }
 
+func (r *statusRecorder) Unwrap() http.ResponseWriter {
+	return r.ResponseWriter
+}
+
 func traceRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestID := strings.TrimSpace(r.Header.Get(requestIDHeader))
@@ -178,6 +182,15 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 				return
 			}
 		}
+		if isRealtimeWebSocketRoute(r) {
+			if token := strings.TrimSpace(r.URL.Query().Get("access_token")); token != "" {
+				principal, authErr := coreservice.ResolveBearerPrincipal(r.Context(), s.deps.Auth(), "Bearer "+token)
+				if authErr == nil {
+					next.ServeHTTP(w, r.WithContext(coreservice.WithPrincipal(r.Context(), principal)))
+					return
+				}
+			}
+		}
 
 		if isPublicRoute(r) {
 			next.ServeHTTP(w, r)
@@ -202,6 +215,10 @@ func isPublicRoute(r *http.Request) bool {
 		return true
 	}
 	return false
+}
+
+func isRealtimeWebSocketRoute(r *http.Request) bool {
+	return r.Method == http.MethodGet && r.URL.Path == "/api/events/ws"
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

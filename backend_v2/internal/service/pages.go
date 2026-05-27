@@ -91,7 +91,6 @@ func (s *DefaultPageService) publishWorkspaceEvent(ctx context.Context, resource
 		return
 	}
 	_ = s.realtime.Publish(ctx, PublishTarget{
-		TenantID:     DefaultRealtimeTenantID,
 		Stream:       WorkspaceStream,
 		ResourceKind: resourceKind,
 		ResourceID:   resourceID,

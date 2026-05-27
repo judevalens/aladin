@@ -4,7 +4,7 @@ use tauri::{ipc::Channel, State};
 use crate::db::repo::browser::{BrowserNodeRow, BrowserRepo};
 use crate::db::{Db, DbResult};
 use crate::events::{DataEvent, DataEventHub};
-use crate::sync::{SyncConfig, SyncState};
+use crate::sync::{SyncConfig, SyncHandle};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -14,7 +14,7 @@ pub struct SyncSessionInput {
 }
 
 #[tauri::command]
-pub fn sync_set_session(sync: State<'_, SyncState>, input: Option<SyncSessionInput>) {
+pub fn sync_set_session(sync: State<'_, SyncHandle>, input: Option<SyncSessionInput>) {
     sync.set(input.map(|value| SyncConfig {
         api_base_url: value.api_base_url,
         token: value.token,
@@ -30,7 +30,7 @@ pub fn sync_subscribe_data_events(events: State<'_, DataEventHub>, channel: Chan
 pub fn sync_drain_outbox(
     db: State<'_, Db>,
     events: State<'_, DataEventHub>,
-    sync: State<'_, SyncState>,
+    sync: State<'_, SyncHandle>,
 ) -> DbResult<usize> {
     sync.drain_once(&db, &events)
 }
@@ -39,7 +39,7 @@ pub fn sync_drain_outbox(
 pub fn db_refresh_workspace(
     db: State<'_, Db>,
     events: State<'_, DataEventHub>,
-    sync: State<'_, SyncState>,
+    sync: State<'_, SyncHandle>,
 ) -> DbResult<Vec<BrowserNodeRow>> {
     let config = sync.get().ok_or(crate::db::DbError::NotInitialized)?;
     BrowserRepo::default().refresh_workspace(&db, &events, &config)

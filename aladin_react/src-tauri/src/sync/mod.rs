@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex,
     },
     thread,
@@ -14,6 +14,7 @@ use crate::{
         Db, DbResult,
     },
     events::DataEventHub,
+    realtime::{self, BackendEventProcessor, EventSubscriber},
 };
 
 #[derive(Debug, Clone)]
@@ -40,37 +41,43 @@ pub trait OutboxProcessor: Send + Sync {
 }
 
 #[derive(Clone)]
-pub struct SyncState {
-    inner: Arc<SyncStateInner>,
+pub struct SyncHandle {
+    inner: Arc<SyncRuntimeState>,
 }
 
-struct SyncStateInner {
+struct SyncRuntimeState {
     config: Mutex<Option<SyncConfig>>,
     processors: Mutex<HashMap<String, Arc<dyn OutboxProcessor>>>,
+    event_processor: BackendEventProcessor,
+    subscription_version: AtomicU64,
     outbox: Arc<dyn OutboxDao>,
     started: AtomicBool,
+    realtime_started: AtomicBool,
 }
 
-impl Default for SyncState {
+impl Default for SyncHandle {
     fn default() -> Self {
         Self {
-            inner: Arc::new(SyncStateInner::default()),
+            inner: Arc::new(SyncRuntimeState::default()),
         }
     }
 }
 
-impl Default for SyncStateInner {
+impl Default for SyncRuntimeState {
     fn default() -> Self {
         Self {
             config: Mutex::new(None),
             processors: Mutex::new(HashMap::new()),
+            event_processor: BackendEventProcessor::default(),
+            subscription_version: AtomicU64::new(0),
             outbox: Arc::new(SqliteOutboxDao),
             started: AtomicBool::new(false),
+            realtime_started: AtomicBool::new(false),
         }
     }
 }
 
-impl SyncState {
+impl SyncHandle {
     pub fn set(&self, config: Option<SyncConfig>) {
         if let Ok(mut guard) = self.inner.config.lock() {
             *guard = config;
@@ -91,6 +98,21 @@ impl SyncState {
         }
     }
 
+    pub fn register_event_subscriber(&self, subscriber: Arc<dyn EventSubscriber>) {
+        self.inner.event_processor.register_subscriber(subscriber);
+        self.inner
+            .subscription_version
+            .fetch_add(1, Ordering::SeqCst);
+    }
+
+    pub fn event_processor(&self) -> BackendEventProcessor {
+        self.inner.event_processor.clone()
+    }
+
+    pub fn subscription_version(&self) -> u64 {
+        self.inner.subscription_version.load(Ordering::SeqCst)
+    }
+
     pub fn start_polling(&self, db: Db, events: DataEventHub) {
         if self.inner.started.swap(true, Ordering::SeqCst) {
             return;
@@ -102,6 +124,14 @@ impl SyncState {
             }
             thread::sleep(Duration::from_secs(60));
         });
+    }
+
+    pub fn start_realtime(&self, db: Db, events: DataEventHub) {
+        if self.inner.realtime_started.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let sync = self.clone();
+        thread::spawn(move || realtime::run_websocket_loop(sync, db, events));
     }
 
     pub fn drain_once(&self, db: &Db, events: &DataEventHub) -> DbResult<usize> {
@@ -178,4 +208,78 @@ fn current_time_ms() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_millis() as i64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::realtime::{
+        decode_entity_deleted_payload, BackendEventSubscription, PayloadRegistration,
+        ValidatedBackendEvent,
+    };
+
+    struct TestEventSubscriber {
+        resource_kind: &'static str,
+        resource_id: &'static str,
+    }
+
+    impl EventSubscriber for TestEventSubscriber {
+        fn name(&self) -> &'static str {
+            "test"
+        }
+
+        fn subscriptions(&self) -> Vec<BackendEventSubscription> {
+            vec![BackendEventSubscription {
+                event_kind: Some("artifact.deleted".to_string()),
+                stream: "workspace".to_string(),
+                resource_kind: self.resource_kind.to_string(),
+                resource_id: self.resource_id.to_string(),
+                qualifiers: None,
+            }]
+        }
+
+        fn payload_registrations(&self) -> Vec<PayloadRegistration> {
+            vec![PayloadRegistration {
+                event_kind: "artifact.deleted",
+                decoder: decode_entity_deleted_payload,
+            }]
+        }
+
+        fn handle(
+            &self,
+            _db: &Db,
+            _events: &DataEventHub,
+            _config: &SyncConfig,
+            _event: &ValidatedBackendEvent,
+        ) -> DbResult<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn register_event_subscriber_bumps_subscription_version_and_updates_subscriptions() {
+        let sync = SyncHandle::default();
+        assert_eq!(sync.subscription_version(), 0);
+        assert!(sync.event_processor().subscriptions().is_empty());
+
+        sync.register_event_subscriber(Arc::new(TestEventSubscriber {
+            resource_kind: "artifact",
+            resource_id: "artifact-1",
+        }));
+
+        assert_eq!(sync.subscription_version(), 1);
+        let subscriptions = sync.event_processor().subscriptions();
+        assert_eq!(subscriptions.len(), 1);
+        assert_eq!(subscriptions[0].resource_kind, "artifact");
+        assert_eq!(subscriptions[0].resource_id, "artifact-1");
+
+        sync.register_event_subscriber(Arc::new(TestEventSubscriber {
+            resource_kind: "folder",
+            resource_id: "folder-1",
+        }));
+
+        assert_eq!(sync.subscription_version(), 2);
+        let subscriptions = sync.event_processor().subscriptions();
+        assert_eq!(subscriptions.len(), 2);
+    }
 }

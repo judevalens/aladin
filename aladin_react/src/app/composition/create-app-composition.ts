@@ -84,9 +84,6 @@ export function createAppComposition() {
 
   const realtime = createRealtimeBoot({
     authSession,
-    workspace: workspaceSync,
-    artifactRepo: repos.artifacts,
-    pages: local.repos.pages,
     admin: local.admin,
     localSync,
     desktopSession,

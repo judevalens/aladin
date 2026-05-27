@@ -13,6 +13,12 @@ use crate::{
         Db, DbResult,
     },
     events::{DataEvent, DataEventHub, EntityDeletedEvent},
+    realtime::{
+        decode_entity_deleted_payload, decode_page_snapshot_payload,
+        decode_tree_node_snapshot_payload, ArtifactSnapshotPayload, BackendEventPayload,
+        BackendEventSubscription, EventSubscriber, PageSnapshotPayload, PayloadRegistration,
+        TreeNodePayload, ValidatedBackendEvent,
+    },
     sync::{OutboxProcessor, SyncConfig},
 };
 
@@ -70,6 +76,10 @@ pub struct BrowserRepo {
 }
 
 pub struct SqliteBrowserDao;
+
+pub struct BrowserEventSubscriber {
+    repo: BrowserRepo,
+}
 
 pub trait BrowserDao: Send + Sync {
     fn list(&self, conn: &Connection) -> DbResult<Vec<BrowserNodeRow>>;
@@ -181,6 +191,123 @@ impl BrowserRepo {
         }
 
         Ok(refreshed.0)
+    }
+
+    pub fn apply_backend_event(
+        &self,
+        db: &Db,
+        events: &DataEventHub,
+        event: &ValidatedBackendEvent,
+    ) -> DbResult<bool> {
+        match &event.payload {
+            BackendEventPayload::TreeNodeSnapshot(payload) => {
+                enum TreeOutcome {
+                    Applied(BrowserNodeRow, Option<ArtifactRow>),
+                    Skipped,
+                    NeedsRefresh,
+                }
+                let outcome = db.with_tx(|tx| {
+                    if let Some(parent_id) = payload.node.parent_id.as_ref() {
+                        if self.dao.get(tx, parent_id)?.is_none() {
+                            return Ok(TreeOutcome::NeedsRefresh);
+                        }
+                    }
+                    let current_node = self.dao.get(tx, &payload.node.id)?;
+                    if current_node.as_ref().map(|row| row.sync_status) == Some(SyncStatus::Pending)
+                    {
+                        return Ok(TreeOutcome::Skipped);
+                    }
+                    let updated_at = event_time_ms(
+                        payload
+                            .artifact
+                            .as_ref()
+                            .and_then(|artifact| artifact.updated_at.as_deref()),
+                        event,
+                    );
+                    let node = browser_node_from_tree_snapshot(
+                        &payload.node,
+                        updated_at,
+                        current_node.as_ref(),
+                    );
+                    self.dao.upsert(tx, &node)?;
+                    let artifact = if let Some(artifact) = payload.artifact.as_ref() {
+                        let current_artifact = self.artifact_dao.get(tx, &artifact.id)?;
+                        if current_artifact.as_ref().map(|row| row.sync_status)
+                            == Some(SyncStatus::Pending)
+                        {
+                            None
+                        } else {
+                            let row = artifact_row_from_snapshot(
+                                artifact,
+                                updated_at,
+                                current_artifact.as_ref(),
+                            );
+                            self.artifact_dao.upsert(tx, &row)?;
+                            Some(row)
+                        }
+                    } else {
+                        None
+                    };
+                    Ok(TreeOutcome::Applied(node, artifact))
+                })?;
+                match outcome {
+                    TreeOutcome::Applied(node, artifact) => {
+                        if let Some(artifact) = artifact {
+                            events.emit(DataEvent::ArtifactChanged(artifact));
+                        }
+                        if event.envelope.kind.ends_with(".created") {
+                            emit_browser_node_created(events, &node);
+                        } else {
+                            emit_browser_node_updated(events, &node);
+                        }
+                        Ok(true)
+                    }
+                    TreeOutcome::Skipped => Ok(true),
+                    TreeOutcome::NeedsRefresh => Ok(false),
+                }
+            }
+            BackendEventPayload::PageSnapshot(payload) => {
+                enum PageOutcome {
+                    Applied(ArtifactRow),
+                    Skipped,
+                    NeedsRefresh,
+                }
+                let outcome = db.with_tx(|tx| {
+                    let Some(current) = self.artifact_dao.get(tx, &payload.id)? else {
+                        return Ok(PageOutcome::NeedsRefresh);
+                    };
+                    if current.sync_status == SyncStatus::Pending {
+                        return Ok(PageOutcome::Skipped);
+                    }
+                    let row = artifact_row_from_page_snapshot(
+                        payload,
+                        event_time_ms(payload.updated_at.as_deref(), event),
+                        &current,
+                    );
+                    self.artifact_dao.upsert(tx, &row)?;
+                    Ok(PageOutcome::Applied(row))
+                })?;
+                match outcome {
+                    PageOutcome::Applied(artifact) => {
+                        events.emit(DataEvent::ArtifactChanged(artifact));
+                        Ok(true)
+                    }
+                    PageOutcome::Skipped => Ok(true),
+                    PageOutcome::NeedsRefresh => Ok(false),
+                }
+            }
+            BackendEventPayload::EntityDeleted(payload) => {
+                let deleted = db.with_tx(|tx| {
+                    self.dao
+                        .tombstone_subtree(tx, &payload.id, event_time_ms(None, event))
+                })?;
+                if deleted.is_empty() {
+                    return Ok(false);
+                }
+                emit_deleted_events(events, &deleted);
+                Ok(true)
+            }
+        }
     }
 
     pub fn get_artifact(&self, conn: &Connection, id: &str) -> DbResult<Option<ArtifactRow>> {
@@ -570,6 +697,83 @@ impl BrowserRepo {
     }
 }
 
+impl BrowserEventSubscriber {
+    pub fn new(repo: BrowserRepo) -> Self {
+        Self { repo }
+    }
+}
+
+impl Default for BrowserEventSubscriber {
+    fn default() -> Self {
+        Self::new(BrowserRepo::default())
+    }
+}
+
+impl EventSubscriber for BrowserEventSubscriber {
+    fn name(&self) -> &'static str {
+        "browser"
+    }
+
+    fn subscriptions(&self) -> Vec<BackendEventSubscription> {
+        self.payload_registrations()
+            .into_iter()
+            .map(|registration| BackendEventSubscription {
+                event_kind: Some(registration.event_kind.to_string()),
+                stream: "workspace".to_string(),
+                resource_kind: "*".to_string(),
+                resource_id: "*".to_string(),
+                qualifiers: None,
+            })
+            .collect()
+    }
+
+    fn payload_registrations(&self) -> Vec<PayloadRegistration> {
+        vec![
+            PayloadRegistration {
+                event_kind: "artifact.created",
+                decoder: decode_tree_node_snapshot_payload,
+            },
+            PayloadRegistration {
+                event_kind: "artifact.updated",
+                decoder: decode_tree_node_snapshot_payload,
+            },
+            PayloadRegistration {
+                event_kind: "artifact.deleted",
+                decoder: decode_entity_deleted_payload,
+            },
+            PayloadRegistration {
+                event_kind: "folder.created",
+                decoder: decode_tree_node_snapshot_payload,
+            },
+            PayloadRegistration {
+                event_kind: "folder.updated",
+                decoder: decode_tree_node_snapshot_payload,
+            },
+            PayloadRegistration {
+                event_kind: "folder.deleted",
+                decoder: decode_entity_deleted_payload,
+            },
+            PayloadRegistration {
+                event_kind: "page.updated",
+                decoder: decode_page_snapshot_payload,
+            },
+        ]
+    }
+
+    fn handle(
+        &self,
+        db: &Db,
+        events: &DataEventHub,
+        config: &SyncConfig,
+        event: &ValidatedBackendEvent,
+    ) -> DbResult<()> {
+        if self.repo.apply_backend_event(db, events, event)? {
+            return Ok(());
+        }
+        self.repo.refresh_workspace(db, events, config).map(|_| ())
+    }
+}
+
 impl Default for BrowserRepo {
     fn default() -> Self {
         Self::new(
@@ -659,6 +863,86 @@ fn browser_create_api_input(
             }
         }),
     }
+}
+
+fn artifact_row_from_snapshot(
+    payload: &ArtifactSnapshotPayload,
+    updated_at: i64,
+    current: Option<&ArtifactRow>,
+) -> ArtifactRow {
+    ArtifactRow {
+        id: payload.id.clone(),
+        folder_id: payload.folder_id.clone(),
+        title: payload.title.clone(),
+        kind: payload.kind.clone(),
+        content: payload
+            .content
+            .clone()
+            .or_else(|| current.and_then(|row| row.content.clone())),
+        source_url: payload.source_url.clone(),
+        resource_url: payload
+            .resource_url
+            .clone()
+            .or_else(|| current.and_then(|row| row.resource_url.clone())),
+        metadata_json: snapshot_metadata_json(payload, current),
+        updated_at,
+        sync_status: SyncStatus::Synced,
+        version: current.map_or(0, |row| row.version),
+    }
+}
+
+fn artifact_row_from_page_snapshot(
+    payload: &PageSnapshotPayload,
+    updated_at: i64,
+    current: &ArtifactRow,
+) -> ArtifactRow {
+    ArtifactRow {
+        id: current.id.clone(),
+        folder_id: current.folder_id.clone(),
+        title: payload.title.clone(),
+        kind: current.kind.clone(),
+        content: Some(payload.content.clone()),
+        source_url: current.source_url.clone(),
+        resource_url: current.resource_url.clone(),
+        metadata_json: current.metadata_json.clone(),
+        updated_at,
+        sync_status: SyncStatus::Synced,
+        version: current.version,
+    }
+}
+
+fn browser_node_from_tree_snapshot(
+    payload: &TreeNodePayload,
+    updated_at: i64,
+    current: Option<&BrowserNodeRow>,
+) -> BrowserNodeRow {
+    BrowserNodeRow {
+        id: payload.id.clone(),
+        parent_id: payload.parent_id.clone(),
+        title: payload.title.clone(),
+        kind: payload.kind.clone(),
+        artifact_id: payload.artifact_id.clone(),
+        updated_at,
+        sync_status: SyncStatus::Synced,
+        version: current.map_or(0, |row| row.version),
+    }
+}
+
+fn snapshot_metadata_json(
+    payload: &ArtifactSnapshotPayload,
+    current: Option<&ArtifactRow>,
+) -> Option<String> {
+    if let Some(summary) = payload.summary.as_ref() {
+        return Some(serde_json::json!({ "summary": summary }).to_string());
+    }
+    if let Some(metadata) = payload.metadata.as_ref().filter(|value| !value.is_null()) {
+        return Some(metadata.to_string());
+    }
+    current.and_then(|row| row.metadata_json.clone())
+}
+
+fn event_time_ms(payload_updated_at: Option<&str>, event: &ValidatedBackendEvent) -> i64 {
+    updated_at_ms(payload_updated_at.or(Some(event.envelope.occurred_at.as_str())))
 }
 
 #[derive(Default)]

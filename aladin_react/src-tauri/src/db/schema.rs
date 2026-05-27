@@ -2,7 +2,7 @@ use rusqlite::Connection;
 
 use super::DbResult;
 
-const CURRENT_VERSION: i32 = 6;
+const CURRENT_VERSION: i32 = 7;
 
 pub fn migrate(conn: &Connection) -> DbResult<()> {
     let version: i32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
@@ -23,6 +23,9 @@ pub fn migrate(conn: &Connection) -> DbResult<()> {
     }
     if version < 6 {
         conn.execute_batch(MIGRATION_V6)?;
+    }
+    if version < 7 {
+        conn.execute_batch(MIGRATION_V7)?;
     }
     conn.execute_batch(&format!("PRAGMA user_version = {CURRENT_VERSION};"))?;
     Ok(())
@@ -111,4 +114,20 @@ ALTER TABLE folders ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE artifacts ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0;
 CREATE INDEX IF NOT EXISTS folders_is_deleted ON folders(is_deleted);
 CREATE INDEX IF NOT EXISTS artifacts_is_deleted ON artifacts(is_deleted);
+";
+
+const MIGRATION_V7: &str = "
+CREATE TABLE IF NOT EXISTS backend_events (
+    id TEXT PRIMARY KEY,
+    event_kind TEXT NOT NULL,
+    subscription_key_json TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    status TEXT NOT NULL,
+    validation_error TEXT,
+    occurred_at TEXT NOT NULL,
+    received_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS backend_events_status_updated_at ON backend_events(status, updated_at);
+CREATE INDEX IF NOT EXISTS backend_events_kind_updated_at ON backend_events(event_kind, updated_at);
 ";

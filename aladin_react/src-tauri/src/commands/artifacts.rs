@@ -7,7 +7,7 @@ use crate::db::repo::artifacts::{
 use crate::db::repo::MutationMode;
 use crate::db::{Db, DbResult};
 use crate::events::DataEventHub;
-use crate::sync::SyncState;
+use crate::sync::SyncHandle;
 
 #[derive(Debug, Deserialize, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -88,7 +88,7 @@ pub fn db_upsert_artifact(db: State<'_, Db>, row: artifacts::ArtifactRow) -> DbR
 pub fn db_create_artifact(
     db: State<'_, Db>,
     events: State<'_, DataEventHub>,
-    sync: State<'_, SyncState>,
+    sync: State<'_, SyncHandle>,
     input: LocalArtifactMutationCommand,
 ) -> DbResult<artifacts::ArtifactRow> {
     ArtifactRepo::default().create(
@@ -104,7 +104,7 @@ pub fn db_create_artifact(
 pub fn db_rename_artifact(
     db: State<'_, Db>,
     events: State<'_, DataEventHub>,
-    sync: State<'_, SyncState>,
+    sync: State<'_, SyncHandle>,
     input: LocalArtifactMutationCommand,
 ) -> DbResult<artifacts::ArtifactRow> {
     ArtifactRepo::default().rename(
@@ -120,7 +120,7 @@ pub fn db_rename_artifact(
 pub fn db_delete_artifact(
     db: State<'_, Db>,
     events: State<'_, DataEventHub>,
-    sync: State<'_, SyncState>,
+    sync: State<'_, SyncHandle>,
     input: LocalArtifactDeleteCommand,
 ) -> DbResult<()> {
     ArtifactRepo::default().delete(

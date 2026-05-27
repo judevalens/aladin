@@ -8,7 +8,7 @@ use crate::db::repo::browser::{
 use crate::db::repo::MutationMode;
 use crate::db::{Db, DbResult};
 use crate::events::DataEventHub;
-use crate::sync::SyncState;
+use crate::sync::SyncHandle;
 
 #[derive(Debug, Deserialize, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -111,7 +111,7 @@ pub fn db_upsert_browser_node(db: State<'_, Db>, row: BrowserNodeRow) -> DbResul
 pub fn db_create_browser_node(
     db: State<'_, Db>,
     events: State<'_, DataEventHub>,
-    sync: State<'_, SyncState>,
+    sync: State<'_, SyncHandle>,
     input: LocalBrowserNodeCreateCommand,
 ) -> DbResult<BrowserCreateResult> {
     let repo = BrowserRepo::default();
@@ -135,7 +135,7 @@ pub fn db_create_browser_node(
 pub fn db_rename_browser_node(
     db: State<'_, Db>,
     events: State<'_, DataEventHub>,
-    sync: State<'_, SyncState>,
+    sync: State<'_, SyncHandle>,
     input: LocalBrowserMutationCommand,
 ) -> DbResult<BrowserNodeRow> {
     BrowserRepo::default().rename(
@@ -151,7 +151,7 @@ pub fn db_rename_browser_node(
 pub fn db_delete_browser_node(
     db: State<'_, Db>,
     events: State<'_, DataEventHub>,
-    sync: State<'_, SyncState>,
+    sync: State<'_, SyncHandle>,
     input: LocalBrowserDeleteCommand,
 ) -> DbResult<()> {
     BrowserRepo::default().delete(

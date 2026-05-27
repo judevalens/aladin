@@ -13,13 +13,20 @@ import (
 )
 
 const (
-	DefaultRealtimeTenantID = "default"
-	WorkspaceStream         = "workspace"
-	AnyResource             = "*"
+	WorkspaceStream = "workspace"
+	AnyResource     = "*"
 )
+
+var allowedWorkspaceResourceKinds = map[string]bool{
+	AnyResource: true,
+	"artifact":  true,
+	"folder":    true,
+	"page":      true,
+}
 
 type SubscriptionKey struct {
 	TenantID     string            `json:"tenantId,omitempty"`
+	EventKind    string            `json:"eventKind,omitempty"`
 	Stream       string            `json:"stream"`
 	ResourceKind string            `json:"resourceKind"`
 	ResourceID   string            `json:"resourceId"`
@@ -27,6 +34,7 @@ type SubscriptionKey struct {
 }
 
 type PublicSubscriptionKey struct {
+	EventKind    string            `json:"eventKind,omitempty"`
 	Stream       string            `json:"stream"`
 	ResourceKind string            `json:"resourceKind"`
 	ResourceID   string            `json:"resourceId"`
@@ -64,18 +72,21 @@ type SubscriptionKeyResolver interface {
 	ResolvePublishKeys(context.Context, PublishTarget) ([]SubscriptionKey, string, error)
 }
 
-type DefaultSubscriptionKeyResolver struct {
-	defaultTenantID string
+type DefaultSubscriptionKeyResolver struct{}
+
+func NewSubscriptionKeyResolver() *DefaultSubscriptionKeyResolver {
+	return &DefaultSubscriptionKeyResolver{}
 }
 
-func NewSubscriptionKeyResolver(defaultTenantID string) *DefaultSubscriptionKeyResolver {
-	if strings.TrimSpace(defaultTenantID) == "" {
-		defaultTenantID = DefaultRealtimeTenantID
+func (r *DefaultSubscriptionKeyResolver) ResolveSubscribeKeys(ctx context.Context, opts SubscriptionOptions) ([]SubscriptionKey, error) {
+	principal, err := RequirePrincipal(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return &DefaultSubscriptionKeyResolver{defaultTenantID: defaultTenantID}
-}
+	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
+		return nil, err
+	}
 
-func (r *DefaultSubscriptionKeyResolver) ResolveSubscribeKeys(_ context.Context, opts SubscriptionOptions) ([]SubscriptionKey, error) {
 	subscriptions := opts.Subscriptions
 	if len(subscriptions) == 0 {
 		subscriptions = []PublicSubscriptionKey{{
@@ -87,11 +98,27 @@ func (r *DefaultSubscriptionKeyResolver) ResolveSubscribeKeys(_ context.Context,
 
 	keys := make([]SubscriptionKey, 0, len(subscriptions))
 	for _, sub := range subscriptions {
+		stream := defaultString(sub.Stream, WorkspaceStream)
+		resourceKind := defaultString(sub.ResourceKind, AnyResource)
+		resourceID := defaultString(sub.ResourceID, AnyResource)
+		eventKind := strings.TrimSpace(sub.EventKind)
+		if stream != WorkspaceStream {
+			return nil, BadRequest("unsupported realtime stream")
+		}
+		if !allowedWorkspaceResourceKinds[resourceKind] {
+			return nil, BadRequest("unsupported workspace resource kind")
+		}
+		if eventKind != "" {
+			if err := validateWorkspaceEventKind(eventKind, resourceKind); err != nil {
+				return nil, err
+			}
+		}
 		key := SubscriptionKey{
-			TenantID:     r.defaultTenantID,
-			Stream:       defaultString(sub.Stream, WorkspaceStream),
-			ResourceKind: defaultString(sub.ResourceKind, AnyResource),
-			ResourceID:   defaultString(sub.ResourceID, AnyResource),
+			TenantID:     principal.UserID,
+			EventKind:    eventKind,
+			Stream:       stream,
+			ResourceKind: resourceKind,
+			ResourceID:   resourceID,
 			Qualifiers:   normalizeQualifiers(sub.Qualifiers),
 		}
 		keys = append(keys, key)
@@ -99,11 +126,39 @@ func (r *DefaultSubscriptionKeyResolver) ResolveSubscribeKeys(_ context.Context,
 	return keys, nil
 }
 
-func (r *DefaultSubscriptionKeyResolver) ResolvePublishKeys(_ context.Context, target PublishTarget) ([]SubscriptionKey, string, error) {
-	tenantID := defaultString(target.TenantID, r.defaultTenantID)
+func validateWorkspaceEventKind(eventKind, resourceKind string) error {
+	parts := strings.SplitN(eventKind, ".", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return BadRequest("eventKind must be in the form 'resource.operation'")
+	}
+	prefix := parts[0]
+	if prefix == AnyResource || !allowedWorkspaceResourceKinds[prefix] {
+		return BadRequest("unsupported eventKind resource prefix")
+	}
+	if resourceKind != AnyResource && resourceKind != prefix {
+		return BadRequest("eventKind does not match resourceKind")
+	}
+	return nil
+}
+
+func (r *DefaultSubscriptionKeyResolver) ResolvePublishKeys(ctx context.Context, target PublishTarget) ([]SubscriptionKey, string, error) {
+	tenantID := strings.TrimSpace(target.TenantID)
+	if tenantID == "" {
+		principal, err := RequirePrincipal(ctx)
+		if err != nil {
+			return nil, "", err
+		}
+		tenantID = principal.UserID
+	}
 	stream := defaultString(target.Stream, WorkspaceStream)
 	resourceKind := defaultString(target.ResourceKind, AnyResource)
 	resourceID := defaultString(target.ResourceID, AnyResource)
+	if stream != WorkspaceStream {
+		return nil, "", BadRequest("unsupported realtime stream")
+	}
+	if !allowedWorkspaceResourceKinds[resourceKind] {
+		return nil, "", BadRequest("unsupported workspace resource kind")
+	}
 	operation := strings.TrimSpace(target.Operation)
 	if operation == "" {
 		operation = "updated"
@@ -114,6 +169,7 @@ func (r *DefaultSubscriptionKeyResolver) ResolvePublishKeys(_ context.Context, t
 	return []SubscriptionKey{
 		{
 			TenantID:     tenantID,
+			EventKind:    eventType,
 			Stream:       stream,
 			ResourceKind: resourceKind,
 			ResourceID:   resourceID,
@@ -121,6 +177,7 @@ func (r *DefaultSubscriptionKeyResolver) ResolvePublishKeys(_ context.Context, t
 		},
 		{
 			TenantID:     tenantID,
+			EventKind:    eventType,
 			Stream:       stream,
 			ResourceKind: AnyResource,
 			ResourceID:   AnyResource,
@@ -133,13 +190,19 @@ type InMemoryRealtimeEventService struct {
 	mu           sync.RWMutex
 	nextID       int64
 	subscribers  map[string]realtimeSubscriber
-	recentEvents []AppEvent
+	recentEvents []recentRealtimeEvent
 	recentLimit  int
 }
 
 type realtimeSubscriber struct {
 	keys []SubscriptionKey
 	ch   chan AppEvent
+	done chan struct{}
+}
+
+type recentRealtimeEvent struct {
+	event AppEvent
+	keys  []SubscriptionKey
 }
 
 func NewInMemoryRealtimeEventService(resolver SubscriptionKeyResolver) *InMemoryRealtimeEventService {
@@ -168,7 +231,7 @@ func (s *InMemoryRealtimeEventService) Publish(ctx context.Context, target Publi
 	}
 
 	s.mu.Lock()
-	s.recentEvents = append(s.recentEvents, event)
+	s.recentEvents = append(s.recentEvents, recentRealtimeEvent{event: event, keys: cloneSubscriptionKeys(keys)})
 	if len(s.recentEvents) > s.recentLimit {
 		s.recentEvents = s.recentEvents[len(s.recentEvents)-s.recentLimit:]
 	}
@@ -191,9 +254,10 @@ func (s *InMemoryRealtimeEventService) Publish(ctx context.Context, target Publi
 func (s *InMemoryRealtimeEventService) Subscribe(ctx context.Context, keys []SubscriptionKey, afterEventID string) (<-chan AppEvent, func(), error) {
 	id := uuid.NewString()
 	ch := make(chan AppEvent, 64)
+	done := make(chan struct{})
 
 	s.mu.Lock()
-	s.subscribers[id] = realtimeSubscriber{keys: keys, ch: ch}
+	s.subscribers[id] = realtimeSubscriber{keys: keys, ch: ch, done: done}
 	replay := s.replayLocked(keys, afterEventID)
 	s.mu.Unlock()
 
@@ -201,6 +265,8 @@ func (s *InMemoryRealtimeEventService) Subscribe(ctx context.Context, keys []Sub
 		for _, event := range replay {
 			select {
 			case ch <- event:
+			case <-done:
+				return
 			case <-ctx.Done():
 				return
 			}
@@ -211,7 +277,7 @@ func (s *InMemoryRealtimeEventService) Subscribe(ctx context.Context, keys []Sub
 		s.mu.Lock()
 		if sub, ok := s.subscribers[id]; ok {
 			delete(s.subscribers, id)
-			close(sub.ch)
+			close(sub.done)
 		}
 		s.mu.Unlock()
 	}
@@ -226,12 +292,21 @@ func (s *InMemoryRealtimeEventService) replayLocked(keys []SubscriptionKey, afte
 	out := make([]AppEvent, 0)
 	for _, event := range s.recentEvents {
 		if !found {
-			found = event.EventID == afterEventID
+			found = event.event.EventID == afterEventID
 			continue
 		}
-		if subscriberMatchesAny(keys, []SubscriptionKey{event.SubscriptionKey.withTenant(DefaultRealtimeTenantID)}) {
-			out = append(out, event)
+		if subscriberMatchesAny(keys, event.keys) {
+			out = append(out, event.event)
 		}
+	}
+	return out
+}
+
+func cloneSubscriptionKeys(keys []SubscriptionKey) []SubscriptionKey {
+	out := make([]SubscriptionKey, 0, len(keys))
+	for _, key := range keys {
+		key.Qualifiers = normalizeQualifiers(key.Qualifiers)
+		out = append(out, key)
 	}
 	return out
 }
@@ -251,6 +326,9 @@ func (k SubscriptionKey) Matches(other SubscriptionKey) bool {
 	if k.TenantID != other.TenantID || k.Stream != other.Stream {
 		return false
 	}
+	if k.EventKind != "" && k.EventKind != other.EventKind {
+		return false
+	}
 	if k.ResourceKind != AnyResource && k.ResourceKind != other.ResourceKind {
 		return false
 	}
@@ -262,16 +340,7 @@ func (k SubscriptionKey) Matches(other SubscriptionKey) bool {
 
 func (k SubscriptionKey) Public() PublicSubscriptionKey {
 	return PublicSubscriptionKey{
-		Stream:       k.Stream,
-		ResourceKind: k.ResourceKind,
-		ResourceID:   k.ResourceID,
-		Qualifiers:   normalizeQualifiers(k.Qualifiers),
-	}
-}
-
-func (k PublicSubscriptionKey) withTenant(tenantID string) SubscriptionKey {
-	return SubscriptionKey{
-		TenantID:     tenantID,
+		EventKind:    k.EventKind,
 		Stream:       k.Stream,
 		ResourceKind: k.ResourceKind,
 		ResourceID:   k.ResourceID,

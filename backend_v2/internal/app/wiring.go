@@ -93,8 +93,6 @@ func (w wiring) RealtimeKeyResolver() coreservice.SubscriptionKeyResolver {
 	return w.rtKeys
 }
 
-const defaultUserID = "00000000-0000-0000-0000-000000000001"
-
 func NewDependencies(pool *pgxpool.Pool) Dependencies {
 	return NewDependenciesWithProviderConnections(pool, config.LoadProviderConnections())
 }
@@ -109,7 +107,7 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 	insightRepo := repo.NewInsightPostgres(pool)
 	systemRepo := repo.NewSystemPostgres(pool)
 	providerConnectionRepo := repo.NewProviderConnectionPostgres(pool)
-	realtimeKeys := coreservice.NewSubscriptionKeyResolver(defaultUserID)
+	realtimeKeys := coreservice.NewSubscriptionKeyResolver()
 	realtime := coreservice.NewInMemoryRealtimeEventService(realtimeKeys)
 	nangoClient := coreservice.NewHTTPNangoClient(providerConfig.NangoBaseURL, providerConfig.NangoSecretKey)
 	nangoBackend := coreservice.NewNangoProviderConnectionBackend(
