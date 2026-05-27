@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"reflect"
 	"testing"
 
 	"aladin/backend_v2/internal/service"
@@ -30,66 +29,34 @@ func TestPageToolsEnforceScopes(t *testing.T) {
 	}
 }
 
-func TestCreateAndUpdatePageToolUsePageTypeAndAgentMetadata(t *testing.T) {
+// During the M5 BlockNote storage migration the MCP write tools are off so
+// that they can't silently drop markdown content. M6 re-enables them on top
+// of the converter sidecar.
+func TestPageWriteToolsDisabledDuringM5Migration(t *testing.T) {
 	t.Parallel()
 
-	artifacts := &fakeArtifactService{
-		getResult: service.ArtifactResponse{
-			ID:       "page-1",
-			Type:     "page",
-			Title:    "Original",
-			Content:  "body",
-			Metadata: map[string]any{"kept": true},
-		},
-		createResult: service.ArtifactCreateResponse{
-			Artifact: service.ArtifactResponse{
-				ID:        "page-created",
-				Type:      "page",
-				Title:     "Created",
-				UpdatedAt: "2026-05-10T00:00:00Z",
-			},
-		},
-		updateResult: service.ArtifactResponse{
-			ID:        "page-1",
-			Type:      "page",
-			Title:     "Updated",
-			UpdatedAt: "2026-05-10T00:00:00Z",
-		},
-	}
+	artifacts := &fakeArtifactService{}
 	tools := toolServer{artifacts: artifacts}
 	writeCtx := contextWithScopes(service.ScopeArtifactsRead, service.ScopeArtifactsWrite)
 
-	if _, _, err := tools.createPage(writeCtx, nil, createPageInput{
-		Title:   "Created",
-		Content: "body",
-		Agent:   &agentInput{Name: "Claude Code", ID: "claude-code"},
-	}); err != nil {
-		t.Fatalf("createPage error: %v", err)
+	_, _, err := tools.createPage(writeCtx, nil, createPageInput{Title: "Created", Content: "body"})
+	if err == nil {
+		t.Fatal("createPage expected migration error, got nil")
 	}
-	if artifacts.createPayload.Type != "page" {
-		t.Fatalf("create type = %q, want page", artifacts.createPayload.Type)
+	var requestErr service.BadRequest
+	if !errors.As(err, &requestErr) {
+		t.Fatalf("createPage error = %T, want service.BadRequest", err)
 	}
-	agent, ok := artifacts.createPayload.Metadata["agent"].(map[string]any)
-	if !ok || agent["source"] != "mcp" || agent["name"] != "Claude Code" || agent["id"] != "claude-code" {
-		t.Fatalf("create metadata agent = %#v, want MCP agent block", artifacts.createPayload.Metadata["agent"])
+	if artifacts.createPayload.Type != "" {
+		t.Fatalf("artifact service should not be reached; got payload %#v", artifacts.createPayload)
 	}
 
-	if _, _, err := tools.updatePage(writeCtx, nil, updatePageInput{
-		ID:    "page-1",
-		Tags:  []string{"research", "  "},
-		Agent: &agentInput{Name: "Claude"},
-	}); err != nil {
-		t.Fatalf("updatePage error: %v", err)
+	_, _, err = tools.updatePage(writeCtx, nil, updatePageInput{ID: "page-1", Title: stringPtr("Next")})
+	if err == nil {
+		t.Fatal("updatePage expected migration error, got nil")
 	}
-	if artifacts.updatePatch.Metadata == nil {
-		t.Fatal("update metadata patch is nil")
-	}
-	metadata := *artifacts.updatePatch.Metadata
-	if metadata["kept"] != true {
-		t.Fatalf("metadata = %#v, want existing metadata preserved", metadata)
-	}
-	if !reflect.DeepEqual(metadata["tags"], []string{"research"}) {
-		t.Fatalf("tags = %#v, want cleaned tags", metadata["tags"])
+	if !errors.As(err, &requestErr) {
+		t.Fatalf("updatePage error = %T, want service.BadRequest", err)
 	}
 }
 

@@ -20,7 +20,7 @@ func New(addr string, deps app.Dependencies) *Server {
 		Name:    "aladin-mcp",
 		Version: "0.1.0",
 	}, &sdkmcp.ServerOptions{
-		Instructions: "Use Aladin page tools to read workspace structure and create or update markdown pages.",
+		Instructions: "Read-only access to Aladin pages and folders. Write tools (create_page, update_page) are temporarily disabled during the BlockNote storage migration; they return an error. Block-level write tools land in M6.",
 	})
 	registerTools(server, deps.Artifacts())
 

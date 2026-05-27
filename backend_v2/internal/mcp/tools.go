@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 
 	"aladin/backend_v2/internal/service"
@@ -10,6 +11,15 @@ import (
 )
 
 const pageArtifactType = "page"
+
+// errMCPWritesDisabled is returned by create_page / update_page while M5 is
+// in flight. M6 re-enables them on top of the BlockNote converter sidecar
+// with proper markdown<->blocks conversion. Until then the safe default is
+// a clear failure rather than silently dropping the agent's content.
+var errMCPWritesDisabled = service.BadRequest(
+	"MCP write tools are temporarily disabled during the BlockNote storage migration; " +
+		"they will be re-enabled in M6 with block-level addressing. Use the web editor in the meantime.",
+)
 
 type toolServer struct {
 	artifacts service.ArtifactService
@@ -28,15 +38,15 @@ func registerTools(server *sdkmcp.Server, artifacts service.ArtifactService) {
 	}, tools.listFolders)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "create_page",
-		Description: "Create an Aladin markdown page in an optional folder.",
+		Description: "[TEMPORARILY DISABLED — storage migration in flight; returns an error. Use the web editor; will be re-enabled with block-level addressing in M6.] Create an Aladin page in an optional folder.",
 	}, tools.createPage)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "update_page",
-		Description: "Update an existing Aladin markdown page.",
+		Description: "[TEMPORARILY DISABLED — storage migration in flight; returns an error. Use the web editor; will be re-enabled with block-level addressing in M6.] Update an existing Aladin page.",
 	}, tools.updatePage)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "get_page",
-		Description: "Read a single Aladin markdown page.",
+		Description: "Read a single Aladin page. Returns a JSON array of BlockNote blocks in the `blocks` field.",
 	}, tools.getPage)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "list_pages",
@@ -103,14 +113,14 @@ type pageSummary struct {
 }
 
 type pageDetail struct {
-	ID        string         `json:"id"`
-	Title     string         `json:"title"`
-	Content   string         `json:"content"`
-	FolderID  *string        `json:"folder_id,omitempty"`
-	Summary   *string        `json:"summary,omitempty"`
-	Metadata  map[string]any `json:"metadata,omitempty"`
-	CreatedAt string         `json:"created_at"`
-	UpdatedAt string         `json:"updated_at"`
+	ID        string          `json:"id"`
+	Title     string          `json:"title"`
+	Blocks    json.RawMessage `json:"blocks"`
+	FolderID  *string         `json:"folder_id,omitempty"`
+	Summary   *string         `json:"summary,omitempty"`
+	Metadata  map[string]any  `json:"metadata,omitempty"`
+	CreatedAt string          `json:"created_at"`
+	UpdatedAt string          `json:"updated_at"`
 }
 
 type folderOutput struct {
@@ -177,66 +187,18 @@ func (t toolServer) listFolders(ctx context.Context, _ *sdkmcp.CallToolRequest, 
 	return nil, foldersOutput{Folders: out}, nil
 }
 
-func (t toolServer) createPage(ctx context.Context, _ *sdkmcp.CallToolRequest, input createPageInput) (*sdkmcp.CallToolResult, createUpdatePageOutput, error) {
-	metadata := mergePageMetadata(nil, input.Tags, input.Agent)
-	rec, err := t.artifacts.Create(ctx, service.ArtifactPayload{
-		Type:     pageArtifactType,
-		FolderID: input.FolderID,
-		Title:    input.Title,
-		Content:  input.Content,
-		Summary:  input.Summary,
-		Metadata: metadata,
-	})
-	if err != nil {
+func (t toolServer) createPage(ctx context.Context, _ *sdkmcp.CallToolRequest, _ createPageInput) (*sdkmcp.CallToolResult, createUpdatePageOutput, error) {
+	if err := service.RequireScope(ctx, service.ScopeArtifactsWrite); err != nil {
 		return nil, createUpdatePageOutput{}, err
 	}
-	return nil, createUpdatePageOutput{
-		ID:        rec.Artifact.ID,
-		Title:     rec.Artifact.Title,
-		FolderID:  rec.Artifact.FolderID,
-		UpdatedAt: rec.Artifact.UpdatedAt,
-	}, nil
+	return nil, createUpdatePageOutput{}, errMCPWritesDisabled
 }
 
-func (t toolServer) updatePage(ctx context.Context, _ *sdkmcp.CallToolRequest, input updatePageInput) (*sdkmcp.CallToolResult, createUpdatePageOutput, error) {
-	if strings.TrimSpace(input.ID) == "" {
-		return nil, createUpdatePageOutput{}, service.ErrNotFound
-	}
-	if input.Title == nil && input.Content == nil && input.FolderID == nil && input.Summary == nil && input.Tags == nil && input.Agent == nil {
-		return nil, createUpdatePageOutput{}, service.BadRequest("update_page requires at least one field")
-	}
-	current, err := t.artifacts.Get(ctx, input.ID)
-	if err != nil {
+func (t toolServer) updatePage(ctx context.Context, _ *sdkmcp.CallToolRequest, _ updatePageInput) (*sdkmcp.CallToolResult, createUpdatePageOutput, error) {
+	if err := service.RequireScope(ctx, service.ScopeArtifactsWrite); err != nil {
 		return nil, createUpdatePageOutput{}, err
 	}
-	if err := requirePage(current); err != nil {
-		return nil, createUpdatePageOutput{}, err
-	}
-
-	var metadata *map[string]any
-	if input.Tags != nil || input.Agent != nil {
-		merged := mergePageMetadata(current.Metadata, input.Tags, input.Agent)
-		metadata = &merged
-	}
-	updated, err := t.artifacts.Update(ctx, input.ID, service.ArtifactPatch{
-		Title:    input.Title,
-		Content:  input.Content,
-		FolderID: input.FolderID,
-		Summary:  input.Summary,
-		Metadata: metadata,
-	})
-	if err != nil {
-		return nil, createUpdatePageOutput{}, err
-	}
-	if err := requirePage(updated); err != nil {
-		return nil, createUpdatePageOutput{}, err
-	}
-	return nil, createUpdatePageOutput{
-		ID:        updated.ID,
-		Title:     updated.Title,
-		FolderID:  updated.FolderID,
-		UpdatedAt: updated.UpdatedAt,
-	}, nil
+	return nil, createUpdatePageOutput{}, errMCPWritesDisabled
 }
 
 func (t toolServer) getPage(ctx context.Context, _ *sdkmcp.CallToolRequest, input getPageInput) (*sdkmcp.CallToolResult, pageOutput, error) {
@@ -359,10 +321,14 @@ func toPageSummary(rec service.ArtifactResponse) pageSummary {
 }
 
 func toPageDetail(rec service.ArtifactResponse) pageDetail {
+	blocks := rec.Blocks
+	if len(blocks) == 0 {
+		blocks = json.RawMessage(`[]`)
+	}
 	return pageDetail{
 		ID:        rec.ID,
 		Title:     rec.Title,
-		Content:   rec.Content,
+		Blocks:    blocks,
 		FolderID:  rec.FolderID,
 		Summary:   rec.Summary,
 		Metadata:  rec.Metadata,
