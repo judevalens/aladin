@@ -7,22 +7,24 @@ import (
 	"time"
 
 	"aladin/backend_v2/internal/app"
+	"aladin/backend_v2/internal/blocknote"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type Server struct {
 	httpServer *http.Server
+	converter  blocknote.Converter
 }
 
-func New(addr string, deps app.Dependencies) *Server {
+func New(addr string, deps app.Dependencies, converter blocknote.Converter) *Server {
 	server := sdkmcp.NewServer(&sdkmcp.Implementation{
 		Name:    "aladin-mcp",
 		Version: "0.1.0",
 	}, &sdkmcp.ServerOptions{
 		Instructions: "Read-only access to Aladin pages and folders. Write tools (create_page, update_page) are temporarily disabled during the BlockNote storage migration; they return an error. Block-level write tools land in M6.",
 	})
-	registerTools(server, deps.Artifacts())
+	registerTools(server, deps.Artifacts(), converter)
 
 	streamable := sdkmcp.NewStreamableHTTPHandler(func(*http.Request) *sdkmcp.Server {
 		return server
@@ -32,18 +34,28 @@ func New(addr string, deps app.Dependencies) *Server {
 
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", bearerAuth(deps.Auth(), streamable))
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
+	srv := &Server{converter: converter}
+	mux.HandleFunc("/healthz", srv.handleHealthz)
 
-	return &Server{
-		httpServer: &http.Server{
-			Addr:              addr,
-			Handler:           traceRequests(mux),
-			ReadHeaderTimeout: 5 * time.Second,
-		},
+	srv.httpServer = &http.Server{
+		Addr:              addr,
+		Handler:           traceRequests(mux),
+		ReadHeaderTimeout: 5 * time.Second,
 	}
+	return srv
+}
+
+func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
+	if s.converter != nil {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		if err := s.converter.Healthz(ctx); err != nil {
+			http.Error(w, "converter unreachable: "+err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+	}
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("ok"))
 }
 
 func (s *Server) Run() error {

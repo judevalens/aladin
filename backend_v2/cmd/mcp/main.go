@@ -7,8 +7,10 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"aladin/backend_v2/internal/app"
+	"aladin/backend_v2/internal/blocknote"
 	"aladin/backend_v2/internal/config"
 	"aladin/backend_v2/internal/db"
 	mcpserver "aladin/backend_v2/internal/mcp"
@@ -51,7 +53,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	server := mcpserver.New(cfg.HTTPAddr, app.NewDependencies(pool))
+	converter := blocknote.NewClient(cfg.ConverterURL, blocknote.ClientOptions{})
+	if err := waitForConverter(ctx, converter); err != nil {
+		slog.Warn("mcp: converter not reachable at startup, continuing anyway", "component", "mcp", "url", cfg.ConverterURL, "err", err)
+	} else {
+		slog.Info("mcp: converter reachable", "component", "mcp", "url", cfg.ConverterURL)
+	}
+
+	server := mcpserver.New(cfg.HTTPAddr, app.NewDependencies(pool), converter)
 
 	go func() {
 		<-ctx.Done()
@@ -64,4 +73,29 @@ func main() {
 		slog.Error("mcp: server stopped", "component", "mcp", "err", err)
 		os.Exit(1)
 	}
+}
+
+// waitForConverter performs a short retry loop against /healthz so the MCP
+// server doesn't return 500s during the first second of a cold
+// `docker-compose up`. We tolerate a missing converter at startup because
+// every tool call that needs it will surface a clear error of its own; the
+// retry just smooths the common case of the converter coming up alongside.
+func waitForConverter(ctx context.Context, c *blocknote.Client) error {
+	const attempts = 5
+	var lastErr error
+	for i := 0; i < attempts; i++ {
+		attemptCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		err := c.Healthz(attemptCtx)
+		cancel()
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		select {
+		case <-time.After(time.Duration(i+1) * 500 * time.Millisecond):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return lastErr
 }

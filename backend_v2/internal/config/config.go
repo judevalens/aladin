@@ -13,8 +13,9 @@ type APIConfig struct {
 }
 
 type MCPConfig struct {
-	DatabaseURL string
-	HTTPAddr    string
+	DatabaseURL  string
+	HTTPAddr     string
+	ConverterURL string
 }
 
 type WorkerConfig struct {
@@ -42,8 +43,9 @@ func LoadMCP() (MCPConfig, error) {
 		return MCPConfig{}, err
 	}
 	return MCPConfig{
-		DatabaseURL: databaseURL,
-		HTTPAddr:    optional("MCP_HTTP_ADDR", ":8090"),
+		DatabaseURL:  databaseURL,
+		HTTPAddr:     optional("MCP_HTTP_ADDR", ":8090"),
+		ConverterURL: optional("CONVERTER_URL", "http://localhost:3500"),
 	}, nil
 }
 

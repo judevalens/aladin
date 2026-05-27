@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 
+	"aladin/backend_v2/internal/blocknote"
 	"aladin/backend_v2/internal/service"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -23,10 +24,13 @@ var errMCPWritesDisabled = service.BadRequest(
 
 type toolServer struct {
 	artifacts service.ArtifactService
+	// converter is the markdown<->blocks bridge. M5 wires it in but only
+	// M6.6/M6.7 tools actually use it (block-level update / read paths).
+	converter blocknote.Converter
 }
 
-func registerTools(server *sdkmcp.Server, artifacts service.ArtifactService) {
-	tools := toolServer{artifacts: artifacts}
+func registerTools(server *sdkmcp.Server, artifacts service.ArtifactService, converter blocknote.Converter) {
+	tools := toolServer{artifacts: artifacts, converter: converter}
 
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "get_browser_tree",
