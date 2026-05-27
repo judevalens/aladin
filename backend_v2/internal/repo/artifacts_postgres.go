@@ -27,7 +27,8 @@ func (r *PostgresArtifactRepository) ListArtifacts(ctx context.Context, params a
 	}
 	query := `
 		SELECT a.id, n.parent_id, a.type, a.title,
-		       CASE WHEN a.type = 'page' THEN COALESCE(p.markdown, a.content) ELSE a.content END AS content,
+		       a.content,
+		       p.blocks,
 		       a.summary, a.source_url, a.metadata, a.created_at, a.updated_at,
 		       COALESCE(p.revision, 0) AS revision
 		  FROM artifacts a
@@ -69,7 +70,8 @@ func (r *PostgresArtifactRepository) SearchPageArtifacts(ctx context.Context, pa
 	query := "%" + params.Query + "%"
 	rows, err := r.pool.Query(ctx, `
 		SELECT a.id, n.parent_id, a.type, a.title,
-		       COALESCE(p.markdown, a.content) AS content,
+		       a.content,
+		       p.blocks,
 		       a.summary, a.source_url, a.metadata, a.created_at, a.updated_at,
 		       COALESCE(p.revision, 0) AS revision
 		  FROM artifacts a
@@ -80,7 +82,7 @@ func (r *PostgresArtifactRepository) SearchPageArtifacts(ctx context.Context, pa
 		   AND (
 		       a.title ILIKE $2
 		       OR COALESCE(a.summary, '') ILIKE $2
-		       OR COALESCE(p.markdown, a.content, '') ILIKE $2
+		       OR COALESCE(p.search_text, '') ILIKE $2
 		   )
 		 ORDER BY a.updated_at DESC, a.created_at DESC
 		 LIMIT $3
@@ -108,7 +110,8 @@ func (r *PostgresArtifactRepository) GetArtifact(ctx context.Context, id string)
 	}
 	row := r.pool.QueryRow(ctx, `
 		SELECT a.id, n.parent_id, a.type, a.title,
-		       CASE WHEN a.type = 'page' THEN COALESCE(p.markdown, a.content) ELSE a.content END AS content,
+		       a.content,
+		       p.blocks,
 		       a.summary, a.source_url, a.metadata, a.created_at, a.updated_at,
 		       COALESCE(p.revision, 0) AS revision
 		  FROM artifacts a
@@ -143,7 +146,7 @@ func (r *PostgresArtifactRepository) CreateArtifact(ctx context.Context, rec art
 	return err
 }
 
-func (r *PostgresArtifactRepository) CreateArtifactGraph(ctx context.Context, rec artifactservice.ArtifactResponse, node artifactservice.TreeNodeRecord, pageMarkdown *string) error {
+func (r *PostgresArtifactRepository) CreateArtifactGraph(ctx context.Context, rec artifactservice.ArtifactResponse, node artifactservice.TreeNodeRecord, pageBlocks json.RawMessage, pageSearchText string) error {
 	userID, err := r.userID(ctx)
 	if err != nil {
 		return err
@@ -176,12 +179,12 @@ func (r *PostgresArtifactRepository) CreateArtifactGraph(ctx context.Context, re
 		return err
 	}
 
-	if pageMarkdown != nil {
+	if pageBlocks != nil {
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO page_documents (artifact_id, markdown, created_at, updated_at)
-			VALUES ($1, $2, now(), now())
+			INSERT INTO page_documents (artifact_id, blocks, search_text, created_at, updated_at)
+			VALUES ($1, $2::jsonb, $3, now(), now())
 			ON CONFLICT (artifact_id) DO NOTHING
-		`, rec.ID, *pageMarkdown); err != nil {
+		`, rec.ID, string(pageBlocks), pageSearchText); err != nil {
 			return err
 		}
 	}
@@ -226,116 +229,131 @@ func (r *PostgresArtifactRepository) UpdateArtifact(ctx context.Context, id stri
 	return nil
 }
 
-func (r *PostgresArtifactRepository) CreatePageDocument(ctx context.Context, artifactID string, markdown string) error {
+func (r *PostgresArtifactRepository) CreatePageDocument(ctx context.Context, artifactID string, blocks json.RawMessage, searchText string) error {
 	if _, err := r.userID(ctx); err != nil {
 		return err
 	}
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO page_documents (artifact_id, markdown, created_at, updated_at)
-		VALUES ($1, $2, now(), now())
+		INSERT INTO page_documents (artifact_id, blocks, search_text, created_at, updated_at)
+		VALUES ($1, $2::jsonb, $3, now(), now())
 		ON CONFLICT (artifact_id) DO NOTHING
-	`, artifactID, markdown)
+	`, artifactID, string(blocks), searchText)
 	return err
 }
 
-func (r *PostgresArtifactRepository) SavePageDocument(ctx context.Context, artifactID string, markdown string) error {
+// SavePageBlocks is the single mutation point for a page's block document.
+// expectedRev=0 disables the optimistic check (last-write-wins);
+// expectedRev>0 enforces that the stored revision is strictly less than
+// expectedRev and returns ErrConflict otherwise. Returns the new revision.
+func (r *PostgresArtifactRepository) SavePageBlocks(ctx context.Context, artifactID string, blocks json.RawMessage, searchText string, expectedRev int64) (int64, error) {
 	userID, err := r.userID(ctx)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer func() {
 		_ = tx.Rollback(ctx)
 	}()
 
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO page_documents (artifact_id, markdown, created_at, updated_at)
-		VALUES ($1, $2, now(), now())
-		ON CONFLICT (artifact_id)
-		DO UPDATE SET markdown = EXCLUDED.markdown, updated_at = now()
-	`, artifactID, markdown); err != nil {
-		return err
+	var newRev int64
+	if expectedRev > 0 {
+		err = tx.QueryRow(ctx, `
+			UPDATE page_documents
+			   SET blocks = $2::jsonb,
+			       search_text = $3,
+			       revision = $4,
+			       updated_at = now()
+			 WHERE artifact_id = $1
+			   AND revision < $4
+			RETURNING revision
+		`, artifactID, string(blocks), searchText, expectedRev).Scan(&newRev)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				var exists bool
+				if err := tx.QueryRow(ctx, `
+					SELECT EXISTS (
+						SELECT 1
+						  FROM artifacts a
+						  JOIN page_documents p ON p.artifact_id = a.id
+						 WHERE a.id = $1
+						   AND a.user_id = $2::uuid
+						   AND a.type = 'page'
+					)
+				`, artifactID, userID).Scan(&exists); err != nil {
+					return 0, err
+				}
+				if !exists {
+					return 0, artifactservice.ErrNotFound
+				}
+				return 0, artifactservice.ErrConflict
+			}
+			return 0, err
+		}
+	} else {
+		err = tx.QueryRow(ctx, `
+			UPDATE page_documents
+			   SET blocks = $2::jsonb,
+			       search_text = $3,
+			       revision = revision + 1,
+			       updated_at = now()
+			 WHERE artifact_id = $1
+			RETURNING revision
+		`, artifactID, string(blocks), searchText).Scan(&newRev)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return 0, artifactservice.ErrNotFound
+			}
+			return 0, err
+		}
 	}
 
 	tag, err := tx.Exec(ctx, `
 		UPDATE artifacts
-		   SET content = $3,
-		       updated_at = now()
-		 WHERE id = $1 AND user_id = $2::uuid
-	`, artifactID, userID, markdown)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return artifactservice.ErrNotFound
-	}
-
-	return tx.Commit(ctx)
-}
-
-func (r *PostgresArtifactRepository) SavePageDocumentRevision(ctx context.Context, artifactID string, markdown string, revision int64) error {
-	userID, err := r.userID(ctx)
-	if err != nil {
-		return err
-	}
-	tx, err := r.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		_ = tx.Rollback(ctx)
-	}()
-
-	tag, err := tx.Exec(ctx, `
-		UPDATE page_documents
-		   SET markdown = $2,
-		       revision = $3,
-		       updated_at = now()
-		 WHERE artifact_id = $1
-		   AND revision < $3
-	`, artifactID, markdown, revision)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		var exists bool
-		if err := tx.QueryRow(ctx, `
-			SELECT EXISTS (
-				SELECT 1
-				  FROM artifacts a
-				  JOIN page_documents p ON p.artifact_id = a.id
-				 WHERE a.id = $1
-				   AND a.user_id = $2::uuid
-				   AND a.type = 'page'
-			)
-		`, artifactID, userID).Scan(&exists); err != nil {
-			return err
-		}
-		if !exists {
-			return artifactservice.ErrNotFound
-		}
-		return artifactservice.ErrConflict
-	}
-
-	tag, err = tx.Exec(ctx, `
-		UPDATE artifacts
-		   SET content = $3,
-		       updated_at = now()
+		   SET updated_at = now()
 		 WHERE id = $1
 		   AND user_id = $2::uuid
 		   AND type = 'page'
-	`, artifactID, userID, markdown)
+	`, artifactID, userID)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if tag.RowsAffected() == 0 {
-		return artifactservice.ErrNotFound
+		return 0, artifactservice.ErrNotFound
 	}
 
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return 0, err
+	}
+	return newRev, nil
+}
+
+// GetPageBlocks returns the current blocks JSON + revision for a page.
+// Implements PageDocumentStore.
+func (r *PostgresArtifactRepository) GetPageBlocks(ctx context.Context, artifactID string) (json.RawMessage, int64, error) {
+	userID, err := r.userID(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	var blocks []byte
+	var revision int64
+	err = r.pool.QueryRow(ctx, `
+		SELECT p.blocks, p.revision
+		  FROM page_documents p
+		  JOIN artifacts a ON a.id = p.artifact_id
+		 WHERE p.artifact_id = $1
+		   AND a.user_id = $2::uuid
+		   AND a.type = 'page'
+	`, artifactID, userID).Scan(&blocks, &revision)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, 0, artifactservice.ErrNotFound
+		}
+		return nil, 0, err
+	}
+	return json.RawMessage(blocks), revision, nil
 }
 
 func (r *PostgresArtifactRepository) DeleteArtifact(ctx context.Context, id string) error {
@@ -683,6 +701,7 @@ func (r *PostgresArtifactRepository) userID(ctx context.Context) (string, error)
 func scanArtifactResponse(row scanner) (artifactservice.ArtifactResponse, error) {
 	var rec artifactservice.ArtifactResponse
 	var metadata []byte
+	var blocks []byte
 	var createdAt time.Time
 	var updatedAt time.Time
 	rec.Metadata = map[string]any{}
@@ -692,6 +711,7 @@ func scanArtifactResponse(row scanner) (artifactservice.ArtifactResponse, error)
 		&rec.Type,
 		&rec.Title,
 		&rec.Content,
+		&blocks,
 		&rec.Summary,
 		&rec.SourceURL,
 		&metadata,
@@ -707,6 +727,15 @@ func scanArtifactResponse(row scanner) (artifactservice.ArtifactResponse, error)
 	}
 	if len(metadata) > 0 {
 		_ = json.Unmarshal(metadata, &rec.Metadata)
+	}
+	if rec.Type == "page" {
+		// Pages carry their body in Blocks; Content is unused.
+		rec.Content = ""
+		if len(blocks) > 0 {
+			rec.Blocks = json.RawMessage(blocks)
+		} else {
+			rec.Blocks = json.RawMessage(`[]`)
+		}
 	}
 	rec.CreatedAt = createdAt.Format(time.RFC3339)
 	rec.UpdatedAt = updatedAt.Format(time.RFC3339)

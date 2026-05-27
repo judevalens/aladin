@@ -2,10 +2,17 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"strings"
 	"time"
+
+	"aladin/backend_v2/internal/blocknote"
 )
+
+// emptyBlocks is the canonical "no blocks" JSON value persisted alongside a
+// freshly-created page that the agent or user has not yet populated.
+var emptyBlocks = json.RawMessage(`[]`)
 
 type ArtifactService interface {
 	List(context.Context, ArtifactListParams) ([]ArtifactResponse, error)
@@ -32,10 +39,20 @@ type ArtifactRepository interface {
 	SearchPageArtifacts(context.Context, PageSearchParams) ([]ArtifactResponse, error)
 	GetArtifact(context.Context, string) (ArtifactResponse, error)
 	CreateArtifact(context.Context, ArtifactResponse) error
-	CreateArtifactGraph(context.Context, ArtifactResponse, TreeNodeRecord, *string) error
+	// CreateArtifactGraph writes the artifact, its tree node, and (when
+	// pageBlocks != nil) the initial page_documents row in a single
+	// transaction. pageBlocks must be a JSON array of BlockNote blocks;
+	// pageSearchText is the pre-derived inline text for full-text search.
+	CreateArtifactGraph(ctx context.Context, rec ArtifactResponse, node TreeNodeRecord, pageBlocks json.RawMessage, pageSearchText string) error
 	UpdateArtifact(context.Context, string, ArtifactPatch) error
-	CreatePageDocument(context.Context, string, string) error
-	SavePageDocument(context.Context, string, string) error
+	// CreatePageDocument inserts the page_documents row for an artifact that
+	// already exists. blocks must be a JSON array; searchText is the
+	// pre-derived inline text.
+	CreatePageDocument(ctx context.Context, artifactID string, blocks json.RawMessage, searchText string) error
+	// SavePageBlocks is the single mutation point for page blocks. expectedRev
+	// of 0 means last-write-wins; >0 enforces optimistic concurrency and
+	// returns ErrConflict if the stored revision is >= expectedRev.
+	SavePageBlocks(ctx context.Context, artifactID string, blocks json.RawMessage, searchText string, expectedRev int64) (newRev int64, err error)
 	DeleteArtifact(context.Context, string) error
 	ListFolders(context.Context, *string) ([]FolderNode, error)
 	ListAllFolders(context.Context) ([]FolderNode, error)
@@ -185,17 +202,31 @@ func (s *DefaultArtifactService) Create(ctx context.Context, payload ArtifactPay
 	content := strings.TrimSpace(payload.Content)
 	sourceURL := TrimStringPtr(payload.SourceURL)
 
+	var (
+		pageBlocks     json.RawMessage
+		pageSearchText string
+	)
+
 	switch artifactType {
 	case "page":
 		if title == "" {
-			title = content
+			return ArtifactCreateResponse{}, BadRequest("title is required")
 		}
-		if title == "" {
-			return ArtifactCreateResponse{}, BadRequest("title or content is required")
+		// Pages use Blocks, not Content. An empty Blocks payload is
+		// permitted and produces an empty document the editor can fill in.
+		blocks := payload.Blocks
+		if len(blocks) == 0 {
+			blocks = emptyBlocks
+		} else if !looksLikeJSONArray(blocks) {
+			return ArtifactCreateResponse{}, BadRequest("blocks must be a JSON array")
 		}
-		if content == "" {
-			content = title
+		searchText, err := blocknote.ExtractText(blocks)
+		if err != nil {
+			return ArtifactCreateResponse{}, BadRequest("blocks: " + err.Error())
 		}
+		pageBlocks = blocks
+		pageSearchText = searchText
+		content = "" // content is unused for pages
 	case "link":
 		if sourceURL == nil {
 			return ArtifactCreateResponse{}, BadRequest("sourceUrl is required")
@@ -216,6 +247,7 @@ func (s *DefaultArtifactService) Create(ctx context.Context, payload ArtifactPay
 		FolderID:  payload.FolderID,
 		Title:     title,
 		Content:   content,
+		Blocks:    pageBlocks,
 		Summary:   TrimStringPtr(payload.Summary),
 		SourceURL: sourceURL,
 		Metadata:  payload.Metadata,
@@ -237,11 +269,7 @@ func (s *DefaultArtifactService) Create(ctx context.Context, payload ArtifactPay
 		ArtifactID: &artifactID,
 		Position:   position,
 	}
-	var pageMarkdown *string
-	if artifactType == "page" {
-		pageMarkdown = &content
-	}
-	if err := s.repo.CreateArtifactGraph(ctx, rec, node, pageMarkdown); err != nil {
+	if err := s.repo.CreateArtifactGraph(ctx, rec, node, pageBlocks, pageSearchText); err != nil {
 		return ArtifactCreateResponse{}, err
 	}
 	nodeResponse := BrowserNodeResponse{
@@ -284,6 +312,7 @@ func (s *DefaultArtifactService) CreateBrowserNode(ctx context.Context, input Br
 			FolderID:  input.ParentID,
 			Title:     input.Title,
 			Content:   input.Artifact.Content,
+			Blocks:    input.Artifact.Blocks,
 			Summary:   input.Artifact.Summary,
 			SourceURL: input.Artifact.SourceURL,
 			Metadata:  input.Artifact.Metadata,
@@ -361,10 +390,6 @@ func (s *DefaultArtifactService) Update(ctx context.Context, id string, patch Ar
 	if patch.Title != nil {
 		nextTitle = *patch.Title
 	}
-	nextContent := current.Content
-	if patch.Content != nil {
-		nextContent = *patch.Content
-	}
 	nextSourceURL := current.SourceURL
 	if patch.SourceURL != nil {
 		nextSourceURL = patch.SourceURL
@@ -375,8 +400,11 @@ func (s *DefaultArtifactService) Update(ctx context.Context, id string, patch Ar
 	if nextType == "link" && strings.TrimSpace(nextTitle) == "" {
 		return ArtifactResponse{}, BadRequest("title is required")
 	}
-	if nextType == "page" && strings.TrimSpace(nextTitle) == "" && strings.TrimSpace(nextContent) == "" {
-		return ArtifactResponse{}, BadRequest("title or content is required")
+	if nextType == "page" && strings.TrimSpace(nextTitle) == "" {
+		return ArtifactResponse{}, BadRequest("title is required")
+	}
+	if current.Type == "page" && patch.Content != nil {
+		return ArtifactResponse{}, BadRequest("pages use blocks, not content; pass `blocks` instead")
 	}
 
 	if patch.FolderID != nil {
@@ -384,8 +412,16 @@ func (s *DefaultArtifactService) Update(ctx context.Context, id string, patch Ar
 			return ArtifactResponse{}, err
 		}
 	}
-	if current.Type == "page" && patch.Content != nil {
-		if err := s.repo.SavePageDocument(ctx, id, *patch.Content); err != nil {
+	if current.Type == "page" && patch.Blocks != nil {
+		blocks := *patch.Blocks
+		if !looksLikeJSONArray(blocks) {
+			return ArtifactResponse{}, BadRequest("blocks must be a JSON array")
+		}
+		searchText, err := blocknote.ExtractText(blocks)
+		if err != nil {
+			return ArtifactResponse{}, BadRequest("blocks: " + err.Error())
+		}
+		if _, err := s.repo.SavePageBlocks(ctx, id, blocks, searchText, 0); err != nil {
 			return ArtifactResponse{}, err
 		}
 	}
@@ -474,7 +510,7 @@ func (s *DefaultArtifactService) Upload(ctx context.Context, input ArtifactUploa
 		ArtifactID: &artifactID,
 		Position:   position,
 	}
-	if err := s.repo.CreateArtifactGraph(ctx, rec, node, nil); err != nil {
+	if err := s.repo.CreateArtifactGraph(ctx, rec, node, nil, ""); err != nil {
 		return ArtifactResponse{}, err
 	}
 	s.publishWorkspaceEvent(ctx, "artifact", rec.ID, "created", WorkspaceTreeNodeEventPayload{

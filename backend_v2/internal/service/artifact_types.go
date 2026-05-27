@@ -1,17 +1,24 @@
 package service
 
+import "encoding/json"
+
 type ArtifactResponse struct {
-	ID        string         `json:"id"`
-	Type      string         `json:"type"`
-	FolderID  *string        `json:"folderId,omitempty"`
-	Title     string         `json:"title"`
-	Content   string         `json:"content"`
-	Summary   *string        `json:"summary"`
-	SourceURL *string        `json:"sourceUrl"`
-	Metadata  map[string]any `json:"metadata"`
-	CreatedAt string         `json:"createdAt"`
-	UpdatedAt string         `json:"updatedAt"`
-	Revision  int64          `json:"-"`
+	ID   string  `json:"id"`
+	Type string  `json:"type"`
+	FolderID *string `json:"folderId,omitempty"`
+	Title    string  `json:"title"`
+	// Content is the canonical body for non-page artifacts (link/voice/file).
+	// For pages it is always empty; use Blocks instead.
+	Content string `json:"content"`
+	// Blocks is the canonical body for pages: a JSON array of BlockNote
+	// blocks. Empty (omitted) for non-page artifacts.
+	Blocks    json.RawMessage `json:"blocks,omitempty"`
+	Summary   *string         `json:"summary"`
+	SourceURL *string         `json:"sourceUrl"`
+	Metadata  map[string]any  `json:"metadata"`
+	CreatedAt string          `json:"createdAt"`
+	UpdatedAt string          `json:"updatedAt"`
+	Revision  int64           `json:"-"`
 }
 
 type BrowserNodeResponse struct {
@@ -34,12 +41,13 @@ type ArtifactCreateResponse struct {
 }
 
 type BrowserArtifactPayload struct {
-	ID        string         `json:"id,omitempty"`
-	Type      string         `json:"type"`
-	Content   string         `json:"content"`
-	Summary   *string        `json:"summary"`
-	SourceURL *string        `json:"sourceUrl"`
-	Metadata  map[string]any `json:"metadata"`
+	ID        string          `json:"id,omitempty"`
+	Type      string          `json:"type"`
+	Content   string          `json:"content"`
+	Blocks    json.RawMessage `json:"blocks,omitempty"`
+	Summary   *string         `json:"summary"`
+	SourceURL *string         `json:"sourceUrl"`
+	Metadata  map[string]any  `json:"metadata"`
 }
 
 type BrowserNodeCreateInput struct {
@@ -56,24 +64,28 @@ type BrowserNodeCreateResponse struct {
 }
 
 type ArtifactPayload struct {
-	ID        string         `json:"id,omitempty"`
-	Type      string         `json:"type"`
-	FolderID  *string        `json:"folderId,omitempty"`
-	Title     string         `json:"title"`
-	Content   string         `json:"content"`
-	Summary   *string        `json:"summary"`
-	SourceURL *string        `json:"sourceUrl"`
-	Metadata  map[string]any `json:"metadata"`
+	ID        string          `json:"id,omitempty"`
+	Type      string          `json:"type"`
+	FolderID  *string         `json:"folderId,omitempty"`
+	Title     string          `json:"title"`
+	// Content is used for non-page artifacts; ignored for pages.
+	Content string `json:"content"`
+	// Blocks is required for type=page; ignored for other types.
+	Blocks    json.RawMessage `json:"blocks,omitempty"`
+	Summary   *string         `json:"summary"`
+	SourceURL *string         `json:"sourceUrl"`
+	Metadata  map[string]any  `json:"metadata"`
 }
 
 type ArtifactPatch struct {
-	Type      *string         `json:"type"`
-	FolderID  *string         `json:"folderId,omitempty"`
-	Title     *string         `json:"title"`
-	Content   *string         `json:"content"`
-	Summary   *string         `json:"summary"`
-	SourceURL *string         `json:"sourceUrl"`
-	Metadata  *map[string]any `json:"metadata"`
+	Type      *string          `json:"type"`
+	FolderID  *string          `json:"folderId,omitempty"`
+	Title     *string          `json:"title"`
+	Content   *string          `json:"content"`
+	Blocks    *json.RawMessage `json:"blocks,omitempty"`
+	Summary   *string          `json:"summary"`
+	SourceURL *string          `json:"sourceUrl"`
+	Metadata  *map[string]any  `json:"metadata"`
 }
 
 type DocumentRecord struct {

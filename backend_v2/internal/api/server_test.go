@@ -3,6 +3,7 @@ package api
 import (
 	"aladin/backend_v2/internal/app"
 	"context"
+	"encoding/json"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -260,7 +261,7 @@ func TestPagesGet(t *testing.T) {
 			page: artifactservice.PageDocument{
 				ID:        "artifact-1",
 				Title:     "Memo",
-				Content:   "# Hello",
+				Blocks:    json.RawMessage(`[{"id":"a","type":"paragraph","content":[{"type":"text","text":"Hello"}],"children":[]}]`),
 				Revision:  7,
 				UpdatedAt: "2026-05-01T00:00:00Z",
 			},
@@ -274,8 +275,8 @@ func TestPagesGet(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "\"content\":\"# Hello\"") {
-		t.Fatalf("body = %s, want page content", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), `"blocks":[`) {
+		t.Fatalf("body = %s, want blocks array", rec.Body.String())
 	}
 	if !strings.Contains(rec.Body.String(), "\"revision\":7") {
 		t.Fatalf("body = %s, want page revision", rec.Body.String())
@@ -285,17 +286,18 @@ func TestPagesGet(t *testing.T) {
 func TestPagesSave(t *testing.T) {
 	t.Parallel()
 
+	updatedBlocks := json.RawMessage(`[{"id":"a","type":"paragraph","content":[{"type":"text","text":"updated"}],"children":[]}]`)
 	service := &fakePageService{
 		page: artifactservice.PageDocument{
 			ID:        "artifact-1",
 			Title:     "Memo",
-			Content:   "updated markdown",
+			Blocks:    updatedBlocks,
 			Revision:  2,
 			UpdatedAt: "2026-05-01T00:00:00Z",
 		},
 	}
 	server := NewWithDependencies(":0", app.StaticDependencies{PagesSvc: service})
-	req := httptest.NewRequest(http.MethodPatch, "/api/pages/artifact-1", strings.NewReader(`{"content":"updated markdown","revision":2}`))
+	req := httptest.NewRequest(http.MethodPatch, "/api/pages/artifact-1", strings.NewReader(`{"blocks":[{"id":"a","type":"paragraph","content":[{"type":"text","text":"updated"}],"children":[]}],"revision":2}`))
 	rec := httptest.NewRecorder()
 
 	server.httpServer.Handler.ServeHTTP(rec, req)
@@ -303,8 +305,8 @@ func TestPagesSave(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
-	if service.saved == nil || service.saved.Content != "updated markdown" {
-		t.Fatalf("saved payload = %#v, want updated markdown", service.saved)
+	if service.saved == nil || len(service.saved.Blocks) == 0 {
+		t.Fatalf("saved payload = %#v, want updated blocks", service.saved)
 	}
 	if service.saved == nil || service.saved.Revision != 2 {
 		t.Fatalf("saved payload = %#v, want revision 2", service.saved)

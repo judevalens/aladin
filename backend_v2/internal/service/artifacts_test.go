@@ -2,22 +2,25 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"strings"
 	"testing"
 )
 
-func TestArtifactServiceCreatePageDefaultsAndTrims(t *testing.T) {
+func TestArtifactServiceCreatePageStoresBlocks(t *testing.T) {
 	t.Parallel()
 
 	summary := "  useful memo  "
 	repo := &fakeArtifactRepository{}
 	svc := NewArtifactService(repo, &fakeArtifactFiles{})
 
+	blocks := json.RawMessage(`[{"id":"a","type":"paragraph","content":[{"type":"text","text":"Rivian supply chain memo"}],"children":[]}]`)
 	result, err := svc.Create(testPrincipalContext(), ArtifactPayload{
 		Type:    "page",
-		Content: "  Rivian supply chain memo  ",
+		Title:   "Rivian supply chain memo",
+		Blocks:  blocks,
 		Summary: &summary,
 	})
 	if err != nil {
@@ -27,8 +30,44 @@ func TestArtifactServiceCreatePageDefaultsAndTrims(t *testing.T) {
 	if rec.ID == "" || !strings.HasPrefix(rec.ID, "artifact-") {
 		t.Fatalf("id = %q, want artifact-*", rec.ID)
 	}
-	if len(repo.createdArtifacts) != 1 || repo.createdArtifacts[0].ID != rec.ID {
-		t.Fatalf("created = %#v, want one created artifact", repo.createdArtifacts)
+	if rec.Content != "" {
+		t.Fatalf("page artifact Content should be empty, got %q", rec.Content)
+	}
+	if string(rec.Blocks) != string(blocks) {
+		t.Fatalf("blocks roundtrip failed: got %s", string(rec.Blocks))
+	}
+	stored := repo.pagesByID[rec.ID]
+	if stored == nil {
+		t.Fatalf("expected page document to be created for id %q", rec.ID)
+	}
+	if stored.searchText != "Rivian supply chain memo" {
+		t.Fatalf("search_text = %q, want %q", stored.searchText, "Rivian supply chain memo")
+	}
+}
+
+func TestArtifactServiceCreatePageRejectsNonArrayBlocks(t *testing.T) {
+	t.Parallel()
+	svc := NewArtifactService(&fakeArtifactRepository{}, &fakeArtifactFiles{})
+	_, err := svc.Create(testPrincipalContext(), ArtifactPayload{
+		Type:   "page",
+		Title:  "Bad",
+		Blocks: json.RawMessage(`{"not":"an array"}`),
+	})
+	var requestErr BadRequest
+	if !errors.As(err, &requestErr) {
+		t.Fatalf("Create with non-array blocks error = %v, want BadRequest", err)
+	}
+}
+
+func TestArtifactServiceCreatePageRequiresTitle(t *testing.T) {
+	t.Parallel()
+	svc := NewArtifactService(&fakeArtifactRepository{}, &fakeArtifactFiles{})
+	_, err := svc.Create(testPrincipalContext(), ArtifactPayload{
+		Type: "page",
+	})
+	var requestErr BadRequest
+	if !errors.As(err, &requestErr) {
+		t.Fatalf("Create without title error = %v, want BadRequest", err)
 	}
 }
 
@@ -192,10 +231,16 @@ func TestArtifactServiceBrowserTreeBuildsMixedHierarchy(t *testing.T) {
 	}
 }
 
+type fakePageStore struct {
+	blocks     json.RawMessage
+	searchText string
+	revision   int64
+}
+
 type fakeArtifactRepository struct {
 	artifactByID     map[string]ArtifactResponse
 	createdArtifacts []ArtifactResponse
-	pageContentByID  map[string]string
+	pagesByID        map[string]*fakePageStore
 	folders          []FolderNode
 	browserNodes     []BrowserTreeFlatNode
 	searchResults    []ArtifactResponse
@@ -221,9 +266,13 @@ func (f *fakeArtifactRepository) GetArtifact(_ context.Context, id string) (Arti
 		return ArtifactResponse{}, ErrNotFound
 	}
 	if rec.Type == "page" {
-		if markdown, ok := f.pageContentByID[id]; ok {
-			rec.Content = markdown
+		if page, ok := f.pagesByID[id]; ok && page != nil {
+			rec.Blocks = page.blocks
+			rec.Revision = page.revision
+		} else {
+			rec.Blocks = json.RawMessage(`[]`)
 		}
+		rec.Content = ""
 	}
 	return rec, nil
 }
@@ -233,13 +282,16 @@ func (f *fakeArtifactRepository) CreateArtifact(_ context.Context, rec ArtifactR
 	return nil
 }
 
-func (f *fakeArtifactRepository) CreateArtifactGraph(_ context.Context, rec ArtifactResponse, node TreeNodeRecord, pageMarkdown *string) error {
+func (f *fakeArtifactRepository) CreateArtifactGraph(_ context.Context, rec ArtifactResponse, node TreeNodeRecord, pageBlocks json.RawMessage, pageSearchText string) error {
 	f.createdArtifacts = append(f.createdArtifacts, rec)
-	if pageMarkdown != nil {
-		if f.pageContentByID == nil {
-			f.pageContentByID = map[string]string{}
+	if pageBlocks != nil {
+		if f.pagesByID == nil {
+			f.pagesByID = map[string]*fakePageStore{}
 		}
-		f.pageContentByID[rec.ID] = *pageMarkdown
+		f.pagesByID[rec.ID] = &fakePageStore{
+			blocks:     pageBlocks,
+			searchText: pageSearchText,
+		}
 	}
 	artifactType := rec.Type
 	f.browserNodes = append(f.browserNodes, BrowserTreeFlatNode{
@@ -258,49 +310,51 @@ func (f *fakeArtifactRepository) UpdateArtifact(context.Context, string, Artifac
 	return nil
 }
 
-func (f *fakeArtifactRepository) CreatePageDocument(_ context.Context, artifactID string, markdown string) error {
-	if f.pageContentByID == nil {
-		f.pageContentByID = map[string]string{}
+func (f *fakeArtifactRepository) CreatePageDocument(_ context.Context, artifactID string, blocks json.RawMessage, searchText string) error {
+	if f.pagesByID == nil {
+		f.pagesByID = map[string]*fakePageStore{}
 	}
-	f.pageContentByID[artifactID] = markdown
-	if rec, ok := f.artifactByID[artifactID]; ok {
-		rec.Content = markdown
-		f.artifactByID[artifactID] = rec
-	}
+	f.pagesByID[artifactID] = &fakePageStore{blocks: blocks, searchText: searchText}
 	return nil
 }
 
-func (f *fakeArtifactRepository) SavePageDocument(_ context.Context, artifactID string, markdown string) error {
-	if f.pageContentByID == nil {
-		f.pageContentByID = map[string]string{}
-	}
-	f.pageContentByID[artifactID] = markdown
-	if rec, ok := f.artifactByID[artifactID]; ok {
-		rec.Content = markdown
-		f.artifactByID[artifactID] = rec
-	}
-	return nil
-}
-
-func (f *fakeArtifactRepository) SavePageDocumentRevision(_ context.Context, artifactID string, markdown string, revision int64) error {
+func (f *fakeArtifactRepository) SavePageBlocks(_ context.Context, artifactID string, blocks json.RawMessage, searchText string, expectedRev int64) (int64, error) {
 	if f.artifactByID == nil {
-		return ErrNotFound
+		return 0, ErrNotFound
 	}
-	rec, ok := f.artifactByID[artifactID]
+	if _, ok := f.artifactByID[artifactID]; !ok {
+		return 0, ErrNotFound
+	}
+	if f.pagesByID == nil {
+		f.pagesByID = map[string]*fakePageStore{}
+	}
+	page, ok := f.pagesByID[artifactID]
 	if !ok {
-		return ErrNotFound
+		page = &fakePageStore{}
+		f.pagesByID[artifactID] = page
 	}
-	if rec.Revision >= revision {
-		return ErrConflict
+	if expectedRev > 0 && page.revision >= expectedRev {
+		return 0, ErrConflict
 	}
-	if f.pageContentByID == nil {
-		f.pageContentByID = map[string]string{}
+	page.blocks = blocks
+	page.searchText = searchText
+	if expectedRev > 0 {
+		page.revision = expectedRev
+	} else {
+		page.revision++
 	}
-	f.pageContentByID[artifactID] = markdown
-	rec.Content = markdown
-	rec.Revision = revision
-	f.artifactByID[artifactID] = rec
-	return nil
+	return page.revision, nil
+}
+
+func (f *fakeArtifactRepository) GetPageBlocks(_ context.Context, artifactID string) (json.RawMessage, int64, error) {
+	if f.pagesByID == nil {
+		return nil, 0, ErrNotFound
+	}
+	page, ok := f.pagesByID[artifactID]
+	if !ok {
+		return nil, 0, ErrNotFound
+	}
+	return page.blocks, page.revision, nil
 }
 
 func (f *fakeArtifactRepository) DeleteArtifact(context.Context, string) error { return nil }

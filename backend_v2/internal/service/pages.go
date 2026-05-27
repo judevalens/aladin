@@ -2,7 +2,10 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
+
+	"aladin/backend_v2/internal/blocknote"
 )
 
 type PageService interface {
@@ -12,20 +15,22 @@ type PageService interface {
 
 type PageRepository interface {
 	GetArtifact(context.Context, string) (ArtifactResponse, error)
-	SavePageDocumentRevision(context.Context, string, string, int64) error
+	// SavePageBlocks persists the page's blocks + derived searchText with
+	// optimistic concurrency. expectedRev=0 disables the check.
+	SavePageBlocks(ctx context.Context, artifactID string, blocks json.RawMessage, searchText string, expectedRev int64) (newRev int64, err error)
 }
 
 type PageDocument struct {
-	ID        string `json:"id"`
-	Title     string `json:"title"`
-	Content   string `json:"content"`
-	Revision  int64  `json:"revision"`
-	UpdatedAt string `json:"updatedAt"`
+	ID        string          `json:"id"`
+	Title     string          `json:"title"`
+	Blocks    json.RawMessage `json:"blocks"`
+	Revision  int64           `json:"revision"`
+	UpdatedAt string          `json:"updatedAt"`
 }
 
 type PageSaveInput struct {
-	Content  string `json:"content"`
-	Revision int64  `json:"revision"`
+	Blocks   json.RawMessage `json:"blocks"`
+	Revision int64           `json:"revision"`
 }
 
 type DefaultPageService struct {
@@ -59,7 +64,14 @@ func (s *DefaultPageService) Save(ctx context.Context, id string, input PageSave
 	if _, err := s.pageArtifact(ctx, id); err != nil {
 		return PageDocument{}, err
 	}
-	if err := s.repo.SavePageDocumentRevision(ctx, id, input.Content, input.Revision); err != nil {
+	if !looksLikeJSONArray(input.Blocks) {
+		return PageDocument{}, BadRequest("blocks must be a JSON array")
+	}
+	searchText, err := blocknote.ExtractText(input.Blocks)
+	if err != nil {
+		return PageDocument{}, BadRequest("blocks: " + err.Error())
+	}
+	if _, err := s.repo.SavePageBlocks(ctx, id, input.Blocks, searchText, input.Revision); err != nil {
 		return PageDocument{}, err
 	}
 
@@ -102,7 +114,7 @@ func toPageDocument(rec ArtifactResponse) PageDocument {
 	return PageDocument{
 		ID:        rec.ID,
 		Title:     rec.Title,
-		Content:   rec.Content,
+		Blocks:    rec.Blocks,
 		Revision:  rec.Revision,
 		UpdatedAt: rec.UpdatedAt,
 	}
