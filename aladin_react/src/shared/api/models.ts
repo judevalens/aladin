@@ -128,16 +128,22 @@ export interface UserArtifactUpdateRequest {
   metadata?: Record<string, unknown> | null;
 }
 
+// BlockNoteDocument is a JSON array of BlockNote blocks. We don't model the
+// inner block shape here — the editor enforces it. Treating it as unknown[]
+// at the boundary keeps the wire contract honest without forcing the rest
+// of the app to depend on @blocknote/core types.
+export type BlockNoteDocument = unknown[];
+
 export interface PageDocumentRecord {
   id: string;
   title: string;
-  content: string;
+  blocks: BlockNoteDocument;
   revision: number;
   updatedAt: string;
 }
 
 export interface PageSaveRequest {
-  content: string;
+  blocks: BlockNoteDocument;
   revision: number;
 }
 

@@ -2,11 +2,12 @@ import { BehaviorSubject, Subscription, type Observable } from "rxjs";
 import type { PageEditorMode, PageSaveState } from "@/modules/pages/domain";
 import { PageSessionService as PageSessionLogic } from "@/services/pages/page-session-service";
 import type { PageDocumentService } from "@/services/pages/page-document-service";
+import type { BlockNoteDocument } from "@/shared/api/models";
 
 export interface PageSessionSnapshot {
   pageId: string;
   sessionReady: boolean;
-  initialMarkdown: string;
+  initialBlocks: BlockNoteDocument;
   editorMode: PageEditorMode;
   blockNoteError: string | null;
   editorBoundaryKey: number;
@@ -18,7 +19,7 @@ function initialSessionSnapshot(pageId: string): PageSessionSnapshot {
   return {
     pageId,
     sessionReady: false,
-    initialMarkdown: "",
+    initialBlocks: [],
     editorMode: "blocknote",
     blockNoteError: null,
     editorBoundaryKey: 0,
@@ -44,9 +45,9 @@ export class PageSessionsService {
     return this.getOrCreate(pageId).subject;
   }
 
-  updateDraft(pageId: string, markdown: string) {
+  updateDraft(pageId: string, blocks: BlockNoteDocument) {
     const entry = this.getOrCreate(pageId);
-    entry.logic.setDraft(markdown);
+    entry.logic.setDraft(blocks);
     this.scheduleSave(pageId);
   }
 
@@ -94,7 +95,7 @@ export class PageSessionsService {
         ? error.message
         : "BlockNote failed to initialize for this page.";
     this.patchSession(pageId, {
-      initialMarkdown: entry.logic.getDraft(),
+      initialBlocks: entry.logic.getDraft(),
       editorMode: "markdown-fallback",
       blockNoteError: message,
     });
@@ -104,7 +105,7 @@ export class PageSessionsService {
     const entry = this.getOrCreate(pageId);
     const current = entry.subject.getValue();
     this.patchSession(pageId, {
-      initialMarkdown: entry.logic.getDraft(),
+      initialBlocks: entry.logic.getDraft(),
       editorMode: "blocknote",
       blockNoteError: null,
       editorBoundaryKey: current.editorBoundaryKey + 1,
@@ -161,7 +162,7 @@ export class PageSessionsService {
       const snapshot = entry.logic.initialize(result.value);
       this.patchSession(pageId, {
         sessionReady: true,
-        initialMarkdown: snapshot.content,
+        initialBlocks: snapshot.blocks,
       });
     });
 

@@ -1,14 +1,17 @@
 import { ApiError } from "@/shared/api/client";
-import type { PageDocumentRecord } from "@/shared/api/models";
+import type {
+  BlockNoteDocument,
+  PageDocumentRecord,
+} from "@/shared/api/models";
 
 export interface PageSnapshot {
-  content: string;
+  blocks: BlockNoteDocument;
   revision: number;
 }
 
 export function snapshotFromRecord(record: PageDocumentRecord): PageSnapshot {
   return {
-    content: record.content,
+    blocks: record.blocks,
     revision: record.revision,
   };
 }
@@ -17,36 +20,44 @@ export function nextPageRevision(currentRevision: number) {
   return currentRevision + 1;
 }
 
+function blocksEqual(a: BlockNoteDocument, b: BlockNoteDocument): boolean {
+  // Cheap structural equality for the dirty-check. BlockNote produces stable
+  // ids and stable property ordering for a given document, so JSON.stringify
+  // is a reasonable identity test. If this proves false-positive in practice
+  // we can switch to a recursive walk that ignores cosmetic key order.
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 export function isAcknowledgedConflict(
   snapshot: PageSnapshot | null,
-  pendingMarkdown: string | null,
+  pendingBlocks: BlockNoteDocument | null,
   pendingRevision: number | null,
 ) {
   return Boolean(
     snapshot &&
-      pendingMarkdown !== null &&
+      pendingBlocks !== null &&
       pendingRevision !== null &&
       snapshot.revision >= pendingRevision &&
-      snapshot.content === pendingMarkdown,
+      blocksEqual(snapshot.blocks, pendingBlocks),
   );
 }
 
 export class PageSessionService {
   private lastServerSnapshot: PageSnapshot | null = null;
   private lastAcknowledgedRevision = 0;
-  private lastSavedMarkdown = "";
-  private draftMarkdown = "";
+  private lastSavedBlocks: BlockNoteDocument = [];
+  private draftBlocks: BlockNoteDocument = [];
   private dirty = false;
-  private pendingSaveMarkdown: string | null = null;
+  private pendingSaveBlocks: BlockNoteDocument | null = null;
   private pendingSaveRevision: number | null = null;
 
   reset() {
     this.lastServerSnapshot = null;
     this.lastAcknowledgedRevision = 0;
-    this.lastSavedMarkdown = "";
-    this.draftMarkdown = "";
+    this.lastSavedBlocks = [];
+    this.draftBlocks = [];
     this.dirty = false;
-    this.pendingSaveMarkdown = null;
+    this.pendingSaveBlocks = null;
     this.pendingSaveRevision = null;
   }
 
@@ -54,8 +65,8 @@ export class PageSessionService {
     const snapshot = snapshotFromRecord(record);
     this.lastServerSnapshot = snapshot;
     this.lastAcknowledgedRevision = snapshot.revision;
-    this.lastSavedMarkdown = snapshot.content;
-    this.draftMarkdown = snapshot.content;
+    this.lastSavedBlocks = snapshot.blocks;
+    this.draftBlocks = snapshot.blocks;
     this.dirty = false;
     return snapshot;
   }
@@ -64,27 +75,27 @@ export class PageSessionService {
     return snapshotFromRecord(record);
   }
 
-  setDraft(markdown: string) {
-    this.draftMarkdown = markdown;
+  setDraft(blocks: BlockNoteDocument) {
+    this.draftBlocks = blocks;
     this.dirty = true;
   }
 
-  getDraft() {
-    return this.draftMarkdown;
+  getDraft(): BlockNoteDocument {
+    return this.draftBlocks;
   }
 
   createSaveRequest() {
-    if (!this.dirty || this.draftMarkdown === this.lastSavedMarkdown) {
+    if (!this.dirty || blocksEqual(this.draftBlocks, this.lastSavedBlocks)) {
       this.dirty = false;
       return null;
     }
 
     const nextRevision = nextPageRevision(this.lastAcknowledgedRevision);
-    this.pendingSaveMarkdown = this.draftMarkdown;
+    this.pendingSaveBlocks = this.draftBlocks;
     this.pendingSaveRevision = nextRevision;
 
     return {
-      content: this.draftMarkdown,
+      blocks: this.draftBlocks,
       revision: nextRevision,
     };
   }
@@ -93,11 +104,11 @@ export class PageSessionService {
     const snapshot = snapshotFromRecord(record);
     this.lastServerSnapshot = snapshot;
     this.lastAcknowledgedRevision = snapshot.revision;
-    this.lastSavedMarkdown = snapshot.content;
-    this.pendingSaveMarkdown = null;
+    this.lastSavedBlocks = snapshot.blocks;
+    this.pendingSaveBlocks = null;
     this.pendingSaveRevision = null;
 
-    if (this.draftMarkdown === snapshot.content) {
+    if (blocksEqual(this.draftBlocks, snapshot.blocks)) {
       this.dirty = false;
       return {
         snapshot,
@@ -124,14 +135,14 @@ export class PageSessionService {
       acknowledgedSnapshot &&
       isAcknowledgedConflict(
         acknowledgedSnapshot,
-        this.pendingSaveMarkdown,
+        this.pendingSaveBlocks,
         this.pendingSaveRevision,
       )
     ) {
       this.lastAcknowledgedRevision = acknowledgedSnapshot.revision;
-      this.lastSavedMarkdown = acknowledgedSnapshot.content;
+      this.lastSavedBlocks = acknowledgedSnapshot.blocks;
       this.dirty = false;
-      this.pendingSaveMarkdown = null;
+      this.pendingSaveBlocks = null;
       this.pendingSaveRevision = null;
       return {
         saveState: "saved" as const,
@@ -140,7 +151,7 @@ export class PageSessionService {
       };
     }
 
-    this.pendingSaveMarkdown = null;
+    this.pendingSaveBlocks = null;
     this.pendingSaveRevision = null;
 
     if (error instanceof ApiError && error.status === 409) {

@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { isAcknowledgedConflict, nextPageRevision } from "@/services/pages/page-session-service";
+import {
+  isAcknowledgedConflict,
+  nextPageRevision,
+} from "@/services/pages/page-session-service";
+
+const draftBlocks = [
+  { id: "a", type: "paragraph", content: [{ type: "text", text: "draft body" }] },
+];
+const serverBlocks = [
+  { id: "a", type: "paragraph", content: [{ type: "text", text: "server copy" }] },
+];
 
 describe("page services", () => {
   it("increments revisions for the next save command", () => {
@@ -10,8 +20,8 @@ describe("page services", () => {
   it("recognizes when the server already acknowledged the pending draft", () => {
     expect(
       isAcknowledgedConflict(
-        { content: "draft body", revision: 4 },
-        "draft body",
+        { blocks: draftBlocks, revision: 4 },
+        draftBlocks,
         4,
       ),
     ).toBe(true);
@@ -20,8 +30,8 @@ describe("page services", () => {
   it("does not acknowledge unrelated server snapshots", () => {
     expect(
       isAcknowledgedConflict(
-        { content: "server copy", revision: 4 },
-        "local draft",
+        { blocks: serverBlocks, revision: 4 },
+        draftBlocks,
         4,
       ),
     ).toBe(false);

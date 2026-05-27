@@ -1,21 +1,19 @@
+import type { PartialBlock } from "@blocknote/core";
 import { useCreateBlockNote } from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/shadcn";
 import { Component, type ReactNode, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { PageEditorMode } from "@/modules/pages/domain";
-import {
-  exportEditorToMarkdown,
-  loadMarkdownIntoEditor,
-} from "@/modules/pages/editor/markdown-adapter";
+import type { BlockNoteDocument } from "@/shared/api/models";
 import "@blocknote/shadcn/style.css";
 
 export interface PageEditorDriverProps {
   pageId: string;
-  markdown: string;
+  initialBlocks: BlockNoteDocument;
   mode: PageEditorMode;
   blockNoteError: string | null;
   editorBoundaryKey: number;
-  onDraftChange: (markdown: string) => void;
+  onDraftChange: (blocks: BlockNoteDocument) => void;
   onBlur: () => void;
   onRetryRichEditor: () => void;
   onDriverError: (error: unknown) => void;
@@ -50,17 +48,16 @@ class BlockNoteRuntimeBoundary extends Component<
   }
 }
 
-export interface PageEditorDriver {
-  load(markdown: string): Promise<void>;
-  export(): string;
-  onChange(listener: (markdown: string) => void): () => void;
-  retry?(): void;
-  attachCollaboration?(input: unknown): void;
+function asPartialBlocks(blocks: BlockNoteDocument): PartialBlock[] {
+  // The wire format is unknown[]; BlockNote's editor accepts PartialBlock[]
+  // structurally. We cast at this single boundary so the rest of the app
+  // doesn't need to know BlockNote's internal types.
+  return blocks as PartialBlock[];
 }
 
 export function BlockNotePageEditorDriver({
   pageId,
-  markdown,
+  initialBlocks,
   mode,
   blockNoteError,
   editorBoundaryKey,
@@ -70,19 +67,27 @@ export function BlockNotePageEditorDriver({
   onDriverError,
 }: PageEditorDriverProps) {
   const editor = useCreateBlockNote({}, [pageId, editorBoundaryKey]);
-  const [fallbackMarkdown, setFallbackMarkdown] = useState(markdown);
+  const [fallbackJSON, setFallbackJSON] = useState(() =>
+    JSON.stringify(initialBlocks, null, 2),
+  );
 
   useEffect(() => {
-    setFallbackMarkdown(markdown);
-  }, [markdown, pageId, editorBoundaryKey, mode]);
+    setFallbackJSON(JSON.stringify(initialBlocks, null, 2));
+  }, [initialBlocks, pageId, editorBoundaryKey, mode]);
 
   useEffect(() => {
     if (mode !== "blocknote") return;
-
-    void loadMarkdownIntoEditor(editor, markdown).catch((error) => {
+    try {
+      const blocks = asPartialBlocks(initialBlocks);
+      if (blocks.length === 0) {
+        editor.replaceBlocks(editor.document, [{ type: "paragraph" }]);
+      } else {
+        editor.replaceBlocks(editor.document, blocks);
+      }
+    } catch (error) {
       onDriverError(error);
-    });
-  }, [editor, markdown, mode, onDriverError]);
+    }
+  }, [editor, initialBlocks, mode, onDriverError]);
 
   if (mode === "markdown-fallback") {
     return (
@@ -94,7 +99,7 @@ export function BlockNotePageEditorDriver({
             </div>
             <div className="text-xs leading-5 text-amber-700">
               {blockNoteError ??
-                "You can keep working in raw markdown for now."}
+                "Editing is read-only until BlockNote recovers."}
             </div>
           </div>
           <Button variant="secondary" size="sm" onClick={onRetryRichEditor}>
@@ -102,14 +107,9 @@ export function BlockNotePageEditorDriver({
           </Button>
         </div>
         <textarea
-          className="min-h-0 flex-1 resize-none border-0 bg-transparent px-5 py-4 font-mono text-sm leading-7 text-black outline-none"
-          value={fallbackMarkdown}
-          onBlur={onBlur}
-          onChange={(event) => {
-            const nextMarkdown = event.target.value;
-            setFallbackMarkdown(nextMarkdown);
-            onDraftChange(nextMarkdown);
-          }}
+          readOnly
+          className="min-h-0 flex-1 resize-none border-0 bg-transparent px-5 py-4 font-mono text-xs leading-6 text-black outline-none"
+          value={fallbackJSON}
         />
       </div>
     );
@@ -126,7 +126,7 @@ export function BlockNotePageEditorDriver({
           onError={onDriverError}
           fallback={
             <div className="border border-gray-300 bg-white px-4 py-3 text-sm text-gray-700">
-              Switching to markdown fallback…
+              Switching to read-only JSON view…
             </div>
           }
         >
@@ -136,7 +136,7 @@ export function BlockNotePageEditorDriver({
             formattingToolbar={true}
             linkToolbar={true}
             onChange={() => {
-              onDraftChange(exportEditorToMarkdown(editor));
+              onDraftChange(editor.document as BlockNoteDocument);
             }}
             theme="light"
           />

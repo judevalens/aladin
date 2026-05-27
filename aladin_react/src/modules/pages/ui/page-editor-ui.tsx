@@ -13,7 +13,7 @@ export function PageEditorUI({ pageId }: { pageId: string }) {
   }
 
   const {
-    initialMarkdown,
+    initialBlocks,
     editorMode,
     blockNoteError,
     editorBoundaryKey,
@@ -29,7 +29,7 @@ export function PageEditorUI({ pageId }: { pageId: string }) {
         <div className="mx-auto flex h-full w-full max-w-workspace-max flex-col">
           <BlockNotePageEditorDriver
             pageId={pageId}
-            markdown={initialMarkdown}
+            initialBlocks={initialBlocks}
             mode={editorMode}
             blockNoteError={blockNoteError}
             editorBoundaryKey={editorBoundaryKey}
