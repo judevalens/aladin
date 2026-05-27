@@ -73,21 +73,30 @@ impl ArtifactApiClient for ArtifactApi {
         input: &ArtifactCreateApiInput<'_>,
     ) -> ApiResult<ArtifactCreateApiRecord> {
         let client = reqwest::blocking::Client::new();
+        // Post-M5 the Go side validates pages on `blocks` (a JSON array)
+        // and ignores `content`. We always send an empty blocks array for
+        // page artifacts; the actual document is shipped separately via
+        // the page_content outbox path (PATCH /api/pages/{id}).
+        let mut body = serde_json::json!({
+            "type": input.artifact_type,
+            "id": input.id,
+            "folderId": input.folder_id,
+            "title": input.title,
+            "summary": input.summary,
+            "sourceUrl": input.source_url,
+        });
+        if input.artifact_type == "page" {
+            body["blocks"] = serde_json::json!([]);
+        } else {
+            body["content"] = serde_json::Value::from(input.content);
+        }
         let response = client
             .post(format!(
                 "{}/api/artifacts/",
                 config.api_base_url.trim_end_matches('/')
             ))
             .bearer_auth(config.token.clone().unwrap_or_default())
-            .json(&serde_json::json!({
-                "type": input.artifact_type,
-                "id": input.id,
-                "folderId": input.folder_id,
-                "title": input.title,
-                "content": input.content,
-                "summary": input.summary,
-                "sourceUrl": input.source_url,
-            }))
+            .json(&body)
             .send()
             .map_err(ApiError::from_reqwest)?
             .error_for_status()
