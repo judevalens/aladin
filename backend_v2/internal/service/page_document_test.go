@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -148,18 +149,131 @@ func TestPageDocumentService_ReplaceAll_ConflictFromStore(t *testing.T) {
 	}
 }
 
-func TestPageDocumentService_BlockOpsNotImplemented(t *testing.T) {
-	store := &fakePageDocStore{}
+func TestPageDocumentService_ReplaceBlock(t *testing.T) {
+	store := &fakePageDocStore{
+		blocks: json.RawMessage(`[{"id":"a","type":"paragraph","content":[{"type":"text","text":"orig"}],"children":[]},{"id":"b","type":"paragraph","content":[],"children":[]}]`),
+	}
+	svc := NewPageDocumentService(store)
+	replacement := json.RawMessage(`[{"id":"new","type":"heading","content":[{"type":"text","text":"NEW"}],"children":[]}]`)
+
+	_, count, err := svc.ReplaceBlock(writeContext(), "page-1", "a", replacement, 0)
+	if err != nil {
+		t.Fatalf("ReplaceBlock: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("count = %d, want 1", count)
+	}
+	if !strings.Contains(string(store.lastSaved.blocks), `"id":"a"`) {
+		t.Fatalf("first new block should inherit original id; saved = %s", string(store.lastSaved.blocks))
+	}
+	if !strings.Contains(string(store.lastSaved.blocks), `"type":"heading"`) {
+		t.Fatalf("expected heading in saved blocks: %s", string(store.lastSaved.blocks))
+	}
+	if !strings.Contains(store.lastSaved.searchText, "NEW") {
+		t.Fatalf("search_text = %q, want it to include NEW", store.lastSaved.searchText)
+	}
+}
+
+func TestPageDocumentService_ReplaceBlock_NotFound(t *testing.T) {
+	store := &fakePageDocStore{
+		blocks: json.RawMessage(`[{"id":"a","type":"paragraph","content":[],"children":[]}]`),
+	}
+	svc := NewPageDocumentService(store)
+	_, _, err := svc.ReplaceBlock(writeContext(), "page-1", "missing", json.RawMessage(`[{"id":"x","type":"p"}]`), 0)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestPageDocumentService_InsertBlocks_After(t *testing.T) {
+	store := &fakePageDocStore{
+		blocks: json.RawMessage(`[{"id":"a","type":"p","content":[],"children":[]}]`),
+	}
+	svc := NewPageDocumentService(store)
+	after := "a"
+	_, ids, err := svc.InsertBlocks(
+		writeContext(),
+		"page-1",
+		BlockPosition{AfterID: &after},
+		json.RawMessage(`[{"id":"x","type":"p"},{"id":"y","type":"p"}]`),
+		0,
+	)
+	if err != nil {
+		t.Fatalf("InsertBlocks: %v", err)
+	}
+	if !equalStrSlices(ids, []string{"x", "y"}) {
+		t.Fatalf("inserted ids = %v, want [x y]", ids)
+	}
+	if !strings.Contains(string(store.lastSaved.blocks), `"id":"x"`) {
+		t.Fatalf("saved blocks do not include x: %s", string(store.lastSaved.blocks))
+	}
+}
+
+func TestPageDocumentService_InsertBlocks_PositionValidation(t *testing.T) {
+	store := &fakePageDocStore{blocks: json.RawMessage(`[{"id":"a","type":"p"}]`)}
 	svc := NewPageDocumentService(store)
 	ctx := writeContext()
 
-	if _, _, err := svc.ReplaceBlock(ctx, "p", "b", json.RawMessage(`[]`), 0); !errors.Is(err, ErrNotImplemented) {
-		t.Fatalf("ReplaceBlock: expected ErrNotImplemented, got %v", err)
+	if _, _, err := svc.InsertBlocks(ctx, "page-1", BlockPosition{}, json.RawMessage(`[{"id":"x","type":"p"}]`), 0); err == nil {
+		t.Fatal("expected position validation error for empty position")
 	}
-	if _, _, err := svc.InsertBlocks(ctx, "p", BlockPosition{}, json.RawMessage(`[]`), 0); !errors.Is(err, ErrNotImplemented) {
-		t.Fatalf("InsertBlocks: expected ErrNotImplemented, got %v", err)
+	a := "a"
+	end := "end"
+	if _, _, err := svc.InsertBlocks(ctx, "page-1", BlockPosition{AfterID: &a, At: &end}, json.RawMessage(`[{"id":"x","type":"p"}]`), 0); err == nil {
+		t.Fatal("expected error when multiple position fields are set")
 	}
-	if _, err := svc.DeleteBlock(ctx, "p", "b", 0); !errors.Is(err, ErrNotImplemented) {
-		t.Fatalf("DeleteBlock: expected ErrNotImplemented, got %v", err)
+	bad := "middle"
+	if _, _, err := svc.InsertBlocks(ctx, "page-1", BlockPosition{At: &bad}, json.RawMessage(`[{"id":"x","type":"p"}]`), 0); err == nil {
+		t.Fatal("expected error for invalid at value")
 	}
+}
+
+func TestPageDocumentService_DeleteBlock(t *testing.T) {
+	store := &fakePageDocStore{
+		blocks: json.RawMessage(`[{"id":"a","type":"p","content":[],"children":[]},{"id":"b","type":"p","content":[],"children":[]}]`),
+	}
+	svc := NewPageDocumentService(store)
+	if _, err := svc.DeleteBlock(writeContext(), "page-1", "a", 0); err != nil {
+		t.Fatalf("DeleteBlock: %v", err)
+	}
+	if !strings.Contains(string(store.lastSaved.blocks), `"id":"b"`) || strings.Contains(string(store.lastSaved.blocks), `"id":"a"`) {
+		t.Fatalf("saved blocks = %s, want only b", string(store.lastSaved.blocks))
+	}
+}
+
+func TestPageDocumentService_DeleteBlock_RefusesLast(t *testing.T) {
+	store := &fakePageDocStore{
+		blocks: json.RawMessage(`[{"id":"a","type":"p","content":[],"children":[]}]`),
+	}
+	svc := NewPageDocumentService(store)
+	_, err := svc.DeleteBlock(writeContext(), "page-1", "a", 0)
+	var requestErr BadRequest
+	if !errors.As(err, &requestErr) {
+		t.Fatalf("error = %v, want BadRequest", err)
+	}
+	if store.saveCalls != 0 {
+		t.Fatalf("store should not be called; got %d save calls", store.saveCalls)
+	}
+}
+
+func TestPageDocumentService_DeleteBlock_NotFound(t *testing.T) {
+	store := &fakePageDocStore{
+		blocks: json.RawMessage(`[{"id":"a","type":"p","content":[],"children":[]},{"id":"b","type":"p","content":[],"children":[]}]`),
+	}
+	svc := NewPageDocumentService(store)
+	if _, err := svc.DeleteBlock(writeContext(), "page-1", "missing", 0); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("error = %v, want ErrNotFound", err)
+	}
+}
+
+func equalStrSlices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
