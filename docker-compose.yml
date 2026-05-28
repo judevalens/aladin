@@ -69,6 +69,10 @@ services:
   blocknote:
     build: ./services/blocknote
     container_name: aladin-blocknote
+    # Opt-in only: excluded from a plain `docker compose up -d` (and thus from
+    # `make backend`). Run the sidecar locally with `make blocknote` instead.
+    # To use the container: `docker compose --profile collab up -d blocknote`.
+    profiles: ["collab"]
     ports:
       - "3500:3500"   # converter (HTTP)
       - "3501:3501"   # collab (Hocuspocus WS)

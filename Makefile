@@ -3,14 +3,18 @@
 help: ## List available make targets
 	@awk 'BEGIN {FS = ":.*## "; printf "Available targets:\n"} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-24s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-backend: ngrok-ensure ## Run the Go backend API on port 8000
+backend: ngrok-ensure ## Run the blocknote sidecar (local) + the Go API on :8000 (needs infra up; see `make db-up`)
+	@(cd services/blocknote && exec node server.js) & \
+	SIDECAR_PID=$$!; \
+	trap 'kill $$SIDECAR_PID 2>/dev/null' EXIT INT TERM; \
+	echo ">> blocknote sidecar pid $$SIDECAR_PID (converter :3500, collab :3501)"; \
 	eval "$$(python3 scripts/ops/read_env_keys.py --env backend_v2/.env)" && cd backend_v2 && API_ADDR=:8000 go run ./cmd/api
 
 mcp: ## Run the MCP page server on port 8090
 	eval "$$(python3 scripts/ops/read_env_keys.py --env backend_v2/.env)" && cd backend_v2 && MCP_HTTP_ADDR=:8090 go run ./cmd/mcp
 
-blocknote: ## Build + run the blocknote Node service (converter; collab in M8b) on :3500
-	docker compose up -d --build blocknote
+blocknote: ## Run the blocknote Node sidecar locally (converter :3500 + collab :3501); needs postgres + Go API up
+	cd services/blocknote && npm start
 
 blocknote-test: ## Run the blocknote Node service unit tests
 	cd services/blocknote && npm test
