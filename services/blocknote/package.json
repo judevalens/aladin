@@ -12,7 +12,14 @@
   "dependencies": {
     "@blocknote/core": "0.51.0",
     "@blocknote/server-util": "0.51.0",
+    "@hocuspocus/extension-database": "^4.1.0",
+    "@hocuspocus/server": "^4.1.0",
     "express": "^4.21.2",
-    "jsdom": "^25.0.1"
+    "jsdom": "^25.0.1",
+    "pg": "^8.21.0"
+  },
+  "devDependencies": {
+    "@hocuspocus/provider": "^4.1.0",
+    "ws": "^8.21.0"
   }
 }

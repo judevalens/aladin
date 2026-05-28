@@ -1,15 +1,20 @@
 // blocknote — combined Node service for Aladin's BlockNote needs.
 //
-// M8a (now): markdown <-> blocks conversion (the former blocknote-converter).
-// M8b:       mounts Hocuspocus on /collaboration for real-time Y.Doc sync.
-// M8c:       adds the MCP admin bridge on /admin/apply.
+// M8a: markdown <-> blocks conversion (the former blocknote-converter), HTTP
+//      on :PORT (default 3500).
+// M8b (now): Hocuspocus real-time Y.Doc collaboration on its own server,
+//      :COLLAB_PORT (default 3501), persisting to page_ydoc; auth via the
+//      Go API. Separate port because Hocuspocus bundles ws@7 and the Express
+//      stack uses ws@8 — separate servers avoid the socket version mismatch.
+// M8c: adds the MCP admin bridge on the HTTP server (/admin/apply).
 //
-// Layered: server.js boots Express + middleware and wires routes to thin
-// handlers (src/handlers); handlers call services (src/services); the error
-// boundary (src/middleware) guarantees a handler bug returns 500 rather than
-// crashing the process.
+// One process, two listeners. Layered: server.js boots both and wires Express
+// routes to thin handlers (src/handlers) that call services (src/services);
+// the error boundary (src/middleware) keeps a handler bug from crashing the
+// process.
 
 import express from "express";
+import pg from "pg";
 import { config } from "./src/config.js";
 import { trace } from "./src/middleware/trace.js";
 import {
@@ -19,9 +24,15 @@ import {
 } from "./src/middleware/error-boundary.js";
 import * as converter from "./src/handlers/converter.js";
 import { healthz } from "./src/handlers/health.js";
+import { createAuthResolver } from "./src/services/auth.js";
+import { createCollabServer } from "./src/services/collab.js";
 
 installProcessHandlers();
 
+// Shared Postgres pool for collab persistence (and, in M8c, the admin bridge).
+const pool = new pg.Pool({ connectionString: config.databaseUrl });
+
+// --- Converter (HTTP, :PORT) ----------------------------------------------
 const app = express();
 app.use(express.json({ limit: config.jsonLimit }));
 app.use(trace);
@@ -34,13 +45,34 @@ app.post("/blocks-to-md-batch", wrap(converter.blocksToMdBatch));
 // Terminal error handler — must be last.
 app.use(errorHandler);
 
-const server = app.listen(config.port, "0.0.0.0", () => {
-  console.log(`blocknote service listening on :${config.port}`);
+const httpServer = app.listen(config.port, "0.0.0.0", () => {
+  console.log(`blocknote converter listening on :${config.port}`);
 });
 
-function shutdown(signal) {
+// --- Collaboration (Hocuspocus, :COLLAB_PORT) ------------------------------
+const collab = createCollabServer({
+  pool,
+  resolveToken: createAuthResolver(config.authResolveUrl),
+  port: config.collabPort,
+  debounceMs: config.storeDebounceMs,
+  maxDebounceMs: config.storeMaxDebounceMs,
+});
+await collab.listen();
+console.log(`blocknote collab (Hocuspocus) listening on :${config.collabPort}`);
+
+async function shutdown(signal) {
   console.log(`blocknote service received ${signal}, shutting down`);
-  server.close(() => process.exit(0));
+  try {
+    await collab.destroy(); // flushes pending stores + closes connections
+  } catch (err) {
+    console.error("collab shutdown error:", err);
+  }
+  try {
+    await pool.end();
+  } catch (err) {
+    console.error("pool shutdown error:", err);
+  }
+  httpServer.close(() => process.exit(0));
 }
 
 process.on("SIGINT", () => shutdown("SIGINT"));

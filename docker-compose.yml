@@ -70,9 +70,20 @@ services:
     build: ./services/blocknote
     container_name: aladin-blocknote
     ports:
-      - "3500:3500"
+      - "3500:3500"   # converter (HTTP)
+      - "3501:3501"   # collab (Hocuspocus WS)
     environment:
       PORT: 3500
+      COLLAB_PORT: 3501
+      # In-network Postgres for Hocuspocus page_ydoc persistence.
+      BLOCKNOTE_DATABASE_URL: postgres://aladin:password@postgres:5432/aladin
+      # Go API runs on the host (make backend), not in compose — reach it via
+      # the docker host gateway.
+      BLOCKNOTE_AUTH_RESOLVE_URL: http://host.docker.internal:8000/api/auth/resolve
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - postgres
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3500/healthz"]
       interval: 10s
