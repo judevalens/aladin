@@ -758,6 +758,43 @@ type fakeFileService struct {
 	err         error
 }
 
+func TestAuthResolveReturnsPrincipalForBearerToken(t *testing.T) {
+	t.Parallel()
+
+	server := NewWithDependencies(":0", app.StaticDependencies{AuthSvc: &fakeAuthService{}})
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/resolve", nil)
+	req.Header.Set("Authorization", "Bearer desktop-valid")
+	rec := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var got resolvedPrincipalResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.UserID != "user-1" || got.ActorType != artifactservice.ActorTypeUserSession {
+		t.Fatalf("principal = %#v, want user-1 / user_session", got)
+	}
+	if got.Scopes == nil {
+		t.Fatalf("scopes should be non-nil (empty array, not null)")
+	}
+}
+
+func TestAuthResolveUnauthenticatedReturns401(t *testing.T) {
+	t.Parallel()
+
+	server := NewWithDependencies(":0", app.StaticDependencies{AuthSvc: &fakeAuthService{}})
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/resolve", nil)
+	rec := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401; body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 type fakeAuthService struct {
 	loginSession    artifactservice.AuthSession
 	registerSession artifactservice.AuthSession

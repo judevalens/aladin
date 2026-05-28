@@ -16,6 +16,7 @@ func (s *Server) registerAuthRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/auth/desktop/login", s.handleDesktopAuthLogin)
 	mux.HandleFunc("POST /api/auth/logout", s.handleAuthLogout)
 	mux.HandleFunc("GET /api/auth/me", s.handleAuthMe)
+	mux.HandleFunc("GET /api/auth/resolve", s.handleAuthResolve)
 	mux.HandleFunc("GET /api/integration-tokens", s.handleIntegrationTokensList)
 	mux.HandleFunc("POST /api/integration-tokens", s.handleIntegrationTokensCreate)
 	mux.HandleFunc("POST /api/integration-tokens/{id}/revoke", s.handleIntegrationTokensRevoke)
@@ -139,6 +140,39 @@ func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, authResponse{User: user})
+}
+
+type resolvedPrincipalResponse struct {
+	UserID    string   `json:"userId"`
+	ActorType string   `json:"actorType"`
+	ActorID   string   `json:"actorId"`
+	Email     string   `json:"email"`
+	Scopes    []string `json:"scopes"`
+}
+
+// handleAuthResolve returns the resolved principal for whatever credential
+// the caller presented (session cookie or bearer token). The auth middleware
+// already populated the context principal and 401s non-public routes with no
+// valid credential, so this handler is a thin read. The Hocuspocus
+// onAuthenticate hook (services/blocknote) calls this to turn a connection's
+// token into an identity for awareness + write authorization.
+func (s *Server) handleAuthResolve(w http.ResponseWriter, r *http.Request) {
+	principal, ok := coreservice.PrincipalFromContext(r.Context())
+	if !ok {
+		writeAPIError(w, r, http.StatusUnauthorized, categoryBadRequest, "Unauthenticated", coreservice.ErrUnauthenticated)
+		return
+	}
+	scopes := principal.Scopes
+	if scopes == nil {
+		scopes = []string{}
+	}
+	writeJSON(w, http.StatusOK, resolvedPrincipalResponse{
+		UserID:    principal.UserID,
+		ActorType: principal.ActorType,
+		ActorID:   principal.ActorID,
+		Email:     principal.Email,
+		Scopes:    scopes,
+	})
 }
 
 func (s *Server) handleIntegrationTokensList(w http.ResponseWriter, r *http.Request) {
