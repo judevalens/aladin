@@ -15,12 +15,16 @@ const pageArtifactType = "page"
 
 type toolServer struct {
 	artifacts service.ArtifactService
+	// pages (M5/M6 PageDocumentService) is retained but unused: M8c routes
+	// page reads/writes through the collab bridge. Removed in M8d with the
+	// rest of the M7 page_content path.
 	pages     service.PageDocumentService
 	converter blocknote.Converter
+	bridge    blocknote.Bridge
 }
 
-func registerTools(server *sdkmcp.Server, artifacts service.ArtifactService, pages service.PageDocumentService, converter blocknote.Converter) {
-	tools := toolServer{artifacts: artifacts, pages: pages, converter: converter}
+func registerTools(server *sdkmcp.Server, artifacts service.ArtifactService, pages service.PageDocumentService, converter blocknote.Converter, bridge blocknote.Bridge) {
+	tools := toolServer{artifacts: artifacts, pages: pages, converter: converter, bridge: bridge}
 
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "get_browser_tree",
@@ -184,14 +188,16 @@ type createUpdatePageOutput struct {
 type updateBlockOutput struct {
 	PageID             string `json:"page_id"`
 	BlockID            string `json:"block_id"`
-	Revision           int64  `json:"revision"`
 	ReplacedBlockCount int    `json:"replaced_block_count"`
+	// Markdown renders the resulting block(s) so the agent sees its own edit
+	// without a follow-up read (the read-after-own-write fix, M8.6).
+	Markdown string `json:"markdown,omitempty"`
 }
 
 type insertBlocksOutput struct {
-	PageID          string   `json:"page_id"`
-	Revision        int64    `json:"revision"`
+	PageID           string   `json:"page_id"`
 	InsertedBlockIDs []string `json:"inserted_block_ids"`
+	Markdown         string   `json:"markdown,omitempty"`
 }
 
 type deleteBlockOutput struct {
@@ -253,27 +259,39 @@ func (t toolServer) listFolders(ctx context.Context, _ *sdkmcp.CallToolRequest, 
 }
 
 func (t toolServer) createPage(ctx context.Context, _ *sdkmcp.CallToolRequest, input createPageInput) (*sdkmcp.CallToolResult, createUpdatePageOutput, error) {
-	if t.converter == nil {
-		return nil, createUpdatePageOutput{}, service.BadRequest("blocknote-converter is not configured; cannot translate markdown to blocks")
-	}
 	if strings.TrimSpace(input.Title) == "" {
 		return nil, createUpdatePageOutput{}, service.BadRequest("title is required")
 	}
-	blocks, err := t.converter.MDToBlocks(ctx, input.Markdown)
-	if err != nil {
-		return nil, createUpdatePageOutput{}, err
+	hasContent := strings.TrimSpace(input.Markdown) != ""
+	if hasContent && t.converter == nil {
+		return nil, createUpdatePageOutput{}, service.BadRequest("blocknote-converter is not configured; cannot translate markdown to blocks")
 	}
 	metadata := mergePageMetadata(nil, input.Tags, input.Agent)
+	// M8c: create the artifact row with empty blocks; content (if any) is
+	// seeded into the live Y.Doc via the collab bridge once the row exists.
 	created, err := t.artifacts.Create(ctx, service.ArtifactPayload{
 		Type:     pageArtifactType,
 		FolderID: input.FolderID,
 		Title:    input.Title,
-		Blocks:   blocks,
 		Summary:  input.Summary,
 		Metadata: metadata,
 	})
 	if err != nil {
 		return nil, createUpdatePageOutput{}, err
+	}
+	if hasContent {
+		blocks, err := t.converter.MDToBlocks(ctx, input.Markdown)
+		if err != nil {
+			return nil, createUpdatePageOutput{}, err
+		}
+		if _, err := t.applyBridge(ctx, blocknote.BridgeOp{
+			PageID: created.Artifact.ID,
+			Op:     "replace_all",
+			Blocks: blocks,
+			Agent:  agentToBridge(input.Agent),
+		}); err != nil {
+			return nil, createUpdatePageOutput{}, err
+		}
 	}
 	return nil, createUpdatePageOutput{
 		ID:        created.Artifact.ID,
@@ -299,10 +317,27 @@ func (t toolServer) updatePage(ctx context.Context, _ *sdkmcp.CallToolRequest, i
 		return nil, createUpdatePageOutput{}, err
 	}
 
-	patch := service.ArtifactPatch{
-		Title:    input.Title,
-		FolderID: input.FolderID,
-		Summary:  input.Summary,
+	// Metadata (title/folder/summary/tags/agent) goes through the artifact
+	// API; page content goes through the collab bridge (M8c). Independent
+	// writes — the artifact API refuses block writes for pages now.
+	rec := current
+	if input.Title != nil || input.FolderID != nil || input.Summary != nil || input.Tags != nil || input.Agent != nil {
+		patch := service.ArtifactPatch{
+			Title:    input.Title,
+			FolderID: input.FolderID,
+			Summary:  input.Summary,
+		}
+		if input.Tags != nil || input.Agent != nil {
+			merged := mergePageMetadata(current.Metadata, input.Tags, input.Agent)
+			patch.Metadata = &merged
+		}
+		rec, err = t.artifacts.Update(ctx, input.ID, patch)
+		if err != nil {
+			return nil, createUpdatePageOutput{}, err
+		}
+		if err := requirePage(rec); err != nil {
+			return nil, createUpdatePageOutput{}, err
+		}
 	}
 	if input.Markdown != nil {
 		if t.converter == nil {
@@ -312,25 +347,21 @@ func (t toolServer) updatePage(ctx context.Context, _ *sdkmcp.CallToolRequest, i
 		if err != nil {
 			return nil, createUpdatePageOutput{}, err
 		}
-		patch.Blocks = &blocks
-	}
-	if input.Tags != nil || input.Agent != nil {
-		merged := mergePageMetadata(current.Metadata, input.Tags, input.Agent)
-		patch.Metadata = &merged
-	}
-	updated, err := t.artifacts.Update(ctx, input.ID, patch)
-	if err != nil {
-		return nil, createUpdatePageOutput{}, err
-	}
-	if err := requirePage(updated); err != nil {
-		return nil, createUpdatePageOutput{}, err
+		if _, err := t.applyBridge(ctx, blocknote.BridgeOp{
+			PageID: input.ID,
+			Op:     "replace_all",
+			Blocks: blocks,
+			Agent:  agentToBridge(input.Agent),
+		}); err != nil {
+			return nil, createUpdatePageOutput{}, err
+		}
 	}
 	return nil, createUpdatePageOutput{
-		ID:        updated.ID,
-		Title:     updated.Title,
-		FolderID:  updated.FolderID,
-		Revision:  updated.Revision,
-		UpdatedAt: updated.UpdatedAt,
+		ID:        rec.ID,
+		Title:     rec.Title,
+		FolderID:  rec.FolderID,
+		Revision:  rec.Revision,
+		UpdatedAt: rec.UpdatedAt,
 	}, nil
 }
 
@@ -342,7 +373,16 @@ func (t toolServer) getPage(ctx context.Context, _ *sdkmcp.CallToolRequest, inpu
 	if err := requirePage(rec); err != nil {
 		return nil, pageOutput{}, err
 	}
-	detail, err := t.renderPageDetail(ctx, rec)
+	// M8c: read fresh from the live Y.Doc via the bridge (not the projection)
+	// — get_page is the precursor to editing and wants a current baseline.
+	if t.bridge == nil {
+		return nil, pageOutput{}, service.BadRequest("collab bridge is not configured; cannot read page content")
+	}
+	page, err := t.bridge.GetPage(ctx, input.ID)
+	if err != nil {
+		return nil, pageOutput{}, err
+	}
+	detail, err := t.renderPageDetail(ctx, rec, page.Blocks)
 	if err != nil {
 		return nil, pageOutput{}, err
 	}
@@ -363,15 +403,23 @@ func (t toolServer) updateBlock(ctx context.Context, _ *sdkmcp.CallToolRequest, 
 	if err != nil {
 		return nil, updateBlockOutput{}, err
 	}
-	rev, count, err := t.pages.ReplaceBlock(ctx, input.PageID, input.BlockID, replacement, input.Revision)
+	// Keep the original id on the first produced block so the agent can keep
+	// targeting it (the markdown may parse into multiple blocks).
+	replacement = withFirstBlockID(replacement, input.BlockID)
+	res, err := t.applyBridge(ctx, blocknote.BridgeOp{
+		PageID:  input.PageID,
+		Op:      "replace_block",
+		BlockID: input.BlockID,
+		Blocks:  replacement,
+	})
 	if err != nil {
 		return nil, updateBlockOutput{}, err
 	}
 	return nil, updateBlockOutput{
 		PageID:             input.PageID,
 		BlockID:            input.BlockID,
-		Revision:           rev,
-		ReplacedBlockCount: count,
+		ReplacedBlockCount: len(res.AffectedBlockIDs),
+		Markdown:           res.Markdown,
 	}, nil
 }
 
@@ -386,19 +434,20 @@ func (t toolServer) insertBlocks(ctx context.Context, _ *sdkmcp.CallToolRequest,
 	if err != nil {
 		return nil, insertBlocksOutput{}, err
 	}
-	pos := service.BlockPosition{
-		AfterID:  input.Position.AfterID,
-		BeforeID: input.Position.BeforeID,
-		At:       input.Position.At,
+	op := blocknote.BridgeOp{
+		PageID: input.PageID,
+		Op:     "insert_blocks",
+		Blocks: blocks,
 	}
-	rev, ids, err := t.pages.InsertBlocks(ctx, input.PageID, pos, blocks, input.Revision)
+	applyInsertPosition(&op, input.Position)
+	res, err := t.applyBridge(ctx, op)
 	if err != nil {
 		return nil, insertBlocksOutput{}, err
 	}
 	return nil, insertBlocksOutput{
 		PageID:           input.PageID,
-		Revision:         rev,
-		InsertedBlockIDs: ids,
+		InsertedBlockIDs: res.AffectedBlockIDs,
+		Markdown:         res.Markdown,
 	}, nil
 }
 
@@ -409,20 +458,22 @@ func (t toolServer) deleteBlock(ctx context.Context, _ *sdkmcp.CallToolRequest, 
 	if strings.TrimSpace(input.BlockID) == "" {
 		return nil, deleteBlockOutput{}, service.BadRequest("block_id is required")
 	}
-	rev, err := t.pages.DeleteBlock(ctx, input.PageID, input.BlockID, input.Revision)
-	if err != nil {
+	if _, err := t.applyBridge(ctx, blocknote.BridgeOp{
+		PageID:  input.PageID,
+		Op:      "delete_block",
+		BlockID: input.BlockID,
+	}); err != nil {
 		return nil, deleteBlockOutput{}, err
 	}
 	return nil, deleteBlockOutput{
-		PageID:   input.PageID,
-		BlockID:  input.BlockID,
-		Revision: rev,
-		Deleted:  true,
+		PageID:  input.PageID,
+		BlockID: input.BlockID,
+		Deleted: true,
 	}, nil
 }
 
-func (t toolServer) renderPageDetail(ctx context.Context, rec service.ArtifactResponse) (pageDetail, error) {
-	parsed, err := blocknote.ParseBlocks(rec.Blocks)
+func (t toolServer) renderPageDetail(ctx context.Context, rec service.ArtifactResponse, blocks json.RawMessage) (pageDetail, error) {
+	parsed, err := blocknote.ParseBlocks(blocks)
 	if err != nil {
 		return pageDetail{}, err
 	}
@@ -599,4 +650,61 @@ func clampLimit(limit int) int {
 		return 50
 	}
 	return limit
+}
+
+// --- M8c bridge helpers ----------------------------------------------------
+
+// applyBridge guards the bridge call: a nil bridge (misconfiguration) yields a
+// clear error instead of a nil-pointer panic.
+func (t toolServer) applyBridge(ctx context.Context, op blocknote.BridgeOp) (blocknote.BridgeResult, error) {
+	if t.bridge == nil {
+		return blocknote.BridgeResult{}, service.BadRequest("collab bridge is not configured; cannot edit page content")
+	}
+	return t.bridge.ApplyOperation(ctx, op)
+}
+
+func agentToBridge(a *agentInput) *blocknote.BridgeAgent {
+	if a == nil {
+		return nil
+	}
+	return &blocknote.BridgeAgent{ID: a.ID, Name: a.Name}
+}
+
+// applyInsertPosition maps the MCP insert-position DTO onto the bridge op:
+//
+//	after_id / before_id => anchor block id + placement
+//	{at: "start"}        => index 0
+//	{at: "end"} / unset  => append (no anchor, no index)
+func applyInsertPosition(op *blocknote.BridgeOp, pos insertBlocksPositionDTO) {
+	switch {
+	case pos.AfterID != nil && strings.TrimSpace(*pos.AfterID) != "":
+		op.BlockID = *pos.AfterID
+		op.Placement = "after"
+	case pos.BeforeID != nil && strings.TrimSpace(*pos.BeforeID) != "":
+		op.BlockID = *pos.BeforeID
+		op.Placement = "before"
+	case pos.At != nil && *pos.At == "start":
+		zero := 0
+		op.Position = &zero
+	}
+}
+
+// withFirstBlockID overrides the id of the first block in a blocks array so a
+// replacement keeps the target block's id. Returns the input unchanged if it
+// can't be parsed as a non-empty array.
+func withFirstBlockID(blocks json.RawMessage, id string) json.RawMessage {
+	var arr []map[string]json.RawMessage
+	if err := json.Unmarshal(blocks, &arr); err != nil || len(arr) == 0 {
+		return blocks
+	}
+	idJSON, err := json.Marshal(id)
+	if err != nil {
+		return blocks
+	}
+	arr[0]["id"] = idJSON
+	out, err := json.Marshal(arr)
+	if err != nil {
+		return blocks
+	}
+	return out
 }

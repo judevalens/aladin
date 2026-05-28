@@ -24,6 +24,8 @@ import {
 } from "./src/middleware/error-boundary.js";
 import * as converter from "./src/handlers/converter.js";
 import { healthz } from "./src/handlers/health.js";
+import { createCollabAdminHandlers } from "./src/handlers/collab-admin.js";
+import { requireAdminSecret } from "./src/middleware/admin-auth.js";
 import { createAuthResolver } from "./src/services/auth.js";
 import { createCollabServer } from "./src/services/collab.js";
 
@@ -32,7 +34,19 @@ installProcessHandlers();
 // Shared Postgres pool for collab persistence (and, in M8c, the admin bridge).
 const pool = new pg.Pool({ connectionString: config.databaseUrl });
 
-// --- Converter (HTTP, :PORT) ----------------------------------------------
+// --- Collaboration (Hocuspocus, :COLLAB_PORT) ------------------------------
+// Created before the HTTP routes so the MCP admin bridge can call into the
+// live Y.Docs in-process.
+const collab = createCollabServer({
+  pool,
+  resolveToken: createAuthResolver(config.authResolveUrl),
+  port: config.collabPort,
+  debounceMs: config.storeDebounceMs,
+  maxDebounceMs: config.storeMaxDebounceMs,
+});
+const collabAdmin = createCollabAdminHandlers(collab);
+
+// --- Converter (HTTP, :PORT) + MCP admin bridge ----------------------------
 const app = express();
 app.use(express.json({ limit: config.jsonLimit }));
 app.use(trace);
@@ -42,21 +56,18 @@ app.post("/md-to-blocks", wrap(converter.mdToBlocks));
 app.post("/blocks-to-md", wrap(converter.blocksToMd));
 app.post("/blocks-to-md-batch", wrap(converter.blocksToMdBatch));
 
+// M8c MCP admin bridge — shared-secret guarded; mutates/reads the live Y.Docs.
+const adminGuard = requireAdminSecret(config.adminSharedSecret);
+app.post("/admin/apply", adminGuard, wrap(collabAdmin.apply));
+app.get("/admin/page/:id", adminGuard, wrap(collabAdmin.getPage));
+
 // Terminal error handler — must be last.
 app.use(errorHandler);
 
 const httpServer = app.listen(config.port, "0.0.0.0", () => {
-  console.log(`blocknote converter listening on :${config.port}`);
+  console.log(`blocknote converter + admin bridge listening on :${config.port}`);
 });
 
-// --- Collaboration (Hocuspocus, :COLLAB_PORT) ------------------------------
-const collab = createCollabServer({
-  pool,
-  resolveToken: createAuthResolver(config.authResolveUrl),
-  port: config.collabPort,
-  debounceMs: config.storeDebounceMs,
-  maxDebounceMs: config.storeMaxDebounceMs,
-});
 await collab.listen();
 console.log(`blocknote collab (Hocuspocus) listening on :${config.collabPort}`);
 

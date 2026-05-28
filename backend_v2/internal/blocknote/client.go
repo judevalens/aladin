@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -22,12 +23,14 @@ type Converter interface {
 	Healthz(ctx context.Context) error
 }
 
-// Client is the HTTP implementation of Converter targeting the
-// blocknote-converter Node sidecar.
+// Client is the HTTP implementation of Converter (and, M8c, Bridge) targeting
+// the blocknote Node sidecar — the converter routes and the /admin/* MCP
+// bridge share one base URL and one client.
 type Client struct {
-	baseURL string
-	http    *http.Client
-	timeout time.Duration
+	baseURL     string
+	http        *http.Client
+	timeout     time.Duration
+	adminSecret string
 }
 
 // ClientOptions tweaks Client behavior. Zero values are reasonable defaults.
@@ -38,6 +41,9 @@ type ClientOptions struct {
 	// RequestTimeout is the per-call ceiling enforced via context.WithTimeout
 	// if the caller didn't already set one. Default: 10s.
 	RequestTimeout time.Duration
+	// AdminSecret is sent as the X-Admin-Secret header on /admin/* bridge
+	// calls (M8c). Empty => bridge calls will be rejected (401) by the sidecar.
+	AdminSecret string
 }
 
 func NewClient(baseURL string, opts ClientOptions) *Client {
@@ -50,9 +56,10 @@ func NewClient(baseURL string, opts ClientOptions) *Client {
 		client = &http.Client{Timeout: timeout + 2*time.Second}
 	}
 	return &Client{
-		baseURL: strings.TrimRight(baseURL, "/"),
-		http:    client,
-		timeout: timeout,
+		baseURL:     strings.TrimRight(baseURL, "/"),
+		http:        client,
+		timeout:     timeout,
+		adminSecret: opts.AdminSecret,
 	}
 }
 
@@ -201,4 +208,106 @@ func parseConverterError(path string, status int, body []byte) error {
 		message = http.StatusText(status)
 	}
 	return &converterError{path: path, status: status, message: message}
+}
+
+// --- M8c MCP collab bridge ------------------------------------------------
+
+// Bridge is the interface the MCP write tools depend on to mutate / read a
+// page's live Y.Doc via the sidecar's /admin/* endpoints. *Client implements
+// it; tests provide fakes.
+type Bridge interface {
+	ApplyOperation(ctx context.Context, op BridgeOp) (BridgeResult, error)
+	GetPage(ctx context.Context, pageID string) (BridgePage, error)
+}
+
+// BridgeOp is a block operation applied to a page's live Y.Doc.
+type BridgeOp struct {
+	PageID    string          `json:"page_id"`
+	Op        string          `json:"op"` // replace_all|replace_block|insert_blocks|delete_block
+	BlockID   string          `json:"block_id,omitempty"`
+	Position  *int            `json:"position,omitempty"`
+	Placement string          `json:"placement,omitempty"` // before|after (insert_blocks)
+	Blocks    json.RawMessage `json:"blocks,omitempty"`
+	Agent     *BridgeAgent    `json:"agent,omitempty"`
+}
+
+// BridgeAgent identifies the integration applying the op (for awareness/audit).
+type BridgeAgent struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// BridgeResult is the response from an apply op: the full current block-id
+// list plus the affected blocks rendered to markdown (so the agent sees its
+// own edit without a follow-up read).
+type BridgeResult struct {
+	BlockIDs         []string `json:"blockIds"`
+	AffectedBlockIDs []string `json:"affectedBlockIds"`
+	Markdown         string   `json:"markdown"`
+}
+
+// BridgePage is the materialized live Y.Doc view returned by GET /admin/page/:id.
+type BridgePage struct {
+	Blocks   json.RawMessage `json:"blocks"`
+	Markdown string          `json:"markdown"`
+}
+
+// ApplyOperation applies a block op to a page's live Y.Doc via the bridge.
+func (c *Client) ApplyOperation(ctx context.Context, op BridgeOp) (BridgeResult, error) {
+	body, err := json.Marshal(op)
+	if err != nil {
+		return BridgeResult{}, err
+	}
+	var out BridgeResult
+	if err := c.admin(ctx, http.MethodPost, "/admin/apply", body, &out); err != nil {
+		return BridgeResult{}, err
+	}
+	return out, nil
+}
+
+// GetPage materializes a page's live Y.Doc to blocks + markdown via the bridge.
+func (c *Client) GetPage(ctx context.Context, pageID string) (BridgePage, error) {
+	var out BridgePage
+	path := "/admin/page/" + url.PathEscape(pageID)
+	if err := c.admin(ctx, http.MethodGet, path, nil, &out); err != nil {
+		return BridgePage{}, err
+	}
+	return out, nil
+}
+
+// admin performs an /admin/* request with the shared-secret header. Errors
+// reuse the converter error mapping (errors.Is(err, ErrConverter) for 4xx).
+func (c *Client) admin(ctx context.Context, method, path string, body []byte, out any) error {
+	ctx, cancel := c.withTimeout(ctx)
+	defer cancel()
+	var reader io.Reader
+	if body != nil {
+		reader = bytes.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, reader)
+	if err != nil {
+		return err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if c.adminSecret != "" {
+		req.Header.Set("X-Admin-Secret", c.adminSecret)
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("blocknote-bridge %s: %w", path, err)
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		return parseConverterError(path, resp.StatusCode, respBody)
+	}
+	if out == nil {
+		return nil
+	}
+	if err := json.Unmarshal(respBody, out); err != nil {
+		return fmt.Errorf("blocknote-bridge %s: decode response: %w", path, err)
+	}
+	return nil
 }

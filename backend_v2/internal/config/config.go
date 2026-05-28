@@ -16,6 +16,10 @@ type MCPConfig struct {
 	DatabaseURL  string
 	HTTPAddr     string
 	ConverterURL string
+	// ConverterAdminSecret authenticates the MCP collab bridge calls
+	// (/admin/*) to the blocknote sidecar (M8c). Defaults to the same
+	// local-dev value the sidecar defaults to; override in Docker/prod.
+	ConverterAdminSecret string
 }
 
 type WorkerConfig struct {
@@ -43,9 +47,10 @@ func LoadMCP() (MCPConfig, error) {
 		return MCPConfig{}, err
 	}
 	return MCPConfig{
-		DatabaseURL:  databaseURL,
-		HTTPAddr:     optional("MCP_HTTP_ADDR", ":8090"),
-		ConverterURL: optional("CONVERTER_URL", "http://localhost:3500"),
+		DatabaseURL:          databaseURL,
+		HTTPAddr:             optional("MCP_HTTP_ADDR", ":8090"),
+		ConverterURL:         optional("CONVERTER_URL", "http://localhost:3500"),
+		ConverterAdminSecret: optional("BLOCKNOTE_ADMIN_SHARED_SECRET", "local-dev-admin-secret"),
 	}, nil
 }
 

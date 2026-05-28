@@ -46,14 +46,14 @@ type Server struct {
 	converter  blocknote.Converter
 }
 
-func New(addr string, deps app.Dependencies, pages service.PageDocumentService, converter blocknote.Converter) *Server {
+func New(addr string, deps app.Dependencies, pages service.PageDocumentService, converter blocknote.Converter, bridge blocknote.Bridge) *Server {
 	server := sdkmcp.NewServer(&sdkmcp.Implementation{
 		Name:    "aladin-mcp",
 		Version: "0.1.0",
 	}, &sdkmcp.ServerOptions{
 		Instructions: mcpInstructions,
 	})
-	registerTools(server, deps.Artifacts(), pages, converter)
+	registerTools(server, deps.Artifacts(), pages, converter, bridge)
 
 	streamable := sdkmcp.NewStreamableHTTPHandler(func(*http.Request) *sdkmcp.Server {
 		return server

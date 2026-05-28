@@ -9,8 +9,12 @@
 //
 // Prerequisites (the test SkipNow()s if any are missing):
 //   - Postgres reachable at $DATABASE_URL or postgres://aladin:password@localhost:5433/aladin
-//   - blocknote-converter reachable at $CONVERTER_URL or http://localhost:3500
-//     (start via `make converter` or `docker compose up -d blocknote-converter`)
+//   - the blocknote sidecar (converter :3500 + collab :3501 + /admin bridge)
+//     reachable at $CONVERTER_URL or http://localhost:3500 — start via
+//     `make blocknote`. M8c routes page writes/reads through the collab
+//     bridge, so the sidecar must be the M8c build and its
+//     BLOCKNOTE_ADMIN_SHARED_SECRET must match this process's (default
+//     local-dev-admin-secret).
 //
 // Run with:
 //   cd backend_v2 && go test -tags=integration ./internal/mcp/... -v -run TestMCP_EndToEnd
@@ -53,9 +57,11 @@ func TestMCP_EndToEnd(t *testing.T) {
 		t.Skipf("postgres ping failed: %v", err)
 	}
 
-	converter := blocknote.NewClient(converterURL, blocknote.ClientOptions{})
+	converter := blocknote.NewClient(converterURL, blocknote.ClientOptions{
+		AdminSecret: envDefault("BLOCKNOTE_ADMIN_SHARED_SECRET", "local-dev-admin-secret"),
+	})
 	if err := converter.Healthz(ctx); err != nil {
-		t.Skipf("blocknote-converter not reachable at %s: %v", converterURL, err)
+		t.Skipf("blocknote sidecar not reachable at %s: %v", converterURL, err)
 	}
 
 	if err := db.Migrate(ctx, pool); err != nil {
@@ -89,7 +95,8 @@ func TestMCP_EndToEnd(t *testing.T) {
 	// Stand up the MCP server in-process via httptest. The server reads
 	// bearer tokens from Authorization: Bearer ... and resolves them via
 	// the AuthService — same as the real `cmd/mcp` binary.
-	mcpServer := New(":0", deps, deps.PageDocuments(), converter)
+	// One client serves both conversion and the collab bridge (M8c).
+	mcpServer := New(":0", deps, deps.PageDocuments(), converter, converter)
 	ts := httptest.NewServer(mcpServer.httpServer.Handler)
 	defer ts.Close()
 

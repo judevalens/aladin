@@ -3,7 +3,7 @@
 Branches: `m8a-collab-foundation` (foundation) → `m8b-collab-online` (collab).
 Plan: `~/.claude/plans/yjs-collab-pages.md`.
 
-**M8a + M8b are code-complete.** M8b's browser behavior is **not yet verified** — that part needs you (collab is inherently a two-client, in-browser thing). M8c (MCP bridge) and M8d (cleanup) are not started.
+**M8a + M8b + M8c are code-complete and tested.** M8b's browser behavior is **verified** — you confirmed live editing + persistence across a full server+client restart; collab broadcast + the projection are now regression-tested in `test/collab.test.js`. **M8c (MCP collab bridge) shipped**: agent edits route through the live Y.Doc, broadcast to open editors, and project to `page_documents`. M8d (cleanup) is not started.
 
 ## What shipped
 
@@ -23,6 +23,22 @@ Plan: `~/.claude/plans/yjs-collab-pages.md`.
 | M8b.1 | Hocuspocus mounted in `services/blocknote`, persisting full Y.Docs to `page_ydoc` via stock `@hocuspocus/extension-database` (debounced 2s/10s). Auth via `/api/auth/resolve`. |
 | collab test | `test/collab.test.js` (COLLAB_IT-gated): two clients converge + state persists to `page_ydoc`. Passes 241ms against live Postgres. |
 | M8b.3/.4/.5 | Frontend editor → Y.Doc collab: HocuspocusProvider + y-indexeddb (local-first) + awareness (cursors). M7 load/save bypassed for content. |
+
+### M8c — MCP collab bridge (branch `m8b-collab-online`)
+| | |
+|---|---|
+| M8c.1/.2 | `services/blocknote` admin bridge: `POST /admin/apply` (block op → live Y.Doc via `server.hocuspocus.openDirectConnection` + `connection.transact`) and `GET /admin/page/:id` (fresh materialized read). Shared-secret guarded (`X-Admin-Secret`, default `local-dev-admin-secret`, fail-closed). Ops: replace_all / replace_block / insert_blocks / delete_block. |
+| M8c.3 | M8.7 JSON projection: debounced `onChange` (≤1/500ms AND ≤1/50 commits, + 5s sweep for restart-orphaned timers) materializes Y.Doc → `page_documents.blocks` + `search_text` + bumped `revision`. Fire-and-forget — a projection failure never blocks the WS loop or crashes the broker. |
+| M8c.4 | Seam guards in `ArtifactService`: Create **ignores** page `blocks` (empty doc; content arrives via the editor or a bridge replace_all); Update **refuses** page `blocks`/`content` (BadRequest). Closes the M5/M6 direct-write leak that would have clobbered the Y.Doc. |
+| M8c.5/.6 | Go: `blocknote.Client` gains `ApplyOperation`/`GetPage` (same base URL, admin-secret header) behind a `Bridge` interface. MCP write tools (`update_block`/`insert_blocks`/`delete_block`/`update_page`) route through the bridge; `create_page` = Create-empty + bridge replace_all; `get_page` reads **fresh** via the bridge; `list_pages`/`search_pages` still read the projection. Write responses carry the affected blocks' markdown (read-after-own-write fix). |
+| tests | `test/collab.test.js` — new bridge-op test: a server-side op broadcasts to two live clients + the projection lands (passes, COLLAB_IT). Go unit tests updated (`tools_test.go`, `artifacts_test.go`); `integration_test.go` rewired for the bridge (manual, `-tags integration` — **TRUNCATEs, don't run against live data**). Full `go test ./...`, hermetic `npm test`, and the version-drift gate are green. |
+
+**Verified end-to-end (HTTP probe + collab test):** replace_all → 2 blocks; insert_blocks keeps prior block ids stable; both live clients observe a server-side bridge op; `page_documents` projection reflects edits with correct `search_text`.
+
+**Bridge limitations (accepted, documented):**
+- **Coarse ops** — server-util has no fine-grained "apply one op preserving history" call; every op is a full-fragment rebuild. Untouched block **ids survive** (verified), but a concurrent human edit landing *during* an agent write resolves last-write-wins at the fragment level. Fine for low-frequency agent edits, single instance.
+- **No agent cursor** — `DirectConnection` exposes only `transact`/`disconnect` (no awareness API), so the agent gets no presence cursor. Deferred.
+- **`get_page` hard-depends on the sidecar** (reads the live Y.Doc; no projection fallback).
 
 ## The crossws finding (corrects the M8b.1 commit message)
 
@@ -87,6 +103,6 @@ b4fbe7f M8b.3/.4/.5: frontend editor → collaborative Y.Doc (Hocuspocus + Index
 
 ## Next
 
-- **You**: browser-verify M8b (checklist above).
-- **Then M8c**: MCP bridge (`/admin/apply` → `openDirectConnection`), route MCP write tools through it, the `ArtifactService.Update` page-blocks guard, and the M8.7 JSON projection.
-- **Then M8d**: delete the M7 content path after a dogfood window.
+- **You**: end-to-end MCP smoke — with the sidecar (`make blocknote`) + API (`make backend`) up, point Claude Code/Codex at the MCP server, create/edit a page via the tools, and watch it appear live in an open editor. (Optional: the `-tags integration` E2E — but it TRUNCATEs page data.)
+- **Then M8d**: delete the M7 content path after a dogfood window — `page-repo.savePage`, `usePageState` drafts, Rust `page_content`, the `PATCH /api/pages` handler, and the now-dead `toolServer.pages` / `PageDocumentService` wiring.
+- **Later (M12)**: `artifacts.content` → per-type canonical content tables (generalize the pages pattern; see `~/.claude/plans/yjs-collab-pages.md`).

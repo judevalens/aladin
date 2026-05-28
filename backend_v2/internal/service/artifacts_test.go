@@ -9,13 +9,16 @@ import (
 	"testing"
 )
 
-func TestArtifactServiceCreatePageStoresBlocks(t *testing.T) {
+func TestArtifactServiceCreatePageIgnoresBlocks(t *testing.T) {
 	t.Parallel()
 
 	summary := "  useful memo  "
 	repo := &fakeArtifactRepository{}
 	svc := NewArtifactService(repo, &fakeArtifactFiles{})
 
+	// M8c: page content is owned by the collab Y.Doc; Create ignores blocks
+	// and always materializes an empty document (content arrives via the
+	// editor or the MCP bridge).
 	blocks := json.RawMessage(`[{"id":"a","type":"paragraph","content":[{"type":"text","text":"Rivian supply chain memo"}],"children":[]}]`)
 	result, err := svc.Create(testPrincipalContext(), ArtifactPayload{
 		Type:    "page",
@@ -33,29 +36,33 @@ func TestArtifactServiceCreatePageStoresBlocks(t *testing.T) {
 	if rec.Content != "" {
 		t.Fatalf("page artifact Content should be empty, got %q", rec.Content)
 	}
-	if string(rec.Blocks) != string(blocks) {
-		t.Fatalf("blocks roundtrip failed: got %s", string(rec.Blocks))
+	if string(rec.Blocks) != "[]" {
+		t.Fatalf("page should be created with empty blocks, got %s", string(rec.Blocks))
 	}
 	stored := repo.pagesByID[rec.ID]
 	if stored == nil {
 		t.Fatalf("expected page document to be created for id %q", rec.ID)
 	}
-	if stored.searchText != "Rivian supply chain memo" {
-		t.Fatalf("search_text = %q, want %q", stored.searchText, "Rivian supply chain memo")
+	if stored.searchText != "" {
+		t.Fatalf("search_text = %q, want empty (blocks ignored)", stored.searchText)
 	}
 }
 
-func TestArtifactServiceCreatePageRejectsNonArrayBlocks(t *testing.T) {
+func TestArtifactServiceCreatePageIgnoresMalformedBlocks(t *testing.T) {
 	t.Parallel()
 	svc := NewArtifactService(&fakeArtifactRepository{}, &fakeArtifactFiles{})
-	_, err := svc.Create(testPrincipalContext(), ArtifactPayload{
+	// Blocks are ignored entirely now, so even malformed blocks don't error —
+	// the page is simply created empty.
+	result, err := svc.Create(testPrincipalContext(), ArtifactPayload{
 		Type:   "page",
 		Title:  "Bad",
 		Blocks: json.RawMessage(`{"not":"an array"}`),
 	})
-	var requestErr BadRequest
-	if !errors.As(err, &requestErr) {
-		t.Fatalf("Create with non-array blocks error = %v, want BadRequest", err)
+	if err != nil {
+		t.Fatalf("Create error = %v, want nil (blocks ignored)", err)
+	}
+	if string(result.Artifact.Blocks) != "[]" {
+		t.Fatalf("blocks = %s, want []", string(result.Artifact.Blocks))
 	}
 }
 

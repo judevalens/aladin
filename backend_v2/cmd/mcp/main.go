@@ -53,7 +53,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	converter := blocknote.NewClient(cfg.ConverterURL, blocknote.ClientOptions{})
+	converter := blocknote.NewClient(cfg.ConverterURL, blocknote.ClientOptions{
+		AdminSecret: cfg.ConverterAdminSecret,
+	})
 	if err := waitForConverter(ctx, converter); err != nil {
 		slog.Warn("mcp: converter not reachable at startup, continuing anyway", "component", "mcp", "url", cfg.ConverterURL, "err", err)
 	} else {
@@ -61,7 +63,9 @@ func main() {
 	}
 
 	deps := app.NewDependencies(pool)
-	server := mcpserver.New(cfg.HTTPAddr, deps, deps.PageDocuments(), converter)
+	// One *Client serves both jobs: markdown<->blocks conversion and the
+	// /admin/* collab bridge (same base URL, shared secret).
+	server := mcpserver.New(cfg.HTTPAddr, deps, deps.PageDocuments(), converter, converter)
 
 	go func() {
 		<-ctx.Done()

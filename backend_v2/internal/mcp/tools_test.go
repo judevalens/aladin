@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"aladin/backend_v2/internal/blocknote"
 	"aladin/backend_v2/internal/service"
 )
 
@@ -76,11 +77,35 @@ func (f *fakePageDocService) DeleteBlock(_ context.Context, pageID, blockID stri
 	return f.deleteBlock(pageID, blockID, expectedRev)
 }
 
+// fakeBridge satisfies blocknote.Bridge without standing up the sidecar. It
+// records the last op applied and returns canned results.
+type fakeBridge struct {
+	applyFunc func(op blocknote.BridgeOp) (blocknote.BridgeResult, error)
+	getFunc   func(pageID string) (blocknote.BridgePage, error)
+	lastOp    blocknote.BridgeOp
+}
+
+func (f *fakeBridge) ApplyOperation(_ context.Context, op blocknote.BridgeOp) (blocknote.BridgeResult, error) {
+	f.lastOp = op
+	if f.applyFunc != nil {
+		return f.applyFunc(op)
+	}
+	return blocknote.BridgeResult{BlockIDs: []string{"x"}, AffectedBlockIDs: []string{"x"}, Markdown: "(md)"}, nil
+}
+
+func (f *fakeBridge) GetPage(_ context.Context, pageID string) (blocknote.BridgePage, error) {
+	if f.getFunc != nil {
+		return f.getFunc(pageID)
+	}
+	return blocknote.BridgePage{Blocks: json.RawMessage("[]")}, nil
+}
+
 func newToolServer(artifacts service.ArtifactService) toolServer {
 	return toolServer{
 		artifacts: artifacts,
 		pages:     &fakePageDocService{},
 		converter: &fakeConverter{},
+		bridge:    &fakeBridge{},
 	}
 }
 
@@ -115,12 +140,14 @@ func TestCreatePage_ConvertsMarkdownToBlocks(t *testing.T) {
 
 	expected := json.RawMessage(`[{"id":"a","type":"heading"}]`)
 	artifacts := &fakeArtifactService{}
+	bridge := &fakeBridge{}
 	tools := toolServer{
 		artifacts: artifacts,
 		pages:     &fakePageDocService{},
 		converter: &fakeConverter{
 			mdToBlocksFunc: func(_ string) (json.RawMessage, error) { return expected, nil },
 		},
+		bridge: bridge,
 	}
 	writeCtx := contextWithScopes(service.ScopeArtifactsRead, service.ScopeArtifactsWrite)
 
@@ -135,8 +162,13 @@ func TestCreatePage_ConvertsMarkdownToBlocks(t *testing.T) {
 	if out.ID == "" {
 		t.Fatal("expected non-empty page id")
 	}
-	if string(artifacts.createPayload.Blocks) != string(expected) {
-		t.Fatalf("artifact create payload blocks = %s, want %s", string(artifacts.createPayload.Blocks), string(expected))
+	// M8c: content is seeded into the Y.Doc via a replace_all bridge op, not
+	// written to the artifact create payload.
+	if len(artifacts.createPayload.Blocks) != 0 {
+		t.Fatalf("create payload should carry no blocks, got %s", string(artifacts.createPayload.Blocks))
+	}
+	if bridge.lastOp.Op != "replace_all" || string(bridge.lastOp.Blocks) != string(expected) {
+		t.Fatalf("bridge op = %+v, want replace_all with %s", bridge.lastOp, string(expected))
 	}
 	agent, _ := artifacts.createPayload.Metadata["agent"].(map[string]any)
 	if agent["source"] != "mcp" || agent["name"] != "Claude Code" {
@@ -174,7 +206,8 @@ func TestUpdatePage_AcceptsMarkdownAndMetadata(t *testing.T) {
 			UpdatedAt: "2026-05-27T00:00:00Z",
 		},
 	}
-	tools := newToolServer(artifacts)
+	bridge := &fakeBridge{}
+	tools := toolServer{artifacts: artifacts, pages: &fakePageDocService{}, converter: &fakeConverter{}, bridge: bridge}
 	writeCtx := contextWithScopes(service.ScopeArtifactsRead, service.ScopeArtifactsWrite)
 
 	md := "new body"
@@ -190,8 +223,13 @@ func TestUpdatePage_AcceptsMarkdownAndMetadata(t *testing.T) {
 	if out.Revision != 4 {
 		t.Fatalf("revision = %d, want 4", out.Revision)
 	}
-	if artifacts.updatePatch.Blocks == nil {
-		t.Fatal("update patch missing blocks")
+	// M8c: content goes through the bridge (replace_all); the artifact patch
+	// carries metadata only, never blocks.
+	if bridge.lastOp.Op != "replace_all" {
+		t.Fatalf("bridge op = %q, want replace_all", bridge.lastOp.Op)
+	}
+	if artifacts.updatePatch.Blocks != nil {
+		t.Fatal("update patch must not carry blocks (they go via the bridge)")
 	}
 	if artifacts.updatePatch.Metadata == nil {
 		t.Fatal("update patch missing metadata")
@@ -218,13 +256,19 @@ func TestUpdatePage_RequiresAField(t *testing.T) {
 func TestGetPage_ReturnsBlocksWithMarkdown(t *testing.T) {
 	t.Parallel()
 
+	blocks := json.RawMessage(`[{"id":"a","type":"heading","props":{"level":1}},{"id":"b","type":"paragraph"}]`)
 	artifacts := &fakeArtifactService{
 		getResult: service.ArtifactResponse{
 			ID:       "page-1",
 			Type:     "page",
 			Title:    "Page",
-			Blocks:   json.RawMessage(`[{"id":"a","type":"heading","props":{"level":1}},{"id":"b","type":"paragraph"}]`),
 			Metadata: map[string]any{},
+		},
+	}
+	// M8c: getPage reads fresh blocks from the live Y.Doc via the bridge.
+	bridge := &fakeBridge{
+		getFunc: func(string) (blocknote.BridgePage, error) {
+			return blocknote.BridgePage{Blocks: blocks}, nil
 		},
 	}
 	tools := toolServer{
@@ -239,6 +283,7 @@ func TestGetPage_ReturnsBlocksWithMarkdown(t *testing.T) {
 				return out, nil
 			},
 		},
+		bridge: bridge,
 	}
 	readCtx := contextWithScopes(service.ScopeArtifactsRead)
 
@@ -263,63 +308,61 @@ func TestGetPage_ReturnsBlocksWithMarkdown(t *testing.T) {
 func TestUpdateBlock_RoundTrip(t *testing.T) {
 	t.Parallel()
 
-	var (
-		gotPageID  string
-		gotBlockID string
-		gotBlocks  json.RawMessage
-	)
-	pages := &fakePageDocService{
-		replaceBlock: func(pageID, blockID string, replacement json.RawMessage, _ int64) (int64, int, error) {
-			gotPageID = pageID
-			gotBlockID = blockID
-			gotBlocks = replacement
-			return 7, 1, nil
+	bridge := &fakeBridge{
+		applyFunc: func(blocknote.BridgeOp) (blocknote.BridgeResult, error) {
+			return blocknote.BridgeResult{AffectedBlockIDs: []string{"block-1"}, Markdown: "## New"}, nil
 		},
 	}
 	tools := toolServer{
 		artifacts: &fakeArtifactService{},
-		pages:     pages,
+		pages:     &fakePageDocService{},
 		converter: &fakeConverter{
 			mdToBlocksFunc: func(_ string) (json.RawMessage, error) {
 				return json.RawMessage(`[{"id":"x","type":"heading"}]`), nil
 			},
 		},
+		bridge: bridge,
 	}
 	writeCtx := contextWithScopes(service.ScopeArtifactsWrite)
 
 	_, out, err := tools.updateBlock(writeCtx, nil, updateBlockInput{
-		PageID:  "page-1",
-		BlockID: "block-1",
+		PageID:   "page-1",
+		BlockID:  "block-1",
 		Markdown: "## New",
 	})
 	if err != nil {
 		t.Fatalf("updateBlock: %v", err)
 	}
-	if gotPageID != "page-1" || gotBlockID != "block-1" {
-		t.Fatalf("page/block = %q/%q, want page-1/block-1", gotPageID, gotBlockID)
+	if bridge.lastOp.Op != "replace_block" || bridge.lastOp.PageID != "page-1" || bridge.lastOp.BlockID != "block-1" {
+		t.Fatalf("bridge op = %+v, want replace_block page-1/block-1", bridge.lastOp)
 	}
-	if !strings.Contains(string(gotBlocks), `"type":"heading"`) {
-		t.Fatalf("converter output = %s, want heading", string(gotBlocks))
+	if !strings.Contains(string(bridge.lastOp.Blocks), `"type":"heading"`) {
+		t.Fatalf("op blocks = %s, want heading", string(bridge.lastOp.Blocks))
 	}
-	if out.Revision != 7 {
-		t.Fatalf("revision = %d, want 7", out.Revision)
+	// The original id is carried onto the first produced block.
+	if !strings.Contains(string(bridge.lastOp.Blocks), `"block-1"`) {
+		t.Fatalf("op blocks = %s, want first block id block-1", string(bridge.lastOp.Blocks))
 	}
 	if out.ReplacedBlockCount != 1 {
 		t.Fatalf("count = %d, want 1", out.ReplacedBlockCount)
+	}
+	if out.Markdown != "## New" {
+		t.Fatalf("markdown = %q, want '## New'", out.Markdown)
 	}
 }
 
 func TestInsertBlocks_ReturnsInsertedIDs(t *testing.T) {
 	t.Parallel()
-	pages := &fakePageDocService{
-		insertBlocks: func(_ string, _ service.BlockPosition, _ json.RawMessage, _ int64) (int64, []string, error) {
-			return 3, []string{"x", "y"}, nil
+	bridge := &fakeBridge{
+		applyFunc: func(blocknote.BridgeOp) (blocknote.BridgeResult, error) {
+			return blocknote.BridgeResult{AffectedBlockIDs: []string{"x", "y"}, Markdown: "* x\n* y"}, nil
 		},
 	}
 	tools := toolServer{
 		artifacts: &fakeArtifactService{},
-		pages:     pages,
+		pages:     &fakePageDocService{},
 		converter: &fakeConverter{},
+		bridge:    bridge,
 	}
 	writeCtx := contextWithScopes(service.ScopeArtifactsWrite)
 
@@ -332,22 +375,22 @@ func TestInsertBlocks_ReturnsInsertedIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("insertBlocks: %v", err)
 	}
-	if out.Revision != 3 || len(out.InsertedBlockIDs) != 2 {
-		t.Fatalf("out = %#v", out)
+	if bridge.lastOp.Op != "insert_blocks" || bridge.lastOp.BlockID != "a" || bridge.lastOp.Placement != "after" {
+		t.Fatalf("bridge op = %+v, want insert_blocks after a", bridge.lastOp)
+	}
+	if len(out.InsertedBlockIDs) != 2 {
+		t.Fatalf("out = %#v, want 2 inserted ids", out)
 	}
 }
 
 func TestDeleteBlock_BypassesConverter(t *testing.T) {
 	t.Parallel()
-	pages := &fakePageDocService{
-		deleteBlock: func(_ string, _ string, _ int64) (int64, error) {
-			return 9, nil
-		},
-	}
+	bridge := &fakeBridge{}
 	tools := toolServer{
 		artifacts: &fakeArtifactService{},
-		pages:     pages,
+		pages:     &fakePageDocService{},
 		converter: nil, // delete_block should not require a converter
+		bridge:    bridge,
 	}
 	writeCtx := contextWithScopes(service.ScopeArtifactsWrite)
 
@@ -358,8 +401,11 @@ func TestDeleteBlock_BypassesConverter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("deleteBlock: %v", err)
 	}
-	if out.Revision != 9 || !out.Deleted {
-		t.Fatalf("out = %#v", out)
+	if bridge.lastOp.Op != "delete_block" || bridge.lastOp.BlockID != "block-1" {
+		t.Fatalf("bridge op = %+v, want delete_block block-1", bridge.lastOp)
+	}
+	if !out.Deleted {
+		t.Fatalf("out = %#v, want deleted", out)
 	}
 }
 

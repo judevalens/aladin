@@ -20,9 +20,12 @@ export const config = {
     process.env.BLOCKNOTE_AUTH_RESOLVE_URL ??
     "http://localhost:8000/api/auth/resolve",
 
-  // M8c: shared secret guarding the MCP admin bridge (/admin/*). Empty here;
-  // set in M8c.
-  adminSharedSecret: process.env.BLOCKNOTE_ADMIN_SHARED_SECRET ?? "",
+  // M8c: shared secret guarding the MCP admin bridge (/admin/*). Defaults to a
+  // known local-dev value so `make backend` + MCP work out of the box; set
+  // BLOCKNOTE_ADMIN_SHARED_SECRET in Docker/prod. Empty string disables the
+  // bridge (fail closed).
+  adminSharedSecret:
+    process.env.BLOCKNOTE_ADMIN_SHARED_SECRET ?? "local-dev-admin-secret",
 
   // Hocuspocus store debounce (write-efficiency, not durability — clients +
   // y-indexeddb are the durability layer).

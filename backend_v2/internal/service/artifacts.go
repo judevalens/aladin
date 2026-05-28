@@ -6,8 +6,6 @@ import (
 	"io"
 	"strings"
 	"time"
-
-	"aladin/backend_v2/internal/blocknote"
 )
 
 // emptyBlocks is the canonical "no blocks" JSON value persisted alongside a
@@ -212,20 +210,12 @@ func (s *DefaultArtifactService) Create(ctx context.Context, payload ArtifactPay
 		if title == "" {
 			return ArtifactCreateResponse{}, BadRequest("title is required")
 		}
-		// Pages use Blocks, not Content. An empty Blocks payload is
-		// permitted and produces an empty document the editor can fill in.
-		blocks := payload.Blocks
-		if len(blocks) == 0 {
-			blocks = emptyBlocks
-		} else if !looksLikeJSONArray(blocks) {
-			return ArtifactCreateResponse{}, BadRequest("blocks must be a JSON array")
-		}
-		searchText, err := blocknote.ExtractText(blocks)
-		if err != nil {
-			return ArtifactCreateResponse{}, BadRequest("blocks: " + err.Error())
-		}
-		pageBlocks = blocks
-		pageSearchText = searchText
+		// M8c: page content is owned by the collaborative Y.Doc, not written
+		// through this API. Always create an empty document; the editor (or,
+		// for an agent, a bridge replace_all op issued after this row exists)
+		// supplies the first content. payload.Blocks is intentionally ignored.
+		pageBlocks = emptyBlocks
+		pageSearchText = ""
 		content = "" // content is unused for pages
 	case "link":
 		if sourceURL == nil {
@@ -404,7 +394,7 @@ func (s *DefaultArtifactService) Update(ctx context.Context, id string, patch Ar
 		return ArtifactResponse{}, BadRequest("title is required")
 	}
 	if current.Type == "page" && patch.Content != nil {
-		return ArtifactResponse{}, BadRequest("pages use blocks, not content; pass `blocks` instead")
+		return ArtifactResponse{}, BadRequest("page content is edited collaboratively, not via the artifact API")
 	}
 
 	if patch.FolderID != nil {
@@ -412,18 +402,12 @@ func (s *DefaultArtifactService) Update(ctx context.Context, id string, patch Ar
 			return ArtifactResponse{}, err
 		}
 	}
+	// M8c seam guard: page blocks are owned by the collaborative Y.Doc. A
+	// direct block write through the artifact API would silently diverge from
+	// (or be clobbered by) the Hocuspocus doc + its projection. Agents edit
+	// pages via the MCP collab bridge; the editor edits via the Y.Doc.
 	if current.Type == "page" && patch.Blocks != nil {
-		blocks := *patch.Blocks
-		if !looksLikeJSONArray(blocks) {
-			return ArtifactResponse{}, BadRequest("blocks must be a JSON array")
-		}
-		searchText, err := blocknote.ExtractText(blocks)
-		if err != nil {
-			return ArtifactResponse{}, BadRequest("blocks: " + err.Error())
-		}
-		if _, err := s.repo.SavePageBlocks(ctx, id, blocks, searchText, 0); err != nil {
-			return ArtifactResponse{}, err
-		}
+		return ArtifactResponse{}, BadRequest("page blocks are edited via the collab bridge, not the artifact API")
 	}
 	if err := s.repo.UpdateArtifact(ctx, id, patch); err != nil {
 		return ArtifactResponse{}, err
