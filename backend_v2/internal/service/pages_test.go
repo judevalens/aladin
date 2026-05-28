@@ -37,75 +37,27 @@ func TestPageServiceGetLoadsPageBlocks(t *testing.T) {
 	}
 }
 
-func TestPageServiceSavePersistsBlocks(t *testing.T) {
+func TestPageServiceSaveRefused(t *testing.T) {
 	t.Parallel()
-
-	repo := &fakeArtifactRepository{
-		artifactByID: map[string]ArtifactResponse{
-			"artifact-1": {
-				ID:        "artifact-1",
-				Type:      "page",
-				Title:     "Memo",
-				UpdatedAt: "2026-05-01T00:00:00Z",
-			},
-		},
-	}
-	svc := NewPageService(repo)
-
-	blocks := json.RawMessage(`[{"id":"a","type":"paragraph","content":[{"type":"text","text":"saved"}],"children":[]}]`)
-	page, err := svc.Save(testPrincipalContext(), "artifact-1", PageSaveInput{Blocks: blocks, Revision: 1})
-	if err != nil {
-		t.Fatalf("Save error: %v", err)
-	}
-	if string(page.Blocks) != string(blocks) {
-		t.Fatalf("returned blocks = %s, want %s", string(page.Blocks), string(blocks))
-	}
-	stored := repo.pagesByID["artifact-1"]
-	if stored == nil || string(stored.blocks) != string(blocks) {
-		t.Fatalf("stored = %v, want blocks round-tripped", stored)
-	}
-	if stored.searchText != "saved" {
-		t.Fatalf("search_text = %q, want %q", stored.searchText, "saved")
-	}
-}
-
-func TestPageServiceSaveRejectsNonArrayBlocks(t *testing.T) {
-	t.Parallel()
+	// M8c seam guard: page content is collaborative, so PATCH /api/pages is
+	// refused — the editor edits via the Y.Doc, agents via the MCP bridge.
 	repo := &fakeArtifactRepository{
 		artifactByID: map[string]ArtifactResponse{
 			"artifact-1": {ID: "artifact-1", Type: "page", Title: "Memo"},
 		},
 	}
 	svc := NewPageService(repo)
+
 	_, err := svc.Save(testPrincipalContext(), "artifact-1", PageSaveInput{
-		Blocks:   json.RawMessage(`{"not":"array"}`),
+		Blocks:   json.RawMessage(`[{"id":"a","type":"paragraph"}]`),
 		Revision: 1,
 	})
 	var requestErr BadRequest
 	if !errors.As(err, &requestErr) {
-		t.Fatalf("Save error = %v, want BadRequest", err)
+		t.Fatalf("Save error = %v, want BadRequest (collab guard)", err)
 	}
-}
-
-func TestPageServiceSaveRejectsStaleRevision(t *testing.T) {
-	t.Parallel()
-
-	repo := &fakeArtifactRepository{
-		artifactByID: map[string]ArtifactResponse{
-			"artifact-1": {ID: "artifact-1", Type: "page", Title: "Memo"},
-		},
-		pagesByID: map[string]*fakePageStore{
-			"artifact-1": {blocks: json.RawMessage(`[]`), revision: 3},
-		},
-	}
-	svc := NewPageService(repo)
-
-	_, err := svc.Save(testPrincipalContext(), "artifact-1", PageSaveInput{
-		Blocks:   json.RawMessage(`[]`),
-		Revision: 3,
-	})
-	if !errors.Is(err, ErrConflict) {
-		t.Fatalf("Save error = %v, want ErrConflict", err)
+	if repo.pagesByID["artifact-1"] != nil {
+		t.Fatal("Save must not persist blocks")
 	}
 }
 

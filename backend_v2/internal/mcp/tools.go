@@ -97,14 +97,12 @@ type updateBlockInput struct {
 	PageID   string `json:"page_id"`
 	BlockID  string `json:"block_id"`
 	Markdown string `json:"markdown"`
-	Revision int64  `json:"revision,omitempty"`
 }
 
 type insertBlocksInput struct {
 	PageID   string                  `json:"page_id"`
 	Position insertBlocksPositionDTO `json:"position"`
 	Markdown string                  `json:"markdown"`
-	Revision int64                   `json:"revision,omitempty"`
 }
 
 type insertBlocksPositionDTO struct {
@@ -114,9 +112,8 @@ type insertBlocksPositionDTO struct {
 }
 
 type deleteBlockInput struct {
-	PageID   string `json:"page_id"`
-	BlockID  string `json:"block_id"`
-	Revision int64  `json:"revision,omitempty"`
+	PageID  string `json:"page_id"`
+	BlockID string `json:"block_id"`
 }
 
 type getPageInput struct {
@@ -201,10 +198,9 @@ type insertBlocksOutput struct {
 }
 
 type deleteBlockOutput struct {
-	PageID   string `json:"page_id"`
-	BlockID  string `json:"block_id"`
-	Revision int64  `json:"revision"`
-	Deleted  bool   `json:"deleted"`
+	PageID  string `json:"page_id"`
+	BlockID string `json:"block_id"`
+	Deleted bool   `json:"deleted"`
 }
 
 type browserTreeNodeOutput struct {
@@ -439,7 +435,9 @@ func (t toolServer) insertBlocks(ctx context.Context, _ *sdkmcp.CallToolRequest,
 		Op:     "insert_blocks",
 		Blocks: blocks,
 	}
-	applyInsertPosition(&op, input.Position)
+	if err := applyInsertPosition(&op, input.Position); err != nil {
+		return nil, insertBlocksOutput{}, err
+	}
 	res, err := t.applyBridge(ctx, op)
 	if err != nil {
 		return nil, insertBlocksOutput{}, err
@@ -675,18 +673,34 @@ func agentToBridge(a *agentInput) *blocknote.BridgeAgent {
 //	after_id / before_id => anchor block id + placement
 //	{at: "start"}        => index 0
 //	{at: "end"} / unset  => append (no anchor, no index)
-func applyInsertPosition(op *blocknote.BridgeOp, pos insertBlocksPositionDTO) {
+//
+// It rejects an ambiguous position (both after_id and before_id) and an
+// unrecognized `at` value rather than silently appending in the wrong place.
+func applyInsertPosition(op *blocknote.BridgeOp, pos insertBlocksPositionDTO) error {
+	hasAfter := pos.AfterID != nil && strings.TrimSpace(*pos.AfterID) != ""
+	hasBefore := pos.BeforeID != nil && strings.TrimSpace(*pos.BeforeID) != ""
+	hasAt := pos.At != nil && strings.TrimSpace(*pos.At) != ""
 	switch {
-	case pos.AfterID != nil && strings.TrimSpace(*pos.AfterID) != "":
+	case hasAfter && hasBefore:
+		return service.BadRequest("position: set only one of after_id / before_id")
+	case hasAfter:
 		op.BlockID = *pos.AfterID
 		op.Placement = "after"
-	case pos.BeforeID != nil && strings.TrimSpace(*pos.BeforeID) != "":
+	case hasBefore:
 		op.BlockID = *pos.BeforeID
 		op.Placement = "before"
-	case pos.At != nil && *pos.At == "start":
-		zero := 0
-		op.Position = &zero
+	case hasAt:
+		switch strings.TrimSpace(*pos.At) {
+		case "start":
+			zero := 0
+			op.Position = &zero
+		case "end":
+			// append: no anchor, no index (the bridge defaults to the end)
+		default:
+			return service.BadRequest(`position.at must be "start" or "end"`)
+		}
 	}
+	return nil
 }
 
 // withFirstBlockID overrides the id of the first block in a blocks array so a

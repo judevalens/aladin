@@ -34,4 +34,20 @@ export const config = {
     process.env.STORE_MAX_DEBOUNCE_MS ?? "10000",
     10,
   ),
+
+  // M8.7 JSON projection debounce (collab.js): coalesce page_documents writes
+  // to at most once per PROJECTION_DEBOUNCE_MS AND once per PROJECTION_MAX_COMMITS,
+  // with a PROJECTION_SWEEP_MS fallback flush for restart-orphaned timers.
+  projectionDebounceMs: Number.parseInt(
+    process.env.PROJECTION_DEBOUNCE_MS ?? "500",
+    10,
+  ),
+  projectionMaxCommits: Number.parseInt(
+    process.env.PROJECTION_MAX_COMMITS ?? "50",
+    10,
+  ),
+  projectionSweepMs: Number.parseInt(
+    process.env.PROJECTION_SWEEP_MS ?? "5000",
+    10,
+  ),
 };

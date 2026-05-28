@@ -43,8 +43,20 @@ const collab = createCollabServer({
   port: config.collabPort,
   debounceMs: config.storeDebounceMs,
   maxDebounceMs: config.storeMaxDebounceMs,
+  projectionDebounceMs: config.projectionDebounceMs,
+  projectionMaxCommits: config.projectionMaxCommits,
+  projectionSweepMs: config.projectionSweepMs,
 });
 const collabAdmin = createCollabAdminHandlers(collab);
+
+// The admin bridge is only as safe as its shared secret. The default exists so
+// `make backend` + MCP work out of the box on localhost; warn loudly so it is
+// never silently relied on when :PORT is reachable beyond the local machine.
+if (config.adminSharedSecret === "local-dev-admin-secret") {
+  console.warn(
+    `[warn] blocknote admin bridge is using the default shared secret — set BLOCKNOTE_ADMIN_SHARED_SECRET before exposing :${config.port} beyond localhost`,
+  );
+}
 
 // --- Converter (HTTP, :PORT) + MCP admin bridge ----------------------------
 const app = express();

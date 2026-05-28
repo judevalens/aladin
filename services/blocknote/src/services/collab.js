@@ -34,6 +34,13 @@ import { BadRequest, errorMessage } from "../errors.js";
 // BlockNote binds its ProseMirror doc to a Y.XmlFragment named "document".
 const FRAGMENT = "document";
 
+const VALID_OPS = new Set([
+  "replace_all",
+  "replace_block",
+  "insert_blocks",
+  "delete_block",
+]);
+
 // One headless editor, reused for all conversions (same pattern as converter).
 const editor = ServerBlockNoteEditor.create();
 
@@ -244,6 +251,11 @@ export function createCollabServer({
   async function applyOperation(input) {
     const pageId = input?.page_id;
     if (!pageId) throw new BadRequest("page_id is required");
+    // Validate the op before opening a connection so a malformed request
+    // doesn't load (and immediately tear down) a live Y.Doc.
+    if (!VALID_OPS.has(input?.op)) {
+      throw new BadRequest(`unknown op: ${input?.op}`);
+    }
 
     const connection = await server.hocuspocus.openDirectConnection(pageId);
     try {

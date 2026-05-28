@@ -36,9 +36,27 @@ Plan: `~/.claude/plans/yjs-collab-pages.md`.
 **Verified end-to-end (HTTP probe + collab test):** replace_all → 2 blocks; insert_blocks keeps prior block ids stable; both live clients observe a server-side bridge op; `page_documents` projection reflects edits with correct `search_text`.
 
 **Bridge limitations (accepted, documented):**
-- **Coarse ops** — server-util has no fine-grained "apply one op preserving history" call; every op is a full-fragment rebuild. Untouched block **ids survive** (verified), but a concurrent human edit landing *during* an agent write resolves last-write-wins at the fragment level. Fine for low-frequency agent edits, single instance.
+- **Coarse ops** — server-util has no fine-grained "apply one op preserving history" call; every op is a full-fragment rebuild. Untouched block **ids survive** (verified), but a concurrent human edit landing *during* an agent write can be dropped wholesale — it's a whole-document clobber, not a block-level merge. Fine for low-frequency agent edits, single instance.
 - **No agent cursor** — `DirectConnection` exposes only `transact`/`disconnect` (no awareness API), so the agent gets no presence cursor. Deferred.
 - **`get_page` hard-depends on the sidecar** (reads the live Y.Doc; no projection fallback).
+
+### Adversarial review (M8c.9)
+
+Two independent adversarial agents reviewed M8c (architecture + clean-code). **Fixed:**
+- **Seam leak closed**: `PATCH /api/pages` (`PageService.Save`) wrote blocks directly, bypassing the M8c guard — it's now refused (the path is dormant; usePageState is orphaned; fully removed in M8d).
+- `insert_blocks` now **rejects** an ambiguous position (after_id + before_id) and an unknown `at` value instead of silently appending in the wrong place.
+- `op` is validated **before** opening a Y.Doc connection (no needless load/teardown on a bad op).
+- Removed dead `revision` fields from the block tool inputs/outputs — they did nothing (CRDT has no optimistic-concurrency CAS); leaving them misled agents.
+- Projection knobs are env-configurable: `PROJECTION_DEBOUNCE_MS` / `PROJECTION_MAX_COMMITS` / `PROJECTION_SWEEP_MS`.
+- Loud startup **warning** when the admin bridge runs on the default shared secret.
+- New hermetic unit tests: `withFirstBlockID` + `applyInsertPosition` (Go), the admin-secret middleware (Node).
+
+**Deferred / accepted (with rationale):**
+- The admin bridge defaults to a known shared secret on `0.0.0.0:3500` — fine for single-machine localhost, but **set `BLOCKNOTE_ADMIN_SHARED_SECRET` before any reachable deployment** (now warned at startup). A loopback-only bind was rejected because the Docker topology reaches the sidecar over the published port.
+- `blocksToSearchText` doesn't read table-cell text → table content is invisible to `search_pages`. Follow-up if pages start using tables.
+- `toolServer.pages` / the whole `PageDocumentService` (~215 lines) + the M7 page_content path are orphaned-but-present — removed in M8d.
+- A bare `get_page` on a never-edited page materializes an empty `page_ydoc` row (benign — the artifact exists, so it's just the empty doc the first edit would have created).
+- Both reviewers' verdict: the core mechanism is sound (persistence is durable before `applyOperation` returns; failure isolation is good; CRDT guarantees hold) — safe to dogfood on a single trusted local machine.
 
 ## The crossws finding (corrects the M8b.1 commit message)
 

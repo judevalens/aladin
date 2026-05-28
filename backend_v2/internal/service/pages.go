@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
-
-	"aladin/backend_v2/internal/blocknote"
 )
 
 type PageService interface {
@@ -57,31 +55,21 @@ func (s *DefaultPageService) Get(ctx context.Context, id string) (PageDocument, 
 	return toPageDocument(rec), nil
 }
 
-func (s *DefaultPageService) Save(ctx context.Context, id string, input PageSaveInput) (PageDocument, error) {
+// Save is an M8c seam guard. Page content is owned by the collaborative Y.Doc
+// (Hocuspocus), so a direct block write through PATCH /api/pages would diverge
+// from — or be clobbered by — the live doc + its projection. The editor edits
+// via the Y.Doc and agents via the MCP collab bridge. This path is dormant
+// (the editor no longer calls it; usePageState is orphaned) and is removed
+// wholesale in M8d; it is refused here meanwhile so it can never silently
+// clobber collab state.
+func (s *DefaultPageService) Save(ctx context.Context, id string, _ PageSaveInput) (PageDocument, error) {
 	if err := RequireScope(ctx, ScopeArtifactsWrite); err != nil {
 		return PageDocument{}, err
 	}
 	if _, err := s.pageArtifact(ctx, id); err != nil {
 		return PageDocument{}, err
 	}
-	if !looksLikeJSONArray(input.Blocks) {
-		return PageDocument{}, BadRequest("blocks must be a JSON array")
-	}
-	searchText, err := blocknote.ExtractText(input.Blocks)
-	if err != nil {
-		return PageDocument{}, BadRequest("blocks: " + err.Error())
-	}
-	if _, err := s.repo.SavePageBlocks(ctx, id, input.Blocks, searchText, input.Revision); err != nil {
-		return PageDocument{}, err
-	}
-
-	updated, err := s.pageArtifact(ctx, id)
-	if err != nil {
-		return PageDocument{}, err
-	}
-	page := toPageDocument(updated)
-	s.publishWorkspaceEvent(ctx, "page", page.ID, "updated", page)
-	return page, nil
+	return PageDocument{}, BadRequest("page blocks are edited collaboratively, not via PATCH /api/pages")
 }
 
 func (s *DefaultPageService) pageArtifact(ctx context.Context, id string) (ArtifactResponse, error) {
