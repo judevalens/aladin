@@ -33,9 +33,15 @@ export function createRuntimeConfig(): ApiRuntimeConfig {
     DEFAULT_DESKTOP_API_BASE_URL;
   const apiBaseUrl = desktop ? desktopApiBaseUrl : webApiBaseUrl;
 
+  // Collab runs as its own Hocuspocus server on a separate port (M8b),
+  // default ws://localhost:3501 in dev. Override with VITE_COLLAB_WS_URL.
+  const collabWsBaseUrl =
+    normalizeBaseUrl(import.meta.env.VITE_COLLAB_WS_URL) || "ws://localhost:3501";
+
   return {
     isDesktopApp: desktop,
     apiBaseUrl,
     websocketBaseUrl: toWebsocketBaseUrl(apiBaseUrl),
+    collabWsBaseUrl,
   };
 }

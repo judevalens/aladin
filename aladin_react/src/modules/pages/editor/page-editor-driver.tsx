@@ -1,146 +1,87 @@
-import type { PartialBlock } from "@blocknote/core";
 import { useCreateBlockNote } from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/shadcn";
-import { Component, type ReactNode, useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
-import type { PageEditorMode } from "@/modules/pages/domain";
-import type { BlockNoteDocument } from "@/shared/api/models";
+import { HocuspocusProvider } from "@hocuspocus/provider";
+import { useEffect, useState } from "react";
+import { IndexeddbPersistence } from "y-indexeddb";
+import * as Y from "yjs";
 import "@blocknote/shadcn/style.css";
 
 export interface PageEditorDriverProps {
   pageId: string;
-  initialBlocks: BlockNoteDocument;
-  mode: PageEditorMode;
-  blockNoteError: string | null;
-  editorBoundaryKey: number;
-  onDraftChange: (blocks: BlockNoteDocument) => void;
-  onBlur: () => void;
-  onRetryRichEditor: () => void;
-  onDriverError: (error: unknown) => void;
+  collabWsUrl: string;
+  token: string;
+  user: { name: string; color: string };
 }
 
-interface BlockNoteRuntimeBoundaryProps {
-  fallback: ReactNode;
-  onError: (error: Error) => void;
-  children: ReactNode;
+interface CollabResources {
+  ydoc: Y.Doc;
+  provider: HocuspocusProvider;
+  idb: IndexeddbPersistence;
 }
 
-class BlockNoteRuntimeBoundary extends Component<
-  BlockNoteRuntimeBoundaryProps,
-  { hasError: boolean }
-> {
-  state = { hasError: false };
-
-  static getDerivedStateFromError() {
-    return { hasError: true };
-  }
-
-  componentDidCatch(error: Error) {
-    this.props.onError(error);
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return this.props.fallback;
-    }
-
-    return this.props.children;
-  }
-}
-
-function asPartialBlocks(blocks: BlockNoteDocument): PartialBlock[] {
-  // The wire format is unknown[]; BlockNote's editor accepts PartialBlock[]
-  // structurally. We cast at this single boundary so the rest of the app
-  // doesn't need to know BlockNote's internal types.
-  return blocks as PartialBlock[];
-}
-
+// Collaborative BlockNote editor (M8). The editor binds to a Y.Doc that is
+// kept in sync two ways:
+//   - y-indexeddb: local-first durability (offline edits survive restarts)
+//   - HocuspocusProvider: real-time sync with the collab server + other clients
+//
+// Content is no longer loaded/saved through the API (M7 path) — Yjs owns it.
+// The Y.Doc hydrates the editor; edits stream to both providers automatically.
+//
+// IMPORTANT: the parent must mount this with `key={pageId}` so a page switch
+// fully remounts the component — resources are created once per mount in the
+// useState initializer and torn down in the useEffect cleanup.
 export function BlockNotePageEditorDriver({
   pageId,
-  initialBlocks,
-  mode,
-  blockNoteError,
-  editorBoundaryKey,
-  onDraftChange,
-  onBlur,
-  onRetryRichEditor,
-  onDriverError,
+  collabWsUrl,
+  token,
+  user,
 }: PageEditorDriverProps) {
-  const editor = useCreateBlockNote({}, [pageId, editorBoundaryKey]);
-  const [fallbackJSON, setFallbackJSON] = useState(() =>
-    JSON.stringify(initialBlocks, null, 2),
-  );
+  // Created once per mount (key={pageId} guarantees one page per mount).
+  const [resources] = useState<CollabResources>(() => {
+    const ydoc = new Y.Doc();
+    const idb = new IndexeddbPersistence(`page-${pageId}`, ydoc);
+    const provider = new HocuspocusProvider({
+      url: collabWsUrl,
+      name: pageId,
+      document: ydoc,
+      token,
+    });
+    return { ydoc, provider, idb };
+  });
 
   useEffect(() => {
-    setFallbackJSON(JSON.stringify(initialBlocks, null, 2));
-  }, [initialBlocks, pageId, editorBoundaryKey, mode]);
+    const { ydoc, provider, idb } = resources;
+    return () => {
+      provider.destroy();
+      void idb.destroy();
+      ydoc.destroy();
+    };
+  }, [resources]);
 
-  useEffect(() => {
-    if (mode !== "blocknote") return;
-    try {
-      const blocks = asPartialBlocks(initialBlocks);
-      if (blocks.length === 0) {
-        editor.replaceBlocks(editor.document, [{ type: "paragraph" }]);
-      } else {
-        editor.replaceBlocks(editor.document, blocks);
-      }
-    } catch (error) {
-      onDriverError(error);
-    }
-  }, [editor, initialBlocks, mode, onDriverError]);
-
-  if (mode === "markdown-fallback") {
-    return (
-      <div className="flex min-h-[520px] flex-1 flex-col">
-        <div className="flex items-center justify-between gap-4 border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          <div className="space-y-1">
-            <div className="font-medium">
-              The rich editor is unavailable for this page.
-            </div>
-            <div className="text-xs leading-5 text-amber-700">
-              {blockNoteError ??
-                "Editing is read-only until BlockNote recovers."}
-            </div>
-          </div>
-          <Button variant="secondary" size="sm" onClick={onRetryRichEditor}>
-            Retry editor
-          </Button>
-        </div>
-        <textarea
-          readOnly
-          className="min-h-0 flex-1 resize-none border-0 bg-transparent px-5 py-4 font-mono text-xs leading-6 text-black outline-none"
-          value={fallbackJSON}
-        />
-      </div>
-    );
-  }
+  const editor = useCreateBlockNote({
+    collaboration: {
+      // BlockNote only reads `.awareness` off the provider (document sync
+      // rides the fragment). HocuspocusProvider.awareness is typed
+      // `Awareness | null` but is always an Awareness instance at runtime;
+      // assert non-null to bridge BlockNote's `| undefined` type.
+      provider: resources.provider as HocuspocusProvider & {
+        awareness: NonNullable<HocuspocusProvider["awareness"]>;
+      },
+      fragment: resources.ydoc.getXmlFragment("document"),
+      user,
+    },
+  });
 
   return (
-    <div
-      className="relative flex min-h-0 flex-1 flex-col"
-      onBlurCapture={onBlur}
-    >
+    <div className="relative flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto px-8 py-4">
-        <BlockNoteRuntimeBoundary
-          key={`${pageId}:${editorBoundaryKey}`}
-          onError={onDriverError}
-          fallback={
-            <div className="border border-gray-300 bg-white px-4 py-3 text-sm text-gray-700">
-              Switching to read-only JSON view…
-            </div>
-          }
-        >
-          <BlockNoteView
-            editor={editor}
-            slashMenu={true}
-            formattingToolbar={true}
-            linkToolbar={true}
-            onChange={() => {
-              onDraftChange(editor.document as BlockNoteDocument);
-            }}
-            theme="light"
-          />
-        </BlockNoteRuntimeBoundary>
+        <BlockNoteView
+          editor={editor}
+          slashMenu={true}
+          formattingToolbar={true}
+          linkToolbar={true}
+          theme="light"
+        />
       </div>
     </div>
   );

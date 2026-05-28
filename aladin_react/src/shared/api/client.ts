@@ -33,6 +33,8 @@ export interface ApiRuntimeConfig {
   isDesktopApp: boolean;
   apiBaseUrl: string;
   websocketBaseUrl: string;
+  // Hocuspocus collab WebSocket base (separate port/service from the API).
+  collabWsBaseUrl: string;
 }
 
 export interface SessionTokenStore {
