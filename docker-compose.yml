@@ -66,9 +66,9 @@ services:
     depends_on:
       - loki
 
-  blocknote-converter:
-    build: ./services/blocknote-converter
-    container_name: aladin-blocknote-converter
+  blocknote:
+    build: ./services/blocknote
+    container_name: aladin-blocknote
     ports:
       - "3500:3500"
     environment:
