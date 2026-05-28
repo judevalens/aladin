@@ -1,0 +1,18 @@
+{
+  "name": "blocknote",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Combined Node service for Aladin: markdown <-> BlockNote conversion (M8a), Hocuspocus collab (M8b), MCP admin bridge (M8c). Must pin @blocknote/* + yjs to the same versions as aladin_react/.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@blocknote/core": "0.51.0",
+    "@blocknote/server-util": "0.51.0",
+    "express": "^4.21.2",
+    "jsdom": "^25.0.1"
+  }
+}
