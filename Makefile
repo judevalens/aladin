@@ -1,4 +1,4 @@
-.PHONY: help backend mcp blocknote blocknote-test check-blocknote-versions db-up db-down nango-up nango-down nango-logs env-nango ngrok-ensure worker-go api-go artifact-spa-build ops-status ops-errors ops-streams ops-queues ops-force-stream ops-reset-stuck-cycles
+.PHONY: help backend mcp blocknote blocknote-test check-blocknote-versions nuke-local-db db-up db-down nango-up nango-down nango-logs env-nango ngrok-ensure worker-go api-go artifact-spa-build ops-status ops-errors ops-streams ops-queues ops-force-stream ops-reset-stuck-cycles
 
 help: ## List available make targets
 	@awk 'BEGIN {FS = ":.*## "; printf "Available targets:\n"} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-24s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -17,6 +17,9 @@ blocknote-test: ## Run the blocknote Node service unit tests
 
 check-blocknote-versions: ## Fail if @blocknote/* + yjs versions drift between aladin_react and services/blocknote
 	bash scripts/check-blocknote-versions.sh
+
+nuke-local-db: ## Wipe the Tauri local SQLite when a schema change breaks the local cache (close the app first; FORCE=1 to override)
+	bash scripts/nuke-local-db.sh
 
 db-up: ## Start local Docker infrastructure
 	docker compose up -d
