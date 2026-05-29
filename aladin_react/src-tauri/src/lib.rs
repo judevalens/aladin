@@ -37,6 +37,12 @@ pub fn run() {
             sync.register_event_subscriber(std::sync::Arc::new(
                 PageContentEventSubscriber::default(),
             ));
+            // Subscribe the websocket to workspace tree events so the server's
+            // post-push poke is delivered → triggers an immediate pull (the new
+            // realtime convergence path). Applies nothing itself.
+            sync.register_event_subscriber(std::sync::Arc::new(
+                crate::sync::poke::WorkspacePokeSubscriber,
+            ));
             sync.start_polling(db.clone(), events.clone());
             sync.start_realtime(db.clone(), events.clone());
             sync.start_pull_polling(db.clone(), events.clone());

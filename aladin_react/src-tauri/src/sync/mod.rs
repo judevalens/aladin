@@ -17,6 +17,7 @@ use crate::{
     realtime::{self, BackendEventProcessor, EventSubscriber},
 };
 
+pub mod poke;
 pub mod pull;
 pub mod push;
 
