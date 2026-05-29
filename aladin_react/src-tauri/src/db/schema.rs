@@ -2,7 +2,7 @@ use rusqlite::Connection;
 
 use super::DbResult;
 
-const CURRENT_VERSION: i32 = 8;
+const CURRENT_VERSION: i32 = 9;
 
 pub fn migrate(conn: &Connection) -> DbResult<()> {
     let version: i32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
@@ -29,6 +29,9 @@ pub fn migrate(conn: &Connection) -> DbResult<()> {
     }
     if version < 8 {
         conn.execute_batch(MIGRATION_V8)?;
+    }
+    if version < 9 {
+        conn.execute_batch(MIGRATION_V9)?;
     }
     conn.execute_batch(&format!("PRAGMA user_version = {CURRENT_VERSION};"))?;
     Ok(())
@@ -147,4 +150,51 @@ CREATE TABLE IF NOT EXISTS page_content (
     version INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS page_content_sync_status ON page_content(sync_status);
+";
+
+// Data-layer redesign, Phase 0 (client control plane). Plan:
+// ~/.claude/plans/data-layer-sync-model.md. Additive — the legacy
+// outbox_mutations/backend_events + folders/artifacts sync_status/version stay
+// until cutover. Confirmed field VALUES keep living in the existing typed
+// tables (folders/artifacts/...); these tables add only the sync control plane:
+//   - field_seq:        per-(entity,field) newest-wins comparator (the seq guard)
+//   - field_intent:     field-level offline intents (value read from the typed
+//                       table at send; coalesce = set-membership per key)
+//   - existence_intent: create/delete intents (linear lifecycle, terminal delete)
+// client_id, the reconnect cursor, and next_local_seq live in sync_state (KV),
+// seeded by Rust at startup.
+const MIGRATION_V9: &str = "
+CREATE TABLE IF NOT EXISTS field_seq (
+    entity_kind TEXT NOT NULL,
+    entity_id   TEXT NOT NULL,
+    field       TEXT NOT NULL,
+    seq         INTEGER NOT NULL,
+    PRIMARY KEY (entity_kind, entity_id, field)
+);
+
+CREATE TABLE IF NOT EXISTS field_intent (
+    entity_kind     TEXT NOT NULL,
+    entity_id       TEXT NOT NULL,
+    field           TEXT NOT NULL,
+    dirty_version   INTEGER NOT NULL,
+    state           TEXT NOT NULL DEFAULT 'PENDING',  -- PENDING | IN_FLIGHT | FAILED_RETRYABLE
+    client_write_id TEXT,                              -- minted per dirty_version at first send
+    local_seq       INTEGER NOT NULL,                  -- monotonic enqueue order (no timestamps)
+    updated_at      INTEGER NOT NULL,
+    PRIMARY KEY (entity_kind, entity_id, field)
+);
+CREATE INDEX IF NOT EXISTS field_intent_state ON field_intent(state, local_seq);
+
+CREATE TABLE IF NOT EXISTS existence_intent (
+    entity_kind     TEXT NOT NULL,
+    entity_id       TEXT NOT NULL,
+    kind            TEXT NOT NULL,                      -- CREATE | DELETE
+    intent_version  INTEGER NOT NULL,
+    state           TEXT NOT NULL DEFAULT 'PENDING',
+    client_write_id TEXT,
+    local_seq       INTEGER NOT NULL,
+    updated_at      INTEGER NOT NULL,
+    PRIMARY KEY (entity_kind, entity_id)
+);
+CREATE INDEX IF NOT EXISTS existence_intent_state ON existence_intent(state, local_seq);
 ";
