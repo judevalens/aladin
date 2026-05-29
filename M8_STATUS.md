@@ -3,7 +3,7 @@
 Branches: `m8a-collab-foundation` (foundation) → `m8b-collab-online` (collab).
 Plan: `~/.claude/plans/yjs-collab-pages.md`.
 
-**M8a + M8b + M8c are code-complete and tested.** M8b's browser behavior is **verified** — you confirmed live editing + persistence across a full server+client restart; collab broadcast + the projection are now regression-tested in `test/collab.test.js`. **M8c (MCP collab bridge) shipped**: agent edits route through the live Y.Doc, broadcast to open editors, and project to `page_documents`. M8d (cleanup) is not started.
+**M8a + M8b + M8c are code-complete and tested.** M8b's browser behavior is **verified** — live multi-client editing **and** awareness (cursors) confirmed across two independent desktop clients (`make tauri-client-b`), plus persistence across a full server+client restart; collab broadcast + the projection are also regression-tested in `test/collab.test.js`. **M8c (MCP collab bridge) shipped**: agent edits route through the live Y.Doc, broadcast to open editors, and project to `page_documents`. M8d (cleanup) is not started.
 
 ## What shipped
 
@@ -92,7 +92,9 @@ Run everything, then:
 ```
 docker compose up -d postgres blocknote        # converter :3500 + collab :3501
 make backend                                    # Go API :8000 (serves /api/auth/resolve)
-cd aladin_react && npm run tauri dev            # desktop app
+cd aladin_react && npm run tauri:dev           # desktop app (instance #1)
+# 2nd client for collab testing (own identity → own login, same user):
+make tauri-client-b
 # verify: go test ./..., npm test, COLLAB_IT=1 node --test --test-force-exit services/blocknote/test/collab.test.js
 ```
 
@@ -121,6 +123,7 @@ b4fbe7f M8b.3/.4/.5: frontend editor → collaborative Y.Doc (Hocuspocus + Index
 
 ## Next
 
+- **Next focus — data-layer model (new branch `data-layer-model`)**: the workspace-tree / metadata realtime sync is **race-prone and non-convergent**. Symptoms seen across two clients: a new note doesn't appear on the other client; a folder's *first* rename propagates but later ones stay local; two clients ended with the same folder under **different names and stayed split after rebooting both**; a page can appear before its node. Root cause: optimistic local-first writes + incremental in-memory event application with **no versioned, idempotent, authoritative reconciliation** — eventual consistency with no convergence guarantee. Page *content* got a CRDT (Yjs); the *tree/metadata* never did. Target model: **server-authoritative, versioned, idempotent reconciliation** — local store is a reconciled cache (not a divergent replica), reconcile on load/reconnect, LWW by server version. Plan to be written on the branch. (The artifact-create band-aid in `workspace-sync-service.ts` lives on that branch, not in `main`.)
 - **You**: end-to-end MCP smoke — with the sidecar (`make blocknote`) + API (`make backend`) up, point Claude Code/Codex at the MCP server, create/edit a page via the tools, and watch it appear live in an open editor. (Optional: the `-tags integration` E2E — but it TRUNCATEs page data.)
 - **Then M8d**: delete the M7 content path after a dogfood window — `page-repo.savePage`, `usePageState` drafts, Rust `page_content`, the `PATCH /api/pages` handler, and the now-dead `toolServer.pages` / `PageDocumentService` wiring.
 - **Later (M12)**: `artifacts.content` → per-type canonical content tables (generalize the pages pattern; see `~/.claude/plans/yjs-collab-pages.md`).
