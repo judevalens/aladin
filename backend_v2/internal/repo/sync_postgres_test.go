@@ -196,3 +196,90 @@ func TestSyncChangeFeed_FolderRenameEmitsChange(t *testing.T) {
 		t.Fatalf("unexpected change: %+v (value=%s)", c, string(c.Value))
 	}
 }
+
+// Artifact create emits create + core fields; delete emits a tombstone.
+func TestSyncChangeFeed_ArtifactCreateAndDelete(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "postgres://aladin:password@localhost:5433/aladin?sslmode=disable"
+	}
+	pool, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		t.Skipf("postgres not reachable: %v", err)
+	}
+	defer pool.Close()
+	if err := pool.Ping(ctx); err != nil {
+		t.Skipf("postgres ping failed: %v", err)
+	}
+	if err := db.Migrate(ctx, pool); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	const artifactID = "test-sync-artifact-A"
+	cleanup := func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM workspace_changes WHERE user_id = $1 AND entity_id = $2`, testAdminUserID, artifactID)
+		_, _ = pool.Exec(ctx, `DELETE FROM artifacts WHERE id = $1 AND user_id = $2::uuid`, artifactID, testAdminUserID)
+		_, _ = pool.Exec(ctx, `DELETE FROM tree_nodes WHERE id = $1 AND user_id = $2::uuid`, artifactID, testAdminUserID)
+	}
+	cleanup()
+	defer cleanup()
+
+	r := NewArtifactsPostgres(pool)
+	sync := NewSyncPostgres(pool)
+	pctx := coreservice.WithPrincipal(ctx, coreservice.Principal{
+		UserID: testAdminUserID, ActorType: coreservice.ActorTypeUserSession, ActorID: testAdminUserID,
+	})
+
+	var cursor0 int64
+	if err := pool.QueryRow(ctx, `SELECT COALESCE(MAX(seq),0) FROM workspace_changes WHERE user_id=$1`, testAdminUserID).Scan(&cursor0); err != nil {
+		t.Fatalf("cursor0: %v", err)
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	rec := coreservice.ArtifactResponse{ID: artifactID, Type: "note", Title: "Hello", Content: "", Metadata: map[string]any{}, CreatedAt: now, UpdatedAt: now}
+	node := coreservice.TreeNodeRecord{ID: artifactID, ParentID: nil, Kind: "artifact", Title: nil, ArtifactID: strptr(artifactID), Position: 9000002}
+	if err := r.CreateArtifactGraph(pctx, rec, node, nil, ""); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	res, err := sync.PullDelta(ctx, testAdminUserID, cursor0)
+	if err != nil {
+		t.Fatalf("pull: %v", err)
+	}
+	var sawCreate bool
+	fields := map[string]string{}
+	for _, c := range res.Changes {
+		if c.EntityKind != "artifact" || c.EntityID != artifactID {
+			t.Fatalf("unexpected change entity: %+v", c)
+		}
+		if c.Op == OpCreate {
+			sawCreate = true
+		} else if c.Field != nil {
+			fields[*c.Field] = strings.TrimSpace(string(c.Value))
+		}
+	}
+	if !sawCreate {
+		t.Fatalf("missing create op: %+v", res.Changes)
+	}
+	if fields["title"] != `"Hello"` || fields["type"] != `"note"` {
+		t.Fatalf("create fields wrong: %v", fields)
+	}
+	if _, ok := fields["parentId"]; !ok {
+		t.Fatalf("missing parentId field: %v", fields)
+	}
+
+	// Delete → tombstone.
+	if err := r.DeleteArtifact(pctx, artifactID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	res2, err := sync.PullDelta(ctx, testAdminUserID, res.Cursor)
+	if err != nil {
+		t.Fatalf("pull2: %v", err)
+	}
+	if len(res2.Changes) != 1 || res2.Changes[0].Op != OpDelete || res2.Changes[0].EntityID != artifactID {
+		t.Fatalf("expected single delete tombstone, got: %+v", res2.Changes)
+	}
+}

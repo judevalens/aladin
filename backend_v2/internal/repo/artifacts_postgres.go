@@ -20,6 +20,43 @@ func NewArtifactsPostgres(pool *pgxpool.Pool) *PostgresArtifactRepository {
 	return &PostgresArtifactRepository{pool: pool}
 }
 
+// withUserTx runs fn in a transaction that holds the per-user advisory lock, so
+// any AppendChange inside gets a seq visible in commit order (DL Phase A — the
+// entity write and its change-feed rows commit atomically). The legacy realtime
+// event path is untouched; the feed is additive until cutover.
+func (r *PostgresArtifactRepository) withUserTx(ctx context.Context, fn func(tx pgx.Tx, userID string) error) error {
+	userID, err := r.userID(ctx)
+	if err != nil {
+		return err
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := LockUser(ctx, tx, userID); err != nil {
+		return err
+	}
+	if err := fn(tx, userID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// appendField emits one field-level change row for the given entity kind
+// (DL Phase A mapping: kind ∈ {"folder","artifact"}; value JSON-encoded).
+func appendField(ctx context.Context, tx pgx.Tx, userID, kind, entityID, field string, value any) error {
+	v, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	f := field
+	_, err = AppendChange(ctx, tx, userID, Change{
+		EntityKind: kind, EntityID: entityID, Op: OpUpdate, Field: &f, Value: v,
+	})
+	return err
+}
+
 func (r *PostgresArtifactRepository) ListArtifacts(ctx context.Context, params artifactservice.ArtifactListParams) ([]artifactservice.ArtifactResponse, error) {
 	userID, err := r.userID(ctx)
 	if err != nil {
@@ -169,6 +206,10 @@ func (r *PostgresArtifactRepository) CreateArtifactGraph(ctx context.Context, re
 		_ = tx.Rollback(ctx)
 	}()
 
+	if err := LockUser(ctx, tx, userID); err != nil {
+		return err
+	}
+
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO artifacts (
 		    id, user_id, type, title, content, summary, source_url, metadata, created_at, updated_at
@@ -196,37 +237,85 @@ func (r *PostgresArtifactRepository) CreateArtifactGraph(ctx context.Context, re
 		return err
 	}
 
+	// DL Phase A: emit the artifact create + its core fields (artifact entity).
+	if _, err := AppendChange(ctx, tx, userID, Change{
+		EntityKind: "artifact", EntityID: rec.ID, Op: OpCreate,
+	}); err != nil {
+		return err
+	}
+	if err := appendField(ctx, tx, userID, "artifact", rec.ID, "title", rec.Title); err != nil {
+		return err
+	}
+	if err := appendField(ctx, tx, userID, "artifact", rec.ID, "type", rec.Type); err != nil {
+		return err
+	}
+	if err := appendField(ctx, tx, userID, "artifact", rec.ID, "parentId", node.ParentID); err != nil {
+		return err
+	}
+	if err := appendField(ctx, tx, userID, "artifact", rec.ID, "position", node.Position); err != nil {
+		return err
+	}
+
 	return tx.Commit(ctx)
 }
 
 func (r *PostgresArtifactRepository) UpdateArtifact(ctx context.Context, id string, patch artifactservice.ArtifactPatch) error {
-	userID, err := r.userID(ctx)
-	if err != nil {
-		return err
-	}
-	metadataJSON := any(nil)
-	if patch.Metadata != nil {
-		raw, _ := json.Marshal(*patch.Metadata)
-		metadataJSON = string(raw)
-	}
-	tag, err := r.pool.Exec(ctx, `
-		UPDATE artifacts
-		   SET type = COALESCE($3, type),
-		       title = COALESCE($4, title),
-		       content = COALESCE($5, content),
-		       summary = COALESCE($6, summary),
-		       source_url = COALESCE($7, source_url),
-		       metadata = COALESCE($8::jsonb, metadata),
-		       updated_at = now()
-		 WHERE id = $1 AND user_id = $2::uuid
-	`, id, userID, patch.Type, patch.Title, patch.Content, patch.Summary, patch.SourceURL, metadataJSON)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return artifactservice.ErrNotFound
-	}
-	return nil
+	return r.withUserTx(ctx, func(tx pgx.Tx, userID string) error {
+		metadataJSON := any(nil)
+		if patch.Metadata != nil {
+			raw, _ := json.Marshal(*patch.Metadata)
+			metadataJSON = string(raw)
+		}
+		tag, err := tx.Exec(ctx, `
+			UPDATE artifacts
+			   SET type = COALESCE($3, type),
+			       title = COALESCE($4, title),
+			       content = COALESCE($5, content),
+			       summary = COALESCE($6, summary),
+			       source_url = COALESCE($7, source_url),
+			       metadata = COALESCE($8::jsonb, metadata),
+			       updated_at = now()
+			 WHERE id = $1 AND user_id = $2::uuid
+		`, id, userID, patch.Type, patch.Title, patch.Content, patch.Summary, patch.SourceURL, metadataJSON)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return artifactservice.ErrNotFound
+		}
+		// Emit a change row per patched field (artifact entity).
+		if patch.Type != nil {
+			if err := appendField(ctx, tx, userID, "artifact", id, "type", *patch.Type); err != nil {
+				return err
+			}
+		}
+		if patch.Title != nil {
+			if err := appendField(ctx, tx, userID, "artifact", id, "title", *patch.Title); err != nil {
+				return err
+			}
+		}
+		if patch.Content != nil {
+			if err := appendField(ctx, tx, userID, "artifact", id, "content", *patch.Content); err != nil {
+				return err
+			}
+		}
+		if patch.Summary != nil {
+			if err := appendField(ctx, tx, userID, "artifact", id, "summary", *patch.Summary); err != nil {
+				return err
+			}
+		}
+		if patch.SourceURL != nil {
+			if err := appendField(ctx, tx, userID, "artifact", id, "sourceUrl", *patch.SourceURL); err != nil {
+				return err
+			}
+		}
+		if patch.Metadata != nil {
+			if err := appendField(ctx, tx, userID, "artifact", id, "metadata", *patch.Metadata); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (r *PostgresArtifactRepository) CreatePageDocument(ctx context.Context, artifactID string, blocks json.RawMessage, searchText string) error {
@@ -357,21 +446,24 @@ func (r *PostgresArtifactRepository) GetPageBlocks(ctx context.Context, artifact
 }
 
 func (r *PostgresArtifactRepository) DeleteArtifact(ctx context.Context, id string) error {
-	userID, err := r.userID(ctx)
-	if err != nil {
+	return r.withUserTx(ctx, func(tx pgx.Tx, userID string) error {
+		tag, err := tx.Exec(ctx, `
+			DELETE FROM artifacts
+			 WHERE id = $1 AND user_id = $2::uuid
+		`, id, userID)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return artifactservice.ErrNotFound
+		}
+		// Tombstone (entity-level delete). Deleting the artifact cascades to its
+		// tree_node; the client drops the artifact + its placement.
+		_, err = AppendChange(ctx, tx, userID, Change{
+			EntityKind: "artifact", EntityID: id, Op: OpDelete,
+		})
 		return err
-	}
-	tag, err := r.pool.Exec(ctx, `
-		DELETE FROM artifacts
-		 WHERE id = $1 AND user_id = $2::uuid
-	`, id, userID)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return artifactservice.ErrNotFound
-	}
-	return nil
+	})
 }
 
 func (r *PostgresArtifactRepository) ListFolders(ctx context.Context, parentID *string) ([]artifactservice.FolderNode, error) {
@@ -502,15 +594,29 @@ func (r *PostgresArtifactRepository) NextNodePosition(ctx context.Context, paren
 }
 
 func (r *PostgresArtifactRepository) CreateTreeNode(ctx context.Context, node artifactservice.TreeNodeRecord) error {
-	userID, err := r.userID(ctx)
-	if err != nil {
-		return err
-	}
-	_, err = r.pool.Exec(ctx, `
-		INSERT INTO tree_nodes (id, user_id, parent_id, kind, title, artifact_id, position, created_at, updated_at)
-		VALUES ($1, $2::uuid, $3, $4, $5, $6, $7, now(), now())
-	`, node.ID, userID, node.ParentID, node.Kind, node.Title, node.ArtifactID, node.Position)
-	return err
+	return r.withUserTx(ctx, func(tx pgx.Tx, userID string) error {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO tree_nodes (id, user_id, parent_id, kind, title, artifact_id, position, created_at, updated_at)
+			VALUES ($1, $2::uuid, $3, $4, $5, $6, $7, now(), now())
+		`, node.ID, userID, node.ParentID, node.Kind, node.Title, node.ArtifactID, node.Position); err != nil {
+			return err
+		}
+		// Folder (or bare node) create. kind = node.Kind ∈ {"folder","artifact"}.
+		if _, err := AppendChange(ctx, tx, userID, Change{
+			EntityKind: node.Kind, EntityID: node.ID, Op: OpCreate,
+		}); err != nil {
+			return err
+		}
+		if node.Title != nil {
+			if err := appendField(ctx, tx, userID, node.Kind, node.ID, "title", *node.Title); err != nil {
+				return err
+			}
+		}
+		if err := appendField(ctx, tx, userID, node.Kind, node.ID, "parentId", node.ParentID); err != nil {
+			return err
+		}
+		return appendField(ctx, tx, userID, node.Kind, node.ID, "position", node.Position)
+	})
 }
 
 func (r *PostgresArtifactRepository) DeleteBrowserNode(ctx context.Context, id string) error {
@@ -583,30 +689,32 @@ func (r *PostgresArtifactRepository) DeleteBrowserNode(ctx context.Context, id s
 }
 
 func (r *PostgresArtifactRepository) UpdateArtifactNodeParent(ctx context.Context, artifactID string, parentID *string) error {
-	userID, err := r.userID(ctx)
-	if err != nil {
-		return err
-	}
 	position, err := r.NextNodePosition(ctx, parentID)
 	if err != nil {
 		return err
 	}
-	tag, err := r.pool.Exec(ctx, `
-		UPDATE tree_nodes
-		   SET parent_id = $3,
-		       position = $4,
-		       updated_at = now()
-		 WHERE id = $1
-		   AND user_id = $2::uuid
-		   AND kind = 'artifact'
-	`, artifactID, userID, parentID, position)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return artifactservice.ErrNotFound
-	}
-	return nil
+	return r.withUserTx(ctx, func(tx pgx.Tx, userID string) error {
+		tag, err := tx.Exec(ctx, `
+			UPDATE tree_nodes
+			   SET parent_id = $3,
+			       position = $4,
+			       updated_at = now()
+			 WHERE id = $1
+			   AND user_id = $2::uuid
+			   AND kind = 'artifact'
+		`, artifactID, userID, parentID, position)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return artifactservice.ErrNotFound
+		}
+		// A move changes placement (artifact entity): parentId + position.
+		if err := appendField(ctx, tx, userID, "artifact", artifactID, "parentId", parentID); err != nil {
+			return err
+		}
+		return appendField(ctx, tx, userID, "artifact", artifactID, "position", position)
+	})
 }
 
 func (r *PostgresArtifactRepository) UpdateFolderTitle(ctx context.Context, id string, title string) error {
