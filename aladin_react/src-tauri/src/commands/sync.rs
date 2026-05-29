@@ -35,6 +35,17 @@ pub fn sync_drain_outbox(
     sync.drain_once(&db, &events)
 }
 
+/// Pulls the workspace change-feed delta and applies it into `nodes` on demand
+/// (Phase A read/convergence). Returns the number of changes applied.
+#[tauri::command]
+pub fn sync_pull_now(
+    db: State<'_, Db>,
+    events: State<'_, DataEventHub>,
+    sync: State<'_, SyncHandle>,
+) -> DbResult<usize> {
+    sync.pull_now(&db, &events)
+}
+
 #[tauri::command]
 pub fn db_refresh_workspace(
     db: State<'_, Db>,

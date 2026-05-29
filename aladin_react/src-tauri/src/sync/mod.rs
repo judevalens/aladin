@@ -17,6 +17,12 @@ use crate::{
     realtime::{self, BackendEventProcessor, EventSubscriber},
 };
 
+pub mod pull;
+
+/// How often the read/convergence loop pulls the change-feed delta. A stopgap
+/// until Phase C demotes the realtime websocket to a poke that triggers a pull.
+const PULL_INTERVAL_SECS: u64 = 3;
+
 #[derive(Debug, Clone)]
 pub struct SyncConfig {
     pub api_base_url: String,
@@ -53,6 +59,7 @@ struct SyncRuntimeState {
     outbox: Arc<dyn OutboxDao>,
     started: AtomicBool,
     realtime_started: AtomicBool,
+    pull_started: AtomicBool,
 }
 
 impl Default for SyncHandle {
@@ -73,6 +80,7 @@ impl Default for SyncRuntimeState {
             outbox: Arc::new(SqliteOutboxDao),
             started: AtomicBool::new(false),
             realtime_started: AtomicBool::new(false),
+            pull_started: AtomicBool::new(false),
         }
     }
 }
@@ -132,6 +140,37 @@ impl SyncHandle {
         }
         let sync = self.clone();
         thread::spawn(move || realtime::run_websocket_loop(sync, db, events));
+    }
+
+    /// Spawns the read/convergence loop: pulls the change-feed delta and applies
+    /// it into `nodes` on boot and every PULL_INTERVAL_SECS thereafter. This is
+    /// the mechanism that makes a client converge to server state (Phase A).
+    pub fn start_pull_polling(&self, db: Db, events: DataEventHub) {
+        if self.inner.pull_started.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let sync = self.clone();
+        thread::spawn(move || {
+            let api = crate::api::sync::SyncApi;
+            loop {
+                if let Some(config) = sync.get() {
+                    if let Err(error) = pull::pull_and_apply(&db, &events, &config, &api) {
+                        eprintln!("sync pull failed: {error}");
+                    }
+                }
+                thread::sleep(Duration::from_secs(PULL_INTERVAL_SECS));
+            }
+        });
+    }
+
+    /// Pulls and applies the change-feed delta once, on demand (e.g. on window
+    /// focus or right after a local write). Returns the number of changes
+    /// applied; a no-op when there is no configured session.
+    pub fn pull_now(&self, db: &Db, events: &DataEventHub) -> DbResult<usize> {
+        let Some(config) = self.get() else {
+            return Ok(0);
+        };
+        pull::pull_and_apply(db, events, &config, &crate::api::sync::SyncApi)
     }
 
     pub fn drain_once(&self, db: &Db, events: &DataEventHub) -> DbResult<usize> {

@@ -4,7 +4,7 @@ use serde::Serialize;
 use tauri::ipc::Channel;
 
 use crate::db::repo::{
-    artifacts::ArtifactRow, browser::BrowserNodeRow, page_content::PageContentRow,
+    artifacts::ArtifactRow, browser::BrowserNodeRow, nodes::NodeRow, page_content::PageContentRow,
 };
 
 #[derive(Debug, Clone, Serialize)]
@@ -16,6 +16,11 @@ pub enum DataEvent {
     ArtifactChanged(ArtifactRow),
     ArtifactDeleted(EntityDeletedEvent),
     PageContentChanged(PageContentRow),
+    // Data-layer redesign, Phase A — the unified `nodes` model. The pull engine
+    // emits these after applying a feed delta; the workspace UI reads `nodes`
+    // and patches its tree by id. NodeUpserted carries the full current row.
+    NodeUpserted(NodeRow),
+    NodeDeleted(EntityDeletedEvent),
 }
 
 #[derive(Debug, Clone, Serialize)]

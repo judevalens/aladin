@@ -37,6 +37,7 @@ pub fn run() {
             ));
             sync.start_polling(db.clone(), events.clone());
             sync.start_realtime(db.clone(), events.clone());
+            sync.start_pull_polling(db.clone(), events.clone());
             app.manage(db);
             app.manage(events);
             app.manage(sync);
@@ -65,6 +66,7 @@ pub fn run() {
             sync_cmd::sync_subscribe_data_events,
             sync_cmd::sync_set_session,
             sync_cmd::sync_drain_outbox,
+            sync_cmd::sync_pull_now,
             sync_cmd::db_refresh_workspace,
         ])
         .run(tauri::generate_context!())
