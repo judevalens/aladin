@@ -278,6 +278,25 @@ pub fn list_nodes(conn: &Connection) -> DbResult<Vec<NodeRow>> {
     rows.collect::<rusqlite::Result<Vec<_>>>().map_err(Into::into)
 }
 
+/// Next sibling position under `parent_id` (max+1), for a new local node — the
+/// server's tree_nodes has a unique (user, parent, position), so siblings must
+/// not collide.
+pub fn next_position(conn: &Connection, parent_id: Option<&str>) -> DbResult<i64> {
+    let next: i64 = match parent_id {
+        Some(p) => conn.query_row(
+            "SELECT COALESCE(MAX(position), 0) + 1 FROM nodes WHERE parent_id = ?1",
+            params![p],
+            |r| r.get(0),
+        )?,
+        None => conn.query_row(
+            "SELECT COALESCE(MAX(position), 0) + 1 FROM nodes WHERE parent_id IS NULL",
+            [],
+            |r| r.get(0),
+        )?,
+    };
+    Ok(next)
+}
+
 /// One node by id.
 pub fn get_node(conn: &Connection, id: &str) -> DbResult<Option<NodeRow>> {
     let mut stmt = conn.prepare(

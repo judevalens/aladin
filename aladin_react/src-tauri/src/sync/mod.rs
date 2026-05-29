@@ -18,6 +18,7 @@ use crate::{
 };
 
 pub mod pull;
+pub mod push;
 
 /// How often the read/convergence loop pulls the change-feed delta. A stopgap
 /// until Phase C demotes the realtime websocket to a poke that triggers a pull.
@@ -154,6 +155,11 @@ impl SyncHandle {
             let api = crate::api::sync::SyncApi;
             loop {
                 if let Some(config) = sync.get() {
+                    // Push local intents first (so the server has them), then pull
+                    // the converged delta (including our own echoes, idempotent).
+                    if let Err(error) = push::push_pending(&db, &events, &config, &api) {
+                        eprintln!("sync push failed: {error}");
+                    }
                     if let Err(error) = pull::pull_and_apply(&db, &events, &config, &api) {
                         eprintln!("sync pull failed: {error}");
                     }
@@ -163,14 +169,18 @@ impl SyncHandle {
         });
     }
 
-    /// Pulls and applies the change-feed delta once, on demand (e.g. on window
-    /// focus or right after a local write). Returns the number of changes
-    /// applied; a no-op when there is no configured session.
+    /// Runs one sync tick on demand (push pending intents, then pull + apply the
+    /// delta). Returns the number of changes applied; a no-op when there is no
+    /// configured session.
     pub fn pull_now(&self, db: &Db, events: &DataEventHub) -> DbResult<usize> {
         let Some(config) = self.get() else {
             return Ok(0);
         };
-        pull::pull_and_apply(db, events, &config, &crate::api::sync::SyncApi)
+        let api = crate::api::sync::SyncApi;
+        if let Err(error) = push::push_pending(db, events, &config, &api) {
+            eprintln!("sync push failed: {error}");
+        }
+        pull::pull_and_apply(db, events, &config, &api)
     }
 
     pub fn drain_once(&self, db: &Db, events: &DataEventHub) -> DbResult<usize> {
