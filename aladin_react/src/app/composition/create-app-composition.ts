@@ -11,7 +11,7 @@ import { createApiClient } from "@/shared/api/client";
 import { createDataEventsRepo } from "@/repos/data-events-repo";
 import { createLocalRepos } from "@/repos/local-repos";
 import { createLocalSyncRepo } from "@/repos/sync/local-sync-repo";
-import { rowToArtifact } from "@/repos/artifacts/artifact-mappers";
+import { nodeRowToArtifactRow, rowToArtifact } from "@/repos/artifacts/artifact-mappers";
 import * as authService from "@/services/auth/auth-service";
 import { AuthSessionService } from "@/services/auth/auth-session-service";
 import { WorkspaceService } from "@/services/workspace/workspace-service";
@@ -37,7 +37,7 @@ export function createAppComposition() {
     auth: createAuthRepo(apiClient),
     workspace: createWorkspaceRepo(
       local.repos.browser,
-      local.repos.artifacts,
+      local.repos.nodes,
       apiClient,
       localSync,
     ),
@@ -60,24 +60,22 @@ export function createAppComposition() {
 
   void dataEvents.connect();
   dataEvents.events().subscribe((event) => {
-    if (event.type === "browserNodeCreated") {
-      workspaceSync.handleBrowserNodeCreated(event.payload);
+    // Data-layer redesign, Phase A: the unified `nodes` model drives the tree.
+    // Any node change reconciles the whole tree from the authoritative local
+    // model (coalesced); an artifact node also refreshes its open work-pane
+    // view. The legacy browserNode*/artifact* events still fire from the old
+    // write path but are intentionally ignored here (removed at cutover).
+    if (event.type === "nodeUpserted") {
+      workspaceSync.handleNodeChanged();
+      if (event.payload.kind === "artifact") {
+        workspaceSync.publishArtifact(
+          rowToArtifact(apiClient, nodeRowToArtifactRow(event.payload)),
+        );
+      }
       return;
     }
-    if (event.type === "browserNodeUpdated") {
-      workspaceSync.handleBrowserNodeUpdated(event.payload);
-      return;
-    }
-    if (event.type === "browserNodeDeleted") {
-      workspaceSync.handleBrowserNodeDeleted(event.payload.id);
-      return;
-    }
-    if (event.type === "artifactChanged") {
-      workspaceSync.publishArtifact(rowToArtifact(apiClient, event.payload));
-      return;
-    }
-    if (event.type === "artifactDeleted") {
-      workspaceSync.handleArtifactDeleted(event.payload.id);
+    if (event.type === "nodeDeleted") {
+      workspaceSync.handleNodeChanged();
       return;
     }
     if (event.type === "pageContentChanged") {

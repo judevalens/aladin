@@ -1,6 +1,6 @@
 import type { ApiClient } from "@/shared/api/client";
 import type { Artifact, ArtifactKind } from "@/shared/api/models";
-import type { ArtifactRow } from "@/repos/local-repo-types";
+import type { ArtifactRow, NodeRow } from "@/repos/local-repo-types";
 
 export function artifactKindFromString(value: string | null | undefined): ArtifactKind {
   switch ((value ?? "").toLowerCase()) {
@@ -29,6 +29,30 @@ export function artifactToRow(artifact: Artifact, updatedAtMs: number): Artifact
     resourceUrl: artifact.resourceUrl ?? null,
     metadataJson: artifact.summary ? JSON.stringify({ summary: artifact.summary }) : null,
     updatedAt: updatedAtMs,
+    syncStatus: "SYNCED",
+    version: 0,
+  };
+}
+
+/**
+ * Adapts a unified `nodes` row (kind = "artifact") to the legacy ArtifactRow
+ * shape so it can flow through rowToArtifact for the work pane. The node id IS
+ * the artifact id; summary lives in its own column, folded back into metadata
+ * for rowToArtifact's summary parsing.
+ */
+export function nodeRowToArtifactRow(node: NodeRow): ArtifactRow {
+  return {
+    id: node.id,
+    folderId: node.parentId,
+    title: node.title ?? "",
+    kind: node.artifactType ?? "page",
+    content: node.content,
+    sourceUrl: node.sourceUrl,
+    resourceUrl: null,
+    metadataJson: node.summary
+      ? JSON.stringify({ summary: node.summary })
+      : node.metadataJson,
+    updatedAt: node.updatedAt,
     syncStatus: "SYNCED",
     version: 0,
   };

@@ -5,9 +5,9 @@ import type {
   UserArtifactCreateRequest,
   Artifact,
 } from "@/shared/api/models";
-import type { ArtifactRow, BrowserNodeRow } from "@/repos/local-repo-types";
+import type { BrowserNodeRow, NodeRow } from "@/repos/local-repo-types";
 import type { BrowserNodeRepo } from "@/repos/workspace/browser-node-repo";
-import type { ArtifactRowRepo } from "@/repos/artifacts/artifact-row-repo";
+import type { NodeRepo } from "@/repos/workspace/node-repo";
 import { artifactKindFromString, rowToArtifact } from "@/repos/artifacts/artifact-mappers";
 import type { ApiClient } from "@/shared/api/client";
 import type { LocalSyncRepo } from "@/repos/sync/local-sync-repo";
@@ -20,49 +20,64 @@ function fromBrowserNodeRow(row: BrowserNodeRow): FolderNode {
   };
 }
 
-function toLocalBrowserTree(
-  browserNodes: BrowserNodeRow[],
-  artifacts: ArtifactRow[],
-): BrowserTreeNode[] {
-  const folderNodes = new Map<string, BrowserTreeNode>();
-  const artifactRowsById = new Map(artifacts.map((row) => [row.id, row]));
-  const nodesById = new Map<string, BrowserTreeNode>();
-  browserNodes.forEach((row) => {
-    const node: BrowserTreeNode = {
+/**
+ * Materializes the nested browser tree from the flat, unified `nodes` rows.
+ * A node's artifact preview is derived from its own columns (no separate
+ * artifact join). Orphan- and cycle-tolerant: a node whose parent is missing,
+ * is not a folder, or whose ancestor chain loops is placed at the root so the
+ * tree always stays finite and renders.
+ */
+function toNodeTree(rows: NodeRow[]): BrowserTreeNode[] {
+  const byId = new Map<string, BrowserTreeNode>();
+  const folderIds = new Set<string>();
+  const parentOf = new Map<string, string | null>();
+
+  rows.forEach((row) => {
+    const isArtifact = row.kind.toLowerCase() === "artifact";
+    parentOf.set(row.id, row.parentId);
+    byId.set(row.id, {
       id: row.id,
       parentId: row.parentId,
-      kind: row.kind.toLowerCase() === "artifact" ? "artifact" : "folder",
-      title: row.title,
-      artifactId: row.artifactId ?? undefined,
-      artifactPreview:
-        row.kind.toLowerCase() === "artifact"
-          ? (() => {
-              const artifact = artifactRowsById.get(row.artifactId ?? row.id);
-              return {
-                id: row.artifactId ?? row.id,
-                title: row.title,
-                kind: artifactKindFromString(artifact?.kind),
-                updatedLabel: new Date(
-                  artifact?.updatedAt ?? row.updatedAt,
-                ).toISOString(),
-              };
-            })()
-          : undefined,
+      kind: isArtifact ? "artifact" : "folder",
+      title: row.title ?? "",
+      artifactId: isArtifact ? row.id : undefined,
+      artifactPreview: isArtifact
+        ? {
+            id: row.id,
+            title: row.title ?? "",
+            kind: artifactKindFromString(row.artifactType),
+            updatedLabel: new Date(row.updatedAt).toISOString(),
+          }
+        : undefined,
       children: [],
-    };
-    nodesById.set(row.id, node);
-    if (node.kind === "folder") {
-      folderNodes.set(row.id, node);
-    }
+    });
+    if (!isArtifact) folderIds.add(row.id);
   });
 
+  const inCycle = (id: string): boolean => {
+    const seen = new Set<string>();
+    let cur: string | null | undefined = id;
+    while (cur) {
+      if (seen.has(cur)) return true;
+      seen.add(cur);
+      cur = parentOf.get(cur) ?? null;
+    }
+    return false;
+  };
+
   const roots: BrowserTreeNode[] = [];
-  browserNodes.forEach((row) => {
-    const node = nodesById.get(row.id);
+  rows.forEach((row) => {
+    const node = byId.get(row.id);
     if (!node) return;
     const parentId = row.parentId;
-    if (parentId && folderNodes.has(parentId)) {
-      folderNodes.get(parentId)!.children.push(node);
+    if (
+      parentId &&
+      parentId !== row.id &&
+      folderIds.has(parentId) &&
+      byId.has(parentId) &&
+      !inCycle(row.id)
+    ) {
+      byId.get(parentId)!.children.push(node);
     } else {
       roots.push(node);
     }
@@ -74,6 +89,8 @@ export interface WorkspaceRepo {
   getBrowserTree(options?: {
     policy?: "local-first" | "remote";
   }): Promise<BrowserTreeNode[]>;
+  /** Reads the tree directly from the local `nodes` model (no remote fetch). */
+  getLocalNodeTree(): Promise<BrowserTreeNode[]>;
   createFolder(input: FolderCreateRequest): Promise<FolderNode>;
   createArtifact(input: UserArtifactCreateRequest): Promise<Artifact>;
   renameFolder(folderId: string, title: string): Promise<FolderNode>;
@@ -81,7 +98,7 @@ export interface WorkspaceRepo {
 
 export function createWorkspaceRepo(
   browser: BrowserNodeRepo,
-  artifacts: ArtifactRowRepo,
+  nodes: NodeRepo,
   client?: ApiClient,
   localSync?: LocalSyncRepo,
 ): WorkspaceRepo {
@@ -89,19 +106,17 @@ export function createWorkspaceRepo(
     return crypto.randomUUID();
   }
 
+  // Data-layer redesign: the tree is materialized from the unified local
+  // `nodes` model — converged by the pull engine and local-write mirrors.
   async function getLocalTree() {
-    const [browserNodes, artifactRows] = await Promise.all([
-      browser.listNodes(),
-      artifacts.listAll(),
-    ]);
-    return toLocalBrowserTree(browserNodes, artifactRows);
+    return toNodeTree(await nodes.listNodes());
   }
 
   async function fetchAndSyncRemoteTree() {
     if (!localSync) {
       throw new Error("Local sync client is required for workspace refresh");
     }
-    await localSync.refreshWorkspace();
+    await localSync.pullNow();
     return getLocalTree();
   }
 
@@ -112,6 +127,9 @@ export function createWorkspaceRepo(
         if (localTree.length > 0) return localTree;
       }
       return fetchAndSyncRemoteTree();
+    },
+    async getLocalNodeTree() {
+      return getLocalTree();
     },
     async createFolder(input) {
       const result = await browser.createNode({

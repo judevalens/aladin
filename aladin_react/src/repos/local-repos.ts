@@ -1,5 +1,6 @@
 import { createArtifactRowRepo, type ArtifactRowRepo } from "@/repos/artifacts/artifact-row-repo";
 import { createBrowserNodeRepo, type BrowserNodeRepo } from "@/repos/workspace/browser-node-repo";
+import { createNodeRepo, type NodeRepo } from "@/repos/workspace/node-repo";
 import {
   createLocalReposAdmin,
   type LocalReposAdmin,
@@ -9,6 +10,7 @@ import { createPageMetadataRepo, type PageMetadataRepo } from "@/repos/pages/pag
 export interface LocalRepos {
   browser: BrowserNodeRepo;
   artifacts: ArtifactRowRepo;
+  nodes: NodeRepo;
   pages: PageMetadataRepo;
 }
 
@@ -22,6 +24,7 @@ export function createLocalRepos(): LocalReposBundle {
     repos: {
       browser: createBrowserNodeRepo(),
       artifacts: createArtifactRowRepo(),
+      nodes: createNodeRepo(),
       pages: createPageMetadataRepo(),
     },
     admin: createLocalReposAdmin(),

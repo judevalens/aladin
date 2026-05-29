@@ -56,6 +56,7 @@ describe("observable services", () => {
   it("broadcasts the fetched artifact to all subscribers via artifactById", async () => {
     const workspaceRepo: WorkspaceRepo = {
       getBrowserTree: vi.fn(),
+      getLocalNodeTree: vi.fn(),
       createFolder: vi.fn(),
       renameFolder: vi.fn(),
       createArtifact: vi.fn(),

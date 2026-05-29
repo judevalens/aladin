@@ -28,6 +28,25 @@ export interface BrowserNodeCreateResult {
   artifact?: ArtifactRow | null;
 }
 
+/**
+ * Data-layer redesign: a row of the unified local `nodes` tree (one row per
+ * folder/artifact). Mirrors the Rust NodeRow and the sync feed's per-field
+ * columns; this is the authoritative local read model (converged by pull).
+ */
+export interface NodeRow {
+  id: string;
+  kind: string;
+  parentId: string | null;
+  position: number;
+  title: string | null;
+  artifactType: string | null;
+  content: string | null;
+  sourceUrl: string | null;
+  summary: string | null;
+  metadataJson: string | null;
+  updatedAt: number;
+}
+
 export interface PageMetadataRow {
   id: string;
   title: string;

@@ -90,6 +90,30 @@ export class WorkspaceSyncService {
     this.pushTree(removeTreeNode(this.currentTree, id));
   }
 
+  // Data-layer redesign, Phase A — convergence by re-read. Any node change
+  // (from the pull engine or a local-write mirror) reconciles the whole tree
+  // from the authoritative local `nodes` model rather than patching it
+  // piecemeal. A burst of node events coalesces into a single re-read.
+  handleNodeChanged() {
+    this.scheduleReconcile();
+  }
+
+  private reconcileScheduled = false;
+
+  private scheduleReconcile() {
+    if (this.reconcileScheduled) return;
+    this.reconcileScheduled = true;
+    void Promise.resolve().then(async () => {
+      this.reconcileScheduled = false;
+      await this.reconcileFromLocal();
+    });
+  }
+
+  async reconcileFromLocal() {
+    const tree = await this.workspaceRepo.getLocalNodeTree();
+    this.pushTree(tree);
+  }
+
   private pushTree(tree: BrowserTreeNode[]) {
     this.currentTree = tree;
     this.treeStream.push(tree);
