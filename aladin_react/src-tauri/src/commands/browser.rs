@@ -8,6 +8,7 @@ use crate::db::repo::intent;
 use crate::db::repo::nodes::{self, NodeRow};
 use crate::db::{Db, DbResult};
 use crate::events::{DataEvent, DataEventHub, EntityDeletedEvent};
+use crate::sync::SyncHandle;
 
 // Data-layer redesign, Phase B (client) — the workspace tree write path. Each
 // mutation writes the unified `nodes` model optimistically, enqueues an intent
@@ -109,6 +110,7 @@ pub fn db_upsert_browser_node(
 pub fn db_create_browser_node(
     db: State<'_, Db>,
     events: State<'_, DataEventHub>,
+    sync: State<'_, SyncHandle>,
     input: LocalBrowserNodeCreateCommand,
 ) -> DbResult<BrowserCreateResult> {
     let is_artifact = input.kind.eq_ignore_ascii_case("artifact");
@@ -135,6 +137,7 @@ pub fn db_create_browser_node(
     })?;
 
     events.emit(DataEvent::NodeUpserted(node_row.clone()));
+    sync.nudge();
 
     let node = browser_node_from_node(node_row.clone());
     let artifact = if is_artifact {
@@ -149,6 +152,7 @@ pub fn db_create_browser_node(
 pub fn db_rename_browser_node(
     db: State<'_, Db>,
     events: State<'_, DataEventHub>,
+    sync: State<'_, SyncHandle>,
     input: LocalBrowserMutationCommand,
 ) -> DbResult<BrowserNodeRow> {
     let row = db.with_tx(|tx| {
@@ -173,6 +177,7 @@ pub fn db_rename_browser_node(
     })?;
 
     events.emit(DataEvent::NodeUpserted(row.clone()));
+    sync.nudge();
     Ok(browser_node_from_node(row))
 }
 
@@ -180,6 +185,7 @@ pub fn db_rename_browser_node(
 pub fn db_delete_browser_node(
     db: State<'_, Db>,
     events: State<'_, DataEventHub>,
+    sync: State<'_, SyncHandle>,
     input: LocalBrowserDeleteCommand,
 ) -> DbResult<()> {
     let removed = db.with_tx(|tx| {
@@ -194,5 +200,6 @@ pub fn db_delete_browser_node(
     for id in removed {
         events.emit(DataEvent::NodeDeleted(EntityDeletedEvent { id }));
     }
+    sync.nudge();
     Ok(())
 }

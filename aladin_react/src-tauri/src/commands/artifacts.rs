@@ -7,6 +7,7 @@ use crate::db::repo::intent;
 use crate::db::repo::nodes::{self, NodeRow};
 use crate::db::{Db, DbResult};
 use crate::events::{DataEvent, DataEventHub, EntityDeletedEvent};
+use crate::sync::SyncHandle;
 
 // Data-layer redesign, Phase B (client) — artifact reads + write path over the
 // unified `nodes` model. Reads serve the legacy ArtifactRow shape from artifact
@@ -113,6 +114,7 @@ pub fn db_upsert_artifact(
 pub fn db_create_artifact(
     db: State<'_, Db>,
     events: State<'_, DataEventHub>,
+    sync: State<'_, SyncHandle>,
     input: LocalArtifactMutationCommand,
 ) -> DbResult<ArtifactRow> {
     let node = db.with_tx(|tx| {
@@ -141,6 +143,7 @@ pub fn db_create_artifact(
         Ok(node)
     })?;
     events.emit(DataEvent::NodeUpserted(node.clone()));
+    sync.nudge();
     Ok(artifact_row_from_node(&node))
 }
 
@@ -148,6 +151,7 @@ pub fn db_create_artifact(
 pub fn db_rename_artifact(
     db: State<'_, Db>,
     events: State<'_, DataEventHub>,
+    sync: State<'_, SyncHandle>,
     input: LocalArtifactMutationCommand,
 ) -> DbResult<ArtifactRow> {
     let node = db.with_tx(|tx| {
@@ -184,6 +188,7 @@ pub fn db_rename_artifact(
         Ok(node)
     })?;
     events.emit(DataEvent::NodeUpserted(node.clone()));
+    sync.nudge();
     Ok(artifact_row_from_node(&node))
 }
 
@@ -191,6 +196,7 @@ pub fn db_rename_artifact(
 pub fn db_delete_artifact(
     db: State<'_, Db>,
     events: State<'_, DataEventHub>,
+    sync: State<'_, SyncHandle>,
     input: LocalArtifactDeleteCommand,
 ) -> DbResult<()> {
     let removed = db.with_tx(|tx| {
@@ -201,5 +207,6 @@ pub fn db_delete_artifact(
     for id in removed {
         events.emit(DataEvent::NodeDeleted(EntityDeletedEvent { id }));
     }
+    sync.nudge();
     Ok(())
 }

@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        Arc, Mutex,
+        Arc, Condvar, Mutex,
     },
     thread,
     time::Duration,
@@ -63,6 +63,10 @@ struct SyncRuntimeState {
     started: AtomicBool,
     realtime_started: AtomicBool,
     pull_started: AtomicBool,
+    // Wakes the pull/push loop early when a local write enqueues an intent, so
+    // changes flush immediately instead of waiting for the next poll tick. The
+    // bool is a "work pending" flag so a nudge during a push isn't lost.
+    wake: (Mutex<bool>, Condvar),
 }
 
 impl Default for SyncHandle {
@@ -84,6 +88,7 @@ impl Default for SyncRuntimeState {
             started: AtomicBool::new(false),
             realtime_started: AtomicBool::new(false),
             pull_started: AtomicBool::new(false),
+            wake: (Mutex::new(false), Condvar::new()),
         }
     }
 }
@@ -166,9 +171,37 @@ impl SyncHandle {
                         eprintln!("sync pull failed: {error}");
                     }
                 }
-                thread::sleep(Duration::from_secs(PULL_INTERVAL_SECS));
+                // Wait until a local write nudges us, or the poll interval elapses
+                // (the guaranteed fallback). A nudge that arrives mid-cycle sets
+                // the flag, so the next wait returns immediately — no lost wakeup.
+                sync.wait_for_nudge(PULL_INTERVAL_SECS);
             }
         });
+    }
+
+    /// Wakes the sync loop now (called right after a local write enqueues an
+    /// intent) so it flushes without waiting for the poll tick.
+    pub fn nudge(&self) {
+        let (lock, cv) = &self.inner.wake;
+        if let Ok(mut pending) = lock.lock() {
+            *pending = true;
+            cv.notify_one();
+        }
+    }
+
+    fn wait_for_nudge(&self, secs: u64) {
+        let (lock, cv) = &self.inner.wake;
+        let mut pending = match lock.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if !*pending {
+            pending = match cv.wait_timeout(pending, Duration::from_secs(secs)) {
+                Ok((guard, _)) => guard,
+                Err(poisoned) => poisoned.into_inner().0,
+            };
+        }
+        *pending = false;
     }
 
     /// Runs one sync tick on demand (push pending intents, then pull + apply the
