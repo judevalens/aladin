@@ -632,55 +632,82 @@ func (r *PostgresArtifactRepository) DeleteBrowserNode(ctx context.Context, id s
 		_ = tx.Rollback(ctx)
 	}()
 
+	if err := LockUser(ctx, tx, userID); err != nil {
+		return err
+	}
+
+	// Collect the whole subtree (root + descendants) with kind, so we can emit a
+	// delete tombstone per entity (DL Phase A: cascade delete propagates).
 	rows, err := tx.Query(ctx, `
 		WITH RECURSIVE subtree AS (
-		    SELECT id, artifact_id
+		    SELECT id, kind, artifact_id
 		      FROM tree_nodes
 		     WHERE id = $1 AND user_id = $2::uuid
 		    UNION ALL
-		    SELECT n.id, n.artifact_id
+		    SELECT n.id, n.kind, n.artifact_id
 		      FROM tree_nodes n
 		      JOIN subtree s ON n.parent_id = s.id
 		     WHERE n.user_id = $2::uuid
 		)
-		SELECT artifact_id
-		  FROM subtree
-		 WHERE artifact_id IS NOT NULL
+		SELECT id, kind, artifact_id FROM subtree
 	`, id, userID)
 	if err != nil {
 		return err
 	}
-	artifactIDs := make([]string, 0)
+	type subnode struct {
+		id         string
+		kind       string
+		artifactID *string
+	}
+	var nodes []subnode
 	for rows.Next() {
-		var artifactID string
-		if err := rows.Scan(&artifactID); err != nil {
+		var n subnode
+		if err := rows.Scan(&n.id, &n.kind, &n.artifactID); err != nil {
 			rows.Close()
 			return err
 		}
-		artifactIDs = append(artifactIDs, artifactID)
+		nodes = append(nodes, n)
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
 		return err
 	}
 	rows.Close()
-
-	tag, err := tx.Exec(ctx, `
-		DELETE FROM tree_nodes
-		 WHERE id = $1 AND user_id = $2::uuid
-	`, id, userID)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
+	if len(nodes) == 0 {
 		return artifactservice.ErrNotFound
 	}
 
-	for _, artifactID := range artifactIDs {
-		if _, err := tx.Exec(ctx, `
-			DELETE FROM artifacts
-			 WHERE id = $1 AND user_id = $2::uuid
-		`, artifactID, userID); err != nil {
+	// Delete the root (cascades to descendant tree_nodes), then orphaned artifacts.
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM tree_nodes
+		 WHERE id = $1 AND user_id = $2::uuid
+	`, id, userID); err != nil {
+		return err
+	}
+	for _, n := range nodes {
+		if n.artifactID != nil {
+			if _, err := tx.Exec(ctx, `
+				DELETE FROM artifacts
+				 WHERE id = $1 AND user_id = $2::uuid
+			`, *n.artifactID, userID); err != nil {
+				return err
+			}
+		}
+	}
+
+	// One tombstone per subtree entity (folder → node id; artifact → artifact id).
+	for _, n := range nodes {
+		entityKind := "folder"
+		entityID := n.id
+		if n.kind == "artifact" {
+			entityKind = "artifact"
+			if n.artifactID != nil {
+				entityID = *n.artifactID
+			}
+		}
+		if _, err := AppendChange(ctx, tx, userID, Change{
+			EntityKind: entityKind, EntityID: entityID, Op: OpDelete,
+		}); err != nil {
 			return err
 		}
 	}
