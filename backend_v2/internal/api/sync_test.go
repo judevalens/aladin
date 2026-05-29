@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,6 +28,80 @@ func TestHandleSyncPull_RequiresPrincipal(t *testing.T) {
 	s.handleSyncPull(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("no-principal status = %d, want 401", rec.Code)
+	}
+}
+
+func TestHandleSyncPush_RequiresPrincipal(t *testing.T) {
+	s := &Server{deps: app.StaticDependencies{}}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/sync/push", strings.NewReader(`{"mutations":[]}`))
+	s.handleSyncPush(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("no-principal status = %d, want 401", rec.Code)
+	}
+}
+
+func TestHandleSyncPush_AppliesAndDedupes(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "postgres://aladin:password@localhost:5433/aladin?sslmode=disable"
+	}
+	pool, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		t.Skipf("postgres not reachable: %v", err)
+	}
+	defer pool.Close()
+	if err := pool.Ping(ctx); err != nil {
+		t.Skipf("postgres ping failed: %v", err)
+	}
+	if err := db.Migrate(ctx, pool); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	const folderID = "test-push-handler-folder"
+	const clientID = "test-push-handler-client"
+	cleanup := func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM workspace_changes WHERE user_id = $1 AND entity_id = $2`, syncTestAdminUserID, folderID)
+		_, _ = pool.Exec(ctx, `DELETE FROM tree_nodes WHERE user_id = $1::uuid AND id = $2`, syncTestAdminUserID, folderID)
+		_, _ = pool.Exec(ctx, `DELETE FROM sync_clients WHERE client_id = $1`, clientID)
+	}
+	cleanup()
+	defer cleanup()
+
+	s := &Server{deps: app.StaticDependencies{SyncRepo: repo.NewSyncPostgres(pool)}}
+	principal := coreservice.Principal{
+		UserID: syncTestAdminUserID, ActorType: coreservice.ActorTypeUserSession, ActorID: syncTestAdminUserID,
+	}
+	reqCtx := coreservice.WithPrincipal(ctx, principal)
+
+	body := `{"mutations":[{"mutationId":"` + clientID + `:1","op":"create","entityKind":"folder","entityId":"` + folderID + `","title":"Pushed","position":9000050}]}`
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/sync/push", strings.NewReader(body)).WithContext(reqCtx)
+	s.handleSyncPush(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+	var resp syncPushResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v (body: %s)", err, rec.Body.String())
+	}
+	if len(resp.Results) != 1 || resp.Results[0].Status != "applied" {
+		t.Fatalf("results = %+v, want one applied", resp.Results)
+	}
+
+	// Re-push the same mutation → duplicate (idempotent).
+	rec2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodPost, "/api/sync/push", strings.NewReader(body)).WithContext(reqCtx)
+	s.handleSyncPush(rec2, req2)
+	var resp2 syncPushResponse
+	if err := json.Unmarshal(rec2.Body.Bytes(), &resp2); err != nil {
+		t.Fatalf("decode2: %v", err)
+	}
+	if len(resp2.Results) != 1 || resp2.Results[0].Status != "duplicate" {
+		t.Fatalf("results2 = %+v, want one duplicate", resp2.Results)
 	}
 }
 
