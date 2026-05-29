@@ -614,7 +614,18 @@ func (r *PostgresArtifactRepository) UpdateFolderTitle(ctx context.Context, id s
 	if err != nil {
 		return err
 	}
-	tag, err := r.pool.Exec(ctx, `
+	// DL Phase A: the entity write + the change-feed row land in one txn under
+	// the per-user advisory lock (so the appended seq is visible in commit order).
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if err := LockUser(ctx, tx, userID); err != nil {
+		return err
+	}
+	tag, err := tx.Exec(ctx, `
 		UPDATE tree_nodes
 		   SET title = $3,
 		       updated_at = now()
@@ -628,7 +639,21 @@ func (r *PostgresArtifactRepository) UpdateFolderTitle(ctx context.Context, id s
 	if tag.RowsAffected() == 0 {
 		return artifactservice.ErrNotFound
 	}
-	return nil
+	titleField := "title"
+	titleVal, err := json.Marshal(title)
+	if err != nil {
+		return err
+	}
+	if _, err := AppendChange(ctx, tx, userID, Change{
+		EntityKind: "folder",
+		EntityID:   id,
+		Op:         OpUpdate,
+		Field:      &titleField,
+		Value:      titleVal,
+	}); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (r *PostgresArtifactRepository) GetFolder(ctx context.Context, id string) (artifactservice.FolderNode, error) {

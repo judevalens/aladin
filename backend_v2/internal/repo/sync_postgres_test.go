@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"aladin/backend_v2/internal/db"
+	coreservice "aladin/backend_v2/internal/service"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -125,5 +126,73 @@ func TestSyncChangeFeed_AppendAndCoalescedPull(t *testing.T) {
 	}
 	if len(res2.Changes) != 0 || res2.Cursor != res.Cursor {
 		t.Fatalf("idempotent re-pull failed: %+v", res2)
+	}
+}
+
+// Full loop: rename a folder via the repo → the change feed gets a
+// folder/title row → PullDelta returns it. Proves AppendChange is wired into a
+// real mutation in-txn under LockUser.
+func TestSyncChangeFeed_FolderRenameEmitsChange(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "postgres://aladin:password@localhost:5433/aladin?sslmode=disable"
+	}
+	pool, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		t.Skipf("postgres not reachable: %v", err)
+	}
+	defer pool.Close()
+	if err := pool.Ping(ctx); err != nil {
+		t.Skipf("postgres ping failed: %v", err)
+	}
+	if err := db.Migrate(ctx, pool); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	const folderID = "test-sync-folder-rename"
+	cleanup := func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM workspace_changes WHERE user_id = $1 AND entity_id = $2`, testAdminUserID, folderID)
+		_, _ = pool.Exec(ctx, `DELETE FROM tree_nodes WHERE user_id = $1::uuid AND id = $2`, testAdminUserID, folderID)
+	}
+	cleanup()
+	defer cleanup()
+
+	// Seed a folder node directly (no change row — only the rename should emit one).
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO tree_nodes (id, user_id, parent_id, kind, title, artifact_id, position, created_at, updated_at)
+		VALUES ($1, $2::uuid, NULL, 'folder', 'Old', NULL, 9000001, now(), now())
+	`, folderID, testAdminUserID); err != nil {
+		t.Fatalf("seed folder: %v", err)
+	}
+
+	var cursor0 int64
+	if err := pool.QueryRow(ctx,
+		`SELECT COALESCE(MAX(seq), 0) FROM workspace_changes WHERE user_id = $1`,
+		testAdminUserID).Scan(&cursor0); err != nil {
+		t.Fatalf("cursor0: %v", err)
+	}
+
+	r := NewArtifactsPostgres(pool)
+	pctx := coreservice.WithPrincipal(ctx, coreservice.Principal{
+		UserID: testAdminUserID, ActorType: coreservice.ActorTypeUserSession, ActorID: testAdminUserID,
+	})
+	if err := r.UpdateFolderTitle(pctx, folderID, "New"); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+
+	res, err := NewSyncPostgres(pool).PullDelta(ctx, testAdminUserID, cursor0)
+	if err != nil {
+		t.Fatalf("pull: %v", err)
+	}
+	if len(res.Changes) != 1 {
+		t.Fatalf("changes = %d, want 1: %+v", len(res.Changes), res.Changes)
+	}
+	c := res.Changes[0]
+	if c.EntityKind != "folder" || c.EntityID != folderID || c.Op != OpUpdate ||
+		c.Field == nil || *c.Field != "title" || strings.TrimSpace(string(c.Value)) != `"New"` {
+		t.Fatalf("unexpected change: %+v (value=%s)", c, string(c.Value))
 	}
 }
