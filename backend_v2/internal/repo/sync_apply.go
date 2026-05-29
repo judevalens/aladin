@@ -145,9 +145,18 @@ func applyOne(ctx context.Context, tx pgx.Tx, userID string, m Mutation) error {
 }
 
 func applyCreate(ctx context.Context, tx pgx.Tx, userID string, m Mutation) error {
+	// Assign the sibling position AUTHORITATIVELY (next free slot under the
+	// per-user advisory lock), not from the client's hint. The client computes
+	// its hint from local state that may be incomplete (e.g. no snapshot
+	// backfill of pre-existing nodes), so trusting it collides with the unique
+	// (user, parent, position) index. The client learns the real position from
+	// the emitted "position" change row. m.Position is ignored.
 	var position int64
-	if m.Position != nil {
-		position = *m.Position
+	if err := tx.QueryRow(ctx, `
+		SELECT COALESCE(MAX(position), 0) + 1 FROM tree_nodes
+		 WHERE user_id = $1::uuid AND parent_id IS NOT DISTINCT FROM $2`,
+		userID, m.ParentID).Scan(&position); err != nil {
+		return err
 	}
 	switch m.EntityKind {
 	case "folder":

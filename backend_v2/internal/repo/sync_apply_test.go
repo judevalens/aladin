@@ -92,8 +92,8 @@ func TestApplyMutation_CreateFolderIdempotent(t *testing.T) {
 		folderID, testAdminUserID).Scan(&title, &pos); err != nil {
 		t.Fatalf("read tree_node: %v", err)
 	}
-	if title != "Docs" || pos != 9000001 {
-		t.Fatalf("tree_node = (%q,%d), want (Docs,9000001)", title, pos)
+	if title != "Docs" || pos <= 0 {
+		t.Fatalf("tree_node = (%q,%d), want (Docs, server-assigned position>0)", title, pos)
 	}
 
 	// Feed has create + title + parentId + position.
@@ -110,8 +110,11 @@ func TestApplyMutation_CreateFolderIdempotent(t *testing.T) {
 			fields[*c.Field] = strings.TrimSpace(string(c.Value))
 		}
 	}
-	if !sawCreate || fields["title"] != `"Docs"` || fields["position"] != "9000001" {
+	if !sawCreate || fields["title"] != `"Docs"` {
 		t.Fatalf("feed wrong: create=%v fields=%v", sawCreate, fields)
+	}
+	if p, ok := fields["position"]; !ok || p == "" {
+		t.Fatalf("feed missing server-assigned position: %v", fields)
 	}
 
 	// Re-applying the SAME mutationId is a duplicate no-op (idempotent).
@@ -292,6 +295,58 @@ func TestApplyMutation_ArtifactMove(t *testing.T) {
 	}
 	if parent == nil || *parent != parentID {
 		t.Fatalf("parent = %v, want %s", parent, parentID)
+	}
+}
+
+// Regression for the live two-client bug: a client computes its position hint
+// from incomplete local state, so two creates can send the SAME colliding hint;
+// the server must assign distinct non-colliding positions, not reject.
+func TestApplyMutation_CreateAssignsNonCollidingPosition(t *testing.T) {
+	pool, ctx, done := applyTestPool(t)
+	defer done()
+
+	const parentID = "test-apply-pos-parent"
+	const a1 = "test-apply-pos-a1"
+	const a2 = "test-apply-pos-a2"
+	const clientID = "test-apply-pos-client"
+	cleanup := func() {
+		for _, id := range []string{parentID, a1, a2} {
+			_, _ = pool.Exec(ctx, `DELETE FROM workspace_changes WHERE user_id=$1 AND entity_id=$2`, testAdminUserID, id)
+			_, _ = pool.Exec(ctx, `DELETE FROM tree_nodes WHERE user_id=$1::uuid AND (id=$2 OR artifact_id=$2)`, testAdminUserID, id)
+			_, _ = pool.Exec(ctx, `DELETE FROM artifacts WHERE user_id=$1::uuid AND id=$2`, testAdminUserID, id)
+		}
+		_, _ = pool.Exec(ctx, `DELETE FROM sync_clients WHERE client_id=$1`, clientID)
+	}
+	cleanup()
+	defer cleanup()
+
+	repo := NewSyncPostgres(pool)
+	if _, err := repo.ApplyMutation(ctx, testAdminUserID, Mutation{
+		MutationID: clientID + ":1", Op: OpCreate, EntityKind: "folder", EntityID: parentID, Title: strptr("Bin"),
+	}); err != nil {
+		t.Fatalf("parent: %v", err)
+	}
+	// Two artifacts under the same parent, BOTH sending the same colliding hint.
+	if _, err := repo.ApplyMutation(ctx, testAdminUserID, Mutation{
+		MutationID: clientID + ":2", Op: OpCreate, EntityKind: "artifact", EntityID: a1, Title: strptr("A1"), Position: int64ptr(1),
+	}); err != nil {
+		t.Fatalf("a1: %v", err)
+	}
+	if _, err := repo.ApplyMutation(ctx, testAdminUserID, Mutation{
+		MutationID: clientID + ":3", Op: OpCreate, EntityKind: "artifact", EntityID: a2, Title: strptr("A2"), Position: int64ptr(1),
+	}); err != nil {
+		t.Fatalf("a2 (same colliding position hint must still succeed): %v", err)
+	}
+
+	var p1, p2 int64
+	if err := pool.QueryRow(ctx, `SELECT position FROM tree_nodes WHERE artifact_id=$1 AND user_id=$2::uuid`, a1, testAdminUserID).Scan(&p1); err != nil {
+		t.Fatalf("p1: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT position FROM tree_nodes WHERE artifact_id=$1 AND user_id=$2::uuid`, a2, testAdminUserID).Scan(&p2); err != nil {
+		t.Fatalf("p2: %v", err)
+	}
+	if p1 == p2 || p1 <= 0 || p2 <= 0 {
+		t.Fatalf("positions must be distinct + positive, got p1=%d p2=%d", p1, p2)
 	}
 }
 
