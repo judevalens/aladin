@@ -2,7 +2,7 @@ use rusqlite::Connection;
 
 use super::DbResult;
 
-const CURRENT_VERSION: i32 = 9;
+const CURRENT_VERSION: i32 = 10;
 
 pub fn migrate(conn: &Connection) -> DbResult<()> {
     let version: i32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
@@ -32,6 +32,9 @@ pub fn migrate(conn: &Connection) -> DbResult<()> {
     }
     if version < 9 {
         conn.execute_batch(MIGRATION_V9)?;
+    }
+    if version < 10 {
+        conn.execute_batch(MIGRATION_V10)?;
     }
     conn.execute_batch(&format!("PRAGMA user_version = {CURRENT_VERSION};"))?;
     Ok(())
@@ -197,4 +200,33 @@ CREATE TABLE IF NOT EXISTS existence_intent (
     PRIMARY KEY (entity_kind, entity_id)
 );
 CREATE INDEX IF NOT EXISTS existence_intent_state ON existence_intent(state, local_seq);
+";
+
+// Data-layer redesign, Phase A/D — the clean local model. One node tree
+// (folders + artifacts) with NO title/placement duplication, mapping 1:1 to the
+// sync feed: entity_kind ∈ {folder, artifact}; per-field changes apply to the
+// columns here (title, parentId→parent_id, position, type→artifact_type,
+// content, sourceUrl→source_url, summary, metadata→metadata_json). `field_seq`
+// (V9) is the per-field newest-wins guard; the cursor lives in sync_state.
+//
+// Additive for now (build stays green): the legacy folders/artifacts/
+// page_metadata/page_content + outbox_mutations/backend_events tables are
+// dropped at cutover, once the read path + apply move onto `nodes` and the old
+// outbox/realtime engine is replaced.
+const MIGRATION_V10: &str = "
+CREATE TABLE IF NOT EXISTS nodes (
+    id            TEXT PRIMARY KEY,
+    kind          TEXT NOT NULL,            -- 'folder' | 'artifact'
+    parent_id     TEXT,                     -- NULL = root
+    position      INTEGER NOT NULL DEFAULT 0,
+    title         TEXT,
+    artifact_type TEXT,                     -- note | link | voice | file (NULL for folders)
+    content       TEXT,
+    source_url    TEXT,
+    summary       TEXT,
+    metadata_json TEXT,
+    updated_at    INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS nodes_parent ON nodes(parent_id);
+CREATE INDEX IF NOT EXISTS nodes_kind ON nodes(kind);
 ";
