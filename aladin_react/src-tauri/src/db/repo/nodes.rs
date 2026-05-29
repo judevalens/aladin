@@ -288,6 +288,71 @@ pub fn get_node(conn: &Connection, id: &str) -> DbResult<Option<NodeRow>> {
     Ok(rows.next().transpose()?)
 }
 
+/// Optimistically writes a full node row from a LOCAL mutation, before the
+/// server echo arrives via pull. Deliberately does NOT touch `field_seq`: the
+/// seq guard governs only server-applied changes. When the echo pulls back, its
+/// seq is recorded and (idempotently) confirms what we already wrote. Callers
+/// pass the complete intended row (read-modify-write for partial edits) so no
+/// column is unintentionally cleared.
+pub fn upsert_local(conn: &Connection, row: &NodeRow) -> DbResult<()> {
+    conn.execute(
+        "INSERT INTO nodes (id, kind, parent_id, position, title, artifact_type, content, source_url, summary, metadata_json, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+         ON CONFLICT(id) DO UPDATE SET
+            kind = excluded.kind,
+            parent_id = excluded.parent_id,
+            position = excluded.position,
+            title = excluded.title,
+            artifact_type = excluded.artifact_type,
+            content = excluded.content,
+            source_url = excluded.source_url,
+            summary = excluded.summary,
+            metadata_json = excluded.metadata_json,
+            updated_at = excluded.updated_at",
+        params![
+            row.id,
+            row.kind,
+            row.parent_id,
+            row.position,
+            row.title,
+            row.artifact_type,
+            row.content,
+            row.source_url,
+            row.summary,
+            row.metadata_json,
+            row.updated_at,
+        ],
+    )?;
+    Ok(())
+}
+
+/// Deletes a node and its entire subtree (by `parent_id`), returning the ids
+/// removed (root first) so the caller can emit a delete event per node. Used by
+/// local delete mutations; the server echo's tombstone pulls back idempotently.
+pub fn delete_subtree(conn: &Connection, id: &str) -> DbResult<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "WITH RECURSIVE sub(id) AS (
+            SELECT id FROM nodes WHERE id = ?1
+            UNION ALL
+            SELECT n.id FROM nodes n JOIN sub s ON n.parent_id = s.id
+         )
+         SELECT id FROM sub",
+    )?;
+    let ids = stmt
+        .query_map(params![id], |row| row.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    conn.execute(
+        "WITH RECURSIVE sub(id) AS (
+            SELECT id FROM nodes WHERE id = ?1
+            UNION ALL
+            SELECT n.id FROM nodes n JOIN sub s ON n.parent_id = s.id
+         )
+         DELETE FROM nodes WHERE id IN (SELECT id FROM sub)",
+        params![id],
+    )?;
+    Ok(ids)
+}
+
 fn map_node_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<NodeRow> {
     Ok(NodeRow {
         id: row.get(0)?,
@@ -456,6 +521,73 @@ mod tests {
             assert_eq!(get_cursor(c)?, 42);
             set_cursor(c, 100)?;
             assert_eq!(get_cursor(c)?, 100);
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    fn node(id: &str, kind: &str) -> NodeRow {
+        NodeRow {
+            id: id.to_string(),
+            kind: kind.to_string(),
+            parent_id: None,
+            position: 0,
+            title: None,
+            artifact_type: None,
+            content: None,
+            source_url: None,
+            summary: None,
+            metadata_json: None,
+            updated_at: 0,
+        }
+    }
+
+    #[test]
+    fn upsert_local_inserts_then_updates() {
+        let db = test_db("upsert_local");
+        db.with_conn(|c| {
+            let mut row = node("a1", "artifact");
+            row.title = Some("Draft".into());
+            row.artifact_type = Some("note".into());
+            row.parent_id = Some("f1".into());
+            upsert_local(c, &row)?;
+            let stored = get_node(c, "a1")?.unwrap();
+            assert_eq!(stored.title.as_deref(), Some("Draft"));
+            assert_eq!(stored.artifact_type.as_deref(), Some("note"));
+
+            // A second upsert with the full intended row updates in place.
+            row.title = Some("Final".into());
+            upsert_local(c, &row)?;
+            assert_eq!(get_node(c, "a1")?.unwrap().title.as_deref(), Some("Final"));
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn delete_subtree_removes_descendants() {
+        let db = test_db("delete_subtree");
+        db.with_conn(|c| {
+            // f1 → f2 → a3, and f1 → a4
+            let mut f1 = node("f1", "folder");
+            f1.title = Some("Root".into());
+            upsert_local(c, &f1)?;
+            let mut f2 = node("f2", "folder");
+            f2.parent_id = Some("f1".into());
+            upsert_local(c, &f2)?;
+            let mut a3 = node("a3", "artifact");
+            a3.parent_id = Some("f2".into());
+            upsert_local(c, &a3)?;
+            let mut a4 = node("a4", "artifact");
+            a4.parent_id = Some("f1".into());
+            upsert_local(c, &a4)?;
+
+            let removed = delete_subtree(c, "f1")?;
+            assert_eq!(removed.len(), 4);
+            assert_eq!(removed.first().map(String::as_str), Some("f1"));
+            assert!(get_node(c, "f1")?.is_none());
+            assert!(get_node(c, "a3")?.is_none());
+            assert!(list_nodes(c)?.is_empty());
             Ok(())
         })
         .unwrap();

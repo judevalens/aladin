@@ -8,7 +8,8 @@ mod sync;
 use tauri::Manager;
 
 use crate::commands::{
-    artifacts as artifact_cmd, browser as browser_cmd, pages as page_cmd, sync as sync_cmd,
+    artifacts as artifact_cmd, browser as browser_cmd, nodes as node_cmd, pages as page_cmd,
+    sync as sync_cmd,
 };
 use crate::db::repo::{
     artifacts::ArtifactRepo,
@@ -57,6 +58,8 @@ pub fn run() {
             browser_cmd::db_create_browser_node,
             browser_cmd::db_rename_browser_node,
             browser_cmd::db_delete_browser_node,
+            node_cmd::db_list_nodes,
+            node_cmd::db_get_node,
             page_cmd::db_get_page_metadata,
             page_cmd::db_upsert_page_metadata,
             page_cmd::db_get_page_content,

@@ -1,9 +1,11 @@
 use serde::Deserialize;
 use tauri::State;
 
+use crate::commands::nodes::{mirror_delete, mirror_upsert};
 use crate::db::repo::artifacts::{
-    self, ArtifactDeleteInput, ArtifactLocalMutationInput, ArtifactRepo,
+    self, ArtifactDeleteInput, ArtifactLocalMutationInput, ArtifactRepo, ArtifactRow,
 };
+use crate::db::repo::nodes::NodeRow;
 use crate::db::repo::MutationMode;
 use crate::db::{Db, DbResult};
 use crate::events::DataEventHub;
@@ -91,13 +93,15 @@ pub fn db_create_artifact(
     sync: State<'_, SyncHandle>,
     input: LocalArtifactMutationCommand,
 ) -> DbResult<artifacts::ArtifactRow> {
-    ArtifactRepo::default().create(
+    let row = ArtifactRepo::default().create(
         &db,
         &events,
         sync.get().as_ref(),
         MutationMode::UserAction,
         input.into(),
-    )
+    )?;
+    mirror_upsert(&db, &events, node_row_from_artifact(&row))?;
+    Ok(row)
 }
 
 #[tauri::command]
@@ -107,13 +111,15 @@ pub fn db_rename_artifact(
     sync: State<'_, SyncHandle>,
     input: LocalArtifactMutationCommand,
 ) -> DbResult<artifacts::ArtifactRow> {
-    ArtifactRepo::default().rename(
+    let row = ArtifactRepo::default().rename(
         &db,
         &events,
         sync.get().as_ref(),
         MutationMode::UserAction,
         input.into(),
-    )
+    )?;
+    mirror_upsert(&db, &events, node_row_from_artifact(&row))?;
+    Ok(row)
 }
 
 #[tauri::command]
@@ -123,11 +129,34 @@ pub fn db_delete_artifact(
     sync: State<'_, SyncHandle>,
     input: LocalArtifactDeleteCommand,
 ) -> DbResult<()> {
+    let id = input.id.clone();
     ArtifactRepo::default().delete(
         &db,
         &events,
         sync.get().as_ref(),
         MutationMode::UserAction,
         input.into(),
-    )
+    )?;
+    mirror_delete(&db, &events, &id)?;
+    Ok(())
+}
+
+/// Mirrors an artifact mutation result into a unified `nodes` row. The node id
+/// IS the artifact id in the new model. `summary` is left to the pull engine
+/// (the server emits it as its own field); the optimistic local row carries the
+/// other fields directly from the artifact write.
+fn node_row_from_artifact(row: &ArtifactRow) -> NodeRow {
+    NodeRow {
+        id: row.id.clone(),
+        kind: "artifact".to_string(),
+        parent_id: row.folder_id.clone(),
+        position: 0,
+        title: Some(row.title.clone()),
+        artifact_type: Some(row.kind.clone()),
+        content: row.content.clone(),
+        source_url: row.source_url.clone(),
+        summary: None,
+        metadata_json: row.metadata_json.clone(),
+        updated_at: row.updated_at,
+    }
 }
