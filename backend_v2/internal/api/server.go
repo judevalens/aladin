@@ -61,6 +61,7 @@ func NewWithDependencies(addr string, deps app.Dependencies) *Server {
 	s.registerFileRoutes(mux)
 	s.registerRealtimeRoutes(mux)
 	s.registerProviderConnectionRoutes(mux)
+	s.registerSyncRoutes(mux)
 
 	mux.HandleFunc("GET /api/sources/", s.handleSourcesList)
 	mux.HandleFunc("POST /api/sources/", s.handleSourcesCreate)
