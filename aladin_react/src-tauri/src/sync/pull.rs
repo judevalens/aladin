@@ -169,6 +169,14 @@ mod tests {
                 Ok(responses.remove(0))
             }
         }
+
+        fn push(
+            &self,
+            _config: &SyncConfig,
+            _mutations: &[crate::api::sync::PushMutation],
+        ) -> ApiResult<Vec<crate::api::sync::PushResult>> {
+            Ok(vec![])
+        }
     }
 
     #[test]
@@ -236,6 +244,14 @@ mod tests {
     struct FailingApi;
     impl SyncApiClient for FailingApi {
         fn pull(&self, _config: &SyncConfig, _since: i64) -> ApiResult<SyncPullResult> {
+            Err(ApiError::for_test(crate::api::ApiErrorKind::Transient))
+        }
+
+        fn push(
+            &self,
+            _config: &SyncConfig,
+            _mutations: &[crate::api::sync::PushMutation],
+        ) -> ApiResult<Vec<crate::api::sync::PushResult>> {
             Err(ApiError::for_test(crate::api::ApiErrorKind::Transient))
         }
     }
