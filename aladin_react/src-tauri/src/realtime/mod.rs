@@ -383,6 +383,12 @@ fn connect_once(
                         .process_event(db, events, config, event)
                         .map_err(|error| error.to_string())?;
                     *last_event_id = Some(event_id);
+                    // Data-layer redesign, Phase C — treat any realtime event as a
+                    // poke: pull the workspace change feed so the new `nodes`
+                    // model converges immediately (rather than waiting for the
+                    // poll). The legacy event application above writes the soon-
+                    // to-be-dropped tables and is ignored by the UI.
+                    let _ = sync.pull_now(db, events);
                 }
             }
             "error" => {

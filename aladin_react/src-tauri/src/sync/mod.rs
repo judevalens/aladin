@@ -20,9 +20,11 @@ use crate::{
 pub mod pull;
 pub mod push;
 
-/// How often the read/convergence loop pulls the change-feed delta. A stopgap
-/// until Phase C demotes the realtime websocket to a poke that triggers a pull.
-const PULL_INTERVAL_SECS: u64 = 3;
+/// How often the read/convergence loop pulls the change-feed delta. The
+/// realtime websocket is the fast path (any event pokes an immediate pull — see
+/// realtime::run_websocket_loop); this poll is the guaranteed fallback when a
+/// poke is missed or the socket is down.
+const PULL_INTERVAL_SECS: u64 = 2;
 
 #[derive(Debug, Clone)]
 pub struct SyncConfig {

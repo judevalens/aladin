@@ -79,13 +79,34 @@ func (s *Server) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 	}
 
 	results := make([]syncPushResult, 0, len(req.Mutations))
+	applied := 0
 	for _, m := range req.Mutations {
 		ack, err := s.deps.Sync().ApplyMutation(r.Context(), principal.UserID, m)
 		if err != nil {
 			results = append(results, syncPushResult{MutationID: m.MutationID, Status: "error", Error: err.Error()})
 			continue
 		}
+		if ack.Status == "applied" {
+			applied++
+		}
 		results = append(results, syncPushResult{MutationID: ack.MutationID, Status: ack.Status})
 	}
+
+	// Data-layer redesign, Phase C — poke the user's other clients to pull the
+	// feed immediately (rather than waiting for their poll). We publish on the
+	// workspace stream, which their realtime subscription already covers; the
+	// client treats any inbound event as a "pull now" signal. Publish is
+	// user-scoped via the request principal. Best-effort (nil in tests).
+	if applied > 0 {
+		if rt := s.deps.Realtime(); rt != nil {
+			_ = rt.Publish(r.Context(), coreservice.PublishTarget{
+				Stream:       coreservice.WorkspaceStream,
+				ResourceKind: "folder",
+				ResourceID:   principal.UserID,
+				Operation:    "updated",
+			}, map[string]any{"poke": true})
+		}
+	}
+
 	writeJSON(w, http.StatusOK, syncPushResponse{Results: results})
 }
