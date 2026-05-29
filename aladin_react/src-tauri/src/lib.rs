@@ -11,11 +11,7 @@ use crate::commands::{
     artifacts as artifact_cmd, browser as browser_cmd, nodes as node_cmd, pages as page_cmd,
     sync as sync_cmd,
 };
-use crate::db::repo::{
-    artifacts::ArtifactRepo,
-    browser::{BrowserEventSubscriber, BrowserRepo},
-    page_content::{PageContentEventSubscriber, PageContentRepo},
-};
+use crate::db::repo::page_content::{PageContentEventSubscriber, PageContentRepo};
 use crate::db::Db;
 use crate::events::DataEventHub;
 use crate::sync::SyncHandle;
@@ -29,10 +25,15 @@ pub fn run() {
             let db = Db::open(db_path).expect("failed to open local sqlite");
             let events = DataEventHub::default();
             let sync = SyncHandle::default();
-            sync.register_processor(std::sync::Arc::new(BrowserRepo::default()));
-            sync.register_processor(std::sync::Arc::new(ArtifactRepo::default()));
+            // Data-layer redesign, Phase D — the workspace TREE now runs entirely
+            // on the new sync engine: reads materialize from `nodes`, writes go
+            // through the intent log + POST /api/sync/push, and convergence is
+            // pull + the realtime poke. The legacy browser outbox processor +
+            // tree event-apply subscriber are intentionally NOT registered.
+            // Only the page-content path (M7/M8) still uses the legacy
+            // outbox/realtime processor + subscriber (its physical cutover is
+            // tracked separately, with the page_content/artifacts tables).
             sync.register_processor(std::sync::Arc::new(PageContentRepo::default()));
-            sync.register_event_subscriber(std::sync::Arc::new(BrowserEventSubscriber::default()));
             sync.register_event_subscriber(std::sync::Arc::new(
                 PageContentEventSubscriber::default(),
             ));
