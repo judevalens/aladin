@@ -88,9 +88,14 @@ type PullResult struct {
 // seq > cursor, in seq order. Coalescing collapses N edits of one field to its
 // latest (e.g. 10 renames → 1). Create/delete (field NULL) coalesce per entity.
 //
-// NOTE: snapshot fallback (when cursor predates the retained feed) and
-// mutation_id-group-safe pagination are the next Phase A increment.
+// A cold client (cursor == 0) instead gets a full SNAPSHOT of the current
+// workspace built from the canonical tables (so pre-feed entities — created
+// before the change feed existed — are included), stamped at the feed
+// high-water. After that it pulls deltas from that cursor.
 func (r *SyncRepo) PullDelta(ctx context.Context, userID string, cursor int64) (PullResult, error) {
+	if cursor == 0 {
+		return r.snapshot(ctx, userID)
+	}
 	rows, err := r.pool.Query(ctx, `
 		SELECT seq, entity_kind, entity_id, op, field, value, mutation_id
 		FROM (
@@ -127,4 +132,89 @@ func (r *SyncRepo) PullDelta(ctx context.Context, userID string, cursor int64) (
 		out.Cursor = out.Changes[n-1].Seq
 	}
 	return out, nil
+}
+
+// snapshot builds a full picture of the user's current workspace from the
+// canonical tables (tree_nodes + artifacts), as create + field change rows
+// stamped at the feed high-water. Served to a cold client (cursor == 0) so
+// pre-feed entities are included; the client applies these idempotently via the
+// per-(entity,field) seq guard, then continues with deltas from the high-water.
+func (r *SyncRepo) snapshot(ctx context.Context, userID string) (PullResult, error) {
+	var hw int64
+	if err := r.pool.QueryRow(ctx,
+		`SELECT COALESCE(MAX(seq), 0) FROM workspace_changes WHERE user_id = $1`,
+		userID).Scan(&hw); err != nil {
+		return PullResult{}, fmt.Errorf("sync: snapshot high-water: %w", err)
+	}
+
+	rows, err := r.pool.Query(ctx, `
+		SELECT n.id, n.kind, n.parent_id, n.position,
+		       n.title AS node_title,
+		       a.id AS artifact_id, a.type, a.title AS artifact_title,
+		       a.content, a.summary, a.source_url
+		  FROM tree_nodes n
+		  LEFT JOIN artifacts a ON a.id = n.artifact_id AND a.user_id = n.user_id
+		 WHERE n.user_id = $1::uuid
+		 ORDER BY n.position ASC, n.created_at ASC`, userID)
+	if err != nil {
+		return PullResult{}, fmt.Errorf("sync: snapshot query: %w", err)
+	}
+	defer rows.Close()
+
+	out := PullResult{Changes: []Change{}, Cursor: hw}
+	for rows.Next() {
+		var (
+			nodeID, kind                   string
+			parentID, nodeTitle            *string
+			position                       int64
+			artifactID, aType, aTitle      *string
+			aContent, aSummary, aSourceURL *string
+		)
+		if err := rows.Scan(&nodeID, &kind, &parentID, &position, &nodeTitle,
+			&artifactID, &aType, &aTitle, &aContent, &aSummary, &aSourceURL); err != nil {
+			return PullResult{}, fmt.Errorf("sync: snapshot scan: %w", err)
+		}
+
+		isArtifact := kind == "artifact"
+		entityID := nodeID
+		title := nodeTitle
+		if isArtifact {
+			if artifactID == nil {
+				continue // artifact node without a backing artifact row — skip
+			}
+			entityID = *artifactID
+			title = aTitle
+		}
+
+		out.Changes = append(out.Changes, Change{Seq: hw, EntityKind: kind, EntityID: entityID, Op: OpCreate})
+		if title != nil {
+			out.Changes = append(out.Changes, snapField(kind, entityID, "title", *title, hw))
+		}
+		out.Changes = append(out.Changes, snapField(kind, entityID, "parentId", parentID, hw))
+		out.Changes = append(out.Changes, snapField(kind, entityID, "position", position, hw))
+		if isArtifact {
+			if aType != nil {
+				out.Changes = append(out.Changes, snapField(kind, entityID, "type", *aType, hw))
+			}
+			if aContent != nil && *aContent != "" {
+				out.Changes = append(out.Changes, snapField(kind, entityID, "content", *aContent, hw))
+			}
+			if aSummary != nil {
+				out.Changes = append(out.Changes, snapField(kind, entityID, "summary", *aSummary, hw))
+			}
+			if aSourceURL != nil {
+				out.Changes = append(out.Changes, snapField(kind, entityID, "sourceUrl", *aSourceURL, hw))
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return PullResult{}, fmt.Errorf("sync: snapshot rows: %w", err)
+	}
+	return out, nil
+}
+
+func snapField(kind, entityID, field string, value any, seq int64) Change {
+	v, _ := json.Marshal(value)
+	f := field
+	return Change{Seq: seq, EntityKind: kind, EntityID: entityID, Op: OpUpdate, Field: &f, Value: v}
 }

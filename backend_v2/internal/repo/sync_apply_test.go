@@ -350,4 +350,65 @@ func TestApplyMutation_CreateAssignsNonCollidingPosition(t *testing.T) {
 	}
 }
 
+// A cold pull (cursor 0) must return a SNAPSHOT of the current canonical
+// workspace — including entities that have NO change-feed rows (created before
+// the feed existed).
+func TestPullDelta_SnapshotIncludesPreFeedNodes(t *testing.T) {
+	pool, ctx, done := applyTestPool(t)
+	defer done()
+
+	const folderID = "test-snap-folder"
+	const artID = "test-snap-artifact"
+	cleanup := func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM workspace_changes WHERE user_id=$1 AND entity_id IN ($2,$3)`, testAdminUserID, folderID, artID)
+		_, _ = pool.Exec(ctx, `DELETE FROM tree_nodes WHERE user_id=$1::uuid AND (id IN ($2,$3) OR artifact_id=$3)`, testAdminUserID, folderID, artID)
+		_, _ = pool.Exec(ctx, `DELETE FROM artifacts WHERE user_id=$1::uuid AND id=$2`, testAdminUserID, artID)
+	}
+	cleanup()
+	defer cleanup()
+
+	// Seed canonical rows directly with NO feed rows (simulates pre-feed data).
+	if _, err := pool.Exec(ctx, `INSERT INTO tree_nodes (id,user_id,parent_id,kind,title,artifact_id,position,created_at,updated_at)
+		VALUES ($1,$2::uuid,NULL,'folder','PreFeed',NULL,9100001,now(),now())`, folderID, testAdminUserID); err != nil {
+		t.Fatalf("seed folder: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO artifacts (id,user_id,type,title,content,metadata,created_at,updated_at)
+		VALUES ($1,$2::uuid,'note','PreNote','','{}'::jsonb,now(),now())`, artID, testAdminUserID); err != nil {
+		t.Fatalf("seed artifact: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO tree_nodes (id,user_id,parent_id,kind,title,artifact_id,position,created_at,updated_at)
+		VALUES ($1,$2::uuid,$3,'artifact',NULL,$1,9100002,now(),now())`, artID, testAdminUserID, folderID); err != nil {
+		t.Fatalf("seed artifact node: %v", err)
+	}
+
+	res, err := NewSyncPostgres(pool).PullDelta(ctx, testAdminUserID, 0)
+	if err != nil {
+		t.Fatalf("pull snapshot: %v", err)
+	}
+
+	sawFolderCreate, sawArtCreate := false, false
+	folderTitle, artType := "", ""
+	for _, c := range res.Changes {
+		switch {
+		case c.EntityID == folderID && c.Op == OpCreate:
+			sawFolderCreate = true
+		case c.EntityID == artID && c.Op == OpCreate:
+			sawArtCreate = true
+		case c.EntityID == folderID && c.Field != nil && *c.Field == "title":
+			folderTitle = strings.TrimSpace(string(c.Value))
+		case c.EntityID == artID && c.Field != nil && *c.Field == "type":
+			artType = strings.TrimSpace(string(c.Value))
+		}
+	}
+	if !sawFolderCreate || !sawArtCreate {
+		t.Fatalf("snapshot missing creates: folder=%v artifact=%v", sawFolderCreate, sawArtCreate)
+	}
+	if folderTitle != `"PreFeed"` {
+		t.Fatalf("folder title = %s, want \"PreFeed\"", folderTitle)
+	}
+	if artType != `"note"` {
+		t.Fatalf("artifact type = %s, want \"note\"", artType)
+	}
+}
+
 func int64ptr(v int64) *int64 { return &v }
