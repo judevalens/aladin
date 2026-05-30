@@ -72,9 +72,11 @@ pub struct PushMutation {
     pub source_url: Option<String>,
 }
 
-/// Per-mutation outcome from the push endpoint.
+/// Per-mutation outcome from the push endpoint. `mutation_id` mirrors the wire
+/// response for traceability even though the serial sender keys off position.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct PushResult {
     pub mutation_id: String,
     pub status: String, // "applied" | "duplicate" | "error"

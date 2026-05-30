@@ -17,10 +17,6 @@ pub enum DbError {
     Api(#[from] crate::api::ApiError),
     #[error("db not initialized")]
     NotInitialized,
-    #[error("missing local state")]
-    MissingLocalState,
-    #[error("invalid input: {0}")]
-    InvalidInput(String),
 }
 
 impl serde::Serialize for DbError {

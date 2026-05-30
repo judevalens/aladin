@@ -46,16 +46,6 @@ impl ApiError {
         }
     }
 
-    pub fn kind(&self) -> ApiErrorKind {
-        self.kind
-    }
-
-    pub fn is_transient(&self) -> bool {
-        matches!(
-            self.kind,
-            ApiErrorKind::Transient | ApiErrorKind::RateLimited | ApiErrorKind::Server
-        )
-    }
 }
 
 #[cfg(test)]

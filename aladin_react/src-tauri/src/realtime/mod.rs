@@ -56,66 +56,10 @@ pub struct ValidatedBackendEvent {
     pub payload: BackendEventPayload,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ArtifactSnapshotPayload {
-    pub id: String,
-    #[serde(rename = "type")]
-    pub kind: String,
-    pub folder_id: Option<String>,
-    pub title: String,
-    #[serde(default)]
-    pub content: Option<String>,
-    pub summary: Option<String>,
-    pub source_url: Option<String>,
-    pub resource_url: Option<String>,
-    pub metadata: Option<Value>,
-    pub updated_at: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TreeNodeSnapshotPayload {
-    pub node: TreeNodePayload,
-    pub artifact: Option<ArtifactSnapshotPayload>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TreeNodePayload {
-    pub id: String,
-    pub parent_id: Option<String>,
-    pub kind: String,
-    pub title: String,
-    pub artifact_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PageSnapshotPayload {
-    pub id: String,
-    pub title: String,
-    /// Post-M5: the Go backend publishes BlockNote blocks JSON in this
-    /// field. We round-trip it opaquely.
-    #[serde(default)]
-    pub blocks: Value,
-    pub revision: i64,
-    pub updated_at: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct EntityDeletedPayload {
-    pub id: String,
-}
-
+/// A live per-field change row carried over the websocket (the only payload),
+/// applied directly into `nodes` via the same seq-guarded apply.
 #[derive(Debug, Clone)]
 pub enum BackendEventPayload {
-    TreeNodeSnapshot(TreeNodeSnapshotPayload),
-    PageSnapshot(PageSnapshotPayload),
-    EntityDeleted(EntityDeletedPayload),
-    // Data-layer redesign, Phase C — a per-field change row carried live over the
-    // websocket, applied directly into `nodes` via the same seq-guarded apply.
     SyncChange(SyncChange),
 }
 
@@ -464,35 +408,6 @@ fn sync_config_ready(config: &SyncConfig) -> bool {
     !config.api_base_url.trim().is_empty() && config.token.as_deref().unwrap_or("").trim() != ""
 }
 
-pub fn decode_tree_node_snapshot_payload(value: &Value) -> Result<BackendEventPayload, String> {
-    let payload: TreeNodeSnapshotPayload =
-        serde_json::from_value(value.clone()).map_err(|error| error.to_string())?;
-    validate_payload_id(&payload.node.id)?;
-    validate_non_empty(&payload.node.kind, "tree node kind is required")?;
-    validate_non_empty(&payload.node.title, "tree node title is required")?;
-    if let Some(artifact) = payload.artifact.as_ref() {
-        validate_payload_id(&artifact.id)?;
-        validate_non_empty(&artifact.kind, "artifact type is required")?;
-        validate_non_empty(&artifact.title, "artifact title is required")?;
-    }
-    Ok(BackendEventPayload::TreeNodeSnapshot(payload))
-}
-
-pub fn decode_page_snapshot_payload(value: &Value) -> Result<BackendEventPayload, String> {
-    let payload: PageSnapshotPayload =
-        serde_json::from_value(value.clone()).map_err(|error| error.to_string())?;
-    validate_payload_id(&payload.id)?;
-    validate_non_empty(&payload.title, "page title is required")?;
-    Ok(BackendEventPayload::PageSnapshot(payload))
-}
-
-pub fn decode_entity_deleted_payload(value: &Value) -> Result<BackendEventPayload, String> {
-    let payload: EntityDeletedPayload =
-        serde_json::from_value(value.clone()).map_err(|error| error.to_string())?;
-    validate_payload_id(&payload.id)?;
-    Ok(BackendEventPayload::EntityDeleted(payload))
-}
-
 /// Decodes a per-field change row carried live over the websocket (the server
 /// echoes the same rows it appended to the feed). Applied directly via the
 /// seq-guarded apply; the cursor is untouched (pull advances it on recovery).
@@ -661,7 +576,7 @@ mod tests {
         fn payload_registrations(&self) -> Vec<PayloadRegistration> {
             vec![PayloadRegistration {
                 event_kind: "artifact.updated",
-                decoder: decode_tree_node_snapshot_payload,
+                decoder: decode_sync_change_payload,
             }]
         }
 
@@ -672,14 +587,9 @@ mod tests {
             _config: &SyncConfig,
             event: &ValidatedBackendEvent,
         ) -> DbResult<()> {
-            match &event.payload {
-                BackendEventPayload::TreeNodeSnapshot(payload) => {
-                    if payload.node.id == "artifact-1" && payload.node.title == "Updated memo" {
-                        self.handled.fetch_add(1, Ordering::SeqCst);
-                    }
-                }
-                BackendEventPayload::EntityDeleted(_) => {}
-                _ => {}
+            let BackendEventPayload::SyncChange(change) = &event.payload;
+            if change.entity_id == "artifact-1" && change.value == Some(serde_json::json!("Updated memo")) {
+                self.handled.fetch_add(1, Ordering::SeqCst);
             }
             Ok(())
         }
@@ -704,24 +614,13 @@ mod tests {
                     "evt-valid",
                     "artifact.updated",
                     serde_json::json!({
-                        "node": {
-                            "id": "artifact-1",
-                            "parentId": "folder-1",
-                            "kind": "artifact",
-                            "title": "Updated memo",
-                            "artifactId": "artifact-1"
-                        },
-                        "artifact": {
-                            "id": "artifact-1",
-                            "type": "page",
-                            "folderId": "folder-1",
-                            "title": "Updated memo",
-                            "content": "Body",
-                            "summary": "Short",
-                            "sourceUrl": null,
-                            "metadata": {},
-                            "updatedAt": "2026-05-24T00:00:00Z"
-                        }
+                        "seq": 42,
+                        "entityKind": "artifact",
+                        "entityId": "artifact-1",
+                        "op": "update",
+                        "field": "title",
+                        "value": "Updated memo",
+                        "mutationId": "client-x:5"
                     }),
                 ),
             )

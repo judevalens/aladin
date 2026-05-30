@@ -65,9 +65,7 @@ impl EventSubscriber for WorkspaceLiveSubscriber {
         _config: &SyncConfig,
         event: &ValidatedBackendEvent,
     ) -> DbResult<()> {
-        let BackendEventPayload::SyncChange(change) = &event.payload else {
-            return Ok(());
-        };
+        let BackendEventPayload::SyncChange(change) = &event.payload;
         let emit = db.with_tx(|tx| {
             let outcome = nodes::apply_change(tx, change)?;
             Ok(match outcome {
