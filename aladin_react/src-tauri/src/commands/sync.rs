@@ -1,7 +1,6 @@
 use serde::Deserialize;
 use tauri::{ipc::Channel, State};
 
-use crate::db::repo::browser::{BrowserNodeRow, BrowserRepo};
 use crate::db::{Db, DbResult};
 use crate::events::{DataEvent, DataEventHub};
 use crate::sync::{SyncConfig, SyncHandle};
@@ -26,17 +25,8 @@ pub fn sync_subscribe_data_events(events: State<'_, DataEventHub>, channel: Chan
     events.subscribe(channel);
 }
 
-#[tauri::command]
-pub fn sync_drain_outbox(
-    db: State<'_, Db>,
-    events: State<'_, DataEventHub>,
-    sync: State<'_, SyncHandle>,
-) -> DbResult<usize> {
-    sync.drain_once(&db, &events)
-}
-
-/// Pulls the workspace change-feed delta and applies it into `nodes` on demand
-/// (Phase A read/convergence). Returns the number of changes applied.
+/// Pushes pending intents then pulls + applies the change-feed delta into
+/// `nodes`, on demand. Returns the number of changes applied.
 #[tauri::command]
 pub fn sync_pull_now(
     db: State<'_, Db>,
@@ -44,14 +34,4 @@ pub fn sync_pull_now(
     sync: State<'_, SyncHandle>,
 ) -> DbResult<usize> {
     sync.pull_now(&db, &events)
-}
-
-#[tauri::command]
-pub fn db_refresh_workspace(
-    db: State<'_, Db>,
-    events: State<'_, DataEventHub>,
-    sync: State<'_, SyncHandle>,
-) -> DbResult<Vec<BrowserNodeRow>> {
-    let config = sync.get().ok_or(crate::db::DbError::NotInitialized)?;
-    BrowserRepo::default().refresh_workspace(&db, &events, &config)
 }

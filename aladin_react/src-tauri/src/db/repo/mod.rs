@@ -2,8 +2,6 @@ pub mod artifacts;
 pub mod browser;
 pub mod intent;
 pub mod nodes;
-pub mod outbox;
-pub mod page_content;
 pub mod pages;
 
 use rusqlite::types::Type;
@@ -15,12 +13,6 @@ pub enum SyncStatus {
     Pending,
     Synced,
     Failed,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MutationMode {
-    UserAction,
-    OutboxReplay,
 }
 
 impl SyncStatus {

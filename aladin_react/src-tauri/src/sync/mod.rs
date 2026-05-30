@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Condvar, Mutex,
@@ -9,10 +8,7 @@ use std::{
 };
 
 use crate::{
-    db::{
-        repo::outbox::{self, OutboxDao, SqliteOutboxDao, MAX_OUTBOX_ATTEMPTS},
-        Db, DbResult,
-    },
+    db::{Db, DbResult},
     events::DataEventHub,
     realtime::{self, BackendEventProcessor, EventSubscriber},
 };
@@ -33,23 +29,6 @@ pub struct SyncConfig {
     pub token: Option<String>,
 }
 
-pub trait OutboxProcessor: Send + Sync {
-    fn entity_kind(&self) -> &'static str;
-    fn process(
-        &self,
-        db: &Db,
-        events: &DataEventHub,
-        config: &SyncConfig,
-        entry: &outbox::OutboxMutationRow,
-    ) -> DbResult<()>;
-
-    fn mark_failed(
-        &self,
-        tx: &rusqlite::Transaction<'_>,
-        entry: &outbox::OutboxMutationRow,
-    ) -> DbResult<()>;
-}
-
 #[derive(Clone)]
 pub struct SyncHandle {
     inner: Arc<SyncRuntimeState>,
@@ -57,11 +36,8 @@ pub struct SyncHandle {
 
 struct SyncRuntimeState {
     config: Mutex<Option<SyncConfig>>,
-    processors: Mutex<HashMap<String, Arc<dyn OutboxProcessor>>>,
     event_processor: BackendEventProcessor,
     subscription_version: AtomicU64,
-    outbox: Arc<dyn OutboxDao>,
-    started: AtomicBool,
     realtime_started: AtomicBool,
     pull_started: AtomicBool,
     // Wakes the pull/push loop early when a local write enqueues an intent, so
@@ -82,11 +58,8 @@ impl Default for SyncRuntimeState {
     fn default() -> Self {
         Self {
             config: Mutex::new(None),
-            processors: Mutex::new(HashMap::new()),
             event_processor: BackendEventProcessor::default(),
             subscription_version: AtomicU64::new(0),
-            outbox: Arc::new(SqliteOutboxDao),
-            started: AtomicBool::new(false),
             realtime_started: AtomicBool::new(false),
             pull_started: AtomicBool::new(false),
             wake: (Mutex::new(false), Condvar::new()),
@@ -109,12 +82,6 @@ impl SyncHandle {
             .and_then(|guard| guard.clone())
     }
 
-    pub fn register_processor(&self, processor: Arc<dyn OutboxProcessor>) {
-        if let Ok(mut processors) = self.inner.processors.lock() {
-            processors.insert(processor.entity_kind().to_string(), processor);
-        }
-    }
-
     pub fn register_event_subscriber(&self, subscriber: Arc<dyn EventSubscriber>) {
         self.inner.event_processor.register_subscriber(subscriber);
         self.inner
@@ -130,19 +97,6 @@ impl SyncHandle {
         self.inner.subscription_version.load(Ordering::SeqCst)
     }
 
-    pub fn start_polling(&self, db: Db, events: DataEventHub) {
-        if self.inner.started.swap(true, Ordering::SeqCst) {
-            return;
-        }
-        let sync = self.clone();
-        thread::spawn(move || loop {
-            if let Err(error) = sync.drain_once(&db, &events) {
-                eprintln!("sync poll failed: {error}");
-            }
-            thread::sleep(Duration::from_secs(60));
-        });
-    }
-
     pub fn start_realtime(&self, db: Db, events: DataEventHub) {
         if self.inner.realtime_started.swap(true, Ordering::SeqCst) {
             return;
@@ -151,9 +105,10 @@ impl SyncHandle {
         thread::spawn(move || realtime::run_websocket_loop(sync, db, events));
     }
 
-    /// Spawns the read/convergence loop: pulls the change-feed delta and applies
-    /// it into `nodes` on boot and every PULL_INTERVAL_SECS thereafter. This is
-    /// the mechanism that makes a client converge to server state (Phase A).
+    /// Spawns the read/convergence loop: push pending intents, then pull + apply
+    /// the change-feed delta. Runs on boot, on a nudge (local write), and every
+    /// PULL_INTERVAL_SECS as a recovery heartbeat. Steady-state convergence is
+    /// the live websocket; this loop is the send path + the recovery pull.
     pub fn start_pull_polling(&self, db: Db, events: DataEventHub) {
         if self.inner.pull_started.swap(true, Ordering::SeqCst) {
             return;
@@ -163,8 +118,6 @@ impl SyncHandle {
             let api = crate::api::sync::SyncApi;
             loop {
                 if let Some(config) = sync.get() {
-                    // Push local intents first (so the server has them), then pull
-                    // the converged delta (including our own echoes, idempotent).
                     if let Err(error) = push::push_pending(&db, &events, &config, &api) {
                         eprintln!("sync push failed: {error}");
                     }
@@ -173,8 +126,8 @@ impl SyncHandle {
                     }
                 }
                 // Wait until a local write nudges us, or the poll interval elapses
-                // (the guaranteed fallback). A nudge that arrives mid-cycle sets
-                // the flag, so the next wait returns immediately — no lost wakeup.
+                // (the recovery fallback). A nudge that arrives mid-cycle sets the
+                // flag, so the next wait returns immediately — no lost wakeup.
                 sync.wait_for_nudge(PULL_INTERVAL_SECS);
             }
         });
@@ -218,88 +171,13 @@ impl SyncHandle {
         }
         pull::pull_and_apply(db, events, &config, &api)
     }
-
-    pub fn drain_once(&self, db: &Db, events: &DataEventHub) -> DbResult<usize> {
-        let Some(config) = self.get() else {
-            return Ok(0);
-        };
-        if config.api_base_url.trim().is_empty() || config.token.as_deref().unwrap_or("").is_empty()
-        {
-            return Ok(0);
-        }
-
-        let pending = db.with_conn(|c| self.inner.outbox.list_pending(c, 50))?;
-        if pending.is_empty() {
-            return Ok(0);
-        }
-
-        let processors = self
-            .inner
-            .processors
-            .lock()
-            .map_err(|_| crate::db::DbError::NotInitialized)?
-            .clone();
-
-        let mut processed = 0usize;
-        for entry in pending {
-            let Some(processor) = processors.get(&entry.entity_kind).cloned() else {
-                continue;
-            };
-            match processor.process(db, events, &config, &entry) {
-                Ok(()) => {
-                    processed += 1;
-                }
-                Err(error) => {
-                    let next_attempts = entry.attempts + 1;
-                    let should_mark_failed = match &error {
-                        crate::db::DbError::Api(api) => matches!(
-                            api.kind(),
-                            crate::api::ApiErrorKind::Validation
-                                | crate::api::ApiErrorKind::Conflict
-                                | crate::api::ApiErrorKind::NotFound
-                        ),
-                        _ => false,
-                    } || next_attempts >= MAX_OUTBOX_ATTEMPTS;
-                    let error_message = error.to_string();
-                    let updated_at = current_time_ms();
-                    db.with_tx(|tx| {
-                        self.inner.outbox.record_retry(
-                            tx,
-                            &entry.id,
-                            &error_message,
-                            updated_at,
-                        )?;
-                        if should_mark_failed {
-                            self.inner.outbox.mark_failed(
-                                tx,
-                                &entry.id,
-                                &error_message,
-                                updated_at,
-                            )?;
-                            processor.mark_failed(tx, &entry)?;
-                        }
-                        Ok(())
-                    })?;
-                }
-            }
-        }
-
-        Ok(processed)
-    }
-}
-
-fn current_time_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as i64)
-        .unwrap_or(0)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::realtime::{
-        decode_entity_deleted_payload, BackendEventSubscription, PayloadRegistration,
+        decode_sync_change_payload, BackendEventSubscription, PayloadRegistration,
         ValidatedBackendEvent,
     };
 
@@ -326,7 +204,7 @@ mod tests {
         fn payload_registrations(&self) -> Vec<PayloadRegistration> {
             vec![PayloadRegistration {
                 event_kind: "artifact.deleted",
-                decoder: decode_entity_deleted_payload,
+                decoder: decode_sync_change_payload,
             }]
         }
 

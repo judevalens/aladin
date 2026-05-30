@@ -2,7 +2,7 @@ use rusqlite::Connection;
 
 use super::DbResult;
 
-const CURRENT_VERSION: i32 = 10;
+const CURRENT_VERSION: i32 = 11;
 
 pub fn migrate(conn: &Connection) -> DbResult<()> {
     let version: i32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
@@ -36,9 +36,23 @@ pub fn migrate(conn: &Connection) -> DbResult<()> {
     if version < 10 {
         conn.execute_batch(MIGRATION_V10)?;
     }
+    if version < 11 {
+        conn.execute_batch(MIGRATION_V11)?;
+    }
     conn.execute_batch(&format!("PRAGMA user_version = {CURRENT_VERSION};"))?;
     Ok(())
 }
+
+// Data-layer redesign, cutover — drop the legacy local tables. The tree is now
+// the unified `nodes` model (V10) + the sync control plane (V9 field_seq/
+// field_intent/existence_intent) + sync_state; page CONTENT lives in
+// Yjs/Hocuspocus. `page_metadata` and `backend_events` are retained for now.
+const MIGRATION_V11: &str = "
+DROP TABLE IF EXISTS page_content;
+DROP TABLE IF EXISTS artifacts;
+DROP TABLE IF EXISTS folders;
+DROP TABLE IF EXISTS outbox_mutations;
+";
 
 const MIGRATION_V1: &str = "
 CREATE TABLE IF NOT EXISTS folders (

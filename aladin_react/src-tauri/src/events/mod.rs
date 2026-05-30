@@ -3,22 +3,14 @@ use std::sync::{Arc, Mutex};
 use serde::Serialize;
 use tauri::ipc::Channel;
 
-use crate::db::repo::{
-    artifacts::ArtifactRow, browser::BrowserNodeRow, nodes::NodeRow, page_content::PageContentRow,
-};
+use crate::db::repo::nodes::NodeRow;
 
+/// Data-layer redesign — the only workspace data events. The pull/live engines
+/// apply changes into `nodes` and emit these; the UI reads `nodes` and patches
+/// its tree by id. (Page content rides Yjs/Hocuspocus, a separate channel.)
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", content = "payload", rename_all = "camelCase")]
 pub enum DataEvent {
-    BrowserNodeCreated(BrowserNodeRow),
-    BrowserNodeUpdated(BrowserNodeRow),
-    BrowserNodeDeleted(EntityDeletedEvent),
-    ArtifactChanged(ArtifactRow),
-    ArtifactDeleted(EntityDeletedEvent),
-    PageContentChanged(PageContentRow),
-    // Data-layer redesign, Phase A — the unified `nodes` model. The pull engine
-    // emits these after applying a feed delta; the workspace UI reads `nodes`
-    // and patches its tree by id. NodeUpserted carries the full current row.
     NodeUpserted(NodeRow),
     NodeDeleted(EntityDeletedEvent),
 }
