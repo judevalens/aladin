@@ -4,7 +4,6 @@ import { createAuthRepo } from "@/repos/auth/auth-repo";
 import { createArtifactApi } from "@/shared/api/artifact-api";
 import { createWorkspaceRepo } from "@/repos/workspace/workspace-repo";
 import { createArtifactRepo } from "@/repos/artifacts/artifact-repo";
-import { createPageRepo } from "@/repos/pages/page-repo";
 import { createSourcesRepo } from "@/repos/sources/sources-repo";
 import { createIntegrationRepo } from "@/repos/integrations/integration-repo";
 import { createApiClient } from "@/shared/api/client";
@@ -15,8 +14,6 @@ import { nodeRowToArtifactRow, rowToArtifact } from "@/repos/artifacts/artifact-
 import * as authService from "@/services/auth/auth-service";
 import { AuthSessionService } from "@/services/auth/auth-session-service";
 import { WorkspaceService } from "@/services/workspace/workspace-service";
-import { PageDocumentService } from "@/services/pages/page-document-service";
-import { PageSessionsService } from "@/services/pages/page-sessions-service";
 import { SourcesCatalogService } from "@/services/sources/sources-catalog-service";
 import * as integrationService from "@/services/integrations/integration-service";
 import { WorkspaceSyncService } from "@/services/workspace/workspace-sync-service";
@@ -42,7 +39,6 @@ export function createAppComposition() {
       localSync,
     ),
     artifacts: createArtifactRepo(apis.artifacts, apiClient, local.repos.artifacts),
-    pages: createPageRepo(local.repos.artifacts),
     sources: createSourcesRepo(apiClient),
     integrations: createIntegrationRepo(apiClient),
   };
@@ -54,17 +50,14 @@ export function createAppComposition() {
     repos.artifacts,
     workspaceSync,
   );
-  const pageDocuments = new PageDocumentService(repos.pages);
-  const pageSessions = new PageSessionsService(pageDocuments);
   const sourcesCatalog = new SourcesCatalogService(repos.sources, repos.integrations);
 
   void dataEvents.connect();
   dataEvents.events().subscribe((event) => {
-    // Data-layer redesign, Phase A: the unified `nodes` model drives the tree.
-    // Any node change reconciles the whole tree from the authoritative local
-    // model (coalesced); an artifact node also refreshes its open work-pane
-    // view. The legacy browserNode*/artifact* events still fire from the old
-    // write path but are intentionally ignored here (removed at cutover).
+    // Data-layer redesign: the unified `nodes` model drives the tree. Any node
+    // change reconciles the whole tree from the authoritative local model
+    // (coalesced); an artifact node also refreshes its open work-pane view.
+    // (Page CONTENT rides Yjs/Hocuspocus — a separate channel.)
     if (event.type === "nodeUpserted") {
       workspaceSync.handleNodeChanged();
       if (event.payload.kind === "artifact") {
@@ -76,31 +69,6 @@ export function createAppComposition() {
     }
     if (event.type === "nodeDeleted") {
       workspaceSync.handleNodeChanged();
-      return;
-    }
-    if (event.type === "pageContentChanged") {
-      // Realtime ingest of a page edit from another client (e.g. an MCP
-      // agent). Join the title onto the row from the local artifact
-      // cache, then publish into the page document stream so an open
-      // editor sees the new revision.
-      const row = event.payload;
-      let blocks: unknown[] = [];
-      try {
-        const parsed = JSON.parse(row.blocks);
-        if (Array.isArray(parsed)) blocks = parsed;
-      } catch {
-        // ignore — leave blocks empty and let the editor's next
-        // db_get_page_content fix it up.
-      }
-      void local.repos.artifacts.getById(row.id).then((artifact) => {
-        pageDocuments.applyExternalUpdate({
-          id: row.id,
-          title: artifact?.title ?? "",
-          blocks,
-          revision: row.revision,
-          updatedAt: new Date(row.updatedAt).toISOString(),
-        });
-      });
       return;
     }
   });
@@ -120,10 +88,6 @@ export function createAppComposition() {
       session: authSession,
     },
     workspace,
-    pages: {
-      documents: pageDocuments,
-      sessions: pageSessions,
-    },
     sources: sourcesCatalog,
     integrations: integrationService,
   };

@@ -1,25 +1,14 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { Subject, type Observable } from "rxjs";
-import type {
-  ArtifactRow,
-  BrowserNodeRow,
-  NodeRow,
-  PageContentRow,
-} from "@/repos/local-repo-types";
+import type { NodeRow } from "@/repos/local-repo-types";
 
 export interface EntityDeletedEvent {
   id: string;
 }
 
+// Data-layer redesign — the only workspace data events (the unified `nodes`
+// model). Emitted by the pull/live engines after applying a change.
 export type DataEvent =
-  | { type: "browserNodeCreated"; payload: BrowserNodeRow }
-  | { type: "browserNodeUpdated"; payload: BrowserNodeRow }
-  | { type: "browserNodeDeleted"; payload: EntityDeletedEvent }
-  | { type: "artifactChanged"; payload: ArtifactRow }
-  | { type: "artifactDeleted"; payload: EntityDeletedEvent }
-  | { type: "pageContentChanged"; payload: PageContentRow }
-  // Data-layer redesign, Phase A — the unified `nodes` model. Emitted by the
-  // pull engine after applying a feed delta and by local-write mirrors.
   | { type: "nodeUpserted"; payload: NodeRow }
   | { type: "nodeDeleted"; payload: EntityDeletedEvent };
 
