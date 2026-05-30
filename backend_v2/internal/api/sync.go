@@ -79,7 +79,7 @@ func (s *Server) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 	}
 
 	results := make([]syncPushResult, 0, len(req.Mutations))
-	applied := 0
+	var appliedIDs []string
 	for _, m := range req.Mutations {
 		ack, err := s.deps.Sync().ApplyMutation(r.Context(), principal.UserID, m)
 		if err != nil {
@@ -87,26 +87,48 @@ func (s *Server) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if ack.Status == "applied" {
-			applied++
+			appliedIDs = append(appliedIDs, ack.MutationID)
 		}
 		results = append(results, syncPushResult{MutationID: ack.MutationID, Status: ack.Status})
 	}
 
-	// Data-layer redesign, Phase C — poke the user's other clients to pull the
-	// feed immediately (rather than waiting for their poll). We publish on the
-	// workspace stream, which their realtime subscription already covers; the
-	// client treats any inbound event as a "pull now" signal. Publish is
-	// user-scoped via the request principal. Best-effort (nil in tests).
-	if applied > 0 {
+	// Data-layer redesign, Phase C — live websocket carrying per-field changes.
+	// Echo each applied change row (with its seq) over the workspace realtime
+	// stream so the user's other clients apply it DIRECTLY via the same
+	// seq-guarded apply — no pull round-trip. The cursor still advances only on
+	// pull, which remains the recovery path (boot/reconnect/dropped events).
+	// User-scoped via the request principal; best-effort (nil in tests).
+	if len(appliedIDs) > 0 {
 		if rt := s.deps.Realtime(); rt != nil {
-			_ = rt.Publish(r.Context(), coreservice.PublishTarget{
-				Stream:       coreservice.WorkspaceStream,
-				ResourceKind: "folder",
-				ResourceID:   principal.UserID,
-				Operation:    "updated",
-			}, map[string]any{"poke": true})
+			for _, mid := range appliedIDs {
+				changes, err := s.deps.Sync().ChangesByMutation(r.Context(), principal.UserID, mid)
+				if err != nil {
+					continue
+				}
+				for _, c := range changes {
+					_ = rt.Publish(r.Context(), coreservice.PublishTarget{
+						Stream:       coreservice.WorkspaceStream,
+						ResourceKind: c.EntityKind,
+						ResourceID:   c.EntityID,
+						Operation:    changeOperation(c.Op),
+					}, c)
+				}
+			}
 		}
 	}
 
 	writeJSON(w, http.StatusOK, syncPushResponse{Results: results})
+}
+
+// changeOperation maps a feed op to the realtime event operation suffix
+// (eventType = entityKind + "." + operation).
+func changeOperation(op repo.ChangeOp) string {
+	switch op {
+	case repo.OpCreate:
+		return "created"
+	case repo.OpDelete:
+		return "deleted"
+	default:
+		return "updated"
+	}
 }

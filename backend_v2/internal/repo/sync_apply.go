@@ -102,6 +102,32 @@ func (r *SyncRepo) ApplyMutation(ctx context.Context, userID string, m Mutation)
 	return MutationAck{MutationID: m.MutationID, Status: ackApplied}, nil
 }
 
+// ChangesByMutation returns the change-feed rows a single mutation produced
+// (they share its mutation_id), in seq order, so the push handler can echo them
+// over the realtime stream for direct apply by peers.
+func (r *SyncRepo) ChangesByMutation(ctx context.Context, userID, mutationID string) ([]Change, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT seq, entity_kind, entity_id, op, field, value, mutation_id
+		  FROM workspace_changes
+		 WHERE user_id = $1 AND mutation_id = $2
+		 ORDER BY seq`, userID, mutationID)
+	if err != nil {
+		return nil, fmt.Errorf("sync: changes by mutation: %w", err)
+	}
+	defer rows.Close()
+	var out []Change
+	for rows.Next() {
+		var c Change
+		var op string
+		if err := rows.Scan(&c.Seq, &c.EntityKind, &c.EntityID, &op, &c.Field, &c.Value, &c.MutationID); err != nil {
+			return nil, err
+		}
+		c.Op = ChangeOp(op)
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
 // claimCounter advances the per-client high-water iff counter is newer; returns
 // false (skip) for a duplicate/old counter. Runs inside the caller's txn.
 func claimCounter(ctx context.Context, tx pgx.Tx, clientID, userID string, counter int64) (bool, error) {

@@ -307,6 +307,9 @@ impl BrowserRepo {
                 emit_deleted_events(events, &deleted);
                 Ok(true)
             }
+            // Legacy subscriber (no longer registered) — the new live path
+            // (WorkspaceLiveSubscriber) handles SyncChange. Deleted at cutover.
+            BackendEventPayload::SyncChange(_) => Ok(true),
         }
     }
 

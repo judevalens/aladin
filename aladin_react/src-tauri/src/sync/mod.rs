@@ -17,15 +17,15 @@ use crate::{
     realtime::{self, BackendEventProcessor, EventSubscriber},
 };
 
-pub mod poke;
+pub mod live;
 pub mod pull;
 pub mod push;
 
-/// How often the read/convergence loop pulls the change-feed delta. The
-/// realtime websocket is the fast path (any event pokes an immediate pull — see
-/// realtime::run_websocket_loop); this poll is the guaranteed fallback when a
-/// poke is missed or the socket is down.
-const PULL_INTERVAL_SECS: u64 = 2;
+/// Recovery-pull cadence. Steady state is the live websocket (data-carrying
+/// events applied directly) + the per-write nudge for sending; this heartbeat
+/// only heals what the live stream missed (a dropped event while connected).
+/// Reconnect catch-up is a separate pull on ws connect.
+const PULL_INTERVAL_SECS: u64 = 20;
 
 #[derive(Debug, Clone)]
 pub struct SyncConfig {

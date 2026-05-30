@@ -19,6 +19,7 @@ use tungstenite::{
 };
 
 use crate::{
+    api::sync::SyncChange,
     db::{Db, DbResult},
     events::DataEventHub,
     sync::{SyncConfig, SyncHandle},
@@ -113,6 +114,9 @@ pub enum BackendEventPayload {
     TreeNodeSnapshot(TreeNodeSnapshotPayload),
     PageSnapshot(PageSnapshotPayload),
     EntityDeleted(EntityDeletedPayload),
+    // Data-layer redesign, Phase C — a per-field change row carried live over the
+    // websocket, applied directly into `nodes` via the same seq-guarded apply.
+    SyncChange(SyncChange),
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -356,7 +360,9 @@ fn connect_once(
     set_socket_read_timeout(&mut socket, Duration::from_secs(SUBSCRIPTION_POLL_SECS))?;
     let mut subscription_version = sync.subscription_version();
     send_subscribe(&mut socket, sync)?;
-    let _ = sync.drain_once(db, events);
+    // Recovery pull on (re)connect: catch up anything missed while the socket
+    // was down (the cursor advances here, not on live events).
+    let _ = sync.pull_now(db, events);
 
     loop {
         let message = match socket.read() {
@@ -379,16 +385,15 @@ fn connect_once(
             "event" => {
                 if let Some(event) = parsed.event {
                     let event_id = event.event_id.clone();
+                    // Data-layer redesign, Phase C — the live change row is carried
+                    // in the event payload and applied DIRECTLY here (via the
+                    // WorkspaceLiveSubscriber → seq-guarded apply). No pull is
+                    // triggered per event; the cursor advances only on the
+                    // recovery pull (on connect + heartbeat).
                     sync.event_processor()
                         .process_event(db, events, config, event)
                         .map_err(|error| error.to_string())?;
                     *last_event_id = Some(event_id);
-                    // Data-layer redesign, Phase C — treat any realtime event as a
-                    // poke: pull the workspace change feed so the new `nodes`
-                    // model converges immediately (rather than waiting for the
-                    // poll). The legacy event application above writes the soon-
-                    // to-be-dropped tables and is ignored by the UI.
-                    let _ = sync.pull_now(db, events);
                 }
             }
             "error" => {
@@ -486,6 +491,18 @@ pub fn decode_entity_deleted_payload(value: &Value) -> Result<BackendEventPayloa
         serde_json::from_value(value.clone()).map_err(|error| error.to_string())?;
     validate_payload_id(&payload.id)?;
     Ok(BackendEventPayload::EntityDeleted(payload))
+}
+
+/// Decodes a per-field change row carried live over the websocket (the server
+/// echoes the same rows it appended to the feed). Applied directly via the
+/// seq-guarded apply; the cursor is untouched (pull advances it on recovery).
+pub fn decode_sync_change_payload(value: &Value) -> Result<BackendEventPayload, String> {
+    let change: SyncChange =
+        serde_json::from_value(value.clone()).map_err(|error| error.to_string())?;
+    validate_payload_id(&change.entity_id)?;
+    validate_non_empty(&change.entity_kind, "change entity kind is required")?;
+    validate_non_empty(&change.op, "change op is required")?;
+    Ok(BackendEventPayload::SyncChange(change))
 }
 
 fn validate_payload_id(id: &str) -> Result<(), String> {
