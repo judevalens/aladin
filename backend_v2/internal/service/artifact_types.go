@@ -30,11 +30,6 @@ type BrowserNodeResponse struct {
 	Position   int64   `json:"position"`
 }
 
-type WorkspaceTreeNodeEventPayload struct {
-	Node     BrowserNodeResponse `json:"node"`
-	Artifact *ArtifactResponse   `json:"artifact,omitempty"`
-}
-
 type ArtifactCreateResponse struct {
 	Artifact ArtifactResponse    `json:"artifact"`
 	Node     BrowserNodeResponse `json:"node"`

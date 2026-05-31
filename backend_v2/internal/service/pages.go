@@ -32,16 +32,11 @@ type PageSaveInput struct {
 }
 
 type DefaultPageService struct {
-	repo     PageRepository
-	realtime RealtimeEventService
+	repo PageRepository
 }
 
-func NewPageService(repo PageRepository, realtime ...RealtimeEventService) *DefaultPageService {
-	var rt RealtimeEventService
-	if len(realtime) > 0 {
-		rt = realtime[0]
-	}
-	return &DefaultPageService{repo: repo, realtime: rt}
+func NewPageService(repo PageRepository) *DefaultPageService {
+	return &DefaultPageService{repo: repo}
 }
 
 func (s *DefaultPageService) Get(ctx context.Context, id string) (PageDocument, error) {
@@ -84,18 +79,6 @@ func (s *DefaultPageService) pageArtifact(ctx context.Context, id string) (Artif
 		return ArtifactResponse{}, ErrNotFound
 	}
 	return rec, nil
-}
-
-func (s *DefaultPageService) publishWorkspaceEvent(ctx context.Context, resourceKind string, resourceID string, operation string, payload any) {
-	if s.realtime == nil {
-		return
-	}
-	_ = s.realtime.Publish(ctx, PublishTarget{
-		Stream:       WorkspaceStream,
-		ResourceKind: resourceKind,
-		ResourceID:   resourceID,
-		Operation:    operation,
-	}, payload)
 }
 
 func toPageDocument(rec ArtifactResponse) PageDocument {

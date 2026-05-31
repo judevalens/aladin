@@ -36,7 +36,6 @@ type ArtifactRepository interface {
 	ListArtifacts(context.Context, ArtifactListParams) ([]ArtifactResponse, error)
 	SearchPageArtifacts(context.Context, PageSearchParams) ([]ArtifactResponse, error)
 	GetArtifact(context.Context, string) (ArtifactResponse, error)
-	CreateArtifact(context.Context, ArtifactResponse) error
 	// CreateArtifactGraph writes the artifact, its tree node, and (when
 	// pageBlocks != nil) the initial page_documents row in a single
 	// transaction. pageBlocks must be a JSON array of BlockNote blocks;
@@ -78,17 +77,12 @@ type ArtifactFileStore interface {
 }
 
 type DefaultArtifactService struct {
-	repo     ArtifactRepository
-	files    ArtifactFileStore
-	realtime RealtimeEventService
+	repo  ArtifactRepository
+	files ArtifactFileStore
 }
 
-func NewArtifactService(repo ArtifactRepository, files ArtifactFileStore, realtime ...RealtimeEventService) *DefaultArtifactService {
-	var rt RealtimeEventService
-	if len(realtime) > 0 {
-		rt = realtime[0]
-	}
-	return &DefaultArtifactService{repo: repo, files: files, realtime: rt}
+func NewArtifactService(repo ArtifactRepository, files ArtifactFileStore) *DefaultArtifactService {
+	return &DefaultArtifactService{repo: repo, files: files}
 }
 
 func (s *DefaultArtifactService) List(ctx context.Context, params ArtifactListParams) ([]ArtifactResponse, error) {
@@ -270,10 +264,6 @@ func (s *DefaultArtifactService) Create(ctx context.Context, payload ArtifactPay
 		ArtifactID: node.ArtifactID,
 		Position:   node.Position,
 	}
-	s.publishWorkspaceEvent(ctx, "artifact", rec.ID, "created", WorkspaceTreeNodeEventPayload{
-		Node:     nodeResponse,
-		Artifact: &rec,
-	})
 	return ArtifactCreateResponse{
 		Artifact: rec,
 		Node:     nodeResponse,
@@ -330,7 +320,6 @@ func (s *DefaultArtifactService) DeleteBrowserNode(ctx context.Context, id strin
 	if err := s.repo.DeleteBrowserNode(ctx, id); err != nil {
 		return err
 	}
-	s.publishWorkspaceEvent(ctx, "folder", id, "deleted", map[string]string{"id": id})
 	return nil
 }
 
@@ -416,10 +405,6 @@ func (s *DefaultArtifactService) Update(ctx context.Context, id string, patch Ar
 	if err != nil {
 		return ArtifactResponse{}, err
 	}
-	s.publishWorkspaceEvent(ctx, "artifact", updated.ID, "updated", WorkspaceTreeNodeEventPayload{
-		Node:     browserNodeEventFromArtifact(updated, 0),
-		Artifact: &updated,
-	})
 	return updated, nil
 }
 
@@ -433,7 +418,6 @@ func (s *DefaultArtifactService) Delete(ctx context.Context, id string) error {
 	if err := s.repo.DeleteArtifact(ctx, id); err != nil {
 		return err
 	}
-	s.publishWorkspaceEvent(ctx, "artifact", id, "deleted", map[string]string{"id": id})
 	return nil
 }
 
@@ -497,10 +481,6 @@ func (s *DefaultArtifactService) Upload(ctx context.Context, input ArtifactUploa
 	if err := s.repo.CreateArtifactGraph(ctx, rec, node, nil, ""); err != nil {
 		return ArtifactResponse{}, err
 	}
-	s.publishWorkspaceEvent(ctx, "artifact", rec.ID, "created", WorkspaceTreeNodeEventPayload{
-		Node:     browserNodeEventFromArtifact(rec, position),
-		Artifact: &rec,
-	})
 	return rec, nil
 }
 
@@ -632,9 +612,6 @@ func (s *DefaultArtifactService) createFolderNode(ctx context.Context, id string
 		Title:    title,
 		Position: position,
 	}
-	s.publishWorkspaceEvent(ctx, "folder", folderID, "created", WorkspaceTreeNodeEventPayload{
-		Node: node,
-	})
 	return node, nil
 }
 
@@ -659,14 +636,6 @@ func (s *DefaultArtifactService) UpdateFolder(ctx context.Context, id string, pa
 	if err != nil {
 		return FolderNode{}, err
 	}
-	s.publishWorkspaceEvent(ctx, "folder", updated.ID, "updated", WorkspaceTreeNodeEventPayload{
-		Node: BrowserNodeResponse{
-			ID:       updated.ID,
-			ParentID: updated.ParentID,
-			Kind:     "folder",
-			Title:    updated.Title,
-		},
-	})
 	return updated, nil
 }
 
@@ -693,25 +662,3 @@ func (s *DefaultArtifactService) FolderBreadcrumbs(ctx context.Context, id strin
 	return s.repo.FolderBreadcrumbs(ctx, id)
 }
 
-func (s *DefaultArtifactService) publishWorkspaceEvent(ctx context.Context, resourceKind string, resourceID string, operation string, payload any) {
-	if s.realtime == nil {
-		return
-	}
-	_ = s.realtime.Publish(ctx, PublishTarget{
-		Stream:       WorkspaceStream,
-		ResourceKind: resourceKind,
-		ResourceID:   resourceID,
-		Operation:    operation,
-	}, payload)
-}
-
-func browserNodeEventFromArtifact(rec ArtifactResponse, position int64) BrowserNodeResponse {
-	return BrowserNodeResponse{
-		ID:         rec.ID,
-		ParentID:   rec.FolderID,
-		Kind:       "artifact",
-		Title:      rec.Title,
-		ArtifactID: &rec.ID,
-		Position:   position,
-	}
-}

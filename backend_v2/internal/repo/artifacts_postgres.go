@@ -147,30 +147,6 @@ func (r *PostgresArtifactRepository) GetArtifact(ctx context.Context, id string)
 	return scanArtifactResponse(row)
 }
 
-func (r *PostgresArtifactRepository) CreateArtifact(ctx context.Context, rec artifactservice.ArtifactResponse) error {
-	userID, err := r.userID(ctx)
-	if err != nil {
-		return err
-	}
-	createdAt, err := time.Parse(time.RFC3339, rec.CreatedAt)
-	if err != nil {
-		return err
-	}
-	updatedAt, err := time.Parse(time.RFC3339, rec.UpdatedAt)
-	if err != nil {
-		return err
-	}
-	metadata, _ := json.Marshal(rec.Metadata)
-	_, err = r.pool.Exec(ctx, `
-		INSERT INTO artifacts (
-		    id, user_id, type, title, content, summary, source_url, metadata, created_at, updated_at
-		) VALUES (
-		    $1, $2::uuid, $3, $4, $5, $6, $7, $8::jsonb, $9, $10
-		)
-	`, rec.ID, userID, rec.Type, rec.Title, rec.Content, rec.Summary, rec.SourceURL, string(metadata), createdAt, updatedAt)
-	return err
-}
-
 func (r *PostgresArtifactRepository) CreateArtifactGraph(ctx context.Context, rec artifactservice.ArtifactResponse, node artifactservice.TreeNodeRecord, pageBlocks json.RawMessage, pageSearchText string) error {
 	userID, err := r.userID(ctx)
 	if err != nil {
