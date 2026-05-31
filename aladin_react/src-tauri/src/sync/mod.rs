@@ -1,7 +1,7 @@
 use std::{
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        Arc, Condvar, Mutex,
+        Arc, Mutex,
     },
     thread,
     time::Duration,
@@ -13,14 +13,16 @@ use crate::{
     realtime::{self, BackendEventProcessor, EventSubscriber},
 };
 
+pub mod engine;
 pub mod live;
 pub mod pull;
-pub mod push;
 
-/// Recovery-pull cadence. Steady state is the live websocket (data-carrying
-/// events applied directly) + the per-write nudge for sending; this heartbeat
-/// only heals what the live stream missed (a dropped event while connected).
-/// Reconnect catch-up is a separate pull on ws connect.
+/// Recovery-pull cadence (doc §6: periodic time-based trigger). Steady state is
+/// the live websocket (committed frames applied directly); this heartbeat heals
+/// what the live stream missed (a dropped frame while connected) and bounds
+/// cursor staleness in wall-clock time. Reconnect catch-up is a separate pull on
+/// ws connect. There is no local-write trigger — writes proxy to the server and
+/// return as frames.
 const PULL_INTERVAL_SECS: u64 = 20;
 
 #[derive(Debug, Clone)]
@@ -40,10 +42,6 @@ struct SyncRuntimeState {
     subscription_version: AtomicU64,
     realtime_started: AtomicBool,
     pull_started: AtomicBool,
-    // Wakes the pull/push loop early when a local write enqueues an intent, so
-    // changes flush immediately instead of waiting for the next poll tick. The
-    // bool is a "work pending" flag so a nudge during a push isn't lost.
-    wake: (Mutex<bool>, Condvar),
 }
 
 impl Default for SyncHandle {
@@ -62,7 +60,6 @@ impl Default for SyncRuntimeState {
             subscription_version: AtomicU64::new(0),
             realtime_started: AtomicBool::new(false),
             pull_started: AtomicBool::new(false),
-            wake: (Mutex::new(false), Condvar::new()),
         }
     }
 }
@@ -118,57 +115,25 @@ impl SyncHandle {
             let api = crate::api::sync::SyncApi;
             loop {
                 if let Some(config) = sync.get() {
-                    if let Err(error) = push::push_pending(&db, &events, &config, &api) {
-                        eprintln!("sync push failed: {error}");
-                    }
                     if let Err(error) = pull::pull_and_apply(&db, &events, &config, &api) {
                         eprintln!("sync pull failed: {error}");
                     }
                 }
-                // Wait until a local write nudges us, or the poll interval elapses
-                // (the recovery fallback). A nudge that arrives mid-cycle sets the
-                // flag, so the next wait returns immediately — no lost wakeup.
-                sync.wait_for_nudge(PULL_INTERVAL_SECS);
+                // Periodic recovery heartbeat (doc §6). Live + reconnect-pull are
+                // the fast paths; this bounds cursor staleness in wall-clock time.
+                thread::sleep(Duration::from_secs(PULL_INTERVAL_SECS));
             }
         });
     }
 
-    /// Wakes the sync loop now (called right after a local write enqueues an
-    /// intent) so it flushes without waiting for the poll tick.
-    pub fn nudge(&self) {
-        let (lock, cv) = &self.inner.wake;
-        if let Ok(mut pending) = lock.lock() {
-            *pending = true;
-            cv.notify_one();
-        }
-    }
-
-    fn wait_for_nudge(&self, secs: u64) {
-        let (lock, cv) = &self.inner.wake;
-        let mut pending = match lock.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        if !*pending {
-            pending = match cv.wait_timeout(pending, Duration::from_secs(secs)) {
-                Ok((guard, _)) => guard,
-                Err(poisoned) => poisoned.into_inner().0,
-            };
-        }
-        *pending = false;
-    }
-
-    /// Runs one sync tick on demand (push pending intents, then pull + apply the
-    /// delta). Returns the number of changes applied; a no-op when there is no
-    /// configured session.
+    /// Runs one pull tick on demand (pull + apply frames since the cursor).
+    /// Returns the number of entities applied; a no-op when there is no
+    /// configured session. Used on ws (re)connect (recovery) + by callers.
     pub fn pull_now(&self, db: &Db, events: &DataEventHub) -> DbResult<usize> {
         let Some(config) = self.get() else {
             return Ok(0);
         };
         let api = crate::api::sync::SyncApi;
-        if let Err(error) = push::push_pending(db, events, &config, &api) {
-            eprintln!("sync push failed: {error}");
-        }
         pull::pull_and_apply(db, events, &config, &api)
     }
 }
@@ -177,8 +142,7 @@ impl SyncHandle {
 mod tests {
     use super::*;
     use crate::realtime::{
-        decode_sync_change_payload, BackendEventSubscription, PayloadRegistration,
-        ValidatedBackendEvent,
+        decode_frame_payload, BackendEventSubscription, PayloadRegistration, ValidatedBackendEvent,
     };
 
     struct TestEventSubscriber {
@@ -204,7 +168,7 @@ mod tests {
         fn payload_registrations(&self) -> Vec<PayloadRegistration> {
             vec![PayloadRegistration {
                 event_kind: "artifact.deleted",
-                decoder: decode_sync_change_payload,
+                decoder: decode_frame_payload,
             }]
         }
 

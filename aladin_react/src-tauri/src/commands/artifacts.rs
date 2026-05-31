@@ -1,19 +1,23 @@
 use serde::Deserialize;
+use serde_json::json;
 use tauri::State;
 
+use crate::api::workspace_write::{HttpWorkspaceWriteApi, WorkspaceWriteApi};
 use crate::commands::nodes::artifact_row_from_node;
 use crate::db::repo::artifacts::ArtifactRow;
-use crate::db::repo::intent;
 use crate::db::repo::nodes::{self, NodeRow};
-use crate::db::{Db, DbResult};
-use crate::events::{DataEvent, DataEventHub, EntityDeletedEvent};
-use crate::sync::SyncHandle;
+use crate::db::{Db, DbError, DbResult};
+use crate::events::{DataEvent, DataEventHub};
+use crate::sync::{SyncConfig, SyncHandle};
 
-// Data-layer redesign, Phase B (client) — artifact reads + write path over the
-// unified `nodes` model. Reads serve the legacy ArtifactRow shape from artifact
-// nodes; writes mirror into `nodes` + enqueue an intent (the background sender
-// pushes to /api/sync/push) + emit a node event. An artifact's id IS its node
-// id. Page bodies stay in page_content/Yjs (separate channel).
+// Data-layer R1-C (client) — artifact reads + write PROXIES.
+// Architecture: ~/.claude/plans/data-layer-offline-readable.md.
+//
+// Reads serve the legacy ArtifactRow shape from the `nodes` cache (an artifact's
+// id IS its node id). Writes proxy to the Go REST API (the Tauri/Rust backend
+// owns the write path) and do NOT touch SQLite — the change returns as a sync
+// FRAME (live drain → ws, or pull), so the frame-apply stays the SOLE cache
+// writer. Page bodies stay in Yjs/Hocuspocus (separate channel).
 
 #[derive(Debug, Deserialize, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -37,7 +41,39 @@ pub struct LocalArtifactDeleteCommand {
     pub mutation_id: String,
 }
 
-fn artifact_nodes(db: &Db) -> DbResult<Vec<ArtifactRow>> {
+fn require_config(sync: &State<'_, SyncHandle>) -> DbResult<SyncConfig> {
+    sync.get().ok_or(DbError::NotInitialized)
+}
+
+/// Builds the synthesized ArtifactRow returned to the caller (the authoritative
+/// row arrives via the frame; this is NOT written to the cache).
+fn synth_artifact_row(input: &LocalArtifactMutationCommand) -> ArtifactRow {
+    let node = NodeRow {
+        id: input.id.clone(),
+        kind: "artifact".to_string(),
+        parent_id: input.folder_id.clone(),
+        position: 0,
+        title: Some(input.title.clone()),
+        artifact_type: Some(
+            input
+                .r#type
+                .clone()
+                .filter(|t| !t.trim().is_empty())
+                .unwrap_or_else(|| "note".to_string()),
+        ),
+        content: input.content.clone(),
+        source_url: input.source_url.clone(),
+        summary: input.summary.clone(),
+        metadata_json: None,
+        updated_at: input.updated_at,
+    };
+    artifact_row_from_node(&node)
+}
+
+// --- reads (unchanged: SQLite cache, tombstones filtered in nodes::*) ---
+
+#[tauri::command]
+pub fn db_list_artifacts(db: State<'_, Db>) -> DbResult<Vec<ArtifactRow>> {
     db.with_conn(|conn| {
         Ok(nodes::list_nodes(conn)?
             .into_iter()
@@ -45,11 +81,6 @@ fn artifact_nodes(db: &Db) -> DbResult<Vec<ArtifactRow>> {
             .map(|n| artifact_row_from_node(&n))
             .collect())
     })
-}
-
-#[tauri::command]
-pub fn db_list_artifacts(db: State<'_, Db>) -> DbResult<Vec<ArtifactRow>> {
-    artifact_nodes(&db)
 }
 
 #[tauri::command]
@@ -76,8 +107,8 @@ pub fn db_get_artifacts(db: State<'_, Db>, ids: Vec<String>) -> DbResult<Vec<Art
     })
 }
 
-/// Local cache upsert of an artifact (no intent — used to cache a server/API
-/// read into the local model). Preserves the node's existing placement.
+/// Cache-only upsert of an artifact (NO write proxy — caches a server/API read,
+/// e.g. read-through of an artifact body, into the local model).
 #[tauri::command]
 pub fn db_upsert_artifact(
     db: State<'_, Db>,
@@ -110,103 +141,60 @@ pub fn db_upsert_artifact(
     Ok(())
 }
 
+// --- writes (proxy to Go; no SQLite, no emit — the frame brings it back) ---
+
 #[tauri::command]
 pub fn db_create_artifact(
-    db: State<'_, Db>,
-    events: State<'_, DataEventHub>,
     sync: State<'_, SyncHandle>,
     input: LocalArtifactMutationCommand,
 ) -> DbResult<ArtifactRow> {
-    let node = db.with_tx(|tx| {
-        let position = nodes::next_position(tx, input.folder_id.as_deref())?;
-        let node = NodeRow {
-            id: input.id.clone(),
-            kind: "artifact".to_string(),
-            parent_id: input.folder_id.clone(),
-            position,
-            title: Some(input.title.clone()),
-            artifact_type: Some(
-                input
-                    .r#type
-                    .clone()
-                    .filter(|t| !t.trim().is_empty())
-                    .unwrap_or_else(|| "note".to_string()),
-            ),
-            content: input.content.clone(),
-            source_url: input.source_url.clone(),
-            summary: input.summary.clone(),
-            metadata_json: None,
-            updated_at: input.updated_at,
-        };
-        nodes::upsert_local(tx, &node)?;
-        intent::enqueue_create(tx, "artifact", &input.id)?;
-        Ok(node)
-    })?;
-    events.emit(DataEvent::NodeUpserted(node.clone()));
-    sync.nudge();
-    Ok(artifact_row_from_node(&node))
+    let config = require_config(&sync)?;
+    let artifact_type = input
+        .r#type
+        .clone()
+        .filter(|t| !t.trim().is_empty())
+        .unwrap_or_else(|| "note".to_string());
+    // Create through the unified browser-node endpoint (kind=artifact).
+    let body = json!({
+        "id": input.id,
+        "kind": "artifact",
+        "parentId": input.folder_id,
+        "title": input.title,
+        "artifact": {
+            "type": artifact_type,
+            "content": input.content,
+            "summary": input.summary,
+            "sourceUrl": input.source_url,
+        },
+    });
+    HttpWorkspaceWriteApi
+        .create_node(&config, body)
+        .map_err(DbError::Api)?;
+    Ok(synth_artifact_row(&input))
 }
 
 #[tauri::command]
 pub fn db_rename_artifact(
-    db: State<'_, Db>,
-    events: State<'_, DataEventHub>,
     sync: State<'_, SyncHandle>,
     input: LocalArtifactMutationCommand,
 ) -> DbResult<ArtifactRow> {
-    let node = db.with_tx(|tx| {
-        let mut node = nodes::get_node(tx, &input.id)?.unwrap_or_else(|| NodeRow {
-            id: input.id.clone(),
-            kind: "artifact".to_string(),
-            parent_id: input.folder_id.clone(),
-            position: 0,
-            title: None,
-            artifact_type: Some("note".to_string()),
-            content: None,
-            source_url: None,
-            summary: None,
-            metadata_json: None,
-            updated_at: input.updated_at,
-        });
-        node.title = Some(input.title.clone());
-        node.updated_at = input.updated_at;
-        intent::enqueue_field(tx, "artifact", &input.id, "title")?;
-        // Optional fields set only when provided by the caller.
-        if let Some(content) = input.content.clone() {
-            node.content = Some(content);
-            intent::enqueue_field(tx, "artifact", &input.id, "content")?;
-        }
-        if let Some(summary) = input.summary.clone() {
-            node.summary = Some(summary);
-            intent::enqueue_field(tx, "artifact", &input.id, "summary")?;
-        }
-        if let Some(source_url) = input.source_url.clone() {
-            node.source_url = Some(source_url);
-            intent::enqueue_field(tx, "artifact", &input.id, "sourceUrl")?;
-        }
-        nodes::upsert_local(tx, &node)?;
-        Ok(node)
-    })?;
-    events.emit(DataEvent::NodeUpserted(node.clone()));
-    sync.nudge();
-    Ok(artifact_row_from_node(&node))
+    let config = require_config(&sync)?;
+    HttpWorkspaceWriteApi
+        .rename_artifact(&config, &input.id, &input.title)
+        .map_err(DbError::Api)?;
+    Ok(synth_artifact_row(&input))
 }
 
 #[tauri::command]
 pub fn db_delete_artifact(
-    db: State<'_, Db>,
-    events: State<'_, DataEventHub>,
     sync: State<'_, SyncHandle>,
     input: LocalArtifactDeleteCommand,
 ) -> DbResult<()> {
-    let removed = db.with_tx(|tx| {
-        let removed = nodes::delete_subtree(tx, &input.id)?;
-        intent::enqueue_delete(tx, "artifact", &input.id)?;
-        Ok(removed)
-    })?;
-    for id in removed {
-        events.emit(DataEvent::NodeDeleted(EntityDeletedEvent { id }));
-    }
-    sync.nudge();
+    let config = require_config(&sync)?;
+    // Delete through the browser-node endpoint so the server tombstones the node
+    // spine (and any subtree), not just the artifact row.
+    HttpWorkspaceWriteApi
+        .delete_node(&config, &input.id)
+        .map_err(DbError::Api)?;
     Ok(())
 }

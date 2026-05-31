@@ -1,4 +1,5 @@
 pub mod sync;
+pub mod workspace_write;
 
 use thiserror::Error;
 
@@ -45,7 +46,6 @@ impl ApiError {
             message: source.to_string(),
         }
     }
-
 }
 
 #[cfg(test)]

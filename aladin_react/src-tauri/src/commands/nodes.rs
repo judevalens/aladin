@@ -47,7 +47,10 @@ pub(crate) fn artifact_row_from_node(node: &NodeRow) -> ArtifactRow {
         id: node.id.clone(),
         folder_id: node.parent_id.clone(),
         title: node.title.clone().unwrap_or_default(),
-        kind: node.artifact_type.clone().unwrap_or_else(|| "note".to_string()),
+        kind: node
+            .artifact_type
+            .clone()
+            .unwrap_or_else(|| "note".to_string()),
         content: node.content.clone(),
         source_url: node.source_url.clone(),
         resource_url: None,

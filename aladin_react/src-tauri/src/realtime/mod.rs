@@ -19,7 +19,7 @@ use tungstenite::{
 };
 
 use crate::{
-    api::sync::SyncChange,
+    api::sync::Frame,
     db::{Db, DbResult},
     events::DataEventHub,
     sync::{SyncConfig, SyncHandle},
@@ -56,11 +56,11 @@ pub struct ValidatedBackendEvent {
     pub payload: BackendEventPayload,
 }
 
-/// A live per-field change row carried over the websocket (the only payload),
-/// applied directly into `nodes` via the same seq-guarded apply.
+/// A live data FRAME carried over the websocket (the only payload), applied
+/// directly into the cache via the same generic engine the pull uses.
 #[derive(Debug, Clone)]
 pub enum BackendEventPayload {
-    SyncChange(SyncChange),
+    Frame(Frame),
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -408,20 +408,21 @@ fn sync_config_ready(config: &SyncConfig) -> bool {
     !config.api_base_url.trim().is_empty() && config.token.as_deref().unwrap_or("").trim() != ""
 }
 
-/// Decodes a per-field change row carried live over the websocket (the server
-/// echoes the same rows it appended to the feed). Applied directly via the
-/// seq-guarded apply; the cursor is untouched (pull advances it on recovery).
-pub fn decode_sync_change_payload(value: &Value) -> Result<BackendEventPayload, String> {
-    let change: SyncChange =
-        serde_json::from_value(value.clone()).map_err(|error| error.to_string())?;
-    validate_payload_id(&change.entity_id)?;
-    validate_non_empty(&change.entity_kind, "change entity kind is required")?;
-    validate_non_empty(&change.op, "change op is required")?;
-    Ok(BackendEventPayload::SyncChange(change))
-}
-
-fn validate_payload_id(id: &str) -> Result<(), String> {
-    validate_non_empty(id, "payload id is required")
+/// Decodes a data FRAME carried live over the websocket (the server CDC drain
+/// publishes each committed frame). Applied directly via the generic engine; the
+/// cursor is untouched (pull advances it on recovery). Validates the frame is
+/// non-empty and every entity carries an id + kind + op.
+pub fn decode_frame_payload(value: &Value) -> Result<BackendEventPayload, String> {
+    let frame: Frame = serde_json::from_value(value.clone()).map_err(|error| error.to_string())?;
+    if frame.entities.is_empty() {
+        return Err("frame has no entities".to_string());
+    }
+    for entity in &frame.entities {
+        validate_non_empty(&entity.entity_id, "frame entity id is required")?;
+        validate_non_empty(&entity.entity_kind, "frame entity kind is required")?;
+        validate_non_empty(&entity.op, "frame entity op is required")?;
+    }
+    Ok(BackendEventPayload::Frame(frame))
 }
 
 fn validate_non_empty(value: &str, message: &str) -> Result<(), String> {
@@ -576,7 +577,7 @@ mod tests {
         fn payload_registrations(&self) -> Vec<PayloadRegistration> {
             vec![PayloadRegistration {
                 event_kind: "artifact.updated",
-                decoder: decode_sync_change_payload,
+                decoder: decode_frame_payload,
             }]
         }
 
@@ -587,8 +588,12 @@ mod tests {
             _config: &SyncConfig,
             event: &ValidatedBackendEvent,
         ) -> DbResult<()> {
-            let BackendEventPayload::SyncChange(change) = &event.payload;
-            if change.entity_id == "artifact-1" && change.value == Some(serde_json::json!("Updated memo")) {
+            let BackendEventPayload::Frame(frame) = &event.payload;
+            if frame
+                .entities
+                .iter()
+                .any(|e| e.entity_id == "artifact-1" && e.op == "upsert")
+            {
                 self.handled.fetch_add(1, Ordering::SeqCst);
             }
             Ok(())
@@ -614,13 +619,13 @@ mod tests {
                     "evt-valid",
                     "artifact.updated",
                     serde_json::json!({
-                        "seq": 42,
-                        "entityKind": "artifact",
-                        "entityId": "artifact-1",
-                        "op": "update",
-                        "field": "title",
-                        "value": "Updated memo",
-                        "mutationId": "client-x:5"
+                        "entities": [{
+                            "entityKind": "artifact",
+                            "entityId": "artifact-1",
+                            "seq": "42",
+                            "op": "upsert",
+                            "data": { "id": "artifact-1", "kind": "artifact", "parentId": null, "position": 1, "title": "Updated memo" }
+                        }]
                     }),
                 ),
             )

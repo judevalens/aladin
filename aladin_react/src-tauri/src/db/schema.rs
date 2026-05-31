@@ -2,7 +2,7 @@ use rusqlite::Connection;
 
 use super::DbResult;
 
-const CURRENT_VERSION: i32 = 11;
+const CURRENT_VERSION: i32 = 12;
 
 pub fn migrate(conn: &Connection) -> DbResult<()> {
     let version: i32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
@@ -38,6 +38,9 @@ pub fn migrate(conn: &Connection) -> DbResult<()> {
     }
     if version < 11 {
         conn.execute_batch(MIGRATION_V11)?;
+    }
+    if version < 12 {
+        conn.execute_batch(MIGRATION_V12)?;
     }
     conn.execute_batch(&format!("PRAGMA user_version = {CURRENT_VERSION};"))?;
     Ok(())
@@ -214,6 +217,24 @@ CREATE TABLE IF NOT EXISTS existence_intent (
     PRIMARY KEY (entity_kind, entity_id)
 );
 CREATE INDEX IF NOT EXISTS existence_intent_state ON existence_intent(state, local_seq);
+";
+
+// Data-layer R1-C — the client read cache for the generic outbox.
+// `nodes` becomes a pure read cache fed by sync FRAMES: per-ENTITY `seq` (the
+// staleness guard; client applies iff incoming.seq > stored.seq) + `is_deleted`
+// (soft-delete tombstone — the row is KEPT so a stale lower-seq upsert can't
+// resurrect it; reads filter is_deleted=0). The client no longer writes locally
+// or converges: the per-field intent log (field_seq/field_intent/
+// existence_intent, V9) is removed — the server is the only writer, writes proxy
+// through the Rust host to Go, and the change returns as a frame. The cursor in
+// sync_state is now the uint64 xid (stored as a decimal string).
+const MIGRATION_V12: &str = "
+ALTER TABLE nodes ADD COLUMN seq INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE nodes ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS nodes_is_deleted ON nodes(is_deleted);
+DROP TABLE IF EXISTS field_seq;
+DROP TABLE IF EXISTS field_intent;
+DROP TABLE IF EXISTS existence_intent;
 ";
 
 // Data-layer redesign, Phase A/D — the clean local model. One node tree

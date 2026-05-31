@@ -1,6 +1,5 @@
 pub mod artifacts;
 pub mod browser;
-pub mod intent;
 pub mod nodes;
 pub mod pages;
 

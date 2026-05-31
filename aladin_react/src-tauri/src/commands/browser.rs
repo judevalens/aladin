@@ -1,22 +1,25 @@
 use serde::Deserialize;
+use serde_json::json;
 use tauri::State;
 
+use crate::api::workspace_write::{HttpWorkspaceWriteApi, WorkspaceWriteApi};
 use crate::commands::nodes::{artifact_row_from_node, browser_node_from_node};
 use crate::db::repo::artifacts::ArtifactRow;
 use crate::db::repo::browser::BrowserNodeRow;
-use crate::db::repo::intent;
 use crate::db::repo::nodes::{self, NodeRow};
-use crate::db::{Db, DbResult};
-use crate::events::{DataEvent, DataEventHub, EntityDeletedEvent};
-use crate::sync::SyncHandle;
+use crate::db::{Db, DbError, DbResult};
+use crate::events::{DataEvent, DataEventHub};
+use crate::sync::{SyncConfig, SyncHandle};
 
-// Data-layer redesign, Phase B (client) — the workspace tree write path. Each
-// mutation writes the unified `nodes` model optimistically, enqueues an intent
-// (the background sender pushes it to POST /api/sync/push), and emits a node
-// event so the UI updates immediately. The server echo reconciles via pull. The
-// client-chosen id IS the server id (the generic write path accepts it), so
-// there is no temp-id reassignment. Returns keep the legacy shapes the frontend
-// repos expect (synthesized from the input).
+// Data-layer R1-C (client) — the workspace tree write path as Go PROXIES.
+// Architecture: ~/.claude/plans/data-layer-offline-readable.md.
+//
+// The Tauri/Rust backend owns workspace writes: each command proxies to the Go
+// REST API and returns; it does NOT write SQLite. The change comes back as a
+// sync FRAME (live drain → ws, or pull), so the frame-apply stays the SOLE cache
+// writer, even for the client's own writes. Returns synthesize the legacy shape
+// from the input so the calling repo keeps a stable signature; the authoritative
+// row arrives via the frame (R1-F drops any optimistic-local assumption).
 
 #[derive(Debug, Deserialize, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -58,10 +61,14 @@ pub struct BrowserCreateResult {
     pub artifact: Option<ArtifactRow>,
 }
 
+fn require_config(sync: &State<'_, SyncHandle>) -> DbResult<SyncConfig> {
+    sync.get().ok_or(DbError::NotInitialized)
+}
+
+// --- reads (unchanged: SQLite cache, tombstones filtered in nodes::*) ---
+
 #[tauri::command]
 pub fn db_list_browser_nodes(db: State<'_, Db>) -> DbResult<Vec<BrowserNodeRow>> {
-    // Legacy shape, served from the unified nodes model (the new read path is
-    // db_list_nodes; this keeps any remaining caller working until cutover).
     db.with_conn(|conn| {
         Ok(nodes::list_nodes(conn)?
             .into_iter()
@@ -75,8 +82,8 @@ pub fn db_get_browser_node(db: State<'_, Db>, id: String) -> DbResult<Option<Bro
     db.with_conn(|conn| Ok(nodes::get_node(conn, &id)?.map(browser_node_from_node)))
 }
 
-/// Local cache upsert of a browser node (no intent). Preserves the node's
-/// existing artifact fields + placement.
+/// Cache-only upsert of a browser node (NO write proxy — caches a read into the
+/// local model, e.g. read-through). Preserves the node's existing fields.
 #[tauri::command]
 pub fn db_upsert_browser_node(
     db: State<'_, Db>,
@@ -106,42 +113,70 @@ pub fn db_upsert_browser_node(
     Ok(())
 }
 
+// --- writes (proxy to Go; no SQLite, no emit — the frame brings it back) ---
+
 #[tauri::command]
 pub fn db_create_browser_node(
-    db: State<'_, Db>,
-    events: State<'_, DataEventHub>,
     sync: State<'_, SyncHandle>,
     input: LocalBrowserNodeCreateCommand,
 ) -> DbResult<BrowserCreateResult> {
+    let config = require_config(&sync)?;
     let is_artifact = input.kind.eq_ignore_ascii_case("artifact");
     let kind = if is_artifact { "artifact" } else { "folder" }.to_string();
 
-    let node_row = db.with_tx(|tx| {
-        let position = nodes::next_position(tx, input.parent_id.as_deref())?;
-        let row = NodeRow {
-            id: input.id.clone(),
-            kind: kind.clone(),
-            parent_id: input.parent_id.clone(),
-            position,
-            title: Some(input.title.clone()),
-            artifact_type: if is_artifact { input.artifact_type.clone() } else { None },
-            content: if is_artifact { input.content.clone() } else { None },
-            source_url: if is_artifact { input.source_url.clone() } else { None },
-            summary: if is_artifact { input.summary.clone() } else { None },
-            metadata_json: None,
-            updated_at: input.updated_at,
-        };
-        nodes::upsert_local(tx, &row)?;
-        intent::enqueue_create(tx, &kind, &input.id)?;
-        Ok(row)
-    })?;
+    let mut body = json!({
+        "id": input.id,
+        "kind": kind,
+        "parentId": input.parent_id,
+        "title": input.title,
+    });
+    if is_artifact {
+        body["artifact"] = json!({
+            "type": input.artifact_type.clone().unwrap_or_else(|| "note".to_string()),
+            "content": input.content,
+            "summary": input.summary,
+            "sourceUrl": input.source_url,
+        });
+    }
 
-    events.emit(DataEvent::NodeUpserted(node_row.clone()));
-    sync.nudge();
+    HttpWorkspaceWriteApi
+        .create_node(&config, body)
+        .map_err(DbError::Api)?;
 
-    let node = browser_node_from_node(node_row.clone());
+    // Synthesize the legacy shape from the input; the authoritative row arrives
+    // via the frame (this is NOT written to the cache).
+    let synth = NodeRow {
+        id: input.id.clone(),
+        kind: kind.clone(),
+        parent_id: input.parent_id.clone(),
+        position: 0,
+        title: Some(input.title.clone()),
+        artifact_type: if is_artifact {
+            input.artifact_type.clone()
+        } else {
+            None
+        },
+        content: if is_artifact {
+            input.content.clone()
+        } else {
+            None
+        },
+        source_url: if is_artifact {
+            input.source_url.clone()
+        } else {
+            None
+        },
+        summary: if is_artifact {
+            input.summary.clone()
+        } else {
+            None
+        },
+        metadata_json: None,
+        updated_at: input.updated_at,
+    };
+    let node = browser_node_from_node(synth.clone());
     let artifact = if is_artifact {
-        Some(artifact_row_from_node(&node_row))
+        Some(artifact_row_from_node(&synth))
     } else {
         None
     };
@@ -150,56 +185,39 @@ pub fn db_create_browser_node(
 
 #[tauri::command]
 pub fn db_rename_browser_node(
-    db: State<'_, Db>,
-    events: State<'_, DataEventHub>,
     sync: State<'_, SyncHandle>,
     input: LocalBrowserMutationCommand,
 ) -> DbResult<BrowserNodeRow> {
-    let row = db.with_tx(|tx| {
-        let mut row = nodes::get_node(tx, &input.id)?.unwrap_or_else(|| NodeRow {
-            id: input.id.clone(),
-            kind: "folder".to_string(),
-            parent_id: input.parent_id.clone(),
-            position: 0,
-            title: None,
-            artifact_type: None,
-            content: None,
-            source_url: None,
-            summary: None,
-            metadata_json: None,
-            updated_at: input.updated_at,
-        });
-        row.title = Some(input.title.clone());
-        row.updated_at = input.updated_at;
-        nodes::upsert_local(tx, &row)?;
-        intent::enqueue_field(tx, &row.kind, &input.id, "title")?;
-        Ok(row)
-    })?;
+    let config = require_config(&sync)?;
+    // A browser node here is a folder (artifacts rename via db_rename_artifact).
+    HttpWorkspaceWriteApi
+        .rename_folder(&config, &input.id, &input.title)
+        .map_err(DbError::Api)?;
 
-    events.emit(DataEvent::NodeUpserted(row.clone()));
-    sync.nudge();
-    Ok(browser_node_from_node(row))
+    let synth = NodeRow {
+        id: input.id.clone(),
+        kind: "folder".to_string(),
+        parent_id: input.parent_id.clone(),
+        position: 0,
+        title: Some(input.title.clone()),
+        artifact_type: None,
+        content: None,
+        source_url: None,
+        summary: None,
+        metadata_json: None,
+        updated_at: input.updated_at,
+    };
+    Ok(browser_node_from_node(synth))
 }
 
 #[tauri::command]
 pub fn db_delete_browser_node(
-    db: State<'_, Db>,
-    events: State<'_, DataEventHub>,
     sync: State<'_, SyncHandle>,
     input: LocalBrowserDeleteCommand,
 ) -> DbResult<()> {
-    let removed = db.with_tx(|tx| {
-        let kind = nodes::get_node(tx, &input.id)?
-            .map(|n| n.kind)
-            .unwrap_or_else(|| "folder".to_string());
-        let removed = nodes::delete_subtree(tx, &input.id)?;
-        intent::enqueue_delete(tx, &kind, &input.id)?;
-        Ok(removed)
-    })?;
-
-    for id in removed {
-        events.emit(DataEvent::NodeDeleted(EntityDeletedEvent { id }));
-    }
-    sync.nudge();
+    let config = require_config(&sync)?;
+    HttpWorkspaceWriteApi
+        .delete_node(&config, &input.id)
+        .map_err(DbError::Api)?;
     Ok(())
 }

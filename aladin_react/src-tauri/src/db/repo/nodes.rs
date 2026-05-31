@@ -1,28 +1,24 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
-use crate::api::sync::SyncChange;
 use crate::db::DbResult;
 
-// Data-layer redesign, Phase A (client) — apply the workspace change feed into
-// the clean `nodes` tree, guarded per (entity, field) by the newest-wins seq.
-// Plan: ~/.claude/plans/data-layer-sync-model.md.
+// Data-layer R1-C (client) — the `nodes` read cache fed by sync FRAMES.
+// Architecture: ~/.claude/plans/data-layer-offline-readable.md.
 //
-// The feed is server-authoritative and seq-ordered. We apply each change iff
-// its seq is strictly newer than the last seq we applied for that
-// (entity_kind, entity_id, field); create/delete share the entity-level
-// existence slot (field = ""). Application is idempotent: replaying a delta is
-// a no-op, and out-of-order/duplicate changes can't regress a field.
+// `nodes` is a pure read cache. Frame entities apply under a per-ENTITY `seq`
+// guard (apply iff incoming.seq > stored.seq); delete is a SOFT delete (the row
+// is KEPT with is_deleted=1 so a stale lower-seq upsert can't resurrect it).
+// Reads filter is_deleted=0. The client never writes locally or converges — the
+// server is the only writer (writes proxy to Go), and the change returns as a
+// frame. The cursor in sync_state is the uint64 xid (decimal string).
 
-/// The reconnect/replay cursor (max applied feed seq) — lives in sync_state KV.
+/// The pull cursor (last applied log horizon, a uint64 xid) — sync_state KV.
 const CURSOR_KEY: &str = "workspace_cursor";
 
-/// Field key for entity-level (create/delete) changes in `field_seq`. Mirrors
-/// the server's COALESCE(field,'') coalescing slot.
-const EXISTENCE_FIELD: &str = "";
-
 /// A node in the unified local workspace tree (folder or artifact). Maps 1:1 to
-/// the `nodes` table and the sync feed's per-field columns.
+/// the `nodes` table; this is the read-cache row the UI consumes (tombstones are
+/// filtered out by the read queries, so `is_deleted`/`seq` aren't exposed here).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NodeRow {
@@ -39,214 +35,103 @@ pub struct NodeRow {
     pub updated_at: i64,
 }
 
-/// What `apply_change` did, so the caller can emit the right UI data event.
-#[derive(Debug, Clone, PartialEq)]
-pub enum ApplyOutcome {
-    /// The node row was created or a field updated; carries the node id.
-    Upserted(String),
-    /// The node row was removed; carries the node id.
-    Deleted(String),
-    /// Stale/duplicate/unknown — nothing changed.
-    Skipped,
+/// The light fields a frame's `data` carries for an upsert (doc §3) — what a
+/// tree/list view needs. Heavy bodies (note content, page blocks) are NOT on the
+/// wire; they are fetched on demand (deferred). `kind` is the entity kind
+/// ("folder" | "artifact"); `type` maps to the artifact_type column.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LightNodeData {
+    kind: String,
+    parent_id: Option<String>,
+    #[serde(default)]
+    position: i64,
+    title: Option<String>,
+    #[serde(rename = "type")]
+    artifact_type: Option<String>,
+    source_url: Option<String>,
 }
 
-/// The `nodes` columns a feed field can target. Restricting to this closed set
-/// keeps the dynamic column name in `apply_field` a compile-time constant (no
-/// SQL injection surface from the wire `field` string).
-#[derive(Debug, Clone, Copy)]
-enum NodeColumn {
-    Title,
-    ParentId,
-    Position,
-    ArtifactType,
-    Content,
-    SourceUrl,
-    Summary,
-    Metadata,
-}
-
-/// Maps a feed field name to its `nodes` column. Unknown fields return None and
-/// are skipped (but their seq is still recorded so we don't reprocess them).
-fn map_field_to_column(field: &str) -> Option<NodeColumn> {
-    match field {
-        "title" => Some(NodeColumn::Title),
-        "parentId" => Some(NodeColumn::ParentId),
-        "position" => Some(NodeColumn::Position),
-        "type" => Some(NodeColumn::ArtifactType),
-        "content" => Some(NodeColumn::Content),
-        "sourceUrl" => Some(NodeColumn::SourceUrl),
-        "summary" => Some(NodeColumn::Summary),
-        "metadata" => Some(NodeColumn::Metadata),
-        _ => None,
-    }
-}
-
-/// JSON string value → owned String; null/absent/non-string → None.
-fn value_as_opt_text(value: Option<&serde_json::Value>) -> Option<String> {
-    match value {
-        Some(serde_json::Value::String(s)) => Some(s.clone()),
-        _ => None,
-    }
-}
-
-/// JSON number value → i64; anything else → 0.
-fn value_as_i64(value: Option<&serde_json::Value>) -> i64 {
-    value.and_then(|v| v.as_i64()).unwrap_or(0)
-}
-
-/// JSON value → its serialized text for storage; null/absent → None.
-fn value_as_json_text(value: Option<&serde_json::Value>) -> Option<String> {
-    match value {
-        None | Some(serde_json::Value::Null) => None,
-        Some(v) => Some(v.to_string()),
-    }
-}
-
-/// Last applied seq for an (entity, field) slot, or None if never applied.
-fn stored_seq(conn: &Connection, kind: &str, id: &str, field: &str) -> DbResult<Option<i64>> {
+/// Last applied seq for an entity, INCLUDING tombstoned rows (0 if never seen).
+/// Reading tombstones is load-bearing: a stale upsert arriving AFTER a delete is
+/// rejected because the tombstone's seq is still here.
+pub fn stored_seq(conn: &Connection, id: &str) -> DbResult<i64> {
     Ok(conn
-        .query_row(
-            "SELECT seq FROM field_seq WHERE entity_kind = ?1 AND entity_id = ?2 AND field = ?3",
-            params![kind, id, field],
-            |row| row.get(0),
-        )
-        .optional()?)
+        .query_row("SELECT seq FROM nodes WHERE id = ?1", params![id], |row| {
+            row.get::<_, i64>(0)
+        })
+        .optional()?
+        .unwrap_or(0))
 }
 
-/// Records `seq` as the newest applied for the (entity, field) slot.
-fn bump_seq(conn: &Connection, kind: &str, id: &str, field: &str, seq: i64) -> DbResult<()> {
+/// Applies one upsert frame entity: writes the light columns, sets seq, clears
+/// the tombstone. Content/summary/metadata are NOT touched (not on the wire) so
+/// any cached body survives. Caller has already passed the seq guard.
+pub fn apply_upsert(
+    conn: &Connection,
+    id: &str,
+    seq: i64,
+    data: Option<&serde_json::Value>,
+) -> DbResult<()> {
+    let Some(value) = data else {
+        // An upsert with no data can't populate columns; skip rather than wipe.
+        return Ok(());
+    };
+    let light: LightNodeData = serde_json::from_value(value.clone()).map_err(|e| {
+        crate::db::DbError::Sqlite(rusqlite::Error::FromSqlConversionFailure(
+            0,
+            rusqlite::types::Type::Text,
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                e.to_string(),
+            )),
+        ))
+    })?;
     conn.execute(
-        "INSERT INTO field_seq (entity_kind, entity_id, field, seq) VALUES (?1, ?2, ?3, ?4)
-         ON CONFLICT(entity_kind, entity_id, field) DO UPDATE SET seq = excluded.seq",
-        params![kind, id, field, seq],
+        "INSERT INTO nodes (id, kind, parent_id, position, title, artifact_type, source_url, seq, is_deleted, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?8)
+         ON CONFLICT(id) DO UPDATE SET
+            kind = excluded.kind,
+            parent_id = excluded.parent_id,
+            position = excluded.position,
+            title = excluded.title,
+            artifact_type = excluded.artifact_type,
+            source_url = excluded.source_url,
+            seq = excluded.seq,
+            is_deleted = 0,
+            updated_at = excluded.updated_at",
+        params![
+            id,
+            light.kind,
+            light.parent_id,
+            light.position,
+            light.title,
+            light.artifact_type,
+            light.source_url,
+            seq,
+        ],
     )?;
     Ok(())
 }
 
-/// Inserts a stub node row if absent (orphan tolerance: a field change may
-/// arrive before its create within live delivery). No-op if it already exists.
-fn ensure_node(conn: &Connection, id: &str, kind: &str, seq: i64) -> DbResult<()> {
+/// Applies one delete frame entity: SOFT delete (tombstone) — keep the row, set
+/// is_deleted=1 and the bumped seq, so a later stale lower-seq upsert is blocked.
+/// If the row is absent, insert a tombstone stub (orphan delete-before-create).
+pub fn apply_soft_delete(conn: &Connection, id: &str, kind: &str, seq: i64) -> DbResult<()> {
     conn.execute(
-        "INSERT INTO nodes (id, kind, position, updated_at) VALUES (?1, ?2, 0, ?3)
-         ON CONFLICT(id) DO NOTHING",
+        "INSERT INTO nodes (id, kind, position, seq, is_deleted, updated_at)
+         VALUES (?1, ?2, 0, ?3, 1, ?3)
+         ON CONFLICT(id) DO UPDATE SET
+            seq = excluded.seq,
+            is_deleted = 1,
+            updated_at = excluded.updated_at",
         params![id, kind, seq],
     )?;
     Ok(())
 }
 
-/// Applies one field update to the node's column, ensuring the row exists.
-fn apply_field(
-    conn: &Connection,
-    kind: &str,
-    id: &str,
-    column: NodeColumn,
-    change: &SyncChange,
-) -> DbResult<()> {
-    ensure_node(conn, id, kind, change.seq)?;
-    let value = change.value.as_ref();
-    match column {
-        NodeColumn::Title => conn.execute(
-            "UPDATE nodes SET title = ?2, updated_at = ?3 WHERE id = ?1",
-            params![id, value_as_opt_text(value), change.seq],
-        )?,
-        NodeColumn::ParentId => conn.execute(
-            "UPDATE nodes SET parent_id = ?2, updated_at = ?3 WHERE id = ?1",
-            params![id, value_as_opt_text(value), change.seq],
-        )?,
-        NodeColumn::Position => conn.execute(
-            "UPDATE nodes SET position = ?2, updated_at = ?3 WHERE id = ?1",
-            params![id, value_as_i64(value), change.seq],
-        )?,
-        NodeColumn::ArtifactType => conn.execute(
-            "UPDATE nodes SET artifact_type = ?2, updated_at = ?3 WHERE id = ?1",
-            params![id, value_as_opt_text(value), change.seq],
-        )?,
-        NodeColumn::Content => conn.execute(
-            "UPDATE nodes SET content = ?2, updated_at = ?3 WHERE id = ?1",
-            params![id, value_as_opt_text(value), change.seq],
-        )?,
-        NodeColumn::SourceUrl => conn.execute(
-            "UPDATE nodes SET source_url = ?2, updated_at = ?3 WHERE id = ?1",
-            params![id, value_as_opt_text(value), change.seq],
-        )?,
-        NodeColumn::Summary => conn.execute(
-            "UPDATE nodes SET summary = ?2, updated_at = ?3 WHERE id = ?1",
-            params![id, value_as_opt_text(value), change.seq],
-        )?,
-        NodeColumn::Metadata => conn.execute(
-            "UPDATE nodes SET metadata_json = ?2, updated_at = ?3 WHERE id = ?1",
-            params![id, value_as_json_text(value), change.seq],
-        )?,
-    };
-    Ok(())
-}
-
-/// Applies one feed change to `nodes`, guarded by the per-(entity,field)
-/// newest-wins seq. Idempotent: a stale or already-applied change is skipped.
-/// Caller runs this inside a transaction and advances the cursor afterward.
-pub fn apply_change(conn: &Connection, change: &SyncChange) -> DbResult<ApplyOutcome> {
-    let kind = change.entity_kind.as_str();
-    let id = change.entity_id.as_str();
-
-    match change.op.as_str() {
-        "create" => {
-            if !seq_is_newer(conn, kind, id, EXISTENCE_FIELD, change.seq)? {
-                return Ok(ApplyOutcome::Skipped);
-            }
-            conn.execute(
-                "INSERT INTO nodes (id, kind, position, updated_at) VALUES (?1, ?2, 0, ?3)
-                 ON CONFLICT(id) DO UPDATE SET kind = excluded.kind, updated_at = excluded.updated_at",
-                params![id, kind, change.seq],
-            )?;
-            bump_seq(conn, kind, id, EXISTENCE_FIELD, change.seq)?;
-            Ok(ApplyOutcome::Upserted(id.to_string()))
-        }
-        "delete" => {
-            if !seq_is_newer(conn, kind, id, EXISTENCE_FIELD, change.seq)? {
-                return Ok(ApplyOutcome::Skipped);
-            }
-            conn.execute("DELETE FROM nodes WHERE id = ?1", params![id])?;
-            bump_seq(conn, kind, id, EXISTENCE_FIELD, change.seq)?;
-            Ok(ApplyOutcome::Deleted(id.to_string()))
-        }
-        "update" => {
-            let Some(field) = change.field.as_deref() else {
-                return Ok(ApplyOutcome::Skipped);
-            };
-            if !seq_is_newer(conn, kind, id, field, change.seq)? {
-                return Ok(ApplyOutcome::Skipped);
-            }
-            // Record the seq regardless, so unknown fields aren't reprocessed.
-            let outcome = match map_field_to_column(field) {
-                Some(column) => {
-                    apply_field(conn, kind, id, column, change)?;
-                    ApplyOutcome::Upserted(id.to_string())
-                }
-                None => ApplyOutcome::Skipped,
-            };
-            bump_seq(conn, kind, id, field, change.seq)?;
-            Ok(outcome)
-        }
-        _ => Ok(ApplyOutcome::Skipped),
-    }
-}
-
-/// True if `incoming` is strictly newer than the last applied seq for the slot.
-fn seq_is_newer(
-    conn: &Connection,
-    kind: &str,
-    id: &str,
-    field: &str,
-    incoming: i64,
-) -> DbResult<bool> {
-    Ok(match stored_seq(conn, kind, id, field)? {
-        Some(stored) => incoming > stored,
-        None => true,
-    })
-}
-
-/// Reads the persisted pull cursor (0 if never set).
-pub fn get_cursor(conn: &Connection) -> DbResult<i64> {
+/// Reads the persisted pull cursor (0 if never set). uint64 xid, stored as text.
+pub fn get_cursor(conn: &Connection) -> DbResult<u64> {
     let raw: Option<String> = conn
         .query_row(
             "SELECT value FROM sync_state WHERE key = ?1",
@@ -254,11 +139,11 @@ pub fn get_cursor(conn: &Connection) -> DbResult<i64> {
             |row| row.get(0),
         )
         .optional()?;
-    Ok(raw.and_then(|s| s.parse::<i64>().ok()).unwrap_or(0))
+    Ok(raw.and_then(|s| s.parse::<u64>().ok()).unwrap_or(0))
 }
 
-/// Persists the pull cursor (max applied feed seq).
-pub fn set_cursor(conn: &Connection, cursor: i64) -> DbResult<()> {
+/// Persists the pull cursor (the log horizon last pulled through).
+pub fn set_cursor(conn: &Connection, cursor: u64) -> DbResult<()> {
     conn.execute(
         "INSERT INTO sync_state (key, value) VALUES (?1, ?2)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -267,29 +152,39 @@ pub fn set_cursor(conn: &Connection, cursor: i64) -> DbResult<()> {
     Ok(())
 }
 
-/// All nodes, flat, ordered by (position, insertion). The tree is materialized
-/// from this by the read layer (orphan-tolerant + cycle-breaking).
+/// All LIVE nodes (is_deleted=0), flat, ordered by (position, insertion). The
+/// tree is materialized from this by the read layer.
 pub fn list_nodes(conn: &Connection) -> DbResult<Vec<NodeRow>> {
     let mut stmt = conn.prepare(
         "SELECT id, kind, parent_id, position, title, artifact_type, content, source_url, summary, metadata_json, updated_at
-         FROM nodes ORDER BY position ASC, rowid ASC",
+         FROM nodes WHERE is_deleted = 0 ORDER BY position ASC, rowid ASC",
     )?;
     let rows = stmt.query_map([], map_node_row)?;
-    rows.collect::<rusqlite::Result<Vec<_>>>().map_err(Into::into)
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(Into::into)
 }
 
-/// Next sibling position under `parent_id` (max+1), for a new local node — the
-/// server's tree_nodes has a unique (user, parent, position), so siblings must
-/// not collide.
+/// One LIVE node by id (tombstoned rows read as absent).
+pub fn get_node(conn: &Connection, id: &str) -> DbResult<Option<NodeRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, kind, parent_id, position, title, artifact_type, content, source_url, summary, metadata_json, updated_at
+         FROM nodes WHERE id = ?1 AND is_deleted = 0",
+    )?;
+    let mut rows = stmt.query_map(params![id], map_node_row)?;
+    Ok(rows.next().transpose()?)
+}
+
+/// Next sibling position under `parent_id` (max+1 over LIVE rows), used by the
+/// cache-only upserts (read-through caching of a fetched artifact).
 pub fn next_position(conn: &Connection, parent_id: Option<&str>) -> DbResult<i64> {
     let next: i64 = match parent_id {
         Some(p) => conn.query_row(
-            "SELECT COALESCE(MAX(position), 0) + 1 FROM nodes WHERE parent_id = ?1",
+            "SELECT COALESCE(MAX(position), 0) + 1 FROM nodes WHERE parent_id = ?1 AND is_deleted = 0",
             params![p],
             |r| r.get(0),
         )?,
         None => conn.query_row(
-            "SELECT COALESCE(MAX(position), 0) + 1 FROM nodes WHERE parent_id IS NULL",
+            "SELECT COALESCE(MAX(position), 0) + 1 FROM nodes WHERE parent_id IS NULL AND is_deleted = 0",
             [],
             |r| r.get(0),
         )?,
@@ -297,22 +192,9 @@ pub fn next_position(conn: &Connection, parent_id: Option<&str>) -> DbResult<i64
     Ok(next)
 }
 
-/// One node by id.
-pub fn get_node(conn: &Connection, id: &str) -> DbResult<Option<NodeRow>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, kind, parent_id, position, title, artifact_type, content, source_url, summary, metadata_json, updated_at
-         FROM nodes WHERE id = ?1",
-    )?;
-    let mut rows = stmt.query_map(params![id], map_node_row)?;
-    Ok(rows.next().transpose()?)
-}
-
-/// Optimistically writes a full node row from a LOCAL mutation, before the
-/// server echo arrives via pull. Deliberately does NOT touch `field_seq`: the
-/// seq guard governs only server-applied changes. When the echo pulls back, its
-/// seq is recorded and (idempotently) confirms what we already wrote. Callers
-/// pass the complete intended row (read-modify-write for partial edits) so no
-/// column is unintentionally cleared.
+/// Cache-only upsert of a full node row (NO sync semantics) — used to cache a
+/// server/API read (e.g. read-through of an artifact body) into the local model.
+/// Preserves the row's seq/is_deleted (does not touch the sync columns).
 pub fn upsert_local(conn: &Connection, row: &NodeRow) -> DbResult<()> {
     conn.execute(
         "INSERT INTO nodes (id, kind, parent_id, position, title, artifact_type, content, source_url, summary, metadata_json, updated_at)
@@ -345,31 +227,27 @@ pub fn upsert_local(conn: &Connection, row: &NodeRow) -> DbResult<()> {
     Ok(())
 }
 
-/// Deletes a node and its entire subtree (by `parent_id`), returning the ids
-/// removed (root first) so the caller can emit a delete event per node. Used by
-/// local delete mutations; the server echo's tombstone pulls back idempotently.
-pub fn delete_subtree(conn: &Connection, id: &str) -> DbResult<Vec<String>> {
-    let mut stmt = conn.prepare(
-        "WITH RECURSIVE sub(id) AS (
-            SELECT id FROM nodes WHERE id = ?1
-            UNION ALL
-            SELECT n.id FROM nodes n JOIN sub s ON n.parent_id = s.id
-         )
-         SELECT id FROM sub",
-    )?;
-    let ids = stmt
-        .query_map(params![id], |row| row.get::<_, String>(0))?
+/// REPLACE reconcile for a cold-start snapshot (doc §6): remove any local row
+/// whose id is NOT in the snapshot's id set. The snapshot is the server's
+/// complete authoritative set (it INCLUDES tombstones), so a local row absent
+/// from it is stale cache garbage. Returns the removed ids (for UI events). A
+/// concurrent live create newer than the snapshot self-heals on the next delta
+/// pull (its xid > the snapshot horizon).
+pub fn retain_only(conn: &Connection, keep_ids: &[String]) -> DbResult<Vec<String>> {
+    // Find live rows not in the keep set (read before delete, for events).
+    let keep: std::collections::HashSet<&str> = keep_ids.iter().map(|s| s.as_str()).collect();
+    let mut stmt = conn.prepare("SELECT id FROM nodes WHERE is_deleted = 0")?;
+    let live_ids = stmt
+        .query_map([], |row| row.get::<_, String>(0))?
         .collect::<rusqlite::Result<Vec<_>>>()?;
-    conn.execute(
-        "WITH RECURSIVE sub(id) AS (
-            SELECT id FROM nodes WHERE id = ?1
-            UNION ALL
-            SELECT n.id FROM nodes n JOIN sub s ON n.parent_id = s.id
-         )
-         DELETE FROM nodes WHERE id IN (SELECT id FROM sub)",
-        params![id],
-    )?;
-    Ok(ids)
+    let mut removed = Vec::new();
+    for id in live_ids {
+        if !keep.contains(id.as_str()) {
+            conn.execute("DELETE FROM nodes WHERE id = ?1", params![id])?;
+            removed.push(id);
+        }
+    }
+    Ok(removed)
 }
 
 fn map_node_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<NodeRow> {
@@ -408,223 +286,59 @@ mod tests {
         Db::open(PathBuf::from(path)).unwrap()
     }
 
-    fn update(kind: &str, id: &str, field: &str, value: serde_json::Value, seq: i64) -> SyncChange {
-        SyncChange {
-            seq,
-            entity_kind: kind.to_string(),
-            entity_id: id.to_string(),
-            op: "update".to_string(),
-            field: Some(field.to_string()),
-            value: Some(value),
-            mutation_id: None,
-        }
-    }
-
-    fn entity(kind: &str, id: &str, op: &str, seq: i64) -> SyncChange {
-        SyncChange {
-            seq,
-            entity_kind: kind.to_string(),
-            entity_id: id.to_string(),
-            op: op.to_string(),
-            field: None,
-            value: None,
-            mutation_id: None,
-        }
+    fn folder_data(id: &str, title: &str) -> serde_json::Value {
+        serde_json::json!({
+            "id": id, "kind": "folder", "parentId": null, "position": 1, "title": title
+        })
     }
 
     #[test]
-    fn create_then_fields_builds_node() {
-        let db = test_db("create_then_fields");
+    fn upsert_sets_seq_and_clears_tombstone() {
+        let db = test_db("upsert_seq");
         db.with_conn(|c| {
-            assert_eq!(
-                apply_change(c, &entity("artifact", "a1", "create", 1))?,
-                ApplyOutcome::Upserted("a1".into())
-            );
-            apply_change(c, &update("artifact", "a1", "title", serde_json::json!("Hello"), 2))?;
-            apply_change(c, &update("artifact", "a1", "type", serde_json::json!("note"), 3))?;
-            apply_change(c, &update("artifact", "a1", "parentId", serde_json::json!("f1"), 4))?;
-            apply_change(c, &update("artifact", "a1", "position", serde_json::json!(7), 5))?;
-            let node = get_node(c, "a1")?.expect("node exists");
-            assert_eq!(node.kind, "artifact");
-            assert_eq!(node.title.as_deref(), Some("Hello"));
-            assert_eq!(node.artifact_type.as_deref(), Some("note"));
-            assert_eq!(node.parent_id.as_deref(), Some("f1"));
-            assert_eq!(node.position, 7);
+            apply_upsert(c, "f1", 5, Some(&folder_data("f1", "Docs")))?;
+            assert_eq!(stored_seq(c, "f1")?, 5);
+            assert_eq!(get_node(c, "f1")?.unwrap().title.as_deref(), Some("Docs"));
             Ok(())
         })
         .unwrap();
     }
 
     #[test]
-    fn seq_guard_rejects_stale_field() {
-        let db = test_db("seq_guard_stale");
+    fn soft_delete_tombstones_and_blocks_stale_upsert() {
+        let db = test_db("soft_delete_block");
         db.with_conn(|c| {
-            apply_change(c, &entity("folder", "f1", "create", 1))?;
-            apply_change(c, &update("folder", "f1", "title", serde_json::json!("B"), 5))?;
-            // A stale rename (seq 3 < 5) must not regress the title.
-            let outcome =
-                apply_change(c, &update("folder", "f1", "title", serde_json::json!("A"), 3))?;
-            assert_eq!(outcome, ApplyOutcome::Skipped);
-            assert_eq!(get_node(c, "f1")?.unwrap().title.as_deref(), Some("B"));
-            // A newer rename (seq 9 > 5) applies.
-            apply_change(c, &update("folder", "f1", "title", serde_json::json!("C"), 9))?;
-            assert_eq!(get_node(c, "f1")?.unwrap().title.as_deref(), Some("C"));
+            apply_upsert(c, "f1", 1, Some(&folder_data("f1", "Docs")))?;
+            apply_soft_delete(c, "f1", "folder", 2)?;
+            // Tombstoned: read as absent, but seq retained.
+            assert!(get_node(c, "f1")?.is_none());
+            assert_eq!(stored_seq(c, "f1")?, 2);
             Ok(())
         })
         .unwrap();
     }
 
     #[test]
-    fn delete_removes_node_and_blocks_stale_recreate() {
-        let db = test_db("delete_blocks_recreate");
+    fn higher_seq_upsert_resurrects_after_delete() {
+        let db = test_db("resurrect");
         db.with_conn(|c| {
-            apply_change(c, &entity("artifact", "a1", "create", 1))?;
-            apply_change(c, &update("artifact", "a1", "title", serde_json::json!("X"), 2))?;
-            assert_eq!(
-                apply_change(c, &entity("artifact", "a1", "delete", 10))?,
-                ApplyOutcome::Deleted("a1".into())
-            );
-            assert!(get_node(c, "a1")?.is_none());
-            // A stale re-create (seq 5 < 10) must stay rejected.
-            assert_eq!(
-                apply_change(c, &entity("artifact", "a1", "create", 5))?,
-                ApplyOutcome::Skipped
-            );
-            assert!(get_node(c, "a1")?.is_none());
-            // A genuinely newer re-create (seq 20 > 10) brings it back.
-            apply_change(c, &entity("artifact", "a1", "create", 20))?;
-            assert!(get_node(c, "a1")?.is_some());
+            apply_soft_delete(c, "f1", "folder", 2)?;
+            // A NEWER upsert (seq 3 > 2) clears the tombstone.
+            apply_upsert(c, "f1", 3, Some(&folder_data("f1", "Back")))?;
+            assert_eq!(get_node(c, "f1")?.unwrap().title.as_deref(), Some("Back"));
             Ok(())
         })
         .unwrap();
     }
 
     #[test]
-    fn parent_id_null_sets_root() {
-        let db = test_db("parent_null_root");
-        db.with_conn(|c| {
-            apply_change(c, &entity("folder", "f1", "create", 1))?;
-            apply_change(c, &update("folder", "f1", "parentId", serde_json::json!("p1"), 2))?;
-            assert_eq!(get_node(c, "f1")?.unwrap().parent_id.as_deref(), Some("p1"));
-            // parentId → null moves it to the root.
-            apply_change(c, &update("folder", "f1", "parentId", serde_json::Value::Null, 3))?;
-            assert_eq!(get_node(c, "f1")?.unwrap().parent_id, None);
-            Ok(())
-        })
-        .unwrap();
-    }
-
-    #[test]
-    fn metadata_stored_as_json_text() {
-        let db = test_db("metadata_json");
-        db.with_conn(|c| {
-            apply_change(c, &entity("artifact", "a1", "create", 1))?;
-            apply_change(
-                c,
-                &update("artifact", "a1", "metadata", serde_json::json!({"k": "v"}), 2),
-            )?;
-            let stored = get_node(c, "a1")?.unwrap().metadata_json.unwrap();
-            let parsed: serde_json::Value = serde_json::from_str(&stored).unwrap();
-            assert_eq!(parsed, serde_json::json!({"k": "v"}));
-            Ok(())
-        })
-        .unwrap();
-    }
-
-    #[test]
-    fn cursor_roundtrips() {
-        let db = test_db("cursor_roundtrip");
+    fn cursor_roundtrip_u64() {
+        let db = test_db("cursor_u64");
         db.with_conn(|c| {
             assert_eq!(get_cursor(c)?, 0);
-            set_cursor(c, 42)?;
-            assert_eq!(get_cursor(c)?, 42);
-            set_cursor(c, 100)?;
-            assert_eq!(get_cursor(c)?, 100);
-            Ok(())
-        })
-        .unwrap();
-    }
-
-    fn node(id: &str, kind: &str) -> NodeRow {
-        NodeRow {
-            id: id.to_string(),
-            kind: kind.to_string(),
-            parent_id: None,
-            position: 0,
-            title: None,
-            artifact_type: None,
-            content: None,
-            source_url: None,
-            summary: None,
-            metadata_json: None,
-            updated_at: 0,
-        }
-    }
-
-    #[test]
-    fn upsert_local_inserts_then_updates() {
-        let db = test_db("upsert_local");
-        db.with_conn(|c| {
-            let mut row = node("a1", "artifact");
-            row.title = Some("Draft".into());
-            row.artifact_type = Some("note".into());
-            row.parent_id = Some("f1".into());
-            upsert_local(c, &row)?;
-            let stored = get_node(c, "a1")?.unwrap();
-            assert_eq!(stored.title.as_deref(), Some("Draft"));
-            assert_eq!(stored.artifact_type.as_deref(), Some("note"));
-
-            // A second upsert with the full intended row updates in place.
-            row.title = Some("Final".into());
-            upsert_local(c, &row)?;
-            assert_eq!(get_node(c, "a1")?.unwrap().title.as_deref(), Some("Final"));
-            Ok(())
-        })
-        .unwrap();
-    }
-
-    #[test]
-    fn delete_subtree_removes_descendants() {
-        let db = test_db("delete_subtree");
-        db.with_conn(|c| {
-            // f1 → f2 → a3, and f1 → a4
-            let mut f1 = node("f1", "folder");
-            f1.title = Some("Root".into());
-            upsert_local(c, &f1)?;
-            let mut f2 = node("f2", "folder");
-            f2.parent_id = Some("f1".into());
-            upsert_local(c, &f2)?;
-            let mut a3 = node("a3", "artifact");
-            a3.parent_id = Some("f2".into());
-            upsert_local(c, &a3)?;
-            let mut a4 = node("a4", "artifact");
-            a4.parent_id = Some("f1".into());
-            upsert_local(c, &a4)?;
-
-            let removed = delete_subtree(c, "f1")?;
-            assert_eq!(removed.len(), 4);
-            assert_eq!(removed.first().map(String::as_str), Some("f1"));
-            assert!(get_node(c, "f1")?.is_none());
-            assert!(get_node(c, "a3")?.is_none());
-            assert!(list_nodes(c)?.is_empty());
-            Ok(())
-        })
-        .unwrap();
-    }
-
-    #[test]
-    fn field_before_create_is_orphan_tolerant() {
-        let db = test_db("orphan_field");
-        db.with_conn(|c| {
-            // A field update arrives before the create (out-of-order live event):
-            // a stub row is created so the value isn't lost.
-            apply_change(c, &update("folder", "f9", "title", serde_json::json!("Early"), 5))?;
-            let node = get_node(c, "f9")?.expect("stub created");
-            assert_eq!(node.title.as_deref(), Some("Early"));
-            assert_eq!(node.kind, "folder");
-            // The later create (lower seq) reconciles existence without clobbering.
-            apply_change(c, &entity("folder", "f9", "create", 1))?;
-            assert_eq!(get_node(c, "f9")?.unwrap().title.as_deref(), Some("Early"));
+            let big: u64 = 9_223_372_036_854_775_810; // > i64::MAX
+            set_cursor(c, big)?;
+            assert_eq!(get_cursor(c)?, big);
             Ok(())
         })
         .unwrap();

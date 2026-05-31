@@ -24,12 +24,14 @@ pub fn run() {
             let db = Db::open(db_path).expect("failed to open local sqlite");
             let events = DataEventHub::default();
             let sync = SyncHandle::default();
-            // Data-layer redesign — the workspace runs entirely on the new sync
-            // engine: reads materialize from `nodes`; writes go through the intent
-            // log + POST /api/sync/push; the live websocket carries change rows
-            // applied directly into `nodes` (WorkspaceLiveSubscriber); pull is the
-            // recovery path (on connect + heartbeat). The legacy outbox + tree
-            // event-apply engines were removed at cutover. Page CONTENT rides
+            // Data-layer R1-C — the workspace is a server-authoritative read
+            // cache: reads materialize from `nodes`; writes PROXY to the Go REST
+            // API (the Tauri commands call Go and return — they never write
+            // SQLite). Every change (incl. the client's own) comes back as a sync
+            // FRAME: the live websocket applies committed frames directly
+            // (WorkspaceLiveSubscriber → the generic engine), and pull is the
+            // recovery path (on connect + heartbeat) that advances the cursor.
+            // The frame-apply is the sole cache writer. Page CONTENT rides
             // Yjs/Hocuspocus (a separate channel).
             sync.register_event_subscriber(std::sync::Arc::new(
                 crate::sync::live::WorkspaceLiveSubscriber,
