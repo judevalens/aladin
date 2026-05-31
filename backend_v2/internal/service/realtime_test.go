@@ -250,6 +250,72 @@ func TestSubscriptionResolverRejectsMalformedEventKind(t *testing.T) {
 	}
 }
 
+// The live data-event kind "*.frame" must be a valid subscription (the CDC
+// drain publishes it cross-resource; the client subscribes to it). This is the
+// one wildcard-prefix exception — regression guard for the R1-C live bug where
+// the subscribe was rejected and live frames never arrived.
+func TestSubscriptionResolverAcceptsFrameEventKind(t *testing.T) {
+	resolver := NewSubscriptionKeyResolver()
+	ctx := realtimeTestContext("user-a", ActorTypeUserSession, nil)
+
+	keys, err := resolver.ResolveSubscribeKeys(ctx, SubscriptionOptions{
+		Subscriptions: []PublicSubscriptionKey{{
+			Stream:       WorkspaceStream,
+			ResourceKind: AnyResource,
+			ResourceID:   AnyResource,
+			EventKind:    WorkspaceFrameKind, // "*.frame"
+		}},
+	})
+	if err != nil {
+		t.Fatalf("ResolveSubscribeKeys(*.frame) error = %v, want nil", err)
+	}
+	if len(keys) != 1 || keys[0].EventKind != WorkspaceFrameKind {
+		t.Fatalf("keys = %+v, want one with EventKind %q", keys, WorkspaceFrameKind)
+	}
+}
+
+// End-to-end live-frame delivery: a subscriber on "*.frame" receives a frame the
+// drain publishes (Operation: FrameOperation), regardless of the frame's
+// resource. Other wildcard kinds (e.g. "*.updated") remain rejected — proven by
+// TestSubscriptionResolverRejectsMalformedEventKind.
+func TestInMemoryRealtimeDeliversFrameToWildcardSubscriber(t *testing.T) {
+	ctx, cancel := context.WithCancel(realtimeTestContext("user-a", ActorTypeUserSession, nil))
+	defer cancel()
+
+	resolver := NewSubscriptionKeyResolver()
+	realtime := NewInMemoryRealtimeEventService(resolver)
+	keys, err := resolver.ResolveSubscribeKeys(ctx, SubscriptionOptions{
+		Subscriptions: []PublicSubscriptionKey{{
+			Stream:       WorkspaceStream,
+			ResourceKind: AnyResource,
+			ResourceID:   AnyResource,
+			EventKind:    WorkspaceFrameKind,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, unsubscribe, err := realtime.Subscribe(ctx, keys, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unsubscribe()
+
+	if err := realtime.Publish(ctx, PublishTarget{
+		Stream:       WorkspaceStream,
+		ResourceKind: AnyResource,
+		ResourceID:   AnyResource,
+		Operation:    FrameOperation,
+	}, map[string]any{"entities": []any{}}); err != nil {
+		t.Fatal(err)
+	}
+
+	event := expectRealtimeEvent(t, events, WorkspaceFrameKind)
+	if event.Type != WorkspaceFrameKind {
+		t.Fatalf("event type = %q, want %q", event.Type, WorkspaceFrameKind)
+	}
+}
+
 func TestSubscriptionResolverRejectsEventKindResourceMismatch(t *testing.T) {
 	resolver := NewSubscriptionKeyResolver()
 	ctx := realtimeTestContext("user-a", ActorTypeUserSession, nil)

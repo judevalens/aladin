@@ -15,6 +15,13 @@ import (
 const (
 	WorkspaceStream = "workspace"
 	AnyResource     = "*"
+	// FrameOperation is the live data-event operation. The CDC outbox drain
+	// publishes each committed frame as eventType "*.frame" — intentionally
+	// cross-resource, since one frame can carry entities of any kind — and the
+	// client's live subscriber subscribes to it. It is the ONE event kind whose
+	// resource prefix is the wildcard (see validateWorkspaceEventKind).
+	FrameOperation     = "frame"
+	WorkspaceFrameKind = AnyResource + "." + FrameOperation // "*.frame"
 )
 
 var allowedWorkspaceResourceKinds = map[string]bool{
@@ -127,6 +134,11 @@ func (r *DefaultSubscriptionKeyResolver) ResolveSubscribeKeys(ctx context.Contex
 }
 
 func validateWorkspaceEventKind(eventKind, resourceKind string) error {
+	// The live data-event kind "*.frame" is cross-resource by design (one frame
+	// carries entities of any kind); it's the only kind with a wildcard prefix.
+	if eventKind == WorkspaceFrameKind {
+		return nil
+	}
 	parts := strings.SplitN(eventKind, ".", 2)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		return BadRequest("eventKind must be in the form 'resource.operation'")

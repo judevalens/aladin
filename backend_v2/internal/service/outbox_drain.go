@@ -91,7 +91,7 @@ func (d *OutboxDrainer) drainOnce(ctx context.Context, cursor uint64) (uint64, e
 			Stream:       WorkspaceStream,
 			ResourceKind: AnyResource,
 			ResourceID:   AnyResource,
-			Operation:    "frame",
+			Operation:    FrameOperation, // composes eventType WorkspaceFrameKind ("*.frame")
 			TenantID:     e.UserID,
 		}, e.Frame); err != nil {
 			slog.Warn("outbox drain publish", "xid", e.Xid, "user", e.UserID, "err", err)
