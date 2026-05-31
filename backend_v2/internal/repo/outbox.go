@@ -119,3 +119,47 @@ func (r *SyncRepo) MinXid(ctx context.Context, userID string) (uint64, bool, err
 	}
 	return v, true, nil
 }
+
+// DrainSince returns the events committed in [afterCursor, horizon) across ALL
+// users, in xid order, plus the horizon (the new cursor) — the CDC drain's read
+// (service.OutboxDrainReader). Same gap-free half-open window as PullSince; the
+// drain publishes each frame to its user and advances its cursor to the horizon.
+func (r *SyncRepo) DrainSince(ctx context.Context, afterCursor uint64) ([]service.DrainedEvent, uint64, error) {
+	horizon, err := r.Horizon(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT xid::text, user_id::text, payload
+		  FROM outbox_events
+		 WHERE xid >= $1::xid8
+		   AND xid <  $2::xid8
+		 ORDER BY xid
+	`, strconv.FormatUint(afterCursor, 10), strconv.FormatUint(horizon, 10))
+	if err != nil {
+		return nil, 0, fmt.Errorf("sync: drain since: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]service.DrainedEvent, 0)
+	for rows.Next() {
+		var xidStr, userID string
+		var payload []byte
+		if err := rows.Scan(&xidStr, &userID, &payload); err != nil {
+			return nil, 0, fmt.Errorf("sync: drain scan: %w", err)
+		}
+		xid, err := strconv.ParseUint(xidStr, 10, 64)
+		if err != nil {
+			return nil, 0, fmt.Errorf("sync: drain parse xid %q: %w", xidStr, err)
+		}
+		var f service.Frame
+		if err := json.Unmarshal(payload, &f); err != nil {
+			return nil, 0, fmt.Errorf("sync: drain decode frame: %w", err)
+		}
+		out = append(out, service.DrainedEvent{Xid: xid, UserID: userID, Frame: f})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("sync: drain rows: %w", err)
+	}
+	return out, horizon, nil
+}

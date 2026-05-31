@@ -25,6 +25,9 @@ type Dependencies interface {
 	Realtime() coreservice.RealtimeEventService
 	RealtimeKeyResolver() coreservice.SubscriptionKeyResolver
 	Sync() coreservice.SyncService
+	// OutboxDrainer is the CDC live-delivery loop (may be nil in tests). Started
+	// by the server at boot.
+	OutboxDrainer() *coreservice.OutboxDrainer
 }
 
 type StaticDependencies struct {
@@ -42,6 +45,7 @@ type StaticDependencies struct {
 	RealtimeSvc            coreservice.RealtimeEventService
 	RealtimeKeys           coreservice.SubscriptionKeyResolver
 	SyncSvc                coreservice.SyncService
+	OutboxDrainerSvc       *coreservice.OutboxDrainer
 }
 
 func (d StaticDependencies) Auth() coreservice.AuthService          { return d.AuthSvc }
@@ -66,6 +70,9 @@ func (d StaticDependencies) RealtimeKeyResolver() coreservice.SubscriptionKeyRes
 	return d.RealtimeKeys
 }
 func (d StaticDependencies) Sync() coreservice.SyncService { return d.SyncSvc }
+func (d StaticDependencies) OutboxDrainer() *coreservice.OutboxDrainer {
+	return d.OutboxDrainerSvc
+}
 
 type wiring struct {
 	auth                coreservice.AuthService
@@ -82,6 +89,7 @@ type wiring struct {
 	realtime            coreservice.RealtimeEventService
 	rtKeys              coreservice.SubscriptionKeyResolver
 	sync                coreservice.SyncService
+	outboxDrainer       *coreservice.OutboxDrainer
 }
 
 func (w wiring) Auth() coreservice.AuthService          { return w.auth }
@@ -106,6 +114,7 @@ func (w wiring) RealtimeKeyResolver() coreservice.SubscriptionKeyResolver {
 	return w.rtKeys
 }
 func (w wiring) Sync() coreservice.SyncService { return w.sync }
+func (w wiring) OutboxDrainer() *coreservice.OutboxDrainer { return w.outboxDrainer }
 
 func NewDependencies(pool *pgxpool.Pool) Dependencies {
 	return NewDependenciesWithProviderConnections(pool, config.LoadProviderConnections())
@@ -125,6 +134,7 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 	syncSvc := coreservice.NewSyncService(syncRepo, repo.NewTreeSyncSource(pool))
 	realtimeKeys := coreservice.NewSubscriptionKeyResolver()
 	realtime := coreservice.NewInMemoryRealtimeEventService(realtimeKeys)
+	outboxDrainer := coreservice.NewOutboxDrainer(syncRepo, realtime, 0)
 	nangoClient := coreservice.NewHTTPNangoClient(providerConfig.NangoBaseURL, providerConfig.NangoSecretKey)
 	nangoBackend := coreservice.NewNangoProviderConnectionBackend(
 		nangoClient,
@@ -154,6 +164,7 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		realtime:            realtime,
 		rtKeys:              realtimeKeys,
 		sync:                syncSvc,
+		outboxDrainer:       outboxDrainer,
 	}
 }
 
