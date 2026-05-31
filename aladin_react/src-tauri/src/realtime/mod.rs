@@ -178,6 +178,10 @@ impl BackendEventProcessor {
         event: BackendEventWire,
     ) -> DbResult<()> {
         if !insert_received_event(db, &event)? {
+            eprintln!(
+                "[ws] event id={} kind={} already received — skipping (dedup)",
+                event.event_id, event.kind
+            );
             return Ok(());
         }
 
@@ -187,6 +191,10 @@ impl BackendEventProcessor {
             .ok()
             .and_then(|decoders| decoders.get(&event.kind).copied());
         let Some(decoder) = decoder else {
+            eprintln!(
+                "[ws] no decoder registered for kind={} — ignoring event id={}",
+                event.kind, event.event_id
+            );
             update_event_status(db, &event.event_id, BackendEventStatus::Ignored, None)?;
             return Ok(());
         };
@@ -194,6 +202,10 @@ impl BackendEventProcessor {
         let payload = match decoder(&event.payload) {
             Ok(payload) => payload,
             Err(error) => {
+                eprintln!(
+                    "[ws] decode FAILED for kind={} id={}: {error}",
+                    event.kind, event.event_id
+                );
                 update_event_status(
                     db,
                     &event.event_id,
@@ -203,6 +215,19 @@ impl BackendEventProcessor {
                 return Ok(());
             }
         };
+
+        match &payload {
+            BackendEventPayload::Frame(frame) => eprintln!(
+                "[ws] decoded frame id={} with {} ent_(ies): {:?}",
+                event.event_id,
+                frame.entities.len(),
+                frame
+                    .entities
+                    .iter()
+                    .map(|e| format!("{}:{} op={} seq={}", e.entity_kind, e.entity_id, e.op, e.seq))
+                    .collect::<Vec<_>>()
+            ),
+        }
 
         let validated = ValidatedBackendEvent {
             envelope: BackendEventEnvelope {
@@ -301,6 +326,11 @@ fn connect_once(
     }
 
     let (mut socket, _) = connect(request).map_err(|error| error.to_string())?;
+    eprintln!(
+        "[ws] connected to {} (resuming from last_event_id={:?})",
+        websocket_url(&config.api_base_url),
+        last_event_id
+    );
     set_socket_read_timeout(&mut socket, Duration::from_secs(SUBSCRIPTION_POLL_SECS))?;
     let mut subscription_version = sync.subscription_version();
     send_subscribe(&mut socket, sync)?;
@@ -329,6 +359,10 @@ fn connect_once(
             "event" => {
                 if let Some(event) = parsed.event {
                     let event_id = event.event_id.clone();
+                    eprintln!(
+                        "[ws] received event kind={} id={} sub_key={:?}",
+                        event.kind, event.event_id, event.subscription_key
+                    );
                     // Data-layer redesign, Phase C — the live change row is carried
                     // in the event payload and applied DIRECTLY here (via the
                     // WorkspaceLiveSubscriber → seq-guarded apply). No pull is

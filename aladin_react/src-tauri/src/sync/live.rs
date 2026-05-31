@@ -58,6 +58,12 @@ impl EventSubscriber for WorkspaceLiveSubscriber {
             let touched = engine::apply_frame(tx, &registry, frame)?;
             engine::derive_events(tx, touched)
         })?;
+        eprintln!(
+            "[ws] live-applied frame id={}: {} entities -> {} data event(s) emitted to UI",
+            event.envelope.event_id,
+            frame.entities.len(),
+            emit.len()
+        );
         for event in emit {
             events.emit(event);
         }
