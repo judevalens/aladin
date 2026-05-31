@@ -51,7 +51,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	server := api.NewWithDependencies(cfg.HTTPAddr, app.NewDependenciesWithProviderConnections(pool, cfg.ProviderConnections))
+	deps := app.NewDependenciesWithProviderConnections(pool, cfg.ProviderConnections)
+	server := api.NewWithDependencies(cfg.HTTPAddr, deps)
+
+	// CDC outbox drain: tails outbox_events and publishes each frame to its
+	// user's realtime subscribers (live delivery). Without this, the tree only
+	// converges via the client's periodic/reconnect pull, never live.
+	deps.OutboxDrainer().Start(ctx)
 
 	go func() {
 		<-ctx.Done()
