@@ -21,9 +21,8 @@ func NewArtifactsPostgres(pool *pgxpool.Pool) *PostgresArtifactRepository {
 }
 
 // withUserTx runs fn in a transaction that holds the per-user advisory lock, so
-// any AppendChange inside gets a seq visible in commit order (DL Phase A — the
-// entity write and its change-feed rows commit atomically). The legacy realtime
-// event path is untouched; the feed is additive until cutover.
+// the outbox event appended inside gets an xid visible in commit order (the
+// canonical write and its frame commit atomically — the transactional outbox).
 func (r *PostgresArtifactRepository) withUserTx(ctx context.Context, fn func(tx pgx.Tx, userID string) error) error {
 	userID, err := r.userID(ctx)
 	if err != nil {
@@ -43,20 +42,6 @@ func (r *PostgresArtifactRepository) withUserTx(ctx context.Context, fn func(tx 
 	return tx.Commit(ctx)
 }
 
-// appendField emits one field-level change row for the given entity kind
-// (DL Phase A mapping: kind ∈ {"folder","artifact"}; value JSON-encoded).
-func appendField(ctx context.Context, tx pgx.Tx, userID, kind, entityID, field string, value any) error {
-	v, err := json.Marshal(value)
-	if err != nil {
-		return err
-	}
-	f := field
-	_, err = AppendChange(ctx, tx, userID, Change{
-		EntityKind: kind, EntityID: entityID, Op: OpUpdate, Field: &f, Value: v,
-	})
-	return err
-}
-
 func (r *PostgresArtifactRepository) ListArtifacts(ctx context.Context, params artifactservice.ArtifactListParams) ([]artifactservice.ArtifactResponse, error) {
 	userID, err := r.userID(ctx)
 	if err != nil {
@@ -72,6 +57,7 @@ func (r *PostgresArtifactRepository) ListArtifacts(ctx context.Context, params a
 		  JOIN tree_nodes n ON n.artifact_id = a.id AND n.user_id = a.user_id AND n.kind = 'artifact'
 		  LEFT JOIN page_documents p ON p.artifact_id = a.id
 		 WHERE a.user_id = $1::uuid
+		   AND n.is_deleted = false
 	`
 	args := []any{userID}
 	if params.FolderID == nil {
@@ -115,6 +101,7 @@ func (r *PostgresArtifactRepository) SearchPageArtifacts(ctx context.Context, pa
 		  LEFT JOIN tree_nodes n ON n.artifact_id = a.id AND n.user_id = a.user_id AND n.kind = 'artifact'
 		  LEFT JOIN page_documents p ON p.artifact_id = a.id
 		 WHERE a.user_id = $1::uuid
+		   AND COALESCE(n.is_deleted, false) = false
 		   AND a.type = 'page'
 		   AND (
 		       a.title ILIKE $2
@@ -155,6 +142,7 @@ func (r *PostgresArtifactRepository) GetArtifact(ctx context.Context, id string)
 		  LEFT JOIN tree_nodes n ON n.artifact_id = a.id AND n.user_id = a.user_id AND n.kind = 'artifact'
 		  LEFT JOIN page_documents p ON p.artifact_id = a.id
 		 WHERE a.id = $1 AND a.user_id = $2::uuid
+		   AND COALESCE(n.is_deleted, false) = false
 	`, id, userID)
 	return scanArtifactResponse(row)
 }
@@ -237,22 +225,9 @@ func (r *PostgresArtifactRepository) CreateArtifactGraph(ctx context.Context, re
 		return err
 	}
 
-	// DL Phase A: emit the artifact create + its core fields (artifact entity).
-	if _, err := AppendChange(ctx, tx, userID, Change{
-		EntityKind: "artifact", EntityID: rec.ID, Op: OpCreate,
-	}); err != nil {
-		return err
-	}
-	if err := appendField(ctx, tx, userID, "artifact", rec.ID, "title", rec.Title); err != nil {
-		return err
-	}
-	if err := appendField(ctx, tx, userID, "artifact", rec.ID, "type", rec.Type); err != nil {
-		return err
-	}
-	if err := appendField(ctx, tx, userID, "artifact", rec.ID, "parentId", node.ParentID); err != nil {
-		return err
-	}
-	if err := appendField(ctx, tx, userID, "artifact", rec.ID, "position", node.Position); err != nil {
+	// Bump the entity version + append one frame describing the new entity, in
+	// the same commit as the canonical write (transactional outbox).
+	if err := emitNodeUpsert(ctx, tx, userID, node.ID); err != nil {
 		return err
 	}
 
@@ -283,38 +258,9 @@ func (r *PostgresArtifactRepository) UpdateArtifact(ctx context.Context, id stri
 		if tag.RowsAffected() == 0 {
 			return artifactservice.ErrNotFound
 		}
-		// Emit a change row per patched field (artifact entity).
-		if patch.Type != nil {
-			if err := appendField(ctx, tx, userID, "artifact", id, "type", *patch.Type); err != nil {
-				return err
-			}
-		}
-		if patch.Title != nil {
-			if err := appendField(ctx, tx, userID, "artifact", id, "title", *patch.Title); err != nil {
-				return err
-			}
-		}
-		if patch.Content != nil {
-			if err := appendField(ctx, tx, userID, "artifact", id, "content", *patch.Content); err != nil {
-				return err
-			}
-		}
-		if patch.Summary != nil {
-			if err := appendField(ctx, tx, userID, "artifact", id, "summary", *patch.Summary); err != nil {
-				return err
-			}
-		}
-		if patch.SourceURL != nil {
-			if err := appendField(ctx, tx, userID, "artifact", id, "sourceUrl", *patch.SourceURL); err != nil {
-				return err
-			}
-		}
-		if patch.Metadata != nil {
-			if err := appendField(ctx, tx, userID, "artifact", id, "metadata", *patch.Metadata); err != nil {
-				return err
-			}
-		}
-		return nil
+		// One frame for the updated entity (light fields; the seq guard makes the
+		// client apply it iff newer).
+		return emitNodeUpsert(ctx, tx, userID, id)
 	})
 }
 
@@ -447,22 +393,18 @@ func (r *PostgresArtifactRepository) GetPageBlocks(ctx context.Context, artifact
 
 func (r *PostgresArtifactRepository) DeleteArtifact(ctx context.Context, id string) error {
 	return r.withUserTx(ctx, func(tx pgx.Tx, userID string) error {
-		tag, err := tx.Exec(ctx, `
-			DELETE FROM artifacts
-			 WHERE id = $1 AND user_id = $2::uuid
-		`, id, userID)
+		// Soft delete: tombstone the artifact's tree node (the entity spine; for
+		// an artifact tree_nodes.id == artifact id). The artifacts row is KEPT
+		// (body retained); reads hide it via the tree_nodes join. The tombstone +
+		// bumped seq block resurrection by a stale upsert.
+		ent, err := softDeleteNode(ctx, tx, userID, id, "artifact")
 		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return artifactservice.ErrNotFound
+			}
 			return err
 		}
-		if tag.RowsAffected() == 0 {
-			return artifactservice.ErrNotFound
-		}
-		// Tombstone (entity-level delete). Deleting the artifact cascades to its
-		// tree_node; the client drops the artifact + its placement.
-		_, err = AppendChange(ctx, tx, userID, Change{
-			EntityKind: "artifact", EntityID: id, Op: OpDelete,
-		})
-		return err
+		return appendOutboxEvent(ctx, tx, userID, artifactservice.Frame{Entities: []artifactservice.FrameEntity{ent}})
 	})
 }
 
@@ -476,6 +418,7 @@ func (r *PostgresArtifactRepository) ListFolders(ctx context.Context, parentID *
 		  FROM tree_nodes
 		 WHERE user_id = $1::uuid
 		   AND kind = 'folder'
+		   AND is_deleted = false
 	`
 	args := []any{userID}
 	if parentID == nil {
@@ -512,6 +455,7 @@ func (r *PostgresArtifactRepository) ListAllFolders(ctx context.Context) ([]arti
 		  FROM tree_nodes
 		 WHERE user_id = $1::uuid
 		   AND kind = 'folder'
+		   AND is_deleted = false
 		 ORDER BY position ASC, created_at ASC
 	`, userID)
 	if err != nil {
@@ -551,6 +495,7 @@ func (r *PostgresArtifactRepository) ListAllBrowserNodes(ctx context.Context) ([
 		  FROM tree_nodes n
 		  LEFT JOIN artifacts a ON a.id = n.artifact_id AND a.user_id = n.user_id
 		 WHERE n.user_id = $1::uuid
+		   AND n.is_deleted = false
 		 ORDER BY COALESCE(n.parent_id, ''), n.position ASC, n.created_at ASC, n.id ASC
 	`, userID)
 	if err != nil {
@@ -589,6 +534,7 @@ func (r *PostgresArtifactRepository) NextNodePosition(ctx context.Context, paren
 		  FROM tree_nodes
 		 WHERE user_id = $1::uuid
 		   AND parent_id IS NOT DISTINCT FROM $2
+		   AND is_deleted = false
 	`, userID, parentID).Scan(&next)
 	return next, err
 }
@@ -601,21 +547,8 @@ func (r *PostgresArtifactRepository) CreateTreeNode(ctx context.Context, node ar
 		`, node.ID, userID, node.ParentID, node.Kind, node.Title, node.ArtifactID, node.Position); err != nil {
 			return err
 		}
-		// Folder (or bare node) create. kind = node.Kind ∈ {"folder","artifact"}.
-		if _, err := AppendChange(ctx, tx, userID, Change{
-			EntityKind: node.Kind, EntityID: node.ID, Op: OpCreate,
-		}); err != nil {
-			return err
-		}
-		if node.Title != nil {
-			if err := appendField(ctx, tx, userID, node.Kind, node.ID, "title", *node.Title); err != nil {
-				return err
-			}
-		}
-		if err := appendField(ctx, tx, userID, node.Kind, node.ID, "parentId", node.ParentID); err != nil {
-			return err
-		}
-		return appendField(ctx, tx, userID, node.Kind, node.ID, "position", node.Position)
+		// Folder (or bare node) create: one frame for the new entity.
+		return emitNodeUpsert(ctx, tx, userID, node.ID)
 	})
 }
 
@@ -677,39 +610,21 @@ func (r *PostgresArtifactRepository) DeleteBrowserNode(ctx context.Context, id s
 		return artifactservice.ErrNotFound
 	}
 
-	// Delete the root (cascades to descendant tree_nodes), then orphaned artifacts.
-	if _, err := tx.Exec(ctx, `
-		DELETE FROM tree_nodes
-		 WHERE id = $1 AND user_id = $2::uuid
-	`, id, userID); err != nil {
-		return err
-	}
+	// Soft delete the whole subtree: tombstone each node (is_deleted=true, seq
+	// bumped, rows KEPT so a stale lower-seq upsert can't resurrect them) and
+	// emit ONE frame with a delete entity per node. Artifact rows are kept
+	// (bodies retained); reads hide them via the tree_nodes join. The entity is
+	// keyed by the node id (== artifact id for artifacts — the spine).
+	ents := make([]artifactservice.FrameEntity, 0, len(nodes))
 	for _, n := range nodes {
-		if n.artifactID != nil {
-			if _, err := tx.Exec(ctx, `
-				DELETE FROM artifacts
-				 WHERE id = $1 AND user_id = $2::uuid
-			`, *n.artifactID, userID); err != nil {
-				return err
-			}
-		}
-	}
-
-	// One tombstone per subtree entity (folder → node id; artifact → artifact id).
-	for _, n := range nodes {
-		entityKind := "folder"
-		entityID := n.id
-		if n.kind == "artifact" {
-			entityKind = "artifact"
-			if n.artifactID != nil {
-				entityID = *n.artifactID
-			}
-		}
-		if _, err := AppendChange(ctx, tx, userID, Change{
-			EntityKind: entityKind, EntityID: entityID, Op: OpDelete,
-		}); err != nil {
+		ent, err := softDeleteNode(ctx, tx, userID, n.id, n.kind)
+		if err != nil {
 			return err
 		}
+		ents = append(ents, ent)
+	}
+	if err := appendOutboxEvent(ctx, tx, userID, artifactservice.Frame{Entities: ents}); err != nil {
+		return err
 	}
 
 	return tx.Commit(ctx)
@@ -736,11 +651,8 @@ func (r *PostgresArtifactRepository) UpdateArtifactNodeParent(ctx context.Contex
 		if tag.RowsAffected() == 0 {
 			return artifactservice.ErrNotFound
 		}
-		// A move changes placement (artifact entity): parentId + position.
-		if err := appendField(ctx, tx, userID, "artifact", artifactID, "parentId", parentID); err != nil {
-			return err
-		}
-		return appendField(ctx, tx, userID, "artifact", artifactID, "position", position)
+		// A move changes placement (parentId + position): one frame for the entity.
+		return emitNodeUpsert(ctx, tx, userID, artifactID)
 	})
 }
 
@@ -774,18 +686,8 @@ func (r *PostgresArtifactRepository) UpdateFolderTitle(ctx context.Context, id s
 	if tag.RowsAffected() == 0 {
 		return artifactservice.ErrNotFound
 	}
-	titleField := "title"
-	titleVal, err := json.Marshal(title)
-	if err != nil {
-		return err
-	}
-	if _, err := AppendChange(ctx, tx, userID, Change{
-		EntityKind: "folder",
-		EntityID:   id,
-		Op:         OpUpdate,
-		Field:      &titleField,
-		Value:      titleVal,
-	}); err != nil {
+	// One frame for the renamed folder entity.
+	if err := emitNodeUpsert(ctx, tx, userID, id); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -802,6 +704,7 @@ func (r *PostgresArtifactRepository) GetFolder(ctx context.Context, id string) (
 		  FROM tree_nodes
 		 WHERE id = $1 AND user_id = $2::uuid
 		   AND kind = 'folder'
+		   AND is_deleted = false
 	`, id, userID).Scan(&node.ID, &node.ParentID, &node.Title)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return artifactservice.FolderNode{}, artifactservice.ErrNotFound
@@ -821,12 +724,12 @@ func (r *PostgresArtifactRepository) FolderBreadcrumbs(ctx context.Context, id s
 		WITH RECURSIVE chain AS (
 		    SELECT id, parent_id, title, 0 AS depth
 		      FROM tree_nodes
-		     WHERE id = $1 AND user_id = $2::uuid AND kind = 'folder'
+		     WHERE id = $1 AND user_id = $2::uuid AND kind = 'folder' AND is_deleted = false
 		    UNION ALL
 		    SELECT f.id, f.parent_id, f.title, c.depth + 1
 		      FROM tree_nodes f
 		      JOIN chain c ON c.parent_id = f.id
-		     WHERE f.user_id = $2::uuid AND f.kind = 'folder'
+		     WHERE f.user_id = $2::uuid AND f.kind = 'folder' AND f.is_deleted = false
 		)
 		SELECT id, title
 		  FROM chain

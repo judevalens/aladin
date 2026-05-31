@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -21,6 +20,8 @@ import (
 
 const syncTestAdminUserID = "00000000-0000-0000-0000-000000000001"
 
+// The pull endpoint requires an authenticated principal (checked before any
+// service call, so a nil Sync() is never reached here).
 func TestHandleSyncPull_RequiresPrincipal(t *testing.T) {
 	s := &Server{deps: app.StaticDependencies{}}
 	rec := httptest.NewRecorder()
@@ -31,163 +32,127 @@ func TestHandleSyncPull_RequiresPrincipal(t *testing.T) {
 	}
 }
 
-func TestHandleSyncPush_RequiresPrincipal(t *testing.T) {
+// A non-numeric ?since cursor is a bad request (uint64 decimal string expected).
+func TestHandleSyncPull_RejectsBadCursor(t *testing.T) {
+	ctx := coreservice.WithPrincipal(context.Background(), coreservice.Principal{
+		UserID: syncTestAdminUserID,
+		Scopes: []string{string(coreservice.ScopeArtifactsRead)},
+	})
 	s := &Server{deps: app.StaticDependencies{}}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/sync/push", strings.NewReader(`{"mutations":[]}`))
-	s.handleSyncPush(rec, req)
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("no-principal status = %d, want 401", rec.Code)
-	}
-}
-
-func TestHandleSyncPush_AppliesAndDedupes(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgres://aladin:password@localhost:5433/aladin?sslmode=disable"
-	}
-	pool, err := pgxpool.New(ctx, dbURL)
-	if err != nil {
-		t.Skipf("postgres not reachable: %v", err)
-	}
-	defer pool.Close()
-	if err := pool.Ping(ctx); err != nil {
-		t.Skipf("postgres ping failed: %v", err)
-	}
-	if err := db.Migrate(ctx, pool); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-
-	const folderID = "test-push-handler-folder"
-	const clientID = "test-push-handler-client"
-	cleanup := func() {
-		_, _ = pool.Exec(ctx, `DELETE FROM workspace_changes WHERE user_id = $1 AND entity_id = $2`, syncTestAdminUserID, folderID)
-		_, _ = pool.Exec(ctx, `DELETE FROM tree_nodes WHERE user_id = $1::uuid AND id = $2`, syncTestAdminUserID, folderID)
-		_, _ = pool.Exec(ctx, `DELETE FROM sync_clients WHERE client_id = $1`, clientID)
-	}
-	cleanup()
-	defer cleanup()
-
-	s := &Server{deps: app.StaticDependencies{SyncRepo: repo.NewSyncPostgres(pool)}}
-	principal := coreservice.Principal{
-		UserID: syncTestAdminUserID, ActorType: coreservice.ActorTypeUserSession, ActorID: syncTestAdminUserID,
-	}
-	reqCtx := coreservice.WithPrincipal(ctx, principal)
-
-	body := `{"mutations":[{"mutationId":"` + clientID + `:1","op":"create","entityKind":"folder","entityId":"` + folderID + `","title":"Pushed","position":9000050}]}`
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/sync/push", strings.NewReader(body)).WithContext(reqCtx)
-	s.handleSyncPush(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
-	}
-	var resp syncPushResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode: %v (body: %s)", err, rec.Body.String())
-	}
-	if len(resp.Results) != 1 || resp.Results[0].Status != "applied" {
-		t.Fatalf("results = %+v, want one applied", resp.Results)
-	}
-
-	// Re-push the same mutation → duplicate (idempotent).
-	rec2 := httptest.NewRecorder()
-	req2 := httptest.NewRequest(http.MethodPost, "/api/sync/push", strings.NewReader(body)).WithContext(reqCtx)
-	s.handleSyncPush(rec2, req2)
-	var resp2 syncPushResponse
-	if err := json.Unmarshal(rec2.Body.Bytes(), &resp2); err != nil {
-		t.Fatalf("decode2: %v", err)
-	}
-	if len(resp2.Results) != 1 || resp2.Results[0].Status != "duplicate" {
-		t.Fatalf("results2 = %+v, want one duplicate", resp2.Results)
-	}
-}
-
-func TestHandleSyncPull_ReturnsDelta(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgres://aladin:password@localhost:5433/aladin?sslmode=disable"
-	}
-	pool, err := pgxpool.New(ctx, dbURL)
-	if err != nil {
-		t.Skipf("postgres not reachable: %v", err)
-	}
-	defer pool.Close()
-	if err := pool.Ping(ctx); err != nil {
-		t.Skipf("postgres ping failed: %v", err)
-	}
-	if err := db.Migrate(ctx, pool); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-
-	const entityID = "test-sync-pull-handler"
-	cleanup := func() {
-		_, _ = pool.Exec(ctx, `DELETE FROM workspace_changes WHERE user_id = $1 AND entity_id = $2`,
-			syncTestAdminUserID, entityID)
-	}
-	cleanup()
-	defer cleanup()
-
-	var cursor0 int64
-	if err := pool.QueryRow(ctx,
-		`SELECT COALESCE(MAX(seq), 0) FROM workspace_changes WHERE user_id = $1`,
-		syncTestAdminUserID).Scan(&cursor0); err != nil {
-		t.Fatalf("cursor0: %v", err)
-	}
-
-	// Seed one change row.
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		t.Fatalf("begin: %v", err)
-	}
-	if err := repo.LockUser(ctx, tx, syncTestAdminUserID); err != nil {
-		t.Fatalf("lock: %v", err)
-	}
-	field := "title"
-	if _, err := repo.AppendChange(ctx, tx, syncTestAdminUserID, repo.Change{
-		EntityKind: "folder", EntityID: entityID, Op: repo.OpUpdate,
-		Field: &field, Value: json.RawMessage(`"Renamed"`),
-	}); err != nil {
-		_ = tx.Rollback(ctx)
-		t.Fatalf("append: %v", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		t.Fatalf("commit: %v", err)
-	}
-
-	// Hit the handler with an authenticated principal in context.
-	s := &Server{deps: app.StaticDependencies{SyncRepo: repo.NewSyncPostgres(pool)}}
-	principal := coreservice.Principal{
-		UserID:    syncTestAdminUserID,
-		ActorType: coreservice.ActorTypeUserSession,
-		ActorID:   syncTestAdminUserID,
-	}
-	reqCtx := coreservice.WithPrincipal(ctx, principal)
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet,
-		"/api/sync/pull?since="+strconv.FormatInt(cursor0, 10), nil).WithContext(reqCtx)
+	req := httptest.NewRequest(http.MethodGet, "/api/sync/pull?since=not-a-number", nil).WithContext(ctx)
 	s.handleSyncPull(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad-cursor status = %d, want 400", rec.Code)
+	}
+}
 
+// End-to-end: a producer write (create folder) lands in the outbox; a cold pull
+// (since=0) returns it as a snapshot; pulling again from the returned cursor is
+// empty (incremental). DB integration test — skips without Postgres.
+func TestHandleSyncPull_ReturnsFramesAndAdvancesCursor(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	pool := mustSyncTestPool(ctx, t)
+	defer pool.Close()
+	if _, err := pool.Exec(ctx, `DELETE FROM outbox_events; DELETE FROM tree_nodes; DELETE FROM artifacts`); err != nil {
+		t.Fatalf("cleanup: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO users (id, email, created_at, updated_at)
+		VALUES ($1::uuid, $2, now(), now()) ON CONFLICT (id) DO NOTHING
+	`, syncTestAdminUserID, syncTestAdminUserID+"@example.com"); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+
+	principalCtx := coreservice.WithPrincipal(ctx, coreservice.Principal{
+		UserID: syncTestAdminUserID,
+		Scopes: []string{string(coreservice.ScopeArtifactsRead), string(coreservice.ScopeArtifactsWrite)},
+	})
+
+	// Producer: create a folder (emits one outbox frame).
+	title := "Folder A"
+	if err := repo.NewArtifactsPostgres(pool).CreateTreeNode(principalCtx, coreservice.TreeNodeRecord{
+		ID: "folder-a", Kind: "folder", Title: &title, Position: 1,
+	}); err != nil {
+		t.Fatalf("create tree node: %v", err)
+	}
+
+	deps := app.StaticDependencies{
+		SyncSvc: coreservice.NewSyncService(repo.NewSyncPostgres(pool), repo.NewTreeSyncSource(pool)),
+	}
+	s := &Server{deps: deps}
+
+	// Cold pull (since=0) → snapshot containing the folder.
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/sync/pull?since=0", nil).WithContext(principalCtx)
+	s.handleSyncPull(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+		t.Fatalf("pull status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
 	}
-	var res repo.PullResult
+	var res coreservice.PullResult
 	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
-		t.Fatalf("decode: %v (body: %s)", err, rec.Body.String())
+		t.Fatalf("decode pull: %v (body: %s)", err, rec.Body.String())
 	}
-	if len(res.Changes) != 1 {
-		t.Fatalf("changes = %d, want 1: %+v", len(res.Changes), res.Changes)
+	if res.Mode != coreservice.PullModeSnapshot {
+		t.Fatalf("mode = %q, want snapshot", res.Mode)
 	}
-	c := res.Changes[0]
-	if c.EntityKind != "folder" || c.EntityID != entityID || c.Field == nil || *c.Field != "title" {
-		t.Fatalf("unexpected change: %+v", c)
+	if n := countEntities(res.Frames); n != 1 {
+		t.Fatalf("snapshot entity count = %d, want 1", n)
 	}
-	if res.Cursor <= cursor0 {
-		t.Fatalf("cursor did not advance: %d <= %d", res.Cursor, cursor0)
+	if res.Cursor == 0 {
+		t.Fatalf("cursor = 0, want > 0")
 	}
+
+	// Incremental pull from the returned cursor → nothing new.
+	rec2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodGet,
+		"/api/sync/pull?since="+strconv.FormatUint(res.Cursor, 10), nil).WithContext(principalCtx)
+	s.handleSyncPull(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("pull2 status = %d, want 200", rec2.Code)
+	}
+	var res2 coreservice.PullResult
+	if err := json.Unmarshal(rec2.Body.Bytes(), &res2); err != nil {
+		t.Fatalf("decode pull2: %v", err)
+	}
+	if res2.Mode != coreservice.PullModeDelta {
+		t.Fatalf("mode2 = %q, want delta", res2.Mode)
+	}
+	if n := countEntities(res2.Frames); n != 0 {
+		t.Fatalf("incremental pull returned %d entities, want 0", n)
+	}
+}
+
+func countEntities(frames []coreservice.Frame) int {
+	n := 0
+	for _, f := range frames {
+		n += len(f.Entities)
+	}
+	return n
+}
+
+func mustSyncTestPool(ctx context.Context, t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		dsn = os.Getenv("DATABASE_URL")
+	}
+	if dsn == "" {
+		dsn = "postgres://aladin:password@localhost:5433/aladin"
+	}
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Skipf("no test database: %v", err)
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		t.Skipf("test database unreachable: %v", err)
+	}
+	if err := db.Migrate(ctx, pool); err != nil {
+		pool.Close()
+		t.Fatalf("migrate: %v", err)
+	}
+	return pool
 }

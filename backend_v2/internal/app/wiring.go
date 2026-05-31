@@ -24,7 +24,7 @@ type Dependencies interface {
 	ProviderConnections() coreservice.ProviderConnectionService
 	Realtime() coreservice.RealtimeEventService
 	RealtimeKeyResolver() coreservice.SubscriptionKeyResolver
-	Sync() *repo.SyncRepo
+	Sync() coreservice.SyncService
 }
 
 type StaticDependencies struct {
@@ -41,7 +41,7 @@ type StaticDependencies struct {
 	ProviderConnectionsSvc coreservice.ProviderConnectionService
 	RealtimeSvc            coreservice.RealtimeEventService
 	RealtimeKeys           coreservice.SubscriptionKeyResolver
-	SyncRepo               *repo.SyncRepo
+	SyncSvc                coreservice.SyncService
 }
 
 func (d StaticDependencies) Auth() coreservice.AuthService          { return d.AuthSvc }
@@ -65,7 +65,7 @@ func (d StaticDependencies) Realtime() coreservice.RealtimeEventService {
 func (d StaticDependencies) RealtimeKeyResolver() coreservice.SubscriptionKeyResolver {
 	return d.RealtimeKeys
 }
-func (d StaticDependencies) Sync() *repo.SyncRepo { return d.SyncRepo }
+func (d StaticDependencies) Sync() coreservice.SyncService { return d.SyncSvc }
 
 type wiring struct {
 	auth                coreservice.AuthService
@@ -81,7 +81,7 @@ type wiring struct {
 	providerConnections coreservice.ProviderConnectionService
 	realtime            coreservice.RealtimeEventService
 	rtKeys              coreservice.SubscriptionKeyResolver
-	sync                *repo.SyncRepo
+	sync                coreservice.SyncService
 }
 
 func (w wiring) Auth() coreservice.AuthService          { return w.auth }
@@ -105,7 +105,7 @@ func (w wiring) Realtime() coreservice.RealtimeEventService {
 func (w wiring) RealtimeKeyResolver() coreservice.SubscriptionKeyResolver {
 	return w.rtKeys
 }
-func (w wiring) Sync() *repo.SyncRepo { return w.sync }
+func (w wiring) Sync() coreservice.SyncService { return w.sync }
 
 func NewDependencies(pool *pgxpool.Pool) Dependencies {
 	return NewDependenciesWithProviderConnections(pool, config.LoadProviderConnections())
@@ -122,6 +122,7 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 	systemRepo := repo.NewSystemPostgres(pool)
 	providerConnectionRepo := repo.NewProviderConnectionPostgres(pool)
 	syncRepo := repo.NewSyncPostgres(pool)
+	syncSvc := coreservice.NewSyncService(syncRepo, repo.NewTreeSyncSource(pool))
 	realtimeKeys := coreservice.NewSubscriptionKeyResolver()
 	realtime := coreservice.NewInMemoryRealtimeEventService(realtimeKeys)
 	nangoClient := coreservice.NewHTTPNangoClient(providerConfig.NangoBaseURL, providerConfig.NangoSecretKey)
@@ -152,7 +153,7 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		providerConnections: providerConnections,
 		realtime:            realtime,
 		rtKeys:              realtimeKeys,
-		sync:                syncRepo,
+		sync:                syncSvc,
 	}
 }
 
