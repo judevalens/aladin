@@ -4,7 +4,7 @@ use crate::api::workspace_write::WorkspaceWriteApi;
 use crate::db::repo::nodes::{self, NodeRow};
 use crate::db::{Db, DbError, DbResult};
 use crate::events::DataEventHub;
-use crate::sync::{engine, SyncConfig};
+use crate::sync::SyncConfig;
 
 // Data-layer R1-F (client) — the workspace write REPO.
 // Architecture: ~/.claude/plans/data-layer-offline-readable.md.
@@ -12,8 +12,9 @@ use crate::sync::{engine, SyncConfig};
 // The Tauri/Rust backend owns the workspace write path. This repo does the real
 // work behind the thin commands: PROXY the write to Go (via WorkspaceWriteApi),
 // then on a successful response APPLY the committed result into the local cache
-// under the SAME per-entity seq guard the WS frame uses (engine::apply_one), emit
-// the UI event, and return the resulting row. So the writer's own change shows
+// via nodes::apply — the SAME guarded repo primitive the WS path uses (no engine
+// dependency from a repo) — emit the event it returns, and return the resulting
+// row. So the writer's own change shows
 // immediately (no wait for the live frame), and the later frame — carrying the
 // same seq — is a no-op via the guard. The Frame stays strictly the WS model; it
 // never appears here (the REST response is a plain resource + its version).
@@ -29,18 +30,15 @@ fn apply_and_read(
     op: &str,
     data: Option<serde_json::Value>,
 ) -> DbResult<Option<NodeRow>> {
-    let registry = engine::Registry::tree();
-    let (row, emit) = db.with_tx(|tx| {
-        let applied = engine::apply_one(tx, &registry, kind, id, seq, op, data.as_ref())?;
-        let emit = if applied {
-            engine::derive_events(tx, vec![id.to_string()])?
-        } else {
-            Vec::new()
-        };
+    let (row, event) = db.with_tx(|tx| {
+        // Apply through the nodes repo's own guarded apply — same primitive the WS
+        // path uses, so the local write and the later frame converge by seq, and
+        // the repo (not the engine) owns the apply + the dispatch decision.
+        let event = nodes::apply(tx, kind, id, seq, op, data.as_ref())?;
         let row = nodes::get_node(tx, id)?;
-        Ok((row, emit))
+        Ok((row, event))
     })?;
-    for event in emit {
+    if let Some(event) = event {
         events.emit(event);
     }
     Ok(row)

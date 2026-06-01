@@ -2,6 +2,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 use crate::db::DbResult;
+use crate::events::{DataEvent, EntityDeletedEvent};
 
 // Data-layer R1-C (client) — the `nodes` read cache fed by sync FRAMES.
 // Architecture: ~/.claude/plans/data-layer-offline-readable.md.
@@ -130,6 +131,35 @@ pub fn apply_soft_delete(conn: &Connection, id: &str, kind: &str, seq: i64) -> D
     Ok(())
 }
 
+/// Apply one entity to the cache under the per-ENTITY seq guard, and return the
+/// UI event this repo chooses to dispatch (None = stale/duplicate — nothing
+/// applied, nothing surfaced). The guard, the cache write, AND the dispatch
+/// decision all live HERE with the data. Both the WS live/pull path (via the
+/// engine's handler) and the local write path (db/repo/workspace_write.rs) call
+/// this, so neither depends on the other and the engine never spills into a repo.
+pub fn apply(
+    conn: &Connection,
+    kind: &str,
+    id: &str,
+    seq: i64,
+    op: &str,
+    data: Option<&serde_json::Value>,
+) -> DbResult<Option<DataEvent>> {
+    if seq <= stored_seq(conn, id)? {
+        return Ok(None); // stale / duplicate / out-of-order — the seq guard (§3a)
+    }
+    match op {
+        "delete" => apply_soft_delete(conn, id, kind, seq)?,
+        _ => apply_upsert(conn, id, seq, data)?,
+    }
+    // The repo builds the event from the final committed state: a live row →
+    // NodeUpserted; a tombstoned/absent row → NodeDeleted.
+    Ok(Some(match get_node(conn, id)? {
+        Some(row) => DataEvent::NodeUpserted(row),
+        None => DataEvent::NodeDeleted(EntityDeletedEvent { id: id.to_string() }),
+    }))
+}
+
 /// Reads the persisted pull cursor (0 if never set). uint64 xid, stored as text.
 pub fn get_cursor(conn: &Connection) -> DbResult<u64> {
     let raw: Option<String> = conn
@@ -233,7 +263,7 @@ pub fn upsert_local(conn: &Connection, row: &NodeRow) -> DbResult<()> {
 /// from it is stale cache garbage. Returns the removed ids (for UI events). A
 /// concurrent live create newer than the snapshot self-heals on the next delta
 /// pull (its xid > the snapshot horizon).
-pub fn retain_only(conn: &Connection, keep_ids: &[String]) -> DbResult<Vec<String>> {
+pub fn retain_only(conn: &Connection, keep_ids: &[String]) -> DbResult<Vec<DataEvent>> {
     // Find live rows not in the keep set (read before delete, for events).
     let keep: std::collections::HashSet<&str> = keep_ids.iter().map(|s| s.as_str()).collect();
     let mut stmt = conn.prepare("SELECT id FROM nodes WHERE is_deleted = 0")?;
@@ -244,7 +274,8 @@ pub fn retain_only(conn: &Connection, keep_ids: &[String]) -> DbResult<Vec<Strin
     for id in live_ids {
         if !keep.contains(id.as_str()) {
             conn.execute("DELETE FROM nodes WHERE id = ?1", params![id])?;
-            removed.push(id);
+            // The repo dispatches its own deletes (snapshot REPLACE drops garbage).
+            removed.push(DataEvent::NodeDeleted(EntityDeletedEvent { id }));
         }
     }
     Ok(removed)

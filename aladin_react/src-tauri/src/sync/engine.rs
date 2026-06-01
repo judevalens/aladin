@@ -3,55 +3,41 @@ use std::sync::Arc;
 
 use rusqlite::Connection;
 
-use crate::api::sync::Frame;
+use crate::api::sync::{Frame, FrameEntity};
 use crate::db::repo::nodes;
 use crate::db::DbResult;
-use crate::events::{DataEvent, EntityDeletedEvent};
+use crate::events::DataEvent;
 
-// Data-layer R1-C (client) — the generic frame apply engine.
+// Data-layer R1-C (client) — the live/pull FRAME dispatcher.
 // Architecture: ~/.claude/plans/data-layer-offline-readable.md (§5).
 //
-// The engine is entity-agnostic: it routes each frame entity by `entityKind` to
-// a registered EntityHandler, guarded by the per-entity `seq`. The handler owns
-// "decode data → my typed table" + soft-delete; the engine owns dispatch + the
-// guard. The caller owns the transaction + cursor advance (pull advances it;
-// live does not) + event emission. Adding a kind = a table + a handler, ZERO
-// engine change. The tree kind (folder + artifact → `nodes`) is the first one.
+// Routes each WS/pull frame entity by `entityKind` to a registered EntityHandler
+// for that kind. A handler applies the entity to the kind's repo and returns the
+// UI event the repo chose to dispatch (None = nothing to surface). The engine
+// owns ONLY dispatch: the seq guard, the cache write, and the event decision all
+// live in the repo (nodes::apply). The engine never reaches past a handler into a
+// repo's internals, and a repo never depends on the engine. The tree kind (folder
+// + artifact → `nodes`) is the only kind today.
 
-/// A per-kind apply target. Implemented over a typed cache table.
+/// Handles one live/pull frame entity: apply it to the kind's repo and return the
+/// event to dispatch (None = applied-but-not-surfaced, or skipped by the guard).
 pub trait EntityHandler: Send + Sync {
-    /// Last applied seq for this entity, INCLUDING tombstones (0 if never seen).
-    fn stored_seq(&self, conn: &Connection, id: &str) -> DbResult<i64>;
-    /// Apply an upsert: write typed columns, set seq, clear the tombstone.
-    fn upsert(
-        &self,
-        conn: &Connection,
-        id: &str,
-        seq: i64,
-        data: Option<&serde_json::Value>,
-    ) -> DbResult<()>;
-    /// Apply a delete: SOFT delete (tombstone), retaining seq.
-    fn soft_delete(&self, conn: &Connection, id: &str, kind: &str, seq: i64) -> DbResult<()>;
+    fn apply(&self, conn: &Connection, entity: &FrameEntity) -> DbResult<Option<DataEvent>>;
 }
 
 /// The tree handler: folder + artifact entities both live in `nodes`.
 struct TreeHandler;
 
 impl EntityHandler for TreeHandler {
-    fn stored_seq(&self, conn: &Connection, id: &str) -> DbResult<i64> {
-        nodes::stored_seq(conn, id)
-    }
-    fn upsert(
-        &self,
-        conn: &Connection,
-        id: &str,
-        seq: i64,
-        data: Option<&serde_json::Value>,
-    ) -> DbResult<()> {
-        nodes::apply_upsert(conn, id, seq, data)
-    }
-    fn soft_delete(&self, conn: &Connection, id: &str, kind: &str, seq: i64) -> DbResult<()> {
-        nodes::apply_soft_delete(conn, id, kind, seq)
+    fn apply(&self, conn: &Connection, entity: &FrameEntity) -> DbResult<Option<DataEvent>> {
+        nodes::apply(
+            conn,
+            &entity.entity_kind,
+            &entity.entity_id,
+            entity.seq as i64,
+            &entity.op,
+            entity.data.as_ref(),
+        )
     }
 }
 
@@ -75,66 +61,19 @@ impl Registry {
     }
 }
 
-/// Applies one frame's entities into the cache, in the caller's transaction,
-/// under the per-entity seq guard. Returns the touched entity ids (deduped, in
-/// first-seen order) so the caller can derive UI events from final state. Does
-/// NOT advance the cursor — the pull caller does that in the same txn; live does
-/// not. An unknown kind is skipped (forward-compat).
-pub fn apply_frame(conn: &Connection, registry: &Registry, frame: &Frame) -> DbResult<Vec<String>> {
-    let mut touched: Vec<String> = Vec::new();
+/// Applies one frame's entities to their kinds' repos (in the caller's tx) and
+/// returns the events the repos chose to dispatch, in order. An unknown kind is
+/// skipped (forward-compat). Does NOT advance the cursor (the pull caller does;
+/// live does not) or emit — the caller emits post-commit.
+pub fn apply_frame(conn: &Connection, registry: &Registry, frame: &Frame) -> DbResult<Vec<DataEvent>> {
+    let mut events = Vec::new();
     for entity in &frame.entities {
-        let applied = apply_one(
-            conn,
-            registry,
-            &entity.entity_kind,
-            &entity.entity_id,
-            entity.seq as i64,
-            &entity.op,
-            entity.data.as_ref(),
-        )?;
-        if applied && !touched.iter().any(|id| id == &entity.entity_id) {
-            touched.push(entity.entity_id.clone());
+        let Some(handler) = registry.get(&entity.entity_kind) else {
+            continue; // unknown kind: a newer server may emit kinds we don't handle
+        };
+        if let Some(event) = handler.apply(conn, entity)? {
+            events.push(event);
         }
     }
-    Ok(touched)
-}
-
-/// Applies ONE entity under the per-entity seq guard, outside any Frame. The
-/// write path uses this to apply the REST write response directly into the cache
-/// (the Frame is strictly the WS model and must not leak into REST), reusing the
-/// exact same guard + handlers as the live/pull path. Returns true if applied
-/// (false = unknown kind or stale/duplicate seq). An unknown kind is skipped.
-pub fn apply_one(
-    conn: &Connection,
-    registry: &Registry,
-    kind: &str,
-    id: &str,
-    seq: i64,
-    op: &str,
-    data: Option<&serde_json::Value>,
-) -> DbResult<bool> {
-    let Some(handler) = registry.get(kind) else {
-        return Ok(false);
-    };
-    if seq <= handler.stored_seq(conn, id)? {
-        return Ok(false); // stale / duplicate / out-of-order — the seq guard (§3a)
-    }
-    match op {
-        "delete" => handler.soft_delete(conn, id, kind, seq)?,
-        _ => handler.upsert(conn, id, seq, data)?,
-    }
-    Ok(true)
-}
-
-/// Derives one UI event per touched id from its final committed state: a live
-/// row → NodeUpserted; a tombstoned/absent row → NodeDeleted.
-pub fn derive_events(conn: &Connection, touched: Vec<String>) -> DbResult<Vec<DataEvent>> {
-    let mut out = Vec::with_capacity(touched.len());
-    for id in touched {
-        match nodes::get_node(conn, &id)? {
-            Some(row) => out.push(DataEvent::NodeUpserted(row)),
-            None => out.push(DataEvent::NodeDeleted(EntityDeletedEvent { id })),
-        }
-    }
-    Ok(out)
+    Ok(events)
 }

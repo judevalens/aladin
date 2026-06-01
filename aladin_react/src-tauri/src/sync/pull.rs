@@ -49,7 +49,9 @@ pub fn pull_and_apply(
         // in the snapshot's id set (stale cache garbage); a `delta` is a merge.
         let is_snapshot = result.mode == "snapshot";
         let (emit, applied) = db.with_tx(|tx| {
-            let mut touched: Vec<String> = Vec::new();
+            // Events to dispatch come straight from the repos (the engine relays
+            // them from the handlers; retain_only dispatches its own deletes).
+            let mut emit: Vec<crate::events::DataEvent> = Vec::new();
             let mut snapshot_ids: Vec<String> = Vec::new();
             for frame in &result.frames {
                 if is_snapshot {
@@ -57,23 +59,14 @@ pub fn pull_and_apply(
                         snapshot_ids.push(e.entity_id.clone());
                     }
                 }
-                for id in engine::apply_frame(tx, &registry, frame)? {
-                    if !touched.iter().any(|t| t == &id) {
-                        touched.push(id);
-                    }
-                }
+                emit.extend(engine::apply_frame(tx, &registry, frame)?);
             }
             if is_snapshot {
                 // REPLACE: drop local rows the authoritative snapshot omits.
-                for id in nodes::retain_only(tx, &snapshot_ids)? {
-                    if !touched.iter().any(|t| t == &id) {
-                        touched.push(id);
-                    }
-                }
+                emit.extend(nodes::retain_only(tx, &snapshot_ids)?);
             }
-            let applied = touched.len();
+            let applied = emit.len();
             nodes::set_cursor(tx, result.cursor)?;
-            let emit = engine::derive_events(tx, touched)?;
             Ok((emit, applied))
         })?;
 
@@ -176,7 +169,9 @@ mod tests {
         let events = DataEventHub::default();
 
         let applied = pull_and_apply(&db, &events, &config(), &api).unwrap();
-        assert_eq!(applied, 1); // one touched entity (f1)
+        // f1 applies twice (seq 1 then seq 2); each apply dispatches its event —
+        // the repo dispatches per applied change, the engine no longer dedups.
+        assert_eq!(applied, 2);
         db.with_conn(|c| {
             assert_eq!(nodes::get_cursor(c)?, 7);
             assert_eq!(
