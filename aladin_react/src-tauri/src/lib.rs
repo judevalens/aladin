@@ -11,6 +11,8 @@ use crate::commands::{
     artifacts as artifact_cmd, browser as browser_cmd, nodes as node_cmd, pages as page_cmd,
     sync as sync_cmd,
 };
+use crate::api::workspace_write::HttpWorkspaceWriteApi;
+use crate::db::repo::workspace::WorkspaceRepo;
 use crate::db::Db;
 use crate::events::DataEventHub;
 use crate::sync::SyncHandle;
@@ -38,9 +40,17 @@ pub fn run() {
             ));
             sync.start_realtime(db.clone(), events.clone());
             sync.start_pull_polling(db.clone(), events.clone());
+            // The workspace repo holds the logical deps (event hub, sync handle,
+            // write API); `db` is passed per call. Commands delegate to it.
+            let workspace = WorkspaceRepo::new(
+                events.clone(),
+                sync.clone(),
+                std::sync::Arc::new(HttpWorkspaceWriteApi),
+            );
             app.manage(db);
             app.manage(events);
             app.manage(sync);
+            app.manage(workspace);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
