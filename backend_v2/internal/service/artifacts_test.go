@@ -102,7 +102,7 @@ func TestArtifactServiceReadOnlyTokenCannotWrite(t *testing.T) {
 	if _, err := svc.Create(ctx, ArtifactPayload{Type: "page", Title: "Memo"}); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("Create read-only error = %v, want ErrForbidden", err)
 	}
-	if err := svc.Delete(ctx, "artifact-1"); !errors.Is(err, ErrForbidden) {
+	if _, err := svc.Delete(ctx, "artifact-1"); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("Delete read-only error = %v, want ErrForbidden", err)
 	}
 	if _, err := svc.CreateFolder(ctx, "Folder", nil); !errors.Is(err, ErrForbidden) {
@@ -160,7 +160,7 @@ func TestArtifactServiceEmptyIDsAreNotFound(t *testing.T) {
 	if _, err := svc.Update(testPrincipalContext(), " ", ArtifactPatch{}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Update error = %v, want ErrNotFound", err)
 	}
-	if err := svc.Delete(testPrincipalContext(), " "); !errors.Is(err, ErrNotFound) {
+	if _, err := svc.Delete(testPrincipalContext(), " "); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Delete error = %v, want ErrNotFound", err)
 	}
 }
@@ -282,6 +282,10 @@ func (f *fakeArtifactRepository) GetArtifact(_ context.Context, id string) (Arti
 		rec.Content = ""
 	}
 	return rec, nil
+}
+
+func (f *fakeArtifactRepository) LightNode(_ context.Context, id string) (BrowserNodeResponse, error) {
+	return BrowserNodeResponse{ID: id, Seq: 1}, nil
 }
 
 func (f *fakeArtifactRepository) CreateArtifact(_ context.Context, rec ArtifactResponse) error {

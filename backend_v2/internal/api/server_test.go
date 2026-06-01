@@ -1019,8 +1019,8 @@ func (f *fakeArtifactService) CreateBrowserNode(_ context.Context, input artifac
 	}, nil
 }
 
-func (f *fakeArtifactService) DeleteBrowserNode(context.Context, string) error {
-	return nil
+func (f *fakeArtifactService) DeleteBrowserNode(context.Context, string) (artifactservice.NodeDeleteResult, error) {
+	return artifactservice.NodeDeleteResult{}, nil
 }
 
 func (f *fakeArtifactService) Get(context.Context, string) (artifactservice.ArtifactResponse, error) {
@@ -1056,11 +1056,11 @@ func (f *fakeArtifactService) Update(context.Context, string, artifactservice.Ar
 	return artifactservice.ArtifactResponse{}, artifactservice.ErrNotFound
 }
 
-func (f *fakeArtifactService) Delete(context.Context, string) error {
+func (f *fakeArtifactService) Delete(context.Context, string) (artifactservice.NodeDeleteResult, error) {
 	if f.err != nil {
-		return f.err
+		return artifactservice.NodeDeleteResult{}, f.err
 	}
-	return artifactservice.ErrNotFound
+	return artifactservice.NodeDeleteResult{}, artifactservice.ErrNotFound
 }
 
 func (f *fakeArtifactService) Upload(_ context.Context, input artifactservice.ArtifactUploadInput, body io.Reader) (artifactservice.ArtifactResponse, error) {

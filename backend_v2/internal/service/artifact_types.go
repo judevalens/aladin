@@ -19,6 +19,10 @@ type ArtifactResponse struct {
 	CreatedAt string          `json:"createdAt"`
 	UpdatedAt string          `json:"updatedAt"`
 	Revision  int64           `json:"-"`
+	// Seq is the entity's version (the tree-node spine's seq). Populated on the
+	// write path (create/update) so the client applies the result under the seq
+	// guard; 0/omitted on read paths that don't need it.
+	Seq uint64 `json:"seq,string,omitempty"`
 }
 
 type BrowserNodeResponse struct {
@@ -28,6 +32,19 @@ type BrowserNodeResponse struct {
 	Title      string  `json:"title"`
 	ArtifactID *string `json:"artifactId,omitempty"`
 	Position   int64   `json:"position"`
+	// Seq is the entity's current version (the staleness gate). A write returns
+	// it so the client can apply the result locally under the same seq guard the
+	// WS frame uses, making the immediate apply idempotent against the later
+	// frame. Wire-encoded as a decimal string (uint64 > JS safe int).
+	Seq uint64 `json:"seq,string"`
+}
+
+// NodeDeleteResult is the write response for a delete: the tombstoned node's id
+// and its bumped version, so the client can apply a seq-guarded soft delete
+// locally (the subtree, if any, heals via the WS frame / next pull).
+type NodeDeleteResult struct {
+	ID  string `json:"id"`
+	Seq uint64 `json:"seq,string"`
 }
 
 type ArtifactCreateResponse struct {
@@ -153,6 +170,7 @@ type FolderNode struct {
 	ID       string  `json:"id"`
 	ParentID *string `json:"parentId,omitempty"`
 	Title    string  `json:"title"`
+	Seq      uint64  `json:"seq,string"`
 }
 
 type FolderPatch struct {

@@ -69,7 +69,8 @@ func (s *Server) handleBrowserTree(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleBrowserNodesDelete(w http.ResponseWriter, r *http.Request) {
-	if err := s.deps.Artifacts().DeleteBrowserNode(r.Context(), r.PathValue("id")); err != nil {
+	result, err := s.deps.Artifacts().DeleteBrowserNode(r.Context(), r.PathValue("id"))
+	if err != nil {
 		if writeAccessError(w, r, err) {
 			return
 		}
@@ -80,7 +81,7 @@ func (s *Server) handleBrowserNodesDelete(w http.ResponseWriter, r *http.Request
 		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) handleArtifactsList(w http.ResponseWriter, r *http.Request) {
@@ -171,7 +172,8 @@ func (s *Server) handleArtifactsUpdate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleArtifactsDelete(w http.ResponseWriter, r *http.Request) {
-	if err := s.deps.Artifacts().Delete(r.Context(), r.PathValue("id")); err != nil {
+	result, err := s.deps.Artifacts().Delete(r.Context(), r.PathValue("id"))
+	if err != nil {
 		if writeAccessError(w, r, err) {
 			return
 		}
@@ -182,7 +184,7 @@ func (s *Server) handleArtifactsDelete(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) handleArtifactsUpload(w http.ResponseWriter, r *http.Request) {

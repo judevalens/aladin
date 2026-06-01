@@ -17,11 +17,11 @@ type ArtifactService interface {
 	SearchPages(context.Context, PageSearchParams) ([]ArtifactResponse, error)
 	BrowserTree(context.Context) ([]BrowserTreeNode, error)
 	CreateBrowserNode(context.Context, BrowserNodeCreateInput) (BrowserNodeCreateResponse, error)
-	DeleteBrowserNode(context.Context, string) error
+	DeleteBrowserNode(context.Context, string) (NodeDeleteResult, error)
 	Get(context.Context, string) (ArtifactResponse, error)
 	Create(context.Context, ArtifactPayload) (ArtifactCreateResponse, error)
 	Update(context.Context, string, ArtifactPatch) (ArtifactResponse, error)
-	Delete(context.Context, string) error
+	Delete(context.Context, string) (NodeDeleteResult, error)
 	Upload(context.Context, ArtifactUploadInput, io.Reader) (ArtifactResponse, error)
 	Resource(context.Context, string) (ArtifactResource, error)
 	ListFolders(context.Context, *string) ([]FolderNode, error)
@@ -36,6 +36,10 @@ type ArtifactRepository interface {
 	ListArtifacts(context.Context, ArtifactListParams) ([]ArtifactResponse, error)
 	SearchPageArtifacts(context.Context, PageSearchParams) ([]ArtifactResponse, error)
 	GetArtifact(context.Context, string) (ArtifactResponse, error)
+	// LightNode returns a node's current light representation + seq (incl
+	// tombstones) — the model a write returns so the client applies the result
+	// under the seq guard. No Frame leaks into REST.
+	LightNode(context.Context, string) (BrowserNodeResponse, error)
 	// CreateArtifactGraph writes the artifact, its tree node, and (when
 	// pageBlocks != nil) the initial page_documents row in a single
 	// transaction. pageBlocks must be a JSON array of BlockNote blocks;
@@ -256,13 +260,12 @@ func (s *DefaultArtifactService) Create(ctx context.Context, payload ArtifactPay
 	if err := s.repo.CreateArtifactGraph(ctx, rec, node, pageBlocks, pageSearchText); err != nil {
 		return ArtifactCreateResponse{}, err
 	}
-	nodeResponse := BrowserNodeResponse{
-		ID:         node.ID,
-		ParentID:   node.ParentID,
-		Kind:       node.Kind,
-		Title:      rec.Title,
-		ArtifactID: node.ArtifactID,
-		Position:   node.Position,
+	// Return the committed light node (incl. its seq) so the caller can apply the
+	// create locally under the seq guard — read atomically post-write so seq and
+	// fields are coherent.
+	nodeResponse, err := s.repo.LightNode(ctx, node.ID)
+	if err != nil {
+		return ArtifactCreateResponse{}, err
 	}
 	return ArtifactCreateResponse{
 		Artifact: rec,
@@ -310,17 +313,23 @@ func (s *DefaultArtifactService) CreateBrowserNode(ctx context.Context, input Br
 	}
 }
 
-func (s *DefaultArtifactService) DeleteBrowserNode(ctx context.Context, id string) error {
+func (s *DefaultArtifactService) DeleteBrowserNode(ctx context.Context, id string) (NodeDeleteResult, error) {
 	if err := RequireScope(ctx, ScopeArtifactsWrite); err != nil {
-		return err
+		return NodeDeleteResult{}, err
 	}
 	if strings.TrimSpace(id) == "" {
-		return ErrNotFound
+		return NodeDeleteResult{}, ErrNotFound
 	}
 	if err := s.repo.DeleteBrowserNode(ctx, id); err != nil {
-		return err
+		return NodeDeleteResult{}, err
 	}
-	return nil
+	// Return the root tombstone's version; descendants (if any) heal via the WS
+	// frame / next pull.
+	node, err := s.repo.LightNode(ctx, id)
+	if err != nil {
+		return NodeDeleteResult{}, err
+	}
+	return NodeDeleteResult{ID: id, Seq: node.Seq}, nil
 }
 
 func (s *DefaultArtifactService) Update(ctx context.Context, id string, patch ArtifactPatch) (ArtifactResponse, error) {
@@ -405,20 +414,31 @@ func (s *DefaultArtifactService) Update(ctx context.Context, id string, patch Ar
 	if err != nil {
 		return ArtifactResponse{}, err
 	}
+	// Stamp the post-write version so the caller can apply the rename locally
+	// under the seq guard.
+	node, err := s.repo.LightNode(ctx, id)
+	if err != nil {
+		return ArtifactResponse{}, err
+	}
+	updated.Seq = node.Seq
 	return updated, nil
 }
 
-func (s *DefaultArtifactService) Delete(ctx context.Context, id string) error {
+func (s *DefaultArtifactService) Delete(ctx context.Context, id string) (NodeDeleteResult, error) {
 	if err := RequireScope(ctx, ScopeArtifactsWrite); err != nil {
-		return err
+		return NodeDeleteResult{}, err
 	}
 	if strings.TrimSpace(id) == "" {
-		return ErrNotFound
+		return NodeDeleteResult{}, ErrNotFound
 	}
 	if err := s.repo.DeleteArtifact(ctx, id); err != nil {
-		return err
+		return NodeDeleteResult{}, err
 	}
-	return nil
+	node, err := s.repo.LightNode(ctx, id)
+	if err != nil {
+		return NodeDeleteResult{}, err
+	}
+	return NodeDeleteResult{ID: id, Seq: node.Seq}, nil
 }
 
 func (s *DefaultArtifactService) Upload(ctx context.Context, input ArtifactUploadInput, body io.Reader) (ArtifactResponse, error) {
@@ -570,6 +590,7 @@ func (s *DefaultArtifactService) CreateFolder(ctx context.Context, title string,
 		ID:       node.ID,
 		ParentID: node.ParentID,
 		Title:    node.Title,
+		Seq:      node.Seq,
 	}, nil
 }
 
@@ -605,14 +626,9 @@ func (s *DefaultArtifactService) createFolderNode(ctx context.Context, id string
 	}); err != nil {
 		return BrowserNodeResponse{}, err
 	}
-	node := BrowserNodeResponse{
-		ID:       folderID,
-		ParentID: parentID,
-		Kind:     "folder",
-		Title:    title,
-		Position: position,
-	}
-	return node, nil
+	// Return the committed light node (incl. seq) so the caller can apply locally
+	// under the seq guard.
+	return s.repo.LightNode(ctx, folderID)
 }
 
 func (s *DefaultArtifactService) UpdateFolder(ctx context.Context, id string, patch FolderPatch) (FolderNode, error) {
@@ -636,6 +652,11 @@ func (s *DefaultArtifactService) UpdateFolder(ctx context.Context, id string, pa
 	if err != nil {
 		return FolderNode{}, err
 	}
+	node, err := s.repo.LightNode(ctx, id)
+	if err != nil {
+		return FolderNode{}, err
+	}
+	updated.Seq = node.Seq
 	return updated, nil
 }
 

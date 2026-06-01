@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	artifactservice "aladin/backend_v2/internal/service"
@@ -145,6 +146,52 @@ func (r *PostgresArtifactRepository) GetArtifact(ctx context.Context, id string)
 		   AND COALESCE(n.is_deleted, false) = false
 	`, id, userID)
 	return scanArtifactResponse(row)
+}
+
+// LightNode reads a node's current light representation (joined to its artifact),
+// INCLUDING tombstones, with its seq — the model a write returns so the client can
+// apply the result under the same seq guard the WS frame uses. No Frame type leaks
+// into the REST layer; this is a plain resource representation + its version.
+func (r *PostgresArtifactRepository) LightNode(ctx context.Context, id string) (artifactservice.BrowserNodeResponse, error) {
+	userID, err := r.userID(ctx)
+	if err != nil {
+		return artifactservice.BrowserNodeResponse{}, err
+	}
+	var (
+		nodeID, kind string
+		parentID     *string
+		position     int64
+		title        *string
+		aType        *string
+		sourceURL    *string
+		seq          int64
+		isDeleted    bool
+	)
+	err = r.pool.QueryRow(ctx, lightEntitySelect+` AND n.id = $2`, userID, id).
+		Scan(&nodeID, &kind, &parentID, &position, &title, &aType, &sourceURL, &seq, &isDeleted)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return artifactservice.BrowserNodeResponse{}, artifactservice.ErrNotFound
+		}
+		return artifactservice.BrowserNodeResponse{}, fmt.Errorf("light node %s: %w", id, err)
+	}
+	t := ""
+	if title != nil {
+		t = *title
+	}
+	var artifactID *string
+	if kind == "artifact" {
+		artifactID = &nodeID
+	}
+	return artifactservice.BrowserNodeResponse{
+		ID:         nodeID,
+		ParentID:   parentID,
+		Kind:       kind,
+		Title:      t,
+		ArtifactID: artifactID,
+		Position:   position,
+		Seq:        uint64(seq),
+	}, nil
 }
 
 func (r *PostgresArtifactRepository) CreateArtifactGraph(ctx context.Context, rec artifactservice.ArtifactResponse, node artifactservice.TreeNodeRecord, pageBlocks json.RawMessage, pageSearchText string) error {

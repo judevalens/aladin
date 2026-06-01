@@ -507,8 +507,8 @@ func (f *fakeArtifactService) BrowserTree(ctx context.Context) ([]service.Browse
 	return f.browserTree, f.err
 }
 
-func (f *fakeArtifactService) DeleteBrowserNode(context.Context, string) error {
-	return nil
+func (f *fakeArtifactService) DeleteBrowserNode(context.Context, string) (service.NodeDeleteResult, error) {
+	return service.NodeDeleteResult{}, nil
 }
 
 func (f *fakeArtifactService) Get(ctx context.Context, _ string) (service.ArtifactResponse, error) {
@@ -549,8 +549,8 @@ func (f *fakeArtifactService) Update(ctx context.Context, _ string, patch servic
 	return f.getResult, f.err
 }
 
-func (f *fakeArtifactService) Delete(context.Context, string) error {
-	return service.ErrForbidden
+func (f *fakeArtifactService) Delete(context.Context, string) (service.NodeDeleteResult, error) {
+	return service.NodeDeleteResult{}, service.ErrForbidden
 }
 
 func (f *fakeArtifactService) Upload(context.Context, service.ArtifactUploadInput, io.Reader) (service.ArtifactResponse, error) {
