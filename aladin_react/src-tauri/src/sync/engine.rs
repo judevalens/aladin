@@ -83,25 +83,47 @@ impl Registry {
 pub fn apply_frame(conn: &Connection, registry: &Registry, frame: &Frame) -> DbResult<Vec<String>> {
     let mut touched: Vec<String> = Vec::new();
     for entity in &frame.entities {
-        let Some(handler) = registry.get(&entity.entity_kind) else {
-            // Unknown kind: skip (a newer server may emit kinds we don't handle).
-            continue;
-        };
-        let incoming = entity.seq as i64;
-        if incoming <= handler.stored_seq(conn, &entity.entity_id)? {
-            continue; // stale / duplicate / out-of-order — the seq guard (§3a)
-        }
-        match entity.op.as_str() {
-            "delete" => {
-                handler.soft_delete(conn, &entity.entity_id, &entity.entity_kind, incoming)?
-            }
-            _ => handler.upsert(conn, &entity.entity_id, incoming, entity.data.as_ref())?,
-        }
-        if !touched.iter().any(|id| id == &entity.entity_id) {
+        let applied = apply_one(
+            conn,
+            registry,
+            &entity.entity_kind,
+            &entity.entity_id,
+            entity.seq as i64,
+            &entity.op,
+            entity.data.as_ref(),
+        )?;
+        if applied && !touched.iter().any(|id| id == &entity.entity_id) {
             touched.push(entity.entity_id.clone());
         }
     }
     Ok(touched)
+}
+
+/// Applies ONE entity under the per-entity seq guard, outside any Frame. The
+/// write path uses this to apply the REST write response directly into the cache
+/// (the Frame is strictly the WS model and must not leak into REST), reusing the
+/// exact same guard + handlers as the live/pull path. Returns true if applied
+/// (false = unknown kind or stale/duplicate seq). An unknown kind is skipped.
+pub fn apply_one(
+    conn: &Connection,
+    registry: &Registry,
+    kind: &str,
+    id: &str,
+    seq: i64,
+    op: &str,
+    data: Option<&serde_json::Value>,
+) -> DbResult<bool> {
+    let Some(handler) = registry.get(kind) else {
+        return Ok(false);
+    };
+    if seq <= handler.stored_seq(conn, id)? {
+        return Ok(false); // stale / duplicate / out-of-order — the seq guard (§3a)
+    }
+    match op {
+        "delete" => handler.soft_delete(conn, id, kind, seq)?,
+        _ => handler.upsert(conn, id, seq, data)?,
+    }
+    Ok(true)
 }
 
 /// Derives one UI event per touched id from its final committed state: a live

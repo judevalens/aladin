@@ -18,7 +18,7 @@ use crate::{
 /// uint64 wire values (xid cursor, per-entity seq) are JSON decimal STRINGs
 /// (they can exceed the JS safe-integer range). This mirrors Go's
 /// `json:",string"`.
-mod string_u64 {
+pub(crate) mod string_u64 {
     use serde::{Deserialize, Deserializer, Serializer};
 
     pub fn serialize<S: Serializer>(value: &u64, serializer: S) -> Result<S::Ok, S::Error> {

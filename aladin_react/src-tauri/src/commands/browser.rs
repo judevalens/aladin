@@ -2,24 +2,24 @@ use serde::Deserialize;
 use serde_json::json;
 use tauri::State;
 
-use crate::api::workspace_write::{HttpWorkspaceWriteApi, WorkspaceWriteApi};
+use crate::api::workspace_write::HttpWorkspaceWriteApi;
 use crate::commands::nodes::{artifact_row_from_node, browser_node_from_node};
 use crate::db::repo::artifacts::ArtifactRow;
 use crate::db::repo::browser::BrowserNodeRow;
 use crate::db::repo::nodes::{self, NodeRow};
+use crate::db::repo::workspace_write;
 use crate::db::{Db, DbError, DbResult};
 use crate::events::{DataEvent, DataEventHub};
 use crate::sync::{SyncConfig, SyncHandle};
 
-// Data-layer R1-C (client) — the workspace tree write path as Go PROXIES.
+// Data-layer R1-F (client) — the workspace tree write commands (thin adapters).
 // Architecture: ~/.claude/plans/data-layer-offline-readable.md.
 //
-// The Tauri/Rust backend owns workspace writes: each command proxies to the Go
-// REST API and returns; it does NOT write SQLite. The change comes back as a
-// sync FRAME (live drain → ws, or pull), so the frame-apply stays the SOLE cache
-// writer, even for the client's own writes. Returns synthesize the legacy shape
-// from the input so the calling repo keeps a stable signature; the authoritative
-// row arrives via the frame (R1-F drops any optimistic-local assumption).
+// Each write command is a thin entry adapter: it gathers state, delegates to the
+// write REPO (db/repo/workspace_write.rs), and maps the result to the legacy
+// shape the TS repo expects. The repo owns the real work — PROXY to Go, then
+// apply the committed result into the local cache under the seq guard — so the
+// writer's own change appears immediately and the later WS frame dedups by seq.
 
 #[derive(Debug, Deserialize, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -113,10 +113,12 @@ pub fn db_upsert_browser_node(
     Ok(())
 }
 
-// --- writes (proxy to Go; no SQLite, no emit — the frame brings it back) ---
+// --- writes (thin adapters → write REPO: proxy to Go + seq-guarded cache apply) ---
 
 #[tauri::command]
 pub fn db_create_browser_node(
+    db: State<'_, Db>,
+    events: State<'_, DataEventHub>,
     sync: State<'_, SyncHandle>,
     input: LocalBrowserNodeCreateCommand,
 ) -> DbResult<BrowserCreateResult> {
@@ -139,62 +141,32 @@ pub fn db_create_browser_node(
         });
     }
 
-    HttpWorkspaceWriteApi
-        .create_node(&config, body)
-        .map_err(DbError::Api)?;
-
-    // Synthesize the legacy shape from the input; the authoritative row arrives
-    // via the frame (this is NOT written to the cache).
-    let synth = NodeRow {
-        id: input.id.clone(),
-        kind: kind.clone(),
-        parent_id: input.parent_id.clone(),
-        position: 0,
-        title: Some(input.title.clone()),
-        artifact_type: if is_artifact {
-            input.artifact_type.clone()
-        } else {
-            None
-        },
-        content: if is_artifact {
-            input.content.clone()
-        } else {
-            None
-        },
-        source_url: if is_artifact {
-            input.source_url.clone()
-        } else {
-            None
-        },
-        summary: if is_artifact {
-            input.summary.clone()
-        } else {
-            None
-        },
-        metadata_json: None,
-        updated_at: input.updated_at,
-    };
-    let node = browser_node_from_node(synth.clone());
-    let artifact = if is_artifact {
-        Some(artifact_row_from_node(&synth))
+    let row = workspace_write::create_node(&db, &events, &HttpWorkspaceWriteApi, &config, body)?;
+    let artifact = if row.kind.eq_ignore_ascii_case("artifact") {
+        Some(artifact_row_from_node(&row))
     } else {
         None
     };
-    Ok(BrowserCreateResult { node, artifact })
+    Ok(BrowserCreateResult {
+        node: browser_node_from_node(row),
+        artifact,
+    })
 }
 
 #[tauri::command]
 pub fn db_rename_browser_node(
+    db: State<'_, Db>,
+    events: State<'_, DataEventHub>,
     sync: State<'_, SyncHandle>,
     input: LocalBrowserMutationCommand,
 ) -> DbResult<BrowserNodeRow> {
     let config = require_config(&sync)?;
     // A browser node here is a folder (artifacts rename via db_rename_artifact).
-    HttpWorkspaceWriteApi
-        .rename_folder(&config, &input.id, &input.title)
-        .map_err(DbError::Api)?;
-
-    let synth = NodeRow {
+    let row =
+        workspace_write::rename_folder(&db, &events, &HttpWorkspaceWriteApi, &config, &input.id, &input.title)?;
+    // Fall back to a minimal node from the input if the row isn't cached yet (the
+    // WS frame will reconcile); keeps the TS repo's return shape stable.
+    let node = row.unwrap_or_else(|| NodeRow {
         id: input.id.clone(),
         kind: "folder".to_string(),
         parent_id: input.parent_id.clone(),
@@ -206,18 +178,17 @@ pub fn db_rename_browser_node(
         summary: None,
         metadata_json: None,
         updated_at: input.updated_at,
-    };
-    Ok(browser_node_from_node(synth))
+    });
+    Ok(browser_node_from_node(node))
 }
 
 #[tauri::command]
 pub fn db_delete_browser_node(
+    db: State<'_, Db>,
+    events: State<'_, DataEventHub>,
     sync: State<'_, SyncHandle>,
     input: LocalBrowserDeleteCommand,
 ) -> DbResult<()> {
     let config = require_config(&sync)?;
-    HttpWorkspaceWriteApi
-        .delete_node(&config, &input.id)
-        .map_err(DbError::Api)?;
-    Ok(())
+    workspace_write::delete_node(&db, &events, &HttpWorkspaceWriteApi, &config, &input.id)
 }

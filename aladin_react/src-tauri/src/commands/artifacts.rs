@@ -2,22 +2,23 @@ use serde::Deserialize;
 use serde_json::json;
 use tauri::State;
 
-use crate::api::workspace_write::{HttpWorkspaceWriteApi, WorkspaceWriteApi};
+use crate::api::workspace_write::HttpWorkspaceWriteApi;
 use crate::commands::nodes::artifact_row_from_node;
 use crate::db::repo::artifacts::ArtifactRow;
 use crate::db::repo::nodes::{self, NodeRow};
+use crate::db::repo::workspace_write;
 use crate::db::{Db, DbError, DbResult};
 use crate::events::{DataEvent, DataEventHub};
 use crate::sync::{SyncConfig, SyncHandle};
 
-// Data-layer R1-C (client) — artifact reads + write PROXIES.
+// Data-layer R1-F (client) — artifact reads + write commands (thin adapters).
 // Architecture: ~/.claude/plans/data-layer-offline-readable.md.
 //
 // Reads serve the legacy ArtifactRow shape from the `nodes` cache (an artifact's
-// id IS its node id). Writes proxy to the Go REST API (the Tauri/Rust backend
-// owns the write path) and do NOT touch SQLite — the change returns as a sync
-// FRAME (live drain → ws, or pull), so the frame-apply stays the SOLE cache
-// writer. Page bodies stay in Yjs/Hocuspocus (separate channel).
+// id IS its node id). Writes are thin adapters over the write REPO
+// (db/repo/workspace_write.rs): proxy to Go, then apply the committed result into
+// the local cache under the seq guard — so the change appears immediately and the
+// later WS frame dedups by seq. Page bodies stay in Yjs/Hocuspocus (separate).
 
 #[derive(Debug, Deserialize, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -141,10 +142,12 @@ pub fn db_upsert_artifact(
     Ok(())
 }
 
-// --- writes (proxy to Go; no SQLite, no emit — the frame brings it back) ---
+// --- writes (thin adapters → write REPO: proxy to Go + seq-guarded cache apply) ---
 
 #[tauri::command]
 pub fn db_create_artifact(
+    db: State<'_, Db>,
+    events: State<'_, DataEventHub>,
     sync: State<'_, SyncHandle>,
     input: LocalArtifactMutationCommand,
 ) -> DbResult<ArtifactRow> {
@@ -167,34 +170,36 @@ pub fn db_create_artifact(
             "sourceUrl": input.source_url,
         },
     });
-    HttpWorkspaceWriteApi
-        .create_node(&config, body)
-        .map_err(DbError::Api)?;
-    Ok(synth_artifact_row(&input))
+    let row = workspace_write::create_node(&db, &events, &HttpWorkspaceWriteApi, &config, body)?;
+    Ok(artifact_row_from_node(&row))
 }
 
 #[tauri::command]
 pub fn db_rename_artifact(
+    db: State<'_, Db>,
+    events: State<'_, DataEventHub>,
     sync: State<'_, SyncHandle>,
     input: LocalArtifactMutationCommand,
 ) -> DbResult<ArtifactRow> {
     let config = require_config(&sync)?;
-    HttpWorkspaceWriteApi
-        .rename_artifact(&config, &input.id, &input.title)
-        .map_err(DbError::Api)?;
-    Ok(synth_artifact_row(&input))
+    let row =
+        workspace_write::rename_artifact(&db, &events, &HttpWorkspaceWriteApi, &config, &input.id, &input.title)?;
+    // Fall back to a synthesized row if the artifact isn't cached yet (the WS
+    // frame reconciles); keeps the TS repo's return shape stable.
+    Ok(row
+        .map(|n| artifact_row_from_node(&n))
+        .unwrap_or_else(|| synth_artifact_row(&input)))
 }
 
 #[tauri::command]
 pub fn db_delete_artifact(
+    db: State<'_, Db>,
+    events: State<'_, DataEventHub>,
     sync: State<'_, SyncHandle>,
     input: LocalArtifactDeleteCommand,
 ) -> DbResult<()> {
-    let config = require_config(&sync)?;
     // Delete through the browser-node endpoint so the server tombstones the node
     // spine (and any subtree), not just the artifact row.
-    HttpWorkspaceWriteApi
-        .delete_node(&config, &input.id)
-        .map_err(DbError::Api)?;
-    Ok(())
+    let config = require_config(&sync)?;
+    workspace_write::delete_node(&db, &events, &HttpWorkspaceWriteApi, &config, &input.id)
 }

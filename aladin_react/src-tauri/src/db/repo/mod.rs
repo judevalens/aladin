@@ -2,6 +2,7 @@ pub mod artifacts;
 pub mod browser;
 pub mod nodes;
 pub mod pages;
+pub mod workspace_write;
 
 use rusqlite::types::Type;
 use serde::{Deserialize, Serialize};
