@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -302,4 +303,88 @@ func countEntities(frames []coreservice.Frame) int {
 		n += len(f.Entities)
 	}
 	return n
+}
+
+// TestOutbox_CursorNeverAdvancesPastInFlight is the adversarial gap test: a pull
+// running CONCURRENTLY with an uncommitted write must not advance its returned
+// cursor past the in-flight xid, and a later pull from that advanced cursor must
+// still deliver the event once it commits. This is the property the "gap-free"
+// claim rests on (see data-layer-offline-readable.md): horizon = pg_snapshot_xmin
+// is provably <= any still-in-flight xid, because such an xid is "still active" in
+// the snapshot. If the horizon were the max assigned xid (e.g. pg_current_xact_id
+// or a BIGSERIAL) this test would catch the resulting permanent silent loss.
+//
+// pg_current_xact_id() assigns the xid at INSERT-evaluation time (not commit), so
+// the in-flight xid genuinely exists below where a naive horizon could land —
+// this test forces exactly that window.
+func TestOutbox_CursorNeverAdvancesPastInFlight(t *testing.T) {
+	ctx := adminContext(testAdminUserID)
+	ctxTO, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+
+	pool := mustTestPool(ctxTO, t)
+	defer pool.Close()
+	cleanupSyncTables(ctxTO, t, pool)
+	seedUser(ctxTO, t, pool, testAdminUserID)
+
+	sr := NewSyncPostgres(pool)
+	_, baseCursor, err := sr.PullSince(ctx, testAdminUserID, 0)
+	if err != nil {
+		t.Fatalf("base pull: %v", err)
+	}
+
+	// Open an uncommitted write tx and append a frame; capture its (now assigned,
+	// still in-flight) xid.
+	conn, err := pool.Acquire(ctxTO)
+	if err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+	defer conn.Release()
+	tx, err := conn.Begin(ctxTO)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer func() { _ = tx.Rollback(ctxTO) }()
+	if err := LockUser(ctxTO, tx, testAdminUserID); err != nil {
+		t.Fatalf("lock: %v", err)
+	}
+	if err := appendOutboxEvent(ctxTO, tx, testAdminUserID, coreservice.Frame{
+		Entities: []coreservice.FrameEntity{{EntityKind: "folder", EntityID: "gap-probe", Seq: 1, Op: coreservice.OpUpsert}},
+	}); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	var inFlightStr string
+	if err := tx.QueryRow(ctxTO, `SELECT pg_current_xact_id()::text`).Scan(&inFlightStr); err != nil {
+		t.Fatalf("read in-flight xid: %v", err)
+	}
+	inFlightXid, err := strconv.ParseUint(inFlightStr, 10, 64)
+	if err != nil {
+		t.Fatalf("parse in-flight xid %q: %v", inFlightStr, err)
+	}
+
+	// Pull WHILE the write is in flight. It must see nothing AND must not advance
+	// its cursor at or past the in-flight xid (else the post-commit re-pull skips it).
+	frames, cursor1, err := sr.PullSince(ctx, testAdminUserID, baseCursor)
+	if err != nil {
+		t.Fatalf("concurrent pull: %v", err)
+	}
+	if total := countEntities(frames); total != 0 {
+		t.Fatalf("concurrent pull saw %d in-flight entities, want 0", total)
+	}
+	if cursor1 > inFlightXid {
+		t.Fatalf("cursor advanced to %d, PAST the in-flight xid %d — silent gap", cursor1, inFlightXid)
+	}
+
+	// Commit, then re-pull FROM THE ADVANCED CURSOR (cursor1, not baseCursor). The
+	// event must still arrive — proving the concurrent pull's cursor advance was safe.
+	if err := tx.Commit(ctxTO); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+	frames, _, err = sr.PullSince(ctx, testAdminUserID, cursor1)
+	if err != nil {
+		t.Fatalf("re-pull from advanced cursor: %v", err)
+	}
+	if total := countEntities(frames); total != 1 {
+		t.Fatalf("re-pull from advanced cursor %d saw %d entities, want 1 — the in-flight event was silently lost", cursor1, total)
+	}
 }
