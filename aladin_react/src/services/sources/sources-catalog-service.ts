@@ -82,11 +82,20 @@ export class SourcesCatalogService {
     request: IntegrationTokenCreateRequest,
   ): Promise<CreatedIntegrationToken> {
     const created = await this.integrationRepo.createIntegrationToken(request);
-    await Promise.all([
-      this.refreshTokens(),
-      this.refreshProviders(),
-      this.refreshSources(),
-    ]);
+    // The token now exists server-side, and `created.token` is the ONE-TIME
+    // plaintext reveal — that is the critical path. Refresh the lists
+    // best-effort: a refresh failure (e.g. providers/sources endpoint erroring)
+    // must NOT reject this call and swallow the created token before the UI can
+    // show it. The lists re-fetch on next open anyway.
+    try {
+      await Promise.all([
+        this.refreshTokens(),
+        this.refreshProviders(),
+        this.refreshSources(),
+      ]);
+    } catch {
+      // ignore — the created token is already captured and returned below
+    }
     return created;
   }
 
