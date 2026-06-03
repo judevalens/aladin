@@ -43,8 +43,8 @@ func (r *PostgresSourceRepository) EnsureUserAndGraph(ctx context.Context, userI
 		     ORDER BY created_at ASC
 		     LIMIT 1
 		), inserted AS (
-		    INSERT INTO knowledge_graphs (user_id, name, description)
-		    SELECT $1::uuid, $2, 'Default workspace for persisted feed sources.'
+		    INSERT INTO knowledge_graphs (id, user_id, name, description)
+		    SELECT gen_random_uuid(), $1::uuid, $2, 'Default workspace for persisted feed sources.'
 		    WHERE NOT EXISTS (SELECT 1 FROM existing)
 		    RETURNING id::text
 		)
