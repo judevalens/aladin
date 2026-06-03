@@ -1,4 +1,5 @@
-import { Link2, RefreshCcw, ShieldCheck } from "lucide-react";
+import { Check, Copy, Link2, RefreshCcw, ShieldCheck } from "lucide-react";
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -71,6 +72,18 @@ export function IntegrationsDialog(props: IntegrationsDialogProps) {
 }
 
 function AgentAccessTabs({ state }: { state: IntegrationsState }) {
+  const [copied, setCopied] = useState(false);
+  const onCopy = async () => {
+    if (!state.createdToken) return;
+    try {
+      await navigator.clipboard.writeText(state.createdToken);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard unavailable (e.g. no permission) — the token is still
+      // selectable in the box below as a fallback.
+    }
+  };
   return (
     <div className="grid h-full min-h-0 gap-0 overflow-hidden rounded-lg border border-[#e7e5e4] bg-white lg:grid-cols-[1.1fr_0.9fr]">
       <div className="flex min-h-0 flex-col border-b border-[#e7e5e4] bg-white lg:border-b-0 lg:border-r">
@@ -142,7 +155,17 @@ function AgentAccessTabs({ state }: { state: IntegrationsState }) {
         </div>
         {state.createdToken ? (
           <div className="border-t border-[#e7e5e4] pt-4">
-            <div className="eyebrow">One-time token reveal</div>
+            <div className="flex items-center justify-between gap-2">
+              <div className="eyebrow">One-time token reveal</div>
+              <Button variant="outline" size="sm" onClick={onCopy}>
+                {copied ? (
+                  <Check className="h-4 w-4" />
+                ) : (
+                  <Copy className="h-4 w-4" />
+                )}
+                {copied ? "Copied" : "Copy"}
+              </Button>
+            </div>
             <div className="mt-2 text-sm leading-7 text-[#44403c]">
               Copy this now. It will not be shown again.
             </div>
