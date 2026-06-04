@@ -10,7 +10,26 @@ import (
 func (s *Server) registerPageRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/pages/{id}", s.handlePagesGet)
 	mux.HandleFunc("GET /api/pages/{id}/attribution", s.handlePagesAttribution)
+	mux.HandleFunc("GET /api/pages/{id}/history", s.handlePagesHistory)
 	mux.HandleFunc("PATCH /api/pages/{id}", s.handlePagesSave)
+}
+
+// handlePagesHistory returns the page's edit history (humans + agents), newest
+// first — the data behind the page "History" view.
+func (s *Server) handlePagesHistory(w http.ResponseWriter, r *http.Request) {
+	entries, err := s.deps.Pages().History(r.Context(), r.PathValue("id"))
+	if err != nil {
+		if writeAccessError(w, r, err) {
+			return
+		}
+		if errors.Is(err, pageservice.ErrNotFound) {
+			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Page not found", err)
+			return
+		}
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
+		return
+	}
+	writeJSON(w, http.StatusOK, entries)
 }
 
 // handlePagesAttribution returns the page's block-level agent-attribution map

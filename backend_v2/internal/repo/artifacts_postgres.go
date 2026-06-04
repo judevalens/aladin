@@ -323,6 +323,39 @@ func (r *PostgresArtifactRepository) PageBlockAttribution(ctx context.Context, i
 	return json.RawMessage(raw), nil
 }
 
+// PageEditHistory returns a page's coalesced edit sessions (humans + agents),
+// newest first. User-scoped via the artifacts join.
+func (r *PostgresArtifactRepository) PageEditHistory(ctx context.Context, id string) ([]artifactservice.PageEditEntry, error) {
+	userID, err := r.userID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT h.editor_kind, h.editor_name, h.occurred_at, h.ended_at, h.edits
+		  FROM page_edit_history h
+		  JOIN artifacts a ON a.id = h.page_id
+		 WHERE h.page_id = $1 AND a.user_id = $2::uuid AND a.type = 'page'
+		 ORDER BY h.occurred_at DESC
+		 LIMIT 200
+	`, id, userID)
+	if err != nil {
+		return nil, fmt.Errorf("page edit history %s: %w", id, err)
+	}
+	defer rows.Close()
+	out := make([]artifactservice.PageEditEntry, 0)
+	for rows.Next() {
+		var e artifactservice.PageEditEntry
+		var occurred, ended time.Time
+		if err := rows.Scan(&e.EditorKind, &e.EditorName, &occurred, &ended, &e.Edits); err != nil {
+			return nil, fmt.Errorf("scan page edit history: %w", err)
+		}
+		e.OccurredAt = occurred.UTC().Format(time.RFC3339)
+		e.EndedAt = ended.UTC().Format(time.RFC3339)
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 // SavePageBlocks is the single mutation point for a page's block document.
 // expectedRev=0 disables the optimistic check (last-write-wins);
 // expectedRev>0 enforces that the stored revision is strictly less than

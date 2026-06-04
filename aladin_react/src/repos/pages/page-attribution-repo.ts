@@ -11,8 +11,18 @@ export interface BlockAttributionEntry {
 
 export type BlockAttribution = Record<string, BlockAttributionEntry>;
 
+// One coalesced edit session in a page's history (humans + agents).
+export interface PageEditEntry {
+  editorKind: "human" | "agent";
+  editorName: string;
+  occurredAt: string;
+  endedAt: string;
+  edits: number;
+}
+
 export interface PageAttributionRepo {
   getAttribution(pageId: string): Promise<BlockAttribution>;
+  getHistory(pageId: string): Promise<PageEditEntry[]>;
 }
 
 export function createPageAttributionRepo(client: ApiClient): PageAttributionRepo {
@@ -21,5 +31,9 @@ export function createPageAttributionRepo(client: ApiClient): PageAttributionRep
       client
         .fetch<BlockAttribution>(`/api/pages/${pageId}/attribution`)
         .catch(() => ({})),
+    getHistory: (pageId) =>
+      client
+        .fetch<PageEditEntry[]>(`/api/pages/${pageId}/history`)
+        .catch(() => []),
   };
 }

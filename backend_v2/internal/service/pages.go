@@ -12,6 +12,8 @@ type PageService interface {
 	// Attribution returns the page's block-level agent-attribution map
 	// ({blockId: {by, at}}) as raw JSON ("{}" when none).
 	Attribution(context.Context, string) (json.RawMessage, error)
+	// History returns the page's edit history (humans + agents), newest first.
+	History(context.Context, string) ([]PageEditEntry, error)
 }
 
 type PageRepository interface {
@@ -21,6 +23,18 @@ type PageRepository interface {
 	SavePageBlocks(ctx context.Context, artifactID string, blocks json.RawMessage, searchText string, expectedRev int64) (newRev int64, err error)
 	// PageBlockAttribution returns the raw block_attribution JSON for a page.
 	PageBlockAttribution(context.Context, string) (json.RawMessage, error)
+	// PageEditHistory returns the page's coalesced edit sessions, newest first.
+	PageEditHistory(context.Context, string) ([]PageEditEntry, error)
+}
+
+// PageEditEntry is one coalesced edit session on a page (the collab server
+// records these; see docs/page-edit-history.md).
+type PageEditEntry struct {
+	EditorKind string `json:"editorKind"` // "human" | "agent"
+	EditorName string `json:"editorName"`
+	OccurredAt string `json:"occurredAt"`
+	EndedAt    string `json:"endedAt"`
+	Edits      int    `json:"edits"`
 }
 
 type PageDocument struct {
@@ -64,6 +78,16 @@ func (s *DefaultPageService) Attribution(ctx context.Context, id string) (json.R
 		return nil, err
 	}
 	return s.repo.PageBlockAttribution(ctx, id)
+}
+
+func (s *DefaultPageService) History(ctx context.Context, id string) ([]PageEditEntry, error) {
+	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
+		return nil, err
+	}
+	if _, err := s.pageArtifact(ctx, id); err != nil {
+		return nil, err
+	}
+	return s.repo.PageEditHistory(ctx, id)
 }
 
 // Save is an M8c seam guard. Page content is owned by the collaborative Y.Doc

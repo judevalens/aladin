@@ -186,6 +186,65 @@ export function createCollabServer({
     );
   }
 
+  // --- page edit history (coalesced sessions) -----------------------------
+  // The collab server is the one place that sees every edit. Humans record via
+  // onChange (the connection's principal); agents record via applyOperation.
+  // Edits by the same editor on the same page within HISTORY_WINDOW_MS extend a
+  // single session row (occurred_at=start, ended_at=last, edits=count) instead
+  // of one row per keystroke. All best-effort — never block an edit.
+  const HISTORY_WINDOW_MS = 45000;
+  const editSessions = new Map(); // key -> { rowId, edits, lastChange, timer }
+
+  async function closeEditSession(key) {
+    const s = editSessions.get(key);
+    if (!s) return;
+    editSessions.delete(key);
+    clearTimeout(s.timer);
+    try {
+      await pool.query(
+        "UPDATE page_edit_history SET ended_at = $2, edits = $3 WHERE id = $1",
+        [s.rowId, s.lastChange.toISOString(), s.edits],
+      );
+    } catch (err) {
+      console.error("history close failed:", errorMessage(err));
+    }
+  }
+
+  // Record one edit by `editor` ({ kind, name }) on `pageId`.
+  function recordEdit(pageId, editor) {
+    if (!editor || !editor.name) return;
+    const key = `${pageId}::${editor.kind}:${editor.name}`;
+    const now = new Date();
+    const existing = editSessions.get(key);
+    if (existing) {
+      existing.edits += 1;
+      existing.lastChange = now;
+      clearTimeout(existing.timer);
+      existing.timer = setTimeout(() => closeEditSession(key), HISTORY_WINDOW_MS);
+      return;
+    }
+    pool
+      .query(
+        `INSERT INTO page_edit_history (page_id, editor_kind, editor_name)
+         VALUES ($1, $2, $3) RETURNING id`,
+        [pageId, editor.kind, editor.name],
+      )
+      .then(({ rows }) => {
+        const timer = setTimeout(() => closeEditSession(key), HISTORY_WINDOW_MS);
+        editSessions.set(key, { rowId: rows[0].id, edits: 1, lastChange: now, timer });
+      })
+      .catch((err) => console.error(`history insert failed for ${pageId}:`, errorMessage(err)));
+  }
+
+  // The human editor behind a connection context (onAuthenticate sets
+  // { principal }). Agents edit via the bridge (no principal on that direct
+  // connection) and are recorded separately, so a missing principal → skip.
+  function humanEditorFromContext(context) {
+    const p = context?.principal;
+    if (!p) return null;
+    return { kind: "human", name: String(p.email || p.userId || p.actorId || "user") };
+  }
+
   function flushProjection(pageId) {
     const entry = pending.get(pageId);
     if (!entry) return;
@@ -265,8 +324,10 @@ export function createCollabServer({
 
     // M8.7: every doc change schedules a debounced projection write. Fires for
     // edits from clients AND from the bridge's own DirectConnection writes.
-    onChange: async ({ documentName, document }) => {
+    onChange: async ({ documentName, document, context }) => {
       scheduleProjection(documentName, document);
+      // Page history: attribute human edits to the connection's principal.
+      recordEdit(documentName, humanEditorFromContext(context));
     },
   });
 
@@ -326,6 +387,9 @@ export function createCollabServer({
           errorMessage(err),
         );
       }
+
+      // Page history: record the agent edit (coalesced, like human edits).
+      recordEdit(pageId, { kind: "agent", name: editorName });
 
       return {
         blockIds: written.map((b) => b.id),

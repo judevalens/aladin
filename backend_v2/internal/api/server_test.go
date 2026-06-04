@@ -945,6 +945,13 @@ func (f *fakePageService) Attribution(_ context.Context, _ string) (json.RawMess
 	return json.RawMessage("{}"), nil
 }
 
+func (f *fakePageService) History(_ context.Context, _ string) ([]artifactservice.PageEditEntry, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return nil, nil
+}
+
 func (f *fakeFileService) Upload(_ context.Context, input artifactservice.FileUploadInput, body io.Reader) (artifactservice.FileRecord, error) {
 	if f.err != nil {
 		return artifactservice.FileRecord{}, f.err
