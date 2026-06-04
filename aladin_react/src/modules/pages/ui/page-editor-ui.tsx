@@ -1,6 +1,5 @@
 import { useAppComposition } from "@/app/composition/app-composition";
 import { BlockNotePageEditorDriver } from "@/modules/pages/editor/page-editor-driver";
-import { usePageAttribution } from "@/modules/pages/hooks/use-page-attribution";
 import { useObservableState } from "@/shared/flow/use-observable-state";
 
 // Stable, readable cursor color per user id (awareness).
@@ -16,8 +15,6 @@ function colorForUser(id: string): string {
 export function PageEditorUI({ pageId }: { pageId: string }) {
   const { runtime, services } = useAppComposition();
   const authState = useObservableState(services.auth.session.session());
-  // Hook must run before the early return (rules of hooks); pageId is stable.
-  const { attribution, refetch } = usePageAttribution(pageId);
 
   const user = authState.status === "data" ? authState.value.user : null;
   if (!user) {
@@ -38,8 +35,6 @@ export function PageEditorUI({ pageId }: { pageId: string }) {
             collabWsUrl={runtime.config.collabWsBaseUrl}
             token={token}
             user={{ name: user.email, color: colorForUser(user.id) }}
-            attribution={attribution}
-            onContentChange={refetch}
           />
         </div>
       </div>
