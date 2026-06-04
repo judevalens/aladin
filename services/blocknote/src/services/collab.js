@@ -158,6 +158,34 @@ export function createCollabServer({
     );
   }
 
+  // Block-level agent presence: record which agent last touched each affected
+  // block into page_documents.block_attribution — a side map { blockId: { by,
+  // at } }, pruned to the page's current block ids so deleted blocks drop out.
+  // The bridge is the only writer that knows "an agent did this" (human edits
+  // ride Yjs and aren't stamped). Best-effort: a failure must not break the op.
+  async function stampAttribution(pageId, affectedIds, currentIds, editorName) {
+    if (!Array.isArray(affectedIds) || affectedIds.length === 0) return;
+    const { rows } = await pool.query(
+      "SELECT block_attribution FROM page_documents WHERE artifact_id = $1",
+      [pageId],
+    );
+    const current = rows[0]?.block_attribution ?? {};
+    const keep = new Set(currentIds);
+    const next = {};
+    for (const [id, v] of Object.entries(current)) {
+      if (keep.has(id)) next[id] = v;
+    }
+    const at = new Date().toISOString();
+    for (const id of affectedIds) next[id] = { by: editorName, at };
+    await pool.query(
+      `INSERT INTO page_documents (artifact_id, block_attribution, created_at, updated_at)
+         VALUES ($1, $2::jsonb, now(), now())
+       ON CONFLICT (artifact_id) DO UPDATE
+         SET block_attribution = EXCLUDED.block_attribution, updated_at = now()`,
+      [pageId, JSON.stringify(next)],
+    );
+  }
+
   function flushProjection(pageId) {
     const entry = pending.get(pageId);
     if (!entry) return;
@@ -275,6 +303,30 @@ export function createCollabServer({
         plan.affectedStart + plan.affectedCount,
       );
       const markdown = await editor.blocksToMarkdownLossy(affected);
+
+      // Stamp block-level agent attribution (best-effort). `agent` is the
+      // bridge's { id, name } object (or absent); prefer name, then id.
+      const agent = input.agent;
+      const editorName =
+        (agent && typeof agent === "object"
+          ? String(agent.name || agent.id || "").trim()
+          : typeof agent === "string"
+            ? agent.trim()
+            : "") || "agent";
+      try {
+        await stampAttribution(
+          pageId,
+          affected.map((b) => b.id),
+          written.map((b) => b.id),
+          editorName,
+        );
+      } catch (err) {
+        console.error(
+          `attribution stamp failed for ${pageId}:`,
+          errorMessage(err),
+        );
+      }
+
       return {
         blockIds: written.map((b) => b.id),
         affectedBlockIds: affected.map((b) => b.id),

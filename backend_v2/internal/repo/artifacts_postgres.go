@@ -299,6 +299,30 @@ func (r *PostgresArtifactRepository) CreatePageDocument(ctx context.Context, art
 	return err
 }
 
+// PageBlockAttribution returns the raw block_attribution JSON for a page (the
+// side map {blockId: {by, at}} the collab bridge stamps on agent edits). Returns
+// "{}" when the page has no document row or no attribution. User-scoped.
+func (r *PostgresArtifactRepository) PageBlockAttribution(ctx context.Context, id string) (json.RawMessage, error) {
+	userID, err := r.userID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var raw []byte
+	err = r.pool.QueryRow(ctx, `
+		SELECT pd.block_attribution
+		  FROM page_documents pd
+		  JOIN artifacts a ON a.id = pd.artifact_id
+		 WHERE pd.artifact_id = $1 AND a.user_id = $2::uuid AND a.type = 'page'
+	`, id, userID).Scan(&raw)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return json.RawMessage("{}"), nil
+		}
+		return nil, fmt.Errorf("page block attribution %s: %w", id, err)
+	}
+	return json.RawMessage(raw), nil
+}
+
 // SavePageBlocks is the single mutation point for a page's block document.
 // expectedRev=0 disables the optimistic check (last-write-wins);
 // expectedRev>0 enforces that the stored revision is strictly less than

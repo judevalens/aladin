@@ -1,0 +1,9 @@
+/* Block-level agent presence: a layout-safe left accent on blocks an agent last
+   authored or edited. `data-agent-by` is set by the editor driver from the
+   page's attribution map; the inset box-shadow doesn't reflow BlockNote's
+   layout, and a native title (set alongside) names the agent on hover. */
+[data-agent-by] {
+  box-shadow: inset 3px 0 0 0 hsl(265 70% 58%);
+  border-radius: 2px;
+  transition: box-shadow 150ms ease;
+}

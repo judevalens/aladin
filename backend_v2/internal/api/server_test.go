@@ -938,6 +938,13 @@ func (f *fakePageService) Save(_ context.Context, _ string, input artifactservic
 	return f.page, nil
 }
 
+func (f *fakePageService) Attribution(_ context.Context, _ string) (json.RawMessage, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return json.RawMessage("{}"), nil
+}
+
 func (f *fakeFileService) Upload(_ context.Context, input artifactservice.FileUploadInput, body io.Reader) (artifactservice.FileRecord, error) {
 	if f.err != nil {
 		return artifactservice.FileRecord{}, f.err

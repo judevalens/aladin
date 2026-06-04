@@ -9,6 +9,9 @@ import (
 type PageService interface {
 	Get(context.Context, string) (PageDocument, error)
 	Save(context.Context, string, PageSaveInput) (PageDocument, error)
+	// Attribution returns the page's block-level agent-attribution map
+	// ({blockId: {by, at}}) as raw JSON ("{}" when none).
+	Attribution(context.Context, string) (json.RawMessage, error)
 }
 
 type PageRepository interface {
@@ -16,6 +19,8 @@ type PageRepository interface {
 	// SavePageBlocks persists the page's blocks + derived searchText with
 	// optimistic concurrency. expectedRev=0 disables the check.
 	SavePageBlocks(ctx context.Context, artifactID string, blocks json.RawMessage, searchText string, expectedRev int64) (newRev int64, err error)
+	// PageBlockAttribution returns the raw block_attribution JSON for a page.
+	PageBlockAttribution(context.Context, string) (json.RawMessage, error)
 }
 
 type PageDocument struct {
@@ -48,6 +53,17 @@ func (s *DefaultPageService) Get(ctx context.Context, id string) (PageDocument, 
 		return PageDocument{}, err
 	}
 	return toPageDocument(rec), nil
+}
+
+func (s *DefaultPageService) Attribution(ctx context.Context, id string) (json.RawMessage, error) {
+	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
+		return nil, err
+	}
+	// Verify it's a page the caller owns before exposing its attribution.
+	if _, err := s.pageArtifact(ctx, id); err != nil {
+		return nil, err
+	}
+	return s.repo.PageBlockAttribution(ctx, id)
 }
 
 // Save is an M8c seam guard. Page content is owned by the collaborative Y.Doc

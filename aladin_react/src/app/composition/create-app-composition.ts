@@ -6,6 +6,7 @@ import { createWorkspaceRepo } from "@/repos/workspace/workspace-repo";
 import { createArtifactRepo } from "@/repos/artifacts/artifact-repo";
 import { createSourcesRepo } from "@/repos/sources/sources-repo";
 import { createIntegrationRepo } from "@/repos/integrations/integration-repo";
+import { createPageAttributionRepo } from "@/repos/pages/page-attribution-repo";
 import { createApiClient } from "@/shared/api/client";
 import { createDataEventsRepo } from "@/repos/data-events-repo";
 import { createLocalRepos } from "@/repos/local-repos";
@@ -41,6 +42,7 @@ export function createAppComposition() {
     artifacts: createArtifactRepo(apis.artifacts, apiClient, local.repos.artifacts),
     sources: createSourcesRepo(apiClient),
     integrations: createIntegrationRepo(apiClient),
+    pages: createPageAttributionRepo(apiClient),
   };
 
   const authSession = new AuthSessionService(repos.auth, desktopSession);
