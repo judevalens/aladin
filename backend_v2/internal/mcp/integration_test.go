@@ -33,6 +33,7 @@ import (
 	"aladin/backend_v2/internal/app"
 	"aladin/backend_v2/internal/blocknote"
 	"aladin/backend_v2/internal/db"
+	"aladin/backend_v2/internal/dbtest"
 	"aladin/backend_v2/internal/service"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -45,7 +46,9 @@ func TestMCP_EndToEnd(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	dbURL := envDefault("DATABASE_URL", "postgres://aladin:password@localhost:5433/aladin?sslmode=disable")
+	// SAFETY: this test creates/edits pages and wipes tables — only ever run it
+	// against an explicit throwaway TEST_DATABASE_URL, never the dev DB.
+	dbURL := dbtest.RequireTestDSN(t)
 	converterURL := envDefault("CONVERTER_URL", "http://localhost:3500")
 
 	pool, err := pgxpool.New(ctx, dbURL)

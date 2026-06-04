@@ -2,8 +2,9 @@ package db
 
 import (
 	"context"
-	"os"
 	"testing"
+
+	"aladin/backend_v2/internal/dbtest"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -12,10 +13,7 @@ import (
 func TestRecordRepositorySaveCompleteIgnoresStaleRevision(t *testing.T) {
 	t.Parallel()
 
-	dsn := os.Getenv("ALADIN_TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("set ALADIN_TEST_DATABASE_URL to run Postgres-backed record repo tests")
-	}
+	dsn := dbtest.RequireTestDSN(t)
 
 	ctx := context.Background()
 	pool, err := Connect(ctx, dsn)

@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strconv"
 	"testing"
 	"time"
 
 	"aladin/backend_v2/internal/app"
 	"aladin/backend_v2/internal/db"
+	"aladin/backend_v2/internal/dbtest"
 	"aladin/backend_v2/internal/repo"
 	coreservice "aladin/backend_v2/internal/service"
 
@@ -135,13 +135,9 @@ func countEntities(frames []coreservice.Frame) int {
 
 func mustSyncTestPool(ctx context.Context, t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		dsn = os.Getenv("DATABASE_URL")
-	}
-	if dsn == "" {
-		dsn = "postgres://aladin:password@localhost:5433/aladin"
-	}
+	// SAFETY: this test wipes workspace tables — only ever run it against an
+	// explicit throwaway TEST_DATABASE_URL, never the dev DB.
+	dsn := dbtest.RequireTestDSN(t)
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
 		t.Skipf("no test database: %v", err)
