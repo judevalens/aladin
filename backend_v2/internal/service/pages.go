@@ -14,6 +14,9 @@ type PageService interface {
 	Attribution(context.Context, string) (json.RawMessage, error)
 	// History returns the page's edit history (humans + agents), newest first.
 	History(context.Context, string) ([]PageEditEntry, error)
+	// Diff returns the before/after markdown for one history entry (the entry's
+	// snapshot vs the previous entry's), for a view-time text diff.
+	Diff(context.Context, string) (PageDiff, error)
 }
 
 type PageRepository interface {
@@ -25,16 +28,26 @@ type PageRepository interface {
 	PageBlockAttribution(context.Context, string) (json.RawMessage, error)
 	// PageEditHistory returns the page's coalesced edit sessions, newest first.
 	PageEditHistory(context.Context, string) ([]PageEditEntry, error)
+	// PageEditDiff returns the before/after markdown for a history entry id.
+	PageEditDiff(context.Context, string) (PageDiff, error)
 }
 
 // PageEditEntry is one coalesced edit session on a page (the collab server
 // records these; see docs/page-edit-history.md).
 type PageEditEntry struct {
+	ID         string `json:"id"`
 	EditorKind string `json:"editorKind"` // "human" | "agent"
 	EditorName string `json:"editorName"`
 	OccurredAt string `json:"occurredAt"`
 	EndedAt    string `json:"endedAt"`
 	Edits      int    `json:"edits"`
+}
+
+// PageDiff is the before/after markdown around one history entry — the client
+// renders a text diff from it.
+type PageDiff struct {
+	Before string `json:"before"`
+	After  string `json:"after"`
 }
 
 type PageDocument struct {
@@ -88,6 +101,14 @@ func (s *DefaultPageService) History(ctx context.Context, id string) ([]PageEdit
 		return nil, err
 	}
 	return s.repo.PageEditHistory(ctx, id)
+}
+
+func (s *DefaultPageService) Diff(ctx context.Context, entryID string) (PageDiff, error) {
+	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
+		return PageDiff{}, err
+	}
+	// Ownership is enforced in the repo (the entry → page → artifact.user_id join).
+	return s.repo.PageEditDiff(ctx, entryID)
 }
 
 // Save is an M8c seam guard. Page content is owned by the collaborative Y.Doc

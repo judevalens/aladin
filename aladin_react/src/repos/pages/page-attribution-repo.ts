@@ -13,6 +13,7 @@ export type BlockAttribution = Record<string, BlockAttributionEntry>;
 
 // One coalesced edit session in a page's history (humans + agents).
 export interface PageEditEntry {
+  id: string;
   editorKind: "human" | "agent";
   editorName: string;
   occurredAt: string;
@@ -20,9 +21,16 @@ export interface PageEditEntry {
   edits: number;
 }
 
+// Before/after markdown around a history entry — the client renders a text diff.
+export interface PageDiff {
+  before: string;
+  after: string;
+}
+
 export interface PageAttributionRepo {
   getAttribution(pageId: string): Promise<BlockAttribution>;
   getHistory(pageId: string): Promise<PageEditEntry[]>;
+  getDiff(pageId: string, entryId: string): Promise<PageDiff>;
 }
 
 export function createPageAttributionRepo(client: ApiClient): PageAttributionRepo {
@@ -35,5 +43,9 @@ export function createPageAttributionRepo(client: ApiClient): PageAttributionRep
       client
         .fetch<PageEditEntry[]>(`/api/pages/${pageId}/history`)
         .catch(() => []),
+    getDiff: (pageId, entryId) =>
+      client
+        .fetch<PageDiff>(`/api/pages/${pageId}/history/${entryId}/diff`)
+        .catch(() => ({ before: "", after: "" })),
   };
 }

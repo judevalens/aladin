@@ -337,6 +337,10 @@ func (f *fakeArtifactRepository) PageEditHistory(_ context.Context, _ string) ([
 	return nil, nil
 }
 
+func (f *fakeArtifactRepository) PageEditDiff(_ context.Context, _ string) (PageDiff, error) {
+	return PageDiff{}, nil
+}
+
 func (f *fakeArtifactRepository) SavePageBlocks(_ context.Context, artifactID string, blocks json.RawMessage, searchText string, expectedRev int64) (int64, error) {
 	if f.artifactByID == nil {
 		return 0, ErrNotFound

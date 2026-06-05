@@ -952,6 +952,13 @@ func (f *fakePageService) History(_ context.Context, _ string) ([]artifactservic
 	return nil, nil
 }
 
+func (f *fakePageService) Diff(_ context.Context, _ string) (artifactservice.PageDiff, error) {
+	if f.err != nil {
+		return artifactservice.PageDiff{}, f.err
+	}
+	return artifactservice.PageDiff{}, nil
+}
+
 func (f *fakeFileService) Upload(_ context.Context, input artifactservice.FileUploadInput, body io.Reader) (artifactservice.FileRecord, error) {
 	if f.err != nil {
 		return artifactservice.FileRecord{}, f.err

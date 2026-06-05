@@ -1,6 +1,9 @@
-import { RefreshCcw, Sparkles, X } from "lucide-react";
+import { diffWords } from "diff";
+import { ChevronDown, ChevronRight, RefreshCcw, Sparkles, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useAppComposition } from "@/app/composition/app-composition";
 import { usePageHistory } from "@/modules/pages/hooks/use-page-history";
-import type { PageEditEntry } from "@/repos/pages/page-attribution-repo";
+import type { PageDiff, PageEditEntry } from "@/repos/pages/page-attribution-repo";
 
 function initials(name: string): string {
   const at = name.indexOf("@");
@@ -28,10 +31,55 @@ function relTime(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-function HistoryRow({ entry }: { entry: PageEditEntry }) {
+// Word-level diff of two markdown snapshots, rendered inline.
+function DiffView({ pageId, entryId }: { pageId: string; entryId: string }) {
+  const { repos } = useAppComposition();
+  const [diff, setDiff] = useState<PageDiff | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void repos.pages.getDiff(pageId, entryId).then((d) => {
+      if (!cancelled) setDiff(d);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [repos, pageId, entryId]);
+
+  if (!diff) {
+    return <div className="px-3 py-2 text-xs text-[#a8a29e]">Loading diff…</div>;
+  }
+  if (!diff.before && !diff.after) {
+    return <div className="px-3 py-2 text-xs text-[#a8a29e]">No snapshot for this edit yet.</div>;
+  }
+  const parts = diffWords(diff.before, diff.after);
+  return (
+    <pre className="mx-1 mb-1 max-h-64 overflow-auto whitespace-pre-wrap rounded-md border border-[#f2f0ee] bg-[#fafaf9] p-2 text-[11px] leading-5 text-[#57534e]">
+      {parts.map((p, i) => (
+        <span
+          key={i}
+          className={
+            p.added
+              ? "rounded bg-green-100 text-green-800"
+              : p.removed
+                ? "rounded bg-red-100 text-red-700 line-through"
+                : ""
+          }
+        >
+          {p.value}
+        </span>
+      ))}
+    </pre>
+  );
+}
+
+function HistoryRow({ entry, expanded }: { entry: PageEditEntry; expanded: boolean }) {
   const isAgent = entry.editorKind === "agent";
   return (
-    <div className="flex items-start gap-3 rounded-md px-2 py-2 hover:bg-[#faf9f8]">
+    <div className="flex items-start gap-2 px-2 py-2">
+      <div className="mt-1.5 text-[#a8a29e]">
+        {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+      </div>
       <div
         className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
         style={{ backgroundColor: colorFor(entry.editorName) }}
@@ -64,34 +112,41 @@ export function PageHistoryPanel({
   onClose: () => void;
 }) {
   const { entries, loading, refetch } = usePageHistory(pageId);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
   return (
-    <div className="absolute right-0 top-0 z-20 flex h-full w-72 flex-col border-l border-[#e7e5e4] bg-white shadow-lg">
+    <div className="absolute right-0 top-0 z-20 flex h-full w-80 flex-col border-l border-[#e7e5e4] bg-white shadow-lg">
       <div className="flex items-center justify-between border-b border-[#f2f0ee] px-4 py-3">
         <div className="text-sm font-medium text-[#292524]">History</div>
         <div className="flex items-center gap-1">
-          <button
-            onClick={refetch}
-            title="Refresh"
-            className="rounded p-1 text-[#78716c] hover:bg-[#f5f5f4]"
-          >
+          <button onClick={refetch} title="Refresh" className="rounded p-1 text-[#78716c] hover:bg-[#f5f5f4]">
             <RefreshCcw className="h-4 w-4" />
           </button>
-          <button
-            onClick={onClose}
-            title="Close"
-            className="rounded p-1 text-[#78716c] hover:bg-[#f5f5f4]"
-          >
+          <button onClick={onClose} title="Close" className="rounded p-1 text-[#78716c] hover:bg-[#f5f5f4]">
             <X className="h-4 w-4" />
           </button>
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-2">
+      <div className="min-h-0 flex-1 overflow-y-auto py-1">
         {loading ? (
-          <div className="px-2 py-4 text-sm text-[#a8a29e]">Loading…</div>
+          <div className="px-4 py-4 text-sm text-[#a8a29e]">Loading…</div>
         ) : entries.length === 0 ? (
-          <div className="px-2 py-4 text-sm text-[#a8a29e]">No edits recorded yet.</div>
+          <div className="px-4 py-4 text-sm text-[#a8a29e]">No edits recorded yet.</div>
         ) : (
-          entries.map((e, i) => <HistoryRow key={`${e.occurredAt}-${i}`} entry={e} />)
+          entries.map((e) => {
+            const open = expandedId === e.id;
+            return (
+              <div key={e.id} className="border-b border-[#f7f6f5] last:border-b-0">
+                <button
+                  onClick={() => setExpandedId(open ? null : e.id)}
+                  className="w-full rounded text-left hover:bg-[#faf9f8]"
+                >
+                  <HistoryRow entry={e} expanded={open} />
+                </button>
+                {open ? <DiffView pageId={pageId} entryId={e.id} /> : null}
+              </div>
+            );
+          })
         )}
       </div>
     </div>

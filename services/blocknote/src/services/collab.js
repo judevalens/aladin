@@ -200,18 +200,30 @@ export function createCollabServer({
     if (!s) return;
     editSessions.delete(key);
     clearTimeout(s.timer);
+    // Option-2 diffs: snapshot the page's markdown at session close. The diff for
+    // this entry is computed at view time vs the previous entry's snapshot.
+    let markdown = null;
+    try {
+      if (s.document) {
+        const blocks = editor.yDocToBlocks(s.document, FRAGMENT);
+        markdown = await editor.blocksToMarkdownLossy(blocks);
+      }
+    } catch (err) {
+      console.error("history snapshot failed:", errorMessage(err));
+    }
     try {
       await pool.query(
-        "UPDATE page_edit_history SET ended_at = $2, edits = $3 WHERE id = $1",
-        [s.rowId, s.lastChange.toISOString(), s.edits],
+        "UPDATE page_edit_history SET ended_at = $2, edits = $3, markdown_snapshot = $4 WHERE id = $1",
+        [s.rowId, s.lastChange.toISOString(), s.edits, markdown],
       );
     } catch (err) {
       console.error("history close failed:", errorMessage(err));
     }
   }
 
-  // Record one edit by `editor` ({ kind, name }) on `pageId`.
-  function recordEdit(pageId, editor) {
+  // Record one edit by `editor` ({ kind, name }) on `pageId`. `document` is the
+  // live Y.Doc, stashed so the session can snapshot its markdown on close.
+  function recordEdit(pageId, editor, document) {
     if (!editor || !editor.name) return;
     const key = `${pageId}::${editor.kind}:${editor.name}`;
     const now = new Date();
@@ -219,6 +231,7 @@ export function createCollabServer({
     if (existing) {
       existing.edits += 1;
       existing.lastChange = now;
+      if (document) existing.document = document;
       clearTimeout(existing.timer);
       existing.timer = setTimeout(() => closeEditSession(key), HISTORY_WINDOW_MS);
       return;
@@ -231,7 +244,7 @@ export function createCollabServer({
       )
       .then(({ rows }) => {
         const timer = setTimeout(() => closeEditSession(key), HISTORY_WINDOW_MS);
-        editSessions.set(key, { rowId: rows[0].id, edits: 1, lastChange: now, timer });
+        editSessions.set(key, { rowId: rows[0].id, edits: 1, lastChange: now, timer, document });
       })
       .catch((err) => console.error(`history insert failed for ${pageId}:`, errorMessage(err)));
   }
@@ -327,7 +340,7 @@ export function createCollabServer({
     onChange: async ({ documentName, document, context }) => {
       scheduleProjection(documentName, document);
       // Page history: attribute human edits to the connection's principal.
-      recordEdit(documentName, humanEditorFromContext(context));
+      recordEdit(documentName, humanEditorFromContext(context), document);
     },
   });
 
@@ -389,7 +402,7 @@ export function createCollabServer({
       }
 
       // Page history: record the agent edit (coalesced, like human edits).
-      recordEdit(pageId, { kind: "agent", name: editorName });
+      recordEdit(pageId, { kind: "agent", name: editorName }, connection.document);
 
       return {
         blockIds: written.map((b) => b.id),

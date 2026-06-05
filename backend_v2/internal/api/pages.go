@@ -11,7 +11,26 @@ func (s *Server) registerPageRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/pages/{id}", s.handlePagesGet)
 	mux.HandleFunc("GET /api/pages/{id}/attribution", s.handlePagesAttribution)
 	mux.HandleFunc("GET /api/pages/{id}/history", s.handlePagesHistory)
+	mux.HandleFunc("GET /api/pages/{id}/history/{entryId}/diff", s.handlePagesHistoryDiff)
 	mux.HandleFunc("PATCH /api/pages/{id}", s.handlePagesSave)
+}
+
+// handlePagesHistoryDiff returns the before/after markdown around a history
+// entry — the client renders a text diff from it.
+func (s *Server) handlePagesHistoryDiff(w http.ResponseWriter, r *http.Request) {
+	diff, err := s.deps.Pages().Diff(r.Context(), r.PathValue("entryId"))
+	if err != nil {
+		if writeAccessError(w, r, err) {
+			return
+		}
+		if errors.Is(err, pageservice.ErrNotFound) {
+			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "History entry not found", err)
+			return
+		}
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
+		return
+	}
+	writeJSON(w, http.StatusOK, diff)
 }
 
 // handlePagesHistory returns the page's edit history (humans + agents), newest
