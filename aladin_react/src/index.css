@@ -215,6 +215,26 @@
     .bn-container {
         --bn-ui-base-z-index: 9999;
     }
+    /* Theme the BlockNote editor to the Aladin tokens. These resolve to the active
+       data-theme (dark/soft) and use !important so they win over BlockNote's own
+       dark-scheme vars regardless of stylesheet import order. */
+    .bn-container {
+        --bn-colors-editor-text: var(--ink) !important;
+        --bn-colors-editor-background: transparent !important;
+        --bn-colors-side-menu: var(--ink-3) !important;
+        --bn-colors-menu-text: var(--ink) !important;
+        --bn-colors-menu-background: var(--explorer) !important;
+        --bn-colors-tooltip-text: var(--ink-2) !important;
+        --bn-colors-tooltip-background: var(--explorer) !important;
+        --bn-colors-hovered-text: var(--ink) !important;
+        --bn-colors-hovered-background: var(--raise) !important;
+        --bn-colors-selected-text: var(--ink) !important;
+        --bn-colors-selected-background: rgb(var(--sel)) !important;
+        --bn-colors-disabled-text: var(--ink-4) !important;
+        --bn-colors-disabled-background: var(--field) !important;
+        --bn-colors-border: rgb(var(--line)) !important;
+        --bn-colors-shadow: rgb(0 0 0 / 0.5) !important;
+    }
 }
 
 .scrollbar-hidden {

@@ -80,7 +80,7 @@ export function BlockNotePageEditorDriver({
           slashMenu={true}
           formattingToolbar={true}
           linkToolbar={true}
-          theme="light"
+          theme="dark"
         />
       </div>
     </div>
