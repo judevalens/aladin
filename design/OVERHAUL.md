@@ -1,5 +1,12 @@
 # Aladin Design-System Overhaul — North Star
 
+> **⚠️ SUPERSEDED (this session).** A new design + a redesigned files/artifact browser
+> are incoming via `PRD.md`, which replaces the "reconcile spec → tokens" direction
+> below. Do **not** act on the warm-token / component-sweep recommendation. The audit
+> findings (§3) and the de-facto-palette table are retained as **reference only** — they
+> still document exactly what's hardcoded and where, which helps when rebuilding.
+> Treat `PRD.md` as the locked source of truth once it lands.
+
 Living doc for the upcoming UI/design-system overhaul. It exists to (1) reconcile the
 two vocabularies the project currently speaks, (2) hold the candidate directions without
 locking one in prematurely, and (3) track the per-surface audit backlog.
