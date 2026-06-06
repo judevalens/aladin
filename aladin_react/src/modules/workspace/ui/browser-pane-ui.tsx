@@ -236,6 +236,15 @@ function BrowserPaneRow({
           )}
         >
           {isActive ? <span className="absolute left-0 top-[5px] bottom-[5px] w-0.5 rounded bg-amber" /> : null}
+          {/* Vertical guide lines — one per ancestor depth; consecutive rows make them continuous. */}
+          {Array.from({ length: row.depth }, (_, ancestorDepth) => (
+            <span
+              key={ancestorDepth}
+              aria-hidden="true"
+              className="pointer-events-none absolute top-0 bottom-0 w-px bg-[rgb(var(--line-2))]"
+              style={{ left: 10 + ancestorDepth * 15 + 6 }}
+            />
+          ))}
           {/* Chevron / spacer (14px) */}
           {isExpandableFolder ? (
             <ChevronRight
