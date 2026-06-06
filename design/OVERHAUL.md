@@ -75,28 +75,77 @@ Seeded from `components/ui/*` and `modules/*/ui`. The `design-audit` workflow
 ☐ not reviewed · ◐ in progress · ☑ conforms.
 
 ### Primitives — `aladin_react/src/components/ui/`
-- ☐ `button.tsx` — CVA reference component; confirm variant set matches spec controls
-- ☐ `badge.tsx` — chips/labels; spec says tags shouldn't look like buttons unless interactive
-- ☐ `card.tsx` — spec: panels are document surfaces, "not cards"; reconcile usage
-- ☐ `dialog.tsx` — management modals may use stronger black/white contrast
-- ☐ `dropdown-menu.tsx`
-- ☐ `tabs.tsx`
-- ☐ `input.tsx`
-- ☐ `textarea.tsx`
-- ☐ `scroll-area.tsx`
-- ☐ `aladin.tsx` — custom shell panes; central to the three-pane spec
+- ☑ `button.tsx` — token-clean REFERENCE component; the target style for the rest
+- ◐ `badge.tsx` (9 hex) — default/muted/inverted variants hardcoded; map to tokens
+- ◐ `card.tsx` (3 hex) — spec: panels are document surfaces, "not cards"; reconcile usage
+- ◐ `dialog.tsx` (12 hex) — bespoke shadow elevations; management-modal contrast decision
+- ◐ `dropdown-menu.tsx` (16 hex) — bespoke shadows + hex fills
+- ◐ `tabs.tsx` (7 hex) — active-tab shadow + hex
+- ◐ `input.tsx` (5 hex) — blue focus ring `#2563eb` (forbidden)
+- ◐ `textarea.tsx` (5 hex) — blue focus ring `#2563eb` (forbidden)
+- ☐ `scroll-area.tsx` — no hardcoded colors found; verify on closer read
+- ◐ `aladin.tsx` (9 hex) — custom shell panes; central to the three-pane spec
 
 ### Feature UI — `aladin_react/src/modules/*/ui/`
-- ☐ `workspace/workspace-shell-ui.tsx` — the three-pane shell (app rail / browser / work pane)
-- ☐ `workspace/browser-pane-ui.tsx` — dense browser rows, selection rules
-- ☐ `workspace/work-pane-ui.tsx` — artifact/work pane
-- ☐ `workspace/rename-dialog-ui.tsx`, `voice-capture-dialog-ui.tsx`
-- ☐ `sources/integrations-dialog-ui.tsx`, `add-source-dialog-ui.tsx`,
-     `source-details-dialog-ui.tsx`, `sources-overview-ui.tsx`, `sources-parts-ui.tsx`
-     — wide management modals (the "focused app screen" treatment)
-- ☐ `pages/page-editor-ui.tsx`, `page-history-panel.tsx`
-- ☐ `artifacts/artifact-ui.tsx`
-- ☐ `auth/auth-ui.tsx`
+- ◐ `workspace/workspace-shell-ui.tsx` (24 hex) — the three-pane shell
+- ◐ `workspace/browser-pane-ui.tsx` (29 hex) — dense browser rows, selection rules
+- ◐ `workspace/work-pane-ui.tsx` (24 hex) — artifact/work pane
+- ◐ `workspace/voice-capture-dialog-ui.tsx` (4 hex); ☐ `rename-dialog-ui.tsx` (verify)
+- ◐ `sources/integrations-dialog-ui.tsx` (32 — worst), `sources-overview-ui.tsx` (17),
+     `sources-parts-ui.tsx` (11), `add-source-dialog-ui.tsx` (4),
+     `source-details-dialog-ui.tsx` (1) — wide management modals
+- ◐ `pages/page-history-panel.tsx` (21, `shadow-lg`); `pages/page-editor-ui.tsx` (3)
+- ◐ `artifacts/artifact-ui.tsx` (11) — blue link accent `#2563eb`
+- ◐ `auth/auth-ui.tsx` (20) — blue accent `#2563eb`
+- ◐ `sources/sources-route.tsx` (2)
 
-### Findings (filled by audit workflow)
-_(none yet — run `.claude/workflows/design-audit.js`)_
+### Findings — Audit pass 1 (inline sweep)
+
+**Headline: pervasive token bypass.** 172 hardcoded color values across the UI
+(Tailwind arbitrary-value hex like `border-[#e7e5e4]`, `text-[#0a0a0a]`, plus 44×
+`bg-white`). Only `button.tsx` is token-clean — it correctly uses `bg-primary`,
+`text-foreground`, `border-border`. **Every other surface hand-codes resolved colors
+and bypasses the token layer entirely.** This is the single biggest design-system debt.
+
+**The de-facto palette → token mapping** (counts = occurrences):
+
+| Hex | × | Role | Target token |
+|---|---|---|---|
+| `#e7e5e4` | 56 | divider/border | `--border` → `border-border` |
+| `#0a0a0a` | 49 | primary ink | `--foreground` → `text-foreground` |
+| `#78716c` | 28 | secondary/muted text | `--muted-foreground` |
+| `#44403c` | 17 | body text | `text-foreground/80` *(decide)* |
+| `#fafaf9` | 16 | canvas/panel-muted | `--background` / `--sidebar` |
+| `#a8a29e` | 16 | placeholder/disabled | `--muted-foreground` (lighter) |
+| `#f2f0ee` | 15 | hover/muted fill | `--muted` / `--accent` |
+| `#57534e` | 15 | secondary text | `--muted-foreground` *(decide)* |
+| `#d6d3d1` | 7 | border hover | needs a `--border-strong` *(gap)* |
+| `#18181b` | 6 | ink surface | `--primary` (compact controls) |
+| `bg-white` | 44 | surfaces | `--background` / `--card` |
+
+**Critical mismatch — warm hex vs. neutral tokens.** The hand-coded palette is the
+**warm `stone` family** (has chroma), matching the spec's "warm near-black ink, never
+pure black." But the live OKLch tokens in `index.css` are **pure neutral gray**
+(`oklch(L 0 0)`, chroma 0). So the components honor the spec's *intent* while the token
+layer doesn't encode the warmth. **Reconciliation must decide:** warm up the tokens
+(add chroma to match `stone`) and then sweep components to semantic tokens — vs. flatten
+to neutral. The audit favors warming the tokens (keeps the spec's editorial feel).
+
+**Spec violations — forbidden color (monochrome rule):**
+- ☐ Blue accent `#2563eb` (6×): `input.tsx`, `textarea.tsx` (focus ring), `artifact-ui.tsx`
+  (link), `auth-ui.tsx`. Spec forbids colorful accents → use `--ring` / `--foreground`.
+- ☐ Purple `#7e22ce` / `#f3e8ff` (likely a tag): off-palette → monochrome or `--destructive`-style semantic only.
+- ☐ Several reds (`#ef4444`/`#dc2626`/`#991b1b`/`#fef2f2`/`#fecaca`) → consolidate to `--destructive` family.
+
+**Material-isms:** `shadow-lg` in `page-history-panel.tsx`; bespoke `shadow-[...]`
+elevations in `dialog.tsx`, `dropdown-menu.tsx`, `tabs.tsx` — spec wants flat, structural
+surfaces. Reconcile against the (gap) elevation decision.
+
+**Worst offenders (hardcoded-hex count):** `integrations-dialog-ui.tsx` (32),
+`browser-pane-ui.tsx` (29), `workspace-shell-ui.tsx` (24), `work-pane-ui.tsx` (24),
+`page-history-panel.tsx` (21), `auth-ui.tsx` (20), `sources-overview-ui.tsx` (17).
+
+**Recommended next step:** lock direction **(a) reconcile spec → tokens**: (1) decide
+warm vs. neutral and encode it in `index.css` (incl. the `--border-strong` gap);
+(2) run the `component-migration` workflow to mechanically replace hex → semantic tokens,
+one file per agent, typechecked. `button.tsx` is the reference for the target style.
