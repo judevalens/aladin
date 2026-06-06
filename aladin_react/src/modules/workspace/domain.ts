@@ -1,11 +1,5 @@
 import type { ArtifactKind, BrowserTreeNode, VoiceCaptureDraft } from "@/shared/api/models";
 
-export interface BrowserFrame {
-  rootFolderId: string | null;
-  expandedFolderIds: string[];
-  scrollTop: number;
-}
-
 export interface RenameDraft {
   kind: "folder" | "artifact";
   rowId: string;
@@ -17,8 +11,6 @@ export interface WorkspaceShellState {
   activeArtifactId: string | null;
   openArtifactIds: string[];
   inspectorOverrides: Record<string, boolean>;
-  browserFrameStack: BrowserFrame[];
-  browserRootFolderId: string | null;
   browserScrollTop: number;
   focusedFolderId: string | null;
   expandedFolderIds: string[];
@@ -30,8 +22,6 @@ export const initialWorkspaceShellState: WorkspaceShellState = {
   activeArtifactId: null,
   openArtifactIds: [],
   inspectorOverrides: {},
-  browserFrameStack: [],
-  browserRootFolderId: null,
   browserScrollTop: 0,
   focusedFolderId: null,
   expandedFolderIds: [],

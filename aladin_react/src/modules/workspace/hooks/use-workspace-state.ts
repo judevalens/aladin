@@ -44,14 +44,9 @@ export interface BrowserPaneState {
   tree: BrowserTreeNode[];
   rows: BrowserTreeRow[];
   activeArtifactId: string | null;
-  canGoBack: boolean;
-  browserPath: WorkPaneCrumb[];
-  browserRootTitle: string | null;
   expandedFolderIds: string[];
   browserScrollTop: number;
   onToggleFolder: (folderId: string) => void;
-  onDrillIntoFolder: (folderId: string) => void;
-  onPopBrowserFrame: () => void;
   onBrowserScroll: (scrollTop: number) => void;
   onOpenArtifact: (artifactId: string) => void;
   onStartRenameFolder: (folderId: string, title: string) => void;
@@ -101,7 +96,6 @@ export function useWorkspaceShell(): WorkspaceShellState {
   const location = useLocation();
   const navigate = useNavigate();
   const shellSession = useShellSession(navigate);
-  const browserRootFolderId = useAppStore((state) => state.workspace.browserRootFolderId);
   const openVoiceDraft = useAppStore((state) => state.openVoiceDraft);
   const [createFolderPending, setCreateFolderPending] = useState(false);
   const [createArtifactPending, setCreateArtifactPending] = useState(false);
@@ -122,7 +116,7 @@ export function useWorkspaceShell(): WorkspaceShellState {
       try {
         setCreateFolderPending(true);
         const folder = await services.workspace.createFolder(
-          createFolderCommand(tree, browserRootFolderId),
+          createFolderCommand(tree, null),
         );
         useAppStore.getState().setFocusedFolder(folder.id);
       } finally {
@@ -133,7 +127,7 @@ export function useWorkspaceShell(): WorkspaceShellState {
       try {
         setCreateArtifactPending(true);
         const artifact = await services.workspace.createArtifact(
-          createArtifactCommand(tree, browserRootFolderId, "note"),
+          createArtifactCommand(tree, null, "note"),
         );
         useAppStore.getState().openArtifact(artifact.id);
       } finally {
@@ -144,7 +138,7 @@ export function useWorkspaceShell(): WorkspaceShellState {
       try {
         setCreateArtifactPending(true);
         const artifact = await services.workspace.createArtifact(
-          createArtifactCommand(tree, browserRootFolderId, "link"),
+          createArtifactCommand(tree, null, "link"),
         );
         useAppStore.getState().openArtifact(artifact.id);
       } finally {
@@ -152,7 +146,7 @@ export function useWorkspaceShell(): WorkspaceShellState {
       }
     },
     onCreateVoice: () => {
-      openVoiceDraft(createVoiceDraft(tree, browserRootFolderId));
+      openVoiceDraft(createVoiceDraft(tree, null));
     },
   };
 }
@@ -163,8 +157,6 @@ export function useBrowserPane(): BrowserPaneState {
   const openArtifact = useAppStore((state) => state.openArtifact);
   const toggleFolder = useAppStore((state) => state.toggleFolder);
   const expandFolders = useAppStore((state) => state.expandFolders);
-  const drillIntoFolder = useAppStore((state) => state.drillIntoFolder);
-  const popBrowserFrame = useAppStore((state) => state.popBrowserFrame);
   const setBrowserScrollTop = useAppStore((state) => state.setBrowserScrollTop);
   const startRename = useAppStore((state) => state.startRename);
 
@@ -173,23 +165,8 @@ export function useBrowserPane(): BrowserPaneState {
   const tree: BrowserTreeNode[] =
     treeLoadable.status === "data" ? treeLoadable.value : [];
   const rows = useMemo(
-    () =>
-      buildWorkspaceRows(tree, workspace.expandedFolderIds, workspace.browserRootFolderId),
-    [tree, workspace.browserRootFolderId, workspace.expandedFolderIds],
-  );
-  const browserRootTitle = useMemo(
-    () => folderTitle(tree, workspace.browserRootFolderId),
-    [tree, workspace.browserRootFolderId],
-  );
-  const browserPath = useMemo<WorkPaneCrumb[]>(
-    () =>
-      [...workspace.browserFrameStack.map((frame) => frame.rootFolderId), workspace.browserRootFolderId]
-        .filter((folderId): folderId is string => Boolean(folderId))
-        .map((folderId) => {
-          const title = folderTitle(tree, folderId) ?? "Folder";
-          return { id: folderId, title };
-        }),
-    [tree, workspace.browserFrameStack, workspace.browserRootFolderId],
+    () => buildWorkspaceRows(tree, workspace.expandedFolderIds, null),
+    [tree, workspace.expandedFolderIds],
   );
 
   return {
@@ -199,19 +176,10 @@ export function useBrowserPane(): BrowserPaneState {
     tree,
     rows,
     activeArtifactId: workspace.activeArtifactId,
-    canGoBack: workspace.browserFrameStack.length > 0,
-    browserPath,
-    browserRootTitle,
     expandedFolderIds: workspace.expandedFolderIds,
     browserScrollTop: workspace.browserScrollTop,
     onToggleFolder: (folderId: string) => {
       toggleFolder(folderId);
-    },
-    onDrillIntoFolder: (folderId: string) => {
-      drillIntoFolder(folderId);
-    },
-    onPopBrowserFrame: () => {
-      popBrowserFrame();
     },
     onBrowserScroll: (scrollTop: number) => {
       setBrowserScrollTop(scrollTop);

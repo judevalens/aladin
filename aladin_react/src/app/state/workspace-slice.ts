@@ -10,8 +10,6 @@ export interface WorkspaceSlice {
   toggleInspector: (artifactId: string) => void;
   toggleFolder: (folderId: string) => void;
   expandFolders: (folderIds: string[]) => void;
-  drillIntoFolder: (folderId: string) => void;
-  popBrowserFrame: () => void;
   setBrowserScrollTop: (scrollTop: number) => void;
   setFocusedFolder: (folderId: string | null) => void;
   startRename: (draft: RenameDraft) => void;
@@ -87,39 +85,6 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice, [], [], Workspac
         ),
       },
     })),
-  drillIntoFolder: (folderId) =>
-    set((state) => ({
-      workspace: {
-        ...state.workspace,
-        browserFrameStack: [
-          ...state.workspace.browserFrameStack,
-          {
-            rootFolderId: state.workspace.browserRootFolderId,
-            expandedFolderIds: state.workspace.expandedFolderIds,
-            scrollTop: state.workspace.browserScrollTop,
-          },
-        ],
-        browserRootFolderId: folderId,
-        browserScrollTop: 0,
-        focusedFolderId: folderId,
-        expandedFolderIds: [],
-      },
-    })),
-  popBrowserFrame: () =>
-    set((state) => {
-      const previousFrame = state.workspace.browserFrameStack.at(-1);
-      if (!previousFrame) return state;
-      return {
-        workspace: {
-          ...state.workspace,
-          browserFrameStack: state.workspace.browserFrameStack.slice(0, -1),
-          browserRootFolderId: previousFrame.rootFolderId,
-          browserScrollTop: previousFrame.scrollTop,
-          focusedFolderId: previousFrame.rootFolderId,
-          expandedFolderIds: previousFrame.expandedFolderIds,
-        },
-      };
-    }),
   setBrowserScrollTop: (scrollTop) =>
     set((state) => ({
       workspace: {

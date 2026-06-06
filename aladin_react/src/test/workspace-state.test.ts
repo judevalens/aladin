@@ -36,34 +36,14 @@ describe("workspace store", () => {
     expect(workspace.activeArtifactId).toBe("a3");
   });
 
-  it("drills into a folder and restores the previous browser frame on pop", () => {
-    useAppStore.setState({
-      workspace: {
-        ...initialWorkspaceShellState,
-        browserRootFolderId: "folder-root",
-        browserScrollTop: 128,
-        expandedFolderIds: ["folder-a", "folder-b"],
-      },
-    });
+  it("toggles inline folder expansion", () => {
+    useAppStore.getState().toggleFolder("folder-a");
+    expect(useAppStore.getState().workspace.expandedFolderIds).toEqual(["folder-a"]);
 
-    useAppStore.getState().drillIntoFolder("folder-deep");
-    let workspace = useAppStore.getState().workspace;
-    expect(workspace.browserRootFolderId).toBe("folder-deep");
-    expect(workspace.expandedFolderIds).toEqual([]);
-    expect(workspace.browserScrollTop).toBe(0);
-    expect(workspace.browserFrameStack).toEqual([
-      {
-        rootFolderId: "folder-root",
-        expandedFolderIds: ["folder-a", "folder-b"],
-        scrollTop: 128,
-      },
-    ]);
+    useAppStore.getState().toggleFolder("folder-b");
+    expect(useAppStore.getState().workspace.expandedFolderIds).toEqual(["folder-a", "folder-b"]);
 
-    useAppStore.getState().popBrowserFrame();
-    workspace = useAppStore.getState().workspace;
-    expect(workspace.browserRootFolderId).toBe("folder-root");
-    expect(workspace.expandedFolderIds).toEqual(["folder-a", "folder-b"]);
-    expect(workspace.browserScrollTop).toBe(128);
-    expect(workspace.browserFrameStack).toEqual([]);
+    useAppStore.getState().toggleFolder("folder-a");
+    expect(useAppStore.getState().workspace.expandedFolderIds).toEqual(["folder-b"]);
   });
 });
