@@ -1,12 +1,15 @@
 import { create } from "zustand";
-import type { SessionSlice } from "@/app/state/session-slice";
 import { createSessionSlice } from "@/app/state/session-slice";
-import type { WorkspaceSlice } from "@/app/state/workspace-slice";
+import type { SessionSlice } from "@/app/state/session-slice";
+import { createThemeSlice } from "@/app/state/theme-slice";
+import type { ThemeSlice } from "@/app/state/theme-slice";
 import { createWorkspaceSlice } from "@/app/state/workspace-slice";
+import type { WorkspaceSlice } from "@/app/state/workspace-slice";
 
-export type AppStoreState = SessionSlice & WorkspaceSlice;
+export type AppStoreState = SessionSlice & WorkspaceSlice & ThemeSlice;
 
 export const useAppStore = create<AppStoreState>()((...args) => ({
   ...createSessionSlice(...args),
   ...createWorkspaceSlice(...args),
+  ...createThemeSlice(...args),
 }));

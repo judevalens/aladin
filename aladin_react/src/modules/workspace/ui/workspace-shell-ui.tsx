@@ -1,4 +1,4 @@
-import { Folder, GitGraph, Home, LogOut, Network, Plus, Signal } from "lucide-react";
+import { Command, Contrast, Folder, GitGraph, Home, LogOut, Network, Plus, Signal } from "lucide-react";
 import { Outlet } from "react-router-dom";
 import {
   DropdownMenu,
@@ -8,9 +8,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { AladinToolbarField, PlaceholderPane } from "@/components/ui/aladin";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { PlaceholderPane } from "@/components/ui/aladin";
 import { useWorkspaceShell } from "@/modules/workspace/hooks/use-workspace-state";
-import { cn } from "@/shared/lib/utils";
+import { useAppStore } from "@/app/state/store";
+import { cn } from "@/lib/utils";
 
 const navItems = [
   { key: "home", label: "Home", icon: Home, path: "/home" },
@@ -32,36 +34,58 @@ export function WorkspaceShellUI() {
     onCreateLink,
     onCreateVoice,
   } = useWorkspaceShell();
+  const theme = useAppStore((state) => state.theme);
+  const toggleTheme = useAppStore((state) => state.toggleTheme);
+
+  const activeLabel = navItems.find((item) => item.key === selectedDestination)?.label ?? "Aladin";
 
   return (
-    <div className="app-canvas flex h-screen border-t border-[#e7e5e4] bg-[#f5f5f4] text-[#0a0a0a]">
-      <aside className="flex h-full w-[252px] shrink-0 border-r border-[#e7e5e4] bg-white sm:w-[272px] lg:w-sidebar">
-        <div className="flex min-h-0 w-full flex-col">
-          <div className="px-4 pt-5 pb-4">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-7 w-7 items-center justify-center rounded-md bg-[#18181b] text-[12px] font-semibold text-[#fafaf9]">
-                A
-              </div>
-              <div className="min-w-0">
-                <div className="text-[13px] font-semibold tracking-[-0.01em] text-[#0a0a0a]">Aladin</div>
-                <div className="text-[11px] leading-4 text-[#78716c]">Workspace memory</div>
-              </div>
+    <TooltipProvider delayDuration={200}>
+      <div className="flex h-screen flex-col overflow-hidden bg-bg font-sans text-ink">
+        {/* Title bar */}
+        <header className="relative flex h-10 shrink-0 items-center gap-2 border-b border-line bg-chrome px-3.5">
+          <div className="flex items-center gap-2">
+            <span className="size-3 rounded-full bg-[#ff5f57]" />
+            <span className="size-3 rounded-full bg-[#febc2e]" />
+            <span className="size-3 rounded-full bg-[#28c840]" />
+          </div>
+          <div className="pointer-events-none absolute left-1/2 -translate-x-1/2">
+            <div className="flex items-center gap-2 rounded-chip border border-line bg-field px-3 py-1 font-mono text-[11px] text-ink-2">
+              <span className="text-ink-3">ʀ</span>
+              <span className="text-ink">{activeLabel}</span>
+              <kbd className="rounded border border-line px-1 text-[9.5px] text-ink-3">⌘K</kbd>
             </div>
           </div>
+        </header>
 
-          <div className="space-y-2 px-3">
-            <AladinToolbarField text="Search…" />
+        <div className="flex min-h-0 flex-1">
+          {/* Activity rail */}
+          <nav className="flex w-[52px] shrink-0 flex-col items-center gap-1 border-r border-line bg-rail py-3">
+            <button
+              type="button"
+              onClick={() => onNavigate("/home")}
+              className="grid size-8 place-items-center rounded-[9px] bg-amber font-display text-sm font-bold text-[#0f0f12]"
+              aria-label="Aladin"
+            >
+              A
+            </button>
+
             <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="flex h-9 w-full items-center justify-between rounded-md border border-[#18181b] bg-[#18181b] px-3 text-[12.5px] font-medium text-[#fafaf9] shadow-[0_1px_0_rgba(0,0,0,0.04)] transition-colors hover:bg-[#27272a]"
-                >
-                  <span>New item</span>
-                  <Plus className="h-3.5 w-3.5" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-52">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="mt-1 grid size-[38px] place-items-center rounded-[9px] text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
+                      aria-label="Capture"
+                    >
+                      <Plus className="size-[18px] text-amber" strokeWidth={1.7} />
+                    </button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent side="right">Capture</TooltipContent>
+              </Tooltip>
+              <DropdownMenuContent align="start" side="right" className="w-52">
                 <DropdownMenuLabel>Create</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={onCreateFolder}>New folder</DropdownMenuItem>
@@ -70,52 +94,93 @@ export function WorkspaceShellUI() {
                 <DropdownMenuItem onClick={onCreateVoice}>New voice note</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          </div>
 
-          <div className="mt-5 px-3">
-            <div className="eyebrow px-2 pb-2">Browse</div>
-            <nav className="space-y-0.5">
+            <div className="mt-1 flex flex-col items-center gap-1">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const active = item.key === selectedDestination;
                 return (
-                  <button
-                    key={item.key}
-                    className={cn(
-                      "flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-[13px] transition-colors",
-                      active
-                        ? "bg-[#ebebe8] font-medium text-[#0a0a0a]"
-                        : "text-[#57534e] hover:bg-[#f2f0ee] hover:text-[#0a0a0a]",
-                    )}
-                    onClick={() => onNavigate(item.path)}
-                    type="button"
-                  >
-                    <Icon className="h-[15px] w-[15px]" strokeWidth={1.75} />
-                    <span>{item.label}</span>
-                  </button>
+                  <Tooltip key={item.key}>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        onClick={() => onNavigate(item.path)}
+                        className={cn(
+                          "relative grid size-[38px] place-items-center rounded-[9px] transition-colors",
+                          active
+                            ? "bg-[rgb(var(--sel))] text-ink"
+                            : "text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink",
+                        )}
+                        aria-label={item.label}
+                        aria-current={active ? "page" : undefined}
+                      >
+                        <Icon className="size-[18px]" strokeWidth={1.7} />
+                        {item.key === "signals" ? (
+                          <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-amber" />
+                        ) : null}
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="right">{item.label}</TooltipContent>
+                  </Tooltip>
                 );
               })}
-            </nav>
-          </div>
+            </div>
 
-          <div className="mt-auto border-t border-[#e7e5e4] px-3 py-3">
-            <div className="truncate px-2 text-[12px] text-[#78716c]">{userEmail}</div>
-            <button
-              className="mt-1 flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-[13px] text-[#57534e] transition-colors hover:bg-[#f2f0ee] hover:text-[#0a0a0a] disabled:opacity-50"
-              onClick={onLogout}
-              type="button"
-              disabled={logoutPending}
-            >
-              <LogOut className="h-[15px] w-[15px]" strokeWidth={1.75} />
-              <span>Sign out</span>
-            </button>
-          </div>
+            <div className="mt-auto flex flex-col items-center gap-1">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={toggleTheme}
+                    className="grid size-[38px] place-items-center rounded-[9px] text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
+                    aria-label="Toggle theme"
+                  >
+                    <Contrast className="size-[17px]" strokeWidth={1.7} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right">{theme === "dark" ? "Soft theme" : "Dark theme"}</TooltipContent>
+              </Tooltip>
+
+              <DropdownMenu>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        className="grid size-8 place-items-center rounded-full border border-line bg-field text-[11px] font-semibold uppercase text-ink-2 transition-colors hover:text-ink"
+                        aria-label="Account"
+                      >
+                        {(userEmail ?? "?").slice(0, 1)}
+                      </button>
+                    </DropdownMenuTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">Account</TooltipContent>
+                </Tooltip>
+                <DropdownMenuContent align="end" side="right" className="w-56">
+                  <DropdownMenuLabel className="truncate font-normal text-ink-2">{userEmail}</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={onLogout} disabled={logoutPending}>
+                    <LogOut className="mr-2 size-[15px]" strokeWidth={1.75} />
+                    Sign out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <div
+                className="grid size-[38px] place-items-center rounded-[9px] text-ink-4"
+                aria-hidden="true"
+              >
+                <Command className="size-[17px]" strokeWidth={1.7} />
+              </div>
+            </div>
+          </nav>
+
+          <main className="flex min-w-0 flex-1 overflow-hidden bg-bg">
+            <Outlet />
+          </main>
         </div>
-      </aside>
-      <main className="flex min-w-0 flex-1 overflow-hidden bg-white">
-        <Outlet />
-      </main>
-    </div>
+      </div>
+    </TooltipProvider>
   );
 }
 
@@ -132,10 +197,10 @@ export function PlaceholderDestinationUI({
 }) {
   return (
     <>
-      <section className="flex w-[336px] flex-col overflow-hidden border-r border-[#e7e5e4] bg-white sm:w-[368px]">
+      <section className="flex w-[336px] flex-col overflow-hidden border-r border-line bg-explorer sm:w-[368px]">
         <PlaceholderPane title={paneTitle} body={paneBody} className="h-full" />
       </section>
-      <section className="min-w-0 flex-1 overflow-hidden bg-white">
+      <section className="min-w-0 flex-1 overflow-hidden bg-bg">
         <PlaceholderPane title={workTitle} body={workBody} className="h-full" />
       </section>
     </>

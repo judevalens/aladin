@@ -1,122 +1,204 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "@fontsource-variable/geist";
+@import "@fontsource-variable/space-grotesk";
+@import "@fontsource/jetbrains-mono";
 
 @source "../node_modules/@blocknote/shadcn";
 
-@custom-variant dark (&:is(.dark *));
+/* Both Aladin themes (dark + soft) are dark-family, so `dark:` utilities should
+   always apply once a data-theme is set on <html>. */
+@custom-variant dark (&:where([data-theme] *));
 
 @theme inline {
-    --font-heading: var(--font-sans);
-    --font-sans: "Geist Variable", sans-serif;
-    --color-sidebar-ring: var(--sidebar-ring);
-    --color-sidebar-border: var(--sidebar-border);
-    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-    --color-sidebar-accent: var(--sidebar-accent);
-    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-    --color-sidebar-primary: var(--sidebar-primary);
-    --color-sidebar-foreground: var(--sidebar-foreground);
-    --color-sidebar: var(--sidebar);
-    --color-chart-5: var(--chart-5);
-    --color-chart-4: var(--chart-4);
-    --color-chart-3: var(--chart-3);
-    --color-chart-2: var(--chart-2);
-    --color-chart-1: var(--chart-1);
-    --color-ring: var(--ring);
-    --color-input: var(--input);
-    --color-border: var(--border);
-    --color-destructive: var(--destructive);
-    --color-accent-foreground: var(--accent-foreground);
-    --color-accent: var(--accent);
-    --color-muted-foreground: var(--muted-foreground);
-    --color-muted: var(--muted);
-    --color-secondary-foreground: var(--secondary-foreground);
-    --color-secondary: var(--secondary);
-    --color-primary-foreground: var(--primary-foreground);
-    --color-primary: var(--primary);
-    --color-popover-foreground: var(--popover-foreground);
-    --color-popover: var(--popover);
-    --color-card-foreground: var(--card-foreground);
-    --color-card: var(--card);
-    --color-foreground: var(--foreground);
+    /* Fonts — Space Grotesk (display), system (body), JetBrains Mono (labels/meta) */
+    --font-display: "Space Grotesk Variable", system-ui, sans-serif;
+    --font-heading: var(--font-display);
+    --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+
+    /* Aladin surfaces */
+    --color-rail: var(--rail);
+    --color-panel: var(--panel);
+    --color-bg: var(--bg);
+    --color-chrome: var(--chrome);
+    --color-field: var(--field);
+    --color-raise: var(--raise);
+    --color-explorer: var(--explorer);
+
+    /* Ink ramp */
+    --color-ink: var(--ink);
+    --color-ink-2: var(--ink-2);
+    --color-ink-3: var(--ink-3);
+    --color-ink-4: var(--ink-4);
+
+    /* Accent + lines + semantic hues */
+    --color-amber: var(--amber);
+    --color-amber-soft: rgb(var(--amber-soft));
+    --color-amber-line: rgb(var(--amber-line));
+    --color-line: rgb(var(--line));
+    --color-line-2: rgb(var(--line-2));
+    --color-for: var(--for);
+    --color-against: var(--against);
+    --color-catalyst: var(--catalyst);
+    --color-echo: var(--echo);
+    --color-neutral: var(--neutral);
+
+    /* shadcn semantic tokens (so existing primitives inherit the theme) */
     --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-destructive: var(--destructive);
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+    --color-sidebar: var(--sidebar);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-ring: var(--sidebar-ring);
+
+    /* Radius — Aladin chips + the existing scale */
+    --radius-chip: 7px;
+    --radius-card: 12px;
+    --radius-modal: 14px;
     --radius-sm: calc(var(--radius) * 0.6);
     --radius-md: calc(var(--radius) * 0.8);
     --radius-lg: var(--radius);
     --radius-xl: calc(var(--radius) * 1.4);
     --radius-2xl: calc(var(--radius) * 1.8);
-    --radius-3xl: calc(var(--radius) * 2.2);
-    --radius-4xl: calc(var(--radius) * 2.6);
+
+    /* Shadows */
+    --shadow-panel: -24px 0 60px rgba(0, 0, 0, 0.5);
+    --shadow-modal: 0 28px 70px rgba(0, 0, 0, 0.6);
+    --shadow-toast: 0 12px 40px rgba(0, 0, 0, 0.5);
+
+    /* Animations */
+    --animate-pop: pop 0.17s cubic-bezier(0.2, 0.8, 0.2, 1);
+    --animate-slidein: slidein 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
+    --animate-cardin: cardin 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
+    --animate-shimmer: shimmer 1.2s ease infinite;
+    --animate-pulse2: pulse2 1.8s ease infinite;
 }
 
-:root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
+@keyframes pop {
+    from { opacity: 0; transform: translateY(8px) scale(0.985); }
+    to { opacity: 1; transform: none; }
+}
+@keyframes slidein {
+    from { transform: translateX(30px); opacity: 0; }
+    to { transform: none; opacity: 1; }
+}
+@keyframes cardin {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: none; }
+}
+@keyframes shimmer {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
+}
+@keyframes pulse2 {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+/* DARK (default). :root always applies, so these are the fallback before the
+   theme provider sets data-theme, and the explicit dark theme. */
+:root,
+[data-theme="dark"] {
+    /* surfaces */
+    --rail: #0b0b0e;
+    --panel: #0f0f12;
+    --bg: #0d0d10;
+    --chrome: #0b0b0e;
+    --field: #161619;
+    --card: #121215;
+    --raise: #17171c;
+    --explorer: #101013;
+    /* ink */
+    --ink: #eceaef;
+    --ink-2: #9694a0;
+    --ink-3: #615f6b;
+    --ink-4: #403e48;
+    /* lines / states — space-separated channels for rgb(var(--x)) + alpha */
+    --line: 255 255 255 / 0.07;
+    --line-2: 255 255 255 / 0.045;
+    --hover: 255 255 255 / 0.035;
+    --sel: 255 255 255 / 0.06;
+    /* accent */
+    --amber: #c9925a;
+    --amber-soft: 201 146 90 / 0.12;
+    --amber-line: 201 146 90 / 0.3;
+    /* semantic hues */
+    --for: #5cba8f;
+    --against: #d8796b;
+    --catalyst: #5b9bd8;
+    --echo: #9a8cd8;
+    --neutral: #7f8aa0;
+
     --radius: 0.625rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
+
+    /* shadcn semantic tokens mapped onto Aladin vars (resolved per-theme via var()) */
+    --background: var(--bg);
+    --foreground: var(--ink);
+    --card-foreground: var(--ink);
+    --popover: var(--explorer);
+    --popover-foreground: var(--ink);
+    --primary: var(--amber);
+    --primary-foreground: #0f0f12;
+    --secondary: var(--field);
+    --secondary-foreground: var(--ink);
+    --muted: var(--field);
+    --muted-foreground: var(--ink-2);
+    --accent: var(--raise);
+    --accent-foreground: var(--ink);
+    --destructive: var(--against);
+    --border: rgb(var(--line));
+    --input: rgb(var(--line));
+    --ring: var(--amber);
+    --sidebar: var(--rail);
+    --sidebar-foreground: var(--ink-2);
+    --sidebar-primary: var(--amber);
+    --sidebar-primary-foreground: #0f0f12;
+    --sidebar-accent: rgb(var(--sel));
+    --sidebar-accent-foreground: var(--ink);
+    --sidebar-border: rgb(var(--line));
+    --sidebar-ring: var(--amber);
 }
 
-.dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0);
+/* SOFT — lifts surfaces + softens contrast. Only the raw vars change; the shadcn
+   semantic mappings above reference var(--bg) etc., so they follow automatically.
+   Lines/states/semantic hues inherit from the dark block. Must come after it. */
+[data-theme="soft"] {
+    --rail: #1a1a1d;
+    --panel: #1e1e21;
+    --bg: #202024;
+    --chrome: #1a1a1d;
+    --field: #242428;
+    --card: #202023;
+    --raise: #252529;
+    --explorer: #1e1e21;
+    --ink: #d7d6da;
+    --ink-2: #9795a0;
+    --ink-3: #67656f;
+    --ink-4: #4a4952;
+    --amber: #c69566;
+    --amber-soft: 198 149 102 / 0.13;
+    --amber-line: 198 149 102 / 0.3;
 }
 
 @layer base {

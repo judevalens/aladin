@@ -22,22 +22,22 @@ export function AuthUI({ mode }: { mode: "login" | "register" }) {
   const isLogin = mode === "login";
 
   return (
-    <div className="app-canvas min-h-screen">
+    <div className="min-h-screen bg-bg font-sans text-ink">
       <div className="grid min-h-screen lg:grid-cols-[1.1fr_0.9fr]">
-        <section className="flex min-h-[320px] flex-col justify-between overflow-hidden border-b border-[#e7e5e4] bg-[#fafaf9] px-10 py-12 sm:px-14 sm:py-16 lg:min-h-full lg:border-b-0 lg:border-r">
+        <section className="flex min-h-[320px] flex-col justify-between overflow-hidden border-b border-line bg-panel px-10 py-12 sm:px-14 sm:py-16 lg:min-h-full lg:border-b-0 lg:border-r">
           <div className="space-y-10">
             <div className="flex items-center gap-2.5">
-              <div className="flex h-7 w-7 items-center justify-center rounded-md bg-[#18181b] text-[12px] font-semibold text-[#fafaf9]">
+              <div className="grid size-7 place-items-center rounded-[9px] bg-amber font-display text-[12px] font-bold text-[#0f0f12]">
                 A
               </div>
-              <span className="text-[13px] font-semibold tracking-[-0.01em] text-[#0a0a0a]">Aladin</span>
+              <span className="text-[13px] font-semibold tracking-[-0.01em] text-ink">Aladin</span>
             </div>
 
             <div className="space-y-5">
-              <h1 className="max-w-xl text-[2.25rem] font-semibold leading-[1.08] tracking-[-0.03em] text-[#0a0a0a] sm:text-[2.625rem]">
+              <h1 className="max-w-xl font-display text-[2.25rem] font-semibold leading-[1.08] tracking-[-0.03em] text-ink sm:text-[2.625rem]">
                 Search, shape, and keep what matters.
               </h1>
-              <p className="max-w-lg text-[14px] leading-[1.6] text-[#57534e]">
+              <p className="max-w-lg text-[14px] leading-[1.6] text-ink-2">
                 A calmer place to collect documents, signals, notes, and connected context — without losing retrieval speed.
               </p>
             </div>
@@ -48,26 +48,26 @@ export function AuthUI({ mode }: { mode: "login" | "register" }) {
                 ["Connected notes", "Pages, links, and voice capture in one memory."],
                 ["Local control", "Workspace access and agent tooling stay visible."],
               ].map(([title, body]) => (
-                <div key={title} className="space-y-1.5 border-t border-[#e7e5e4] pt-3">
-                  <div className="text-[12.5px] font-semibold tracking-[-0.005em] text-[#0a0a0a]">{title}</div>
-                  <p className="text-[12px] leading-[1.5] text-[#78716c]">{body}</p>
+                <div key={title} className="space-y-1.5 border-t border-line pt-3">
+                  <div className="text-[12.5px] font-semibold tracking-[-0.005em] text-ink">{title}</div>
+                  <p className="text-[12px] leading-[1.5] text-ink-3">{body}</p>
                 </div>
               ))}
             </div>
           </div>
 
-          <p className="mt-10 max-w-lg text-[12px] leading-[1.55] text-[#a8a29e]">
+          <p className="mt-10 max-w-lg text-[12px] leading-[1.55] text-ink-4">
             Use the same account you already use for your local workspace.
           </p>
         </section>
 
-        <section className="flex items-center justify-center bg-white px-7 py-12 sm:px-10">
+        <section className="flex items-center justify-center bg-bg px-7 py-12 sm:px-10">
           <div className="w-full max-w-sm">
             <div className="space-y-2">
-              <h2 className="text-[1.5rem] font-semibold leading-tight tracking-[-0.02em] text-[#0a0a0a]">
+              <h2 className="font-display text-[1.5rem] font-semibold leading-tight tracking-[-0.02em] text-ink">
                 {isLogin ? "Welcome back" : "Create your account"}
               </h2>
-              <p className="text-[13px] leading-[1.55] text-[#78716c]">
+              <p className="text-[13px] leading-[1.55] text-ink-3">
                 {isLogin
                   ? "Sign in to continue."
                   : "Open a new workspace session."}
@@ -81,11 +81,11 @@ export function AuthUI({ mode }: { mode: "login" | "register" }) {
               }}
             >
               <div className="space-y-1.5">
-                <label className="text-[12px] font-medium text-[#44403c]">Email</label>
+                <label className="text-[12px] font-medium text-ink-2">Email</label>
                 <Input value={email} onChange={(event) => setEmail(event.target.value)} type="email" required />
               </div>
               <div className="space-y-1.5">
-                <label className="text-[12px] font-medium text-[#44403c]">Password</label>
+                <label className="text-[12px] font-medium text-ink-2">Password</label>
                 <Input
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
@@ -94,7 +94,7 @@ export function AuthUI({ mode }: { mode: "login" | "register" }) {
                 />
               </div>
               {errorMessage ? (
-                <div className="rounded-md border border-[#fecaca] bg-[#fef2f2] px-3 py-2 text-[12.5px] leading-[1.5] text-[#991b1b]">
+                <div className="rounded-md border border-against/40 bg-against/10 px-3 py-2 text-[12.5px] leading-[1.5] text-against">
                   {errorMessage}
                 </div>
               ) : null}
@@ -111,10 +111,10 @@ export function AuthUI({ mode }: { mode: "login" | "register" }) {
                 )}
               </Button>
             </form>
-            <div className="mt-5 text-[12.5px] text-[#78716c]">
+            <div className="mt-5 text-[12.5px] text-ink-3">
               {isLogin ? "Need an account?" : "Already have an account?"}{" "}
               <Link
-                className="font-medium text-[#2563eb] hover:underline underline-offset-4"
+                className="font-medium text-amber underline-offset-4 hover:underline"
                 to={isLogin ? "/register" : "/login"}
               >
                 {isLogin ? "Register" : "Sign in"}
