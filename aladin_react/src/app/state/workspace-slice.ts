@@ -4,6 +4,8 @@ import { initialWorkspaceShellState, type RenameDraft, type WorkspaceShellState 
 
 export interface WorkspaceSlice {
   workspace: WorkspaceShellState;
+  commandPaletteOpen: boolean;
+  setCommandPaletteOpen: (open: boolean) => void;
   openArtifact: (artifactId: string) => void;
   activateArtifact: (artifactId: string) => void;
   closeArtifact: (artifactId: string) => void;
@@ -22,6 +24,8 @@ export interface WorkspaceSlice {
 
 export const createWorkspaceSlice: StateCreator<WorkspaceSlice, [], [], WorkspaceSlice> = (set) => ({
   workspace: initialWorkspaceShellState,
+  commandPaletteOpen: false,
+  setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
   openArtifact: (artifactId) =>
     set((state) => {
       const openArtifactIds = state.workspace.openArtifactIds.includes(artifactId)

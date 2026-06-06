@@ -1,23 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  ChevronDown,
   ChevronRight,
   Columns3,
-  Ellipsis,
   FileText,
+  Folder,
   Link2,
   Mic,
   Paperclip,
+  Plus,
+  Search,
+  SlidersHorizontal,
 } from "lucide-react";
 import type { ArtifactKind } from "@/shared/api/models";
 import type { LucideIcon } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -25,14 +20,14 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { AladinPanel } from "@/components/ui/aladin";
-import { MillerColumns } from "@/modules/workspace/ui/miller-columns";
+import { MillerColumns, type MillerState } from "@/modules/workspace/ui/miller-columns";
+import { folderAncestors } from "@/modules/workspace/domain";
 import { useBrowserPane } from "@/modules/workspace/hooks/use-workspace-state";
+import { useAppStore } from "@/app/state/store";
 import { cn } from "@/shared/lib/utils";
 
-const INDENT_STEP = 14;
-const MAX_INDENT_DEPTH = 8; // cap visual indentation; deep browsing uses Miller columns
+const MAX_INLINE = 2; // depths 0,1 expand inline; depth >= 2 drills into the Miller popup
 
 const ARTIFACT_ICONS: Record<ArtifactKind, LucideIcon> = {
   note: FileText,
@@ -58,9 +53,17 @@ export function BrowserPaneUI() {
     onCreateFolderHere,
     onCreateNoteHere,
   } = useBrowserPane();
+  const openCommandPalette = useAppStore((state) => state.setCommandPaletteOpen);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  // undefined = closed; null = browse from root; string = browse from that folder.
-  const [millerStart, setMillerStart] = useState<string | null | undefined>(undefined);
+  const [miller, setMiller] = useState<MillerState | null>(null);
+
+  const openMiller = (folderId: string | null, anchor: DOMRect, seedLeaf?: string) => {
+    setMiller({
+      seed: folderId ? folderAncestors(tree, folderId).map((node) => node.id) : [],
+      anchor,
+      seedLeaf,
+    });
+  };
 
   useEffect(() => {
     const element = scrollRef.current;
@@ -71,7 +74,7 @@ export function BrowserPaneUI() {
 
   if (loading) {
     return (
-      <section className="flex w-[336px] flex-col overflow-hidden border-r border-line bg-explorer sm:w-[368px]">
+      <section className="flex w-[274px] shrink-0 flex-col overflow-hidden border-r border-line bg-explorer">
         <div className="p-5 text-sm text-ink-2">Loading browser tree…</div>
       </section>
     );
@@ -79,73 +82,95 @@ export function BrowserPaneUI() {
 
   if (errorMessage) {
     return (
-      <section className="flex w-[336px] flex-col overflow-hidden border-r border-line bg-explorer p-4 sm:w-[368px]">
+      <section className="flex w-[274px] shrink-0 flex-col overflow-hidden border-r border-line bg-explorer p-4">
         <AladinPanel className="rounded-md border border-against/40 bg-against/10 p-4 text-sm text-against">{errorMessage}</AladinPanel>
       </section>
     );
   }
 
   return (
-    <Popover open={millerStart !== undefined} onOpenChange={(open) => !open && setMillerStart(undefined)}>
-      <PopoverAnchor asChild>
-        <section className="flex w-[300px] flex-col overflow-hidden border-r border-line bg-explorer sm:w-[332px]">
-          <div className="flex items-center justify-between gap-2 px-3 pt-3 pb-2">
-            <span className="font-mono text-[10.5px] font-semibold uppercase tracking-[0.08em] text-ink-3">
-              Workspace
-            </span>
-            <button
-              type="button"
-              onClick={() => setMillerStart((current) => (current === undefined ? null : undefined))}
-              className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
-              aria-label="Browse in columns"
-              title="Browse in columns"
-            >
-              <Columns3 className="h-4 w-4" strokeWidth={1.75} />
-            </button>
-          </div>
-          <div
-            ref={scrollRef}
-            className="min-h-0 flex-1 overflow-y-auto browser-pane-scroll"
-            onScroll={(event) => onBrowserScroll(event.currentTarget.scrollTop)}
+    <section className="flex w-[274px] shrink-0 flex-col overflow-hidden border-r border-line bg-explorer">
+      {/* Header */}
+      <div className="flex items-center gap-2 px-3 pt-[13px] pb-[11px]">
+        <span className="font-mono text-[11px] font-bold uppercase tracking-[1px] text-ink-3">Workspace</span>
+        <div className="ml-auto flex items-center gap-0.5">
+          <button
+            type="button"
+            onClick={() => openCommandPalette(true)}
+            className="grid h-6 w-6 place-items-center rounded-md text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
+            aria-label="Add item"
+            title="Add item"
           >
-            <div className="flex flex-col gap-0.5 px-2 py-2">
-              {rows.map((row) => (
-                <BrowserPaneRow
-                  key={row.id}
-                  row={row}
-                  activeArtifactId={activeArtifactId}
-                  expandedFolderIds={expandedFolderIds}
-                  onToggleFolder={onToggleFolder}
-                  onOpenArtifact={onOpenArtifact}
-                  onStartRenameFolder={onStartRenameFolder}
-                  onStartRenameArtifact={onStartRenameArtifact}
-                  onCreateFolderHere={onCreateFolderHere}
-                  onCreateNoteHere={onCreateNoteHere}
-                  onBrowseColumns={(folderId) => setMillerStart(folderId)}
-                />
-              ))}
-              {rows.length === 0 ? (
-                <div className="px-3 py-10 text-center text-[12px] text-ink-4">Nothing here yet.</div>
-              ) : null}
-            </div>
-          </div>
-        </section>
-      </PopoverAnchor>
-      <PopoverContent side="right" align="start" sideOffset={8} className="overflow-hidden p-0">
-        {millerStart !== undefined ? (
-          <MillerColumns
-            key={millerStart ?? "root"}
-            tree={tree}
-            startFolderId={millerStart ?? null}
-            onOpenArtifact={(id) => {
-              onOpenArtifact(id);
-              setMillerStart(undefined);
-            }}
-            onClose={() => setMillerStart(undefined)}
+            <Plus className="h-4 w-4" strokeWidth={1.75} />
+          </button>
+          <button
+            type="button"
+            onClick={(event) => openMiller(null, event.currentTarget.getBoundingClientRect())}
+            className="grid h-6 w-6 place-items-center rounded-md text-ink-2 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
+            aria-label="Browse in columns"
+            title="Browse in columns"
+          >
+            <Columns3 className="h-4 w-4" strokeWidth={1.75} />
+          </button>
+          <button
+            type="button"
+            className="grid h-6 w-6 place-items-center rounded-md text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
+            aria-label="View options"
+            title="View options"
+          >
+            <SlidersHorizontal className="h-4 w-4" strokeWidth={1.75} />
+          </button>
+        </div>
+      </div>
+
+      {/* Search pill */}
+      <div className="px-3 pb-2.5">
+        <button
+          type="button"
+          onClick={() => openCommandPalette(true)}
+          className="flex w-full items-center gap-2 rounded-lg border border-line bg-field px-2.5 py-1.5 text-left transition-colors hover:border-ink-4"
+        >
+          <Search className="h-3.5 w-3.5 shrink-0 text-ink-3" strokeWidth={1.75} />
+          <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-ink-3">search or ask</span>
+          <kbd className="rounded border border-line px-1 font-mono text-[10px] text-ink-4">⌘K</kbd>
+        </button>
+      </div>
+
+      {/* Tree */}
+      <div
+        ref={scrollRef}
+        className="min-h-0 flex-1 overflow-y-auto px-2 pt-0.5 pb-3"
+        onScroll={(event) => onBrowserScroll(event.currentTarget.scrollTop)}
+      >
+        {rows.map((row) => (
+          <BrowserPaneRow
+            key={row.id}
+            row={row}
+            activeArtifactId={activeArtifactId}
+            expandedFolderIds={expandedFolderIds}
+            onToggleFolder={onToggleFolder}
+            onOpenArtifact={onOpenArtifact}
+            onStartRenameFolder={onStartRenameFolder}
+            onStartRenameArtifact={onStartRenameArtifact}
+            onCreateFolderHere={onCreateFolderHere}
+            onCreateNoteHere={onCreateNoteHere}
+            onOpenMiller={openMiller}
           />
+        ))}
+        {rows.length === 0 ? (
+          <div className="px-3 py-10 text-center text-[12px] text-ink-4">Nothing here yet.</div>
         ) : null}
-      </PopoverContent>
-    </Popover>
+      </div>
+
+      {miller ? (
+        <MillerColumns
+          tree={tree}
+          state={miller}
+          onOpenArtifact={onOpenArtifact}
+          onClose={() => setMiller(null)}
+        />
+      ) : null}
+    </section>
   );
 }
 
@@ -159,7 +184,7 @@ function BrowserPaneRow({
   onStartRenameArtifact,
   onCreateFolderHere,
   onCreateNoteHere,
-  onBrowseColumns,
+  onOpenMiller,
 }: {
   row: (ReturnType<typeof useBrowserPane>)["rows"][number];
   activeArtifactId: string | null;
@@ -170,131 +195,109 @@ function BrowserPaneRow({
   onStartRenameArtifact: (artifactId: string, title: string) => void;
   onCreateFolderHere: (folderId: string) => void;
   onCreateNoteHere: (folderId: string) => void;
-  onBrowseColumns: (folderId: string | null) => void;
+  onOpenMiller: (folderId: string | null, anchor: DOMRect, seedLeaf?: string) => void;
 }) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const isActiveArtifact = row.artifactId === activeArtifactId;
-  const isExpanded = row.folderId ? expandedFolderIds.includes(row.folderId) : false;
-  const paddingLeft = `${Math.min(row.depth, MAX_INDENT_DEPTH) * INDENT_STEP + 6}px`;
+  const rowRef = useRef<HTMLButtonElement | null>(null);
+  const isActive = row.artifactId === activeArtifactId;
+  const isExpandableFolder = row.kind === "folder" && row.depth < MAX_INLINE;
+  const isDrillFolder = row.kind === "folder" && row.depth >= MAX_INLINE;
+  const isExpanded = isExpandableFolder && row.folderId ? expandedFolderIds.includes(row.folderId) : false;
+  const TypeIcon = row.kind === "folder" ? Folder : row.artifactKind ? ARTIFACT_ICONS[row.artifactKind] : FileText;
+
+  const rect = () => rowRef.current?.getBoundingClientRect() ?? new DOMRect();
+
+  const handleClick = () => {
+    if (row.kind === "artifact" && row.artifactId) {
+      onOpenArtifact(row.artifactId);
+      return;
+    }
+    if (row.kind === "folder" && row.folderId) {
+      if (isDrillFolder) {
+        onOpenMiller(row.folderId, rect());
+      } else {
+        onToggleFolder(row.folderId);
+      }
+    }
+  };
 
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        <div className="group relative">
-          <div
+        <button
+          ref={rowRef}
+          type="button"
+          onClick={handleClick}
+          style={{ paddingLeft: 10 + row.depth * 15 }}
+          className={cn(
+            "relative flex h-7 w-full items-center gap-[7px] rounded-md pr-2.5 text-left transition-colors",
+            isActive
+              ? "bg-[rgb(var(--sel))] text-ink"
+              : cn("hover:bg-[rgb(var(--hover))]", row.kind === "folder" ? "text-ink" : "text-ink-2"),
+          )}
+        >
+          {isActive ? <span className="absolute left-0 top-[5px] bottom-[5px] w-0.5 rounded bg-amber" /> : null}
+          {/* Chevron / spacer (14px) */}
+          {isExpandableFolder ? (
+            <ChevronRight
+              className={cn("h-3.5 w-3.5 shrink-0 text-ink-3 transition-transform duration-100", isExpanded && "rotate-90")}
+              strokeWidth={2}
+            />
+          ) : (
+            <span className="h-3.5 w-3.5 shrink-0" />
+          )}
+          {/* Type icon (16px) */}
+          <TypeIcon
+            className={cn("h-4 w-4 shrink-0", row.kind === "folder" ? "text-ink-2" : "text-ink-3")}
+            strokeWidth={1.75}
+          />
+          <span
             className={cn(
-              "flex items-center gap-1 rounded-md pr-1",
-              isActiveArtifact || menuOpen
-                ? "bg-[rgb(var(--sel))] text-ink"
-                : "text-ink-2 hover:bg-[rgb(var(--hover))] hover:text-ink",
-              isActiveArtifact ? "font-medium" : null,
+              "min-w-0 flex-1 truncate text-[13px]",
+              isActive ? "font-semibold" : row.kind === "folder" ? "font-medium" : "font-normal",
             )}
           >
-            <button
-              type="button"
-              onClick={() => {
-                if (row.kind === "artifact" && row.artifactId) {
-                  onOpenArtifact(row.artifactId);
-                  return;
-                }
-                if (row.kind === "folder" && row.folderId) {
-                  onToggleFolder(row.folderId);
-                }
-              }}
-              className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-[13px]"
-              style={{ paddingLeft }}
-            >
-              {row.kind === "folder" ? (
-                <span className="flex h-5 w-5 items-center justify-center text-ink-3">
-                  {isExpanded ? (
-                    <ChevronDown className="h-3.5 w-3.5" strokeWidth={2} />
-                  ) : (
-                    <ChevronRight className="h-3.5 w-3.5" strokeWidth={2} />
-                  )}
-                </span>
-              ) : (
-                (() => {
-                  const Icon = row.artifactKind ? ARTIFACT_ICONS[row.artifactKind] : FileText;
-                  return (
-                    <span className="flex h-5 w-5 items-center justify-center text-ink-4">
-                      <Icon className="h-3.5 w-3.5" strokeWidth={1.75} />
-                    </span>
-                  );
-                })()
-              )}
-              <span className="min-w-0 flex-1 truncate">{row.title}</span>
-            </button>
-            <DropdownMenu onOpenChange={setMenuOpen}>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className={cn(
-                    "flex h-5 w-5 shrink-0 items-center justify-center rounded text-ink-4 transition-opacity hover:bg-[rgb(var(--hover))] hover:text-ink",
-                    menuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100",
-                  )}
-                  aria-label={`More actions for ${row.title}`}
-                >
-                  <Ellipsis className="h-3.5 w-3.5" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
-                {row.kind === "folder" && row.folderId ? (
-                  <>
-                    <DropdownMenuItem onClick={() => onStartRenameFolder(row.folderId!, row.title)}>
-                      Rename folder
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => onCreateFolderHere(row.folderId!)}>
-                      New folder here
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => onCreateNoteHere(row.folderId!)}>
-                      New note here
-                    </DropdownMenuItem>
-                  </>
-                ) : null}
-                {row.kind === "artifact" && row.artifactId ? (
-                  <>
-                    <DropdownMenuItem onClick={() => onOpenArtifact(row.artifactId!)}>
-                      Open artifact
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => onStartRenameArtifact(row.artifactId!, row.title)}>
-                      Rename artifact
-                    </DropdownMenuItem>
-                  </>
-                ) : null}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
+            {row.title}
+          </span>
+          {row.kind === "folder" ? (
+            <span className="flex shrink-0 items-center gap-1 font-mono text-[10.5px] text-ink-4">
+              {row.childCount ?? 0}
+              {isDrillFolder ? <ChevronRight className="h-3.5 w-3.5" strokeWidth={2} /> : null}
+            </span>
+          ) : null}
+        </button>
       </ContextMenuTrigger>
       <ContextMenuContent className="w-56">
         {row.kind === "folder" && row.folderId ? (
           <>
-            <ContextMenuItem onSelect={() => onBrowseColumns(row.folderId!)}>
-              <Columns3 className="h-[15px] w-[15px] text-ink-3" strokeWidth={1.75} />
-              Browse in columns
+            <ContextMenuItem onSelect={() => onOpenMiller(row.folderId!, rect())}>
+              <Columns3 className="h-[15px] w-[15px] text-amber" strokeWidth={1.75} />
+              <span className="font-medium">Browse in columns</span>
             </ContextMenuItem>
             <ContextMenuSeparator />
-            <ContextMenuItem onSelect={() => onStartRenameFolder(row.folderId!, row.title)}>
-              Rename folder
-            </ContextMenuItem>
-            <ContextMenuItem onSelect={() => onCreateFolderHere(row.folderId!)}>
-              New folder here
-            </ContextMenuItem>
-            <ContextMenuItem onSelect={() => onCreateNoteHere(row.folderId!)}>
-              New note here
-            </ContextMenuItem>
+            {isExpandableFolder ? (
+              <ContextMenuItem onSelect={() => onToggleFolder(row.folderId!)}>
+                {isExpanded ? "Collapse" : "Expand"}
+              </ContextMenuItem>
+            ) : null}
+            <ContextMenuItem onSelect={() => onCreateFolderHere(row.folderId!)}>New folder here</ContextMenuItem>
+            <ContextMenuItem onSelect={() => onCreateNoteHere(row.folderId!)}>New note here</ContextMenuItem>
+            <ContextMenuSeparator />
+            <ContextMenuItem onSelect={() => onStartRenameFolder(row.folderId!, row.title)}>Rename</ContextMenuItem>
           </>
         ) : null}
         {row.kind === "artifact" && row.artifactId ? (
           <>
             <ContextMenuItem onSelect={() => onOpenArtifact(row.artifactId!)}>
-              Open artifact
+              <span className="font-medium">Open</span>
+            </ContextMenuItem>
+            <ContextMenuItem
+              onSelect={() => onOpenMiller(row.ancestorFolderIds.at(-1) ?? null, rect(), row.artifactId)}
+            >
+              <Columns3 className="h-[15px] w-[15px] text-ink-3" strokeWidth={1.75} />
+              Reveal in columns
             </ContextMenuItem>
             <ContextMenuSeparator />
-            <ContextMenuItem onSelect={() => onStartRenameArtifact(row.artifactId!, row.title)}>
-              Rename artifact
-            </ContextMenuItem>
+            <ContextMenuItem onSelect={() => onStartRenameArtifact(row.artifactId!, row.title)}>Rename</ContextMenuItem>
           </>
         ) : null}
       </ContextMenuContent>

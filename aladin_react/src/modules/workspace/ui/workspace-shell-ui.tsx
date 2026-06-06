@@ -1,5 +1,5 @@
 import { Command, Contrast, Folder, GitGraph, Home, LogOut, Network, Plus, Signal } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Outlet } from "react-router-dom";
 import { CommandPalette } from "@/modules/workspace/ui/command-palette";
 import {
@@ -38,13 +38,15 @@ export function WorkspaceShellUI() {
   } = useWorkspaceShell();
   const theme = useAppStore((state) => state.theme);
   const toggleTheme = useAppStore((state) => state.toggleTheme);
-  const [commandOpen, setCommandOpen] = useState(false);
+  const commandOpen = useAppStore((state) => state.commandPaletteOpen);
+  const setCommandOpen = useAppStore((state) => state.setCommandPaletteOpen);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
-        setCommandOpen((open) => !open);
+        const store = useAppStore.getState();
+        store.setCommandPaletteOpen(!store.commandPaletteOpen);
       }
     };
     document.addEventListener("keydown", onKeyDown);

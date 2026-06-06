@@ -39,6 +39,7 @@ export interface BrowserTreeRow {
   artifactId?: string;
   artifactKind?: ArtifactKind;
   updatedLabel?: string | null;
+  childCount?: number;
 }
 
 export function buildBrowserRows(
@@ -62,6 +63,7 @@ export function buildBrowserRows(
           title: node.title,
           ancestorFolderIds: folderAncestorIds,
           folderId: node.id,
+          childCount: node.children.length,
         });
         if (expandedSet.has(node.id)) {
           visit(node.children, depth + 1, folderAncestorIds);
