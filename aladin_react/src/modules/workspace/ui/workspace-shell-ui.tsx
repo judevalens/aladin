@@ -37,30 +37,11 @@ export function WorkspaceShellUI() {
   const theme = useAppStore((state) => state.theme);
   const toggleTheme = useAppStore((state) => state.toggleTheme);
 
-  const activeLabel = navItems.find((item) => item.key === selectedDestination)?.label ?? "Aladin";
-
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="flex h-screen flex-col overflow-hidden bg-bg font-sans text-ink">
-        {/* Title bar */}
-        <header className="relative flex h-10 shrink-0 items-center gap-2 border-b border-line bg-chrome px-3.5">
-          <div className="flex items-center gap-2">
-            <span className="size-3 rounded-full bg-[#ff5f57]" />
-            <span className="size-3 rounded-full bg-[#febc2e]" />
-            <span className="size-3 rounded-full bg-[#28c840]" />
-          </div>
-          <div className="pointer-events-none absolute left-1/2 -translate-x-1/2">
-            <div className="flex items-center gap-2 rounded-chip border border-line bg-field px-3 py-1 font-mono text-[11px] text-ink-2">
-              <span className="text-ink-3">ʀ</span>
-              <span className="text-ink">{activeLabel}</span>
-              <kbd className="rounded border border-line px-1 text-[9.5px] text-ink-3">⌘K</kbd>
-            </div>
-          </div>
-        </header>
-
-        <div className="flex min-h-0 flex-1">
-          {/* Activity rail */}
-          <nav className="flex w-[52px] shrink-0 flex-col items-center gap-1 border-r border-line bg-rail py-3">
+      <div className="flex h-screen overflow-hidden bg-bg font-sans text-ink">
+        {/* Activity rail */}
+        <nav className="flex w-[52px] shrink-0 flex-col items-center gap-1 border-r border-line bg-rail py-3">
             <button
               type="button"
               onClick={() => onNavigate("/home")}
@@ -175,10 +156,9 @@ export function WorkspaceShellUI() {
             </div>
           </nav>
 
-          <main className="flex min-w-0 flex-1 overflow-hidden bg-bg">
-            <Outlet />
-          </main>
-        </div>
+        <main className="flex min-w-0 flex-1 overflow-hidden bg-bg">
+          <Outlet />
+        </main>
       </div>
     </TooltipProvider>
   );
