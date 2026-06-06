@@ -7,7 +7,7 @@ export function ProtectedLayout() {
 
   if (sessionQuery.isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white text-sm text-gray-700">
+      <div className="flex min-h-screen items-center justify-center bg-bg text-sm text-ink-2">
         Loading workspace…
       </div>
     );

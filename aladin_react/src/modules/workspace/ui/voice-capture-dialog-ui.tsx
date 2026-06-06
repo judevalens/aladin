@@ -47,23 +47,23 @@ export function VoiceCaptureDialogUI() {
               />
             </div>
 
-            <div className="panel-white bg-white p-4">
+            <div className="rounded-md border border-line bg-field p-4">
               {draft.phase === "recording" ? (
-                <div className="flex items-center gap-3 text-sm text-[#44403c]">
-                  <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
+                <div className="flex items-center gap-3 text-sm text-ink-2">
+                  <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-against" />
                   Recording in progress…
                 </div>
               ) : draft.audioUrl ? (
                 <audio className="w-full" controls src={draft.audioUrl} />
               ) : (
-                <p className="text-sm leading-7 text-[#78716c]">
+                <p className="text-sm leading-7 text-ink-3">
                   No audio captured yet. Start recording to create a preview.
                 </p>
               )}
             </div>
 
             {permissionError || draft.errorMessage ? (
-            <div className="rounded-[12px] border border-[#0a0a0a] bg-white px-4 py-3 text-sm leading-6 text-[#0a0a0a]">
+            <div className="rounded-md border border-against/40 bg-against/10 px-4 py-3 text-sm leading-6 text-against">
               {permissionError ?? draft.errorMessage}
             </div>
             ) : null}

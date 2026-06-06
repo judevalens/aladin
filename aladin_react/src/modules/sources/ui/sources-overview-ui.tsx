@@ -27,14 +27,14 @@ export function SourcesOverviewSection({
 
   return (
     <>
-      <div className="border-b border-[#e7e5e4] bg-white px-8 pt-8 pb-6">
+      <div className="border-b border-line bg-bg px-8 pt-8 pb-6">
         <div className="flex flex-wrap items-start justify-between gap-5">
           <div className="space-y-2">
             <div className="eyebrow">Sources</div>
-            <h1 className="max-w-2xl text-[1.625rem] font-semibold leading-[1.15] tracking-[-0.02em] text-[#0a0a0a]">
+            <h1 className="max-w-2xl font-display text-[1.625rem] font-semibold leading-[1.15] tracking-[-0.02em] text-ink">
               Keep fresh material flowing in.
             </h1>
-            <p className="max-w-2xl text-[13.5px] leading-[1.6] text-[#57534e]">
+            <p className="max-w-2xl text-[13.5px] leading-[1.6] text-ink-2">
               Manage live search streams, connected providers, and local agent access.
             </p>
           </div>
@@ -48,7 +48,7 @@ export function SourcesOverviewSection({
             </Button>
           </div>
         </div>
-        <div className="mt-7 grid gap-px overflow-hidden rounded-md border border-[#e7e5e4] bg-[#e7e5e4] md:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-7 grid gap-px overflow-hidden rounded-md border border-line bg-line md:grid-cols-2 xl:grid-cols-4">
           {metrics.map((metric) => (
             <MetricCard
               key={metric.label}
@@ -62,15 +62,15 @@ export function SourcesOverviewSection({
 
       <ScrollArea className="min-h-0 flex-1">
         {loading ? (
-          <p className="px-8 py-6 text-[13px] text-[#78716c]">Loading sources…</p>
+          <p className="px-8 py-6 text-[13px] text-ink-3">Loading sources…</p>
         ) : sources.length === 0 ? (
-          <div className="mx-8 my-6 flex flex-col items-start justify-between gap-5 rounded-md border border-dashed border-[#d6d3d1] bg-white p-6 md:flex-row md:items-center">
+          <div className="mx-8 my-6 flex flex-col items-start justify-between gap-5 rounded-md border border-dashed border-line bg-card p-6 md:flex-row md:items-center">
             <div className="space-y-1.5">
               <div className="eyebrow">No live streams yet</div>
-              <h2 className="text-[1.125rem] font-semibold tracking-[-0.01em] text-[#0a0a0a]">
+              <h2 className="font-display text-[1.125rem] font-semibold tracking-[-0.01em] text-ink">
                 Bring in the first stream.
               </h2>
-              <p className="max-w-xl text-[13px] leading-[1.6] text-[#57534e]">
+              <p className="max-w-xl text-[13px] leading-[1.6] text-ink-2">
                 Add a source to start pulling new material into the workspace.
               </p>
             </div>
@@ -83,20 +83,20 @@ export function SourcesOverviewSection({
             {sources.map((source) => (
               <button
                 key={source.id}
-                className="group min-h-[176px] rounded-md border border-[#e7e5e4] bg-white p-4 text-left transition-all hover:border-[#d6d3d1] hover:shadow-[0_4px_12px_-4px_rgba(10,10,10,0.06)]"
+                className="group min-h-[176px] rounded-card border border-line bg-card p-4 text-left transition-all hover:border-ink-4 hover:bg-raise"
                 onClick={() => onSelectSource(source.id)}
                 type="button"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 space-y-2">
-                    <div className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-[#78716c]">
+                    <div className="font-mono text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-3">
                       {formatters.providerLabel(source)}
                     </div>
                     <div className="space-y-1">
-                      <h3 className="truncate text-[14px] font-semibold tracking-[-0.01em] text-[#0a0a0a]">
+                      <h3 className="truncate text-[14px] font-semibold tracking-[-0.01em] text-ink">
                         {source.name}
                       </h3>
-                      <p className="line-clamp-2 text-[12.5px] leading-[1.5] text-[#57534e]">
+                      <p className="line-clamp-2 text-[12.5px] leading-[1.5] text-ink-2">
                         {formatters.descriptionLine(source)}
                       </p>
                     </div>
@@ -106,7 +106,7 @@ export function SourcesOverviewSection({
                 <div className="mt-4 flex flex-wrap gap-1.5">
                   <Pill>{formatters.lastRefreshSummary(source)}</Pill>
                 </div>
-                <div className="mt-4 inline-flex items-center gap-1 text-[12px] font-medium text-[#78716c] transition-colors group-hover:text-[#0a0a0a]">
+                <div className="mt-4 inline-flex items-center gap-1 text-[12px] font-medium text-ink-3 transition-colors group-hover:text-ink">
                   View details
                   <ArrowUpRight className="h-3.5 w-3.5" />
                 </div>

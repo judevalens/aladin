@@ -15,12 +15,12 @@ export function MetricCard({
   description: string;
 }) {
   return (
-    <div className="bg-white px-5 py-4">
+    <div className="bg-card px-5 py-4">
       <div className="eyebrow">{label}</div>
-      <div className="mt-2 text-[1.5rem] font-semibold leading-tight tracking-[-0.02em] text-[#0a0a0a] tabular-nums">
+      <div className="mt-2 font-display text-[1.5rem] font-semibold leading-tight tracking-[-0.02em] text-ink tabular-nums">
         {value}
       </div>
-      <div className="mt-1 text-[12px] leading-[1.45] text-[#78716c]">
+      <div className="mt-1 text-[12px] leading-[1.45] text-ink-3">
         {description}
       </div>
     </div>
@@ -29,7 +29,7 @@ export function MetricCard({
 
 export function Pill({ children }: { children: ReactNode }) {
   return (
-    <div className="inline-flex items-center rounded-full border border-[#e7e5e4] bg-[#fafaf9] px-2 py-0.5 text-[11px] text-[#57534e]">
+    <div className="inline-flex items-center rounded-full border border-line bg-field px-2 py-0.5 text-[11px] text-ink-2">
       {children}
     </div>
   );
@@ -45,19 +45,19 @@ export function IntegrationTokenRow({
   onRevoke: () => void;
 }) {
   return (
-    <div className="border-t border-[#e7e5e4] py-4">
+    <div className="border-t border-line py-4">
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1.5">
           <div className="flex items-center gap-2">
-            <div className="font-semibold tracking-[-0.02em] text-[#0a0a0a]">
+            <div className="font-semibold tracking-[-0.02em] text-ink">
               {token.name}
             </div>
             <Badge>{token.status}</Badge>
           </div>
-          <div className="text-sm leading-7 text-[#44403c]">
+          <div className="text-sm leading-7 text-ink-2">
             {token.scopes.join(", ") || "No scopes"}
           </div>
-          <div className="text-sm leading-7 text-[#78716c]">
+          <div className="text-sm leading-7 text-ink-3">
             Created {formatHumanDate(token.createdAt)} · Last used{" "}
             {formatHumanDate(token.lastUsedAt)} · Expires{" "}
             {formatHumanDate(token.expiresAt)}
@@ -80,9 +80,9 @@ export function IntegrationTokenRow({
 
 export function FactCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="border-t border-[#e7e5e4] p-4">
+    <div className="border-t border-line p-4">
       <div className="eyebrow">{label}</div>
-      <div className="mt-2 text-sm leading-7 text-[#44403c]">{value}</div>
+      <div className="mt-2 text-sm leading-7 text-ink-2">{value}</div>
     </div>
   );
 }

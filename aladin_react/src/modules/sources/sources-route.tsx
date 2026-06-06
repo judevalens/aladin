@@ -18,15 +18,15 @@ export function SourcesRoute() {
 
   return (
     <>
-      <section className="flex w-[352px] flex-col overflow-hidden border-r border-[#e7e5e4] bg-white">
+      <section className="flex w-[352px] flex-col overflow-hidden border-r border-line bg-explorer">
         <PlaceholderPane
           title="Sources"
           body="Connections, streams, and agent access for this workspace."
           className="h-full"
         />
       </section>
-      <section className="min-w-0 flex-1 overflow-hidden bg-white">
-        <div className="flex h-full flex-col bg-[#fafaf9]">
+      <section className="min-w-0 flex-1 overflow-hidden bg-bg">
+        <div className="flex h-full flex-col bg-bg">
           <SourcesOverviewSection
             overview={{
               loading: sources.catalog.loading,

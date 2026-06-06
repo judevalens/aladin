@@ -49,7 +49,7 @@ export function SourceDetailsDialog({
                   <FactCard key={fact.label} label={fact.label} value={fact.value} />
                 ))}
               </div>
-              <div className="border-t border-[#e7e5e4] pt-4">
+              <div className="border-t border-line pt-4">
                 <div className="eyebrow">Config snapshot</div>
                 <Textarea
                   className="mt-3 min-h-[180px] font-mono text-xs"

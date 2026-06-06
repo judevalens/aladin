@@ -85,12 +85,12 @@ function AgentAccessTabs({ state }: { state: IntegrationsState }) {
     }
   };
   return (
-    <div className="grid h-full min-h-0 gap-0 overflow-hidden rounded-lg border border-[#e7e5e4] bg-white lg:grid-cols-[1.1fr_0.9fr]">
-      <div className="flex min-h-0 flex-col border-b border-[#e7e5e4] bg-white lg:border-b-0 lg:border-r">
-        <div className="border-b border-[#f2f0ee] px-5 py-5">
+    <div className="grid h-full min-h-0 gap-0 overflow-hidden rounded-lg border border-line bg-card lg:grid-cols-[1.1fr_0.9fr]">
+      <div className="flex min-h-0 flex-col border-b border-line bg-card lg:border-b-0 lg:border-r">
+        <div className="border-b border-line px-5 py-5">
           <div className="space-y-1">
             <div className="eyebrow">Agent tokens</div>
-            <p className="text-sm leading-7 text-[#78716c]">
+            <p className="text-sm leading-7 text-ink-3">
               Bearer tokens for local MCP clients and agents.
             </p>
           </div>
@@ -98,7 +98,7 @@ function AgentAccessTabs({ state }: { state: IntegrationsState }) {
         <ScrollArea className="h-0 min-h-0 flex-1">
           <div className="space-y-0 px-5 py-5">
             {state.tokens.length === 0 ? (
-              <div className="rounded-md border border-dashed border-[#e7e5e4] bg-white p-4 text-sm leading-7 text-[#78716c]">
+              <div className="rounded-md border border-dashed border-line bg-card p-4 text-sm leading-7 text-ink-3">
                 No agent tokens yet.
               </div>
             ) : (
@@ -114,23 +114,23 @@ function AgentAccessTabs({ state }: { state: IntegrationsState }) {
           </div>
         </ScrollArea>
       </div>
-      <div className="flex min-h-0 flex-col bg-white p-5">
+      <div className="flex min-h-0 flex-col bg-card p-5">
         <div className="space-y-2">
           <div className="eyebrow">MCP setup</div>
-          <h3 className="text-[1.8rem] font-semibold leading-[1.05] tracking-[-0.04em] text-[#0a0a0a]">
+          <h3 className="text-[1.8rem] font-semibold leading-[1.05] tracking-[-0.04em] text-ink">
             Local agent access
           </h3>
-          <p className="text-sm leading-7 text-[#44403c]">
+          <p className="text-sm leading-7 text-ink-2">
             Create and manage bearer tokens for local MCP clients and agents.
           </p>
         </div>
-        <div className="border-t border-[#e7e5e4] pt-4">
+        <div className="border-t border-line pt-4">
           <div className="eyebrow">Endpoint</div>
-          <div className="mt-2 font-mono text-sm text-[#44403c]">
+          <div className="mt-2 font-mono text-sm text-ink-2">
             http://localhost:8090/mcp
           </div>
         </div>
-        <div className="border-t border-[#e7e5e4] pt-4">
+        <div className="border-t border-line pt-4">
           <div className="eyebrow">Recommended scopes</div>
           <div className="mt-3 flex flex-wrap gap-2">
             <Pill>artifacts:read</Pill>
@@ -154,7 +154,7 @@ function AgentAccessTabs({ state }: { state: IntegrationsState }) {
           </Button>
         </div>
         {state.createdToken ? (
-          <div className="border-t border-[#e7e5e4] pt-4">
+          <div className="border-t border-line pt-4">
             <div className="flex items-center justify-between gap-2">
               <div className="eyebrow">One-time token reveal</div>
               <Button variant="outline" size="sm" onClick={onCopy}>
@@ -166,10 +166,10 @@ function AgentAccessTabs({ state }: { state: IntegrationsState }) {
                 {copied ? "Copied" : "Copy"}
               </Button>
             </div>
-            <div className="mt-2 text-sm leading-7 text-[#44403c]">
+            <div className="mt-2 text-sm leading-7 text-ink-2">
               Copy this now. It will not be shown again.
             </div>
-            <pre className="mt-3 overflow-auto rounded-md border border-[#e7e5e4] bg-white p-3 text-xs text-[#57534e]">
+            <pre className="mt-3 overflow-auto rounded-md border border-line bg-field p-3 font-mono text-xs text-ink-2">
               {state.createdToken}
             </pre>
           </div>
@@ -181,17 +181,17 @@ function AgentAccessTabs({ state }: { state: IntegrationsState }) {
 
 function IntegrationTabs({ state }: { state: IntegrationsState }) {
   return (
-    <div className="flex h-full min-h-0 flex-col rounded-lg border border-[#e7e5e4] bg-white">
-      <div className="border-b border-[#f2f0ee] px-5 py-5">
+    <div className="flex h-full min-h-0 flex-col rounded-lg border border-line bg-card">
+      <div className="border-b border-line px-5 py-5">
         <div className="space-y-1">
           <div className="eyebrow">Available now</div>
-          <p className="text-sm leading-7 text-[#78716c]">
+          <p className="text-sm leading-7 text-ink-3">
             Configured providers you can connect or manage.
           </p>
         </div>
       </div>
       <div className="flex min-h-0 flex-1 w-full">
-        <div className="min-h-0 flex-1 overflow-y-auto border-r border-[#e7e5e4]">
+        <div className="min-h-0 flex-1 overflow-y-auto border-r border-line">
           <div className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-3">
             {state.providers.map((provider) => (
               <button
@@ -199,10 +199,10 @@ function IntegrationTabs({ state }: { state: IntegrationsState }) {
                 className={cn(
                   "flex aspect-square min-h-[176px] min-w-0 flex-col overflow-hidden rounded-md border p-4 text-left transition-colors",
                   provider.provider === state.selectedProvider?.provider
-                    ? "border-[#ebebe8] bg-[#ebebe8] text-[#0a0a0a]"
+                    ? "border-[rgb(var(--sel))] bg-[rgb(var(--sel))] text-ink"
                     : provider.available || provider.connected
-                      ? "border-[#e7e5e4] bg-white text-[#0a0a0a] hover:bg-[#f2f0ee]"
-                      : "border-[#e7e5e4] bg-white text-[#a8a29e]",
+                      ? "border-line bg-card text-ink hover:bg-raise"
+                      : "border-line bg-card text-ink-4",
                 )}
                 onClick={() => state.onSelectProvider(provider.provider)}
                 type="button"
@@ -237,15 +237,15 @@ function IntegrationTabs({ state }: { state: IntegrationsState }) {
             ))}
           </div>
         </div>
-        <div className="flex w-[340px] shrink-0 flex-col bg-white p-5">
+        <div className="flex w-[340px] shrink-0 flex-col bg-card p-5">
           {state.selectedProvider ? (
             <div className="flex h-full flex-col gap-5">
               <div className="space-y-2">
                 <div className="eyebrow">Provider detail</div>
-                <h3 className="text-[1.8rem] font-semibold leading-[1.05] tracking-[-0.04em] text-[#0a0a0a]">
+                <h3 className="text-[1.8rem] font-semibold leading-[1.05] tracking-[-0.04em] text-ink">
                   {state.selectedProvider.label}
                 </h3>
-                <p className="text-sm leading-7 text-[#44403c]">
+                <p className="text-sm leading-7 text-ink-2">
                   {state.selectedProvider.connected
                     ? "This account is already connected."
                     : state.selectedProvider.available
@@ -263,9 +263,9 @@ function IntegrationTabs({ state }: { state: IntegrationsState }) {
               ) : null}
 
               {state.selectedProvider.grantedScopes.length > 0 ? (
-                <div className="border-t border-[#e7e5e4] pt-4">
+                <div className="border-t border-line pt-4">
                   <div className="eyebrow">Granted scopes</div>
-                  <p className="mt-2 text-sm leading-7 text-[#44403c]">
+                  <p className="mt-2 text-sm leading-7 text-ink-2">
                     {state.selectedProvider.grantedScopes.join(", ")}
                   </p>
                 </div>
@@ -313,7 +313,7 @@ function IntegrationTabs({ state }: { state: IntegrationsState }) {
               </div>
             </div>
           ) : (
-            <p className="text-sm leading-7 text-[#78716c]">
+            <p className="text-sm leading-7 text-ink-3">
               No provider catalog available.
             </p>
           )}

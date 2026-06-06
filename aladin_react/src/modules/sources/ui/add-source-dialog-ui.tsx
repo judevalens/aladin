@@ -32,7 +32,7 @@ export function AddSourceDialog(props: AddSourceDialogProps) {
         <DialogBody className="space-y-5 pb-4">
           <div className="space-y-2">
             <label className="eyebrow">Provider</label>
-            <div className="rounded-md border border-[#e7e5e4] bg-white px-4 py-3 text-sm text-[#0a0a0a]">
+            <div className="rounded-md border border-line bg-field px-4 py-3 text-sm text-ink">
               Bluesky search
             </div>
           </div>
@@ -62,7 +62,7 @@ export function AddSourceDialog(props: AddSourceDialogProps) {
             </div>
           </div>
           {state.streamErrorMessage ? (
-            <div className="rounded-md border border-[#e7e5e4] bg-white px-4 py-3 text-sm leading-6 text-[#0a0a0a]">
+            <div className="rounded-md border border-against/40 bg-against/10 px-4 py-3 text-sm leading-6 text-against">
               {state.streamErrorMessage}
             </div>
           ) : null}
