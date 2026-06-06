@@ -41,6 +41,7 @@ export interface WorkspaceShellState {
 export interface BrowserPaneState {
   loading: boolean;
   errorMessage: string | null;
+  tree: BrowserTreeNode[];
   rows: BrowserTreeRow[];
   activeArtifactId: string | null;
   canGoBack: boolean;
@@ -195,6 +196,7 @@ export function useBrowserPane(): BrowserPaneState {
     loading: treeLoadable.status !== "data",
     errorMessage:
       treeLoadable.status === "error" ? treeLoadable.error.message : null,
+    tree,
     rows,
     activeArtifactId: workspace.activeArtifactId,
     canGoBack: workspace.browserFrameStack.length > 0,
