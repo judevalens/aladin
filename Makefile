@@ -1,4 +1,11 @@
-.PHONY: help backend mcp blocknote blocknote-test check-blocknote-versions nuke-local-db nuke-clients tauri-client-b db-up db-down nango-up nango-down nango-logs env-nango ngrok-ensure worker-go api-go artifact-spa-build ops-status ops-errors ops-streams ops-queues ops-force-stream ops-reset-stuck-cycles
+.PHONY: help backend mcp blocknote blocknote-test check-blocknote-versions nuke-local-db nuke-clients tauri-client-b db-up db-down test-db-up test-db-down test-go nango-up nango-down nango-logs env-nango ngrok-ensure worker-go api-go artifact-spa-build ops-status ops-errors ops-streams ops-queues ops-force-stream ops-reset-stuck-cycles
+
+# --- Isolated sandbox stack (docker-compose.test.yml) -----------------------
+# A throwaway mirror of the dev infra on DISTINCT ports, namespaced under the
+# `aladin-test` project, used for agent/automated testing so the real `aladin-*`
+# dev stack and its data are never touched.
+TEST_COMPOSE := docker compose -f docker-compose.test.yml -p aladin-test
+TEST_DATABASE_URL := postgres://aladin:password@localhost:5444/aladin
 
 help: ## List available make targets
 	@awk 'BEGIN {FS = ":.*## "; printf "Available targets:\n"} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-24s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -38,6 +45,18 @@ db-up: ## Start local Docker infrastructure
 
 db-down: ## Stop local Docker infrastructure
 	docker compose down
+
+test-db-up: ## Start the ISOLATED sandbox stack (pg :5444, neo4j :7475/:7688, redis :6380); coexists with the dev stack
+	$(TEST_COMPOSE) up -d postgres neo4j redis
+
+test-db-down: ## Stop the sandbox stack (pass ARGS=-v to also drop sandbox volumes)
+	$(TEST_COMPOSE) down $(ARGS)
+
+test-go: ## Run Go tests against the SANDBOX db (TEST_DATABASE_URL -> :5444); boots sandbox postgres first
+	$(TEST_COMPOSE) up -d postgres
+	@echo ">> waiting for sandbox postgres on :5444..."
+	@until docker exec aladin-test-postgres pg_isready -U aladin -d aladin >/dev/null 2>&1; do sleep 1; done
+	cd backend_v2 && env -u DATABASE_URL TEST_DATABASE_URL=$(TEST_DATABASE_URL) go test ./...
 
 nango-up: ## Start local Nango self-hosted services
 	eval "$$(python3 scripts/ops/read_env_keys.py --env backend_v2/.env)" && docker compose -f docker-compose.nango.yml up -d

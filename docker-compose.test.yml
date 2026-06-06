@@ -1,0 +1,90 @@
+# Isolated SANDBOX stack for Claude/agent testing.
+#
+# This is a throwaway mirror of docker-compose.yml. It exists so automated
+# testing and verification never touch the real dev infra (the `aladin-*`
+# containers and their volumes). Everything here is namespaced under the
+# `aladin-test` project and bound to DISTINCT host ports, so it coexists with a
+# running dev stack — you can have both up at once.
+#
+#   Bring up:   make test-db-up      (or: docker compose -f docker-compose.test.yml -p aladin-test up -d)
+#   Tear down:  make test-db-down    (add  -v  to also drop the volumes)
+#   Run tests:  make test-go         (points TEST_DATABASE_URL at :5444)
+#
+# Host ports (dev -> sandbox):
+#   postgres 5433 -> 5444 | neo4j 7474/7687 -> 7475/7688 | redis 6379 -> 6380
+#   (5434 is avoided: a non-aladin container may already use it.)
+#   blocknote 3500/3501 -> 3600/3601 (profile: collab)
+#
+# Credentials and the in-container service ports match dev exactly, so app code
+# and the embedded goose migrations work unchanged — only the host ports differ.
+name: aladin-test
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: aladin-test-postgres
+    environment:
+      POSTGRES_DB: aladin
+      POSTGRES_USER: aladin
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5444:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aladin -d aladin"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  neo4j:
+    image: neo4j:5
+    container_name: aladin-test-neo4j
+    environment:
+      NEO4J_AUTH: neo4j/password
+    ports:
+      - "7475:7474"
+      - "7688:7687"
+    volumes:
+      - neo4j_data:/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: aladin-test-redis
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
+  blocknote:
+    build: ./services/blocknote
+    container_name: aladin-test-blocknote
+    # Opt-in only: excluded from a plain `up -d`. Use the collab profile:
+    #   docker compose -f docker-compose.test.yml -p aladin-test --profile collab up -d blocknote
+    profiles: ["collab"]
+    ports:
+      - "3600:3500"   # converter (HTTP)
+      - "3601:3501"   # collab (Hocuspocus WS)
+    environment:
+      PORT: 3500
+      COLLAB_PORT: 3501
+      # In-network Postgres (service port, not the host-mapped 5434).
+      BLOCKNOTE_DATABASE_URL: postgres://aladin:password@postgres:5432/aladin
+      # The Go API runs on the host; reach it via the docker host gateway.
+      # NOTE: if you run a sandbox API on a non-default port, update this.
+      BLOCKNOTE_AUTH_RESOLVE_URL: http://host.docker.internal:8000/api/auth/resolve
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - postgres
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3500/healthz"]
+      interval: 10s
+      timeout: 2s
+      retries: 5
+
+volumes:
+  postgres_data:
+  neo4j_data:
+  redis_data:

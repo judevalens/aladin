@@ -20,8 +20,11 @@ node_modules/
 
 
 *.env
+.env.test
 
-.claude/
+# Ignore all Claude state EXCEPT committed, shared orchestration workflows.
+.claude/*
+!.claude/workflows/
 .codex-skill-build/
 .codex-skill-drafts/
 backend_v2/.gocache/
