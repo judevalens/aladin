@@ -1,5 +1,7 @@
 import { Command, Contrast, Folder, GitGraph, Home, LogOut, Network, Plus, Signal } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Outlet } from "react-router-dom";
+import { CommandPalette } from "@/modules/workspace/ui/command-palette";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -36,17 +38,34 @@ export function WorkspaceShellUI() {
   } = useWorkspaceShell();
   const theme = useAppStore((state) => state.theme);
   const toggleTheme = useAppStore((state) => state.toggleTheme);
+  const [commandOpen, setCommandOpen] = useState(false);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        setCommandOpen((open) => !open);
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   return (
     <TooltipProvider delayDuration={200}>
+      <CommandPalette
+        open={commandOpen}
+        onOpenChange={setCommandOpen}
+        actions={{ onCreateFolder, onCreateNote, onCreateLink, onCreateVoice }}
+      />
       <div className="flex h-screen overflow-hidden bg-bg font-sans text-ink">
         {/* Activity rail */}
         <nav className="flex w-[52px] shrink-0 flex-col items-center gap-1 border-r border-line bg-rail py-3">
             <button
               type="button"
-              onClick={() => onNavigate("/home")}
+              onClick={() => setCommandOpen(true)}
               className="grid size-8 place-items-center rounded-[9px] bg-amber font-display text-sm font-bold text-[#0f0f12]"
-              aria-label="Aladin"
+              aria-label="Open command palette"
             >
               A
             </button>
@@ -147,12 +166,19 @@ export function WorkspaceShellUI() {
                 </DropdownMenuContent>
               </DropdownMenu>
 
-              <div
-                className="grid size-[38px] place-items-center rounded-[9px] text-ink-4"
-                aria-hidden="true"
-              >
-                <Command className="size-[17px]" strokeWidth={1.7} />
-              </div>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => setCommandOpen(true)}
+                    className="grid size-[38px] place-items-center rounded-[9px] text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
+                    aria-label="Command palette"
+                  >
+                    <Command className="size-[17px]" strokeWidth={1.7} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right">Command · ⌘K</TooltipContent>
+              </Tooltip>
             </div>
           </nav>
 
