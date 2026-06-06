@@ -24,7 +24,7 @@ Connected Accounts is the setup surface for private provider credentials. It is 
 
 - Sources exposes a standard `Integrations` action near the Add Stream action.
 - The `Integrations` action opens a wide app-level management modal, not a small test dialog and not an embedded panel.
-- The modal uses the high-contrast management pattern from `design/ui-design-spec.md`: fixed title band, provider card grid on the left, selected provider detail/actions on the right.
+- The modal uses the high-contrast management pattern from `design/DESIGN_SPEC.md`: fixed title band, provider card grid on the left, selected provider detail/actions on the right.
 - Google renders as the first connectable provider card when the provider catalog is available.
 - Disabled/future providers render as muted cards so unavailable state is visible before reading status text.
 - Selected provider cards use a strong near-black selected surface with light foreground.

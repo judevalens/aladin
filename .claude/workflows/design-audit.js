@@ -4,15 +4,15 @@ export const meta = {
   whenToUse: 'When you want a systematic pass over UI surfaces for token drift, hardcoded colors, Material-isms, and spec violations.',
   phases: [
     { title: 'Audit', detail: 'one agent per component file, checked against the spec + token bridge' },
-    { title: 'Record', detail: 'append the findings to design/OVERHAUL.md' },
+    { title: 'Record', detail: 'append the findings to design/AUDIT_FINDINGS.md' },
   ],
 }
 
 // args (all optional):
 //   args.targets : string[]  explicit file globs/paths to audit
 //                            (default: components/ui + modules/*/ui)
-//   args.specPath: string    design intent doc (default design/ui-design-spec.md)
-const SPEC = (args && args.specPath) || 'design/ui-design-spec.md'
+//   args.specPath: string    design spec doc (default design/DESIGN_SPEC.md)
+const SPEC = (args && args.specPath) || 'design/DESIGN_SPEC.md'
 const TARGETS = (args && args.targets && args.targets.length)
   ? args.targets
   : [
@@ -71,15 +71,15 @@ const results = await parallel(TARGETS.map((file) => () =>
 FILE TO AUDIT: ${file}
 
 Read it, then read these references:
-  - ${SPEC}                       (design intent / principles; AladinColor vocabulary)
-  - design/OVERHAUL.md            (token bridge: spec role -> live shadcn/OKLch token)
-  - aladin_react/src/index.css    (the actual tokens that exist)
+  - ${SPEC}                       (design system: tokens + shadcn component map)
+  - design/BROWSER_SPEC.md        (Folders/browser spec — for tree/explorer files)
+  - aladin_react/src/index.css    (the actual Aladin Dark/Soft tokens that exist)
 
 Report violations of the design system. Specifically look for:
-  - hardcoded-color: literal hex/rgb/oklch/hsl values instead of semantic tokens
+  - hardcoded-color: literal hex/rgb/oklch/hsl values instead of Aladin tokens
   - token-misuse: using a token whose semantic role doesn't match its use
   - material-ism: Material-style ripple/filled/elevation/softness the spec rejects
-  - radius-drift: radii that ignore the --radius scale (spec wants small 4-6px radii)
+  - radius-drift: radii that ignore the chip/card/modal scale
   - spec-violation: anything contradicting ${SPEC} (e.g. cards used where the spec
     wants flat document surfaces; selection markers the spec forbids)
   - a11y: missing focus-visible, insufficient contrast, non-semantic interactive els
@@ -101,14 +101,12 @@ if (!withIssues.length) {
 }
 
 await agent(
-  `Append the audit findings below to design/OVERHAUL.md.
+  `Append the audit findings below to design/AUDIT_FINDINGS.md (create it if missing — it
+is a generated scratch doc, NOT one of the locked handoff specs; never edit PRD.md /
+DESIGN_SPEC.md / BROWSER_SPEC.md).
 
-Edit the file: under the "### Findings (filled by audit workflow)" heading in section 3,
-replace the "_(none yet ...)_" placeholder (or append, if findings already exist) with a
-dated-by-run bullet list grouped by file. For each finding use the format:
+Add a new section grouped by file, each finding as:
   - [SEVERITY][category] file: detail — fix: suggestion
-Also flip the matching backlog checkbox from ☐ to ◐ for any file that has findings.
-Do not change anything else in the doc.
 
 FINDINGS (JSON):
 ${JSON.stringify(withIssues, null, 2)}`,

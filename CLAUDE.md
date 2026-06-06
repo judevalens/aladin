@@ -26,12 +26,13 @@ aladin_react/
   src/app/state/          Zustand slices (session, workspace)
   src/shared/             API types, realtime, shared libs
   src/lib/utils.ts        the cn() helper used by components/ui  ← import from "@/lib/utils"
-  src/index.css           design tokens (Tailwind v4 + shadcn, OKLch)
+  src/index.css           design tokens (Tailwind v4; Aladin Dark/Soft via data-theme)
 backend_v2/
   cmd/{api,worker,mcp}    entrypoints (api :8000, mcp :8090)
   internal/               api → service → repo layering; db/migrations/*.sql (goose)
 services/blocknote/       collab sidecar (converter :3500, collab :3501)
-design/                   ui-design-spec.md (intent) + OVERHAUL.md (north-star)
+design/                   handoff source of truth: PRD.md + DESIGN_SPEC.md +
+                          BROWSER_SPEC.md + screens/  (the locked design)
 ```
 
 > Note: a duplicate `cn()` exists at `src/shared/lib/utils.ts`. Components/ui use
@@ -82,16 +83,22 @@ Go integration tests are behind `-tags=integration` and need the sidecar up; pla
 
 ## Design tokens — the rule that matters
 
-The app is styled with **Tailwind v4 + shadcn**, tokens defined in
-`aladin_react/src/index.css` using **OKLch** with light (`:root`) + dark (`.dark`)
-variants. **Never hardcode hex/rgb/oklch in components** — use the semantic tokens:
-`bg-background`, `text-foreground`, `bg-card`, `bg-muted`, `text-muted-foreground`,
-`bg-primary`, `border-border`, `ring-ring`, `bg-destructive`, the `sidebar-*` family,
-and `--radius` (`rounded-md/lg/xl`, …).
+The app ships a **dark-minimal IDE** look in two themes — **Dark** (default) + **Soft** —
+driven by `data-theme` on `<html>` (see `src/app/state/theme-slice.ts`). Tokens live in
+`aladin_react/src/index.css` (Tailwind v4 inline `@theme`). **Never hardcode hex/rgb in
+components** — use the Aladin tokens:
+- surfaces: `bg-rail`/`bg-panel`/`bg-bg`/`bg-chrome`/`bg-field`/`bg-card`/`bg-raise`/`bg-explorer`
+- ink ramp: `text-ink` / `text-ink-2` / `text-ink-3` / `text-ink-4`
+- accent + lines: `bg-amber`, `bg-amber-soft`, `border-amber-line`, `border-line`, `border-line-2`
+- semantic hues: `text-for` (supports), `text-against` (counters), `text-catalyst`, `text-echo`
+- fonts: `font-display` (Space Grotesk) · `font-mono` (JetBrains Mono) · `font-sans` (system)
+- radii `rounded-chip/card/modal`; shadows `shadow-panel/modal/toast`
+shadcn's own tokens (`bg-background`, `text-foreground`, `border-border`, …) are mapped
+onto these, so restyled primitives inherit the theme.
 
-Design *intent* lives in `design/ui-design-spec.md` (written in an older `AladinColor`
-vocabulary). `design/OVERHAUL.md` bridges that vocabulary to the live tokens — consult
-it before design work.
+**The locked design lives in `design/`:** `PRD.md` (product), `DESIGN_SPEC.md`
+(tokens + shadcn component map), `BROWSER_SPEC.md` (Folders/browser), `screens/`
+(reference renders). Consult these before design work.
 
 ## Component conventions
 

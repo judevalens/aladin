@@ -14,7 +14,7 @@ const BASE = (args && args.base) || 'main'
 
 const DIMENSIONS = [
   { key: 'tokens', prompt: 'Token usage: hardcoded hex/rgb/oklch instead of semantic tokens; tokens used outside their semantic role; radii ignoring the --radius scale.' },
-  { key: 'spec', prompt: 'Spec conformance vs design/ui-design-spec.md: Material-isms, card treatment where flat document surfaces are wanted, forbidden selection markers, off-spec contrast.' },
+  { key: 'spec', prompt: 'Spec conformance vs design/DESIGN_SPEC.md (+ design/BROWSER_SPEC.md for the Folders view): default shadcn look not restyled to tokens, Material-isms, wrong surface/elevation, off-spec contrast.' },
   { key: 'a11y', prompt: 'Accessibility: missing focus-visible states, insufficient contrast, non-semantic interactive elements, missing aria/labels.' },
   { key: 'visual-regression', prompt: 'Visual-regression risk: layout/spacing/overflow changes, dark-mode (.dark) parity, responsive breakage.' },
 ]
@@ -67,8 +67,8 @@ Get the diff by running:
 
 LENS — ${dim.key}: ${dim.prompt}
 
-References: design/ui-design-spec.md, design/OVERHAUL.md (token bridge),
-aladin_react/src/index.css (real tokens), CLAUDE.md (conventions).
+References: design/DESIGN_SPEC.md + design/BROWSER_SPEC.md (the locked design),
+aladin_react/src/index.css (real Aladin tokens), CLAUDE.md (conventions).
 
 Report ONLY issues introduced/changed by this diff, within this lens. Be conservative —
 no nitpicks, no pre-existing issues. Set dimension="${dim.key}".`,
