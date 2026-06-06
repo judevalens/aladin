@@ -1,4 +1,0 @@
-interface:
-  display_name: "Aladin Go Conventions"
-  short_description: "Aladin backend Go placement rules"
-  default_prompt: "Use $aladin-go-conventions to place or refactor Go backend code in the Aladin repo."

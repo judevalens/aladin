@@ -1,4 +1,4 @@
-.PHONY: help backend mcp blocknote blocknote-test check-blocknote-versions nuke-local-db nuke-clients tauri-client-b db-up db-down test-db-up test-db-down test-go nango-up nango-down nango-logs env-nango ngrok-ensure worker-go api-go artifact-spa-build ops-status ops-errors ops-streams ops-queues ops-force-stream ops-reset-stuck-cycles
+.PHONY: help backend mcp blocknote blocknote-test check-blocknote-versions nuke-local-db nuke-clients tauri-client-b db-up db-down test-db-up test-db-down test-go nango-up nango-down nango-logs env-nango ngrok-ensure worker-go api-go ops-status ops-errors ops-streams ops-queues ops-force-stream ops-reset-stuck-cycles
 
 # --- Isolated sandbox stack (docker-compose.test.yml) -----------------------
 # A throwaway mirror of the dev infra on DISTINCT ports, namespaced under the
@@ -79,12 +79,6 @@ worker-go: ngrok-ensure ## Run the Go worker; optional CONCURRENCY=24
 api-go: ## Run the Go backend API
 	cd backend_v2 && go run ./cmd/api
 
-artifact-spa-build: ## Build and copy the React artifact editor bundle
-	cd aladin_ui/composeApp/react-spa && npm install && npm run build
-	rm -rf aladin_ui/composeApp/src/wasmJsMain/resources/artifact-spa
-	mkdir -p aladin_ui/composeApp/src/wasmJsMain/resources/artifact-spa
-	cp aladin_ui/composeApp/react-spa/dist/artifact-spa.js aladin_ui/composeApp/src/wasmJsMain/resources/artifact-spa/artifact-spa.js
-	cp aladin_ui/composeApp/react-spa/dist/style.css aladin_ui/composeApp/src/wasmJsMain/resources/artifact-spa/style.css
 
 ops-status: ## Show local ops dashboard
 	python3 scripts/ops/aladin_ops.py status

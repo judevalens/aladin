@@ -14,8 +14,6 @@ A desktop research workspace. **Dual-store architecture:**
   (Asynq queue) + Neo4j (graph). Migrations are embedded **goose**, applied on boot.
 - **Collab sidecar** — `services/blocknote/` — Node; Yjs/Hocuspocus realtime page
   editing. Page content lives in Postgres `page_ydoc` + webview IndexedDB.
-- Legacy Kotlin/Compose UI lives in `aladin_ui/` — **not** the active surface; ignore
-  unless explicitly asked.
 
 ## Layout
 

@@ -6,8 +6,6 @@ This repository is now centered on the React frontend in `aladin_react` and the 
   The primary product UI. This is the frontend to use for shell, workspace, auth, sources, pages, and general product work.
 - `backend_v2/`
   The Go API, worker, MCP server, and persistence layer.
-- `aladin_ui/`
-  Legacy Kotlin/Compose code that may still exist in the repo, but it is no longer the primary frontend direction.
 
 ## Common Commands
 
