@@ -47,22 +47,22 @@ function DiffView({ pageId, entryId }: { pageId: string; entryId: string }) {
   }, [repos, pageId, entryId]);
 
   if (!diff) {
-    return <div className="px-3 py-2 text-xs text-[#a8a29e]">Loading diff…</div>;
+    return <div className="px-3 py-2 text-xs text-ink-4">Loading diff…</div>;
   }
   if (!diff.before && !diff.after) {
-    return <div className="px-3 py-2 text-xs text-[#a8a29e]">No snapshot for this edit yet.</div>;
+    return <div className="px-3 py-2 text-xs text-ink-4">No snapshot for this edit yet.</div>;
   }
   const parts = diffWords(diff.before, diff.after);
   return (
-    <pre className="mx-1 mb-1 max-h-64 overflow-auto whitespace-pre-wrap rounded-md border border-[#f2f0ee] bg-[#fafaf9] p-2 text-[11px] leading-5 text-[#57534e]">
+    <pre className="mx-1 mb-1 max-h-64 overflow-auto whitespace-pre-wrap rounded-md border border-line bg-field p-2 text-[11px] leading-5 text-ink-2">
       {parts.map((p, i) => (
         <span
           key={i}
           className={
             p.added
-              ? "rounded bg-green-100 text-green-800"
+              ? "rounded bg-for/15 text-for"
               : p.removed
-                ? "rounded bg-red-100 text-red-700 line-through"
+                ? "rounded bg-against/15 text-against line-through"
                 : ""
           }
         >
@@ -77,7 +77,7 @@ function HistoryRow({ entry, expanded }: { entry: PageEditEntry; expanded: boole
   const isAgent = entry.editorKind === "agent";
   return (
     <div className="flex items-start gap-2 px-2 py-2">
-      <div className="mt-1.5 text-[#a8a29e]">
+      <div className="mt-1.5 text-ink-4">
         {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
       </div>
       <div
@@ -88,14 +88,14 @@ function HistoryRow({ entry, expanded }: { entry: PageEditEntry; expanded: boole
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <span className="truncate text-sm text-[#292524]">{entry.editorName}</span>
+          <span className="truncate text-sm text-ink">{entry.editorName}</span>
           {isAgent ? (
-            <span className="rounded-full bg-[#f3e8ff] px-1.5 py-px text-[10px] font-medium text-[#7e22ce]">
+            <span className="rounded-full bg-echo/15 px-1.5 py-px text-[10px] font-medium text-echo">
               agent
             </span>
           ) : null}
         </div>
-        <div className="text-xs text-[#78716c]">
+        <div className="text-xs text-ink-3">
           edited · {relTime(entry.occurredAt)}
           {entry.edits > 1 ? ` · ${entry.edits} changes` : ""}
         </div>
@@ -115,31 +115,31 @@ export function PageHistoryPanel({
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   return (
-    <div className="absolute right-0 top-0 z-20 flex h-full w-80 flex-col border-l border-[#e7e5e4] bg-white shadow-lg">
-      <div className="flex items-center justify-between border-b border-[#f2f0ee] px-4 py-3">
-        <div className="text-sm font-medium text-[#292524]">History</div>
+    <div className="absolute right-0 top-0 z-20 flex h-full w-80 flex-col border-l border-line bg-panel shadow-panel">
+      <div className="flex items-center justify-between border-b border-line px-4 py-3">
+        <div className="text-sm font-medium text-ink">History</div>
         <div className="flex items-center gap-1">
-          <button onClick={refetch} title="Refresh" className="rounded p-1 text-[#78716c] hover:bg-[#f5f5f4]">
+          <button onClick={refetch} title="Refresh" className="rounded p-1 text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink">
             <RefreshCcw className="h-4 w-4" />
           </button>
-          <button onClick={onClose} title="Close" className="rounded p-1 text-[#78716c] hover:bg-[#f5f5f4]">
+          <button onClick={onClose} title="Close" className="rounded p-1 text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink">
             <X className="h-4 w-4" />
           </button>
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto py-1">
         {loading ? (
-          <div className="px-4 py-4 text-sm text-[#a8a29e]">Loading…</div>
+          <div className="px-4 py-4 text-sm text-ink-4">Loading…</div>
         ) : entries.length === 0 ? (
-          <div className="px-4 py-4 text-sm text-[#a8a29e]">No edits recorded yet.</div>
+          <div className="px-4 py-4 text-sm text-ink-4">No edits recorded yet.</div>
         ) : (
           entries.map((e) => {
             const open = expandedId === e.id;
             return (
-              <div key={e.id} className="border-b border-[#f7f6f5] last:border-b-0">
+              <div key={e.id} className="border-b border-line last:border-b-0">
                 <button
                   onClick={() => setExpandedId(open ? null : e.id)}
-                  className="w-full rounded text-left hover:bg-[#faf9f8]"
+                  className="w-full rounded text-left hover:bg-[rgb(var(--hover))]"
                 >
                   <HistoryRow entry={e} expanded={open} />
                 </button>

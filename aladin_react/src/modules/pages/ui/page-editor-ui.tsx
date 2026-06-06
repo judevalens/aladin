@@ -24,7 +24,7 @@ export function PageEditorUI({ pageId }: { pageId: string }) {
   const user = authState.status === "data" ? authState.value.user : null;
   if (!user) {
     return (
-      <div className="px-7 py-6 text-sm text-gray-700">Loading page…</div>
+      <div className="px-7 py-6 text-sm text-ink-2">Loading page…</div>
     );
   }
 
@@ -35,7 +35,7 @@ export function PageEditorUI({ pageId }: { pageId: string }) {
       <button
         onClick={() => setHistoryOpen((v) => !v)}
         title="Edit history"
-        className="absolute right-3 top-2 z-10 flex items-center gap-1.5 rounded-md border border-[#e7e5e4] bg-white/90 px-2.5 py-1 text-xs font-medium text-[#57534e] shadow-sm hover:bg-[#faf9f8]"
+        className="absolute right-3 top-2 z-10 flex items-center gap-1.5 rounded-md border border-line bg-field/90 px-2.5 py-1 text-xs font-medium text-ink-2 backdrop-blur-sm hover:bg-raise hover:text-ink"
       >
         <History className="h-3.5 w-3.5" />
         History

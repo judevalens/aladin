@@ -45,29 +45,29 @@ export function BrowserPaneUI() {
 
   if (loading) {
     return (
-      <section className="flex w-[336px] flex-col overflow-hidden border-r border-[#e7e5e4] bg-white sm:w-[368px]">
-        <div className="p-5 text-sm text-[#44403c]">Loading browser tree…</div>
+      <section className="flex w-[336px] flex-col overflow-hidden border-r border-line bg-explorer sm:w-[368px]">
+        <div className="p-5 text-sm text-ink-2">Loading browser tree…</div>
       </section>
     );
   }
 
   if (errorMessage) {
     return (
-      <section className="flex w-[336px] flex-col overflow-hidden border-r border-[#e7e5e4] bg-white p-4 sm:w-[368px]">
-        <AladinPanel className="border-[#ef4444] bg-white p-4 text-sm text-[#dc2626]">{errorMessage}</AladinPanel>
+      <section className="flex w-[336px] flex-col overflow-hidden border-r border-line bg-explorer p-4 sm:w-[368px]">
+        <AladinPanel className="rounded-md border border-against/40 bg-against/10 p-4 text-sm text-against">{errorMessage}</AladinPanel>
       </section>
     );
   }
 
   return (
-    <section className="flex w-[300px] flex-col overflow-hidden border-r border-[#e7e5e4] bg-[#fafaf9] sm:w-[332px]">
+    <section className="flex w-[300px] flex-col overflow-hidden border-r border-line bg-explorer sm:w-[332px]">
       <div className="px-2 py-2">
-        <div className="flex items-center gap-2 rounded-xl border border-[#e7e5e4] bg-white px-2 py-1.5">
+        <div className="flex items-center gap-2 rounded-xl border border-line bg-field px-2 py-1.5">
           {canGoBack ? (
             <button
               type="button"
               onClick={onPopBrowserFrame}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[#78716c] transition-colors hover:bg-[#f5f5f4] hover:text-[#0a0a0a]"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
               aria-label="Back to previous folder view"
             >
               <ChevronLeft className="h-4 w-4" strokeWidth={2} />
@@ -75,15 +75,15 @@ export function BrowserPaneUI() {
           ) : (
             <div className="h-7 w-7 shrink-0" aria-hidden />
           )}
-          <nav className="flex min-w-0 items-center text-[12px] text-[#78716c]" aria-label="Browser navigation">
-            <span className="truncate rounded px-1 py-0.5 text-[#0a0a0a]">Workspace</span>
+          <nav className="flex min-w-0 items-center text-[12px] text-ink-3" aria-label="Browser navigation">
+            <span className="truncate rounded px-1 py-0.5 text-ink">Workspace</span>
             {browserPath.map((crumb) => (
               <div key={crumb.id} className="flex min-w-0 items-center">
-                <span className="mx-0.5 text-[#d6d3d1]">/</span>
+                <span className="mx-0.5 text-ink-4">/</span>
                 <span
                   className={cn(
                     "truncate rounded px-1 py-0.5",
-                    crumb.id === browserPath.at(-1)?.id ? "text-[#0a0a0a]" : "text-[#78716c]",
+                    crumb.id === browserPath.at(-1)?.id ? "text-ink" : "text-ink-3",
                   )}
                   title={crumb.title}
                 >
@@ -92,13 +92,13 @@ export function BrowserPaneUI() {
               </div>
             ))}
             {browserPath.length === 0 ? (
-              <span className="mx-0.5 text-[#d6d3d1]">/</span>
+              <span className="mx-0.5 text-ink-4">/</span>
             ) : null}
             {browserPath.length === 0 ? (
-              <span className="truncate rounded px-1 py-0.5 text-[#a8a29e]">All folders</span>
+              <span className="truncate rounded px-1 py-0.5 text-ink-4">All folders</span>
             ) : null}
             {browserPath.length > 0 && !browserRootTitle ? (
-              <span className="mx-0.5 text-[#d6d3d1]">/</span>
+              <span className="mx-0.5 text-ink-4">/</span>
             ) : null}
           </nav>
         </div>
@@ -125,7 +125,7 @@ export function BrowserPaneUI() {
             />
           ))}
           {rows.length === 0 ? (
-            <div className="px-3 py-10 text-center text-[12px] text-[#a8a29e]">Nothing here yet.</div>
+            <div className="px-3 py-10 text-center text-[12px] text-ink-4">Nothing here yet.</div>
           ) : null}
         </div>
       </div>
@@ -169,8 +169,8 @@ function BrowserPaneRow({
         className={cn(
           "flex items-center gap-1 rounded-md pr-1",
           isActiveArtifact || menuOpen
-            ? "bg-[#ebebe8] text-[#0a0a0a]"
-            : "text-[#44403c] hover:bg-[#f2f0ee] hover:text-[#0a0a0a]",
+            ? "bg-[rgb(var(--sel))] text-ink"
+            : "text-ink-2 hover:bg-[rgb(var(--hover))] hover:text-ink",
           isActiveArtifact ? "font-medium" : null,
         )}
       >
@@ -193,7 +193,7 @@ function BrowserPaneRow({
           style={{ paddingLeft }}
         >
           {row.kind === "folder" ? (
-            <span className="flex h-5 w-5 items-center justify-center text-[#78716c]">
+            <span className="flex h-5 w-5 items-center justify-center text-ink-3">
               {row.depth >= DRILL_DEPTH ? (
                 <ChevronRight className="h-3.5 w-3.5" strokeWidth={2} />
               ) : isExpanded ? (
@@ -212,7 +212,7 @@ function BrowserPaneRow({
             <button
               type="button"
               className={cn(
-                "flex h-5 w-5 shrink-0 items-center justify-center rounded text-[#a8a29e] transition-opacity hover:bg-[#e7e5e4] hover:text-[#0a0a0a]",
+                "flex h-5 w-5 shrink-0 items-center justify-center rounded text-ink-4 transition-opacity hover:bg-[rgb(var(--hover))] hover:text-ink",
                 menuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100",
               )}
               aria-label={`More actions for ${row.title}`}

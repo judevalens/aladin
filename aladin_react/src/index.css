@@ -221,3 +221,8 @@
     scrollbar-width: none;
     -ms-overflow-style: none;
 }
+
+/* Small mono section label used across feature surfaces. */
+.eyebrow {
+    @apply font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-3;
+}

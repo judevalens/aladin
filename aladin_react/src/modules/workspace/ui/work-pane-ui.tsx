@@ -21,8 +21,8 @@ export function WorkPaneUI() {
   } = useWorkPane();
 
   return (
-    <section className="flex min-w-0 flex-1 flex-col overflow-hidden bg-white">
-      <div className="h-10 border-b border-[#e7e5e4] bg-[#fafaf9]">
+    <section className="flex min-w-0 flex-1 flex-col overflow-hidden bg-bg">
+      <div className="h-10 border-b border-line bg-panel">
         <div className="scrollbar-hidden flex h-full min-w-0 overflow-x-auto overflow-y-hidden">
           {openArtifacts.map((artifact) => {
             const active = artifact.id === activeArtifact?.id;
@@ -32,15 +32,15 @@ export function WorkPaneUI() {
                 className={cn(
                   "group relative flex h-full items-center gap-2 border-r px-4 text-[12.5px] transition-colors",
                   active
-                    ? "border-[#e7e5e4] bg-white font-medium text-[#0a0a0a]"
-                    : "border-[#e7e5e4] bg-[#fafaf9] text-[#78716c] hover:bg-[#f5f5f4] hover:text-[#0a0a0a]",
+                    ? "border-line bg-bg font-medium text-ink"
+                    : "border-line bg-panel text-ink-3 hover:bg-raise hover:text-ink",
                 )}
                 onClick={() => onActivateArtifact(artifact.id)}
                 type="button"
               >
                 <span className="max-w-[200px] truncate">{artifact.title}</span>
                 <span
-                  className="ml-1 flex h-4 w-4 items-center justify-center rounded text-[#a8a29e] transition-colors hover:bg-[#ececea] hover:text-[#0a0a0a]"
+                  className="ml-1 flex h-4 w-4 items-center justify-center rounded text-ink-4 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
                   onClick={(event) => {
                     event.stopPropagation();
                     onCloseArtifact(artifact.id);
@@ -62,7 +62,7 @@ export function WorkPaneUI() {
           onJumpToFolder={onJumpToFolder}
         />
       ) : null}
-      <div className="min-h-0 flex-1 bg-white">
+      <div className="min-h-0 flex-1 bg-bg">
         {!activeArtifact ? (
           <PlaceholderPane
             title="Open a page"
@@ -109,24 +109,24 @@ function WorkPaneStatusBar({
   onJumpToFolder: (folderId: string) => void;
 }) {
   return (
-    <div className="flex items-center gap-3 border-b border-[#e7e5e4] bg-[#fafaf9] px-3.5 py-1.5">
-      <nav className="flex min-w-0 flex-1 items-center text-[12px] text-[#78716c]">
+    <div className="flex items-center gap-3 border-b border-line bg-panel px-3.5 py-1.5">
+      <nav className="flex min-w-0 flex-1 items-center text-[12px] text-ink-3">
         {folders.map((crumb, index) => (
           <div key={crumb.id} className="flex min-w-0 items-center">
             <button
               type="button"
               onClick={() => onJumpToFolder(crumb.id)}
-              className="max-w-[14ch] truncate rounded px-1 py-0.5 hover:bg-[#ebebe8] hover:text-[#0a0a0a]"
+              className="max-w-[14ch] truncate rounded px-1 py-0.5 hover:bg-[rgb(var(--hover))] hover:text-ink"
               title={crumb.title}
             >
               {crumb.title}
             </button>
-            <span className="mx-0.5 text-[#d6d3d1]">/</span>
+            <span className="mx-0.5 text-ink-4">/</span>
             {index === folders.length - 1 && artifactTitle ? null : null}
           </div>
         ))}
         {artifactTitle ? (
-          <span className="max-w-[24ch] truncate px-1 font-medium text-[#0a0a0a]" title={artifactTitle}>
+          <span className="max-w-[24ch] truncate px-1 font-medium text-ink" title={artifactTitle}>
             {artifactTitle}
           </span>
         ) : null}
@@ -173,8 +173,8 @@ function StatusUtilityIcon({
       className={cn(
         "flex h-6 w-6 items-center justify-center rounded transition-colors",
         isActive
-          ? "bg-[#0a0a0a] text-white hover:bg-[#1f1f1f]"
-          : "text-[#78716c] hover:bg-[#ebebe8] hover:text-[#0a0a0a]",
+          ? "bg-[rgb(var(--sel))] text-ink"
+          : "text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink",
       )}
     >
       {children}
