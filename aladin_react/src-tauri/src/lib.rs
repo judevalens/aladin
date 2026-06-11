@@ -53,6 +53,22 @@ pub fn run() {
             app.manage(workspace);
             Ok(())
         })
+        // SPIKE (local-vendor-cache): prove a sandboxed, opaque-origin Doc Surface
+        // iframe can load an ES module through a CUSTOM Tauri scheme under CSP.
+        // The real handler will resolve `vendor://deps/<sha>` against a local cache
+        // (app_cache_dir/vendor/<sha>) and fetch-on-miss from the backend; here we
+        // just return a recognizable module so the iframe can confirm it loaded.
+        .register_uri_scheme_protocol("vendor", |_app, _request| {
+            let body: Vec<u8> =
+                b"export const ANSWER = 42;\nexport function ping(){ return \"vendor-scheme-ok\"; }\n"
+                    .to_vec();
+            tauri::http::Response::builder()
+                .status(200)
+                .header("Content-Type", "text/javascript")
+                .header("Access-Control-Allow-Origin", "*")
+                .body(body)
+                .expect("build vendor scheme response")
+        })
         .invoke_handler(tauri::generate_handler![
             artifact_cmd::db_list_artifacts,
             artifact_cmd::db_get_artifact,
