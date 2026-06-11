@@ -15,8 +15,15 @@ function useServedUrl(pageId: string): string {
   const { runtime } = useAppComposition();
   const base = runtime.config.apiBaseUrl;
   const token = runtime.desktopSession.getToken();
-  const query = token ? `?access_token=${encodeURIComponent(token)}` : "";
-  return `${base}/content/${pageId}/${query}`;
+  const params = new URLSearchParams();
+  if (token) params.set("access_token", token);
+  // In the desktop app, signal the serve route to emit vendor://deps/<sha> import
+  // URLs so deps load from the local Tauri cache (zero network after first fetch).
+  if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+    params.set("client", "tauri");
+  }
+  const q = params.toString();
+  return `${base}/content/${pageId}/${q ? `?${q}` : ""}`;
 }
 
 /**

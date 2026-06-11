@@ -11,7 +11,6 @@ import {
 } from "@/modules/workspace/ui/workspace-shell-ui";
 import { SourcesRoute } from "@/modules/sources/sources-route";
 import { SandboxSpike } from "@/modules/doc-surface/spike/sandbox-spike";
-import { VendorSchemeSpike } from "@/modules/doc-surface/spike/vendor-scheme-spike";
 
 function WorkspaceRoute() {
   return (
@@ -37,12 +36,6 @@ export const router = createBrowserRouter([
     // Phase 0 Doc Surface spike — standalone, no auth, for browser + tauri:dev.
     path: "/spike/sandbox",
     element: <SandboxSpike />,
-  },
-  {
-    // Local-vendor-cache spike — custom `vendor://` scheme in a sandboxed iframe.
-    // Meaningful only in `npm run tauri:dev`.
-    path: "/spike/vendor-scheme",
-    element: <VendorSchemeSpike />,
   },
   {
     element: <ProtectedLayout />,

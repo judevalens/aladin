@@ -349,6 +349,20 @@ func TestDocSurface_EndToEnd(t *testing.T) {
 		t.Fatalf("unknown vendor sha = %d, want 404", r.StatusCode)
 	}
 
+	// Desktop client (?client=tauri): deps are addressed via the local vendor://
+	// scheme instead of /vendor, and the CSP allows that scheme.
+	tauriURL := "/content/" + pageID + "/?access_token=" + url.QueryEscape(token.Token) + "&client=tauri"
+	tresp, tbody := get(tauriURL, "")
+	if tresp.StatusCode != http.StatusOK {
+		t.Fatalf("client=tauri GET = %d, want 200", tresp.StatusCode)
+	}
+	if !strings.Contains(tbody, "vendor://deps/") || strings.Contains(tbody, `"/vendor/`) {
+		t.Fatalf("client=tauri should emit vendor://deps/ import URLs (not /vendor/):\n%.700s", tbody)
+	}
+	if csp := tresp.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'unsafe-inline' vendor:") {
+		t.Fatalf("client=tauri CSP must allow the vendor: scheme: %q", csp)
+	}
+
 	// Desktop iframe path: ?access_token query auth (no Authorization header) →
 	// the entry (and its inlined everything) authenticates with no sub-resources.
 	resp, qbody := get("/content/"+pageID+"/?access_token="+url.QueryEscape(token.Token), "")

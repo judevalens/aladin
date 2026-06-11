@@ -96,9 +96,15 @@ func (s *Server) handleContentServe(w http.ResponseWriter, r *http.Request) {
 
 	csp := docsurface.CSP
 	if len(im.Imports) > 0 {
-		// Vendored deps load from /vendor (this serving origin); the opaque-origin
-		// doc needs that origin in script-src ('self' matches nothing for it).
-		if origin, oerr := derivePublicOrigin(r); oerr == nil {
+		if r.URL.Query().Get("client") == "tauri" {
+			// Desktop app: deps load from a LOCAL cache via the custom vendor://
+			// scheme (zero network after first fetch). Rewrite /vendor/<sha> ->
+			// vendor://deps/<sha> and allow the scheme in script-src.
+			im = rewriteToVendorScheme(im)
+			csp = docsurface.CSPWithVendorScheme()
+		} else if origin, oerr := derivePublicOrigin(r); oerr == nil {
+			// Web: deps load from /vendor on this serving origin; the opaque-origin
+			// doc needs that origin in script-src ('self' matches nothing for it).
 			csp = docsurface.CSPWithVendor(origin)
 		}
 	}
@@ -141,6 +147,17 @@ func reconstructOrigin(raw string) (string, error) {
 		origin += ":" + port
 	}
 	return origin, nil
+}
+
+// rewriteToVendorScheme maps each /vendor/<sha> import to vendor://deps/<sha> for
+// the desktop app's local-cache scheme. The /vendor route + build are unchanged —
+// only the address form differs per client.
+func rewriteToVendorScheme(im docsurface.ImportMap) docsurface.ImportMap {
+	out := docsurface.ImportMap{Imports: make(map[string]string, len(im.Imports))}
+	for spec, u := range im.Imports {
+		out.Imports[spec] = "vendor://deps/" + strings.TrimPrefix(u, "/vendor/")
+	}
+	return out
 }
 
 func validHostname(h string) bool {

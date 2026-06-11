@@ -111,6 +111,13 @@ func CSPWithVendor(origin string) string {
 	return strings.Replace(CSP, "script-src 'unsafe-inline'", "script-src 'unsafe-inline' "+origin, 1)
 }
 
+// CSPWithVendorScheme widens script-src to allow the custom `vendor:` scheme, used
+// by the desktop (Tauri) app where deps are served from a local cache via
+// vendor://deps/<sha> instead of an HTTP origin. connect-src 'none' still holds.
+func CSPWithVendorScheme() string {
+	return strings.Replace(CSP, "script-src 'unsafe-inline'", "script-src 'unsafe-inline' vendor:", 1)
+}
+
 // PreviewHTML is EntryHTML for the headless preview renderer. It is byte-for-byte
 // the same document the serve route emits, except it carries the CSP as a <meta
 // http-equiv> tag: page.SetDocumentContent loads HTML with no HTTP headers, so
