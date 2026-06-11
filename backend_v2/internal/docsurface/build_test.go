@@ -59,12 +59,27 @@ func TestBuildReactPage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected dist/bundle.js: %v", err)
 	}
-	if len(data) < 10_000 {
-		t.Fatalf("bundle suspiciously small (%d bytes) — React not inlined?", len(data))
+	// React is now VENDORED (external), so the doc bundle is tiny and imports
+	// react/react-dom externally instead of inlining them.
+	if len(data) > 200_000 {
+		t.Fatalf("bundle should be small now react is vendored, got %d bytes", len(data))
 	}
-	// React must be inlined, not left as a bare/external import.
-	if strings.Contains(string(data), `from"react"`) || strings.Contains(string(data), `from "react"`) {
-		t.Fatalf("bundle still imports react externally — not self-contained")
+	if !strings.Contains(string(data), "react") {
+		t.Fatalf("bundle should reference external react, got:\n%s", string(data))
+	}
+	// The build emits an import map mapping the vendored react family to /vendor/<sha>.
+	imData, err := os.ReadFile(filepath.Join(root, "users", "user-abc", "pages", "p1", importMapPath))
+	if err != nil {
+		t.Fatalf("expected %s: %v", importMapPath, err)
+	}
+	var im ImportMap
+	if err := json.Unmarshal(imData, &im); err != nil {
+		t.Fatalf("importmap.json invalid: %v", err)
+	}
+	for _, spec := range []string{"react", "react-dom/client", "react/jsx-runtime"} {
+		if u := im.Imports[spec]; !strings.HasPrefix(u, "/vendor/") {
+			t.Fatalf("import map missing vendored %q: %#v", spec, im.Imports)
+		}
 	}
 	if res.ServedURL != "/content/p1/" {
 		t.Fatalf("ServedURL = %q", res.ServedURL)

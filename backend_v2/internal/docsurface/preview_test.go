@@ -59,6 +59,8 @@ func (f *fakeRuntime) Build(ctx context.Context, pageID string) (service.BuildRe
 	return service.BuildResult{OK: true, ServedURL: "/content/" + pageID + "/"}, nil
 }
 
+func (f *fakeRuntime) ReadVendor(sha string) ([]byte, error) { return nil, service.ErrNotFound }
+
 // newPreviewFixture wires the real filesystem store (seeded with the fixture
 // bundle) to a no-op build runtime, so Open loads the fixture without a network.
 func newPreviewFixture(t *testing.T, opts PreviewOptions, pages ...string) (*PreviewSessions, context.Context) {
@@ -173,6 +175,54 @@ func TestPreviewSession_Interactive(t *testing.T) {
 	}
 	if !hasLine(con.Exceptions, "kaboom") {
 		t.Errorf("exception not captured after click: %v", con.Exceptions)
+	}
+}
+
+// TestPreviewSession_VendoredDoc is the end-to-end vendored-deps regression: a
+// REAL build externalizes react (→ /vendor + import map), and the preview's local
+// vendor server + the LNA-disable flag must let the opaque-origin doc load those
+// modules and mount. "mounted + no exceptions + rendered content" implies the
+// import map resolved, the vendor server was reachable, react was shared (no
+// invalid-hook error), and no CSP/LNA block occurred.
+func TestPreviewSession_VendoredDoc(t *testing.T) {
+	if !esmReachable() {
+		t.Skip("esm.sh unreachable")
+	}
+	chromeAvailable(t)
+	root := t.TempDir()
+	st := NewStore(root)
+	rt := NewBuilder(st, filepath.Join(root, "cache", "esm")) // real builder — vendors deps
+	ctx := testCtx()
+	if _, err := st.EnsurePageDir(ctx, "p1"); err != nil {
+		t.Fatal(err)
+	}
+	src := `import { useState } from "react";
+import { createRoot } from "react-dom/client";
+function App(){ const [n]=useState(7); return <div><h1 id="title">vendored {n}</h1></div>; }
+createRoot(document.getElementById("root")).render(<App/>);`
+	if err := st.WriteFile(ctx, "p1", "index.tsx", []byte(src)); err != nil {
+		t.Fatal(err)
+	}
+
+	m := NewPreviewSessions(st, rt, PreviewOptions{}).(*PreviewSessions)
+	t.Cleanup(func() { _ = m.CloseAll(context.Background()) })
+
+	state, err := m.Open(ctx, "p1") // Open rebuilds (vendors) then loads via the import map
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if !state.Mounted {
+		t.Fatalf("vendored doc did not mount — import map / vendor server / react sharing broke: %+v", state)
+	}
+	if len(state.Exceptions) > 0 {
+		t.Fatalf("exceptions in vendored doc: %v", state.Exceptions)
+	}
+	snap, err := m.Snapshot(ctx, "p1")
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	if !strings.Contains(snap.Outline, "vendored 7") {
+		t.Errorf("vendored doc did not render expected content: %q", snap.Outline)
 	}
 }
 

@@ -19,6 +19,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"strings"
@@ -79,6 +81,13 @@ type PreviewSessions struct {
 
 	reaperStop     chan struct{}
 	stopReaperOnce sync.Once
+
+	// Local static server over the vendored deps, so the about:blank preview can
+	// load them via the import map. Started lazily, guarded by mu.
+	vendorStarted bool
+	vendorBase    string
+	vendorSrv     *http.Server
+	vendorErr     error
 }
 
 // previewSession is one live tab. opMu serializes chromedp ops on the tab; logMu
@@ -148,7 +157,10 @@ func (m *PreviewSessions) Open(ctx context.Context, pageID string) (service.Prev
 		return service.PreviewState{}, err
 	}
 	bundleCSS, _ := m.store.ReadFile(ctx, pageID, distDirName+"/bundle.css")
-	html := PreviewHTML(pageID, TokensCSS, string(bundleCSS), string(bundleJS))
+	html, err := m.previewHTML(ctx, pageID, string(bundleCSS), string(bundleJS))
+	if err != nil {
+		return service.PreviewState{}, err
+	}
 
 	s, err := m.getOrCreate(key)
 	if err != nil {
@@ -331,8 +343,72 @@ func (m *PreviewSessions) CloseAll(ctx context.Context) error {
 		m.allocCancel = nil
 		m.allocReady = false
 	}
+	if m.vendorSrv != nil {
+		_ = m.vendorSrv.Close()
+		m.vendorSrv = nil
+	}
 	m.stopReaperOnce.Do(func() { close(m.reaperStop) })
 	return nil
+}
+
+// previewHTML builds the preview document. For an ESM build (importmap.json
+// present), it absolutizes the /vendor URLs to the local vendor server and widens
+// the meta-CSP to that origin; otherwise it serves the legacy inline doc.
+func (m *PreviewSessions) previewHTML(ctx context.Context, pageID, css, js string) (string, error) {
+	var im ImportMap
+	csp := CSP
+	if data, derr := m.store.ReadFile(ctx, pageID, importMapPath); derr == nil {
+		if json.Unmarshal(data, &im) == nil {
+			if im.Imports == nil {
+				im.Imports = map[string]string{}
+			}
+			if len(im.Imports) > 0 {
+				base, err := m.ensureVendorServer()
+				if err != nil {
+					return "", fmt.Errorf("preview vendor server: %w", err)
+				}
+				abs := make(map[string]string, len(im.Imports))
+				for spec, u := range im.Imports {
+					abs[spec] = base + u // u is "/vendor/<sha>"
+				}
+				im.Imports = abs
+				csp = CSPWithVendor(base)
+			}
+		}
+	}
+	return PreviewHTML(pageID, TokensCSS, css, js, csp, im), nil
+}
+
+// ensureVendorServer lazily starts a localhost static server over the vendored
+// deps so the about:blank preview can load them via the import map. Production
+// serves /vendor from the API origin; this is preview-only.
+func (m *PreviewSessions) ensureVendorServer() (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.vendorStarted {
+		return m.vendorBase, m.vendorErr
+	}
+	m.vendorStarted = true
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		m.vendorErr = err
+		return "", err
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /vendor/{sha}", func(w http.ResponseWriter, r *http.Request) {
+		data, err := m.runtime.ReadVendor(r.PathValue("sha"))
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		_, _ = w.Write(data)
+	})
+	m.vendorSrv = &http.Server{Handler: mux}
+	m.vendorBase = "http://" + ln.Addr().String()
+	go func() { _ = m.vendorSrv.Serve(ln) }()
+	return m.vendorBase, nil
 }
 
 // --- session lifecycle -----------------------------------------------------
@@ -393,6 +469,11 @@ func (m *PreviewSessions) ensureAllocLocked() error {
 		chromedp.ExecPath(chromePath),
 		chromedp.NoSandbox,
 		chromedp.DisableGPU,
+		// The preview loads about:blank (an opaque "public" origin) and fetches the
+		// local vendor server; disable Local/Private Network Access checks so those
+		// loads aren't blocked. (Production loads the doc FROM the API origin, so
+		// it's local->local and this never applies there.)
+		chromedp.Flag("disable-features", "LocalNetworkAccessChecks,PrivateNetworkAccessChecks,BlockInsecurePrivateNetworkRequests"),
 	)
 	m.allocCtx, m.allocCancel = chromedp.NewExecAllocator(context.Background(), opts...)
 	m.allocReady = true

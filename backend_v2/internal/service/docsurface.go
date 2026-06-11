@@ -58,6 +58,10 @@ type DocSurfaceStore interface {
 type WorkspaceRuntime interface {
 	// Build bundles pageID's index.tsx into dist/bundle.js and returns the result.
 	Build(ctx context.Context, pageID string) (BuildResult, error)
+	// ReadVendor returns the bytes of a content-addressed vendored dependency file
+	// (served publicly at GET /vendor/<sha>). sha is a bare hex string; the impl
+	// rejects anything else. Vendored libs are shared across all users/pages.
+	ReadVendor(sha string) ([]byte, error)
 }
 
 // PreviewState is the agent's view of the live headless preview tab after an op.

@@ -58,6 +58,7 @@ type builder struct {
 	store    service.DocSurfaceStore
 	cacheDir string
 	client   *http.Client
+	vendor   *vendorStore
 	// builds serializes concurrent Build() calls per pageID so two agents
 	// can't race on the same dist/bundle.js and corrupt it.
 	builds sync.Map // pageID -> *sync.Mutex
@@ -73,7 +74,16 @@ func (b *builder) lockPage(pageID string) func() {
 // NewBuilder returns a WorkspaceRuntime. cacheDir is the shared content-addressed
 // cache for fetched CDN modules (one copy per url across all users/pages).
 func NewBuilder(store service.DocSurfaceStore, cacheDir string) service.WorkspaceRuntime {
-	return &builder{store: store, cacheDir: cacheDir, client: &http.Client{Timeout: 30 * time.Second}}
+	b := &builder{store: store, cacheDir: cacheDir, client: &http.Client{Timeout: 30 * time.Second}}
+	// Vendored libs live next to the esm cache (e.g. <data>/cache/vendor), shared
+	// across all users/pages and across the api + mcp processes.
+	b.vendor = newVendorStore(b, filepath.Join(filepath.Dir(cacheDir), vendorDirName))
+	return b
+}
+
+// ReadVendor serves a content-addressed vendored dependency file (GET /vendor/<sha>).
+func (b *builder) ReadVendor(sha string) ([]byte, error) {
+	return b.vendor.ReadVendor(sha)
 }
 
 func (b *builder) Build(ctx context.Context, pageID string) (service.BuildResult, error) {
@@ -100,7 +110,8 @@ func (b *builder) Build(ctx context.Context, pageID string) (service.BuildResult
 		Outfile:          filepath.Join(dir, distDirName, "bundle.js"),
 		Bundle:           true,
 		Write:            true,
-		Format:           esbuild.FormatIIFE,
+		Metafile:         true, // discover which deps were left external (vendored)
+		Format:           esbuild.FormatESModule,
 		Platform:         esbuild.PlatformBrowser,
 		Target:           esbuild.ES2020,
 		JSX:              esbuild.JSXAutomatic,
@@ -123,12 +134,90 @@ func (b *builder) Build(ctx context.Context, pageID string) (service.BuildResult
 	if len(result.Errors) > 0 {
 		return service.BuildResult{OK: false, Log: formatMessages(result.Errors)}, nil
 	}
+	// Resolve the externalized (vendored) deps into an import map persisted next to
+	// the bundle. A vendoring failure is a soft build failure so the agent iterates.
+	im, vlog, ok := b.resolveImportMap(ctx, result.Metafile, pins)
+	if !ok {
+		return service.BuildResult{OK: false, Log: vlog}, nil
+	}
+	if err := b.writeImportMap(ctx, pageID, im); err != nil {
+		return service.BuildResult{}, err
+	}
 	b.writeBuildMeta(ctx, pageID, dir)
 	return service.BuildResult{
 		OK:        true,
 		ServedURL: "/content/" + pageID + "/",
 		Log:       formatMessages(result.Warnings),
 	}, nil
+}
+
+// importMapPath is the page-relative path of the persisted import map.
+const importMapPath = distDirName + "/importmap.json"
+
+// resolveImportMap builds + caches a vendored file for each externalized specifier
+// the bundle imports (discovered from the esbuild metafile) and returns the import
+// map. Returns ok=false with a readable log on a vendoring failure.
+func (b *builder) resolveImportMap(ctx context.Context, metafile string, pins map[string]string) (ImportMap, string, bool) {
+	im := ImportMap{Imports: map[string]string{}}
+	needReact := false
+	for _, spec := range parseExternalImports(metafile) {
+		if !isVendored(spec) {
+			continue // a stray external (shouldn't happen) — leave it unmapped
+		}
+		ref, err := b.vendor.Resolve(ctx, spec, pins)
+		if err != nil {
+			return ImportMap{}, "vendoring " + spec + ": " + err.Error(), false
+		}
+		im.Imports[spec] = "/" + vendorDirName + "/" + ref.Sha
+		if reactFamily[spec] && spec != "react" {
+			needReact = true // its bare `import "react"` needs the shared react mapped
+		}
+	}
+	if needReact {
+		if _, ok := im.Imports["react"]; !ok {
+			ref, err := b.vendor.Resolve(ctx, "react", pins)
+			if err != nil {
+				return ImportMap{}, "vendoring react: " + err.Error(), false
+			}
+			im.Imports["react"] = "/" + vendorDirName + "/" + ref.Sha
+		}
+	}
+	return im, "", true
+}
+
+func (b *builder) writeImportMap(ctx context.Context, pageID string, im ImportMap) error {
+	data, err := json.Marshal(im)
+	if err != nil {
+		return err
+	}
+	return b.store.WriteFile(ctx, pageID, importMapPath, data)
+}
+
+// parseExternalImports returns the unique specifiers the bundle imports that
+// esbuild left external (i.e. the vendored deps), from the build metafile.
+func parseExternalImports(metafile string) []string {
+	var m struct {
+		Outputs map[string]struct {
+			Imports []struct {
+				Path     string `json:"path"`
+				External bool   `json:"external"`
+			} `json:"imports"`
+		} `json:"outputs"`
+	}
+	if json.Unmarshal([]byte(metafile), &m) != nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, o := range m.Outputs {
+		for _, imp := range o.Imports {
+			if imp.External && !seen[imp.Path] {
+				seen[imp.Path] = true
+				out = append(out, imp.Path)
+			}
+		}
+	}
+	return out
 }
 
 // writeBuildMeta drops the build-success marker. Best-effort: a marker write
@@ -180,6 +269,11 @@ func (b *builder) cdnPlugin(ctx context.Context, pins map[string]string) esbuild
 				// Entry point and local relative/absolute imports -> default fs resolution.
 				if args.Kind == esbuild.ResolveEntryPoint || strings.HasPrefix(args.Path, ".") || strings.HasPrefix(args.Path, "/") {
 					return esbuild.OnResolveResult{}, nil
+				}
+				// Vendored deps (react family + heavy libs) load from /vendor at
+				// runtime via the import map — keep them external, don't inline.
+				if isVendored(args.Path) {
+					return esbuild.OnResolveResult{Path: args.Path, External: true}, nil
 				}
 				// Bare specifier from local code -> esm.sh (version-pinned).
 				if !validBareSpec(args.Path) {

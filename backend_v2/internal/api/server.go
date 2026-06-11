@@ -225,6 +225,10 @@ func isPublicRoute(r *http.Request) bool {
 	if path == "/api/provider-connections/nango/webhook" {
 		return true
 	}
+	// Vendored Doc Surface deps are public, content-addressed static files.
+	if strings.HasPrefix(path, "/vendor/") {
+		return true
+	}
 	return false
 }
 

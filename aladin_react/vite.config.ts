@@ -25,10 +25,20 @@ export default defineConfig({
       },
       // Doc Surface built pages are served by the API. Proxying keeps the iframe
       // same-origin as the app in dev (the session cookie rides along); the
-      // sandbox attribute still gives the frame an opaque origin.
+      // sandbox attribute still gives the frame an opaque origin. xfwd:true adds
+      // X-Forwarded-Host so the backend derives the BROWSER origin (localhost:4173)
+      // for the CSP script-src that allows the /vendor module loads.
       "/content": {
         target: "http://localhost:8000",
         changeOrigin: true,
+        xfwd: true,
+      },
+      // Public, content-addressed vendored deps (react, mermaid, …) loaded by the
+      // Doc Surface import map at runtime.
+      "/vendor": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+        xfwd: true,
       },
     },
   },

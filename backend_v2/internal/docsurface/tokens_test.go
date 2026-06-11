@@ -6,7 +6,7 @@ import (
 )
 
 func TestPreviewHTMLCarriesMetaCSP(t *testing.T) {
-	html := PreviewHTML("My Page", TokensCSS, "body{color:red}", `console.log("hi")`)
+	html := PreviewHTML("My Page", TokensCSS, "body{color:red}", `console.log("hi")`, CSP, ImportMap{})
 
 	// The policy must travel inline as a meta tag (SetDocumentContent has no headers).
 	wantMeta := `<meta http-equiv="Content-Security-Policy" content="` + CSP + `">`
@@ -32,11 +32,36 @@ func TestPreviewHTMLCarriesMetaCSP(t *testing.T) {
 // EntryHTML plus the meta tag and nothing else, so what the agent previews is
 // what the iframe serves.
 func TestPreviewHTMLMatchesEntryBody(t *testing.T) {
-	entry := EntryHTML("T", TokensCSS, "", `1`)
-	preview := PreviewHTML("T", TokensCSS, "", `1`)
+	entry := EntryHTML("T", TokensCSS, "", `1`, ImportMap{})
+	preview := PreviewHTML("T", TokensCSS, "", `1`, CSP, ImportMap{})
 	meta := "<meta http-equiv=\"Content-Security-Policy\" content=\"" + CSP + "\">\n"
 	// Removing the injected meta line should recover EntryHTML exactly.
 	if got := strings.Replace(preview, meta, "", 1); got != entry {
 		t.Fatalf("PreviewHTML is not EntryHTML+meta:\n--- recovered ---\n%s\n--- entry ---\n%s", got, entry)
+	}
+}
+
+// TestEntryHTMLImportMap: an ESM build (non-nil Imports) emits an import map +
+// module script; a legacy build (nil Imports) stays a bare classic script.
+func TestEntryHTMLImportMap(t *testing.T) {
+	im := ImportMap{Imports: map[string]string{"react": "/vendor/abc123", "react-dom/client": "/vendor/def456"}}
+	esm := EntryHTML("T", TokensCSS, "", `createRoot()`, im)
+	for _, frag := range []string{`<script type="importmap">`, `<script type="module">`, `/vendor/abc123`, `"react-dom/client"`} {
+		if !strings.Contains(esm, frag) {
+			t.Errorf("ESM EntryHTML missing %q", frag)
+		}
+	}
+	legacy := EntryHTML("T", TokensCSS, "", `var x=1`, ImportMap{})
+	if strings.Contains(legacy, "importmap") || strings.Contains(legacy, `type="module"`) {
+		t.Errorf("legacy (nil import map) must be a bare <script>:\n%s", legacy)
+	}
+	if !strings.Contains(legacy, "<script>var x=1</script>") {
+		t.Errorf("legacy bare script missing")
+	}
+
+	// CSPWithVendor widens script-src by exactly the origin, keeps connect-src none.
+	csp := CSPWithVendor("http://localhost:8000")
+	if !strings.Contains(csp, "script-src 'unsafe-inline' http://localhost:8000") || !strings.Contains(csp, "connect-src 'none'") {
+		t.Errorf("CSPWithVendor wrong: %s", csp)
 	}
 }

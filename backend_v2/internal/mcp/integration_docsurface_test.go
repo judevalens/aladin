@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -309,17 +310,43 @@ func TestDocSurface_EndToEnd(t *testing.T) {
 	if csp := resp.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "connect-src 'none'") || !strings.Contains(csp, "script-src 'unsafe-inline'") {
 		t.Fatalf("CSP header missing/weak: %q", csp)
 	}
-	if !strings.Contains(body, `id="root"`) || !strings.Contains(body, "<script>") {
-		t.Fatalf("entry HTML missing #root / inline script:\n%.500s", body)
+	if !strings.Contains(body, `id="root"`) {
+		t.Fatalf("entry HTML missing #root:\n%.500s", body)
+	}
+	// Vendored deps: the doc is a small ESM module + an import map -> /vendor.
+	if !strings.Contains(body, `<script type="importmap">`) || !strings.Contains(body, `<script type="module">`) {
+		t.Fatalf("entry HTML should be ESM (import map + module script):\n%.700s", body)
+	}
+	if !strings.Contains(body, "/vendor/") {
+		t.Fatalf("entry HTML import map should reference /vendor:\n%.700s", body)
 	}
 	if strings.Contains(body, `src="bundle.js`) || strings.Contains(body, `href="tokens.css`) {
-		t.Fatalf("entry HTML must inline (no external sub-resources):\n%.500s", body)
+		t.Fatalf("entry HTML must inline tokens/css (no <link>/<script src>):\n%.500s", body)
 	}
-	if len(body) < 50_000 { // the React bundle is inlined, so the doc is large
-		t.Fatalf("entry HTML suspiciously small (%d bytes) — bundle not inlined?", len(body))
-	}
-	if !strings.Contains(body, "--amber") { // design token definitions inlined
+	if !strings.Contains(body, "--amber") { // design tokens still inlined
 		t.Fatalf("entry HTML missing inlined design tokens")
+	}
+
+	// The import map references /vendor/<sha>; that route is PUBLIC (no auth) + immutable.
+	if mm := regexp.MustCompile(`/vendor/([a-f0-9]{64})`).FindStringSubmatch(body); mm != nil {
+		vresp, vbody := get("/vendor/"+mm[1], "") // no token — public route
+		if vresp.StatusCode != http.StatusOK {
+			t.Fatalf("public GET /vendor/<sha> = %d, want 200", vresp.StatusCode)
+		}
+		if ac := vresp.Header.Get("Access-Control-Allow-Origin"); ac != "*" {
+			t.Fatalf("vendor ACAO = %q, want * (opaque-origin module fetch)", ac)
+		}
+		if cc := vresp.Header.Get("Cache-Control"); !strings.Contains(cc, "immutable") {
+			t.Fatalf("vendor Cache-Control = %q, want immutable", cc)
+		}
+		if len(vbody) == 0 {
+			t.Fatal("vendor body empty")
+		}
+	} else {
+		t.Fatalf("no /vendor/<sha> in import map:\n%.800s", body)
+	}
+	if r, _ := get("/vendor/deadbeef", ""); r.StatusCode != http.StatusNotFound {
+		t.Fatalf("unknown vendor sha = %d, want 404", r.StatusCode)
 	}
 
 	// Desktop iframe path: ?access_token query auth (no Authorization header) →

@@ -1,10 +1,21 @@
 package docsurface
 
 import (
+	"encoding/json"
 	"html"
 	"regexp"
 	"strings"
 )
+
+// ImportMap is the (optional) ES module import map for a built doc: bare specifier
+// -> /vendor/<sha> URL (relative, so it resolves against the doc's base origin),
+// plus best-effort SRI. A NIL Imports map means a legacy (inlined IIFE) build with
+// no vendored deps — served the old way. A non-nil (possibly empty) map means an
+// ESM build served as a module + import map.
+type ImportMap struct {
+	Imports   map[string]string `json:"imports"`
+	Integrity map[string]string `json:"integrity,omitempty"`
+}
 
 // CSP is the Content-Security-Policy applied to every Doc Surface page. The page
 // is fully self-contained: the design tokens, built CSS, and the IIFE bundle
@@ -60,10 +71,20 @@ func breakInlineClosers(s string) string {
 // 'self' matches nothing, so same-host sub-resources can't be loaded. Inlining
 // also means only the entry document needs auth (no sub-resource requests). The
 // CSP ('unsafe-inline' script/style, connect-src 'none') is set by the serve route.
-func EntryHTML(title, tokensCSS, bundleCSS, bundleJS string) string {
+func EntryHTML(title, tokensCSS, bundleCSS, bundleJS string, im ImportMap) string {
 	css := "<style>" + tokensCSS + "</style>"
 	if bundleCSS != "" {
 		css += "<style>" + breakInlineClosers(bundleCSS) + "</style>"
+	}
+	var scripts string
+	if im.Imports == nil {
+		// Legacy build: inlined IIFE bundle, no vendored deps.
+		scripts = "<script>" + breakInlineClosers(bundleJS) + "</script>"
+	} else {
+		// ESM build: an import map (bare specifier -> /vendor/<sha>) then the module.
+		imJSON, _ := json.Marshal(im)
+		scripts = `<script type="importmap">` + breakInlineClosers(string(imJSON)) + "</script>\n" +
+			`<script type="module">` + breakInlineClosers(bundleJS) + "</script>"
 	}
 	return `<!doctype html>
 <html lang="en">
@@ -75,9 +96,19 @@ func EntryHTML(title, tokensCSS, bundleCSS, bundleJS string) string {
 </head>
 <body>
 <div id="root"></div>
-<script>` + breakInlineClosers(bundleJS) + `</script>
+` + scripts + `
 </body>
 </html>`
+}
+
+// CSPWithVendor returns the doc CSP with the vendor origin added to script-src so
+// the opaque-origin doc can load /vendor ES modules. connect-src 'none' still holds
+// (module loads ride script-src, not connect-src), so no exfil path is opened.
+func CSPWithVendor(origin string) string {
+	if origin == "" {
+		return CSP
+	}
+	return strings.Replace(CSP, "script-src 'unsafe-inline'", "script-src 'unsafe-inline' "+origin, 1)
 }
 
 // PreviewHTML is EntryHTML for the headless preview renderer. It is byte-for-byte
@@ -85,9 +116,9 @@ func EntryHTML(title, tokensCSS, bundleCSS, bundleJS string) string {
 // http-equiv> tag: page.SetDocumentContent loads HTML with no HTTP headers, so
 // the policy must travel inline for the preview to render under the SAME
 // constraints as production (an agent that passes preview then passes the iframe).
-func PreviewHTML(title, tokensCSS, bundleCSS, bundleJS string) string {
-	doc := EntryHTML(title, tokensCSS, bundleCSS, bundleJS)
-	meta := "<meta http-equiv=\"Content-Security-Policy\" content=\"" + CSP + "\">\n"
+func PreviewHTML(title, tokensCSS, bundleCSS, bundleJS, csp string, im ImportMap) string {
+	doc := EntryHTML(title, tokensCSS, bundleCSS, bundleJS, im)
+	meta := "<meta http-equiv=\"Content-Security-Policy\" content=\"" + csp + "\">\n"
 	// Insert immediately after the charset meta so the policy is the first thing
 	// the parser applies. EntryHTML always emits this exact line.
 	return strings.Replace(doc, "<meta charset=\"utf-8\">\n", "<meta charset=\"utf-8\">\n"+meta, 1)
