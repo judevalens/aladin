@@ -13,6 +13,8 @@ export function artifactKindFromString(value: string | null | undefined): Artifa
       return "voice";
     case "file":
       return "file";
+    case "app":
+      return "app";
     default:
       return "note";
   }

@@ -62,7 +62,7 @@ func main() {
 		slog.Info("mcp: converter reachable", "component", "mcp", "url", cfg.ConverterURL)
 	}
 
-	deps := app.NewDependencies(pool)
+	deps := app.NewDependenciesWithProviderConnections(pool, config.LoadProviderConnections(), cfg.DataVolumePath)
 	// One *Client serves both jobs: markdown<->blocks conversion and the
 	// /admin/* collab bridge (same base URL, shared secret).
 	server := mcpserver.New(cfg.HTTPAddr, deps, deps.PageDocuments(), converter, converter)

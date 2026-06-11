@@ -18,6 +18,12 @@ captures
 **/xcshareddata/WorkspaceSettings.xcsettings
 node_modules/
 
+# Doc Surface runtime data volume (built bundles, esm/vendor cache, per-user pages)
+backend_v2/data/
+# Nested local Claude state + stray root lockfile
+aladin_react/.claude/
+/package-lock.json
+
 
 *.env
 .env.test

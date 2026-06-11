@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 
 	"aladin/backend_v2/internal/config"
+	"aladin/backend_v2/internal/docsurface"
 	"aladin/backend_v2/internal/repo"
 	coreservice "aladin/backend_v2/internal/service"
 
@@ -28,6 +29,12 @@ type Dependencies interface {
 	// OutboxDrainer is the CDC live-delivery loop (may be nil in tests). Started
 	// by the server at boot.
 	OutboxDrainer() *coreservice.OutboxDrainer
+	// DocSurfaceStore + WorkspaceRuntime back the "app" artifact surface: the
+	// MCP process writes files + builds; the API process serves built dist.
+	DocSurfaceStore() coreservice.DocSurfaceStore
+	WorkspaceRuntime() coreservice.WorkspaceRuntime
+	// Preview drives interactive headless inspection of built app pages (MCP only).
+	Preview() coreservice.PreviewService
 }
 
 type StaticDependencies struct {
@@ -46,6 +53,9 @@ type StaticDependencies struct {
 	RealtimeKeys           coreservice.SubscriptionKeyResolver
 	SyncSvc                coreservice.SyncService
 	OutboxDrainerSvc       *coreservice.OutboxDrainer
+	DocSurfaceStoreSvc     coreservice.DocSurfaceStore
+	WorkspaceRuntimeSvc    coreservice.WorkspaceRuntime
+	PreviewSvc             coreservice.PreviewService
 }
 
 func (d StaticDependencies) Auth() coreservice.AuthService          { return d.AuthSvc }
@@ -73,6 +83,15 @@ func (d StaticDependencies) Sync() coreservice.SyncService { return d.SyncSvc }
 func (d StaticDependencies) OutboxDrainer() *coreservice.OutboxDrainer {
 	return d.OutboxDrainerSvc
 }
+func (d StaticDependencies) DocSurfaceStore() coreservice.DocSurfaceStore {
+	return d.DocSurfaceStoreSvc
+}
+func (d StaticDependencies) WorkspaceRuntime() coreservice.WorkspaceRuntime {
+	return d.WorkspaceRuntimeSvc
+}
+func (d StaticDependencies) Preview() coreservice.PreviewService {
+	return d.PreviewSvc
+}
 
 type wiring struct {
 	auth                coreservice.AuthService
@@ -90,6 +109,9 @@ type wiring struct {
 	rtKeys              coreservice.SubscriptionKeyResolver
 	sync                coreservice.SyncService
 	outboxDrainer       *coreservice.OutboxDrainer
+	docSurfaceStore     coreservice.DocSurfaceStore
+	workspaceRuntime    coreservice.WorkspaceRuntime
+	preview             coreservice.PreviewService
 }
 
 func (w wiring) Auth() coreservice.AuthService          { return w.auth }
@@ -113,19 +135,25 @@ func (w wiring) Realtime() coreservice.RealtimeEventService {
 func (w wiring) RealtimeKeyResolver() coreservice.SubscriptionKeyResolver {
 	return w.rtKeys
 }
-func (w wiring) Sync() coreservice.SyncService { return w.sync }
-func (w wiring) OutboxDrainer() *coreservice.OutboxDrainer { return w.outboxDrainer }
+func (w wiring) Sync() coreservice.SyncService                  { return w.sync }
+func (w wiring) OutboxDrainer() *coreservice.OutboxDrainer      { return w.outboxDrainer }
+func (w wiring) DocSurfaceStore() coreservice.DocSurfaceStore   { return w.docSurfaceStore }
+func (w wiring) WorkspaceRuntime() coreservice.WorkspaceRuntime { return w.workspaceRuntime }
+func (w wiring) Preview() coreservice.PreviewService            { return w.preview }
 
 func NewDependencies(pool *pgxpool.Pool) Dependencies {
-	return NewDependenciesWithProviderConnections(pool, config.LoadProviderConnections())
+	return NewDependenciesWithProviderConnections(pool, config.LoadProviderConnections(), config.DataVolumePathOrDefault())
 }
 
-func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig config.ProviderConnectionConfig) Dependencies {
+func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig config.ProviderConnectionConfig, dataVolumePath string) Dependencies {
 	authRepo := repo.NewAuthPostgres(pool)
 	sourceRepo := repo.NewSourcePostgres(pool)
 	recordRepo := repo.NewRecordPostgres(pool)
 	artifactRepo := repo.NewArtifactsPostgres(pool)
 	artifactFiles := repo.NewFilesystemArtifactStore(uploadDir(), audioDir())
+	docStore := docsurface.NewStore(dataVolumePath)
+	docRuntime := docsurface.NewBuilder(docStore, filepath.Join(dataVolumePath, "cache", "esm"))
+	docPreview := docsurface.NewPreviewSessions(docStore, docRuntime, docsurface.PreviewOptions{})
 	feedRepo := repo.NewFeedPostgres(pool)
 	insightRepo := repo.NewInsightPostgres(pool)
 	systemRepo := repo.NewSystemPostgres(pool)
@@ -165,6 +193,9 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		rtKeys:              realtimeKeys,
 		sync:                syncSvc,
 		outboxDrainer:       outboxDrainer,
+		docSurfaceStore:     docStore,
+		workspaceRuntime:    docRuntime,
+		preview:             docPreview,
 	}
 }
 

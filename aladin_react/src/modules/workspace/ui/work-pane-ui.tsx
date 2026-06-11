@@ -4,6 +4,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { PlaceholderPane } from "@/components/ui/aladin";
 import { FileArtifactUI, LinkArtifactUI, VoiceArtifactUI } from "@/modules/artifacts/ui/artifact-ui";
 import { PageEditorUI } from "@/modules/pages/ui/page-editor-ui";
+import { DocSurfaceKeepAlive } from "@/modules/doc-surface/ui/doc-surface-ui";
 import { useWorkPane, type WorkPaneCrumb } from "@/modules/workspace/hooks/use-workspace-state";
 import { cn } from "@/shared/lib/utils";
 
@@ -71,6 +72,11 @@ export function WorkPaneUI() {
           />
         ) : activeArtifact.kind === "note" ? (
           <PageEditorUI pageId={activeArtifact.id} />
+        ) : activeArtifact.kind === "app" ? (
+          <DocSurfaceKeepAlive
+            activeId={activeArtifact.id}
+            artifacts={openArtifacts.filter((a) => a.kind === "app")}
+          />
         ) : activeArtifact.kind === "link" ? (
           <ScrollArea className="h-full">
             <div className="mx-auto w-full max-w-workspace-max">

@@ -10,6 +10,7 @@ import {
   WorkspaceShellUI,
 } from "@/modules/workspace/ui/workspace-shell-ui";
 import { SourcesRoute } from "@/modules/sources/sources-route";
+import { SandboxSpike } from "@/modules/doc-surface/spike/sandbox-spike";
 
 function WorkspaceRoute() {
   return (
@@ -30,6 +31,11 @@ export const router = createBrowserRouter([
   {
     path: "/register",
     element: <AuthUI mode="register" />,
+  },
+  {
+    // Phase 0 Doc Surface spike — standalone, no auth, for browser + tauri:dev.
+    path: "/spike/sandbox",
+    element: <SandboxSpike />,
   },
   {
     element: <ProtectedLayout />,

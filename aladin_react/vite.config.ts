@@ -23,6 +23,13 @@ export default defineConfig({
         target: "http://localhost:8000",
         changeOrigin: true,
       },
+      // Doc Surface built pages are served by the API. Proxying keeps the iframe
+      // same-origin as the app in dev (the session cookie rides along); the
+      // sandbox attribute still gives the frame an opaque origin.
+      "/content": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
     },
   },
   preview: {

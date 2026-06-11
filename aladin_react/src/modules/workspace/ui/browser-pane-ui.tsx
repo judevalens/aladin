@@ -4,6 +4,7 @@ import {
   Columns3,
   FileText,
   Folder,
+  Layout,
   Link2,
   Mic,
   Paperclip,
@@ -34,6 +35,7 @@ const ARTIFACT_ICONS: Record<ArtifactKind, LucideIcon> = {
   link: Link2,
   voice: Mic,
   file: Paperclip,
+  app: Layout,
 };
 
 export function BrowserPaneUI() {

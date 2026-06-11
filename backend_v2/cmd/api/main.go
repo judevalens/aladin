@@ -51,7 +51,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	deps := app.NewDependenciesWithProviderConnections(pool, cfg.ProviderConnections)
+	deps := app.NewDependenciesWithProviderConnections(pool, cfg.ProviderConnections, cfg.DataVolumePath)
 	server := api.NewWithDependencies(cfg.HTTPAddr, deps)
 
 	// CDC outbox drain: tails outbox_events and publishes each frame to its

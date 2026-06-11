@@ -184,7 +184,7 @@ export interface BreadcrumbRecord {
   label: string;
 }
 
-export type ArtifactKind = "note" | "link" | "voice" | "file";
+export type ArtifactKind = "note" | "link" | "voice" | "file" | "app";
 
 export interface Artifact {
   id: string;

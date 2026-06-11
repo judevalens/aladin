@@ -59,6 +59,7 @@ func NewWithDependencies(addr string, deps app.Dependencies) *Server {
 	s.registerArtifactRoutes(mux)
 	s.registerPageRoutes(mux)
 	s.registerFileRoutes(mux)
+	s.registerContentRoutes(mux)
 	s.registerRealtimeRoutes(mux)
 	s.registerProviderConnectionRoutes(mux)
 	s.registerSyncRoutes(mux)
@@ -90,6 +91,12 @@ func NewWithDependencies(addr string, deps app.Dependencies) *Server {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	return s
+}
+
+// Handler exposes the fully-wrapped HTTP handler (auth + cors + tracing) for
+// in-process integration tests.
+func (s *Server) Handler() http.Handler {
+	return s.httpServer.Handler
 }
 
 func (s *Server) Run() error {
@@ -183,7 +190,10 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 				return
 			}
 		}
-		if isRealtimeWebSocketRoute(r) {
+		// The realtime WS and Doc Surface content routes can't carry an
+		// Authorization header (a WebSocket handshake / an <iframe> load), so
+		// they accept the bearer token as an ?access_token query param instead.
+		if isRealtimeWebSocketRoute(r) || isContentRoute(r) {
 			if token := strings.TrimSpace(r.URL.Query().Get("access_token")); token != "" {
 				principal, authErr := coreservice.ResolveBearerPrincipal(r.Context(), s.deps.Auth(), "Bearer "+token)
 				if authErr == nil {
@@ -220,6 +230,10 @@ func isPublicRoute(r *http.Request) bool {
 
 func isRealtimeWebSocketRoute(r *http.Request) bool {
 	return r.Method == http.MethodGet && r.URL.Path == "/api/events/ws"
+}
+
+func isContentRoute(r *http.Request) bool {
+	return r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/content/")
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

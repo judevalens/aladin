@@ -7,6 +7,7 @@ import {
   FileText,
   Folder,
   Home,
+  Layout,
   Link2,
   Mic,
   Paperclip,
@@ -28,6 +29,7 @@ const TYPE_META: Record<ArtifactKind, { label: string; icon: LucideIcon }> = {
   link: { label: "Link", icon: Link2 },
   voice: { label: "Voice", icon: Mic },
   file: { label: "File", icon: Paperclip },
+  app: { label: "App", icon: Layout },
 };
 
 function findArtifactNode(tree: BrowserTreeNode[], artifactId: string): BrowserTreeNode | null {

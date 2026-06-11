@@ -1,0 +1,108 @@
+package service
+
+import "context"
+
+// Doc Surface ("app" artifacts) — agent-authored multi-file React pages built
+// server-side with esbuild and rendered in a sandboxed iframe. Source lives as
+// files on a data volume (users/{userId}/pages/{pageId}/...), NOT in Postgres;
+// Postgres holds only the artifact row + the MD summary (the KG spine).
+//
+// These interfaces are declared here (the service layer) so app.Dependencies can
+// expose them; the concrete impls live in internal/docsurface.
+
+// FileEntry is one item in a directory listing.
+type FileEntry struct {
+	Name  string `json:"name"`
+	IsDir bool   `json:"is_dir"`
+	Size  int64  `json:"size,omitempty"`
+}
+
+// LibEntry is one installed dependency (resolved to an esm.sh URL at build time
+// and emitted as an external ESM import the browser loads at runtime).
+type LibEntry struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+}
+
+// BuildResult is what build_app returns to the agent. A failed build is OK=false
+// with a non-empty Log (compiler errors) — NOT a Go error — so the agent can
+// read the errors and iterate.
+type BuildResult struct {
+	OK        bool   `json:"ok"`
+	ServedURL string `json:"served_url,omitempty"`
+	Log       string `json:"log,omitempty"`
+}
+
+// DocSurfaceStore is per-user, per-page file IO over the data volume. The userID
+// is ALWAYS derived from the ctx Principal inside the impl — never passed by a
+// caller — and combined with pageID through a traversal-safe path join.
+type DocSurfaceStore interface {
+	// EnsurePageDir creates users/{userId}/pages/{pageId}/ and returns its abs path.
+	EnsurePageDir(ctx context.Context, pageID string) (string, error)
+	// PageDir returns the abs path for (userID-from-ctx, pageID) without creating it.
+	PageDir(ctx context.Context, pageID string) (string, error)
+	ListDir(ctx context.Context, pageID, relPath string) ([]FileEntry, error)
+	ReadFile(ctx context.Context, pageID, relPath string) ([]byte, error)
+	WriteFile(ctx context.Context, pageID, relPath string, data []byte) error
+	DeleteFile(ctx context.Context, pageID, relPath string) error
+	SearchFiles(ctx context.Context, pageID, query string, limit int) ([]string, error)
+	// InstallLib appends name->url to install_lib.json (dedupe by name) and
+	// returns the full lib list.
+	InstallLib(ctx context.Context, pageID string, lib LibEntry) ([]LibEntry, error)
+	// Libs reads the current install_lib.json manifest.
+	Libs(ctx context.Context, pageID string) ([]LibEntry, error)
+}
+
+// WorkspaceRuntime is the build/exec seam. v1 impl runs esbuild in-process
+// (in the MCP process); a Docker-per-user impl can swap in later unchanged.
+type WorkspaceRuntime interface {
+	// Build bundles pageID's index.tsx into dist/bundle.js and returns the result.
+	Build(ctx context.Context, pageID string) (BuildResult, error)
+}
+
+// PreviewState is the agent's view of the live headless preview tab after an op.
+// One shape covers every preview_* tool (returned as StructuredContent): the
+// always-present fields (URL/Title/Mounted/Console/Exceptions) plus the op-
+// specific field (Outline for snapshot, EvalResult for eval).
+type PreviewState struct {
+	PageID     string   `json:"page_id"`
+	URL        string   `json:"url"`                   // current location incl. hash, e.g. "about:blank#/section"
+	Title      string   `json:"title,omitempty"`       // document.title
+	Mounted    bool     `json:"mounted"`               // #root has child nodes (React mounted)
+	Outline    string   `json:"outline,omitempty"`     // snapshot op: innerText + compact element outline
+	EvalResult string   `json:"eval_result,omitempty"` // eval op: JSON-stringified return value
+	Console    []string `json:"console,omitempty"`     // console lines accumulated since open (capped)
+	Exceptions []string `json:"exceptions,omitempty"`  // uncaught errors accumulated since open (capped)
+}
+
+// PreviewService drives a live headless browser tab per (userID-from-ctx, pageID)
+// so an agent can interactively inspect a built Doc Surface page across MCP calls:
+// open it, walk its in-app hash routes, snapshot / screenshot / eval / click, and
+// read the console — before publishing. It is best-effort: where no Chrome binary
+// is available every method returns a BadRequest ("renderer unavailable"), never
+// a fatal error, so the rest of the MCP surface keeps working. The tab loads the
+// exact same inlined bundle under the exact same opaque-origin CSP as the served
+// iframe, so eval/click run against untrusted agent code with zero host reach.
+type PreviewService interface {
+	// Open (re)builds pageID then loads the freshest inlined HTML into the tab
+	// (reusing the page's existing tab if present, else creating one). A build
+	// failure is returned as an error carrying the build log.
+	Open(ctx context.Context, pageID string) (PreviewState, error)
+	// Navigate sets the in-app hash route (e.g. "#/section/sub") and waits for the
+	// view to settle.
+	Navigate(ctx context.Context, pageID, route string) (PreviewState, error)
+	// Snapshot fills Outline with the current view's text + a compact DOM outline.
+	Snapshot(ctx context.Context, pageID string) (PreviewState, error)
+	// Screenshot returns a viewport PNG plus the current state.
+	Screenshot(ctx context.Context, pageID string) ([]byte, PreviewState, error)
+	// Eval evaluates a JS expression in the page and returns its JSON result.
+	Eval(ctx context.Context, pageID, expr string) (PreviewState, error)
+	// Click clicks the first element matching a CSS selector.
+	Click(ctx context.Context, pageID, selector string) (PreviewState, error)
+	// Console returns the console + exception lines accumulated since open.
+	Console(ctx context.Context, pageID string) (PreviewState, error)
+	// Close frees the page's tab (no-op if none open).
+	Close(ctx context.Context, pageID string) error
+	// CloseAll tears down every tab + the browser; called on MCP shutdown.
+	CloseAll(ctx context.Context) error
+}

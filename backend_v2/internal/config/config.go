@@ -10,6 +10,11 @@ type APIConfig struct {
 	DatabaseURL         string
 	HTTPAddr            string
 	ProviderConnections ProviderConnectionConfig
+	// DataVolumePath is the root of the Doc Surface page file store
+	// (users/{userId}/pages/{pageId}/...). The API process SERVES built
+	// dist from here; the MCP process WRITES + BUILDS into the same root.
+	// Both must resolve to the same path.
+	DataVolumePath string
 }
 
 type MCPConfig struct {
@@ -20,6 +25,8 @@ type MCPConfig struct {
 	// (/admin/*) to the blocknote sidecar (M8c). Defaults to the same
 	// local-dev value the sidecar defaults to; override in Docker/prod.
 	ConverterAdminSecret string
+	// DataVolumePath — see APIConfig.DataVolumePath. Must match the API's.
+	DataVolumePath string
 }
 
 type WorkerConfig struct {
@@ -51,6 +58,7 @@ func LoadMCP() (MCPConfig, error) {
 		HTTPAddr:             optional("MCP_HTTP_ADDR", ":8090"),
 		ConverterURL:         optional("CONVERTER_URL", "http://localhost:3500"),
 		ConverterAdminSecret: optional("BLOCKNOTE_ADMIN_SHARED_SECRET", "local-dev-admin-secret"),
+		DataVolumePath:       DataVolumePathOrDefault(),
 	}, nil
 }
 
@@ -63,6 +71,7 @@ func LoadAPI() (APIConfig, error) {
 		DatabaseURL:         databaseURL,
 		HTTPAddr:            optional("API_ADDR", ":8080"),
 		ProviderConnections: LoadProviderConnections(),
+		DataVolumePath:      DataVolumePathOrDefault(),
 	}, nil
 }
 
@@ -111,6 +120,13 @@ func require(key string) (string, error) {
 		return "", fmt.Errorf("missing required env var: %s", key)
 	}
 	return v, nil
+}
+
+// DataVolumePathOrDefault resolves the Doc Surface data volume path from
+// DATA_VOLUME_PATH, defaulting to ./data. Single source for the default so the
+// API and MCP processes agree.
+func DataVolumePathOrDefault() string {
+	return optional("DATA_VOLUME_PATH", "./data")
 }
 
 func optional(key, fallback string) string {
