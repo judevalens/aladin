@@ -46,12 +46,36 @@ interactive React app you author as files, build, and publish; it renders in a
 sandboxed iframe. Use this (not create_page) when the user wants an interactive
 widget, dashboard, visualization, calculator, or mini-tool.
 
+@aladin/kit — the DEFAULT way to author. create_app seeds a kit-composed
+index.tsx + an anchors.json manifest. Import from "@aladin/kit":
+  - Region({anchor, kind, children}) — wrap any ADDRESSABLE surface; it stamps
+    the anchor so the region can be referenced for feedback, deep links, and the
+    knowledge graph. To make something addressable, wrap it in a Region AND
+    declare it in anchors.json.
+  - Page / Section / Panel / Toolbar — layout + chrome.
+  - HashRouter / Route / Link / useRoute — multi-view shards (opaque-origin-safe
+    hash routing; never pushState).
+  - For / Against / Catalyst / Echo — semantic hues.
+Style with Tailwind classes + Aladin token utilities (bg-bg, bg-panel, text-ink,
+text-ink-2, bg-amber, border-line, rounded-card, font-display/font-mono). Tailwind
+is compiled live in the shard — just use classes; no build/config step. Raw React
++ inline styles still work, but the kit makes the conventions the default path.
+
+anchors.json (the manifest) is the canonical identity layer — declare each
+addressable region: {id, kind, route, source, refs, meaning}. refs are graph
+entity ids the region depends on. Keep it in sync as you add/rename regions;
+write meaning + the top-level intent so another agent could rebuild the idea. A
+malformed manifest fails the build.
+
 Authoring loop (like a normal dev):
-  1. create_app(title)        → makes the page + seeds index.tsx; returns its id
-  2. write_file(page_id, path, content) → author index.tsx + any components/css.
-     Write standard React/TS: import { useState } from "react"; mount onto
-     #root via createRoot from "react-dom/client". JSX is automatic (no React
-     import needed for JSX itself).
+  1. create_app(title)        → makes the shard + seeds a kit-composed index.tsx
+     and anchors.json; returns its id
+  2. write_file / edit_file   → author index.tsx + components, composing
+     @aladin/kit (above); mount onto #root via createRoot from "react-dom/client".
+     EVERY write auto-runs a DRAFT build and returns diagnostics inline — read
+     them. Use edit_file (exact old_string→new_string) for surgical edits;
+     write_file overwrites a whole file (pass build:false to skip the auto-build
+     for bulk multi-file writes, then build once).
   3. install_lib(page_id, name) → add a dependency (e.g. "recharts", "d3");
      import it normally. It is bundled from esm.sh at build time.
   4. build_app(page_id)        → compiles. On {ok:false}, read log, fix, rebuild.

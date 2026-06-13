@@ -16,21 +16,48 @@ import (
 // from "page", which is a BlockNote note).
 const appArtifactType = "app"
 
-// starterIndexTSX seeds a new app so build_app succeeds immediately.
-const starterIndexTSX = `import { useState } from "react";
-import { createRoot } from "react-dom/client";
+// starterIndexTSX seeds a new shard composed from @aladin/kit — the default way
+// to author: kit components (Region marks addressable surfaces), Tailwind +
+// Aladin token utilities for styling, hash routing for multi-view shards.
+const starterIndexTSX = `import { createRoot } from "react-dom/client";
+import { Page, Section, Region } from "@aladin/kit";
 
 function App() {
-  const [n, setN] = useState(0);
   return (
-    <div style={{ fontFamily: "system-ui", padding: 24 }}>
-      <h1>New Doc Surface page</h1>
-      <button onClick={() => setN(n + 1)}>clicked {n}</button>
-    </div>
+    <Page>
+      <Section>
+        <Region anchor="intro" kind="narrative">
+          <h1 className="text-2xl font-display text-ink">New shard</h1>
+          <p className="mt-2 text-ink-2">
+            Composed from <span className="font-mono text-amber">@aladin/kit</span>.
+            Wrap addressable regions in <span className="font-mono">Region</span>,
+            style with Tailwind + token utilities (bg-panel, text-ink, …), and
+            declare each region in anchors.json.
+          </p>
+        </Region>
+      </Section>
+    </Page>
   );
 }
 
 createRoot(document.getElementById("root")!).render(<App />);
+`
+
+// starterAnchorsJSON seeds the manifest so the addressable surface is declared
+// from the start (the intro Region above). Agents extend this as they add regions.
+const starterAnchorsJSON = `{
+  "version": 1,
+  "intent": "Describe what this shard is for — written so a cold agent could rebuild its idea.",
+  "anchors": [
+    {
+      "id": "intro",
+      "kind": "narrative",
+      "route": "#/",
+      "source": "index.tsx",
+      "meaning": "The shard's intro/heading region."
+    }
+  ]
+}
 `
 
 // docToolServer carries the deps the Doc Surface tools need. The artifact
@@ -264,6 +291,10 @@ func (t docToolServer) createApp(ctx context.Context, _ *sdkmcp.CallToolRequest,
 		return nil, createAppOutput{}, err
 	}
 	if err := t.store.WriteFile(ctx, id, "index.tsx", []byte(starterIndexTSX)); err != nil {
+		_, _ = t.artifacts.Delete(ctx, id)
+		return nil, createAppOutput{}, err
+	}
+	if err := t.store.WriteFile(ctx, id, docsurface.ManifestFileName, []byte(starterAnchorsJSON)); err != nil {
 		_, _ = t.artifacts.Delete(ctx, id)
 		return nil, createAppOutput{}, err
 	}

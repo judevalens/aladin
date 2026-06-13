@@ -44,13 +44,13 @@ func TestValidateManifest(t *testing.T) {
 		}
 	})
 
-	t.Run("unknown kind", func(t *testing.T) {
+	t.Run("kind is open / kit-owned (not enforced)", func(t *testing.T) {
 		problems := ValidateManifest(Manifest{
 			Version: 1,
-			Anchors: []ManifestAnchor{{ID: "a", Route: "#/", Meaning: "m", Kind: "bogus"}},
+			Anchors: []ManifestAnchor{{ID: "a", Route: "#/", Meaning: "m", Kind: "custom-widget"}},
 		})
-		if !hasProblem(problems, `unknown kind "bogus"`) {
-			t.Fatalf("got %v", problems)
+		if len(problems) != 0 {
+			t.Fatalf("kind is open; expected no problems, got %v", problems)
 		}
 	})
 
