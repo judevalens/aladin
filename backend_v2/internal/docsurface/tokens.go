@@ -44,6 +44,16 @@ var TokensCSS = themeCSS + `
 html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);font-family:var(--font-sans);}
 `
 
+// tailwindBrowserJS is the @tailwindcss/browser v4 engine (a self-contained,
+// WASM-free, network-free IIFE — verified: no fetch/eval/WebAssembly, so it runs
+// under the shard CSP's connect-src 'none' + script-src 'unsafe-inline'). It
+// scans the DOM + the <style type="text/tailwindcss"> block and JIT-injects the
+// utilities agents use. KIT-1.2 "B" (runtime). The build-time path "A" (deferred)
+// will compile Tailwind at build and drop this ~275KB/page runtime cost.
+//
+//go:embed tailwind-browser.js
+var tailwindBrowserJS string
+
 var reCloseScript = regexp.MustCompile(`(?i)</script`)
 var reCloseStyle = regexp.MustCompile(`(?i)</style`)
 
@@ -63,7 +73,13 @@ func breakInlineClosers(s string) string {
 // also means only the entry document needs auth (no sub-resource requests). The
 // CSP ('unsafe-inline' script/style, connect-src 'none') is set by the serve route.
 func EntryHTML(title, tokensCSS, bundleCSS, bundleJS string, im ImportMap) string {
-	css := "<style>" + tokensCSS + "</style>"
+	// Tailwind is the agent default styling: the theme/tokens go in a
+	// type="text/tailwindcss" block (so the runtime engine compiles the @theme
+	// into utilities), and the engine script follows it (it scans the DOM +
+	// this block and JIT-injects used utilities). Both ride script-src/style-src
+	// 'unsafe-inline'; the engine needs no network (connect-src 'none' holds).
+	css := `<style type="text/tailwindcss">@import "tailwindcss";` + "\n" + tokensCSS + "</style>" +
+		"<script>" + breakInlineClosers(tailwindBrowserJS) + "</script>"
 	if bundleCSS != "" {
 		css += "<style>" + breakInlineClosers(bundleCSS) + "</style>"
 	}
