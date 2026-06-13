@@ -230,10 +230,19 @@ joins."
 `data-aladin-key` from the same key React already requires on lists — both are
 ordinary props the kit components spread onto their root element. No
 `jsxImportSource` shim, no `JSXDev`, no `react/jsx-dev-runtime` wrapper, no dev
-runtime shipped in published. A click resolves to an **evidence bundle**:
-nearest declared anchor + instance key + sibling count + CSS selector + visible
-text + route; the agent gets the *file* from the manifest's `source` field, not
-from the DOM.
+runtime shipped in published.
+
+**Feedback is per-region, via a kit `FeedbackToolbar` (decided 2026-06-13)** —
+this supersedes the earlier host-overlay "inspect runtime + evidence bundle"
+design. Because the toolbar lives *inside* a `<Region anchor=… kind=…>` (and,
+for collection items, carries that item's `nodeKey`), it already knows its
+identity — no DOM-walking, no CSS selector, no source chain. The feedback
+payload collapses to `{ anchorId, instanceKey?, action, note }`, sent to the
+host via the bridge. Consequence (accepted): **feedback is possible only on
+declared Regions** — to make something feedback-able you wrap it in a `Region`,
+so the addressable surface and the feedback surface are the same set. Gated
+behind a "feedback mode" toggle so per-region toolbars aren't visual clutter.
+The agent gets the *file* from the manifest's `source` field, not from the DOM.
 
 > Deprioritized / dropped: auto **`data-aladin-src` (file:line)** stamping. It
 > needed the dev transform (the only thing that computes source locations) and

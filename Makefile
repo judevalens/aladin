@@ -1,4 +1,4 @@
-.PHONY: help backend mcp blocknote blocknote-test check-blocknote-versions nuke-local-db nuke-clients tauri-client-b db-up db-down test-db-up test-db-down test-go nango-up nango-down nango-logs env-nango ngrok-ensure worker-go api-go ops-status ops-errors ops-streams ops-queues ops-force-stream ops-reset-stuck-cycles
+.PHONY: help backend mcp blocknote blocknote-test check-blocknote-versions tokens check-tokens nuke-local-db nuke-clients tauri-client-b db-up db-down test-db-up test-db-down test-go nango-up nango-down nango-logs env-nango ngrok-ensure worker-go api-go ops-status ops-errors ops-streams ops-queues ops-force-stream ops-reset-stuck-cycles
 
 # --- Isolated sandbox stack (docker-compose.test.yml) -----------------------
 # A throwaway mirror of the dev infra on DISTINCT ports, namespaced under the
@@ -34,6 +34,15 @@ blocknote-test: ## Run the blocknote Node service unit tests
 
 check-blocknote-versions: ## Fail if @blocknote/* + yjs versions drift between aladin_react and services/blocknote
 	bash scripts/check-blocknote-versions.sh
+
+tokens: ## Regenerate the backend theme copy from the canonical aladin_react/src/theme.css (single source of truth)
+	cp aladin_react/src/theme.css backend_v2/internal/docsurface/theme.css
+	@echo ">> backend theme.css regenerated from aladin_react/src/theme.css"
+
+check-tokens: ## Fail if the backend theme copy drifts from the canonical (run `make tokens` to fix)
+	@diff -u aladin_react/src/theme.css backend_v2/internal/docsurface/theme.css \
+		&& echo ">> tokens in sync" \
+		|| (echo ">> ERROR: backend theme.css is stale — run 'make tokens'"; exit 1)
 
 nuke-local-db: ## Wipe the Tauri local SQLite when a schema change breaks the local cache (close the app first; FORCE=1 to override)
 	bash scripts/nuke-local-db.sh

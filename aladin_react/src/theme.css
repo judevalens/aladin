@@ -1,0 +1,182 @@
+/* Aladin design theme — THE single source of truth for tokens.
+ *
+ * Consumed by:
+ *   - the host app:  index.css does `@import "./theme.css"`
+ *   - shards:        backend_v2/internal/docsurface embeds a generated copy
+ *                    (make tokens) and inlines it; the shard's runtime Tailwind
+ *                    compiles the @theme. (`make check-tokens` guards drift.)
+ *
+ * Tailwind v4 @theme generates BOTH the utilities (bg-panel, text-ink, …) and
+ * the :root custom properties, so this one declarative block is all that's
+ * needed. Edit tokens HERE only. Soft-theme overrides + @layer base stay in
+ * index.css (host-only). */
+
+@theme inline {
+    /* Fonts — Space Grotesk (display), system (body), JetBrains Mono (labels/meta) */
+    --font-display: "Space Grotesk Variable", system-ui, sans-serif;
+    --font-heading: var(--font-display);
+    --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+
+    /* Aladin surfaces */
+    --color-rail: var(--rail);
+    --color-panel: var(--panel);
+    --color-bg: var(--bg);
+    --color-chrome: var(--chrome);
+    --color-field: var(--field);
+    --color-raise: var(--raise);
+    --color-explorer: var(--explorer);
+
+    /* Ink ramp */
+    --color-ink: var(--ink);
+    --color-ink-2: var(--ink-2);
+    --color-ink-3: var(--ink-3);
+    --color-ink-4: var(--ink-4);
+
+    /* Accent + lines + semantic hues */
+    --color-amber: var(--amber);
+    --color-amber-soft: rgb(var(--amber-soft));
+    --color-amber-line: rgb(var(--amber-line));
+    --color-line: rgb(var(--line));
+    --color-line-2: rgb(var(--line-2));
+    --color-for: var(--for);
+    --color-against: var(--against);
+    --color-catalyst: var(--catalyst);
+    --color-echo: var(--echo);
+    --color-neutral: var(--neutral);
+
+    /* shadcn semantic tokens (so existing primitives inherit the theme) */
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-destructive: var(--destructive);
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+    --color-sidebar: var(--sidebar);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-ring: var(--sidebar-ring);
+
+    /* Radius — Aladin chips + the existing scale */
+    --radius-chip: 7px;
+    --radius-card: 12px;
+    --radius-modal: 14px;
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+
+    /* Shadows */
+    --shadow-panel: -24px 0 60px rgba(0, 0, 0, 0.5);
+    --shadow-modal: 0 28px 70px rgba(0, 0, 0, 0.6);
+    --shadow-toast: 0 12px 40px rgba(0, 0, 0, 0.5);
+
+    /* Animations */
+    --animate-pop: pop 0.17s cubic-bezier(0.2, 0.8, 0.2, 1);
+    --animate-slidein: slidein 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
+    --animate-cardin: cardin 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
+    --animate-shimmer: shimmer 1.2s ease infinite;
+    --animate-pulse2: pulse2 1.8s ease infinite;
+}
+
+@keyframes pop {
+    from { opacity: 0; transform: translateY(8px) scale(0.985); }
+    to { opacity: 1; transform: none; }
+}
+@keyframes slidein {
+    from { transform: translateX(30px); opacity: 0; }
+    to { transform: none; opacity: 1; }
+}
+@keyframes cardin {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: none; }
+}
+@keyframes shimmer {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
+}
+@keyframes pulse2 {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+/* DARK (default). :root always applies, so these are the fallback before the
+   theme provider sets data-theme, and the explicit dark theme. */
+:root,
+[data-theme="dark"] {
+    /* surfaces */
+    --rail: #0b0b0e;
+    --panel: #0f0f12;
+    --bg: #0d0d10;
+    --chrome: #0b0b0e;
+    --field: #161619;
+    --card: #121215;
+    --raise: #17171c;
+    --explorer: #101013;
+    /* ink */
+    --ink: #eceaef;
+    --ink-2: #9694a0;
+    --ink-3: #615f6b;
+    --ink-4: #403e48;
+    /* lines / states — space-separated channels for rgb(var(--x)) + alpha */
+    --line: 255 255 255 / 0.07;
+    --line-2: 255 255 255 / 0.045;
+    --hover: 255 255 255 / 0.035;
+    --sel: 255 255 255 / 0.06;
+    /* accent */
+    --amber: #c9925a;
+    --amber-soft: 201 146 90 / 0.12;
+    --amber-line: 201 146 90 / 0.3;
+    /* semantic hues */
+    --for: #5cba8f;
+    --against: #d8796b;
+    --catalyst: #5b9bd8;
+    --echo: #9a8cd8;
+    --neutral: #7f8aa0;
+
+    --radius: 0.625rem;
+
+    /* shadcn semantic tokens mapped onto Aladin vars (resolved per-theme via var()) */
+    --background: var(--bg);
+    --foreground: var(--ink);
+    --card-foreground: var(--ink);
+    --popover: var(--explorer);
+    --popover-foreground: var(--ink);
+    --primary: var(--amber);
+    --primary-foreground: #0f0f12;
+    --secondary: var(--field);
+    --secondary-foreground: var(--ink);
+    --muted: var(--field);
+    --muted-foreground: var(--ink-2);
+    --accent: var(--raise);
+    --accent-foreground: var(--ink);
+    --destructive: var(--against);
+    --border: rgb(var(--line));
+    --input: rgb(var(--line));
+    --ring: var(--amber);
+    --sidebar: var(--rail);
+    --sidebar-foreground: var(--ink-2);
+    --sidebar-primary: var(--amber);
+    --sidebar-primary-foreground: #0f0f12;
+    --sidebar-accent: rgb(var(--sel));
+    --sidebar-accent-foreground: var(--ink);
+    --sidebar-border: rgb(var(--line));
+    --sidebar-ring: var(--amber);
+}

@@ -1,6 +1,7 @@
 package docsurface
 
 import (
+	_ "embed"
 	"encoding/json"
 	"html"
 	"regexp"
@@ -28,28 +29,18 @@ type ImportMap struct {
 // as a <meta> tag so the headless preview renders under the identical policy.
 const CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'"
 
-// TokensCSS mirrors the Aladin dark-theme design tokens from
-// aladin_react/src/index.css (:root). Served as /content/{id}/tokens.css and
-// linked from the entry HTML so agent pages compose against var(--ink) etc. and
-// inherit the app's look. Keep in sync with index.css manually (v1).
-const TokensCSS = `:root{
-  /* fonts */
-  --font-display:"Space Grotesk Variable",system-ui,sans-serif;
-  --font-sans:system-ui,-apple-system,"Segoe UI",sans-serif;
-  --font-mono:"JetBrains Mono",ui-monospace,"SF Mono",monospace;
-  /* surfaces */
-  --rail:#0b0b0e; --panel:#0f0f12; --bg:#0d0d10; --chrome:#0b0b0e;
-  --field:#161619; --card:#121215; --raise:#17171c; --explorer:#101013;
-  /* ink ramp */
-  --ink:#eceaef; --ink-2:#9694a0; --ink-3:#615f6b; --ink-4:#403e48;
-  /* lines (rgb channels for rgb(var(--line)/alpha)) */
-  --line:255 255 255 / 0.07; --line-2:255 255 255 / 0.045;
-  /* accent + semantic hues */
-  --amber:#c9925a; --for:#5cba8f; --against:#d8796b;
-  --catalyst:#5b9bd8; --echo:#9a8cd8; --neutral:#7f8aa0;
-  /* radii */
-  --radius-chip:7px; --radius-card:12px; --radius-modal:14px;
-}
+// themeCSS is the canonical Aladin design theme — the SINGLE source of truth,
+// generated from aladin_react/src/theme.css via `make tokens` and drift-guarded
+// by `make check-tokens`. It carries the Tailwind v4 @theme (which yields both
+// the utility classes and the :root custom properties). In the shard's plain
+// <style> the @theme at-rule is inert; once the shard's runtime Tailwind loads
+// (KIT-1.2) it compiles the utilities. No hand-authored token values live in Go.
+//
+//go:embed theme.css
+var themeCSS string
+
+// TokensCSS is the theme plus the shard document base, inlined into every shard.
+var TokensCSS = themeCSS + `
 html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);font-family:var(--font-sans);}
 `
 
