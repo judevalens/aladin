@@ -213,28 +213,46 @@ const importMapPath = distDirName + "/importmap.json"
 // map. Returns ok=false with a readable log on a vendoring failure.
 func (b *builder) resolveImportMap(ctx context.Context, metafile string, pins map[string]string) (ImportMap, string, bool) {
 	im := ImportMap{Imports: map[string]string{}}
+	var failLog string
+	ensure := func(spec string) bool {
+		if _, has := im.Imports[spec]; has {
+			return true
+		}
+		ref, err := b.vendor.Resolve(ctx, spec, pins)
+		if err != nil {
+			failLog = "vendoring " + spec + ": " + err.Error()
+			return false
+		}
+		im.Imports[spec] = "/" + vendorDirName + "/" + ref.Sha
+		return true
+	}
+
 	needReact := false
+	usesKit := false
 	for _, spec := range parseExternalImports(metafile) {
 		if !isVendored(spec) {
 			continue // a stray external (shouldn't happen) — leave it unmapped
 		}
-		ref, err := b.vendor.Resolve(ctx, spec, pins)
-		if err != nil {
-			return ImportMap{}, "vendoring " + spec + ": " + err.Error(), false
+		if !ensure(spec) {
+			return ImportMap{}, failLog, false
 		}
-		im.Imports[spec] = "/" + vendorDirName + "/" + ref.Sha
 		if reactFamily[spec] && spec != "react" {
 			needReact = true // its bare `import "react"` needs the shared react mapped
 		}
-	}
-	if needReact {
-		if _, ok := im.Imports["react"]; !ok {
-			ref, err := b.vendor.Resolve(ctx, "react", pins)
-			if err != nil {
-				return ImportMap{}, "vendoring react: " + err.Error(), false
-			}
-			im.Imports["react"] = "/" + vendorDirName + "/" + ref.Sha
+		if spec == kitSpec {
+			usesKit = true
 		}
+	}
+	// The kit imports react + react/jsx-runtime at runtime; map them even if the
+	// shard's own code didn't pull them in directly.
+	if usesKit {
+		needReact = true
+		if !ensure("react/jsx-runtime") {
+			return ImportMap{}, failLog, false
+		}
+	}
+	if needReact && !ensure("react") {
+		return ImportMap{}, failLog, false
 	}
 	return im, "", true
 }

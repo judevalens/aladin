@@ -55,7 +55,7 @@ var heavyLibs = map[string]bool{
 // isVendored reports whether a bare import specifier should be loaded from /vendor
 // (externalized) rather than inlined into the doc bundle.
 func isVendored(spec string) bool {
-	if reactFamily[spec] {
+	if spec == kitSpec || reactFamily[spec] {
 		return true
 	}
 	pkg, _ := splitPackage(spec)
@@ -92,6 +92,11 @@ func resolveKey(spec string, pins map[string]string) string {
 // Resolve returns the /vendor ref for spec, building + caching it if needed.
 func (vs *vendorStore) Resolve(ctx context.Context, spec string, pins map[string]string) (vendorRef, error) {
 	key := resolveKey(spec, pins)
+	if spec == kitSpec {
+		// The kit's source is embedded (not esm.sh), so key it by source hash —
+		// a rebuilt binary with changed kit source re-vendors.
+		key = kitSpec + "\x00" + kitSourceHash()
+	}
 
 	vs.mu.Lock()
 	if ref, ok := vs.mem[key]; ok {
@@ -112,11 +117,17 @@ func (vs *vendorStore) Resolve(ctx context.Context, spec string, pins map[string
 		}
 	}
 
-	external := map[string]bool{}
-	if spec != "react" {
-		external["react"] = true // share the single react across the family + consumers
+	var body []byte
+	var err error
+	if spec == kitSpec {
+		body, err = vs.b.buildKit() // OUR embedded source, react externalized
+	} else {
+		external := map[string]bool{}
+		if spec != "react" {
+			external["react"] = true // share the single react across the family + consumers
+		}
+		body, err = vs.build(ctx, spec, external, pins)
 	}
-	body, err := vs.build(ctx, spec, external, pins)
 	if err != nil {
 		return vendorRef{}, err
 	}
