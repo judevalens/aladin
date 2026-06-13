@@ -18,16 +18,27 @@ type ImportMap struct {
 	Integrity map[string]string `json:"integrity,omitempty"`
 }
 
-// CSP is the Content-Security-Policy applied to every Doc Surface page. The page
-// is fully self-contained: the design tokens, built CSS, and the IIFE bundle
-// (React + deps) are all INLINED into the HTML, so nothing is loaded by URL. The
-// frame is sandboxed to an opaque origin (no allow-same-origin), for which CSP
-// 'self' matches nothing — hence 'unsafe-inline' for the inlined script/style,
-// which is safe precisely because the frame is isolated: connect-src 'none' (no
-// exfil), no DOM/cookie access to Aladin. The iframe sandbox is the security
-// boundary. The serve route sets this as an HTTP header; PreviewHTML mirrors it
-// as a <meta> tag so the headless preview renders under the identical policy.
-const CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'"
+// CSP for shard pages. The security boundary is FRAME ISOLATION: the iframe is
+// sandboxed to an opaque origin (no allow-same-origin), so the shard cannot
+// reach Aladin's DOM, cookies, session, or other artifacts. That containment
+// holds regardless of trust and bounds the blast radius of bugs.
+//
+// Network + display resources are OPEN (connect-src / img / font / media / frame
+// to https): the trust decision is the MCP grant on a trusted machine — a client
+// you've authorized already has full workspace access, so locking the shard's
+// network defended against nothing real while crippling the surface. Remote CODE
+// stays closed: script-src is 'unsafe-inline' + (via CSPWithVendor) the vendored
+// origin only — no unsafe-eval, no arbitrary runtime scripts; deps go through the
+// build/vendor pipeline. base-uri/form-action stay locked (cheap; forms are moot
+// under sandbox="allow-scripts").
+//
+// COMPANION (land with the bridge): the view-time access_token rides the shard
+// URL and is readable by shard JS; with connect-src open, scope it to /content
+// so a shard can't raw-call /api as the viewer — WORKSPACE data flows through the
+// bridge (declared refs + provenance); the open network is for EXTERNAL resources.
+//
+// The serve route sets this as an HTTP header; PreviewHTML mirrors it as a <meta>.
+const CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline' https:; img-src https: data: blob:; font-src https: data:; media-src https: data: blob:; connect-src https: wss:; frame-src https:; base-uri 'none'; form-action 'none'"
 
 // themeCSS is the canonical Aladin design theme — the SINGLE source of truth,
 // generated from aladin_react/src/theme.css via `make tokens` and drift-guarded

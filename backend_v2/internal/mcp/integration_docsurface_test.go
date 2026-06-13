@@ -307,7 +307,7 @@ func TestDocSurface_EndToEnd(t *testing.T) {
 	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
 		t.Fatalf("entry content-type = %q", ct)
 	}
-	if csp := resp.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "connect-src 'none'") || !strings.Contains(csp, "script-src 'unsafe-inline'") {
+	if csp := resp.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "connect-src https:") || !strings.Contains(csp, "script-src 'unsafe-inline'") {
 		t.Fatalf("CSP header missing/weak: %q", csp)
 	}
 	if !strings.Contains(body, `id="root"`) {

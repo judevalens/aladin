@@ -13,11 +13,15 @@ func TestPreviewHTMLCarriesMetaCSP(t *testing.T) {
 	if !strings.Contains(html, wantMeta) {
 		t.Fatalf("PreviewHTML missing meta-CSP.\nwant substring: %s\n---\n%s", wantMeta, html)
 	}
-	// The policy itself must keep the inline allowances + the no-exfil guard.
-	for _, frag := range []string{"script-src 'unsafe-inline'", "style-src 'unsafe-inline'", "connect-src 'none'"} {
+	// Inline allowances stay; network is open (connect-src https:) for external
+	// resources; remote code stays closed (no unsafe-eval).
+	for _, frag := range []string{"script-src 'unsafe-inline'", "style-src 'unsafe-inline'", "connect-src https:"} {
 		if !strings.Contains(CSP, frag) {
 			t.Errorf("CSP missing %q: %s", frag, CSP)
 		}
+	}
+	if strings.Contains(CSP, "unsafe-eval") {
+		t.Errorf("CSP must not allow unsafe-eval: %s", CSP)
 	}
 	// It must be the same self-contained document as the serve path: #root, the
 	// inline bundle, the design tokens, and the page CSS.
@@ -59,9 +63,9 @@ func TestEntryHTMLImportMap(t *testing.T) {
 		t.Errorf("legacy bare script missing")
 	}
 
-	// CSPWithVendor widens script-src by exactly the origin, keeps connect-src none.
+	// CSPWithVendor widens script-src by exactly the origin (for /vendor modules).
 	csp := CSPWithVendor("http://localhost:8000")
-	if !strings.Contains(csp, "script-src 'unsafe-inline' http://localhost:8000") || !strings.Contains(csp, "connect-src 'none'") {
+	if !strings.Contains(csp, "script-src 'unsafe-inline' http://localhost:8000") || !strings.Contains(csp, "connect-src https:") {
 		t.Errorf("CSPWithVendor wrong: %s", csp)
 	}
 }
