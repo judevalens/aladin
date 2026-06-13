@@ -60,6 +60,41 @@ distribution and bound the tails; never chase the point mass.**
 
 ---
 
+## Security model — trust is the grant, not the sandbox
+
+The trust decision is the **MCP grant on a trusted machine**: a client you've
+authorized already has full read/write access to your workspace and could
+exfiltrate from its own side. So sandboxing the shard's *network* to defend
+against its own author guards nothing real — it only cripples the surface. (You
+vet the contractor before handing over the keys; you don't then straitjacket
+their deliverables.) The boundary that matters is elsewhere:
+
+- **Frame isolation (kept, trust-independent):** the shard renders in an
+  opaque-origin iframe (`sandbox="allow-scripts"`, no `allow-same-origin`), so it
+  can't reach Aladin's DOM, session, cookies, or other artifacts. Contains *bugs*,
+  not just malice; holds regardless of trust.
+- **Network + display: OPEN** — `connect-src https: wss:`, `img/font/media https:`,
+  `frame-src https:`. Shards are real apps: they fetch data, load pictures, embed.
+- **Remote code: CLOSED** — `script-src` is inline + the vendored origin only, no
+  `unsafe-eval`; deps go through the build/vendor pipeline, not arbitrary runtime
+  scripts (eval-blocked also keeps open `connect-src` from becoming code-exec).
+
+Two things still matter — about *flows*, not the author:
+- **Workspace data goes through the bridge, not raw `/api`.** The view-time access
+  token rides the shard URL; with the network open it must be scoped to `/content`
+  so a shard can't impersonate the viewer to `/api` (companion change, lands with
+  the bridge). Routing workspace data via declared refs is also what gives it
+  provenance — bypassing the bridge would break the manifest model.
+- **The sharing boundary.** Author-trust is transitive only while you author *and*
+  view your own shards. The day a foreign-authored shard renders in your session,
+  the viewer's host applies policy (declared capabilities, approval). Until then
+  (single-user), trust flows from the grant.
+
+So: don't sandbox the shard against you; keep it from clobbering the host app;
+make data+egress flows visible; enforce for real only when the author isn't you.
+
+---
+
 ## 1. The three-layer model
 
 ```
@@ -354,9 +389,11 @@ ref can never authorize anything its owner couldn't already read. Typed URIs
 field every consumer trusts to be homogeneous.
 
 External data gets two honest doors instead: **ingestion** (durable — the high
-road; the platform's connectors exist exactly for this) or a future **bridge-v2
-external capability** (live — explicit egress scope, host-mediated,
-user-visible permission; CSP still `connect-src 'none'`).
+road; the platform's connectors exist exactly for this) or the shard's own
+**open network** (the CSP now allows `connect-src https:` — see Security below)
+for ephemeral external resources. The distinction the *model* cares about: data
+that should be **citable knowledge** belongs in the graph (a ref); transient
+external fetches don't, and that's fine.
 
 ### Topic vs data (the NVIDIA question)
 
@@ -578,7 +615,9 @@ runtime, never persisted per row).
 ## 7. Observability → live shards, stale shards
 
 `Observable()` is the hinge for live data. Liveness is **forwarded observation**
-— the shard never polls, never connects, never violates `connect-src 'none'`:
+— the shard doesn't fetch its own workspace data; the host pushes it. (The shard
+*can* reach the open network now, but WORKSPACE data flows through the bridge so
+it carries refs + provenance — see Security.) The path:
 
 ```
 canonical write → outbox (same tx) → drain → websocket → host
