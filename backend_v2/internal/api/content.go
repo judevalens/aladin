@@ -75,19 +75,23 @@ func (s *Server) handleContentServe(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 
+	// ?channel=draft serves the fast-loop draft build (dist/draft/); default is
+	// the published build (dist/).
+	distRel := docsurface.DistDir(docsurface.ParseChannel(r.URL.Query().Get("channel")))
+
 	store := s.deps.DocSurfaceStore()
-	bundleJS, err := store.ReadFile(r.Context(), pageID, "dist/bundle.js")
+	bundleJS, err := store.ReadFile(r.Context(), pageID, distRel+"/bundle.js")
 	if err != nil {
 		w.Header().Set("Content-Security-Policy", docsurface.CSP)
 		_, _ = w.Write([]byte(docsurface.NotBuiltHTML(rec.Title)))
 		return
 	}
-	bundleCSS, _ := store.ReadFile(r.Context(), pageID, "dist/bundle.css")
+	bundleCSS, _ := store.ReadFile(r.Context(), pageID, distRel+"/bundle.css")
 
 	// Optional import map: present for ESM builds with vendored deps. Its presence
 	// switches the doc to <script type=module>; its absence is the legacy inline path.
 	var im docsurface.ImportMap
-	if data, derr := store.ReadFile(r.Context(), pageID, "dist/importmap.json"); derr == nil {
+	if data, derr := store.ReadFile(r.Context(), pageID, distRel+"/importmap.json"); derr == nil {
 		_ = json.Unmarshal(data, &im)
 		if im.Imports == nil {
 			im.Imports = map[string]string{}

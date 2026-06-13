@@ -11,6 +11,9 @@ export interface RealtimeBootDeps {
   localSync: LocalSyncRepo;
   desktopSession: DesktopSessionStore;
   config: ApiRuntimeConfig;
+  // The server-push websocket pipeline (app events). Started when authenticated,
+  // stopped when anonymous. Optional so tests/headless can omit it.
+  appEventSource?: { start(): void; stop(): void };
 }
 
 export interface RealtimeBoot {
@@ -21,6 +24,7 @@ export interface RealtimeBoot {
 export function createRealtimeBoot(deps: RealtimeBootDeps): RealtimeBoot {
   let sessionSub: Subscription | null = null;
   let currentUserId: string | null = null;
+  let eventsStarted = false;
 
   return {
     start() {
@@ -36,16 +40,29 @@ export function createRealtimeBoot(deps: RealtimeBootDeps): RealtimeBoot {
             token: deps.desktopSession.getToken(),
           });
           void deps.localSync.drainOutbox().catch(() => undefined);
+          // Server-push app events (build-status, …) — start once authenticated.
+          if (!eventsStarted) {
+            deps.appEventSource?.start();
+            eventsStarted = true;
+          }
         } else if (snapshot.status === "anonymous") {
           currentUserId = null;
           void deps.localSync.setSession(null);
           void deps.admin.clearWorkspace().catch(() => undefined);
+          if (eventsStarted) {
+            deps.appEventSource?.stop();
+            eventsStarted = false;
+          }
         }
       });
     },
     stop() {
       sessionSub?.unsubscribe();
       sessionSub = null;
+      if (eventsStarted) {
+        deps.appEventSource?.stop();
+        eventsStarted = false;
+      }
       void deps.localSync.setSession(null);
     },
   };

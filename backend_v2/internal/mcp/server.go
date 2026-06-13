@@ -114,7 +114,7 @@ func New(addr string, deps app.Dependencies, pages service.PageDocumentService, 
 		Instructions: mcpInstructions,
 	})
 	registerTools(server, deps.Artifacts(), pages, converter, bridge)
-	registerDocSurfaceTools(server, deps.Artifacts(), deps.DocSurfaceStore(), deps.WorkspaceRuntime(), deps.Preview())
+	registerDocSurfaceTools(server, deps.Artifacts(), deps.DocSurfaceStore(), deps.ShardBuild(), deps.Preview())
 
 	streamable := sdkmcp.NewStreamableHTTPHandler(func(*http.Request) *sdkmcp.Server {
 		return server

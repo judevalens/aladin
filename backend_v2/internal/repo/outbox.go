@@ -38,6 +38,25 @@ func appendOutboxEvent(ctx context.Context, tx pgx.Tx, userID string, frame serv
 	return nil
 }
 
+// appendAppEvent appends ONE 'app_event' row carrying a non-data realtime event
+// (service.OutboxAppEvent), inside the caller's write tx. The live drain forwards
+// it to the realtime websocket under its own eventType; the durable pull path
+// (PullSince/MinXid) filters 'app_event' out, so it never reaches a client's
+// offline data store. Use for ephemeral, cross-process UI events (build-status).
+func appendAppEvent(ctx context.Context, tx pgx.Tx, userID string, ev service.OutboxAppEvent) error {
+	payload, err := json.Marshal(ev)
+	if err != nil {
+		return fmt.Errorf("sync: marshal app event: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO outbox_events (user_id, type, payload)
+		VALUES ($1::uuid, 'app_event', $2::jsonb)
+	`, userID, payload); err != nil {
+		return fmt.Errorf("sync: append app event: %w", err)
+	}
+	return nil
+}
+
 // Horizon returns the current log horizon: pg_snapshot_xmin of the current
 // snapshot, i.e. the smallest still-in-progress xid. Every xid below it is
 // committed, so reading `xid < horizon` is gap-free regardless of commit order.
@@ -68,6 +87,7 @@ func (r *SyncRepo) PullSince(ctx context.Context, userID string, cursor uint64) 
 		SELECT payload
 		  FROM outbox_events
 		 WHERE user_id = $1::uuid
+		   AND type = 'data_event'
 		   AND xid >= $2::xid8
 		   AND xid <  $3::xid8
 		 ORDER BY xid
@@ -104,6 +124,7 @@ func (r *SyncRepo) MinXid(ctx context.Context, userID string) (uint64, bool, err
 	err := r.pool.QueryRow(ctx, `
 		SELECT xid::text FROM outbox_events
 		 WHERE user_id = $1::uuid
+		   AND type = 'data_event'
 		 ORDER BY xid
 		 LIMIT 1
 	`, userID).Scan(&s)
@@ -130,7 +151,7 @@ func (r *SyncRepo) DrainSince(ctx context.Context, afterCursor uint64) ([]servic
 		return nil, 0, err
 	}
 	rows, err := r.pool.Query(ctx, `
-		SELECT xid::text, user_id::text, payload
+		SELECT xid::text, user_id::text, type, payload
 		  FROM outbox_events
 		 WHERE xid >= $1::xid8
 		   AND xid <  $2::xid8
@@ -143,20 +164,28 @@ func (r *SyncRepo) DrainSince(ctx context.Context, afterCursor uint64) ([]servic
 
 	out := make([]service.DrainedEvent, 0)
 	for rows.Next() {
-		var xidStr, userID string
+		var xidStr, userID, typ string
 		var payload []byte
-		if err := rows.Scan(&xidStr, &userID, &payload); err != nil {
+		if err := rows.Scan(&xidStr, &userID, &typ, &payload); err != nil {
 			return nil, 0, fmt.Errorf("sync: drain scan: %w", err)
 		}
 		xid, err := strconv.ParseUint(xidStr, 10, 64)
 		if err != nil {
 			return nil, 0, fmt.Errorf("sync: drain parse xid %q: %w", xidStr, err)
 		}
-		var f service.Frame
-		if err := json.Unmarshal(payload, &f); err != nil {
-			return nil, 0, fmt.Errorf("sync: drain decode frame: %w", err)
+		ev := service.DrainedEvent{Xid: xid, UserID: userID}
+		if typ == "app_event" {
+			var ae service.OutboxAppEvent
+			if err := json.Unmarshal(payload, &ae); err != nil {
+				return nil, 0, fmt.Errorf("sync: drain decode app event: %w", err)
+			}
+			ev.AppEvent = &ae
+		} else {
+			if err := json.Unmarshal(payload, &ev.Frame); err != nil {
+				return nil, 0, fmt.Errorf("sync: drain decode frame: %w", err)
+			}
 		}
-		out = append(out, service.DrainedEvent{Xid: xid, UserID: userID, Frame: f})
+		out = append(out, ev)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("sync: drain rows: %w", err)

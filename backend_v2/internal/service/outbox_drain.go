@@ -15,11 +15,15 @@ import (
 // CDC) — pull remains the durable guarantee; the drain is best-effort latency.
 
 // DrainedEvent is one outbox row surfaced to the drain: the committing xid, the
-// owning user (so the frame fans out only to that user), and the decoded frame.
+// owning user (so it fans out only to that user), and the decoded payload —
+// either a data Frame (type 'data_event') or an AppEvent (type 'app_event').
+// Exactly one of Frame/AppEvent is meaningful per row; AppEvent != nil selects
+// the app-event path.
 type DrainedEvent struct {
-	Xid    uint64
-	UserID string
-	Frame  Frame
+	Xid      uint64
+	UserID   string
+	Frame    Frame
+	AppEvent *OutboxAppEvent
 }
 
 // OutboxDrainReader is the drain's read port (implemented by the repo). Returns
@@ -84,9 +88,24 @@ func (d *OutboxDrainer) drainOnce(ctx context.Context, cursor uint64) (uint64, e
 		return cursor, err
 	}
 	for _, e := range events {
-		// Server-trusted tenant: the frame fans out only to this user's
-		// subscribers. ResolvePublishKeys honors a caller-set TenantID, so no
-		// request principal is needed in this background context.
+		// Server-trusted tenant: events fan out only to this user's subscribers.
+		// ResolvePublishKeys honors a caller-set TenantID, so no request principal
+		// is needed in this background context.
+		if e.AppEvent != nil {
+			// App-event lane: publish under its own eventType (e.g.
+			// "artifact.build-status") — NOT the data-sync "*.frame" stream — so
+			// the UI reacts but the offline data engine ignores it.
+			if err := d.realtime.Publish(ctx, PublishTarget{
+				Stream:       WorkspaceStream,
+				ResourceKind: e.AppEvent.ResourceKind,
+				ResourceID:   e.AppEvent.ResourceID,
+				Operation:    e.AppEvent.Operation,
+				TenantID:     e.UserID,
+			}, e.AppEvent.Payload); err != nil {
+				slog.Warn("outbox drain publish app-event", "xid", e.Xid, "user", e.UserID, "err", err)
+			}
+			continue
+		}
 		if err := d.realtime.Publish(ctx, PublishTarget{
 			Stream:       WorkspaceStream,
 			ResourceKind: AnyResource,

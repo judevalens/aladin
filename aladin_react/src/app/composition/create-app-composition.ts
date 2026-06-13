@@ -19,6 +19,25 @@ import { SourcesCatalogService } from "@/services/sources/sources-catalog-servic
 import * as integrationService from "@/services/integrations/integration-service";
 import { WorkspaceSyncService } from "@/services/workspace/workspace-sync-service";
 import { createRealtimeBoot } from "@/app/composition/realtime-boot";
+import { createShardApi } from "@/shared/api/shard-api";
+import { createAppEventProcessor } from "@/shared/realtime/app-event-processor";
+import { createWebSocketAppEventSource } from "@/shared/realtime/websocket-app-event-source";
+import { createShardBuildEventHandler } from "@/shared/realtime/shard-build-event-handler";
+import type { ApiRuntimeConfig } from "@/shared/api/client";
+
+// eventsWebSocketUrl resolves the realtime app-event endpoint. Desktop has an
+// absolute websocketBaseUrl (→ :8000); web dev has "" so we use the page origin
+// (the vite dev server proxies /api, ws included).
+function eventsWebSocketUrl(config: ApiRuntimeConfig): string {
+  if (config.websocketBaseUrl) {
+    return `${config.websocketBaseUrl}/api/events/ws`;
+  }
+  if (typeof window !== "undefined") {
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return `${proto}//${window.location.host}/api/events/ws`;
+  }
+  return "/api/events/ws";
+}
 
 export function createAppComposition() {
   const config = createRuntimeConfig();
@@ -29,6 +48,7 @@ export function createAppComposition() {
   const localSync = createLocalSyncRepo();
   const apis = {
     artifacts: createArtifactApi(apiClient),
+    shards: createShardApi(apiClient),
   };
 
   const repos = {
@@ -75,12 +95,27 @@ export function createAppComposition() {
     }
   });
 
+  // Server-push app events (the realtime websocket). Currently drives shard
+  // build-status into the store slice; the same pipeline carries M3 live regions.
+  // Only the build-status handler is registered — the workspace tree-sync handler
+  // stays on the pull/local path, so the verified data layer's behavior is
+  // unchanged.
+  const appEvents = createAppEventProcessor();
+  appEvents.register(createShardBuildEventHandler());
+  const appEventSource = createWebSocketAppEventSource({
+    url: eventsWebSocketUrl(config),
+    token: () => desktopSession.getToken(),
+    subscriptions: [], // empty → backend defaults to the whole workspace stream
+    onEvent: (event) => appEvents.dispatch(event),
+  });
+
   const realtime = createRealtimeBoot({
     authSession,
     admin: local.admin,
     localSync,
     desktopSession,
     config,
+    appEventSource,
   });
   realtime.start();
 

@@ -34,6 +34,7 @@ type buildMeta struct {
 	PageID      string `json:"page_id"`
 	BuiltAt     string `json:"built_at"`
 	BundleBytes int64  `json:"bundle_bytes"`
+	BuildID     string `json:"build_id"`
 }
 
 // allowedCDNHost is the only host the build is allowed to fetch from. This is
@@ -86,7 +87,27 @@ func (b *builder) ReadVendor(sha string) ([]byte, error) {
 	return b.vendor.ReadVendor(sha)
 }
 
-func (b *builder) Build(ctx context.Context, pageID string) (service.BuildResult, error) {
+// DistDir is the page-relative dist directory for a build channel: published →
+// "dist", draft → "dist/draft". All of a build's outputs (bundle.js, bundle.css,
+// importmap.json, the build marker) live under it. Exported so the serve route
+// can locate the right channel's artifacts.
+func DistDir(channel service.BuildChannel) string {
+	if channel == service.ChannelDraft {
+		return distDirName + "/draft"
+	}
+	return distDirName
+}
+
+// ParseChannel maps a request's ?channel value to a BuildChannel, defaulting to
+// published for anything other than "draft".
+func ParseChannel(s string) service.BuildChannel {
+	if s == string(service.ChannelDraft) {
+		return service.ChannelDraft
+	}
+	return service.ChannelPublished
+}
+
+func (b *builder) Build(ctx context.Context, pageID string, channel service.BuildChannel) (service.BuildResult, error) {
 	defer b.lockPage(pageID)() // serialize builds per page (no concurrent dist writes)
 	dir, err := b.store.PageDir(ctx, pageID)
 	if err != nil {
@@ -94,6 +115,13 @@ func (b *builder) Build(ctx context.Context, pageID string) (service.BuildResult
 	}
 	if _, err := os.Stat(filepath.Join(dir, "index.tsx")); err != nil {
 		return service.BuildResult{OK: false, Log: "index.tsx not found at page root"}, nil
+	}
+	// Anchor manifest: schema-validate when present (hard, both channels). Absent
+	// is fine in v1 — the manifest becomes required only at the publish gate.
+	if data, merr := b.store.ReadFile(ctx, pageID, ManifestFileName); merr == nil {
+		if problems := ValidateManifestBytes(data); len(problems) > 0 {
+			return service.BuildResult{OK: false, Log: ManifestFileName + ":\n  " + strings.Join(problems, "\n  ")}, nil
+		}
 	}
 	libs, err := b.store.Libs(ctx, pageID)
 	if err != nil {
@@ -104,19 +132,19 @@ func (b *builder) Build(ctx context.Context, pageID string) (service.BuildResult
 		pins[l.Name] = l.URL
 	}
 
-	result := esbuild.Build(esbuild.BuildOptions{
-		AbsWorkingDir:    dir,
-		EntryPoints:      []string{"index.tsx"},
-		Outfile:          filepath.Join(dir, distDirName, "bundle.js"),
-		Bundle:           true,
-		Write:            true,
-		Metafile:         true, // discover which deps were left external (vendored)
-		Format:           esbuild.FormatESModule,
-		Platform:         esbuild.PlatformBrowser,
-		Target:           esbuild.ES2020,
-		JSX:              esbuild.JSXAutomatic,
-		MinifyWhitespace: true,
-		MinifySyntax:     true,
+	distRel := DistDir(channel)
+	draft := channel == service.ChannelDraft
+	opts := esbuild.BuildOptions{
+		AbsWorkingDir: dir,
+		EntryPoints:   []string{"index.tsx"},
+		Outfile:       filepath.Join(dir, distRel, "bundle.js"),
+		Bundle:        true,
+		Write:         true,
+		Metafile:      true, // discover which deps were left external (vendored)
+		Format:        esbuild.FormatESModule,
+		Platform:      esbuild.PlatformBrowser,
+		Target:        esbuild.ES2020,
+		JSX:           esbuild.JSXAutomatic,
 		Loader: map[string]esbuild.Loader{
 			".tsx":  esbuild.LoaderTSX,
 			".ts":   esbuild.LoaderTS,
@@ -129,7 +157,16 @@ func (b *builder) Build(ctx context.Context, pageID string) (service.BuildResult
 		},
 		Plugins:  []esbuild.Plugin{b.cdnPlugin(ctx, pins)},
 		LogLevel: esbuild.LogLevelSilent,
-	})
+	}
+	if draft {
+		// Fast authoring loop: keep the source readable + map back to the agent's
+		// files for debugging. No minify.
+		opts.Sourcemap = esbuild.SourceMapInline
+	} else {
+		opts.MinifyWhitespace = true
+		opts.MinifySyntax = true
+	}
+	result := esbuild.Build(opts)
 
 	if len(result.Errors) > 0 {
 		return service.BuildResult{OK: false, Log: formatMessages(result.Errors)}, nil
@@ -140,15 +177,32 @@ func (b *builder) Build(ctx context.Context, pageID string) (service.BuildResult
 	if !ok {
 		return service.BuildResult{OK: false, Log: vlog}, nil
 	}
-	if err := b.writeImportMap(ctx, pageID, im); err != nil {
+	if err := b.writeImportMap(ctx, pageID, distRel, im); err != nil {
 		return service.BuildResult{}, err
 	}
-	b.writeBuildMeta(ctx, pageID, dir)
+	buildID := b.writeBuildMeta(ctx, pageID, dir, distRel)
+	served := "/content/" + pageID + "/"
+	if draft {
+		served += "?channel=draft"
+	}
 	return service.BuildResult{
 		OK:        true,
-		ServedURL: "/content/" + pageID + "/",
+		ServedURL: served,
 		Log:       formatMessages(result.Warnings),
+		BuildID:   buildID,
 	}, nil
+}
+
+// buildID is a content hash of the build outputs (bundle.js + bundle.css). It
+// changes iff the served bytes change, so it cleanly identifies a build.
+func buildIDFor(dir, distRel string) string {
+	h := sha256.New()
+	for _, name := range []string{"bundle.js", "bundle.css"} {
+		if data, err := os.ReadFile(filepath.Join(dir, distRel, name)); err == nil {
+			h.Write(data)
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // importMapPath is the page-relative path of the persisted import map.
@@ -185,12 +239,12 @@ func (b *builder) resolveImportMap(ctx context.Context, metafile string, pins ma
 	return im, "", true
 }
 
-func (b *builder) writeImportMap(ctx context.Context, pageID string, im ImportMap) error {
+func (b *builder) writeImportMap(ctx context.Context, pageID, distRel string, im ImportMap) error {
 	data, err := json.Marshal(im)
 	if err != nil {
 		return err
 	}
-	return b.store.WriteFile(ctx, pageID, importMapPath, data)
+	return b.store.WriteFile(ctx, pageID, distRel+"/importmap.json", data)
 }
 
 // parseExternalImports returns the unique specifiers the bundle imports that
@@ -220,25 +274,30 @@ func parseExternalImports(metafile string) []string {
 	return out
 }
 
-// writeBuildMeta drops the build-success marker. Best-effort: a marker write
-// failure logs but does not fail an otherwise-good build.
-func (b *builder) writeBuildMeta(ctx context.Context, pageID, dir string) {
+// writeBuildMeta drops the build-success marker into the channel's dist dir.
+// Best-effort: a marker write failure logs but does not fail an otherwise-good
+// build. publish_app gates on the PUBLISHED marker (BuildMetaPath = dist/...).
+// writeBuildMeta computes the build id, writes the marker, and returns the id.
+func (b *builder) writeBuildMeta(ctx context.Context, pageID, dir, distRel string) string {
 	var size int64
-	if fi, err := os.Stat(filepath.Join(dir, distDirName, "bundle.js")); err == nil {
+	if fi, err := os.Stat(filepath.Join(dir, distRel, "bundle.js")); err == nil {
 		size = fi.Size()
 	}
+	buildID := buildIDFor(dir, distRel)
 	data, err := json.Marshal(buildMeta{
 		PageID:      pageID,
 		BuiltAt:     time.Now().UTC().Format(time.RFC3339),
 		BundleBytes: size,
+		BuildID:     buildID,
 	})
 	if err != nil {
 		slog.Warn("docsurface: marshal build meta", "page_id", pageID, "err", err)
-		return
+		return buildID
 	}
-	if err := b.store.WriteFile(ctx, pageID, BuildMetaPath, data); err != nil {
+	if err := b.store.WriteFile(ctx, pageID, distRel+"/"+buildMetaName, data); err != nil {
 		slog.Warn("docsurface: write build meta", "page_id", pageID, "err", err)
 	}
+	return buildID
 }
 
 // cdnPlugin resolves bare specifiers (react, react-dom/client, react/jsx-runtime,

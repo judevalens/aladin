@@ -31,7 +31,23 @@ type BuildResult struct {
 	OK        bool   `json:"ok"`
 	ServedURL string `json:"served_url,omitempty"`
 	Log       string `json:"log,omitempty"`
+	// BuildID is a content hash of this build's output (bundle.js + css). It
+	// identifies exactly which build produced the served artifact — recorded in
+	// the build-status event and (later) embedded for the inspect runtime.
+	BuildID string `json:"build_id,omitempty"`
 }
+
+// BuildChannel selects which artifact a build produces. The two channels coexist
+// per page: draft is the fast authoring loop (unminified, inline source maps,
+// auto-built on every write) written to dist/draft/; published is the promoted
+// artifact publish_app gates on, written to dist/ (minified). They differ only
+// in minification, source maps, and output dir.
+type BuildChannel string
+
+const (
+	ChannelPublished BuildChannel = "published"
+	ChannelDraft     BuildChannel = "draft"
+)
 
 // DocSurfaceStore is per-user, per-page file IO over the data volume. The userID
 // is ALWAYS derived from the ctx Principal inside the impl — never passed by a
@@ -56,8 +72,10 @@ type DocSurfaceStore interface {
 // WorkspaceRuntime is the build/exec seam. v1 impl runs esbuild in-process
 // (in the MCP process); a Docker-per-user impl can swap in later unchanged.
 type WorkspaceRuntime interface {
-	// Build bundles pageID's index.tsx into dist/bundle.js and returns the result.
-	Build(ctx context.Context, pageID string) (BuildResult, error)
+	// Build bundles pageID's index.tsx into the channel's dist dir and returns the
+	// result. channel selects draft (dist/draft/, unminified + inline source maps)
+	// vs published (dist/, minified).
+	Build(ctx context.Context, pageID string, channel BuildChannel) (BuildResult, error)
 	// ReadVendor returns the bytes of a content-addressed vendored dependency file
 	// (served publicly at GET /vendor/<sha>). sha is a bare hex string; the impl
 	// rejects anything else. Vendored libs are shared across all users/pages.
@@ -88,10 +106,10 @@ type PreviewState struct {
 // exact same inlined bundle under the exact same opaque-origin CSP as the served
 // iframe, so eval/click run against untrusted agent code with zero host reach.
 type PreviewService interface {
-	// Open (re)builds pageID then loads the freshest inlined HTML into the tab
-	// (reusing the page's existing tab if present, else creating one). A build
-	// failure is returned as an error carrying the build log.
-	Open(ctx context.Context, pageID string) (PreviewState, error)
+	// Open (re)builds pageID on the given channel then loads the freshest inlined
+	// HTML into the tab (reusing the page's existing tab if present, else creating
+	// one). A build failure is returned as an error carrying the build log.
+	Open(ctx context.Context, pageID string, channel BuildChannel) (PreviewState, error)
 	// Navigate sets the in-app hash route (e.g. "#/section/sub") and waits for the
 	// view to settle.
 	Navigate(ctx context.Context, pageID, route string) (PreviewState, error)

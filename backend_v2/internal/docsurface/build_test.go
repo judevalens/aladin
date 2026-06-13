@@ -47,7 +47,7 @@ func TestBuildReactPage(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	res, err := b.Build(ctx, "p1")
+	res, err := b.Build(ctx, "p1", service.ChannelPublished)
 	if err != nil {
 		t.Fatalf("Build returned Go error: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestBuildSyntaxErrorIsSoftFail(t *testing.T) {
 	if err := st.WriteFile(ctx, "p1", "index.tsx", []byte("const x = (((;")); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	res, err := b.Build(ctx, "p1")
+	res, err := b.Build(ctx, "p1", service.ChannelPublished)
 	if err != nil {
 		t.Fatalf("Build returned Go error (should be soft fail): %v", err)
 	}
@@ -165,7 +165,7 @@ func TestBuildMissingEntry(t *testing.T) {
 	b := NewBuilder(st, filepath.Join(root, "cache", "esm"))
 	ctx := testCtx()
 	_, _ = st.EnsurePageDir(ctx, "p1")
-	res, err := b.Build(ctx, "p1")
+	res, err := b.Build(ctx, "p1", service.ChannelPublished)
 	if err != nil {
 		t.Fatalf("Build error: %v", err)
 	}

@@ -35,6 +35,8 @@ type Dependencies interface {
 	WorkspaceRuntime() coreservice.WorkspaceRuntime
 	// Preview drives interactive headless inspection of built app pages (MCP only).
 	Preview() coreservice.PreviewService
+	// ShardBuild runs builds while recording status + emitting build-status events.
+	ShardBuild() coreservice.ShardBuildService
 }
 
 type StaticDependencies struct {
@@ -56,6 +58,7 @@ type StaticDependencies struct {
 	DocSurfaceStoreSvc     coreservice.DocSurfaceStore
 	WorkspaceRuntimeSvc    coreservice.WorkspaceRuntime
 	PreviewSvc             coreservice.PreviewService
+	ShardBuildSvc          coreservice.ShardBuildService
 }
 
 func (d StaticDependencies) Auth() coreservice.AuthService          { return d.AuthSvc }
@@ -92,6 +95,9 @@ func (d StaticDependencies) WorkspaceRuntime() coreservice.WorkspaceRuntime {
 func (d StaticDependencies) Preview() coreservice.PreviewService {
 	return d.PreviewSvc
 }
+func (d StaticDependencies) ShardBuild() coreservice.ShardBuildService {
+	return d.ShardBuildSvc
+}
 
 type wiring struct {
 	auth                coreservice.AuthService
@@ -112,6 +118,7 @@ type wiring struct {
 	docSurfaceStore     coreservice.DocSurfaceStore
 	workspaceRuntime    coreservice.WorkspaceRuntime
 	preview             coreservice.PreviewService
+	shardBuild          coreservice.ShardBuildService
 }
 
 func (w wiring) Auth() coreservice.AuthService          { return w.auth }
@@ -140,6 +147,7 @@ func (w wiring) OutboxDrainer() *coreservice.OutboxDrainer      { return w.outbo
 func (w wiring) DocSurfaceStore() coreservice.DocSurfaceStore   { return w.docSurfaceStore }
 func (w wiring) WorkspaceRuntime() coreservice.WorkspaceRuntime { return w.workspaceRuntime }
 func (w wiring) Preview() coreservice.PreviewService            { return w.preview }
+func (w wiring) ShardBuild() coreservice.ShardBuildService      { return w.shardBuild }
 
 func NewDependencies(pool *pgxpool.Pool) Dependencies {
 	return NewDependenciesWithProviderConnections(pool, config.LoadProviderConnections(), config.DataVolumePathOrDefault())
@@ -154,6 +162,7 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 	docStore := docsurface.NewStore(dataVolumePath)
 	docRuntime := docsurface.NewBuilder(docStore, filepath.Join(dataVolumePath, "cache", "esm"))
 	docPreview := docsurface.NewPreviewSessions(docStore, docRuntime, docsurface.PreviewOptions{})
+	shardBuild := coreservice.NewShardBuildService(docRuntime, repo.NewShardBuildPostgres(pool))
 	feedRepo := repo.NewFeedPostgres(pool)
 	insightRepo := repo.NewInsightPostgres(pool)
 	systemRepo := repo.NewSystemPostgres(pool)
@@ -196,6 +205,7 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		docSurfaceStore:     docStore,
 		workspaceRuntime:    docRuntime,
 		preview:             docPreview,
+		shardBuild:          shardBuild,
 	}
 }
 

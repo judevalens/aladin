@@ -139,25 +139,26 @@ func NewPreviewSessions(store service.DocSurfaceStore, runtime service.Workspace
 
 // --- public API (service.PreviewService) -----------------------------------
 
-func (m *PreviewSessions) Open(ctx context.Context, pageID string) (service.PreviewState, error) {
+func (m *PreviewSessions) Open(ctx context.Context, pageID string, channel service.BuildChannel) (service.PreviewState, error) {
 	key, err := sessionKey(ctx, pageID)
 	if err != nil {
 		return service.PreviewState{}, err
 	}
 	// Rebuild on every open so the tab always reflects the agent's latest edits.
-	res, err := m.runtime.Build(ctx, pageID)
+	res, err := m.runtime.Build(ctx, pageID, channel)
 	if err != nil {
 		return service.PreviewState{}, err
 	}
 	if !res.OK {
 		return service.PreviewState{}, service.BadRequest("build failed; fix the errors and preview_open again:\n" + res.Log)
 	}
-	bundleJS, err := m.store.ReadFile(ctx, pageID, distDirName+"/bundle.js")
+	distRel := DistDir(channel)
+	bundleJS, err := m.store.ReadFile(ctx, pageID, distRel+"/bundle.js")
 	if err != nil {
 		return service.PreviewState{}, err
 	}
-	bundleCSS, _ := m.store.ReadFile(ctx, pageID, distDirName+"/bundle.css")
-	html, err := m.previewHTML(ctx, pageID, string(bundleCSS), string(bundleJS))
+	bundleCSS, _ := m.store.ReadFile(ctx, pageID, distRel+"/bundle.css")
+	html, err := m.previewHTML(ctx, pageID, distRel, string(bundleCSS), string(bundleJS))
 	if err != nil {
 		return service.PreviewState{}, err
 	}
@@ -354,10 +355,10 @@ func (m *PreviewSessions) CloseAll(ctx context.Context) error {
 // previewHTML builds the preview document. For an ESM build (importmap.json
 // present), it absolutizes the /vendor URLs to the local vendor server and widens
 // the meta-CSP to that origin; otherwise it serves the legacy inline doc.
-func (m *PreviewSessions) previewHTML(ctx context.Context, pageID, css, js string) (string, error) {
+func (m *PreviewSessions) previewHTML(ctx context.Context, pageID, distRel, css, js string) (string, error) {
 	var im ImportMap
 	csp := CSP
-	if data, derr := m.store.ReadFile(ctx, pageID, importMapPath); derr == nil {
+	if data, derr := m.store.ReadFile(ctx, pageID, distRel+"/importmap.json"); derr == nil {
 		if json.Unmarshal(data, &im) == nil {
 			if im.Imports == nil {
 				im.Imports = map[string]string{}

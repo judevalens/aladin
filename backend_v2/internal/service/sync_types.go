@@ -41,6 +41,19 @@ type Frame struct {
 	Entities []FrameEntity `json:"entities"`
 }
 
+// OutboxAppEvent is a NON-data realtime event carried over the outbox (row type
+// 'app_event') so it can cross process boundaries — e.g. shard build-status
+// emitted by the MCP build process must reach the API process's websocket.
+// Unlike a Frame it is NOT durable synced data: the pull path filters it out
+// (clients never store it); only the live drain forwards it, publishing a
+// realtime event of type "<ResourceKind>.<Operation>" carrying Payload verbatim.
+type OutboxAppEvent struct {
+	ResourceKind string          `json:"resourceKind"`
+	ResourceID   string          `json:"resourceId"`
+	Operation    string          `json:"operation"`
+	Payload      json.RawMessage `json:"payload"`
+}
+
 // PullMode tells the client how to apply a pull response.
 type PullMode string
 
