@@ -42,10 +42,11 @@ const CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-i
 
 // themeCSS is the canonical Aladin design theme — the SINGLE source of truth,
 // generated from aladin_react/src/theme.css via `make tokens` and drift-guarded
-// by `make check-tokens`. It carries the Tailwind v4 @theme (which yields both
-// the utility classes and the :root custom properties). In the shard's plain
-// <style> the @theme at-rule is inert; once the shard's runtime Tailwind loads
-// (KIT-1.2) it compiles the utilities. No hand-authored token values live in Go.
+// by `make check-tokens`. It carries the Tailwind v4 `@theme inline` block: the
+// runtime engine (KIT-1.2) compiles the utilities, inlining each token's base var
+// directly — so it does NOT emit :root --color-* custom properties (that's what
+// `inline` means). shardColorRootCSS re-emits them so var(--color-*) still
+// resolves. No hand-authored token values live in Go.
 //
 //go:embed theme.css
 var themeCSS string
@@ -54,6 +55,41 @@ var themeCSS string
 var TokensCSS = themeCSS + `
 html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);font-family:var(--font-sans);}
 `
+
+// shardColorRootCSS mirrors the @theme tokens into a REAL :root block. theme.css
+// uses Tailwind's `@theme inline`, which compiles tokens straight into utilities
+// and deliberately does NOT emit :root custom properties — so var(--color-*) is
+// undefined at runtime, and any chart/SVG/inline style that references a token
+// color (recharts stroke/fill, hand-drawn SVG, a tok() resolver) renders with no
+// color. EntryHTML re-emits the tokens as a plain :root (a normal <style>,
+// applied by the browser independent of the runtime engine), so var(--color-*)
+// resolves identically in the headless preview and when served. Shard-only:
+// theme.css (host-shared, drift-guarded) is untouched.
+var shardColorRootCSS = themeRootMirror(themeCSS)
+
+// themeRootMirror lifts the body of the first @theme block into a :root selector.
+// The @theme block contains only `--name: value;` declarations (no nested
+// braces), so wrapping its body in :root{} is valid CSS.
+func themeRootMirror(theme string) string {
+	i := strings.Index(theme, "@theme")
+	if i < 0 {
+		return ""
+	}
+	open := strings.IndexByte(theme[i:], '{')
+	if open < 0 {
+		return ""
+	}
+	open += i
+	end := strings.IndexByte(theme[open:], '}')
+	if end < 0 {
+		return ""
+	}
+	body := strings.TrimSpace(theme[open+1 : open+end])
+	if body == "" {
+		return ""
+	}
+	return ":root{" + body + "}"
+}
 
 // tailwindBrowserJS is the @tailwindcss/browser v4 engine (a self-contained,
 // WASM-free, network-free IIFE — verified: no fetch/eval/WebAssembly, so it runs
@@ -90,7 +126,10 @@ func EntryHTML(title, tokensCSS, bundleCSS, bundleJS string, im ImportMap) strin
 	// this block and JIT-injects used utilities). Both ride script-src/style-src
 	// 'unsafe-inline'; the engine needs no network (connect-src 'none' holds).
 	css := `<style type="text/tailwindcss">@import "tailwindcss";` + "\n" + tokensCSS + "</style>" +
-		"<script>" + breakInlineClosers(tailwindBrowserJS) + "</script>"
+		"<script>" + breakInlineClosers(tailwindBrowserJS) + "</script>" +
+		// A plain :root mirror of the @theme tokens so var(--color-*) resolves at
+		// runtime (see shardColorRootCSS): `@theme inline` does not emit these.
+		"<style>" + shardColorRootCSS + "</style>"
 	if bundleCSS != "" {
 		css += "<style>" + breakInlineClosers(bundleCSS) + "</style>"
 	}
