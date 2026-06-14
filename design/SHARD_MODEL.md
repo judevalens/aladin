@@ -1,14 +1,20 @@
-# The Shard Model — graph, manifest, projection
+# The Shard Model — entities, manifest, projection
 
 > The complete conceptual model behind Shards, captured from the design sessions of
 > 2026-06-11/12. This is the thinking, not the implementation plan (that lives at
 > `~/.claude/plans/shard-authoring-loop.md`). Read this to understand *why* the
 > system is shaped the way it is; read the plan to build it.
 
-**The model in one sentence:** the knowledge graph is the source of truth, the
-manifest is each shard's declared interface to it, and the UI is a disposable,
-regenerable **projection** of the graph — addressable, data-bound,
-provenance-carrying, and steerable.
+**The model in one sentence:** the **entity layer** — the workspace's data, today
+mostly relational — is the source of truth, reached through several query lenses
+of which the knowledge graph is *one*; the manifest is each shard's declared
+interface to that data; and the UI is a disposable, regenerable **projection** of
+it — addressable, data-bound, provenance-carrying, and steerable.
+
+> **Framing note (2026-06-14):** earlier drafts said "the knowledge graph is the
+> source of truth," which over-anchored the whole model on the graph engine. The
+> truth is the *entity layer* (§1); the graph is one **lens** onto it, not its
+> foundation. See "reached through lenses" below.
 
 ---
 
@@ -157,6 +163,43 @@ The database-theory mapping is exact:
 | Live view | a bridge shard (`nodes.subscribe`) |
 | View invalidation | staleness badging |
 | Re-materialization | regeneration from the manifest |
+
+### The entity layer is reached through lenses — the graph is one
+
+The truth is the entity layer; getting *to* it is a query problem, and there are
+three distinct ways to find what's relevant, plus one to read it:
+
+| lens | engine | answers |
+|---|---|---|
+| **structure** | relational (Postgres / SQL) | filters, joins, aggregations — *and* the read of record by id |
+| **connection** | graph (Neo4j / Cypher) | relationships, multi-hop, neighborhoods |
+| **similarity** | vector + full-text search | "things like this," by meaning / keyword |
+
+The first three columns are really **two jobs**: *discovery* (connection +
+similarity + structural filters → which entities are relevant, returned as **ids**)
+and *retrieval* (structural read → the entity's content by id). The normal shape is
+**discover → narrow → retrieve**: traverse or search to get ids, then read them
+relationally. Each lens does the half it's good at; none is the foundation.
+
+Two consequences that matter for the rest of this doc:
+
+- **The graph is a lens, not the substrate.** It's the *connection* engine — it
+  returns pointers (ids + how they relate), never payloads (its nodes hold only
+  light props by design). Vector/search is the *similarity* lens, structurally
+  identical: it also returns ids. Both are **discovery aids that feed `refs`**;
+  relational is what `refs` are then read through. Today only the relational lens
+  is populated — the graph and embedding pipeline branches exist but are dormant
+  (see `backend_v2/PIPELINE.md`), so graph/vector are **additive when revived**,
+  and neither gates anything.
+- **Lenses live at authoring time; refs and the bridge stay entity-id-based.** The
+  agent uses these lenses (text-to-SQL, text-to-Cypher, a `search` call — each a
+  read-only tool whose schema it's given) to *discover* the entities a region
+  depends on and to *derive* its `binding`. What lands in the manifest is the
+  result: stable entity **ids** in `refs` (§4) and prose `binding` (§5). The
+  view-time bridge then serves those ids (`nodes.get`/`subscribe`) — it does **not**
+  re-run arbitrary queries in the iframe. So the multi-lens query layer changes
+  *how the agent finds and derives*, not the durable, grant-shaped `refs`/bridge
+  contract. (This is why `binding` stays descriptive, not an executable DSL — §5.)
 
 ---
 
