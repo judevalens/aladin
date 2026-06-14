@@ -175,17 +175,43 @@ func CSPWithVendorScheme() string {
 	return strings.Replace(CSP, "script-src 'unsafe-inline'", "script-src 'unsafe-inline' vendor:", 1)
 }
 
-// PreviewHTML is EntryHTML for the headless preview renderer. It is byte-for-byte
-// the same document the serve route emits, except it carries the CSP as a <meta
-// http-equiv> tag: page.SetDocumentContent loads HTML with no HTTP headers, so
-// the policy must travel inline for the preview to render under the SAME
-// constraints as production (an agent that passes preview then passes the iframe).
+// previewBridgeEmulatorJS stands in for the production host's bridge: it answers
+// the kit's nodes.get/subscribe postMessages with stub nodes, so a data-wired
+// shard (useNode/useNodes) renders in the headless preview instead of hanging on a
+// host that isn't there. Preview-only — EntryHTML (the served doc) never carries
+// it; the real app's host responds with workspace data. See kit.tsx L5 bridge.
+const previewBridgeEmulatorJS = `(function(){
+  if(window.__aladinBridgeEmu)return; window.__aladinBridgeEmu=1;
+  function node(id){return {id:id,type:"preview",title:"Preview node "+id,
+    data:{id:id,note:"preview stub — the live host serves nodes.get from your workspace"}};}
+  function reply(r){window.postMessage(r,"*");}
+  window.addEventListener("message",function(e){
+    var m=e.data; if(!m||m.aladin!=="bridge/1"||m.type!=="request")return;
+    var ids=(m.params&&m.params.ids)||[];
+    if(m.method==="nodes.get"){reply({aladin:"bridge/1",type:"response",id:m.id,ok:true,data:ids.map(node)});}
+    else if(m.method==="nodes.subscribe"){
+      reply({aladin:"bridge/1",type:"response",id:m.id,ok:true,data:true});
+      ids.forEach(function(id){reply({aladin:"bridge/1",type:"push",channel:m.params.channel,data:node(id)});});
+    }
+    else if(m.method==="nodes.unsubscribe"){reply({aladin:"bridge/1",type:"response",id:m.id,ok:true,data:true});}
+    else{reply({aladin:"bridge/1",type:"response",id:m.id,ok:false,error:"preview emulator: unknown method "+m.method});}
+  });
+})();`
+
+// PreviewHTML is EntryHTML for the headless preview renderer. It is the same
+// document the serve route emits, plus two preview-only injections: the CSP as a
+// <meta http-equiv> tag (page.SetDocumentContent loads HTML with no HTTP headers,
+// so the policy must travel inline) and a bridge emulator so data-wired shards
+// render without the production host.
 func PreviewHTML(title, tokensCSS, bundleCSS, bundleJS, csp string, im ImportMap) string {
 	doc := EntryHTML(title, tokensCSS, bundleCSS, bundleJS, im)
-	meta := "<meta http-equiv=\"Content-Security-Policy\" content=\"" + csp + "\">\n"
-	// Insert immediately after the charset meta so the policy is the first thing
-	// the parser applies. EntryHTML always emits this exact line.
-	return strings.Replace(doc, "<meta charset=\"utf-8\">\n", "<meta charset=\"utf-8\">\n"+meta, 1)
+	// Insert immediately after the charset meta: the CSP first (so it's the first
+	// thing the parser applies), then the bridge emulator (before the body bundle,
+	// so its listener is ready when the shard mounts). EntryHTML always emits this
+	// exact charset line.
+	head := "<meta http-equiv=\"Content-Security-Policy\" content=\"" + csp + "\">\n" +
+		"<script>" + breakInlineClosers(previewBridgeEmulatorJS) + "</script>\n"
+	return strings.Replace(doc, "<meta charset=\"utf-8\">\n", "<meta charset=\"utf-8\">\n"+head, 1)
 }
 
 // NotBuiltHTML is shown when a page has no built bundle yet.

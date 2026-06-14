@@ -59,6 +59,11 @@ index.tsx + an anchors.json manifest. Import from "@aladin/kit":
   - Generic UI (token-styled, no extra deps): Button, Card, Badge, Input, Textarea,
     Field, Callout, Stat, Tabs ([{id,label,content}]), Dialog ({open,onClose}),
     Divider. Reach for these before hand-rolling buttons/cards/inputs.
+  - bridge + useNode(id) / useNodes(ids) — read live workspace/graph data over the
+    host bridge (a shard is sandboxed; this postMessage channel is its only data
+    path). useNode returns {node, loading, error}; declare the entity ids in each
+    region's anchors.json refs. In preview a built-in emulator returns stub nodes so
+    data-wired shards render; the live app's host serves real workspace data.
   - tok(name) + chartSeries() + chartAxis()/chartGrid()/chartTooltip() — chart/SVG
     theming. IMPORTANT: var(--color-*) is INERT inside SVG presentation attributes
     (stroke="…"/fill="…"), which is how recharts and <svg> set colors — so resolve

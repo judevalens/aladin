@@ -383,3 +383,146 @@ export function Dialog({
     </div>
   );
 }
+
+// --- L5 bridge (host ↔ shard channel: nodes.get / nodes.subscribe) -----------
+//
+// A shard is sandboxed (opaque origin); it reaches workspace/graph data only
+// through this postMessage bridge. The SHARD code is identical in preview and
+// production — it posts to window.parent; in the live app the HOST answers (auth +
+// data, scoped to the shard's manifest refs), and in the headless preview a small
+// emulator answers with stub nodes so data-wired shards still render. Messages are
+// namespaced { aladin: "bridge/1" }; everything else is ignored.
+
+const BRIDGE = "bridge/1";
+
+// Node is a workspace/graph entity a shard depends on (declared in anchors.json
+// `refs`). Shape is intentionally generic; `data` carries the entity payload.
+export type Node = { id: string; type?: string; title?: string; data?: unknown };
+
+let _seq = 0;
+const _pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
+const _subs = new Map<string, (n: Node) => void>();
+let _wired = false;
+
+function ensureWired() {
+  if (_wired || typeof window === "undefined") return;
+  _wired = true;
+  window.addEventListener("message", (e: MessageEvent) => {
+    const m = e.data as { aladin?: string; type?: string; id?: number; ok?: boolean; data?: unknown; error?: string; channel?: string };
+    if (!m || m.aladin !== BRIDGE) return;
+    if (m.type === "response" && m.id != null && _pending.has(m.id)) {
+      const p = _pending.get(m.id)!;
+      _pending.delete(m.id);
+      if (m.ok) p.resolve(m.data);
+      else p.reject(new Error(m.error || "bridge error"));
+    } else if (m.type === "push" && m.channel && _subs.has(m.channel)) {
+      _subs.get(m.channel)!(m.data as Node);
+    }
+  });
+}
+
+function post(method: string, params: Record<string, unknown>): Promise<unknown> {
+  if (typeof window === "undefined") return Promise.reject(new Error("bridge: no window"));
+  ensureWired();
+  const id = ++_seq;
+  return new Promise((resolve, reject) => {
+    _pending.set(id, { resolve, reject });
+    (window.parent || window).postMessage({ aladin: BRIDGE, type: "request", id, method, params }, "*");
+    setTimeout(() => {
+      if (_pending.has(id)) {
+        _pending.delete(id);
+        reject(new Error("bridge: timeout on " + method));
+      }
+    }, 8000);
+  });
+}
+
+// bridge is the low-level client. Most shards use the useNode/useNodes hooks.
+export const bridge = {
+  getNodes(ids: string[]): Promise<Node[]> {
+    return post("nodes.get", { ids }).then((d) => (d as Node[]) || []);
+  },
+  getNode(id: string): Promise<Node | null> {
+    return post("nodes.get", { ids: [id] }).then((d) => ((d as Node[]) || [])[0] ?? null);
+  },
+  // subscribe pushes the current value then updates; returns an unsubscribe fn.
+  subscribe(ids: string[], cb: (n: Node) => void): () => void {
+    ensureWired();
+    const channel = "sub:" + ++_seq;
+    _subs.set(channel, cb);
+    post("nodes.subscribe", { ids, channel }).catch(() => {});
+    return () => {
+      _subs.delete(channel);
+      post("nodes.unsubscribe", { channel }).catch(() => {});
+    };
+  },
+};
+
+export type NodeState = { node: Node | null; loading: boolean; error: string | null };
+
+// useNode fetches a single node and live-updates it via subscription. id may be
+// null/undefined to render nothing. Use the returned {node, loading, error}.
+export function useNode(id: string | null | undefined): NodeState {
+  const [state, setState] = useState<NodeState>({ node: null, loading: !!id, error: null });
+  useEffect(() => {
+    if (!id) {
+      setState({ node: null, loading: false, error: null });
+      return;
+    }
+    let alive = true;
+    setState({ node: null, loading: true, error: null });
+    bridge
+      .getNode(id)
+      .then((n) => {
+        if (alive) setState({ node: n, loading: false, error: null });
+      })
+      .catch((e: Error) => {
+        if (alive) setState({ node: null, loading: false, error: e.message });
+      });
+    const unsub = bridge.subscribe([id], (n) => {
+      if (alive && n && n.id === id) setState({ node: n, loading: false, error: null });
+    });
+    return () => {
+      alive = false;
+      unsub();
+    };
+  }, [id]);
+  return state;
+}
+
+// useNodes is the multi-id form: returns {nodes, loading, error} with nodes keyed
+// in the requested order (missing ids omitted).
+export function useNodes(ids: string[]): { nodes: Node[]; loading: boolean; error: string | null } {
+  const key = ids.join(",");
+  const [state, setState] = useState<{ nodes: Node[]; loading: boolean; error: string | null }>({
+    nodes: [],
+    loading: ids.length > 0,
+    error: null,
+  });
+  useEffect(() => {
+    if (ids.length === 0) {
+      setState({ nodes: [], loading: false, error: null });
+      return;
+    }
+    let alive = true;
+    setState({ nodes: [], loading: true, error: null });
+    bridge
+      .getNodes(ids)
+      .then((ns) => {
+        if (alive) setState({ nodes: ns, loading: false, error: null });
+      })
+      .catch((e: Error) => {
+        if (alive) setState({ nodes: [], loading: false, error: e.message });
+      });
+    const unsub = bridge.subscribe(ids, (n) => {
+      if (!alive) return;
+      setState((s) => ({ ...s, loading: false, nodes: s.nodes.map((x) => (x.id === n.id ? n : x)) }));
+    });
+    return () => {
+      alive = false;
+      unsub();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  return state;
+}

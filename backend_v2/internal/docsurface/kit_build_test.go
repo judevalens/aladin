@@ -21,6 +21,7 @@ func TestBuildKitCompilesWithVizHelpers(t *testing.T) {
 		"Region", "useRoute", // core
 		"chartSeries", "chartAxis", "chartGrid", "chartTooltip", "tok", // L3 viz
 		"Button", "Card", "Badge", "Input", "Textarea", "Field", "Callout", "Stat", "Tabs", "Dialog", "Divider", // L4 UI
+		"bridge", "useNode", "useNodes", // L5 bridge
 	} {
 		if !strings.Contains(js, sym) {
 			t.Fatalf("kit bundle missing exported symbol %q", sym)
