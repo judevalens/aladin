@@ -1,16 +1,22 @@
 // @aladin/kit — the shard authoring kit (KIT-1 core).
 //
-// Thin stable core: identity (Region), opaque-origin-safe hash routing, layout
-// chrome, and the Aladin semantic hues. Generic UI (buttons, cards, dialogs)
-// comes from shadcn/Radix re-exports in a later increment. Every component is
-// Tailwind/token-styled and reactivity-agnostic; semantic components compose
-// Region rather than reimplementing anchoring.
+// Layers: L0 identity (Region), L1 routing + layout chrome, L2 semantic hues,
+// L3 chart/SVG theming helpers, L4 generic UI (Button/Card/Field/Tabs/Dialog…).
+// Generic UI is kit-native (React + Tailwind tokens only — no Radix/shadcn
+// vendoring), so it adds no bundle weight and inherits the theme. Every component
+// is token-styled and reactivity-agnostic; semantic components compose Region
+// rather than reimplementing anchoring.
 //
 // Built once (esbuild, react externalized → shared instance) and served
 // content-addressed at /vendor/<sha>; agents `import { … } from "@aladin/kit"`.
 
 import { useEffect, useState } from "react";
-import type { ReactNode } from "react";
+import type {
+  ReactNode,
+  ButtonHTMLAttributes,
+  InputHTMLAttributes,
+  TextAreaHTMLAttributes,
+} from "react";
 
 export function cn(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
@@ -189,4 +195,191 @@ export function chartTooltip() {
     cursor: { fill: tok("--color-raise") },
     labelStyle: { color: tok("--color-ink-2") },
   };
+}
+
+// --- L4 generic UI (token-styled, dependency-free) ---------------------------
+//
+// Kit-native primitives for the things agents otherwise hand-roll (buttons,
+// cards, fields, tabs, dialogs). Built on React + Tailwind tokens only — no
+// Radix/shadcn vendoring, so they add nothing to a shard's bundle weight and
+// inherit the Aladin theme automatically.
+
+type ButtonVariant = "primary" | "outline" | "ghost" | "danger";
+type ButtonSize = "sm" | "md";
+const btnBase =
+  "inline-flex items-center justify-center gap-2 rounded-chip font-mono transition-colors " +
+  "focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-line disabled:opacity-50 disabled:pointer-events-none";
+const btnVariant: Record<ButtonVariant, string> = {
+  primary: "bg-amber text-bg hover:bg-amber-soft",
+  outline: "border border-line text-ink hover:bg-raise",
+  ghost: "text-ink-2 hover:text-ink hover:bg-raise",
+  danger: "bg-against text-bg hover:opacity-90",
+};
+const btnSize: Record<ButtonSize, string> = {
+  sm: "h-7 px-2 text-[11px]",
+  md: "h-9 px-3 text-sm",
+};
+export function Button({
+  variant = "primary",
+  size = "md",
+  className,
+  ...rest
+}: { variant?: ButtonVariant; size?: ButtonSize } & ButtonHTMLAttributes<HTMLButtonElement>) {
+  return <button className={cn(btnBase, btnVariant[variant], btnSize[size], className)} {...rest} />;
+}
+
+export function Card({ className, children }: Styled) {
+  return <div className={cn("rounded-card border border-line bg-card p-4", className)}>{children}</div>;
+}
+
+export function Divider({ className }: { className?: string }) {
+  return <hr className={cn("border-0 border-t border-line", className)} />;
+}
+
+type BadgeTone = "neutral" | "amber" | "for" | "against";
+export function Badge({
+  tone = "neutral",
+  className,
+  children,
+}: { tone?: BadgeTone; className?: string; children?: ReactNode }) {
+  const tones: Record<BadgeTone, string> = {
+    neutral: "bg-raise text-ink-2 border-line",
+    amber: "text-amber border-amber-line",
+    for: "text-for border-line",
+    against: "text-against border-line",
+  };
+  return (
+    <span className={cn("inline-flex items-center rounded-chip border px-1.5 py-0.5 font-mono text-[11px]", tones[tone], className)}>
+      {children}
+    </span>
+  );
+}
+
+const fieldCls =
+  "w-full rounded-chip border border-line bg-field px-2.5 py-1.5 text-sm text-ink " +
+  "placeholder:text-ink-4 focus:outline-none focus:border-amber-line";
+export function Input({ className, ...rest }: InputHTMLAttributes<HTMLInputElement>) {
+  return <input className={cn(fieldCls, className)} {...rest} />;
+}
+export function Textarea({ className, ...rest }: TextAreaHTMLAttributes<HTMLTextAreaElement>) {
+  return <textarea className={cn(fieldCls, "min-h-20", className)} {...rest} />;
+}
+
+export function Field({
+  label,
+  hint,
+  htmlFor,
+  className,
+  children,
+}: { label?: ReactNode; hint?: ReactNode; htmlFor?: string; className?: string; children?: ReactNode }) {
+  return (
+    <div className={cn("flex flex-col gap-1", className)}>
+      {label ? <label htmlFor={htmlFor} className="font-mono text-xs text-ink-3">{label}</label> : null}
+      {children}
+      {hint ? <p className="font-mono text-[11px] text-ink-4">{hint}</p> : null}
+    </div>
+  );
+}
+
+type CalloutTone = "info" | "warn" | "for" | "against";
+export function Callout({
+  tone = "info",
+  title,
+  className,
+  children,
+}: { tone?: CalloutTone; title?: ReactNode; className?: string; children?: ReactNode }) {
+  const border: Record<CalloutTone, string> = {
+    info: "border-line",
+    warn: "border-amber-line",
+    for: "border-line",
+    against: "border-line",
+  };
+  const accent: Record<CalloutTone, string> = {
+    info: "text-ink",
+    warn: "text-amber",
+    for: "text-for",
+    against: "text-against",
+  };
+  return (
+    <div className={cn("rounded-card border bg-panel p-3", border[tone], className)}>
+      {title ? <div className={cn("mb-1 font-display text-sm", accent[tone])}>{title}</div> : null}
+      <div className="text-sm text-ink-2">{children}</div>
+    </div>
+  );
+}
+
+export function Stat({
+  label,
+  value,
+  sub,
+  className,
+}: { label?: ReactNode; value?: ReactNode; sub?: ReactNode; className?: string }) {
+  return (
+    <div className={cn("rounded-card border border-line bg-card p-3", className)}>
+      {label ? <div className="font-mono text-[11px] uppercase tracking-wide text-ink-3">{label}</div> : null}
+      <div className="font-display text-2xl text-ink">{value}</div>
+      {sub ? <div className="font-mono text-[11px] text-ink-4">{sub}</div> : null}
+    </div>
+  );
+}
+
+// Tabs is a self-contained tablist: pass [{id,label,content}]; it tracks the
+// active tab internally. For controlled use, drive your own state + conditional.
+export function Tabs({
+  tabs,
+  initialId,
+  className,
+}: { tabs: Array<{ id: string; label: ReactNode; content: ReactNode }>; initialId?: string; className?: string }) {
+  const [active, setActive] = useState(initialId ?? (tabs[0] ? tabs[0].id : ""));
+  const current = tabs.find((t) => t.id === active) ?? tabs[0];
+  return (
+    <div className={className}>
+      <div className="flex gap-1 border-b border-line" role="tablist">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            role="tab"
+            aria-selected={t.id === active}
+            onClick={() => setActive(t.id)}
+            className={cn(
+              "-mb-px border-b-2 px-3 py-1.5 font-mono text-sm transition-colors",
+              t.id === active ? "border-amber text-amber" : "border-transparent text-ink-3 hover:text-ink",
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <div role="tabpanel" className="pt-4">{current ? current.content : null}</div>
+    </div>
+  );
+}
+
+// Dialog is a controlled modal: render it with open + onClose. Backdrop click and
+// Escape both close. Opaque-origin-safe (no portals needed — it's fixed-position).
+export function Dialog({
+  open,
+  onClose,
+  title,
+  className,
+  children,
+}: { open: boolean; onClose: () => void; title?: ReactNode; className?: string; children?: ReactNode }) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+      <div className="absolute inset-0 bg-bg/70" onClick={onClose} />
+      <div className={cn("relative z-10 w-full max-w-lg rounded-modal border border-line bg-raise p-5 shadow-modal", className)}>
+        {title ? <div className="mb-3 font-display text-lg text-ink">{title}</div> : null}
+        {children}
+      </div>
+    </div>
+  );
 }

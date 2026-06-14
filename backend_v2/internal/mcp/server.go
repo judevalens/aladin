@@ -56,6 +56,9 @@ index.tsx + an anchors.json manifest. Import from "@aladin/kit":
   - HashRouter / Route / Link / useRoute — multi-view shards (opaque-origin-safe
     hash routing; never pushState).
   - For / Against / Catalyst / Echo — semantic hues.
+  - Generic UI (token-styled, no extra deps): Button, Card, Badge, Input, Textarea,
+    Field, Callout, Stat, Tabs ([{id,label,content}]), Dialog ({open,onClose}),
+    Divider. Reach for these before hand-rolling buttons/cards/inputs.
   - tok(name) + chartSeries() + chartAxis()/chartGrid()/chartTooltip() — chart/SVG
     theming. IMPORTANT: var(--color-*) is INERT inside SVG presentation attributes
     (stroke="…"/fill="…"), which is how recharts and <svg> set colors — so resolve
