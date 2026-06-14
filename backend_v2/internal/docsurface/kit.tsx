@@ -123,3 +123,70 @@ export function Catalyst({ className, children }: Styled) {
 export function Echo({ className, children }: Styled) {
   return <span className={cn("text-echo", className)}>{children}</span>;
 }
+
+// --- L3 viz theming (token-resolved colors for charts / SVG) -----------------
+//
+// var(--color-*) resolves at runtime (the shard inlines the tokens into :root),
+// but it is INERT inside an SVG presentation attribute (stroke="…" / fill="…"),
+// which is exactly how recharts and hand-drawn SVG set colors. tok() flattens a
+// token to a CONCRETE color so it's safe to pass as an attribute; the chart*
+// helpers return spread-ready, on-theme props for the recharts primitives. Import
+// recharts yourself; the kit only supplies the theme glue (no recharts coupling).
+
+// tok resolves a design token (e.g. "--color-amber") to a concrete CSS color by
+// reading a throwaway element's computed `color`, flattening the whole var()
+// chain to an rgb(...) string — valid anywhere, including SVG attributes.
+export function tok(name: string): string {
+  if (typeof document === "undefined") return "#888";
+  const el = document.createElement("span");
+  el.style.color = "var(" + name + ")";
+  el.style.display = "none";
+  document.body.appendChild(el);
+  const c = getComputedStyle(el).color;
+  el.remove();
+  return c || "#888";
+}
+
+// chartSeries is the ordered on-theme palette for chart series, resolved to
+// concrete colors. Call at render time (it reads computed styles); index/cycle as
+// needed: <Bar fill={chartSeries()[0]} />.
+export function chartSeries(): string[] {
+  return [
+    "--color-amber",
+    "--color-echo",
+    "--color-for",
+    "--color-against",
+    "--color-catalyst",
+    "--color-ink-3",
+  ].map(tok);
+}
+
+// chartAxis / chartGrid / chartTooltip return spread-ready, theme-resolved props
+// for the matching recharts primitives — call them in render:
+//   <XAxis {...chartAxis()} dataKey="x" />
+//   <CartesianGrid {...chartGrid()} />
+//   <Tooltip {...chartTooltip()} />
+export function chartAxis() {
+  const ink = tok("--color-ink-3");
+  return {
+    stroke: ink,
+    tick: { fill: ink, fontSize: 11 },
+    tickLine: { stroke: tok("--color-line-2") },
+  };
+}
+export function chartGrid() {
+  return { stroke: tok("--color-line-2"), strokeDasharray: "3 3" };
+}
+export function chartTooltip() {
+  return {
+    contentStyle: {
+      background: tok("--color-card"),
+      border: "1px solid " + tok("--color-line"),
+      borderRadius: 8,
+      color: tok("--color-ink"),
+      fontSize: 12,
+    },
+    cursor: { fill: tok("--color-raise") },
+    labelStyle: { color: tok("--color-ink-2") },
+  };
+}

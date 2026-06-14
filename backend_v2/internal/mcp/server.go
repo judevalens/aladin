@@ -56,6 +56,13 @@ index.tsx + an anchors.json manifest. Import from "@aladin/kit":
   - HashRouter / Route / Link / useRoute — multi-view shards (opaque-origin-safe
     hash routing; never pushState).
   - For / Against / Catalyst / Echo — semantic hues.
+  - tok(name) + chartSeries() + chartAxis()/chartGrid()/chartTooltip() — chart/SVG
+    theming. IMPORTANT: var(--color-*) is INERT inside SVG presentation attributes
+    (stroke="…"/fill="…"), which is how recharts and <svg> set colors — so resolve
+    a token with tok("--color-amber") before passing it as an attribute, pick
+    series colors from chartSeries(), and spread chartAxis()/chartGrid()/
+    chartTooltip() into recharts <XAxis>/<CartesianGrid>/<Tooltip>. Don't hardcode
+    hex and don't put var(--…) in an SVG attribute.
 Style with Tailwind classes + Aladin token utilities (bg-bg, bg-panel, text-ink,
 text-ink-2, bg-amber, border-line, rounded-card, font-display/font-mono). Tailwind
 is compiled live in the shard — just use classes; no build/config step. Raw React
