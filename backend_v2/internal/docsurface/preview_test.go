@@ -308,6 +308,76 @@ func TestPreviewSession_CloseAndCloseAll(t *testing.T) {
 	}
 }
 
+// A crashed shared browser must self-heal: the next Open transparently rebuilds
+// the renderer and mounts again, instead of returning "context canceled" forever
+// (the failure that previously required a full mcp restart).
+func TestPreviewSession_SelfHealsDeadBrowser(t *testing.T) {
+	chromeAvailable(t)
+	m, ctx := newPreviewFixture(t, PreviewOptions{})
+
+	if _, err := m.Open(ctx, "p1", service.ChannelPublished); err != nil {
+		t.Fatalf("first Open: %v", err)
+	}
+
+	// Simulate a browser crash: cancel the shared allocator out from under the
+	// live tab. This kills allocCtx and every child tabCtx.
+	m.mu.Lock()
+	allocCancel := m.allocCancel
+	m.mu.Unlock()
+	if allocCancel == nil {
+		t.Fatal("expected an allocator after first Open")
+	}
+	allocCancel()
+	// Let chromedp propagate the cancellation to the tab contexts.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		m.mu.Lock()
+		dead := m.allocCtx != nil && m.allocCtx.Err() != nil
+		m.mu.Unlock()
+		if dead || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// A second Open must rebuild the browser and mount again.
+	st, err := m.Open(ctx, "p1", service.ChannelPublished)
+	if err != nil {
+		t.Fatalf("Open after crash should self-heal, got: %v", err)
+	}
+	if !st.Mounted {
+		t.Fatalf("expected mounted after self-heal, state=%+v", st)
+	}
+}
+
+// Reset (the preview_restart escape hatch) clears all sessions + the browser,
+// and the next Open transparently rebuilds and mounts.
+func TestPreviewSession_ResetThenReopen(t *testing.T) {
+	chromeAvailable(t)
+	m, ctx := newPreviewFixture(t, PreviewOptions{})
+
+	if _, err := m.Open(ctx, "p1", service.ChannelPublished); err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if err := m.Reset(ctx); err != nil {
+		t.Fatalf("Reset: %v", err)
+	}
+	m.mu.Lock()
+	n, ready := len(m.sessions), m.allocReady
+	m.mu.Unlock()
+	if n != 0 || ready {
+		t.Fatalf("after Reset want 0 sessions & alloc not ready, got sessions=%d ready=%v", n, ready)
+	}
+
+	st, err := m.Open(ctx, "p1", service.ChannelPublished)
+	if err != nil {
+		t.Fatalf("Open after Reset should rebuild, got: %v", err)
+	}
+	if !st.Mounted {
+		t.Fatalf("expected mounted after reset+reopen, state=%+v", st)
+	}
+}
+
 // No Chrome binary → every op degrades to a clean BadRequest, never a panic.
 func TestPreviewSession_RendererUnavailable(t *testing.T) {
 	t.Setenv("DOCSURFACE_CHROME_PATH", filepath.Join(t.TempDir(), "no-such-chrome"))

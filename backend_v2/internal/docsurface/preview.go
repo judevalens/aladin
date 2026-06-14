@@ -163,6 +163,26 @@ func (m *PreviewSessions) Open(ctx context.Context, pageID string, channel servi
 		return service.PreviewState{}, err
 	}
 
+	// Load into a tab. If the browser/tab died under us (crash, external kill),
+	// self-heal once: reset the dead browser and retry on a fresh one. Combined
+	// with the liveness checks in ensureAllocLocked/getOrCreate, this means a
+	// crashed renderer recovers on the next preview_open — no mcp restart.
+	for attempt := 0; ; attempt++ {
+		st, err := m.openOnce(key, pageID, html)
+		if err == nil {
+			return st, nil
+		}
+		if attempt == 0 && isBrowserDead(err) {
+			m.resetBrowser()
+			continue
+		}
+		return service.PreviewState{}, err
+	}
+}
+
+// openOnce performs one load attempt: (re)acquire the tab, warm up the browser
+// on first use, then replace the document and wait for mount.
+func (m *PreviewSessions) openOnce(key, pageID, html string) (service.PreviewState, error) {
 	s, err := m.getOrCreate(key)
 	if err != nil {
 		return service.PreviewState{}, err
@@ -318,6 +338,16 @@ func (m *PreviewSessions) Console(ctx context.Context, pageID string) (service.P
 	return m.captureState(opCtx, s, pageID), nil
 }
 
+// Reset force-restarts the renderer: it tears down the shared browser and all
+// tabs so the next Open rebuilds from scratch. The manual escape hatch behind
+// the preview_restart tool, for a wedged browser that auto-recovery hasn't yet
+// noticed. Safe to call when nothing is open (no-op) or no Chrome exists (the
+// next Open returns the usual "renderer unavailable").
+func (m *PreviewSessions) Reset(_ context.Context) error {
+	m.resetBrowser()
+	return nil
+}
+
 func (m *PreviewSessions) Close(ctx context.Context, pageID string) error {
 	key, err := sessionKey(ctx, pageID)
 	if err != nil {
@@ -421,8 +451,14 @@ func (m *PreviewSessions) getOrCreate(key string) (*previewSession, error) {
 		return nil, err
 	}
 	if s, ok := m.sessions[key]; ok {
-		s.lastUsed = time.Now()
-		return s, nil
+		// Reuse the tab only if it's still alive; a dead tab (browser restarted,
+		// or this tab crashed while the browser survived) is dropped and rebuilt.
+		if s.tabCtx.Err() == nil {
+			s.lastUsed = time.Now()
+			return s, nil
+		}
+		s.tabCancel()
+		delete(m.sessions, key)
 	}
 	if len(m.sessions) >= m.maxSessions {
 		m.evictLRULocked()
@@ -456,7 +492,14 @@ func (m *PreviewSessions) getExisting(ctx context.Context, pageID string) (*prev
 // ensureAllocLocked lazily creates the shared browser allocator. Caller holds m.mu.
 func (m *PreviewSessions) ensureAllocLocked() error {
 	if m.allocReady {
-		return nil
+		// Self-heal: if the shared browser died (crash, OOM, external kill), its
+		// context is canceled and every child tab is dead. Tear the whole thing
+		// down here so we rebuild a fresh browser below instead of handing out
+		// dead tabs forever (the failure mode that needed a full mcp restart).
+		if m.allocCtx != nil && m.allocCtx.Err() == nil {
+			return nil
+		}
+		m.resetBrowserLocked()
 	}
 	if m.initErr != nil {
 		return unavailable(m.initErr)
@@ -494,6 +537,43 @@ func (m *PreviewSessions) evictLRULocked() {
 		m.sessions[oldestKey].tabCancel()
 		delete(m.sessions, oldestKey)
 	}
+}
+
+// resetBrowser tears down the shared browser + all tabs so the next Open
+// rebuilds from scratch. Used to recover from a crashed renderer.
+func (m *PreviewSessions) resetBrowser() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.resetBrowserLocked()
+}
+
+// resetBrowserLocked cancels every tab and the shared allocator, clearing the
+// session map, so ensureAllocLocked rebuilds a fresh browser on the next call.
+// It deliberately leaves the vendor server, the reaper, and a permanent
+// initErr (no-Chrome) untouched. Caller holds m.mu.
+func (m *PreviewSessions) resetBrowserLocked() {
+	for k, s := range m.sessions {
+		s.tabCancel()
+		delete(m.sessions, k)
+	}
+	if m.allocCancel != nil {
+		m.allocCancel()
+	}
+	m.allocCtx, m.allocCancel, m.allocReady = nil, nil, false
+}
+
+// isBrowserDead reports whether err means the browser/tab context died (a crash
+// or external kill) — as opposed to a normal op timeout or an app-level failure.
+// Such errors are recoverable by rebuilding the browser and retrying.
+func isBrowserDead(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "context canceled") || strings.Contains(msg, "browser start timed out")
 }
 
 func (m *PreviewSessions) reaper() {
@@ -607,9 +687,20 @@ func sessionKey(ctx context.Context, pageID string) (string, error) {
 	return uid + "/" + pid, nil
 }
 
+// rendererUnavailableMsg prefixes the "no Chrome binary" BadRequest so callers
+// can distinguish a missing renderer from a real failure (e.g. publish soft-warns
+// instead of hard-gating when there's nothing to verify with).
+const rendererUnavailableMsg = "renderer unavailable: "
+
 func unavailable(err error) error {
-	return service.BadRequest("renderer unavailable: " + err.Error() +
+	return service.BadRequest(rendererUnavailableMsg + err.Error() +
 		" — preview tools require a Chrome/Chromium binary (set DOCSURFACE_CHROME_PATH)")
+}
+
+// IsRendererUnavailable reports whether err is the "no Chrome binary" condition,
+// as opposed to a build failure or a genuine mount failure.
+func IsRendererUnavailable(err error) bool {
+	return err != nil && strings.HasPrefix(err.Error(), rendererUnavailableMsg)
 }
 
 // resolveChrome finds a Chrome/Chromium binary: the env override, then common

@@ -103,7 +103,7 @@ func registerDocSurfaceTools(server *sdkmcp.Server, artifacts service.ArtifactSe
 	}, t.buildApp)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "publish_app",
-		Description: "Publish a built Doc Surface page: records the markdown summary (the knowledge-graph spine) and marks the page live. Requires a successful build_app first.",
+		Description: "Publish a built Doc Surface page: records the markdown summary (the knowledge-graph spine) and marks the page live. Requires a successful build_app first. Before going live it VERIFIES the build by driving every manifest route through the live preview — publish is REFUSED if a route fails to mount or throws (fix it and retry). If no renderer is available it publishes UNVERIFIED and returns a warning.",
 	}, t.publishApp)
 
 	// --- interactive preview (headless inspection session) -----------------
@@ -139,6 +139,10 @@ func registerDocSurfaceTools(server *sdkmcp.Server, artifacts service.ArtifactSe
 		Name:        "preview_close",
 		Description: "Close the live preview tab for a page and free its resources. Optional — idle tabs are reaped automatically.",
 	}, t.previewClose)
+	sdkmcp.AddTool(server, &sdkmcp.Tool{
+		Name:        "preview_restart",
+		Description: "Force-restart the headless preview renderer: tears down the shared browser and ALL preview tabs. Use to recover if preview_open/navigate/eval start failing with 'context canceled' or the renderer seems wedged — the next preview_open rebuilds it. Auto-recovery normally handles a crash, so this is an explicit escape hatch.",
+	}, t.previewRestart)
 }
 
 // --- inputs / outputs ------------------------------------------------------
@@ -220,6 +224,11 @@ type publishAppInput struct {
 type publishAppOutput struct {
 	OK        bool   `json:"ok"`
 	ServedURL string `json:"served_url"`
+	// Verified is true when every manifest route was driven through the live
+	// preview and mounted cleanly before publishing. False means the renderer
+	// was unavailable and the build shipped UNVERIFIED (see Warning).
+	Verified bool   `json:"verified"`
+	Warning  string `json:"warning,omitempty"`
 }
 
 type previewOpenInput struct {
@@ -251,6 +260,12 @@ type previewCloseInput struct {
 	PageID string `json:"page_id"`
 }
 type previewCloseOutput struct {
+	OK bool `json:"ok"`
+}
+type previewRestartInput struct {
+	PageID string `json:"page_id"`
+}
+type previewRestartOutput struct {
 	OK bool `json:"ok"`
 }
 
@@ -456,13 +471,136 @@ func (t docToolServer) publishApp(ctx context.Context, _ *sdkmcp.CallToolRequest
 	if _, err := t.store.ReadFile(ctx, in.PageID, docsurface.BuildMetaPath); err != nil {
 		return nil, publishAppOutput{}, service.BadRequest("no successful build found — run build_app first")
 	}
+	// Gate on a live mount check across the manifest's routes: a build that
+	// doesn't actually render must not go live. Hard-fails (refuses to publish)
+	// when the renderer is available and a route is broken; soft-warns (publishes
+	// UNVERIFIED) only when there's no renderer to verify with.
+	verified, warning, err := t.verifyMount(ctx, in.PageID)
+	if err != nil {
+		return nil, publishAppOutput{}, err
+	}
 	summary := strings.TrimSpace(in.Summary)
 	if summary != "" {
 		if _, err := t.artifacts.Update(ctx, in.PageID, service.ArtifactPatch{Summary: &summary}); err != nil {
 			return nil, publishAppOutput{}, err
 		}
 	}
-	return nil, publishAppOutput{OK: true, ServedURL: "/content/" + in.PageID + "/"}, nil
+	// Reconcile the DRAFT build-state. A successful publish proves the current
+	// source builds; without this, a stale 'failed' left in the draft channel
+	// from mid-authoring (fixed before publish but never rebuilt on draft) keeps
+	// the work pane showing "build failed" for a shard that is in fact live. This
+	// rebuilds draft through the state-recording path. Best-effort: a published
+	// shard stays published even if the refresh hiccups.
+	if t.build != nil {
+		_, _ = t.build.Build(ctx, in.PageID, service.ChannelDraft)
+	}
+	return nil, publishAppOutput{
+		OK:        true,
+		ServedURL: "/content/" + in.PageID + "/",
+		Verified:  verified,
+		Warning:   warning,
+	}, nil
+}
+
+// verifyMount drives the live preview across the page's declared manifest routes
+// and confirms each mounts cleanly. Returns (verified, warning, err):
+//   - err != nil   → a route failed to mount with the renderer AVAILABLE: a hard
+//     gate; publish is refused. (Also surfaces a genuine build failure.)
+//   - verified=false + warning → renderer UNAVAILABLE (no Chrome): a soft warn;
+//     the caller publishes anyway but the result is stamped unverified.
+//   - verified=true → every route mounted with no uncaught exceptions.
+func (t docToolServer) verifyMount(ctx context.Context, pageID string) (bool, string, error) {
+	routes := t.manifestRoutes(ctx, pageID)
+	first, err := t.preview.Open(ctx, pageID, service.ChannelPublished)
+	if err != nil {
+		if docsurface.IsRendererUnavailable(err) {
+			return false, "renderer unavailable — published WITHOUT mount verification; preview the routes manually before relying on this build.", nil
+		}
+		return false, "", err
+	}
+
+	var failed []string
+	note := func(route string, st service.PreviewState) {
+		switch {
+		case !st.Mounted:
+			failed = append(failed, route+" (did not mount)")
+		case len(st.Exceptions) > 0:
+			failed = append(failed, fmt.Sprintf("%s (%d uncaught exception(s): %s)", route, len(st.Exceptions), firstLine(st.Exceptions[0])))
+		}
+	}
+	// Open landed on the app's default route ("#/"); verify it, then walk the rest.
+	note(firstNonEmpty(first.URL, "#/"), first)
+	for _, r := range routes {
+		if r == "#/" {
+			continue // already covered by the initial Open
+		}
+		st, nerr := t.preview.Navigate(ctx, pageID, r)
+		if nerr != nil {
+			if docsurface.IsRendererUnavailable(nerr) {
+				return false, "renderer unavailable mid-verification — published UNVERIFIED.", nil
+			}
+			failed = append(failed, r+" (navigate error: "+firstLine(nerr.Error())+")")
+			continue
+		}
+		note(r, st)
+	}
+
+	if len(failed) > 0 {
+		return false, "", service.BadRequest("publish blocked — these routes did not mount cleanly:\n  - " +
+			strings.Join(failed, "\n  - ") +
+			"\nFix the build (use preview_open/preview_navigate to debug), then build_app + publish_app again.")
+	}
+	return true, "", nil
+}
+
+// manifestRoutes returns the distinct, declared routes from the page's
+// anchors.json (in declaration order). Falls back to just "#/" when there is no
+// manifest or no routes — the root must at least mount.
+func (t docToolServer) manifestRoutes(ctx context.Context, pageID string) []string {
+	data, err := t.store.ReadFile(ctx, pageID, docsurface.ManifestFileName)
+	if err != nil {
+		return []string{"#/"}
+	}
+	m, err := docsurface.ParseManifest(data)
+	if err != nil {
+		return []string{"#/"}
+	}
+	seen := map[string]bool{}
+	var routes []string
+	for _, a := range m.Anchors {
+		r := strings.TrimSpace(a.Route)
+		if r == "" || seen[r] {
+			continue
+		}
+		seen[r] = true
+		routes = append(routes, r)
+	}
+	if len(routes) == 0 {
+		return []string{"#/"}
+	}
+	return routes
+}
+
+// firstLine returns s up to its first newline, trimmed and length-capped, for a
+// compact one-line failure note.
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	s = strings.TrimSpace(s)
+	if len(s) > 160 {
+		s = s[:160] + "…"
+	}
+	return s
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // --- preview handlers ------------------------------------------------------
@@ -569,4 +707,14 @@ func (t docToolServer) previewClose(ctx context.Context, _ *sdkmcp.CallToolReque
 		return nil, previewCloseOutput{}, err
 	}
 	return nil, previewCloseOutput{OK: true}, nil
+}
+
+func (t docToolServer) previewRestart(ctx context.Context, _ *sdkmcp.CallToolRequest, in previewRestartInput) (*sdkmcp.CallToolResult, previewRestartOutput, error) {
+	if err := t.requireApp(ctx, in.PageID); err != nil {
+		return nil, previewRestartOutput{}, err
+	}
+	if err := t.preview.Reset(ctx); err != nil {
+		return nil, previewRestartOutput{}, err
+	}
+	return nil, previewRestartOutput{OK: true}, nil
 }

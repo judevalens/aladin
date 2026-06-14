@@ -125,6 +125,10 @@ type PreviewService interface {
 	Console(ctx context.Context, pageID string) (PreviewState, error)
 	// Close frees the page's tab (no-op if none open).
 	Close(ctx context.Context, pageID string) error
+	// Reset force-tears down the shared browser + every tab so the next Open
+	// rebuilds a fresh renderer — the manual escape hatch for a wedged browser
+	// that auto-recovery hasn't yet noticed.
+	Reset(ctx context.Context) error
 	// CloseAll tears down every tab + the browser; called on MCP shutdown.
 	CloseAll(ctx context.Context) error
 }
