@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"time"
 )
 
@@ -40,4 +41,67 @@ type RelationshipStore interface {
 	ListForNode(ctx context.Context, userID, kind, id string) ([]Relationship, error)
 	// Delete removes an edge by id, scoped to the owner.
 	Delete(ctx context.Context, userID, id string) error
+}
+
+// RelationshipService is the application port: it resolves the owner from the
+// request principal and validates input before delegating to the store. The
+// concrete impl is unexported; DI exposes this interface.
+type RelationshipService interface {
+	// Create validates + persists an edge for the current principal.
+	Create(ctx context.Context, rel Relationship) (Relationship, error)
+	// ListForNode returns every edge touching (kind,id) for the current principal.
+	ListForNode(ctx context.Context, kind, id string) ([]Relationship, error)
+	// Delete removes an edge by id for the current principal.
+	Delete(ctx context.Context, id string) error
+}
+
+type relationshipService struct {
+	store RelationshipStore
+}
+
+func NewRelationshipService(store RelationshipStore) RelationshipService {
+	return &relationshipService{store: store}
+}
+
+func (s *relationshipService) Create(ctx context.Context, rel Relationship) (Relationship, error) {
+	p, err := RequirePrincipal(ctx)
+	if err != nil {
+		return Relationship{}, err
+	}
+	if !RelationshipKinds[rel.SrcKind] || !RelationshipKinds[rel.DstKind] {
+		return Relationship{}, BadRequest("srcKind and dstKind must each be one of: artifact, record, insight")
+	}
+	if !RelationshipTypes[rel.RelType] {
+		return Relationship{}, BadRequest("relType must be one of: cites, supports, contradicts, about, derived_from")
+	}
+	if strings.TrimSpace(rel.SrcID) == "" || strings.TrimSpace(rel.DstID) == "" {
+		return Relationship{}, BadRequest("srcId and dstId are required")
+	}
+	rel.UserID = p.UserID
+	return s.store.Create(ctx, rel)
+}
+
+func (s *relationshipService) ListForNode(ctx context.Context, kind, id string) ([]Relationship, error) {
+	p, err := RequirePrincipal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !RelationshipKinds[kind] {
+		return nil, BadRequest("kind must be one of: artifact, record, insight")
+	}
+	if strings.TrimSpace(id) == "" {
+		return nil, BadRequest("id is required")
+	}
+	return s.store.ListForNode(ctx, p.UserID, kind, id)
+}
+
+func (s *relationshipService) Delete(ctx context.Context, id string) error {
+	p, err := RequirePrincipal(ctx)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(id) == "" {
+		return BadRequest("id is required")
+	}
+	return s.store.Delete(ctx, p.UserID, id)
 }

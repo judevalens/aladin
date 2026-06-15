@@ -34,9 +34,8 @@ scope to include **the data model** and **new surfaces** — but I'm holding the
 
 ## Backlog
 **Data / spine (now in scope):**
-1. 🟡 **The bridge (Phase 1)** — additive `relationships` edge table linking artifacts ↔
-   records ↔ insights. **Data layer DONE** (migration + repo + interface + tests, Cycle 2);
-   **service + API + DI wiring = next cycle**.
+1. ✅ **The bridge (Phase 1)** — additive `relationships` edge table linking artifacts ↔
+   records ↔ insights. **DONE** end-to-end: data (Cycle 2) + service/API/DI (Cycle 3).
 2. ⏳ **Promote-to-workspace** — create an artifact from a record/insight + a `derived-from`
    edge (the first real cross-world action; the compounding loop's "capture").
 3. ⏳ **Curation surface (backend)** — endpoints to triage insights/records (accept/dismiss/
@@ -98,3 +97,29 @@ else hangs on. (Backlog evolves as I learn the code; kept current here.)
     by `user_id` (matches today's single-user model) without deciding the tenancy model.
 - **Next cycle:** `RelationshipService` (principal → userID, endpoint-existence validation,
   BadRequest on bad kind/type) + `/api/relationships` routes + DI wiring + service/API tests.
+
+### Cycle 3 — The bridge (Phase 1): service + API + DI ✅
+- **What:** completed the bridge's application layer on top of Cycle 2's data layer.
+  `RelationshipService` (interface + unexported impl, per the clean-layering convention)
+  resolves the owner from the request principal (`RequirePrincipal`), validates `kind` ∈
+  {artifact,record,insight} and `relType` ∈ the allow-list (→ `BadRequest`), then delegates
+  to the store. REST: `POST /api/relationships`, `GET /api/relationships?kind=&id=`,
+  `DELETE /api/relationships/{id}` — `BadRequest`→400, else 500. Wired through DI
+  (`Dependencies.Relationships()`, both `StaticDependencies` and `wiring`, + constructor).
+- **Files:** `internal/service/relationships.go` (+service iface/impl), `internal/api/
+  relationships.go` (handlers + `registerRelationshipRoutes`), `internal/api/server.go`
+  (route registration), `internal/app/wiring.go` (DI), `internal/service/relationships_test.go`
+  (service unit test: validation + principal-scoping + missing-principal). Build + vet clean;
+  service + repo suites green against sandbox.
+- **Assumptions / judgment calls:**
+  - **Endpoint-existence validation deferred.** The service validates kind/type/ids but does
+    NOT yet verify the referenced artifact/record/insight actually exists (that needs
+    cross-store reads — artifacts + records + insights services). Kept the service dependency-
+    light for now; a follow-up can inject an existence-checker. Logged so you can prioritize.
+  - **No full HTTP integration test.** Covered the logic via the service unit test + the
+    Cycle-2 repo integration test; a full server/auth-middleware HTTP roundtrip test is a
+    reasonable follow-up but heavier (needs the auth harness). The handlers are thin pass-throughs.
+  - Still additive/reversible; no founder-level decisions touched.
+- **The bridge is now usable:** an authenticated client can create/list/delete typed edges
+  between any artifact/record/insight. This is the connective tissue the whole "connect the
+  two worlds" roadmap (DATA_MODEL.md Phase 1) hangs on.
