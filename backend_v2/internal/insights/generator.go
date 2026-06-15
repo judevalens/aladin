@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -41,6 +42,7 @@ func (g *Generator) GenerateAndStore(ctx context.Context, kgID string) (int, err
 
 	finders := []func(context.Context, string) ([]*db.Insight, error){
 		g.findTrendInsights,
+		g.findBridgeInsights,
 	}
 
 	for _, find := range finders {
@@ -160,6 +162,69 @@ func (g *Generator) findTrendInsights(ctx context.Context, kgID string) ([]*db.I
 			Topic:      topic,
 			RecordIDs:  recordIDs,
 			Confidence: min(0.5+float64(count)*0.05, 1.0),
+		})
+	}
+	return insights, rows.Err()
+}
+
+// findBridgeInsights finds entities that connect MULTIPLE distinct topics across
+// the KG's relevant records in the last 24h — cross-cutting threads a single-topic
+// trend would miss. Pure SQL over the enrichment JSONB (entities × topics), no LLM.
+// Additive and decision-free: reads existing tables, emits the existing 'bridge'
+// insight type.
+func (g *Generator) findBridgeInsights(ctx context.Context, kgID string) ([]*db.Insight, error) {
+	rows, err := g.pool.Query(ctx, `
+		WITH rel AS (
+			SELECT a.id, a.enrichment
+			FROM records a
+			JOIN tenant_item_matches tim ON tim.record_id = a.id
+			JOIN source_subscriptions ss ON ss.id = tim.subscription_id
+			WHERE ss.kg_id = $1::uuid
+			  AND tim.relevance_status = 'relevant'
+			  AND a.created_at >= now() - interval '24 hours'
+			  AND a.enrichment IS NOT NULL
+		),
+		pairs AS (
+			SELECT DISTINCT
+				r.id          AS record_id,
+				e.entity      AS entity,
+				t.topic       AS topic
+			FROM rel r
+			CROSS JOIN LATERAL jsonb_array_elements_text(r.enrichment->'entities') AS e(entity)
+			CROSS JOIN LATERAL jsonb_array_elements_text(r.enrichment->'topics')   AS t(topic)
+			WHERE e.entity <> '' AND t.topic <> ''
+		)
+		SELECT
+			entity,
+			count(DISTINCT topic)     AS topic_count,
+			array_agg(DISTINCT topic) AS topics,
+			array_agg(DISTINCT record_id) AS record_ids
+		FROM pairs
+		GROUP BY entity
+		HAVING count(DISTINCT topic) >= 2
+		ORDER BY topic_count DESC, entity
+		LIMIT 10
+	`, kgID)
+	if err != nil {
+		return nil, fmt.Errorf("findBridgeInsights: %w", err)
+	}
+	defer rows.Close()
+
+	var insights []*db.Insight
+	for rows.Next() {
+		var entity string
+		var topicCount int
+		var topics, recordIDs []string
+		if err := rows.Scan(&entity, &topicCount, &topics, &recordIDs); err != nil {
+			return nil, err
+		}
+		insights = append(insights, &db.Insight{
+			Type:       "bridge",
+			Title:      fmt.Sprintf("'%s' connects %d topics", entity, topicCount),
+			Body:       fmt.Sprintf("'%s' appears across %d topics (%s) in the last 24 hours — a cross-cutting thread worth a closer look.", entity, topicCount, strings.Join(topics, ", ")),
+			Entity:     entity,
+			RecordIDs:  recordIDs,
+			Confidence: min(0.5+float64(topicCount)*0.1, 1.0),
 		})
 	}
 	return insights, rows.Err()
