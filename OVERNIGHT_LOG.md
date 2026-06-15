@@ -18,15 +18,40 @@ Each cycle is one commit on this branch. `git -C .claude/worktrees/cto-overnight
 Run the suite: `cd backend_v2 && TEST_DATABASE_URL=postgres://aladin:password@localhost:5444/aladin go test ./internal/insights/...` (or `make test-go`).
 If you like a cycle, it cherry-picks/merges cleanly onto `main`; if not, drop the commit. Each is self-contained.
 
-## Backlog (decision-free, additive)
-1. ✅ **Insights: `bridge` finder** — entities connecting ≥2 topics (cross-cutting threads).
-2. ⏳ Insights: `contradiction` finder — opposing signals on the same entity.
-3. ⏳ Pipeline robustness: terminal-failure record status (stuck records become queryable) — PIPELINE_AUDIT Phase B.
-4. ⏳ Observability: pipeline status counts (records by status, enrichment lag, insight counts).
-5. ⏳ DX: tighten the kit component reference in the MCP instructions (exact prop signatures) — the doc agent had to read kit source because `Tabs`/`Callout`/`Stat`/`Badge` props were loosely documented.
-6. ⏳ Tests/hardening for the live insight + pipeline paths.
+## Mandate update (you loosened the rules mid-run)
+You said: *"you can add new surfaces or work on the data if you can."* So I've widened
+scope to include **the data model** and **new surfaces** — but I'm holding these guardrails:
+- **Reversible-only.** Data work is **additive** (new tables/columns), never destructive
+  migrations or table unification. Anything here can be dropped without data loss.
+- **Bridge-first, not unify.** I'll connect the two worlds with a relationships layer
+  (the master plan's recommended D1), NOT merge `artifacts`+`records` (the contested call).
+- **I will NOT make the founder-level, hard-to-reverse calls:** D1 unify-vs-keep (beyond
+  the additive bridge), **D6 multi-tenancy**, **D3 revive-vs-replace graph/vector**. Those
+  stay yours; I note where I bumped into them.
+- **Assumptions documented.** Every judgment call I make is logged below so you can override.
+- **Surfaces:** I can build + test the **backend** of a surface; **frontend I scaffold +
+  typecheck only** (no Tauri to run in the loop) and flag it for your verification.
 
-(Backlog may evolve as I learn the code; I'll keep this list current.)
+## Backlog
+**Data / spine (now in scope):**
+1. ⏳ **The bridge (Phase 1)** — an additive `relationships` table (typed edges:
+   cites / supports / contradicts / about / derived-from) linking artifacts ↔ records ↔
+   insights, + repo/service/API + tests. The single highest-leverage move; reversible.
+2. ⏳ **Promote-to-workspace** — create an artifact from a record/insight + a `derived-from`
+   edge (the first real cross-world action; the compounding loop's "capture").
+3. ⏳ **Curation surface (backend)** — endpoints to triage insights/records (accept/dismiss/
+   promote) over the bridge; frontend scaffold flagged for review.
+
+**Decision-free, additive (original backlog):**
+4. ✅ **Insights: `bridge` finder** — entities connecting ≥2 topics (cross-cutting threads).
+5. ⏳ Insights: `contradiction` finder — opposing signals on the same entity.
+6. ⏳ Pipeline robustness: terminal-failure record status (stuck records queryable) — PIPELINE_AUDIT Phase B.
+7. ⏳ Observability: pipeline status counts (records by status, enrichment lag, insight counts).
+8. ⏳ DX: tighten the kit component reference in the MCP instructions (exact prop signatures).
+9. ⏳ Tests/hardening for the live insight + pipeline paths.
+
+I'll lead with the **bridge (#1)** now that data work is in scope — it's the spine everything
+else hangs on. (Backlog evolves as I learn the code; kept current here.)
 
 ## Cycle log
 
