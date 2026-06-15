@@ -43,9 +43,16 @@ scope to include **the data model** and **new surfaces** — but I'm holding the
 
 **Decision-free, additive (original backlog):**
 4. ✅ **Insights: `bridge` finder** — entities connecting ≥2 topics (cross-cutting threads).
-5. ⏳ Insights: `contradiction` finder — opposing signals on the same entity.
-6. ⏳ Pipeline robustness: terminal-failure record status (stuck records queryable) — PIPELINE_AUDIT Phase B.
-7. ⏳ Observability: pipeline status counts (records by status, enrichment lag, insight counts).
+5. ⏭️ **Insights: `contradiction` finder — SKIPPED (quality).** Enrichment carries no
+   stance/sentiment/polarity, only free-text claims; a meaningful contradiction detector
+   needs the LLM insight layer (the deferred paper loop) or a stance field. A SQL heuristic
+   over free-text claims would emit misleading "contradictions." Logged for the user.
+6. 🟡 **Pipeline robustness: terminal-failure record status — DEFERRED (needs review).**
+   Doable but it touches the LIVE enrichment retry/error path (orchestrator + asynq retry
+   detection); mis-marking transient failures would degrade ingestion. Wants founder review;
+   observability (#7) already surfaces stuck records read-only. Logged, not built.
+7. ✅ **Observability: pipeline stats** (records by status, stuck count, enrichment throughput,
+   insight/match breakdowns, edge count) — Cycle 4.
 8. ⏳ DX: tighten the kit component reference in the MCP instructions (exact prop signatures).
 9. ⏳ Tests/hardening for the live insight + pipeline paths.
 
@@ -123,3 +130,20 @@ else hangs on. (Backlog evolves as I learn the code; kept current here.)
 - **The bridge is now usable:** an authenticated client can create/list/delete typed edges
   between any artifact/record/insight. This is the connective tissue the whole "connect the
   two worlds" roadmap (DATA_MODEL.md Phase 1) hangs on.
+
+### Cycle 4 — Pipeline observability (read-only) ✅  [contradiction finder skipped]
+- **Skipped the contradiction finder (quality):** enrichment has no stance/sentiment field
+  (only free-text summary/claims/entities/topics), so a meaningful contradiction detector
+  needs the LLM insight layer or a stance field — neither exists. A SQL heuristic over
+  free-text would mislead. Logged; moved on.
+- **Built instead:** `SystemService.PipelineStats` + `GET /api/pipeline/stats` — a read-only
+  ingestion health snapshot: records by status, `stuckOverOneHour`, `enrichedLast24h`,
+  `oldestPendingSecs`, insights by type + user_status, matches by relevance_status, and the
+  relationships (edge) count. **Pure SELECTs — touches nothing in the write/retry path**, so
+  it's zero-risk and it surfaces the silent-stuck-record problem that motivated the
+  (deferred) terminal-failure status.
+- **Files:** `internal/service/system.go` (+`PipelineStats` on both interfaces + delegate),
+  `internal/repo/system_postgres.go` (+`PipelineStats` + `countBy` helper), `internal/api/
+  worker.go` (+handler), `internal/api/server.go` (+route), `internal/repo/system_postgres_test.go`
+  (`TestPipelineStats`: shape + seeded-record counts). Build + vet clean; repo suite green.
+- **Why safe:** read-only; if unwanted, drop the route+method — no data/schema change.
