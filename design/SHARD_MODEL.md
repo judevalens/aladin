@@ -254,6 +254,43 @@ dedup is staleness hygiene, not just tidiness.
 carries `fetched_at`; a re-fetch updates the record; every shard reffing it
 lights up through ordinary machinery that never knew an external API existed.
 
+### Compounding — shards as the workspace's growth loop
+
+Ingest-then-ref isn't just the cold-start trick; it's the **flywheel**. A shard
+reads from two registers — the **open web** (general, unowned knowledge the agent
+fetches with its own tools) and the **workspace** (proprietary entities, read
+through the lenses of §1). The data it pulls from *outside* the workspace doesn't
+stay outside: capturing it (resolve-or-create) and reffing it from the manifest
+**indexes it into the entity layer as new entities**, so the next shard — and
+every other surface — can use it. Web → shard → capture/index → workspace → richer
+next shard. **The workspace grows by the act of authoring shards over new ground.**
+
+This is the **write** side of the multi-lens model. The lenses (structure /
+connection / similarity) are how a shard *reads*; capture is how it *writes*. And
+"write to the graph **or any other source**" means the same thing reading did: one
+canonical entity (conservation, §2), **projected** into whichever stores serve it
+— a graph node for traversal, a vector for similarity, a row for retrieval.
+Ingestion never mints truth in a projection; it commits an entity, and the
+projections derive.
+
+Two things ingest-then-ref does **not** yet pin down, and both must be settled
+*before* compounding is safe — they are data-model decisions, not shard ones:
+
+- **Provenance + a trust tier on ingested-external data.** Web-sourced entities
+  enter *unverified* (an agent believed a page). Each needs its lineage ("captured
+  by shard X from URL Y, at T") and a trust tier (cf. verified-vs-trusted, §3), or
+  the flywheel compounds *unverified claims* — which is how a knowledge base rots
+  faster the better the loop works. Compounding amplifies whatever you let in.
+- **Promotable vs. ephemeral.** Not everything a shard renders earns a permanent
+  entity. The manifest must mark which fetched data is worth indexing (a durable
+  claim/source) vs. merely displayed once. Without that signal, "index the
+  manifest" floods the entity layer with one-off scaffolding.
+
+Because this *is* the workspace's growth mechanism, it can only be designed at the
+data-model level — which is why the shard data-wiring (bridge, capture, refs) is
+**paused** until that model is settled. Designing it shard-first would bake the
+workspace's growth rules around a single consumer.
+
 ---
 
 ## 3. The manifest — the shard's declared interface
