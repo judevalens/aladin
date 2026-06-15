@@ -34,9 +34,9 @@ scope to include **the data model** and **new surfaces** — but I'm holding the
 
 ## Backlog
 **Data / spine (now in scope):**
-1. ⏳ **The bridge (Phase 1)** — an additive `relationships` table (typed edges:
-   cites / supports / contradicts / about / derived-from) linking artifacts ↔ records ↔
-   insights, + repo/service/API + tests. The single highest-leverage move; reversible.
+1. 🟡 **The bridge (Phase 1)** — additive `relationships` edge table linking artifacts ↔
+   records ↔ insights. **Data layer DONE** (migration + repo + interface + tests, Cycle 2);
+   **service + API + DI wiring = next cycle**.
 2. ⏳ **Promote-to-workspace** — create an artifact from a record/insight + a `derived-from`
    edge (the first real cross-world action; the compounding loop's "capture").
 3. ⏳ **Curation surface (backend)** — endpoints to triage insights/records (accept/dismiss/
@@ -70,3 +70,31 @@ else hangs on. (Backlog evolves as I learn the code; kept current here.)
   `go vet` clean.
 - **Why it's safe:** purely additive read over existing tables; if you dislike it, drop
   the finder from the slice (one line) — no migration, no data change.
+
+### Cycle 2 — The bridge (Phase 1): `relationships` edge layer — DATA ✅
+- **What:** the additive connective tissue between the two worlds, the master plan's
+  "bridge-first" path (D1) — explicitly **NOT** table unification. A new `relationships`
+  table: typed edges (`cites` / `supports` / `contradicts` / `about` / `derived_from`)
+  between polymorphic endpoints `(kind ∈ {artifact,record,insight}, id)`. Idempotent
+  upsert on the edge key; bidirectional lookup; per-user scoped (FK `user_id`→users,
+  ON DELETE CASCADE).
+- **Files:** migration `internal/db/migrations/00006_relationships.sql`; port
+  `internal/service/relationships.go` (`Relationship` + `RelationshipStore` + valid
+  kinds/types); impl `internal/repo/relationship_postgres.go`; test
+  `internal/repo/relationship_postgres_test.go` (upsert idempotency, bidirectional
+  lookup, scoping leak check, delete). **Green** against sandbox; build + vet clean.
+- **Assumptions / judgment calls (override freely):**
+  - **Polymorphic edge, no cross-world FK.** Endpoints are `(kind,id)` text pairs because
+    artifact/record ids are text and insight ids are uuid — no single FK spans them.
+    Endpoint existence is left for the **service layer** to validate on create (next cycle);
+    the table itself only guarantees the owner FK. (Alternative you might prefer: separate
+    per-pair tables with real FKs — heavier, less flexible. I chose the flexible additive form.)
+  - **Edge vocabulary** (`cites/supports/contradicts/about/derived_from`) is a starter set
+    from the master plan, enforced by a CHECK + a Go allow-list. Easy to extend.
+  - **No outbox/sync wiring yet** — relationships aren't in the client sync stream. Kept
+    minimal/additive; sync integration is a later, separate decision.
+  - **Reversible:** `DROP TABLE relationships` undoes it entirely; nothing else changed.
+  - Did **not** touch D1-unify, D6 multi-tenancy, or D3 graph/vector — the table is scoped
+    by `user_id` (matches today's single-user model) without deciding the tenancy model.
+- **Next cycle:** `RelationshipService` (principal → userID, endpoint-existence validation,
+  BadRequest on bad kind/type) + `/api/relationships` routes + DI wiring + service/API tests.
