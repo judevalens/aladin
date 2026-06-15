@@ -2,6 +2,29 @@
 
 Autonomous build session while you slept. **Read this first in the morning.**
 
+## ☀️ Morning summary
+
+**Shipped — 6 commits on `claude/cto-overnight`, all additive, reversible, tested green, nothing pushed, dev data untouched:**
+1. **Insights `bridge` finder** — surfaces entities that connect ≥2 topics (cross-cutting threads the topic-trend finder misses).
+2. **The bridge (Phase 1), end-to-end** — the connective tissue to link the workspace world (artifacts) and ingestion world (records/insights), built **bridge-first, NOT unify**: a new additive `relationships` edge table (migration `00006`), repo, `RelationshipService` (principal scoping + validation), `/api/relationships` (POST/GET/DELETE), and DI. This is DATA_MODEL.md Phase 1 — the highest-leverage data move.
+3. **Pipeline observability** — read-only `GET /api/pipeline/stats`: records by status, stuck-over-1h, enriched-last-24h, oldest-pending age, insights by type/status, matches by relevance, edge count. Pure SELECTs (no write-path risk); surfaces silently-stuck records.
+4. **DX** — tightened the `@aladin/kit` component reference in the MCP instructions to exact prop signatures (the doc-author agent had been guessing).
+
+**Skipped / deferred — logged, NOT built (your call):**
+- **Contradiction finder — SKIPPED (quality).** Enrichment has no stance/sentiment, only free-text claims; a real contradiction detector needs the LLM insight layer (the deferred paper loop) or a stance field. A SQL heuristic would mislead.
+- **Terminal-failure record status — DEFERRED (needs review).** Touches the LIVE enrichment retry/error path; mis-marking transient failures would degrade ingestion. Observability (#3) already surfaces stuck records read-only, so the value is partly covered without the risk.
+
+**Held the line:** no founder-level/irreversible calls (D1 unify, D6 multi-tenancy, D3 graph/vector revive-vs-replace); no new capture surfaces; no destructive migrations; sandbox-only testing; nothing pushed.
+
+**Review / merge:**
+- `git -C .claude/worktrees/cto-overnight log --oneline main..HEAD` — 6 self-contained commits.
+- Tests: `cd backend_v2 && TEST_DATABASE_URL=postgres://aladin:password@localhost:5444/aladin go test ./internal/...` (sandbox up via `make test-db-up`).
+- The bridge is the centerpiece; the new migration `00006_relationships.sql` is additive (`DROP TABLE` reverses). Each commit cherry-picks/FFs onto `main` cleanly, or drop any you dislike — they're independent.
+
+**Loop stopped here** — the decision-free backlog is exhausted; what remains needs your decisions, so I didn't manufacture busywork.
+
+---
+
 - **Branch:** `claude/cto-overnight` (off `main` @ `a3a723af`). Separate worktree at
   `.claude/worktrees/cto-overnight`. **Not pushed.** Nothing on `main` or your dev
   data was touched.
@@ -147,3 +170,15 @@ else hangs on. (Backlog evolves as I learn the code; kept current here.)
   worker.go` (+handler), `internal/api/server.go` (+route), `internal/repo/system_postgres_test.go`
   (`TestPipelineStats`: shape + seeded-record counts). Build + vet clean; repo suite green.
 - **Why safe:** read-only; if unwanted, drop the route+method — no data/schema change.
+
+### Cycle 5 — DX: exact kit component reference ✅  [final cycle]
+- **What:** tightened the `@aladin/kit` Generic-UI reference in `internal/mcp/server.go`'s
+  MCP instructions to exact prop signatures — Button variants/sizes, Field({label,hint,htmlFor}),
+  Badge tones (neutral|amber|for|against, no "muted"), Callout tones (info|warn|for|against),
+  Stat({label,value,sub}), Tabs({tabs:[{id,label,content}]}, not "items"), Dialog({open,onClose,title}).
+  Fixes the looseness the doc-author agent hit (it had to read kit source). var()-in-SVG warning
+  was already present on the chart-helpers line.
+- **Files:** `internal/mcp/server.go` (instructions string only). Build + vet clean.
+- **Then:** decision-free backlog exhausted → wrote the morning summary above and stopped the
+  loop (no busywork). Remaining work (terminal-failure status, frontend surfaces, the insights
+  LLM loop, Phases 2–5 of DATA_MODEL.md) needs founder decisions.

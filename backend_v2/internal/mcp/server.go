@@ -56,9 +56,13 @@ index.tsx + an anchors.json manifest. Import from "@aladin/kit":
   - HashRouter / Route / Link / useRoute — multi-view shards (opaque-origin-safe
     hash routing; never pushState).
   - For / Against / Catalyst / Echo — semantic hues.
-  - Generic UI (token-styled, no extra deps): Button, Card, Badge, Input, Textarea,
-    Field, Callout, Stat, Tabs ([{id,label,content}]), Dialog ({open,onClose}),
-    Divider. Reach for these before hand-rolling buttons/cards/inputs.
+  - Generic UI (token-styled, no extra deps) — use the EXACT props shown, don't guess:
+    Button({variant: primary|outline|ghost|danger, size: sm|md, ...native}), Card, Divider,
+    Input, Textarea (native input/textarea props), Field({label, hint, htmlFor}),
+    Badge({tone: neutral|amber|for|against}), Callout({tone: info|warn|for|against, title}),
+    Stat({label, value, sub}), Tabs({tabs: [{id, label, content}], initialId}),
+    Dialog({open, onClose, title}). Note: Tabs takes "tabs" (not "items"); Stat uses "sub";
+    Badge has no "muted" tone. Reach for these before hand-rolling buttons/cards/inputs.
   - bridge + useNode(id) / useNodes(ids) — read live workspace/graph data over the
     host bridge (a shard is sandboxed; this postMessage channel is its only data
     path). useNode returns {node, loading, error}; declare the entity ids in each
