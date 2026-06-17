@@ -14,6 +14,7 @@ import (
 
 	"aladin/backend_v2/internal/config"
 	"aladin/backend_v2/internal/db"
+	"aladin/backend_v2/internal/entities"
 	"aladin/backend_v2/internal/graph"
 	"aladin/backend_v2/internal/insights"
 	"aladin/backend_v2/internal/llm"
@@ -127,9 +128,11 @@ func main() {
 	handler := pipeline.NewFullPipelineHandler(pipelineEnqueuer, recordRepo, insightCh).
 		WithTenantItemMatches(tenantItemMatchRepo).
 		WithInsightEnqueuer(insightEnqueuer)
+	entityResolver := entities.NewResolver(db.NewEntityRepository(pool))
 	orch := pipeline.NewOrchestrator(handler)
 	orch.Add(workers.NewGlobalFirstPassWorker(enricher, openaiLimiter))
 	orch.Add(workers.NewTenantMatchWorker(recordRepo, providerStreamRepo, sourceSubscriptionRepo, tenantItemMatchRepo))
+	orch.Add(workers.NewResolveEntitiesWorker(recordRepo, entityResolver))
 	orch.Add(workers.NewFirstPassWorker(enricher, openaiLimiter))
 	orch.Add(workers.NewSearchWorker(cachedSearcher))
 	orch.Add(workers.NewEmbedWorker(embedder, openaiLimiter))
@@ -158,6 +161,7 @@ func main() {
 		pipeline.TaskSearch:          5,
 		pipeline.TaskEmbed:           3,
 		pipeline.TaskGraph:           5,
+		pipeline.TaskResolveEntities: 5,
 		insights.TaskGenerate:        5,
 	}
 	for name, weight := range syncOrchestrator.Queues() {

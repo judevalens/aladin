@@ -66,6 +66,11 @@ func (h *FullPipelineHandler) OnDone(ctx context.Context, result Result) error {
 		log.Info("orchestrator: tenant matching complete")
 		return h.enqueueInsightTriggers(ctx, log, result.Payload)
 
+	case ResultResolveEntitiesDone:
+		// Terminal: the worker has populated the entity layer directly. No next stage.
+		log.Info("orchestrator: entity resolution complete")
+		return nil
+
 	case ResultFirstPassSearchNeeded:
 		log.Info("orchestrator: routing to search")
 		return h.enqueue(ctx, TaskSearch, result.RecordID, result.Payload)
@@ -148,6 +153,19 @@ func (h *FullPipelineHandler) persistGlobalRecordEnrichment(ctx context.Context,
 		return fmt.Errorf("persist global record enrichment: marshal tenant match payload: %w", err)
 	}
 	if err := h.enqueue(ctx, TaskTenantMatch, p.RecordID, matchPayload); err != nil {
+		return err
+	}
+	// Fan out entity resolution in parallel with tenant matching (both consume the
+	// enriched record; resolution feeds the entity layer / graph + vector lenses).
+	resolvePayload, err := json.Marshal(ResolveEntitiesPayload{
+		RecordID:       p.RecordID,
+		CorrelationID:  p.CorrelationID,
+		SourceRevision: p.SourceRevision,
+	})
+	if err != nil {
+		return fmt.Errorf("persist global record enrichment: marshal resolve entities payload: %w", err)
+	}
+	if err := h.enqueue(ctx, TaskResolveEntities, p.RecordID, resolvePayload); err != nil {
 		return err
 	}
 	log.Info("orchestrator: global record enrichment persisted", "record_id", p.RecordID, "source_revision", p.SourceRevision)

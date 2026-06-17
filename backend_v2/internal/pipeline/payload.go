@@ -65,6 +65,15 @@ type TenantMatchPayload struct {
 	InsightTriggers []InsightTrigger `json:"insight_triggers,omitempty"`
 }
 
+// ResolveEntitiesPayload drives the entity-resolution stage. It carries only what the
+// worker needs to load the record and apply the revision guard; the worker reads the
+// enrichment entities off the record itself.
+type ResolveEntitiesPayload struct {
+	RecordID       string `json:"record_id"`
+	CorrelationID  string `json:"correlation_id"`
+	SourceRevision int64  `json:"source_revision"`
+}
+
 type InsightTrigger struct {
 	KgID            string   `json:"kg_id"`
 	RecordID        string   `json:"record_id"`

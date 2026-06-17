@@ -52,3 +52,11 @@ type SourceSubscriptionRepository interface {
 type TenantItemMatchRepository interface {
 	Save(ctx context.Context, match *TenantItemMatch) error
 }
+
+// EntityRepository is the shared (Tier 0) entity registry used by entity resolution (R0).
+type EntityRepository interface {
+	FindSharedByKey(ctx context.Context, kind, normalizedKey string) ([]EntityCandidate, error)
+	CreateSharedEntity(ctx context.Context, p CreateEntityParams) (string, error)
+	AddAlias(ctx context.Context, p AliasParams) error
+	AddMention(ctx context.Context, p MentionParams) error
+}

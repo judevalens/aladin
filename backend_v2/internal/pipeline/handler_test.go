@@ -295,11 +295,15 @@ func TestFullPipelineHandlerPersistsGlobalRecordEnrichment(t *testing.T) {
 	if got := repo.enrichments[0]; got.RecordID != "record-6" || got.SourceRevision != 7 || got.Summary != "summary" {
 		t.Fatalf("saved enrichment = %+v", got)
 	}
-	if len(enq.stageCalls) != 1 {
-		t.Fatalf("EnqueueStage calls = %d, want tenant match enqueue", len(enq.stageCalls))
+	// Enrichment fans out to tenant matching AND entity resolution (in that order).
+	if len(enq.stageCalls) != 2 {
+		t.Fatalf("EnqueueStage calls = %d, want tenant match + resolve entities", len(enq.stageCalls))
 	}
 	if got := enq.stageCalls[0]; got.taskType != TaskTenantMatch || got.recordID != "record-6" {
 		t.Fatalf("tenant match enqueue = %+v", got)
+	}
+	if got := enq.stageCalls[1]; got.taskType != TaskResolveEntities || got.recordID != "record-6" {
+		t.Fatalf("resolve entities enqueue = %+v", got)
 	}
 }
 

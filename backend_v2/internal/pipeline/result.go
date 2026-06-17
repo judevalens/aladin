@@ -10,6 +10,7 @@ const (
 	TaskSearch          = "pipeline:search"
 	TaskEmbed           = "pipeline:embed"
 	TaskGraph           = "pipeline:graph"
+	TaskResolveEntities = "pipeline:resolve_entities"
 )
 
 // Result discriminants — used by ResultHandler to route between stages.
@@ -21,6 +22,7 @@ const (
 	ResultSearchDone            = "search.done"
 	ResultEmbedDone             = "embed.done"
 	ResultGraphDone             = "graph.done"
+	ResultResolveEntitiesDone   = "resolve_entities.done"
 )
 
 // Result is the outcome of a pipeline stage.
