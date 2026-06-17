@@ -34,6 +34,17 @@ type CreateEntityParams struct {
 	FirstRecordID string
 }
 
+// CreateTenantEntityParams creates a tenant (Tier 1) entity, optionally bound to its
+// shared canonical via SharedEntityID ("" = unbound / private).
+type CreateTenantEntityParams struct {
+	OwnerUserID    string
+	SharedEntityID string
+	Kind           string
+	CanonicalName  string
+	NormalizedKey  string
+	FirstRecordID  string
+}
+
 // AliasParams records a surface form for an entity.
 type AliasParams struct {
 	EntityID   string
@@ -129,6 +140,81 @@ func (r *pgEntityRepo) FindSharedCandidates(ctx context.Context, kind, normalize
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+// FindTenantByKey looks up a tenant's own (Tier 1) entities by normalized key.
+func (r *pgEntityRepo) FindTenantByKey(ctx context.Context, ownerUserID, kind, normalizedKey string) ([]EntityCandidate, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, kind, canonical_name, normalized_key
+		  FROM entities
+		 WHERE scope = 'tenant' AND owner_user_id = $1::uuid AND kind = $2 AND normalized_key = $3
+		 ORDER BY created_at ASC
+	`, ownerUserID, kind, normalizedKey)
+	if err != nil {
+		return nil, fmt.Errorf("entity FindTenantByKey: %w", err)
+	}
+	defer rows.Close()
+	var out []EntityCandidate
+	for rows.Next() {
+		var c EntityCandidate
+		if err := rows.Scan(&c.ID, &c.Kind, &c.CanonicalName, &c.NormalizedKey); err != nil {
+			return nil, fmt.Errorf("entity FindTenantByKey scan: %w", err)
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// CreateTenantEntity inserts a Tier 1 entity owned by a tenant, optionally bound to a
+// shared (Tier 0) canonical.
+func (r *pgEntityRepo) CreateTenantEntity(ctx context.Context, p CreateTenantEntityParams) (string, error) {
+	prov, err := json.Marshal(map[string]string{"first_record_id": p.FirstRecordID})
+	if err != nil {
+		return "", fmt.Errorf("entity CreateTenantEntity marshal provenance: %w", err)
+	}
+	var shared any
+	if p.SharedEntityID != "" {
+		shared = p.SharedEntityID
+	}
+	var id string
+	err = r.pool.QueryRow(ctx, `
+		INSERT INTO entities (scope, owner_user_id, shared_entity_id, kind, canonical_name, normalized_key, trust_tier, provenance)
+		VALUES ('tenant', $1::uuid, $2::uuid, $3, $4, $5, 'believed', $6::jsonb)
+		RETURNING id::text
+	`, p.OwnerUserID, shared, p.Kind, p.CanonicalName, p.NormalizedKey, prov).Scan(&id)
+	if err != nil {
+		return "", fmt.Errorf("entity CreateTenantEntity: %w", err)
+	}
+	return id, nil
+}
+
+// ResolveCanonicalRoot returns an entity's effective canonical id, composing the
+// reversible merge overlay across tiers: it follows canonical_root_id to the local
+// (tenant) root first — so a tenant's own merges win (local override) — and only then,
+// if that root is bound to a shared entity, crosses into the shared tier and follows
+// its root. Shared entities never point up at a tenant (enforced), so this terminates.
+func (r *pgEntityRepo) ResolveCanonicalRoot(ctx context.Context, entityID string) (string, error) {
+	cur := entityID
+	for i := 0; i < 32; i++ {
+		var root, shared *string
+		err := r.pool.QueryRow(ctx, `
+			SELECT canonical_root_id::text, shared_entity_id::text
+			  FROM entities WHERE id = $1::uuid
+		`, cur).Scan(&root, &shared)
+		if err != nil {
+			return "", fmt.Errorf("entity ResolveCanonicalRoot: %w", err)
+		}
+		if root != nil && *root != cur {
+			cur = *root // follow a merge within the current tier
+			continue
+		}
+		if shared != nil { // at a local root that is bound to shared → cross tiers
+			cur = *shared
+			continue
+		}
+		return cur, nil
+	}
+	return cur, nil // depth cap (defensive; the overlay is acyclic)
 }
 
 func (r *pgEntityRepo) CreateSharedEntity(ctx context.Context, p CreateEntityParams) (string, error) {

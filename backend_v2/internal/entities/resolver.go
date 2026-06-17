@@ -122,6 +122,83 @@ func (r *Resolver) Resolve(ctx context.Context, m Mention) (string, error) {
 	return id, nil
 }
 
+// ResolveTenant resolves a mention into a tenant's overlay (Tier 1), per the §5.0
+// cascade: probe the tenant's own entities first, else bind to a matching shared
+// (Tier 0) entity, else create a new tenant-local entity. This is the authored-content
+// resolve path — built and tested, but not yet wired into the public-ingestion
+// pipeline (which resolves into Tier 0 via Resolve).
+func (r *Resolver) ResolveTenant(ctx context.Context, ownerUserID string, m Mention) (string, error) {
+	surface := strings.TrimSpace(m.Surface)
+	if surface == "" || ownerUserID == "" {
+		return "", nil
+	}
+	kind := m.Kind
+	if kind == "" {
+		kind = "unknown"
+	}
+	norm := Normalize(surface)
+	if norm == "" {
+		return "", nil
+	}
+
+	resolver := "alias"
+	var id string
+	tcands, err := r.store.FindTenantByKey(ctx, ownerUserID, kind, norm)
+	if err != nil {
+		return "", fmt.Errorf("entities: find tenant key: %w", err)
+	}
+	if len(tcands) >= 1 {
+		id = tcands[0].ID
+	} else {
+		// No tenant overlay yet — bind to the shared canonical if one exists, else go private.
+		sharedID := ""
+		scands, err := r.store.FindSharedByKey(ctx, kind, norm)
+		if err != nil {
+			return "", fmt.Errorf("entities: find shared key: %w", err)
+		}
+		if len(scands) >= 1 {
+			sharedID = scands[0].ID
+		}
+		id, err = r.store.CreateTenantEntity(ctx, db.CreateTenantEntityParams{
+			OwnerUserID:    ownerUserID,
+			SharedEntityID: sharedID,
+			Kind:           kind,
+			CanonicalName:  surface,
+			NormalizedKey:  norm,
+			FirstRecordID:  m.RecordID,
+		})
+		if err != nil {
+			return "", fmt.Errorf("entities: create tenant entity: %w", err)
+		}
+		if sharedID != "" {
+			resolver = "bind"
+		} else {
+			resolver = "new"
+		}
+	}
+
+	if err := r.store.AddAlias(ctx, db.AliasParams{
+		EntityID:   id,
+		Surface:    surface,
+		Normalized: norm,
+		Kind:       kind,
+		Source:     "authored",
+	}); err != nil {
+		return "", fmt.Errorf("entities: add alias: %w", err)
+	}
+	if err := r.store.AddMention(ctx, db.MentionParams{
+		RecordID:       m.RecordID,
+		EntityID:       id,
+		Surface:        surface,
+		Kind:           kind,
+		Resolver:       resolver,
+		SourceRevision: m.SourceRevision,
+	}); err != nil {
+		return "", fmt.Errorf("entities: add mention: %w", err)
+	}
+	return id, nil
+}
+
 // proposeFuzzyMerge queues a proposed merge between the newly-created entity newID and
 // the best trigram near-match (if any above the floor). ProposeMerge itself is a no-op
 // when the pair already has a row in any status, so a previously rejected pair (negative

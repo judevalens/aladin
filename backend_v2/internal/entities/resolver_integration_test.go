@@ -214,3 +214,156 @@ func TestEntityRepo_AcceptMergeSetsCanonicalRoot(t *testing.T) {
 		t.Fatalf("expected from.canonical_root_id = into (%s), got %s", into, root)
 	}
 }
+
+// TestResolver_TenantTier_BindAndIsolation (R3): a tenant mention of a known shared
+// entity creates a per-tenant overlay *bound* to the shared canonical; two tenants get
+// distinct overlays (isolation); and ResolveCanonicalRoot crosses the bind to the shared
+// id for both.
+func TestResolver_TenantTier_BindAndIsolation(t *testing.T) {
+	dsn := dbtest.RequireTestDSN(t)
+	ctx := context.Background()
+	pool, err := db.Connect(ctx, dsn)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	if err := db.Migrate(ctx, pool); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	tag := strings.ReplaceAll(uuid.NewString(), "-", "")[:8]
+	key := "acme" + tag
+	ownerA := uuid.NewString()
+	ownerB := uuid.NewString()
+	recordID := "entity-tenant-" + uuid.NewString()
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO records (id, type, label, content, status, source_revision)
+		VALUES ($1, 'story', 'test', 'content', 'enriched', 1) ON CONFLICT (id) DO NOTHING
+	`, recordID); err != nil {
+		t.Fatalf("seed record: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM records WHERE id = $1`, recordID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM entities WHERE normalized_key = $1`, key)
+	})
+
+	repo := db.NewEntityRepository(pool)
+	r := NewResolver(repo)
+
+	shared, err := repo.CreateSharedEntity(ctx, db.CreateEntityParams{Kind: "unknown", CanonicalName: key, NormalizedKey: key})
+	if err != nil {
+		t.Fatalf("create shared: %v", err)
+	}
+
+	tA, err := r.ResolveTenant(ctx, ownerA, Mention{Surface: key, RecordID: recordID, SourceRevision: 1})
+	if err != nil {
+		t.Fatalf("resolve tenant A: %v", err)
+	}
+	tA2, err := r.ResolveTenant(ctx, ownerA, Mention{Surface: key, RecordID: recordID, SourceRevision: 1})
+	if err != nil {
+		t.Fatalf("resolve tenant A again: %v", err)
+	}
+	tB, err := r.ResolveTenant(ctx, ownerB, Mention{Surface: key, RecordID: recordID, SourceRevision: 1})
+	if err != nil {
+		t.Fatalf("resolve tenant B: %v", err)
+	}
+
+	if tA != tA2 {
+		t.Fatalf("tenant overlay must be idempotent for the same owner: %s vs %s", tA, tA2)
+	}
+	if tA == tB {
+		t.Fatal("cross-tenant isolation: distinct owners must get distinct entities")
+	}
+	if tA == shared || tB == shared {
+		t.Fatal("a tenant overlay must be a distinct entity from the shared canonical")
+	}
+
+	rootA, err := repo.ResolveCanonicalRoot(ctx, tA)
+	if err != nil {
+		t.Fatalf("resolve root A: %v", err)
+	}
+	rootB, err := repo.ResolveCanonicalRoot(ctx, tB)
+	if err != nil {
+		t.Fatalf("resolve root B: %v", err)
+	}
+	if rootA != shared || rootB != shared {
+		t.Fatalf("both tenant overlays should resolve through their bind to the shared canonical %s; got A=%s B=%s", shared, rootA, rootB)
+	}
+}
+
+// TestResolver_TenantTier_LocalOverride (R3): a tenant's own merge wins over its bind to
+// the shared tier — after merging a bound overlay into another tenant entity, the
+// canonical root is the tenant target, not the shared canonical.
+func TestResolver_TenantTier_LocalOverride(t *testing.T) {
+	dsn := dbtest.RequireTestDSN(t)
+	ctx := context.Background()
+	pool, err := db.Connect(ctx, dsn)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	if err := db.Migrate(ctx, pool); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	tag := strings.ReplaceAll(uuid.NewString(), "-", "")[:8]
+	keyBound := "globex" + tag
+	keyOther := "globexalt" + tag
+	owner := uuid.NewString()
+	recordID := "entity-override-" + uuid.NewString()
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO records (id, type, label, content, status, source_revision)
+		VALUES ($1, 'story', 'test', 'content', 'enriched', 1) ON CONFLICT (id) DO NOTHING
+	`, recordID); err != nil {
+		t.Fatalf("seed record: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM records WHERE id = $1`, recordID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM entities WHERE normalized_key IN ($1, $2)`, keyBound, keyOther)
+	})
+
+	repo := db.NewEntityRepository(pool)
+	r := NewResolver(repo)
+
+	shared, err := repo.CreateSharedEntity(ctx, db.CreateEntityParams{Kind: "unknown", CanonicalName: keyBound, NormalizedKey: keyBound})
+	if err != nil {
+		t.Fatalf("create shared: %v", err)
+	}
+	bound, err := r.ResolveTenant(ctx, owner, Mention{Surface: keyBound, RecordID: recordID, SourceRevision: 1}) // binds to shared
+	if err != nil {
+		t.Fatalf("resolve bound: %v", err)
+	}
+	other, err := r.ResolveTenant(ctx, owner, Mention{Surface: keyOther, RecordID: recordID, SourceRevision: 1}) // unbound (no shared match)
+	if err != nil {
+		t.Fatalf("resolve other: %v", err)
+	}
+
+	// Tenant-local merge: bound -> other.
+	if _, err := repo.ProposeMerge(ctx, db.ProposeMergeParams{FromEntityID: bound, IntoEntityID: other, Confidence: 1, Method: "manual"}); err != nil {
+		t.Fatalf("propose: %v", err)
+	}
+	proposals, err := repo.ListProposedMerges(ctx, 100)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	var mergeID string
+	for _, p := range proposals {
+		if p.FromEntityID == bound && p.IntoEntityID == other {
+			mergeID = p.ID
+		}
+	}
+	if mergeID == "" {
+		t.Fatal("expected the tenant-local proposed merge")
+	}
+	if err := repo.AcceptMerge(ctx, mergeID); err != nil {
+		t.Fatalf("accept: %v", err)
+	}
+
+	root, err := repo.ResolveCanonicalRoot(ctx, bound)
+	if err != nil {
+		t.Fatalf("resolve root: %v", err)
+	}
+	if root != other {
+		t.Fatalf("local override: the merged overlay should resolve to the tenant target %s, not the shared canonical %s; got %s", other, shared, root)
+	}
+}

@@ -21,10 +21,12 @@ type fakeStore struct {
 	proposed      []db.ProposeMergeParams // recorded by ProposeMerge
 	rejectedPairs map[string]bool         // "from|into" negative evidence
 	distinct      [][2]string             // recorded by RecordDistinct
+	tenantByKey   map[string]string       // "owner|kind|norm" -> tenant entity id
+	lastTenantBind string                 // SharedEntityID of the last CreateTenantEntity
 }
 
 func newFakeStore() *fakeStore {
-	return &fakeStore{byKey: map[string]string{}, rejectedPairs: map[string]bool{}}
+	return &fakeStore{byKey: map[string]string{}, rejectedPairs: map[string]bool{}, tenantByKey: map[string]string{}}
 }
 
 func storeKey(kind, norm string) string { return kind + "|" + norm }
@@ -80,6 +82,53 @@ func (f *fakeStore) ListProposedMerges(_ context.Context, _ int) ([]db.ProposedM
 }
 func (f *fakeStore) RejectMerge(_ context.Context, _ string) error { return nil }
 func (f *fakeStore) AcceptMerge(_ context.Context, _ string) error { return nil }
+
+func (f *fakeStore) FindTenantByKey(_ context.Context, owner, kind, norm string) ([]db.EntityCandidate, error) {
+	if id, ok := f.tenantByKey[owner+"|"+kind+"|"+norm]; ok {
+		return []db.EntityCandidate{{ID: id, Kind: kind, NormalizedKey: norm}}, nil
+	}
+	return nil, nil
+}
+
+func (f *fakeStore) CreateTenantEntity(_ context.Context, p db.CreateTenantEntityParams) (string, error) {
+	f.seq++
+	id := "t" + strconv.Itoa(f.seq)
+	f.tenantByKey[p.OwnerUserID+"|"+p.Kind+"|"+p.NormalizedKey] = id
+	f.lastTenantBind = p.SharedEntityID
+	return id, nil
+}
+
+func (f *fakeStore) ResolveCanonicalRoot(_ context.Context, entityID string) (string, error) {
+	return entityID, nil
+}
+
+func TestResolver_TenantBindsToSharedWhenPresent(t *testing.T) {
+	s := newFakeStore()
+	s.byKey[storeKey("unknown", "acme")] = "shared-acme" // a shared canonical exists
+	r := NewResolver(s)
+
+	id, err := r.ResolveTenant(context.Background(), "owner-1", Mention{Surface: "Acme", RecordID: "r"})
+	if err != nil {
+		t.Fatalf("resolve tenant: %v", err)
+	}
+	if id == "shared-acme" {
+		t.Fatal("tenant resolve must create a tenant overlay entity, not return the shared id")
+	}
+	if s.lastTenantBind != "shared-acme" {
+		t.Fatalf("expected the tenant entity bound to the shared canonical, got bind=%q", s.lastTenantBind)
+	}
+}
+
+func TestResolver_TenantCreatesPrivateWhenNoShared(t *testing.T) {
+	s := newFakeStore()
+	r := NewResolver(s)
+	if _, err := r.ResolveTenant(context.Background(), "owner-1", Mention{Surface: "MyPrivateNote", RecordID: "r"}); err != nil {
+		t.Fatalf("resolve tenant: %v", err)
+	}
+	if s.lastTenantBind != "" {
+		t.Fatalf("expected an unbound (private) tenant entity, got bind=%q", s.lastTenantBind)
+	}
+}
 
 // fakeAdjudicator is a deterministic llm.EntityAdjudicator for unit tests.
 type fakeAdjudicator struct {
