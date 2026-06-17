@@ -53,10 +53,17 @@ type TenantItemMatchRepository interface {
 	Save(ctx context.Context, match *TenantItemMatch) error
 }
 
-// EntityRepository is the shared (Tier 0) entity registry used by entity resolution (R0).
+// EntityRepository is the shared (Tier 0) entity registry used by entity resolution.
 type EntityRepository interface {
 	FindSharedByKey(ctx context.Context, kind, normalizedKey string) ([]EntityCandidate, error)
 	CreateSharedEntity(ctx context.Context, p CreateEntityParams) (string, error)
 	AddAlias(ctx context.Context, p AliasParams) error
 	AddMention(ctx context.Context, p MentionParams) error
+
+	// R1: fuzzy near-match detection + proposed-merge curation.
+	FindSharedCandidates(ctx context.Context, kind, normalizedKey string, minSim float64, limit int) ([]ScoredCandidate, error)
+	ProposeMerge(ctx context.Context, p ProposeMergeParams) (bool, error)
+	ListProposedMerges(ctx context.Context, limit int) ([]ProposedMerge, error)
+	RejectMerge(ctx context.Context, mergeID string) error
+	AcceptMerge(ctx context.Context, mergeID string) error
 }

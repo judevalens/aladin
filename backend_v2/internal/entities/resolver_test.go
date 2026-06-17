@@ -10,14 +10,19 @@ import (
 
 // fakeStore is an in-memory db.EntityRepository for resolver unit tests.
 type fakeStore struct {
-	byKey    map[string]string // "kind|norm" -> entity id
-	created  int
-	aliases  int
-	mentions []db.MentionParams
-	seq      int
+	byKey         map[string]string // "kind|norm" -> entity id
+	created       int
+	aliases       int
+	mentions      []db.MentionParams
+	seq           int
+	candidates    []db.ScoredCandidate     // returned by FindSharedCandidates
+	proposed      []db.ProposeMergeParams  // recorded by ProposeMerge
+	rejectedPairs map[string]bool          // "from|into" negative evidence
 }
 
-func newFakeStore() *fakeStore { return &fakeStore{byKey: map[string]string{}} }
+func newFakeStore() *fakeStore {
+	return &fakeStore{byKey: map[string]string{}, rejectedPairs: map[string]bool{}}
+}
 
 func storeKey(kind, norm string) string { return kind + "|" + norm }
 
@@ -41,6 +46,64 @@ func (f *fakeStore) AddAlias(_ context.Context, _ db.AliasParams) error { f.alia
 func (f *fakeStore) AddMention(_ context.Context, p db.MentionParams) error {
 	f.mentions = append(f.mentions, p)
 	return nil
+}
+
+func (f *fakeStore) FindSharedCandidates(_ context.Context, _, _ string, minSim float64, _ int) ([]db.ScoredCandidate, error) {
+	var out []db.ScoredCandidate
+	for _, c := range f.candidates {
+		if c.Similarity >= minSim {
+			out = append(out, c)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeStore) ProposeMerge(_ context.Context, p db.ProposeMergeParams) (bool, error) {
+	if f.rejectedPairs[p.FromEntityID+"|"+p.IntoEntityID] || f.rejectedPairs[p.IntoEntityID+"|"+p.FromEntityID] {
+		return false, nil
+	}
+	f.proposed = append(f.proposed, p)
+	return true, nil
+}
+
+func (f *fakeStore) ListProposedMerges(_ context.Context, _ int) ([]db.ProposedMerge, error) {
+	return nil, nil
+}
+func (f *fakeStore) RejectMerge(_ context.Context, _ string) error { return nil }
+func (f *fakeStore) AcceptMerge(_ context.Context, _ string) error { return nil }
+
+func TestResolver_FuzzyNearMatchProposesMergeNeverAutoMerges(t *testing.T) {
+	s := newFakeStore()
+	// An existing "Anthropic" is a strong trigram candidate for a new "Anthropics".
+	s.candidates = []db.ScoredCandidate{
+		{ID: "existing", Kind: "unknown", CanonicalName: "Anthropic", NormalizedKey: "anthropic", Similarity: 0.8},
+	}
+	r := NewResolver(s)
+
+	id, err := r.Resolve(context.Background(), Mention{Surface: "Anthropics", RecordID: "r"})
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if id == "existing" {
+		t.Fatal("R1 must NOT auto-merge a fuzzy match — it should create a new entity and propose")
+	}
+	if s.created != 1 {
+		t.Fatalf("expected a new entity created, got %d", s.created)
+	}
+	if len(s.proposed) != 1 || s.proposed[0].IntoEntityID != "existing" {
+		t.Fatalf("expected 1 proposed merge into the candidate, got %+v", s.proposed)
+	}
+}
+
+func TestResolver_NoFuzzyCandidateNoProposal(t *testing.T) {
+	s := newFakeStore() // no candidates seeded
+	r := NewResolver(s)
+	if _, err := r.Resolve(context.Background(), Mention{Surface: "Mistral", RecordID: "r"}); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if len(s.proposed) != 0 {
+		t.Fatalf("expected no proposed merges, got %d", len(s.proposed))
+	}
 }
 
 func TestResolver_CollapsesVariantsToOneEntity(t *testing.T) {
