@@ -94,6 +94,9 @@ worker-go: ngrok-ensure ## Run the Go worker; optional CONCURRENCY=24
 api-go: ## Run the Go backend API
 	cd backend_v2 && DATA_VOLUME_PATH=$(DATA_VOLUME_PATH) go run ./cmd/api
 
+ops-backfill-entities: ## Resolve entities for all enriched records into the entity layer
+	eval "$$(python3 scripts/ops/read_env_keys.py --env backend_v2/.env)" && cd backend_v2 && go run ./cmd/backfill-entities
+
 
 ops-status: ## Show local ops dashboard
 	python3 scripts/ops/aladin_ops.py status

@@ -67,6 +67,7 @@ type EntityRepository interface {
 	ListProposedMerges(ctx context.Context, limit int) ([]ProposedMerge, error)
 	RejectMerge(ctx context.Context, mergeID string) error
 	AcceptMerge(ctx context.Context, mergeID string) error
+	RevertMerge(ctx context.Context, mergeID string) error
 
 	// R3: tenant tier (Tier 1 overlays + cross-tier bind + local-override read).
 	FindTenantByKey(ctx context.Context, ownerUserID, kind, normalizedKey string) ([]EntityCandidate, error)

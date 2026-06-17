@@ -407,6 +407,34 @@ func (r *pgEntityRepo) RejectMerge(ctx context.Context, mergeID string) error {
 	return nil
 }
 
+// RevertMerge undoes an applied merge: the from-entity's canonical_root_id is reset to
+// self (NULL), so it pops back out of the cluster with all its mentions intact (those
+// were never rewritten — the reversibility guarantee). Marks the row reverted.
+func (r *pgEntityRepo) RevertMerge(ctx context.Context, mergeID string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("entity RevertMerge begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var fromID string
+	err = tx.QueryRow(ctx, `
+		UPDATE entity_merges
+		   SET status = 'reverted', decided_at = now()
+		 WHERE id = $1::uuid AND status = 'applied'
+		 RETURNING from_entity_id::text
+	`, mergeID).Scan(&fromID)
+	if err != nil {
+		return fmt.Errorf("entity RevertMerge update merge: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE entities SET canonical_root_id = NULL, updated_at = now() WHERE id = $1::uuid
+	`, fromID); err != nil {
+		return fmt.Errorf("entity RevertMerge reset root: %w", err)
+	}
+	return tx.Commit(ctx)
+}
+
 // AcceptMerge applies a proposed merge: it records the decision and points the
 // from-entity's canonical_root_id at the into-entity's root (the reversible overlay).
 // The read path that resolves mentions *through* canonical_root_id (union-find with

@@ -83,6 +83,7 @@ func (f *fakeStore) ListProposedMerges(_ context.Context, _ int) ([]db.ProposedM
 }
 func (f *fakeStore) RejectMerge(_ context.Context, _ string) error { return nil }
 func (f *fakeStore) AcceptMerge(_ context.Context, _ string) error { return nil }
+func (f *fakeStore) RevertMerge(_ context.Context, _ string) error { return nil }
 
 func (f *fakeStore) FindTenantByKey(_ context.Context, owner, kind, norm string) ([]db.EntityCandidate, error) {
 	if id, ok := f.tenantByKey[owner+"|"+kind+"|"+norm]; ok {

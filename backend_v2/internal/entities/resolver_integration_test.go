@@ -368,6 +368,68 @@ func TestResolver_TenantTier_LocalOverride(t *testing.T) {
 	}
 }
 
+// TestEntityRepo_RevertMergePopsEntityBack (R4): accepting then reverting a merge
+// returns the entity to itself — the reversibility guarantee.
+func TestEntityRepo_RevertMergePopsEntityBack(t *testing.T) {
+	dsn := dbtest.RequireTestDSN(t)
+	ctx := context.Background()
+	pool, err := db.Connect(ctx, dsn)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	if err := db.Migrate(ctx, pool); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	tag := strings.ReplaceAll(uuid.NewString(), "-", "")[:8]
+	keyInto := "revinto" + tag
+	keyFrom := "revfrom" + tag
+	repo := db.NewEntityRepository(pool)
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM entities WHERE scope='shared' AND normalized_key IN ($1, $2)`, keyInto, keyFrom)
+	})
+
+	into, err := repo.CreateSharedEntity(ctx, db.CreateEntityParams{Kind: "unknown", CanonicalName: keyInto, NormalizedKey: keyInto})
+	if err != nil {
+		t.Fatalf("create into: %v", err)
+	}
+	from, err := repo.CreateSharedEntity(ctx, db.CreateEntityParams{Kind: "unknown", CanonicalName: keyFrom, NormalizedKey: keyFrom})
+	if err != nil {
+		t.Fatalf("create from: %v", err)
+	}
+	if _, err := repo.ProposeMerge(ctx, db.ProposeMergeParams{FromEntityID: from, IntoEntityID: into, Confidence: 1, Method: "manual"}); err != nil {
+		t.Fatalf("propose: %v", err)
+	}
+	proposals, err := repo.ListProposedMerges(ctx, 100)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	var mergeID string
+	for _, p := range proposals {
+		if p.FromEntityID == from && p.IntoEntityID == into {
+			mergeID = p.ID
+		}
+	}
+	if mergeID == "" {
+		t.Fatal("expected the proposed merge")
+	}
+
+	if err := repo.AcceptMerge(ctx, mergeID); err != nil {
+		t.Fatalf("accept: %v", err)
+	}
+	if root, err := repo.ResolveCanonicalRoot(ctx, from); err != nil || root != into {
+		t.Fatalf("after accept, from should resolve to into (%s); got %s err=%v", into, root, err)
+	}
+
+	if err := repo.RevertMerge(ctx, mergeID); err != nil {
+		t.Fatalf("revert: %v", err)
+	}
+	if root, err := repo.ResolveCanonicalRoot(ctx, from); err != nil || root != from {
+		t.Fatalf("after revert, from should pop back to itself (%s); got %s err=%v", from, root, err)
+	}
+}
+
 // unitVec builds a 1536-dim one-hot vector (matches the entities.embedding column).
 func unitVec(i int) []float32 {
 	v := make([]float32, 1536)
