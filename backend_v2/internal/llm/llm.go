@@ -39,3 +39,27 @@ type RelevanceResult struct {
 type RelevanceJudge interface {
 	JudgeRelevance(ctx context.Context, input RelevanceInput) (*RelevanceResult, error)
 }
+
+// EntityAdjudicationInput asks whether two entity surface forms denote the same
+// real-world entity. Used by entity resolution (R2) to adjudicate the ambiguous
+// fuzzy band — the cases a string normalizer can't settle (acronyms, rebrands,
+// same-name/different-thing).
+type EntityAdjudicationInput struct {
+	Kind        string
+	A           string   // the new mention's surface form
+	B           string   // the candidate entity's canonical name
+	BAliases    []string // the candidate's known surface forms
+	ContextHint string   // optional surrounding context for A (co-mentions, summary)
+}
+
+// EntityVerdict is the adjudicator's decision. Verdict is "same" | "different" |
+// "uncertain"; "different" is treated as negative evidence (the pair won't be proposed).
+type EntityVerdict struct {
+	Verdict    string  `json:"verdict"`
+	Confidence float64 `json:"confidence"`
+	Reason     string  `json:"reason"`
+}
+
+type EntityAdjudicator interface {
+	JudgeSameEntity(ctx context.Context, input EntityAdjudicationInput) (*EntityVerdict, error)
+}

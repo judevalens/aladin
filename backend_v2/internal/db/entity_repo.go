@@ -196,6 +196,29 @@ func (r *pgEntityRepo) ProposeMerge(ctx context.Context, p ProposeMergeParams) (
 	return tag.RowsAffected() > 0, nil
 }
 
+// RecordDistinct records that two entities are NOT the same (negative evidence),
+// e.g. an adjudicator returned "different". It writes a rejected merge row so
+// ProposeMerge never proposes the pair. No-op if the pair already has a row.
+func (r *pgEntityRepo) RecordDistinct(ctx context.Context, fromEntityID, intoEntityID, method, reason string) error {
+	evidence, err := json.Marshal(map[string]string{"reason": reason})
+	if err != nil {
+		return fmt.Errorf("entity RecordDistinct marshal evidence: %w", err)
+	}
+	_, err = r.pool.Exec(ctx, `
+		INSERT INTO entity_merges (from_entity_id, into_entity_id, status, method, evidence, decided_by, decided_at)
+		SELECT $1::uuid, $2::uuid, 'rejected', $3, $4::jsonb, 'llm', now()
+		 WHERE NOT EXISTS (
+			SELECT 1 FROM entity_merges
+			 WHERE (from_entity_id = $1::uuid AND into_entity_id = $2::uuid)
+			    OR (from_entity_id = $2::uuid AND into_entity_id = $1::uuid)
+		 )
+	`, fromEntityID, intoEntityID, method, evidence)
+	if err != nil {
+		return fmt.Errorf("entity RecordDistinct: %w", err)
+	}
+	return nil
+}
+
 func (r *pgEntityRepo) ListProposedMerges(ctx context.Context, limit int) ([]ProposedMerge, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT m.id::text, m.from_entity_id::text, ef.canonical_name,

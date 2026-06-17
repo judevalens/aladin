@@ -2,10 +2,12 @@ package entities
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"testing"
 
 	"aladin/backend_v2/internal/db"
+	"aladin/backend_v2/internal/llm"
 )
 
 // fakeStore is an in-memory db.EntityRepository for resolver unit tests.
@@ -15,9 +17,10 @@ type fakeStore struct {
 	aliases       int
 	mentions      []db.MentionParams
 	seq           int
-	candidates    []db.ScoredCandidate     // returned by FindSharedCandidates
-	proposed      []db.ProposeMergeParams  // recorded by ProposeMerge
-	rejectedPairs map[string]bool          // "from|into" negative evidence
+	candidates    []db.ScoredCandidate    // returned by FindSharedCandidates
+	proposed      []db.ProposeMergeParams // recorded by ProposeMerge
+	rejectedPairs map[string]bool         // "from|into" negative evidence
+	distinct      [][2]string             // recorded by RecordDistinct
 }
 
 func newFakeStore() *fakeStore {
@@ -66,11 +69,70 @@ func (f *fakeStore) ProposeMerge(_ context.Context, p db.ProposeMergeParams) (bo
 	return true, nil
 }
 
+func (f *fakeStore) RecordDistinct(_ context.Context, from, into, _, _ string) error {
+	f.distinct = append(f.distinct, [2]string{from, into})
+	f.rejectedPairs[from+"|"+into] = true
+	return nil
+}
+
 func (f *fakeStore) ListProposedMerges(_ context.Context, _ int) ([]db.ProposedMerge, error) {
 	return nil, nil
 }
 func (f *fakeStore) RejectMerge(_ context.Context, _ string) error { return nil }
 func (f *fakeStore) AcceptMerge(_ context.Context, _ string) error { return nil }
+
+// fakeAdjudicator is a deterministic llm.EntityAdjudicator for unit tests.
+type fakeAdjudicator struct {
+	verdict string
+	conf    float64
+	err     error
+}
+
+func (a fakeAdjudicator) JudgeSameEntity(_ context.Context, _ llm.EntityAdjudicationInput) (*llm.EntityVerdict, error) {
+	if a.err != nil {
+		return nil, a.err
+	}
+	return &llm.EntityVerdict{Verdict: a.verdict, Confidence: a.conf, Reason: "test"}, nil
+}
+
+func TestResolver_AdjudicatorDifferentSuppressesProposal(t *testing.T) {
+	s := newFakeStore()
+	s.candidates = []db.ScoredCandidate{{ID: "existing", CanonicalName: "Apex Legal", NormalizedKey: "apex legal", Similarity: 0.6}}
+	r := NewResolver(s).WithAdjudicator(fakeAdjudicator{verdict: "different", conf: 0.9})
+	if _, err := r.Resolve(context.Background(), Mention{Surface: "Apex Financial", RecordID: "r"}); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if len(s.proposed) != 0 {
+		t.Fatalf("a 'different' verdict must suppress the proposal, got %d", len(s.proposed))
+	}
+	if len(s.distinct) != 1 {
+		t.Fatalf("a 'different' verdict must record negative evidence, got %d", len(s.distinct))
+	}
+}
+
+func TestResolver_AdjudicatorSameProposesWithLLMMethod(t *testing.T) {
+	s := newFakeStore()
+	s.candidates = []db.ScoredCandidate{{ID: "ibm", CanonicalName: "International Business Machines", NormalizedKey: "international business machines", Similarity: 0.5}}
+	r := NewResolver(s).WithAdjudicator(fakeAdjudicator{verdict: "same", conf: 0.95})
+	if _, err := r.Resolve(context.Background(), Mention{Surface: "IBM", RecordID: "r"}); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if len(s.proposed) != 1 || s.proposed[0].Method != "llm" {
+		t.Fatalf("a 'same' verdict must propose with method=llm, got %+v", s.proposed)
+	}
+}
+
+func TestResolver_AdjudicatorErrorFallsBackToTrigram(t *testing.T) {
+	s := newFakeStore()
+	s.candidates = []db.ScoredCandidate{{ID: "x", CanonicalName: "Foobar", NormalizedKey: "foobar", Similarity: 0.7}}
+	r := NewResolver(s).WithAdjudicator(fakeAdjudicator{err: errors.New("no api key")})
+	if _, err := r.Resolve(context.Background(), Mention{Surface: "Foobaz", RecordID: "r"}); err != nil {
+		t.Fatalf("resolve must not fail when the adjudicator errors: %v", err)
+	}
+	if len(s.proposed) != 1 || s.proposed[0].Method != "trigram" {
+		t.Fatalf("adjudicator error must degrade to a trigram proposal, got %+v", s.proposed)
+	}
+}
 
 func TestResolver_FuzzyNearMatchProposesMergeNeverAutoMerges(t *testing.T) {
 	s := newFakeStore()

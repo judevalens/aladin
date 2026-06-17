@@ -3,9 +3,11 @@ package entities
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"aladin/backend_v2/internal/db"
+	"aladin/backend_v2/internal/llm"
 )
 
 const (
@@ -23,11 +25,20 @@ const (
 // rejected-pair negative evidence). Auto-merge, embeddings, the LLM adjudicator, the
 // tenant tier, and same-name/same-kind context splitting are later phases.
 type Resolver struct {
-	store db.EntityRepository
+	store       db.EntityRepository
+	adjudicator llm.EntityAdjudicator // optional (R2); nil → deterministic R1 behavior
 }
 
 func NewResolver(store db.EntityRepository) *Resolver {
 	return &Resolver{store: store}
+}
+
+// WithAdjudicator enables the R2 LLM adjudication of fuzzy candidates. When set, a
+// "different" verdict suppresses the proposal as negative evidence and "same" raises
+// its confidence; a nil adjudicator (the default) keeps pure trigram proposing.
+func (r *Resolver) WithAdjudicator(a llm.EntityAdjudicator) *Resolver {
+	r.adjudicator = a
+	return r
 }
 
 // Mention is one occurrence of an entity surface form in a record.
@@ -124,11 +135,39 @@ func (r *Resolver) proposeFuzzyMerge(ctx context.Context, newID, kind, norm, sur
 		return nil
 	}
 	best := scored[0]
+	method := "trigram"
+	confidence := best.Similarity
+
+	// R2: let the adjudicator settle the ambiguous match. "different" becomes negative
+	// evidence (no proposal); "same" raises confidence. An adjudicator error degrades
+	// gracefully to a plain trigram proposal — resolution must never fail on the LLM.
+	if r.adjudicator != nil {
+		verdict, jerr := r.adjudicator.JudgeSameEntity(ctx, llm.EntityAdjudicationInput{
+			Kind: kind,
+			A:    surface,
+			B:    best.CanonicalName,
+		})
+		switch {
+		case jerr != nil:
+			slog.Warn("entities: adjudicator failed, falling back to trigram", "component", "entities", "err", jerr)
+		case verdict.Verdict == "different":
+			if err := r.store.RecordDistinct(ctx, newID, best.ID, "llm", verdict.Reason); err != nil {
+				return fmt.Errorf("entities: record distinct: %w", err)
+			}
+			return nil
+		case verdict.Verdict == "same":
+			method = "llm"
+			confidence = verdict.Confidence
+		default: // "uncertain" or anything unexpected → still propose for human review
+			method = "trigram+llm"
+		}
+	}
+
 	if _, err := r.store.ProposeMerge(ctx, db.ProposeMergeParams{
 		FromEntityID: newID,
 		IntoEntityID: best.ID,
-		Confidence:   best.Similarity,
-		Method:       "trigram",
+		Confidence:   confidence,
+		Method:       method,
 		Evidence: map[string]any{
 			"surface":    surface,
 			"candidate":  best.CanonicalName,

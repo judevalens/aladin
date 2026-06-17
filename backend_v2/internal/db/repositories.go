@@ -63,6 +63,7 @@ type EntityRepository interface {
 	// R1: fuzzy near-match detection + proposed-merge curation.
 	FindSharedCandidates(ctx context.Context, kind, normalizedKey string, minSim float64, limit int) ([]ScoredCandidate, error)
 	ProposeMerge(ctx context.Context, p ProposeMergeParams) (bool, error)
+	RecordDistinct(ctx context.Context, fromEntityID, intoEntityID, method, reason string) error
 	ListProposedMerges(ctx context.Context, limit int) ([]ProposedMerge, error)
 	RejectMerge(ctx context.Context, mergeID string) error
 	AcceptMerge(ctx context.Context, mergeID string) error

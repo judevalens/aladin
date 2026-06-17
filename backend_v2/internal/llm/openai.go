@@ -64,6 +64,70 @@ var relevanceSchema = map[string]any{
 	"additionalProperties": false,
 }
 
+var entityAdjudicationSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"verdict": map[string]any{
+			"type":        "string",
+			"enum":        []string{"same", "different", "uncertain"},
+			"description": "Whether A and B denote the same real-world entity.",
+		},
+		"confidence": map[string]any{
+			"type":        "number",
+			"description": "Confidence from 0 to 1.",
+		},
+		"reason": map[string]any{
+			"type":        "string",
+			"description": "Short reason for the decision.",
+		},
+	},
+	"required":             []string{"verdict", "confidence", "reason"},
+	"additionalProperties": false,
+}
+
+// OpenAIEntityAdjudicator implements EntityAdjudicator. NOTE: like
+// OpenAIRelevanceJudge it is not wired into the live pipeline by default — entity
+// resolution runs with a nil adjudicator (deterministic R1 behavior) until this is
+// deliberately enabled and verified against a real key.
+type OpenAIEntityAdjudicator struct {
+	client openai.Client
+}
+
+func NewOpenAIEntityAdjudicator(apiKey string) *OpenAIEntityAdjudicator {
+	return &OpenAIEntityAdjudicator{client: openai.NewClient(option.WithAPIKey(apiKey))}
+}
+
+func (j *OpenAIEntityAdjudicator) JudgeSameEntity(ctx context.Context, input EntityAdjudicationInput) (*EntityVerdict, error) {
+	resp, err := j.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+		Model: openai.ChatModelGPT4oMini,
+		Messages: []openai.ChatCompletionMessageParamUnion{
+			openai.SystemMessage("You decide whether two names refer to the same real-world entity. Same-name look-alikes of the same kind are often DIFFERENT entities; demand evidence before saying 'same'. Prefer 'uncertain' over a guess."),
+			openai.UserMessage(fmt.Sprintf(
+				"Kind: %s\nA: %s\nContext for A: %s\nB (candidate): %s\nKnown aliases of B: %v",
+				input.Kind, input.A, input.ContextHint, input.B, input.BAliases,
+			)),
+		},
+		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
+			OfJSONSchema: &shared.ResponseFormatJSONSchemaParam{
+				JSONSchema: shared.ResponseFormatJSONSchemaJSONSchemaParam{
+					Name:   "entity_verdict",
+					Strict: openai.Bool(true),
+					Schema: entityAdjudicationSchema,
+				},
+			},
+		},
+		MaxTokens: openai.Int(180),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("openai entity adjudication: %w", err)
+	}
+	var result EntityVerdict
+	if err := json.Unmarshal([]byte(resp.Choices[0].Message.Content), &result); err != nil {
+		return nil, fmt.Errorf("parse entity verdict: %w", err)
+	}
+	return &result, nil
+}
+
 // OpenAIEnricher implements Enricher using OpenAI structured outputs.
 type OpenAIEnricher struct {
 	client openai.Client
