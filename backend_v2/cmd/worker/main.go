@@ -128,7 +128,12 @@ func main() {
 	handler := pipeline.NewFullPipelineHandler(pipelineEnqueuer, recordRepo, insightCh).
 		WithTenantItemMatches(tenantItemMatchRepo).
 		WithInsightEnqueuer(insightEnqueuer)
-	entityResolver := entities.NewResolver(db.NewEntityRepository(pool))
+	// Entity resolution. The embedder (vector matching + sense split) and the LLM
+	// adjudicator are enabled here; both degrade gracefully if the API call fails, so a
+	// missing/invalid key falls back to deterministic string-only resolution.
+	entityResolver := entities.NewResolver(db.NewEntityRepository(pool)).
+		WithEmbedder(embedder).
+		WithAdjudicator(llm.NewOpenAIEntityAdjudicator(cfg.OpenAIAPIKey))
 	orch := pipeline.NewOrchestrator(handler)
 	orch.Add(workers.NewGlobalFirstPassWorker(enricher, openaiLimiter))
 	orch.Add(workers.NewTenantMatchWorker(recordRepo, providerStreamRepo, sourceSubscriptionRepo, tenantItemMatchRepo))

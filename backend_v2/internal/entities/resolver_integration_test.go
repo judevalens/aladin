@@ -367,3 +367,77 @@ func TestResolver_TenantTier_LocalOverride(t *testing.T) {
 		t.Fatalf("local override: the merged overlay should resolve to the tenant target %s, not the shared canonical %s; got %s", other, shared, root)
 	}
 }
+
+// unitVec builds a 1536-dim one-hot vector (matches the entities.embedding column).
+func unitVec(i int) []float32 {
+	v := make([]float32, 1536)
+	v[i] = 1
+	return v
+}
+
+// TestEntityRepo_EmbeddingStoreAndVectorSearch (R2): the pgvector plumbing — store an
+// entity embedding, read it back, and find cosine-similar entities while excluding
+// orthogonal ones via the threshold.
+func TestEntityRepo_EmbeddingStoreAndVectorSearch(t *testing.T) {
+	dsn := dbtest.RequireTestDSN(t)
+	ctx := context.Background()
+	pool, err := db.Connect(ctx, dsn)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	if err := db.Migrate(ctx, pool); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	tag := strings.ReplaceAll(uuid.NewString(), "-", "")[:8]
+	keyNear := "vnear" + tag
+	keyFar := "vfar" + tag
+	repo := db.NewEntityRepository(pool)
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM entities WHERE scope='shared' AND normalized_key IN ($1, $2)`, keyNear, keyFar)
+	})
+
+	near, err := repo.CreateSharedEntity(ctx, db.CreateEntityParams{Kind: "unknown", CanonicalName: keyNear, NormalizedKey: keyNear})
+	if err != nil {
+		t.Fatalf("create near: %v", err)
+	}
+	far, err := repo.CreateSharedEntity(ctx, db.CreateEntityParams{Kind: "unknown", CanonicalName: keyFar, NormalizedKey: keyFar})
+	if err != nil {
+		t.Fatalf("create far: %v", err)
+	}
+	if err := repo.SetEntityEmbedding(ctx, near, unitVec(5)); err != nil {
+		t.Fatalf("set near embedding: %v", err)
+	}
+	if err := repo.SetEntityEmbedding(ctx, far, unitVec(900)); err != nil {
+		t.Fatalf("set far embedding: %v", err)
+	}
+
+	got, has, err := repo.GetEntityEmbedding(ctx, near)
+	if err != nil || !has {
+		t.Fatalf("get embedding: has=%v err=%v", has, err)
+	}
+	if len(got) != 1536 || got[5] < 0.99 {
+		t.Fatalf("embedding roundtrip mismatch: len=%d got[5]=%v", len(got), got[5])
+	}
+
+	cands, err := repo.FindSharedCandidatesByVector(ctx, "unknown", "noexclude", unitVec(5), 0.75, 50)
+	if err != nil {
+		t.Fatalf("vector search: %v", err)
+	}
+	var foundNear, foundFar bool
+	for _, c := range cands {
+		if c.ID == near {
+			foundNear = true
+		}
+		if c.ID == far {
+			foundFar = true
+		}
+	}
+	if !foundNear {
+		t.Fatal("the cosine-similar entity must be returned")
+	}
+	if foundFar {
+		t.Fatal("the orthogonal entity must be filtered out by the cosine threshold")
+	}
+}

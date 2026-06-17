@@ -217,6 +217,67 @@ func (r *pgEntityRepo) ResolveCanonicalRoot(ctx context.Context, entityID string
 	return cur, nil // depth cap (defensive; the overlay is acyclic)
 }
 
+// SetEntityEmbedding stores an entity's context-embedding (R2).
+func (r *pgEntityRepo) SetEntityEmbedding(ctx context.Context, entityID string, vec []float32) error {
+	if len(vec) == 0 {
+		return nil
+	}
+	_, err := r.pool.Exec(ctx, `
+		UPDATE entities SET embedding = $2::vector, updated_at = now() WHERE id = $1::uuid
+	`, entityID, vectorToString(vec))
+	if err != nil {
+		return fmt.Errorf("entity SetEntityEmbedding: %w", err)
+	}
+	return nil
+}
+
+// GetEntityEmbedding returns an entity's stored embedding, or has=false if unset.
+func (r *pgEntityRepo) GetEntityEmbedding(ctx context.Context, entityID string) ([]float32, bool, error) {
+	var raw *string
+	if err := r.pool.QueryRow(ctx, `SELECT embedding::text FROM entities WHERE id = $1::uuid`, entityID).Scan(&raw); err != nil {
+		return nil, false, fmt.Errorf("entity GetEntityEmbedding: %w", err)
+	}
+	if raw == nil || *raw == "" {
+		return nil, false, nil
+	}
+	var vec []float32
+	if err := json.Unmarshal([]byte(*raw), &vec); err != nil {
+		return nil, false, fmt.Errorf("entity GetEntityEmbedding parse: %w", err)
+	}
+	return vec, true, nil
+}
+
+// FindSharedCandidatesByVector returns shared-tier entities of the same kind with an
+// embedding cosine-similar to vec (excluding the exact normalized key), best first.
+// Uses pgvector's <=> cosine-distance operator. A semantic near-match signal that
+// trigram blocking misses (R2).
+func (r *pgEntityRepo) FindSharedCandidatesByVector(ctx context.Context, kind, excludeKey string, vec []float32, minCosine float64, limit int) ([]ScoredCandidate, error) {
+	if len(vec) == 0 {
+		return nil, nil
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, kind, canonical_name, normalized_key, 1 - (embedding <=> $2::vector) AS cosine
+		  FROM entities
+		 WHERE scope = 'shared' AND kind = $1 AND embedding IS NOT NULL AND normalized_key <> $3
+		   AND 1 - (embedding <=> $2::vector) >= $4
+		 ORDER BY embedding <=> $2::vector ASC
+		 LIMIT $5
+	`, kind, vectorToString(vec), excludeKey, minCosine, limit)
+	if err != nil {
+		return nil, fmt.Errorf("entity FindSharedCandidatesByVector: %w", err)
+	}
+	defer rows.Close()
+	var out []ScoredCandidate
+	for rows.Next() {
+		var c ScoredCandidate
+		if err := rows.Scan(&c.ID, &c.Kind, &c.CanonicalName, &c.NormalizedKey, &c.Similarity); err != nil {
+			return nil, fmt.Errorf("entity FindSharedCandidatesByVector scan: %w", err)
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
 func (r *pgEntityRepo) CreateSharedEntity(ctx context.Context, p CreateEntityParams) (string, error) {
 	prov, err := json.Marshal(map[string]string{"first_record_id": p.FirstRecordID})
 	if err != nil {

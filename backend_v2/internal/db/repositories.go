@@ -72,4 +72,9 @@ type EntityRepository interface {
 	FindTenantByKey(ctx context.Context, ownerUserID, kind, normalizedKey string) ([]EntityCandidate, error)
 	CreateTenantEntity(ctx context.Context, p CreateTenantEntityParams) (string, error)
 	ResolveCanonicalRoot(ctx context.Context, entityID string) (string, error)
+
+	// R2 embeddings: context-embedding storage + vector candidate signal.
+	SetEntityEmbedding(ctx context.Context, entityID string, vec []float32) error
+	GetEntityEmbedding(ctx context.Context, entityID string) ([]float32, bool, error)
+	FindSharedCandidatesByVector(ctx context.Context, kind, excludeKey string, vec []float32, minCosine float64, limit int) ([]ScoredCandidate, error)
 }

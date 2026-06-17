@@ -21,12 +21,13 @@ type fakeStore struct {
 	proposed      []db.ProposeMergeParams // recorded by ProposeMerge
 	rejectedPairs map[string]bool         // "from|into" negative evidence
 	distinct      [][2]string             // recorded by RecordDistinct
-	tenantByKey   map[string]string       // "owner|kind|norm" -> tenant entity id
+	tenantByKey    map[string]string      // "owner|kind|norm" -> tenant entity id
 	lastTenantBind string                 // SharedEntityID of the last CreateTenantEntity
+	embeddings     map[string][]float32   // entity id -> stored embedding
 }
 
 func newFakeStore() *fakeStore {
-	return &fakeStore{byKey: map[string]string{}, rejectedPairs: map[string]bool{}, tenantByKey: map[string]string{}}
+	return &fakeStore{byKey: map[string]string{}, rejectedPairs: map[string]bool{}, tenantByKey: map[string]string{}, embeddings: map[string][]float32{}}
 }
 
 func storeKey(kind, norm string) string { return kind + "|" + norm }
@@ -100,6 +101,76 @@ func (f *fakeStore) CreateTenantEntity(_ context.Context, p db.CreateTenantEntit
 
 func (f *fakeStore) ResolveCanonicalRoot(_ context.Context, entityID string) (string, error) {
 	return entityID, nil
+}
+
+func (f *fakeStore) SetEntityEmbedding(_ context.Context, entityID string, vec []float32) error {
+	f.embeddings[entityID] = vec
+	return nil
+}
+func (f *fakeStore) GetEntityEmbedding(_ context.Context, entityID string) ([]float32, bool, error) {
+	v, ok := f.embeddings[entityID]
+	return v, ok, nil
+}
+func (f *fakeStore) FindSharedCandidatesByVector(_ context.Context, _, _ string, _ []float32, _ float64, _ int) ([]db.ScoredCandidate, error) {
+	return nil, nil
+}
+
+// fakeEmbedder returns deterministic vectors keyed by the embed text.
+type fakeEmbedder struct{ vecs map[string][]float32 }
+
+func (f fakeEmbedder) Embed(_ context.Context, text string) ([]float32, error) {
+	if v, ok := f.vecs[text]; ok {
+		return v, nil
+	}
+	return []float32{0.5, 0.5}, nil
+}
+
+func TestResolver_SenseSplitOnDivergentContext(t *testing.T) {
+	emb := fakeEmbedder{vecs: map[string][]float32{
+		"Mercury — chemistry":         {1, 0},
+		"Mercury — automobile brand":  {0, 1},
+	}}
+	s := newFakeStore()
+	r := NewResolver(s).WithEmbedder(emb)
+
+	id1, err := r.Resolve(context.Background(), Mention{Surface: "Mercury", ContextHint: "chemistry", RecordID: "r"})
+	if err != nil {
+		t.Fatalf("resolve 1: %v", err)
+	}
+	id2, err := r.Resolve(context.Background(), Mention{Surface: "Mercury", ContextHint: "automobile brand", RecordID: "r"})
+	if err != nil {
+		t.Fatalf("resolve 2: %v", err)
+	}
+	if id1 == id2 {
+		t.Fatal("divergent context for the same name+kind must split into a new sense")
+	}
+	if s.created != 2 {
+		t.Fatalf("expected 2 entities (a split), got %d", s.created)
+	}
+}
+
+func TestResolver_SameSenseResolvesToExisting(t *testing.T) {
+	emb := fakeEmbedder{vecs: map[string][]float32{
+		"Mercury — the element":      {1, 0},
+		"Mercury — chemical element": {0.99, 0.01},
+	}}
+	s := newFakeStore()
+	r := NewResolver(s).WithEmbedder(emb)
+
+	id1, err := r.Resolve(context.Background(), Mention{Surface: "Mercury", ContextHint: "the element", RecordID: "r"})
+	if err != nil {
+		t.Fatalf("resolve 1: %v", err)
+	}
+	id2, err := r.Resolve(context.Background(), Mention{Surface: "Mercury", ContextHint: "chemical element", RecordID: "r"})
+	if err != nil {
+		t.Fatalf("resolve 2: %v", err)
+	}
+	if id1 != id2 {
+		t.Fatalf("similar context must resolve to the same sense: %s vs %s", id1, id2)
+	}
+	if s.created != 1 {
+		t.Fatalf("expected 1 entity (no split), got %d", s.created)
+	}
 }
 
 func TestResolver_TenantBindsToSharedWhenPresent(t *testing.T) {

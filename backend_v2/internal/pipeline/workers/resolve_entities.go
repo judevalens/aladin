@@ -63,6 +63,7 @@ func (w *ResolveEntitiesWorker) Run(ctx context.Context, raw []byte) pipeline.Re
 			Surface:        surface,
 			RecordID:       rec.ID,
 			SourceRevision: rec.SourceRevision,
+			ContextHint:    rec.Enrichment.Summary,
 		}); err != nil {
 			return pipeline.Result{
 				TaskType:      pipeline.TaskResolveEntities,
