@@ -113,3 +113,31 @@ type ClaimRelation struct {
 type ClaimAdjudicator interface {
 	JudgeClaims(ctx context.Context, input ClaimAdjudicationInput) (*ClaimRelation, error)
 }
+
+// DiscourseMember is one document in a bridge's connected set (input to the discourse pass).
+type DiscourseMember struct {
+	ID      string // record/artifact id — the grounding handle
+	Kind    string // record | artifact (artifact = the user's own writing)
+	Summary string
+}
+
+// DiscoursePosition is one member's stance toward the bridge entity, grounded to its id.
+type DiscoursePosition struct {
+	MemberID string `json:"member_id"`
+	Stance   string `json:"stance"` // supportive | critical | neutral | mixed
+	Claim    string `json:"claim"`
+}
+
+// DiscourseResult is the discourse map for one bridge entity: each member's stance plus an
+// overall reading (consensus | contradiction | mixed | emerging).
+type DiscourseResult struct {
+	Headline   string              `json:"headline"`
+	Overall    string              `json:"overall"`
+	Positions  []DiscoursePosition `json:"positions"`
+	Confidence float64             `json:"confidence"`
+}
+
+// DiscourseJudge runs the stance/discourse pass over a bridge's connected members.
+type DiscourseJudge interface {
+	JudgeDiscourse(ctx context.Context, entity string, members []DiscourseMember) (*DiscourseResult, error)
+}

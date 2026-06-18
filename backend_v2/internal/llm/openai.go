@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
@@ -251,6 +252,76 @@ func (j *OpenAIClaimAdjudicator) JudgeClaims(ctx context.Context, input ClaimAdj
 	var result ClaimRelation
 	if err := json.Unmarshal([]byte(resp.Choices[0].Message.Content), &result); err != nil {
 		return nil, fmt.Errorf("parse claim relation: %w", err)
+	}
+	return &result, nil
+}
+
+var discourseSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"headline": map[string]any{"type": "string", "description": "one sentence capturing the discourse around the entity"},
+		"overall": map[string]any{
+			"type": "string", "enum": []string{"consensus", "contradiction", "mixed", "emerging"},
+			"description": "consensus = sources agree; contradiction = directly oppose; mixed = varied; emerging = too sparse to tell.",
+		},
+		"positions": map[string]any{
+			"type":        "array",
+			"description": "one entry per provided member that takes a discernible position",
+			"items": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"member_id": map[string]any{"type": "string", "description": "the member id exactly as provided"},
+					"stance":    map[string]any{"type": "string", "enum": []string{"supportive", "critical", "neutral", "mixed"}},
+					"claim":     map[string]any{"type": "string", "description": "this member's position on the entity, one line"},
+				},
+				"required":             []string{"member_id", "stance", "claim"},
+				"additionalProperties": false,
+			},
+		},
+		"confidence": map[string]any{"type": "number"},
+	},
+	"required":             []string{"headline", "overall", "positions", "confidence"},
+	"additionalProperties": false,
+}
+
+// OpenAIDiscourseJudge runs the discourse/stance pass. Live call unverified without a key;
+// the discourse sweep degrades gracefully without it.
+type OpenAIDiscourseJudge struct {
+	client openai.Client
+}
+
+func NewOpenAIDiscourseJudge(apiKey string) *OpenAIDiscourseJudge {
+	return &OpenAIDiscourseJudge{client: openai.NewClient(option.WithAPIKey(apiKey))}
+}
+
+func (j *OpenAIDiscourseJudge) JudgeDiscourse(ctx context.Context, entity string, members []DiscourseMember) (*DiscourseResult, error) {
+	var b strings.Builder
+	for _, m := range members {
+		fmt.Fprintf(&b, "- [%s] (%s) %s\n", m.ID, m.Kind, m.Summary)
+	}
+	resp, err := j.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+		Model: openai.ChatModelGPT4oMini,
+		Messages: []openai.ChatCompletionMessageParamUnion{
+			openai.SystemMessage("You analyze how multiple sources discuss one entity. Identify each source's stance toward the entity and whether the sources agree or contradict. Artifact members are the user's own writing — weigh them as the user's position. Ground every position to the member id provided. Be conservative; mark 'emerging' when evidence is thin."),
+			openai.UserMessage(fmt.Sprintf("Entity: %s\n\nSources:\n%s", entity, b.String())),
+		},
+		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
+			OfJSONSchema: &shared.ResponseFormatJSONSchemaParam{
+				JSONSchema: shared.ResponseFormatJSONSchemaJSONSchemaParam{
+					Name:   "discourse_result",
+					Strict: openai.Bool(true),
+					Schema: discourseSchema,
+				},
+			},
+		},
+		MaxTokens: openai.Int(700),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("openai discourse: %w", err)
+	}
+	var result DiscourseResult
+	if err := json.Unmarshal([]byte(resp.Choices[0].Message.Content), &result); err != nil {
+		return nil, fmt.Errorf("parse discourse: %w", err)
 	}
 	return &result, nil
 }

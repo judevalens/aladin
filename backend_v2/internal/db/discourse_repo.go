@@ -39,6 +39,15 @@ type EntityDiscourse struct {
 	Version             int
 }
 
+// Due reports whether a bridge should be (re-)analyzed: never analyzed, or grown by at
+// least growthThreshold connected docs since the last pass. Nil receiver = never analyzed.
+func (e *EntityDiscourse) Due(currentDegree, growthThreshold int) bool {
+	if e == nil || e.LastAnalyzedAt == nil {
+		return true
+	}
+	return currentDegree-e.CountAtLastAnalysis >= growthThreshold
+}
+
 // DiscourseInsight is a stored discourse map for one entity (insights row, type=discourse).
 type DiscourseInsight struct {
 	EntityID   string
