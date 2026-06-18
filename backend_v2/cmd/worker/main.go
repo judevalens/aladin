@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/hibiken/asynq"
 	"github.com/joho/godotenv"
@@ -15,6 +16,7 @@ import (
 	"aladin/backend_v2/internal/claims"
 	"aladin/backend_v2/internal/config"
 	"aladin/backend_v2/internal/db"
+	"aladin/backend_v2/internal/discourse"
 	"aladin/backend_v2/internal/entities"
 	"aladin/backend_v2/internal/graph"
 	"aladin/backend_v2/internal/insights"
@@ -142,6 +144,26 @@ func main() {
 	claimService := claims.NewService(db.NewClaimRepository(pool), llm.NewOpenAIClaimExtractor(cfg.OpenAIAPIKey)).
 		WithEmbedder(embedder).
 		WithAdjudicator(llm.NewOpenAIClaimAdjudicator(cfg.OpenAIAPIKey))
+	// Discourse sweep (ambient) — analyzes shared-entity "bridges" (entities mentioned by
+	// >=2 docs) from the resolved entity layer and stores a grounded discourse map. The
+	// judge is the only LLM call; the sweep degrades gracefully without a key.
+	discourseSvc := discourse.NewService(db.NewDiscourseRepository(pool), llm.NewOpenAIDiscourseJudge(cfg.OpenAIAPIKey), openaiLimiter)
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if n, err := discourseSvc.Sweep(ctx, 25); err != nil {
+					slog.Error("discourse: sweep failed", "component", "discourse", "err", err)
+				} else if n > 0 {
+					slog.Info("discourse: sweep complete", "component", "discourse", "maps", n)
+				}
+			}
+		}
+	}()
 	orch := pipeline.NewOrchestrator(handler)
 	orch.Add(workers.NewGlobalFirstPassWorker(enricher, openaiLimiter))
 	orch.Add(workers.NewTenantMatchWorker(recordRepo, providerStreamRepo, sourceSubscriptionRepo, tenantItemMatchRepo))
