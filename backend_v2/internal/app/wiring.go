@@ -37,6 +37,8 @@ type Dependencies interface {
 	Preview() coreservice.PreviewService
 	// ShardBuild runs builds while recording status + emitting build-status events.
 	ShardBuild() coreservice.ShardBuildService
+	// Relationships is the additive cross-world edge layer (artifacts ↔ records ↔ insights).
+	Relationships() coreservice.RelationshipService
 }
 
 type StaticDependencies struct {
@@ -59,6 +61,7 @@ type StaticDependencies struct {
 	WorkspaceRuntimeSvc    coreservice.WorkspaceRuntime
 	PreviewSvc             coreservice.PreviewService
 	ShardBuildSvc          coreservice.ShardBuildService
+	RelationshipsSvc       coreservice.RelationshipService
 }
 
 func (d StaticDependencies) Auth() coreservice.AuthService          { return d.AuthSvc }
@@ -98,6 +101,9 @@ func (d StaticDependencies) Preview() coreservice.PreviewService {
 func (d StaticDependencies) ShardBuild() coreservice.ShardBuildService {
 	return d.ShardBuildSvc
 }
+func (d StaticDependencies) Relationships() coreservice.RelationshipService {
+	return d.RelationshipsSvc
+}
 
 type wiring struct {
 	auth                coreservice.AuthService
@@ -119,6 +125,7 @@ type wiring struct {
 	workspaceRuntime    coreservice.WorkspaceRuntime
 	preview             coreservice.PreviewService
 	shardBuild          coreservice.ShardBuildService
+	relationships       coreservice.RelationshipService
 }
 
 func (w wiring) Auth() coreservice.AuthService          { return w.auth }
@@ -148,6 +155,7 @@ func (w wiring) DocSurfaceStore() coreservice.DocSurfaceStore   { return w.docSu
 func (w wiring) WorkspaceRuntime() coreservice.WorkspaceRuntime { return w.workspaceRuntime }
 func (w wiring) Preview() coreservice.PreviewService            { return w.preview }
 func (w wiring) ShardBuild() coreservice.ShardBuildService      { return w.shardBuild }
+func (w wiring) Relationships() coreservice.RelationshipService { return w.relationships }
 
 func NewDependencies(pool *pgxpool.Pool) Dependencies {
 	return NewDependenciesWithProviderConnections(pool, config.LoadProviderConnections(), config.DataVolumePathOrDefault())
@@ -165,6 +173,7 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 	shardBuild := coreservice.NewShardBuildService(docRuntime, repo.NewShardBuildPostgres(pool))
 	feedRepo := repo.NewFeedPostgres(pool)
 	insightRepo := repo.NewInsightPostgres(pool)
+	relationshipRepo := repo.NewRelationshipPostgres(pool)
 	systemRepo := repo.NewSystemPostgres(pool)
 	providerConnectionRepo := repo.NewProviderConnectionPostgres(pool)
 	syncRepo := repo.NewSyncPostgres(pool)
@@ -206,6 +215,7 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		workspaceRuntime:    docRuntime,
 		preview:             docPreview,
 		shardBuild:          shardBuild,
+		relationships:       coreservice.NewRelationshipService(relationshipRepo),
 	}
 }
 

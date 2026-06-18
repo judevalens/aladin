@@ -55,12 +55,14 @@ func NewWithDependencies(addr string, deps app.Dependencies) *Server {
 	mux.HandleFunc("GET /api/graph-explore/full", s.handleEmptyGraph)
 
 	mux.HandleFunc("GET /api/worker/status", s.handleWorkerStatus)
+	mux.HandleFunc("GET /api/pipeline/stats", s.handlePipelineStats)
 
 	s.registerArtifactRoutes(mux)
 	s.registerPageRoutes(mux)
 	s.registerFileRoutes(mux)
 	s.registerContentRoutes(mux)
 	s.registerShardRoutes(mux)
+	s.registerRelationshipRoutes(mux)
 	s.registerRealtimeRoutes(mux)
 	s.registerProviderConnectionRoutes(mux)
 	s.registerSyncRoutes(mux)
