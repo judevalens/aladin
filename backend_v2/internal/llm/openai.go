@@ -197,6 +197,64 @@ func (e *OpenAIClaimExtractor) ExtractClaims(ctx context.Context, input ClaimExt
 	return out.Claims, nil
 }
 
+var claimAdjudicationSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"relation": map[string]any{
+			"type":        "string",
+			"enum":        []string{"same", "negation", "related", "unrelated"},
+			"description": "same = paraphrase with the SAME stance; negation = same proposition with the OPPOSITE stance; related = distinct but linked; unrelated.",
+		},
+		"edge_type": map[string]any{
+			"type":        "string",
+			"enum":        []string{"supports", "contradicts", "qualifies", "none"},
+			"description": "when relation=related, how A relates to B; otherwise 'none'.",
+		},
+		"confidence": map[string]any{"type": "number"},
+		"reason":     map[string]any{"type": "string"},
+	},
+	"required":             []string{"relation", "edge_type", "confidence", "reason"},
+	"additionalProperties": false,
+}
+
+// OpenAIClaimAdjudicator implements ClaimAdjudicator. Live call unverified without a key;
+// resolution degrades gracefully without it.
+type OpenAIClaimAdjudicator struct {
+	client openai.Client
+}
+
+func NewOpenAIClaimAdjudicator(apiKey string) *OpenAIClaimAdjudicator {
+	return &OpenAIClaimAdjudicator{client: openai.NewClient(option.WithAPIKey(apiKey))}
+}
+
+func (j *OpenAIClaimAdjudicator) JudgeClaims(ctx context.Context, input ClaimAdjudicationInput) (*ClaimRelation, error) {
+	resp, err := j.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+		Model: openai.ChatModelGPT4oMini,
+		Messages: []openai.ChatCompletionMessageParamUnion{
+			openai.SystemMessage("You decide how two claims relate. CRUCIAL: a claim and its negation (same proposition, opposite stance) are 'negation', NOT 'unrelated'. Be precise about stance."),
+			openai.UserMessage(fmt.Sprintf("Shared subjects: %v\nA: %s\nB: %s", input.Subjects, input.A, input.B)),
+		},
+		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
+			OfJSONSchema: &shared.ResponseFormatJSONSchemaParam{
+				JSONSchema: shared.ResponseFormatJSONSchemaJSONSchemaParam{
+					Name:   "claim_relation",
+					Strict: openai.Bool(true),
+					Schema: claimAdjudicationSchema,
+				},
+			},
+		},
+		MaxTokens: openai.Int(180),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("openai claim adjudication: %w", err)
+	}
+	var result ClaimRelation
+	if err := json.Unmarshal([]byte(resp.Choices[0].Message.Content), &result); err != nil {
+		return nil, fmt.Errorf("parse claim relation: %w", err)
+	}
+	return &result, nil
+}
+
 // OpenAIEnricher implements Enricher using OpenAI structured outputs.
 type OpenAIEnricher struct {
 	client openai.Client

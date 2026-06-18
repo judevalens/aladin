@@ -136,8 +136,12 @@ func main() {
 	entityResolver := entities.NewResolver(entityRepo).
 		WithEmbedder(embedder).
 		WithAdjudicator(llm.NewOpenAIEntityAdjudicator(cfg.OpenAIAPIKey))
-	// Claim extraction (C0) — runs after entity resolution; degrades gracefully without a key.
-	claimService := claims.NewService(db.NewClaimRepository(pool), llm.NewOpenAIClaimExtractor(cfg.OpenAIAPIKey))
+	// Claim extraction + resolution — runs after entity resolution. The embedder +
+	// adjudicator give polarity-aware resolution (negations → deny mentions); all degrade
+	// gracefully without a key.
+	claimService := claims.NewService(db.NewClaimRepository(pool), llm.NewOpenAIClaimExtractor(cfg.OpenAIAPIKey)).
+		WithEmbedder(embedder).
+		WithAdjudicator(llm.NewOpenAIClaimAdjudicator(cfg.OpenAIAPIKey))
 	orch := pipeline.NewOrchestrator(handler)
 	orch.Add(workers.NewGlobalFirstPassWorker(enricher, openaiLimiter))
 	orch.Add(workers.NewTenantMatchWorker(recordRepo, providerStreamRepo, sourceSubscriptionRepo, tenantItemMatchRepo))

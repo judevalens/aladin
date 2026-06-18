@@ -13,14 +13,37 @@ import (
 	"aladin/backend_v2/internal/llm"
 )
 
-// Service runs discovered-side claim extraction.
+const (
+	// claimResolveMinCosine is the embedding floor for a claim to be a resolution
+	// candidate (claims are paraphrase-heavy, so this is the primary signal).
+	claimResolveMinCosine = 0.8
+	claimCandidateLimit   = 5
+)
+
+// Service runs claim extraction + resolution. The embedder + adjudicator are optional
+// (C1): without them it falls back to C0 behavior (exact-text dedup + create).
 type Service struct {
-	store     db.ClaimRepository
-	extractor llm.ClaimExtractor
+	store       db.ClaimRepository
+	extractor   llm.ClaimExtractor
+	embedder    llm.Embedder
+	adjudicator llm.ClaimAdjudicator
 }
 
 func NewService(store db.ClaimRepository, extractor llm.ClaimExtractor) *Service {
 	return &Service{store: store, extractor: extractor}
+}
+
+// WithEmbedder enables embedding-based claim resolution (C1).
+func (s *Service) WithEmbedder(e llm.Embedder) *Service {
+	s.embedder = e
+	return s
+}
+
+// WithAdjudicator enables polarity-aware claim adjudication: a negation resolves to the
+// canonical claim as a deny mention; a related claim gets a proposed argument edge.
+func (s *Service) WithAdjudicator(a llm.ClaimAdjudicator) *Service {
+	s.adjudicator = a
+	return s
 }
 
 // RecordInput is the extraction context for one enriched record.
@@ -75,33 +98,20 @@ func (s *Service) ExtractFromRecord(ctx context.Context, in RecordInput) (int, e
 			continue // entity-grounded gate
 		}
 
-		claimID, found, err := s.store.FindClaimByText(ctx, "shared", "", text)
+		claimID, stance, err := s.resolveClaim(ctx, "shared", "", text, normalizePolarity(c.Polarity), subjectIDs, in.RecordID)
 		if err != nil {
 			return stored, err
-		}
-		if !found {
-			claimID, err = s.store.CreateClaim(ctx, db.CreateClaimParams{
-				Scope:         "shared",
-				CanonicalText: text,
-				Polarity:      normalizePolarity(c.Polarity),
-				FirstSourceID: in.RecordID,
-			})
-			if err != nil {
-				return stored, err
-			}
 		}
 		for _, eid := range subjectIDs {
 			if err := s.store.AddClaimSubject(ctx, claimID, eid); err != nil {
 				return stored, err
 			}
 		}
-		// C0: the extracting source ASSERTS the claim as stated (its polarity carries the
-		// affirmative/negative form). C1/C3 reconcile negations into deny-stance + contradicts.
 		if err := s.store.AddClaimMention(ctx, db.ClaimMentionParams{
 			ClaimID:    claimID,
 			SourceKind: "record",
 			SourceID:   in.RecordID,
-			Stance:     "assert",
+			Stance:     stance,
 			Resolver:   "extract",
 		}); err != nil {
 			return stored, err
@@ -109,6 +119,80 @@ func (s *Service) ExtractFromRecord(ctx context.Context, in RecordInput) (int, e
 		stored++
 	}
 	return stored, nil
+}
+
+// resolveClaim maps a claim to a canonical claim id + the source's stance on it. Order:
+// exact text → embedding+adjudicator (C1) → create new. A "negation" verdict is the
+// crux of the contradiction feature: it resolves to the SAME canonical claim but the
+// source's stance is 'deny', so support/contradict is just assert/deny mentions on one
+// proposition. "related" creates a new claim + a proposed argument edge.
+func (s *Service) resolveClaim(ctx context.Context, scope, owner, text, polarity string, subjectIDs []string, sourceID string) (string, string, error) {
+	if id, found, err := s.store.FindClaimByText(ctx, scope, owner, text); err != nil {
+		return "", "", err
+	} else if found {
+		return id, "assert", nil
+	}
+
+	var vec []float32
+	if s.embedder != nil {
+		if v, err := s.embedder.Embed(ctx, text); err != nil {
+			slog.Warn("claims: embed failed, skipping vector resolution", "component", "claims", "err", err)
+		} else {
+			vec = v
+		}
+	}
+
+	if len(vec) > 0 && s.adjudicator != nil {
+		cands, err := s.store.FindClaimCandidates(ctx, scope, owner, subjectIDs, vec, claimResolveMinCosine, claimCandidateLimit)
+		if err != nil {
+			return "", "", err
+		}
+		if len(cands) > 0 {
+			best := cands[0]
+			rel, jerr := s.adjudicator.JudgeClaims(ctx, llm.ClaimAdjudicationInput{A: text, B: best.CanonicalText})
+			switch {
+			case jerr != nil:
+				slog.Warn("claims: adjudicator failed, treating as new claim", "component", "claims", "err", jerr)
+			case rel.Relation == "same":
+				return best.ID, "assert", nil
+			case rel.Relation == "negation":
+				return best.ID, "deny", nil // the contradiction mechanism
+			case rel.Relation == "related":
+				id, err := s.createClaim(ctx, scope, owner, text, polarity, sourceID, vec)
+				if err != nil {
+					return "", "", err
+				}
+				edge := rel.EdgeType
+				if edge == "" || edge == "none" {
+					edge = "qualifies"
+				}
+				if _, err := s.store.AddClaimEdge(ctx, db.ClaimEdgeParams{
+					FromClaimID: id, ToClaimID: best.ID, Type: edge, Confidence: rel.Confidence, Method: "llm",
+				}); err != nil {
+					return "", "", err
+				}
+				return id, "assert", nil
+			}
+		}
+	}
+
+	id, err := s.createClaim(ctx, scope, owner, text, polarity, sourceID, vec)
+	return id, "assert", err
+}
+
+func (s *Service) createClaim(ctx context.Context, scope, owner, text, polarity, sourceID string, vec []float32) (string, error) {
+	id, err := s.store.CreateClaim(ctx, db.CreateClaimParams{
+		Scope: scope, OwnerUserID: owner, CanonicalText: text, Polarity: polarity, FirstSourceID: sourceID,
+	})
+	if err != nil {
+		return "", err
+	}
+	if len(vec) > 0 {
+		if err := s.store.SetClaimEmbedding(ctx, id, vec); err != nil {
+			return "", err
+		}
+	}
+	return id, nil
 }
 
 // matchSubjects maps the model's subject names back to the record's resolved entity ids

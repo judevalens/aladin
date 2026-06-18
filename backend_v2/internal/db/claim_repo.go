@@ -28,6 +28,24 @@ type ClaimMentionParams struct {
 	Resolver   string
 }
 
+// ScoredClaim is a candidate claim from resolution (embedding cosine over claims sharing
+// a subject entity).
+type ScoredClaim struct {
+	ID            string
+	CanonicalText string
+	Polarity      string
+	Similarity    float64
+}
+
+// ClaimEdgeParams proposes a typed argument edge between two distinct claims.
+type ClaimEdgeParams struct {
+	FromClaimID string
+	ToClaimID   string
+	Type        string // supports | contradicts | qualifies
+	Confidence  float64
+	Method      string
+}
+
 type pgClaimRepo struct{ pool *pgxpool.Pool }
 
 func NewClaimRepository(pool *pgxpool.Pool) ClaimRepository {
@@ -92,6 +110,78 @@ func (r *pgClaimRepo) AddClaimSubject(ctx context.Context, claimID, entityID str
 		return fmt.Errorf("claim AddClaimSubject: %w", err)
 	}
 	return nil
+}
+
+// SetClaimEmbedding stores a claim's proposition embedding (C1, for resolution).
+func (r *pgClaimRepo) SetClaimEmbedding(ctx context.Context, claimID string, vec []float32) error {
+	if len(vec) == 0 {
+		return nil
+	}
+	_, err := r.pool.Exec(ctx, `
+		UPDATE claims SET embedding = $2::vector, updated_at = now() WHERE id = $1::uuid
+	`, claimID, vectorToString(vec))
+	if err != nil {
+		return fmt.Errorf("claim SetClaimEmbedding: %w", err)
+	}
+	return nil
+}
+
+// FindClaimCandidates returns claims in the given scope/owner that share ≥1 subject
+// entity with the mention and are embedding-similar — the candidates for polarity-aware
+// resolution (C1). Subject overlap is the cheap blocker the entity layer gives for free;
+// pgvector cosine ranks. Pass scope='shared', owner='' to match a tenant thesis against
+// discovered claims (the contradiction surface, C3).
+func (r *pgClaimRepo) FindClaimCandidates(ctx context.Context, scope, ownerUserID string, subjectEntityIDs []string, vec []float32, minCosine float64, limit int) ([]ScoredClaim, error) {
+	if len(subjectEntityIDs) == 0 || len(vec) == 0 {
+		return nil, nil
+	}
+	var owner any
+	if ownerUserID != "" {
+		owner = ownerUserID
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT c.id::text, c.canonical_text, c.polarity, 1 - (c.embedding <=> $4::vector) AS cosine
+		  FROM claims c
+		 WHERE c.scope = $1 AND c.owner_user_id IS NOT DISTINCT FROM $2::uuid
+		   AND c.embedding IS NOT NULL
+		   AND c.id IN (SELECT claim_id FROM claim_subjects WHERE entity_id = ANY($3::uuid[]))
+		   AND 1 - (c.embedding <=> $4::vector) >= $5
+		 ORDER BY c.embedding <=> $4::vector ASC
+		 LIMIT $6
+	`, scope, owner, subjectEntityIDs, vectorToString(vec), minCosine, limit)
+	if err != nil {
+		return nil, fmt.Errorf("claim FindClaimCandidates: %w", err)
+	}
+	defer rows.Close()
+	var out []ScoredClaim
+	for rows.Next() {
+		var c ScoredClaim
+		if err := rows.Scan(&c.ID, &c.CanonicalText, &c.Polarity, &c.Similarity); err != nil {
+			return nil, fmt.Errorf("claim FindClaimCandidates scan: %w", err)
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// AddClaimEdge proposes a typed argument edge between two distinct claims, unless the
+// (unordered) pair already has an edge of that type in any status (negative-evidence
+// safe, like entity ProposeMerge). Returns whether a new edge was inserted.
+func (r *pgClaimRepo) AddClaimEdge(ctx context.Context, p ClaimEdgeParams) (bool, error) {
+	tag, err := r.pool.Exec(ctx, `
+		INSERT INTO claim_edges (from_claim_id, to_claim_id, type, status, confidence, method, decided_by)
+		SELECT $1::uuid, $2::uuid, $3, 'proposed', $4, $5, 'auto'
+		 WHERE NOT EXISTS (
+			SELECT 1 FROM claim_edges
+			 WHERE type = $3
+			   AND ((from_claim_id = $1::uuid AND to_claim_id = $2::uuid)
+			     OR (from_claim_id = $2::uuid AND to_claim_id = $1::uuid))
+		 )
+	`, p.FromClaimID, p.ToClaimID, p.Type, p.Confidence, p.Method)
+	if err != nil {
+		return false, fmt.Errorf("claim AddClaimEdge: %w", err)
+	}
+	return tag.RowsAffected() > 0, nil
 }
 
 func (r *pgClaimRepo) AddClaimMention(ctx context.Context, p ClaimMentionParams) error {

@@ -91,3 +91,25 @@ type ExtractedClaim struct {
 type ClaimExtractor interface {
 	ExtractClaims(ctx context.Context, input ClaimExtractionInput) ([]ExtractedClaim, error)
 }
+
+// ClaimAdjudicationInput asks how a new claim relates to a candidate claim (C1) — the
+// polarity-aware twist that powers the contradiction surface.
+type ClaimAdjudicationInput struct {
+	A         string // the new claim
+	B         string // the candidate claim
+	Subjects  []string
+}
+
+// ClaimRelation: "same" (paraphrase, same stance) | "negation" (same proposition,
+// opposite stance) | "related" (distinct but linked) | "unrelated". When "related",
+// EdgeType is supports|contradicts|qualifies.
+type ClaimRelation struct {
+	Relation   string  `json:"relation"`
+	EdgeType   string  `json:"edge_type"`
+	Confidence float64 `json:"confidence"`
+	Reason     string  `json:"reason"`
+}
+
+type ClaimAdjudicator interface {
+	JudgeClaims(ctx context.Context, input ClaimAdjudicationInput) (*ClaimRelation, error)
+}

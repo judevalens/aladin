@@ -10,15 +10,18 @@ import (
 
 // fakeClaimStore is an in-memory db.ClaimRepository for unit tests.
 type fakeClaimStore struct {
-	byText   map[string]string // canonical_text -> claim id
-	created  int
-	subjects map[string][]string // claim id -> entity ids
-	mentions []db.ClaimMentionParams
-	seq      int
+	byText     map[string]string // canonical_text -> claim id
+	created    int
+	subjects   map[string][]string // claim id -> entity ids
+	mentions   []db.ClaimMentionParams
+	seq        int
+	embeddings map[string][]float32
+	candidates []db.ScoredClaim // returned by FindClaimCandidates
+	edges      []db.ClaimEdgeParams
 }
 
 func newFakeClaimStore() *fakeClaimStore {
-	return &fakeClaimStore{byText: map[string]string{}, subjects: map[string][]string{}}
+	return &fakeClaimStore{byText: map[string]string{}, subjects: map[string][]string{}, embeddings: map[string][]float32{}}
 }
 
 func (f *fakeClaimStore) FindClaimByText(_ context.Context, _, _, text string) (string, bool, error) {
@@ -41,6 +44,18 @@ func (f *fakeClaimStore) AddClaimMention(_ context.Context, p db.ClaimMentionPar
 	return nil
 }
 
+func (f *fakeClaimStore) SetClaimEmbedding(_ context.Context, claimID string, vec []float32) error {
+	f.embeddings[claimID] = vec
+	return nil
+}
+func (f *fakeClaimStore) FindClaimCandidates(_ context.Context, _, _ string, _ []string, _ []float32, _ float64, _ int) ([]db.ScoredClaim, error) {
+	return f.candidates, nil
+}
+func (f *fakeClaimStore) AddClaimEdge(_ context.Context, p db.ClaimEdgeParams) (bool, error) {
+	f.edges = append(f.edges, p)
+	return true, nil
+}
+
 func itoa(n int) string { return string(rune('0' + n)) } // small n only
 
 // fakeExtractor returns canned claims.
@@ -51,6 +66,84 @@ type fakeExtractor struct {
 
 func (f fakeExtractor) ExtractClaims(_ context.Context, _ llm.ClaimExtractionInput) ([]llm.ExtractedClaim, error) {
 	return f.claims, f.err
+}
+
+type fakeClaimEmbedder struct{}
+
+func (fakeClaimEmbedder) Embed(_ context.Context, _ string) ([]float32, error) {
+	return []float32{1, 0}, nil
+}
+
+type fakeClaimAdj struct {
+	rel  string
+	edge string
+}
+
+func (f fakeClaimAdj) JudgeClaims(_ context.Context, _ llm.ClaimAdjudicationInput) (*llm.ClaimRelation, error) {
+	return &llm.ClaimRelation{Relation: f.rel, EdgeType: f.edge, Confidence: 0.9}, nil
+}
+
+func negationInput() RecordInput {
+	in := recordInput()
+	in.KeyClaims = []string{"OpenAI's approach will not win"}
+	return in
+}
+
+func TestService_NegationResolvesToDenyMention(t *testing.T) {
+	store := newFakeClaimStore()
+	store.candidates = []db.ScoredClaim{{ID: "existing", CanonicalText: "OpenAI's approach will win", Polarity: "assert", Similarity: 0.9}}
+	ext := fakeExtractor{claims: []llm.ExtractedClaim{
+		{Text: "OpenAI's approach will not win", Polarity: "deny", Contestable: true, SubjectNames: []string{"OpenAI"}},
+	}}
+	svc := NewService(store, ext).WithEmbedder(fakeClaimEmbedder{}).WithAdjudicator(fakeClaimAdj{rel: "negation"})
+
+	if _, err := svc.ExtractFromRecord(context.Background(), negationInput()); err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+	if store.created != 0 {
+		t.Fatalf("a negation must reuse the canonical claim, not create one (created=%d)", store.created)
+	}
+	if len(store.mentions) != 1 || store.mentions[0].Stance != "deny" || store.mentions[0].ClaimID != "existing" {
+		t.Fatalf("expected one deny mention on the canonical, got %+v", store.mentions)
+	}
+}
+
+func TestService_SameResolvesToAssert(t *testing.T) {
+	store := newFakeClaimStore()
+	store.candidates = []db.ScoredClaim{{ID: "existing", CanonicalText: "OpenAI's approach will win", Polarity: "assert", Similarity: 0.95}}
+	ext := fakeExtractor{claims: []llm.ExtractedClaim{
+		{Text: "OpenAI is going to win with its approach", Polarity: "assert", Contestable: true, SubjectNames: []string{"OpenAI"}},
+	}}
+	svc := NewService(store, ext).WithEmbedder(fakeClaimEmbedder{}).WithAdjudicator(fakeClaimAdj{rel: "same"})
+
+	if _, err := svc.ExtractFromRecord(context.Background(), recordInput()); err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+	if store.created != 0 {
+		t.Fatalf("a paraphrase must reuse the canonical, not create (created=%d)", store.created)
+	}
+	if len(store.mentions) != 1 || store.mentions[0].Stance != "assert" {
+		t.Fatalf("expected one assert mention, got %+v", store.mentions)
+	}
+}
+
+func TestService_RelatedCreatesEdge(t *testing.T) {
+	store := newFakeClaimStore()
+	store.candidates = []db.ScoredClaim{{ID: "existing", CanonicalText: "OpenAI's approach will win", Polarity: "assert", Similarity: 0.82}}
+	ext := fakeExtractor{claims: []llm.ExtractedClaim{
+		{Text: "OpenAI is burning too much cash", Polarity: "assert", Contestable: true, SubjectNames: []string{"OpenAI"}},
+	}}
+	svc := NewService(store, ext).WithEmbedder(fakeClaimEmbedder{}).WithAdjudicator(fakeClaimAdj{rel: "related", edge: "contradicts"})
+
+	if _, err := svc.ExtractFromRecord(context.Background(), recordInput()); err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+	if store.created != 1 {
+		t.Fatalf("a related claim must be a new claim, created=%d", store.created)
+	}
+	if len(store.edges) != 1 || store.edges[0].Type != "contradicts" || store.edges[0].ToClaimID != "existing" {
+		t.Fatalf("expected one contradicts edge to the candidate, got %+v", store.edges)
+	}
 }
 
 func recordInput() RecordInput {

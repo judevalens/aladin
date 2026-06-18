@@ -90,4 +90,9 @@ type ClaimRepository interface {
 	CreateClaim(ctx context.Context, p CreateClaimParams) (string, error)
 	AddClaimSubject(ctx context.Context, claimID, entityID string) error
 	AddClaimMention(ctx context.Context, p ClaimMentionParams) error
+
+	// C1: polarity-aware resolution.
+	SetClaimEmbedding(ctx context.Context, claimID string, vec []float32) error
+	FindClaimCandidates(ctx context.Context, scope, ownerUserID string, subjectEntityIDs []string, vec []float32, minCosine float64, limit int) ([]ScoredClaim, error)
+	AddClaimEdge(ctx context.Context, p ClaimEdgeParams) (bool, error)
 }
