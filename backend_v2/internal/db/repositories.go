@@ -95,4 +95,7 @@ type ClaimRepository interface {
 	SetClaimEmbedding(ctx context.Context, claimID string, vec []float32) error
 	FindClaimCandidates(ctx context.Context, scope, ownerUserID string, subjectEntityIDs []string, vec []float32, minCosine float64, limit int) ([]ScoredClaim, error)
 	AddClaimEdge(ctx context.Context, p ClaimEdgeParams) (bool, error)
+
+	// C4: the contradiction surface for a thesis claim.
+	ContradictionSurface(ctx context.Context, thesisClaimID string, minCosine float64) (ClaimStanceCounts, error)
 }

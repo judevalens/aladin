@@ -54,36 +54,70 @@ type RecordInput struct {
 	Entities  []db.EntityRef // the record's resolved entities (the grounding set)
 }
 
-// ExtractFromRecord runs the contestability-gated extraction: lift contestable,
-// entity-grounded claims and store each as a canonical claim + subject edges + an
-// asserting mention. Two gates, both enforced here so the LLM can't flood the layer:
-// (1) the model marks it contestable, and (2) it's about ≥1 of the record's resolved
-// entities. C0 dedup is exact-text only (paraphrase resolution is C1). A nil/erroring
-// extractor is a no-op — resolution-style graceful degrade; the pipeline never fails on it.
-// Returns the number of claims stored.
+// claimSink is the scope/trust/source context a batch of extracted claims lands in.
+type claimSink struct {
+	Scope      string
+	Owner      string
+	Trust      string
+	SourceKind string
+	SourceID   string
+}
+
+// AuthoredInput is a user's authored page/thesis: its claims become tenant-scoped,
+// verified claims (C2 — the authored side of the bridge). The caller resolves the page's
+// entities (tenant tier) and passes them as the grounding set.
+type AuthoredInput struct {
+	OwnerID    string
+	ArtifactID string
+	Summary    string
+	KeyClaims  []string
+	Entities   []db.EntityRef
+}
+
+// ExtractFromRecord runs contestability-gated extraction over a discovered record into
+// shared, believed claims.
 func (s *Service) ExtractFromRecord(ctx context.Context, in RecordInput) (int, error) {
-	if s.extractor == nil || len(in.KeyClaims) == 0 {
+	return s.extract(ctx,
+		claimSink{Scope: "shared", Trust: "believed", SourceKind: "record", SourceID: in.RecordID},
+		in.Summary, in.KeyClaims, in.Entities)
+}
+
+// ExtractFromAuthored extracts a user's theses from authored content into tenant,
+// verified claims — the theses the contradiction surface defends.
+func (s *Service) ExtractFromAuthored(ctx context.Context, in AuthoredInput) (int, error) {
+	if in.OwnerID == "" {
+		return 0, nil
+	}
+	return s.extract(ctx,
+		claimSink{Scope: "tenant", Owner: in.OwnerID, Trust: "verified", SourceKind: "artifact", SourceID: in.ArtifactID},
+		in.Summary, in.KeyClaims, in.Entities)
+}
+
+// extract is the shared extraction core. Two gates (contestable + entity-grounded) keep
+// the layer clean; a nil/erroring extractor is a no-op (graceful degrade). Returns the
+// number of claims stored.
+func (s *Service) extract(ctx context.Context, sink claimSink, summary string, keyClaims []string, entities []db.EntityRef) (int, error) {
+	if s.extractor == nil || len(keyClaims) == 0 {
 		return 0, nil
 	}
 
-	entByName := make(map[string]string, len(in.Entities))
-	llmEntities := make([]llm.ClaimEntity, 0, len(in.Entities))
-	for _, e := range in.Entities {
+	entByName := make(map[string]string, len(entities))
+	llmEntities := make([]llm.ClaimEntity, 0, len(entities))
+	for _, e := range entities {
 		entByName[strings.ToLower(strings.TrimSpace(e.Name))] = e.ID
 		llmEntities = append(llmEntities, llm.ClaimEntity{ID: e.ID, Name: e.Name})
 	}
-	// No grounding entities → nothing can pass the entity-grounded gate.
 	if len(entByName) == 0 {
-		return 0, nil
+		return 0, nil // nothing can pass the entity-grounded gate
 	}
 
 	extracted, err := s.extractor.ExtractClaims(ctx, llm.ClaimExtractionInput{
-		Summary:   in.Summary,
-		KeyClaims: in.KeyClaims,
+		Summary:   summary,
+		KeyClaims: keyClaims,
 		Entities:  llmEntities,
 	})
 	if err != nil {
-		slog.Warn("claims: extract failed, skipping record", "component", "claims", "record_id", in.RecordID, "err", err)
+		slog.Warn("claims: extract failed, skipping source", "component", "claims", "source_id", sink.SourceID, "err", err)
 		return 0, nil
 	}
 
@@ -98,7 +132,7 @@ func (s *Service) ExtractFromRecord(ctx context.Context, in RecordInput) (int, e
 			continue // entity-grounded gate
 		}
 
-		claimID, stance, err := s.resolveClaim(ctx, "shared", "", text, normalizePolarity(c.Polarity), subjectIDs, in.RecordID)
+		claimID, stance, err := s.resolveClaim(ctx, sink.Scope, sink.Owner, sink.Trust, text, normalizePolarity(c.Polarity), subjectIDs, sink.SourceID)
 		if err != nil {
 			return stored, err
 		}
@@ -109,8 +143,8 @@ func (s *Service) ExtractFromRecord(ctx context.Context, in RecordInput) (int, e
 		}
 		if err := s.store.AddClaimMention(ctx, db.ClaimMentionParams{
 			ClaimID:    claimID,
-			SourceKind: "record",
-			SourceID:   in.RecordID,
+			SourceKind: sink.SourceKind,
+			SourceID:   sink.SourceID,
 			Stance:     stance,
 			Resolver:   "extract",
 		}); err != nil {
@@ -121,12 +155,18 @@ func (s *Service) ExtractFromRecord(ctx context.Context, in RecordInput) (int, e
 	return stored, nil
 }
 
+// GetContradictions returns the support/contradict tally for a thesis claim — the C4
+// surface. A nil result is zero counts (e.g. the thesis has no embedding/subjects).
+func (s *Service) GetContradictions(ctx context.Context, thesisClaimID string) (db.ClaimStanceCounts, error) {
+	return s.store.ContradictionSurface(ctx, thesisClaimID, claimResolveMinCosine)
+}
+
 // resolveClaim maps a claim to a canonical claim id + the source's stance on it. Order:
 // exact text → embedding+adjudicator (C1) → create new. A "negation" verdict is the
 // crux of the contradiction feature: it resolves to the SAME canonical claim but the
 // source's stance is 'deny', so support/contradict is just assert/deny mentions on one
 // proposition. "related" creates a new claim + a proposed argument edge.
-func (s *Service) resolveClaim(ctx context.Context, scope, owner, text, polarity string, subjectIDs []string, sourceID string) (string, string, error) {
+func (s *Service) resolveClaim(ctx context.Context, scope, owner, trust, text, polarity string, subjectIDs []string, sourceID string) (string, string, error) {
 	if id, found, err := s.store.FindClaimByText(ctx, scope, owner, text); err != nil {
 		return "", "", err
 	} else if found {
@@ -158,7 +198,7 @@ func (s *Service) resolveClaim(ctx context.Context, scope, owner, text, polarity
 			case rel.Relation == "negation":
 				return best.ID, "deny", nil // the contradiction mechanism
 			case rel.Relation == "related":
-				id, err := s.createClaim(ctx, scope, owner, text, polarity, sourceID, vec)
+				id, err := s.createClaim(ctx, scope, owner, trust, text, polarity, sourceID, vec)
 				if err != nil {
 					return "", "", err
 				}
@@ -176,13 +216,13 @@ func (s *Service) resolveClaim(ctx context.Context, scope, owner, text, polarity
 		}
 	}
 
-	id, err := s.createClaim(ctx, scope, owner, text, polarity, sourceID, vec)
+	id, err := s.createClaim(ctx, scope, owner, trust, text, polarity, sourceID, vec)
 	return id, "assert", err
 }
 
-func (s *Service) createClaim(ctx context.Context, scope, owner, text, polarity, sourceID string, vec []float32) (string, error) {
+func (s *Service) createClaim(ctx context.Context, scope, owner, trust, text, polarity, sourceID string, vec []float32) (string, error) {
 	id, err := s.store.CreateClaim(ctx, db.CreateClaimParams{
-		Scope: scope, OwnerUserID: owner, CanonicalText: text, Polarity: polarity, FirstSourceID: sourceID,
+		Scope: scope, OwnerUserID: owner, CanonicalText: text, Polarity: polarity, TrustTier: trust, FirstSourceID: sourceID,
 	})
 	if err != nil {
 		return "", err

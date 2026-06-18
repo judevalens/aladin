@@ -10,13 +10,23 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// CreateClaimParams creates a canonical claim. C0 uses scope='shared' (discovered side).
+// CreateClaimParams creates a canonical claim. Discovered claims are scope='shared'
+// trust='believed'; authored theses are scope='tenant' (owner) trust='verified'.
 type CreateClaimParams struct {
 	Scope         string
 	OwnerUserID   string // "" → NULL (shared)
 	CanonicalText string
 	Polarity      string // assert | deny | neutral
+	TrustTier     string // "" → believed
 	FirstSourceID string
+}
+
+// ClaimStanceCounts is the contradiction-surface tally for a thesis: how many distinct
+// sources support vs contradict it.
+type ClaimStanceCounts struct {
+	Support    int
+	Contradict int
+	Hedge      int
 }
 
 // ClaimMentionParams records that a source asserts/denies/hedges a claim (the evidence layer).
@@ -88,12 +98,16 @@ func (r *pgClaimRepo) CreateClaim(ctx context.Context, p CreateClaimParams) (str
 	if scope == "" {
 		scope = "shared"
 	}
+	trust := p.TrustTier
+	if trust == "" {
+		trust = "believed"
+	}
 	var id string
 	err = r.pool.QueryRow(ctx, `
 		INSERT INTO claims (scope, owner_user_id, canonical_text, polarity, trust_tier, provenance)
-		VALUES ($1, $2::uuid, $3, $4, 'believed', $5::jsonb)
+		VALUES ($1, $2::uuid, $3, $4, $5, $6::jsonb)
 		RETURNING id::text
-	`, scope, owner, p.CanonicalText, p.Polarity, prov).Scan(&id)
+	`, scope, owner, p.CanonicalText, p.Polarity, trust, prov).Scan(&id)
 	if err != nil {
 		return "", fmt.Errorf("claim CreateClaim: %w", err)
 	}
@@ -160,6 +174,79 @@ func (r *pgClaimRepo) FindClaimCandidates(ctx context.Context, scope, ownerUserI
 			return nil, fmt.Errorf("claim FindClaimCandidates scan: %w", err)
 		}
 		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// ContradictionSurface computes, for a thesis claim, how many distinct discovered
+// (shared) sources SUPPORT vs CONTRADICT it (C4 — the hero query). It matches the thesis
+// to shared claims of the same proposition (shared subject entity + embedding cosine ≥
+// minCosine) and tallies their mentions by stance — deduped by source. Because C1
+// resolution folds negations into deny-mentions on one canonical proposition, support =
+// asserting sources and contradict = denying sources. Returns zero counts if the thesis
+// has no embedding or subjects.
+func (r *pgClaimRepo) ContradictionSurface(ctx context.Context, thesisClaimID string, minCosine float64) (ClaimStanceCounts, error) {
+	var out ClaimStanceCounts
+
+	var embRaw *string
+	if err := r.pool.QueryRow(ctx, `SELECT embedding::text FROM claims WHERE id = $1::uuid`, thesisClaimID).Scan(&embRaw); err != nil {
+		return out, fmt.Errorf("claim ContradictionSurface load thesis: %w", err)
+	}
+	if embRaw == nil || *embRaw == "" {
+		return out, nil
+	}
+
+	subjRows, err := r.pool.Query(ctx, `SELECT entity_id::text FROM claim_subjects WHERE claim_id = $1::uuid`, thesisClaimID)
+	if err != nil {
+		return out, fmt.Errorf("claim ContradictionSurface subjects: %w", err)
+	}
+	var subjects []string
+	for subjRows.Next() {
+		var s string
+		if err := subjRows.Scan(&s); err != nil {
+			subjRows.Close()
+			return out, fmt.Errorf("claim ContradictionSurface subject scan: %w", err)
+		}
+		subjects = append(subjects, s)
+	}
+	subjRows.Close()
+	if err := subjRows.Err(); err != nil {
+		return out, err
+	}
+	if len(subjects) == 0 {
+		return out, nil
+	}
+
+	rows, err := r.pool.Query(ctx, `
+		WITH matched AS (
+			SELECT c.id
+			  FROM claims c
+			 WHERE c.scope = 'shared' AND c.embedding IS NOT NULL
+			   AND c.id IN (SELECT claim_id FROM claim_subjects WHERE entity_id = ANY($1::uuid[]))
+			   AND 1 - (c.embedding <=> $2::vector) >= $3
+		)
+		SELECT m.stance, count(DISTINCT m.source_id)
+		  FROM claim_mentions m JOIN matched ON matched.id = m.claim_id
+		 GROUP BY m.stance
+	`, subjects, *embRaw, minCosine)
+	if err != nil {
+		return out, fmt.Errorf("claim ContradictionSurface aggregate: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var stance string
+		var n int
+		if err := rows.Scan(&stance, &n); err != nil {
+			return out, fmt.Errorf("claim ContradictionSurface scan: %w", err)
+		}
+		switch stance {
+		case "assert":
+			out.Support = n
+		case "deny":
+			out.Contradict = n
+		case "hedge":
+			out.Hedge = n
+		}
 	}
 	return out, rows.Err()
 }

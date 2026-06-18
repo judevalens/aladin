@@ -55,6 +55,9 @@ func (f *fakeClaimStore) AddClaimEdge(_ context.Context, p db.ClaimEdgeParams) (
 	f.edges = append(f.edges, p)
 	return true, nil
 }
+func (f *fakeClaimStore) ContradictionSurface(_ context.Context, _ string, _ float64) (db.ClaimStanceCounts, error) {
+	return db.ClaimStanceCounts{}, nil
+}
 
 func itoa(n int) string { return string(rune('0' + n)) } // small n only
 
