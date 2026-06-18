@@ -83,6 +83,17 @@ type EntityRepository interface {
 	EntitiesForRecord(ctx context.Context, recordID string) ([]EntityRef, error)
 }
 
+// DiscourseRepository sources bridges (shared entities mentioned by >=2 docs) + members
+// from the resolved entity layer (entity_mentions), keyed on entity_id, and stores the
+// discourse maps. The rework of buck's Neo4j/canonical-text engine onto the entity layer.
+type DiscourseRepository interface {
+	CandidateBridges(ctx context.Context, minDegree, limit int) ([]Bridge, error)
+	BridgeMembers(ctx context.Context, entityID string, limit int) ([]BridgeMember, error)
+	GetDiscourseLedger(ctx context.Context, entityID string) (*EntityDiscourse, error)
+	MarkAnalyzed(ctx context.Context, entityID string, degree int) (int, error)
+	StoreDiscourse(ctx context.Context, d *DiscourseInsight) error
+}
+
 // ClaimRepository is the claim registry (C0): contestable propositions grounded in
 // entities, with the evidence (claim_mentions) of which sources assert/deny them.
 type ClaimRepository interface {
