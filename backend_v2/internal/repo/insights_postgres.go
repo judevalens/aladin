@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"encoding/json"
 	"strconv"
 	"time"
 
@@ -19,7 +20,8 @@ func NewInsightPostgres(pool *pgxpool.Pool) *PostgresInsightRepository {
 func (r *PostgresInsightRepository) List(ctx context.Context, params coreservice.InsightListParams) (map[string]any, error) {
 	query := `
 		SELECT id::text, type, title, body, entity, topic,
-		       record_ids, confidence, user_status, created_at
+		       record_ids, confidence, user_status, created_at,
+		       entity_id::text, trust_tier, version, COALESCE(provenance, 'null'::jsonb)
 		  FROM insights
 		 WHERE 1=1
 	`
@@ -48,10 +50,12 @@ func (r *PostgresInsightRepository) List(ctx context.Context, params coreservice
 	for rows.Next() {
 		var item coreservice.InsightRecord
 		var createdAt time.Time
-		if err := rows.Scan(&item.ID, &item.Type, &item.Title, &item.Body, &item.Entity, &item.Topic, &item.RecordIDs, &item.Confidence, &item.UserStatus, &createdAt); err != nil {
+		var prov []byte
+		if err := rows.Scan(&item.ID, &item.Type, &item.Title, &item.Body, &item.Entity, &item.Topic, &item.RecordIDs, &item.Confidence, &item.UserStatus, &createdAt, &item.EntityID, &item.TrustTier, &item.Version, &prov); err != nil {
 			return nil, err
 		}
 		item.CreatedAt = createdAt.Format(time.RFC3339)
+		item.Provenance = json.RawMessage(prov)
 		items = append(items, item)
 	}
 

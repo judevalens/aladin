@@ -1,6 +1,9 @@
 package service
 
-import "context"
+import (
+	"context"
+	"encoding/json"
+)
 
 type InsightService interface {
 	List(context.Context, InsightListParams) (map[string]any, error)
@@ -32,6 +35,12 @@ type InsightRecord struct {
 	Confidence float64  `json:"confidence"`
 	UserStatus string   `json:"userStatus"`
 	CreatedAt  string   `json:"createdAt"`
+
+	// Discourse insights (type='discourse') carry these; null/zero otherwise.
+	EntityID   *string         `json:"entityId,omitempty"`
+	TrustTier  *string         `json:"trustTier,omitempty"`
+	Version    int             `json:"version,omitempty"`
+	Provenance json.RawMessage `json:"provenance,omitempty"`
 }
 
 type DefaultInsightService struct{ repo InsightRepository }
