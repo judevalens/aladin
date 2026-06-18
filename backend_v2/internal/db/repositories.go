@@ -78,4 +78,16 @@ type EntityRepository interface {
 	SetEntityEmbedding(ctx context.Context, entityID string, vec []float32) error
 	GetEntityEmbedding(ctx context.Context, entityID string) ([]float32, bool, error)
 	FindSharedCandidatesByVector(ctx context.Context, kind, excludeKey string, vec []float32, minCosine float64, limit int) ([]ScoredCandidate, error)
+
+	// Claim layer grounding: the entities a record mentions.
+	EntitiesForRecord(ctx context.Context, recordID string) ([]EntityRef, error)
+}
+
+// ClaimRepository is the claim registry (C0): contestable propositions grounded in
+// entities, with the evidence (claim_mentions) of which sources assert/deny them.
+type ClaimRepository interface {
+	FindClaimByText(ctx context.Context, scope, ownerUserID, canonicalText string) (string, bool, error)
+	CreateClaim(ctx context.Context, p CreateClaimParams) (string, error)
+	AddClaimSubject(ctx context.Context, claimID, entityID string) error
+	AddClaimMention(ctx context.Context, p ClaimMentionParams) error
 }

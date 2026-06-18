@@ -11,6 +11,7 @@ const (
 	TaskEmbed           = "pipeline:embed"
 	TaskGraph           = "pipeline:graph"
 	TaskResolveEntities = "pipeline:resolve_entities"
+	TaskResolveClaims   = "pipeline:resolve_claims"
 )
 
 // Result discriminants — used by ResultHandler to route between stages.
@@ -23,6 +24,7 @@ const (
 	ResultEmbedDone             = "embed.done"
 	ResultGraphDone             = "graph.done"
 	ResultResolveEntitiesDone   = "resolve_entities.done"
+	ResultResolveClaimsDone     = "resolve_claims.done"
 )
 
 // Result is the outcome of a pipeline stage.

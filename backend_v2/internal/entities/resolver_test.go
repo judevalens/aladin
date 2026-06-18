@@ -115,6 +115,9 @@ func (f *fakeStore) GetEntityEmbedding(_ context.Context, entityID string) ([]fl
 func (f *fakeStore) FindSharedCandidatesByVector(_ context.Context, _, _ string, _ []float32, _ float64, _ int) ([]db.ScoredCandidate, error) {
 	return nil, nil
 }
+func (f *fakeStore) EntitiesForRecord(_ context.Context, _ string) ([]db.EntityRef, error) {
+	return nil, nil
+}
 
 // fakeEmbedder returns deterministic vectors keyed by the embed text.
 type fakeEmbedder struct{ vecs map[string][]float32 }

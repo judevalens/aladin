@@ -12,6 +12,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 
+	"aladin/backend_v2/internal/claims"
 	"aladin/backend_v2/internal/config"
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/entities"
@@ -131,13 +132,17 @@ func main() {
 	// Entity resolution. The embedder (vector matching + sense split) and the LLM
 	// adjudicator are enabled here; both degrade gracefully if the API call fails, so a
 	// missing/invalid key falls back to deterministic string-only resolution.
-	entityResolver := entities.NewResolver(db.NewEntityRepository(pool)).
+	entityRepo := db.NewEntityRepository(pool)
+	entityResolver := entities.NewResolver(entityRepo).
 		WithEmbedder(embedder).
 		WithAdjudicator(llm.NewOpenAIEntityAdjudicator(cfg.OpenAIAPIKey))
+	// Claim extraction (C0) — runs after entity resolution; degrades gracefully without a key.
+	claimService := claims.NewService(db.NewClaimRepository(pool), llm.NewOpenAIClaimExtractor(cfg.OpenAIAPIKey))
 	orch := pipeline.NewOrchestrator(handler)
 	orch.Add(workers.NewGlobalFirstPassWorker(enricher, openaiLimiter))
 	orch.Add(workers.NewTenantMatchWorker(recordRepo, providerStreamRepo, sourceSubscriptionRepo, tenantItemMatchRepo))
 	orch.Add(workers.NewResolveEntitiesWorker(recordRepo, entityResolver))
+	orch.Add(workers.NewResolveClaimsWorker(recordRepo, entityRepo, claimService))
 	orch.Add(workers.NewFirstPassWorker(enricher, openaiLimiter))
 	orch.Add(workers.NewSearchWorker(cachedSearcher))
 	orch.Add(workers.NewEmbedWorker(embedder, openaiLimiter))
@@ -167,6 +172,7 @@ func main() {
 		pipeline.TaskEmbed:           3,
 		pipeline.TaskGraph:           5,
 		pipeline.TaskResolveEntities: 5,
+		pipeline.TaskResolveClaims:   5,
 		insights.TaskGenerate:        5,
 	}
 	for name, weight := range syncOrchestrator.Queues() {

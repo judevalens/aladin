@@ -128,6 +128,75 @@ func (j *OpenAIEntityAdjudicator) JudgeSameEntity(ctx context.Context, input Ent
 	return &result, nil
 }
 
+var claimExtractionSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"claims": map[string]any{
+			"type": "array",
+			"items": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"text":        map[string]any{"type": "string", "description": "the claim as one canonical sentence"},
+					"polarity":    map[string]any{"type": "string", "enum": []string{"assert", "deny", "neutral"}, "description": "assert = stated affirmatively, deny = stated negatively"},
+					"contestable": map[string]any{"type": "boolean", "description": "true ONLY if something could support or contradict it (a prediction, opinion, or evaluative/causal claim); false for plain facts"},
+					"subjects":    map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "names of the provided entities this claim is about"},
+				},
+				"required":             []string{"text", "polarity", "contestable", "subjects"},
+				"additionalProperties": false,
+			},
+		},
+	},
+	"required":             []string{"claims"},
+	"additionalProperties": false,
+}
+
+// OpenAIClaimExtractor implements ClaimExtractor. Like the other judges it is wired with
+// graceful degradation and its live call is unverified without a real key.
+type OpenAIClaimExtractor struct {
+	client openai.Client
+}
+
+func NewOpenAIClaimExtractor(apiKey string) *OpenAIClaimExtractor {
+	return &OpenAIClaimExtractor{client: openai.NewClient(option.WithAPIKey(apiKey))}
+}
+
+func (e *OpenAIClaimExtractor) ExtractClaims(ctx context.Context, input ClaimExtractionInput) ([]ExtractedClaim, error) {
+	names := make([]string, 0, len(input.Entities))
+	for _, en := range input.Entities {
+		names = append(names, en.Name)
+	}
+	resp, err := e.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+		Model: openai.ChatModelGPT4oMini,
+		Messages: []openai.ChatCompletionMessageParamUnion{
+			openai.SystemMessage("You lift CONTESTABLE claims (predictions, opinions, evaluative/causal assertions) out of a record. Reject plain facts. Each claim must be about one of the provided entities. Be conservative — prefer fewer, sharper claims."),
+			openai.UserMessage(fmt.Sprintf(
+				"Summary: %s\nRaw points: %v\nKnown entities (claims must reference these by name): %v",
+				input.Summary, input.KeyClaims, names,
+			)),
+		},
+		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
+			OfJSONSchema: &shared.ResponseFormatJSONSchemaParam{
+				JSONSchema: shared.ResponseFormatJSONSchemaJSONSchemaParam{
+					Name:   "claim_extraction",
+					Strict: openai.Bool(true),
+					Schema: claimExtractionSchema,
+				},
+			},
+		},
+		MaxTokens: openai.Int(500),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("openai claim extraction: %w", err)
+	}
+	var out struct {
+		Claims []ExtractedClaim `json:"claims"`
+	}
+	if err := json.Unmarshal([]byte(resp.Choices[0].Message.Content), &out); err != nil {
+		return nil, fmt.Errorf("parse claim extraction: %w", err)
+	}
+	return out.Claims, nil
+}
+
 // OpenAIEnricher implements Enricher using OpenAI structured outputs.
 type OpenAIEnricher struct {
 	client openai.Client

@@ -63,3 +63,31 @@ type EntityVerdict struct {
 type EntityAdjudicator interface {
 	JudgeSameEntity(ctx context.Context, input EntityAdjudicationInput) (*EntityVerdict, error)
 }
+
+// ClaimEntity is a resolved entity offered as grounding context for claim extraction.
+type ClaimEntity struct {
+	ID   string
+	Name string
+}
+
+// ClaimExtractionInput asks the model to lift CONTESTABLE, entity-grounded claims out of
+// a record's raw enrichment (C0). Plain facts are rejected; only propositions something
+// could support or contradict become claims.
+type ClaimExtractionInput struct {
+	Summary   string
+	KeyClaims []string
+	Entities  []ClaimEntity
+}
+
+// ExtractedClaim is one candidate claim. Polarity is assert|deny|neutral; SubjectNames
+// are names of the provided entities the claim is about (matched back to ids by the caller).
+type ExtractedClaim struct {
+	Text         string   `json:"text"`
+	Polarity     string   `json:"polarity"`
+	Contestable  bool     `json:"contestable"`
+	SubjectNames []string `json:"subjects"`
+}
+
+type ClaimExtractor interface {
+	ExtractClaims(ctx context.Context, input ClaimExtractionInput) ([]ExtractedClaim, error)
+}

@@ -67,8 +67,14 @@ func (h *FullPipelineHandler) OnDone(ctx context.Context, result Result) error {
 		return h.enqueueInsightTriggers(ctx, log, result.Payload)
 
 	case ResultResolveEntitiesDone:
-		// Terminal: the worker has populated the entity layer directly. No next stage.
-		log.Info("orchestrator: entity resolution complete")
+		// Chain claim extraction after entities so claims can ground on the resolved
+		// entity set. The payloads share a shape, so forward it directly.
+		log.Info("orchestrator: entity resolution complete, routing to claims")
+		return h.enqueue(ctx, TaskResolveClaims, result.RecordID, result.Payload)
+
+	case ResultResolveClaimsDone:
+		// Terminal: the worker has populated the claim layer directly.
+		log.Info("orchestrator: claim extraction complete")
 		return nil
 
 	case ResultFirstPassSearchNeeded:

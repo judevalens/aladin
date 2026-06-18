@@ -9,6 +9,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// EntityRef is a minimal entity reference (id + display name), e.g. the entities a
+// record mentions — used to ground claims (claim_subjects).
+type EntityRef struct {
+	ID   string
+	Name string
+}
+
 // EntityCandidate is a shared-tier entity matched by normalized key (oldest first).
 type EntityCandidate struct {
 	ID            string
@@ -274,6 +281,29 @@ func (r *pgEntityRepo) FindSharedCandidatesByVector(ctx context.Context, kind, e
 			return nil, fmt.Errorf("entity FindSharedCandidatesByVector scan: %w", err)
 		}
 		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// EntitiesForRecord returns the distinct entities a record mentions (via entity_mentions),
+// the grounding set for claim extraction.
+func (r *pgEntityRepo) EntitiesForRecord(ctx context.Context, recordID string) ([]EntityRef, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT DISTINCT e.id::text, e.canonical_name
+		  FROM entity_mentions m JOIN entities e ON e.id = m.entity_id
+		 WHERE m.record_id = $1
+	`, recordID)
+	if err != nil {
+		return nil, fmt.Errorf("entity EntitiesForRecord: %w", err)
+	}
+	defer rows.Close()
+	var out []EntityRef
+	for rows.Next() {
+		var ref EntityRef
+		if err := rows.Scan(&ref.ID, &ref.Name); err != nil {
+			return nil, fmt.Errorf("entity EntitiesForRecord scan: %w", err)
+		}
+		out = append(out, ref)
 	}
 	return out, rows.Err()
 }
