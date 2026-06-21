@@ -1,4 +1,4 @@
-import { Command, Contrast, Folder, GitGraph, Home, LogOut, Network, Plus, Signal } from "lucide-react";
+import { Command, Contrast, Folder, GitGraph, Home, Lightbulb, LogOut, Network, Plus, Signal } from "lucide-react";
 import { useEffect } from "react";
 import { Outlet } from "react-router-dom";
 import { CommandPalette } from "@/modules/workspace/ui/command-palette";
@@ -20,6 +20,7 @@ const navItems = [
   { key: "home", label: "Home", icon: Home, path: "/home" },
   { key: "folders", label: "Folders", icon: Folder, path: "/folders" },
   { key: "signals", label: "Signals", icon: Signal, path: "/signals" },
+  { key: "insights", label: "Insights", icon: Lightbulb, path: "/insights" },
   { key: "sources", label: "Sources", icon: Network, path: "/sources" },
   { key: "graph", label: "Graph", icon: GitGraph, path: "/graph" },
 ] as const;
@@ -40,6 +41,7 @@ export function WorkspaceShellUI() {
   const toggleTheme = useAppStore((state) => state.toggleTheme);
   const commandOpen = useAppStore((state) => state.commandPaletteOpen);
   const setCommandOpen = useAppStore((state) => state.setCommandPaletteOpen);
+  const signalsUnread = useAppStore((state) => state.signalsUnread);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -117,7 +119,7 @@ export function WorkspaceShellUI() {
                         aria-current={active ? "page" : undefined}
                       >
                         <Icon className="size-[18px]" strokeWidth={1.7} />
-                        {item.key === "signals" ? (
+                        {item.key === "signals" && signalsUnread ? (
                           <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-amber" />
                         ) : null}
                       </button>

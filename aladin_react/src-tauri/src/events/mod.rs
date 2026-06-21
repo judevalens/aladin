@@ -4,15 +4,19 @@ use serde::Serialize;
 use tauri::ipc::Channel;
 
 use crate::db::repo::nodes::NodeRow;
+use crate::db::repo::signals::SignalRow;
 
-/// Data-layer redesign — the only workspace data events. The pull/live engines
-/// apply changes into `nodes` and emit these; the UI reads `nodes` and patches
-/// its tree by id. (Page content rides Yjs/Hocuspocus, a separate channel.)
+/// Data-layer redesign — workspace data events. The pull/live engines apply frame
+/// changes into the local cache and emit these; the UI reads the cache and patches
+/// by id. Node events drive the tree; signal events drive the Signals (claim) feed.
+/// (Page content rides Yjs/Hocuspocus, a separate channel.)
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", content = "payload", rename_all = "camelCase")]
 pub enum DataEvent {
     NodeUpserted(NodeRow),
     NodeDeleted(EntityDeletedEvent),
+    SignalUpserted(SignalRow),
+    SignalDeleted(EntityDeletedEvent),
 }
 
 #[derive(Debug, Clone, Serialize)]

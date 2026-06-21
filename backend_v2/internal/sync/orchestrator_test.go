@@ -50,6 +50,8 @@ func (f *fakeSourceRepo) MarkSyncStarted(ctx context.Context, id string) error {
 	return f.markStartedErr
 }
 
+func (f *fakeSourceRepo) Heartbeat(ctx context.Context, id string) error { return nil }
+
 func (f *fakeSourceRepo) MarkSyncPage(ctx context.Context, id string, configUpdates map[string]any) error {
 	f.markPageIDs = append(f.markPageIDs, id)
 	f.markPageUpdates = append(f.markPageUpdates, cloneMap(configUpdates))
@@ -291,6 +293,22 @@ func (f *fakeRecordRepo) Get(ctx context.Context, id string) (*db.Record, error)
 func (f *fakeRecordRepo) SaveEnrichment(ctx context.Context, enrichment *db.RecordEnrichment) (bool, error) {
 	f.enrichments = append(f.enrichments, enrichment)
 	return true, nil
+}
+
+func (f *fakeRecordRepo) SaveEmbedding(ctx context.Context, recordID string, sourceRevision int64, vec []float32) (bool, error) {
+	return true, nil
+}
+
+func (f *fakeRecordRepo) ListStuck(ctx context.Context, olderThanSecs, limit int) ([]*db.Record, error) {
+	return nil, nil
+}
+
+func (f *fakeRecordRepo) MarkFailed(ctx context.Context, recordID, reason string) error {
+	return nil
+}
+
+func (f *fakeRecordRepo) ResetForRetry(ctx context.Context, recordID string) (bool, error) {
+	return false, nil
 }
 
 func (f *fakeResultHandler) HandleSuccess(ctx context.Context, job db.SyncJob, result *Result) error {

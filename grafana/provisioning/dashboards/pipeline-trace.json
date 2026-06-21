@@ -1,0 +1,150 @@
+{
+  "uid": "aladin-pipeline-trace",
+  "title": "Aladin — Pipeline Trace",
+  "tags": ["aladin", "pipeline"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 2,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "record_id",
+        "type": "textbox",
+        "label": "Record ID — paste one from the table on the right →",
+        "query": "",
+        "current": { "text": "", "value": "" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 100,
+      "type": "row",
+      "title": "Overview — all records",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "id": 101,
+      "type": "logs",
+      "title": "Recent checkpoint activity (all records) — copy a Record ID from here",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 9, "w": 16, "x": 0, "y": 1 },
+      "options": { "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true, "dedupStrategy": "none" },
+      "targets": [ { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "queryType": "range", "expr": "{job=\"aladin-worker\"} | json | checkpoint != ``" } ]
+    },
+    {
+      "id": 102,
+      "type": "table",
+      "title": "Recent records — copy a Record ID into the box ↖",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 9, "w": 8, "x": 16, "y": 1 },
+      "options": { "showHeader": true, "sortBy": [ { "displayName": "checkpoints", "desc": true } ] },
+      "targets": [ { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "queryType": "instant", "expr": "sum by (record_id) (count_over_time({job=\"aladin-worker\"} | json | record_id != `` [$__range]))" } ],
+      "transformations": [ { "id": "organize", "options": { "excludeByName": { "Time": true }, "renameByName": { "Value": "checkpoints" } } } ]
+    },
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Record journey — $record_id",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 10 }
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Enriched",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 11 },
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] }, "mappings": [ { "type": "value", "options": { "0": { "text": "—" } } } ] } },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [ { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "queryType": "instant", "expr": "sum(count_over_time({job=\"aladin-worker\"} | json | record_id=`$record_id` | checkpoint=`enriched` [$__range]))" } ]
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "Entities",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 11 },
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] }, "mappings": [ { "type": "value", "options": { "0": { "text": "—" } } } ] } },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [ { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "queryType": "instant", "expr": "sum(count_over_time({job=\"aladin-worker\"} | json | record_id=`$record_id` | checkpoint=`entities_resolved` [$__range]))" } ]
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "Claims → PG",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 11 },
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] }, "mappings": [ { "type": "value", "options": { "0": { "text": "—" } } } ] } },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [ { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "queryType": "instant", "expr": "sum(count_over_time({job=\"aladin-worker\"} | json | record_id=`$record_id` | checkpoint=`claims_written` [$__range]))" } ]
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "Graph → Neo4j",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 11 },
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] }, "mappings": [ { "type": "value", "options": { "0": { "text": "—" } } } ] } },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [ { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "queryType": "instant", "expr": "sum(count_over_time({job=\"aladin-worker\"} | json | record_id=`$record_id` | checkpoint=`graph_projected` [$__range]))" } ]
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "Outbox sent",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 11 },
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] }, "mappings": [ { "type": "value", "options": { "0": { "text": "—" } } } ] } },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [ { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "queryType": "instant", "expr": "sum(count_over_time({job=\"aladin-worker\"} | json | record_id=`$record_id` | checkpoint=`outbox_emitted` [$__range]))" } ]
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "Completed",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 11 },
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] }, "mappings": [ { "type": "value", "options": { "0": { "text": "—" } } } ] } },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [ { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "queryType": "instant", "expr": "sum(count_over_time({job=\"aladin-worker\"} | json | record_id=`$record_id` | checkpoint=`completed` [$__range]))" } ]
+    },
+    {
+      "id": 20,
+      "type": "logs",
+      "title": "Record journey (ordered)",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 11, "w": 24, "x": 0, "y": 15 },
+      "options": { "showTime": true, "sortOrder": "Ascending", "wrapLogMessage": true, "dedupStrategy": "none" },
+      "targets": [ { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "queryType": "range", "expr": "{job=\"aladin-worker\"} | json | record_id=`$record_id`" } ]
+    },
+    {
+      "id": 30,
+      "type": "logs",
+      "title": "Errors — this record",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 26 },
+      "options": { "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+      "targets": [ { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "queryType": "range", "expr": "{job=\"aladin-worker\"} | json | record_id=`$record_id` | level=`error`" } ]
+    },
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "Pipeline error rate (all records)",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 26 },
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 40 }, "color": { "mode": "fixed", "fixedColor": "red" } } },
+      "targets": [ { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "queryType": "range", "expr": "sum(count_over_time({job=\"aladin-worker\"} | json | level=`error` [$__interval]))" } ]
+    },
+    {
+      "id": 40,
+      "type": "logs",
+      "title": "Pipeline errors — all records (last range)",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 34 },
+      "options": { "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+      "targets": [ { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "queryType": "range", "expr": "{job=\"aladin-worker\"} | json | level=`error`" } ]
+    }
+  ]
+}

@@ -51,10 +51,11 @@ func (r *PostgresSystemRepository) WorkerStatus(ctx context.Context) (map[string
 	}, nil
 }
 
-// PipelineStats is a read-only ingestion health snapshot. It only SELECTs — it
-// never touches the write/retry path — so it surfaces stuck records (the silent-
-// failure problem) safely. "Stuck" = a record that hasn't reached 'enriched' an
-// hour after capture.
+// PipelineStats is a read-only ingestion health snapshot. It only SELECTs — it never
+// touches the write/retry path — so it surfaces stuck records (the silent-failure problem)
+// safely. Terminal statuses are 'complete' (enriched + entities + claims + embedded) and
+// 'failed'; everything else is in-flight. "Stuck" = in-flight with no stage progress for
+// 15+ minutes.
 func (r *PostgresSystemRepository) PipelineStats(ctx context.Context) (map[string]any, error) {
 	recordsByStatus, err := r.countBy(ctx, `SELECT status, count(*) FROM records GROUP BY status`)
 	if err != nil {
@@ -73,27 +74,46 @@ func (r *PostgresSystemRepository) PipelineStats(ctx context.Context) (map[strin
 		return nil, err
 	}
 
-	var stuck, enriched24h, relationships int
-	var oldestPendingSecs *float64
-	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM records WHERE status <> 'enriched' AND created_at < now() - interval '1 hour'`).Scan(&stuck); err != nil {
+	var inFlight, stuck, failed, completed1h, completed24h, relationships int
+	var oldestInFlightSecs, avgLatencySecs *float64
+	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM records WHERE status NOT IN ('complete', 'failed')`).Scan(&inFlight); err != nil {
 		return nil, err
 	}
-	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM records WHERE status = 'enriched' AND created_at >= now() - interval '24 hours'`).Scan(&enriched24h); err != nil {
+	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM records WHERE status NOT IN ('complete', 'failed') AND updated_at < now() - interval '15 minutes'`).Scan(&stuck); err != nil {
+		return nil, err
+	}
+	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM records WHERE status = 'failed'`).Scan(&failed); err != nil {
+		return nil, err
+	}
+	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM records WHERE status = 'complete' AND updated_at >= now() - interval '1 hour'`).Scan(&completed1h); err != nil {
+		return nil, err
+	}
+	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM records WHERE status = 'complete' AND updated_at >= now() - interval '24 hours'`).Scan(&completed24h); err != nil {
 		return nil, err
 	}
 	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM relationships`).Scan(&relationships); err != nil {
 		return nil, err
 	}
-	if err := r.pool.QueryRow(ctx, `SELECT extract(epoch FROM (now() - min(created_at))) FROM records WHERE status <> 'enriched'`).Scan(&oldestPendingSecs); err != nil {
+	if err := r.pool.QueryRow(ctx, `SELECT extract(epoch FROM (now() - min(updated_at))) FROM records WHERE status NOT IN ('complete', 'failed')`).Scan(&oldestInFlightSecs); err != nil {
+		return nil, err
+	}
+	// End-to-end latency (capture → complete) over records completed in the last 24h.
+	if err := r.pool.QueryRow(ctx, `SELECT avg(extract(epoch FROM (updated_at - created_at))) FROM records WHERE status = 'complete' AND updated_at >= now() - interval '24 hours'`).Scan(&avgLatencySecs); err != nil {
 		return nil, err
 	}
 
 	return map[string]any{
 		"records": map[string]any{
-			"byStatus":          recordsByStatus,
-			"stuckOverOneHour":  stuck,
-			"enrichedLast24h":   enriched24h,
-			"oldestPendingSecs": oldestPendingSecs, // null when nothing is pending
+			"byStatus":           recordsByStatus,
+			"inFlight":           inFlight,
+			"stuckOver15Min":     stuck,
+			"failed":             failed,
+			"oldestInFlightSecs": oldestInFlightSecs, // null when nothing is in-flight
+		},
+		"throughput": map[string]any{
+			"completedLast1h":  completed1h,
+			"completedLast24h": completed24h,
+			"avgLatencySecs":   avgLatencySecs, // null when none completed recently
 		},
 		"insights": map[string]any{
 			"byType":   insightsByType,

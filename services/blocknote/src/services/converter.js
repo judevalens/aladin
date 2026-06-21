@@ -7,8 +7,9 @@
 
 import { ServerBlockNoteEditor } from "@blocknote/server-util";
 import { BadRequest, errorMessage } from "../errors.js";
+import { pageSchema } from "./page-schema.js";
 
-const editor = ServerBlockNoteEditor.create();
+const editor = ServerBlockNoteEditor.create({ schema: pageSchema });
 
 export async function mdToBlocks(markdown) {
   const md = typeof markdown === "string" ? markdown : "";

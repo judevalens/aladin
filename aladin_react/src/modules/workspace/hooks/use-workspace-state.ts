@@ -23,7 +23,7 @@ import type {
 } from "@/shared/api/models";
 import { useObservableState } from "@/shared/flow/use-observable-state";
 
-export type WorkspaceDestination = "home" | "folders" | "sources" | "signals" | "graph";
+export type WorkspaceDestination = "home" | "folders" | "sources" | "signals" | "insights" | "graph";
 
 export interface WorkspaceShellState {
   selectedDestination: WorkspaceDestination;

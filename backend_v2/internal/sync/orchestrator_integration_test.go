@@ -37,6 +37,8 @@ func (r *integrationSourceRepo) ClaimBatch(ctx context.Context, limit int) ([]*d
 	return []*db.ProviderStream{r.source}, nil
 }
 
+func (r *integrationSourceRepo) Heartbeat(ctx context.Context, id string) error { return nil }
+
 func (r *integrationSourceRepo) MarkSyncStarted(ctx context.Context, id string) error {
 	r.markStartedIDs = append(r.markStartedIDs, id)
 	return nil
@@ -188,6 +190,22 @@ func (r *integrationRecordRepo) Get(ctx context.Context, id string) (*db.Record,
 
 func (r *integrationRecordRepo) SaveEnrichment(ctx context.Context, enrichment *db.RecordEnrichment) (bool, error) {
 	return true, nil
+}
+
+func (r *integrationRecordRepo) SaveEmbedding(ctx context.Context, recordID string, sourceRevision int64, vec []float32) (bool, error) {
+	return true, nil
+}
+
+func (r *integrationRecordRepo) ListStuck(ctx context.Context, olderThanSecs, limit int) ([]*db.Record, error) {
+	return nil, nil
+}
+
+func (r *integrationRecordRepo) MarkFailed(ctx context.Context, recordID, reason string) error {
+	return nil
+}
+
+func (r *integrationRecordRepo) ResetForRetry(ctx context.Context, recordID string) (bool, error) {
+	return false, nil
 }
 
 type redditFlowFixture struct {

@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"fmt"
 
 	coreservice "aladin/backend_v2/internal/service"
 
@@ -99,4 +100,48 @@ func (r *PostgresRecordRepository) Create(ctx context.Context, id string, kind s
 func (r *PostgresRecordRepository) Delete(ctx context.Context, id string) error {
 	_, err := r.pool.Exec(ctx, `DELETE FROM records WHERE id = $1`, id)
 	return err
+}
+
+// SimilarRecords returns records whose embedding is cosine-closest to the given record's
+// (the vector "similar sources" lens), excluding the record itself. Empty if the record
+// has no embedding.
+func (r *PostgresRecordRepository) SimilarRecords(ctx context.Context, id string, limit int) ([]coreservice.SimilarRecord, error) {
+	rows, err := r.pool.Query(ctx, `
+		WITH target AS (SELECT embedding FROM records WHERE id = $1)
+		SELECT r.id, r.label, COALESCE(r.source_url, ''), COALESCE(r.provider, ''),
+		       1 - (r.embedding <=> t.embedding) AS cosine
+		  FROM records r, target t
+		 WHERE r.id <> $1
+		   AND r.embedding IS NOT NULL
+		   AND t.embedding IS NOT NULL
+		 ORDER BY r.embedding <=> t.embedding ASC
+		 LIMIT $2
+	`, id, limit)
+	if err != nil {
+		return nil, fmt.Errorf("SimilarRecords: %w", err)
+	}
+	defer rows.Close()
+
+	out := []coreservice.SimilarRecord{}
+	for rows.Next() {
+		var s coreservice.SimilarRecord
+		if err := rows.Scan(&s.ID, &s.Label, &s.SourceURL, &s.Provider, &s.Cosine); err != nil {
+			return nil, fmt.Errorf("SimilarRecords scan: %w", err)
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+// ResetForRetry moves a 'failed' record back to 'captured' so it re-enters the pipeline
+// (the worker's reaper re-drives it). Returns false if the record wasn't failed.
+func (r *PostgresRecordRepository) ResetForRetry(ctx context.Context, id string) (bool, error) {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE records SET status = 'captured', updated_at = now()
+		 WHERE id = $1 AND status = 'failed'
+	`, id)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
 }

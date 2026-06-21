@@ -11,9 +11,8 @@ import (
 )
 
 type fakeEnqueuer struct {
-	stageCalls []stageCall
-	stageErr   error
-	// delayedStageCalls tracks calls made outside the interface for test assertions.
+	stageCalls        []stageCall
+	stageErr          error
 	delayedStageCalls []delayedStageCall
 }
 
@@ -36,17 +35,15 @@ func (f *fakeEnqueuer) EnqueueStage(ctx context.Context, taskType, recordID stri
 }
 
 type fakeRecordRepo struct {
-	saved       []*db.CompletedRecord
 	enrichments []*db.RecordEnrichment
+	embeddings  int
 	records     map[string]*db.Record
+	failed      []string
 	err         error
 	stale       bool
 }
 
-func (f *fakeRecordRepo) SaveComplete(ctx context.Context, a *db.CompletedRecord) error {
-	f.saved = append(f.saved, a)
-	return f.err
-}
+func (f *fakeRecordRepo) SaveComplete(ctx context.Context, a *db.CompletedRecord) error { return f.err }
 
 func (f *fakeRecordRepo) UpsertCanonical(ctx context.Context, record *db.Record) (*db.RecordUpsertResult, error) {
 	if f.records == nil {
@@ -71,6 +68,24 @@ func (f *fakeRecordRepo) SaveEnrichment(ctx context.Context, e *db.RecordEnrichm
 		return false, f.err
 	}
 	return !f.stale, nil
+}
+
+func (f *fakeRecordRepo) SaveEmbedding(ctx context.Context, recordID string, sourceRevision int64, vec []float32) (bool, error) {
+	f.embeddings++
+	return true, f.err
+}
+
+func (f *fakeRecordRepo) ListStuck(ctx context.Context, olderThanSecs, limit int) ([]*db.Record, error) {
+	return nil, nil
+}
+
+func (f *fakeRecordRepo) MarkFailed(ctx context.Context, recordID, reason string) error {
+	f.failed = append(f.failed, recordID)
+	return nil
+}
+
+func (f *fakeRecordRepo) ResetForRetry(ctx context.Context, recordID string) (bool, error) {
+	return false, nil
 }
 
 type fakeTenantItemMatchRepo struct {
@@ -113,15 +128,15 @@ func (f *fakeInsightEnqueuer) EnqueueInsightGeneration(
 	return f.err
 }
 
-func TestFullPipelineHandlerRoutesFirstPassSearchNeeded(t *testing.T) {
+func TestFullPipelineHandlerRoutesClaimsToEmbed(t *testing.T) {
 	t.Parallel()
 
 	enq := &fakeEnqueuer{}
-	h := NewFullPipelineHandler(enq, &fakeRecordRepo{}, make(chan string, 1))
+	h := NewFullPipelineHandler(enq, &fakeRecordRepo{})
 
 	err := h.OnDone(context.Background(), Result{
-		Type:     ResultFirstPassSearchNeeded,
-		TaskType: TaskFirstPass,
+		Type:     ResultResolveClaimsDone,
+		TaskType: TaskResolveClaims,
 		RecordID: "record-1",
 		Payload:  []byte(`{"record_id":"record-1"}`),
 	})
@@ -131,8 +146,28 @@ func TestFullPipelineHandlerRoutesFirstPassSearchNeeded(t *testing.T) {
 	if len(enq.stageCalls) != 1 {
 		t.Fatalf("EnqueueStage calls = %d, want 1", len(enq.stageCalls))
 	}
-	if got := enq.stageCalls[0]; got.taskType != TaskSearch || got.recordID != "record-1" {
-		t.Fatalf("EnqueueStage call = %+v, want task=%q record=%q", got, TaskSearch, "record-1")
+	if got := enq.stageCalls[0]; got.taskType != TaskEmbed || got.recordID != "record-1" {
+		t.Fatalf("EnqueueStage call = %+v, want task=%q record=%q", got, TaskEmbed, "record-1")
+	}
+}
+
+func TestFullPipelineHandlerEmbedDoneIsTerminal(t *testing.T) {
+	t.Parallel()
+
+	enq := &fakeEnqueuer{}
+	h := NewFullPipelineHandler(enq, &fakeRecordRepo{})
+
+	err := h.OnDone(context.Background(), Result{
+		Type:     ResultEmbedDone,
+		TaskType: TaskEmbed,
+		RecordID: "record-1",
+		Payload:  []byte(`{"record_id":"record-1"}`),
+	})
+	if err != nil {
+		t.Fatalf("OnDone returned error: %v", err)
+	}
+	if len(enq.stageCalls) != 0 {
+		t.Fatalf("embed.done must be terminal, got %d enqueue calls", len(enq.stageCalls))
 	}
 }
 
@@ -140,11 +175,11 @@ func TestFullPipelineHandlerRateLimitBubblesError(t *testing.T) {
 	t.Parallel()
 
 	enq := &fakeEnqueuer{}
-	h := NewFullPipelineHandler(enq, &fakeRecordRepo{}, make(chan string, 1))
+	h := NewFullPipelineHandler(enq, &fakeRecordRepo{})
 
 	rlErr := ErrRateLimit{RetryAfter: 45 * time.Second}
 	err := h.OnDone(context.Background(), Result{
-		TaskType: TaskSearch,
+		TaskType: TaskEmbed,
 		RecordID: "record-2",
 		Payload:  []byte(`{"record_id":"record-2"}`),
 		Err:      rlErr,
@@ -161,11 +196,12 @@ func TestFullPipelineHandlerRateLimitBubblesError(t *testing.T) {
 	}
 }
 
-func TestFullPipelineHandlerPermanentErrorDrops(t *testing.T) {
+func TestFullPipelineHandlerPermanentErrorMarksFailed(t *testing.T) {
 	t.Parallel()
 
 	enq := &fakeEnqueuer{}
-	h := NewFullPipelineHandler(enq, &fakeRecordRepo{}, make(chan string, 1))
+	repo := &fakeRecordRepo{}
+	h := NewFullPipelineHandler(enq, repo)
 
 	err := h.OnDone(context.Background(), Result{
 		TaskType: TaskEmbed,
@@ -176,7 +212,10 @@ func TestFullPipelineHandlerPermanentErrorDrops(t *testing.T) {
 		t.Fatalf("OnDone returned error: %v", err)
 	}
 	if len(enq.stageCalls) != 0 || len(enq.delayedStageCalls) != 0 {
-		t.Fatalf("unexpected enqueue calls: %+v %+v", enq.stageCalls, enq.delayedStageCalls)
+		t.Fatalf("a permanent error must not retry: %+v %+v", enq.stageCalls, enq.delayedStageCalls)
+	}
+	if len(repo.failed) != 1 || repo.failed[0] != "record-3" {
+		t.Fatalf("permanent error must mark the record failed, got %+v", repo.failed)
 	}
 }
 
@@ -184,11 +223,11 @@ func TestFullPipelineHandlerTransientErrorBubbles(t *testing.T) {
 	t.Parallel()
 
 	enq := &fakeEnqueuer{}
-	h := NewFullPipelineHandler(enq, &fakeRecordRepo{}, make(chan string, 1))
+	h := NewFullPipelineHandler(enq, &fakeRecordRepo{})
 
 	want := ErrTransient{Cause: errors.New("temporary")}
 	err := h.OnDone(context.Background(), Result{
-		TaskType: TaskGraph,
+		TaskType: TaskResolveClaims,
 		RecordID: "record-4",
 		Err:      want,
 	})
@@ -200,71 +239,12 @@ func TestFullPipelineHandlerTransientErrorBubbles(t *testing.T) {
 	}
 }
 
-func TestFullPipelineHandlerPersistsCompletedRecord(t *testing.T) {
-	t.Parallel()
-
-	repo := &fakeRecordRepo{}
-	matches := &fakeTenantItemMatchRepo{}
-	insights := make(chan string, 1)
-	h := NewFullPipelineHandler(&fakeEnqueuer{}, repo, insights).WithTenantItemMatches(matches)
-
-	payload, err := json.Marshal(RecordPayload{
-		RecordID:       "record-5",
-		KgID:           "kg-5",
-		ExternalID:     "ext-5",
-		SourceRevision: 42,
-		Type:           "post",
-		Label:          "label",
-		Content:        "content",
-		SourceURL:      "https://example.com",
-		Metadata: map[string]any{
-			"score": float64(7),
-		},
-		Summary:   "summary",
-		Entities:  []string{"entity"},
-		Topics:    []string{"topic"},
-		KeyClaims: []string{"claim"},
-		Embedding: []float32{1, 2, 3},
-	})
-	if err != nil {
-		t.Fatalf("json.Marshal returned error: %v", err)
-	}
-
-	err = h.OnDone(context.Background(), Result{
-		Type:     ResultGraphDone,
-		TaskType: TaskGraph,
-		RecordID: "record-5",
-		KgID:     "kg-5",
-		Payload:  payload,
-	})
-	if err != nil {
-		t.Fatalf("OnDone returned error: %v", err)
-	}
-	if len(repo.saved) != 1 {
-		t.Fatalf("SaveComplete calls = %d, want 1", len(repo.saved))
-	}
-	if repo.saved[0].ID != "record-5" || repo.saved[0].ExternalID != "ext-5" {
-		t.Fatalf("saved record = %+v", repo.saved[0])
-	}
-	if repo.saved[0].SourceRevision != 42 {
-		t.Fatalf("saved source revision = %d, want 42", repo.saved[0].SourceRevision)
-	}
-	select {
-	case kgID := <-insights:
-		if kgID != "kg-5" {
-			t.Fatalf("insight kgID = %q, want kg-5", kgID)
-		}
-	default:
-		t.Fatal("expected insight signal")
-	}
-}
-
 func TestFullPipelineHandlerPersistsGlobalRecordEnrichment(t *testing.T) {
 	t.Parallel()
 
 	repo := &fakeRecordRepo{}
 	enq := &fakeEnqueuer{}
-	h := NewFullPipelineHandler(enq, repo, make(chan string, 1))
+	h := NewFullPipelineHandler(enq, repo)
 
 	payload, err := json.Marshal(GlobalRecordPayload{
 		RecordID:       "record-6",
@@ -307,12 +287,100 @@ func TestFullPipelineHandlerPersistsGlobalRecordEnrichment(t *testing.T) {
 	}
 }
 
+func TestFullPipelineHandlerEnrichmentDoesNotFanOutLowConfidence(t *testing.T) {
+	t.Parallel()
+
+	// Low-confidence search is sequenced inside the entity→claims chain, NOT fanned out off
+	// enrichment — so even with it enabled, enrichment only fans out tenant_match + resolve_entities.
+	enq := &fakeEnqueuer{}
+	h := NewFullPipelineHandler(enq, &fakeRecordRepo{}).WithLowConfidenceSearch(true)
+
+	payload, _ := json.Marshal(GlobalRecordPayload{RecordID: "record-lc", SourceRevision: 1, Summary: "s"})
+	if err := h.OnDone(context.Background(), Result{
+		Type:     ResultGlobalFirstPassDone,
+		TaskType: TaskGlobalFirstPass,
+		RecordID: "record-lc",
+		Payload:  payload,
+	}); err != nil {
+		t.Fatalf("OnDone: %v", err)
+	}
+	for _, c := range enq.stageCalls {
+		if c.taskType == TaskResolveLowConfidence {
+			t.Fatalf("low-confidence must not fan out off enrichment; got %v", enq.stageCalls)
+		}
+	}
+	if len(enq.stageCalls) != 2 {
+		t.Fatalf("enrichment fan-out = %d, want tenant_match + resolve_entities only", len(enq.stageCalls))
+	}
+}
+
+func TestFullPipelineHandlerEntitiesRouteToClaimsByDefault(t *testing.T) {
+	t.Parallel()
+
+	enq := &fakeEnqueuer{}
+	h := NewFullPipelineHandler(enq, &fakeRecordRepo{}) // no searcher configured
+
+	err := h.OnDone(context.Background(), Result{
+		Type:     ResultResolveEntitiesDone,
+		TaskType: TaskResolveEntities,
+		RecordID: "record-e",
+		Payload:  []byte(`{"record_id":"record-e"}`),
+	})
+	if err != nil {
+		t.Fatalf("OnDone: %v", err)
+	}
+	if len(enq.stageCalls) != 1 || enq.stageCalls[0].taskType != TaskResolveClaims {
+		t.Fatalf("without low-conf, entities must route straight to claims; got %v", enq.stageCalls)
+	}
+}
+
+func TestFullPipelineHandlerEntitiesRouteToLowConfidenceWhenEnabled(t *testing.T) {
+	t.Parallel()
+
+	enq := &fakeEnqueuer{}
+	h := NewFullPipelineHandler(enq, &fakeRecordRepo{}).WithLowConfidenceSearch(true)
+
+	err := h.OnDone(context.Background(), Result{
+		Type:     ResultResolveEntitiesDone,
+		TaskType: TaskResolveEntities,
+		RecordID: "record-e",
+		Payload:  []byte(`{"record_id":"record-e"}`),
+	})
+	if err != nil {
+		t.Fatalf("OnDone: %v", err)
+	}
+	// Claims must NOT be enqueued yet — the record waits on low-confidence resolution first.
+	if len(enq.stageCalls) != 1 || enq.stageCalls[0].taskType != TaskResolveLowConfidence {
+		t.Fatalf("with low-conf enabled, entities must route to low-confidence search first; got %v", enq.stageCalls)
+	}
+}
+
+func TestFullPipelineHandlerLowConfidenceRoutesToClaims(t *testing.T) {
+	t.Parallel()
+
+	enq := &fakeEnqueuer{}
+	h := NewFullPipelineHandler(enq, &fakeRecordRepo{}).WithLowConfidenceSearch(true)
+
+	err := h.OnDone(context.Background(), Result{
+		Type:     ResultResolveLowConfidenceDone,
+		TaskType: TaskResolveLowConfidence,
+		RecordID: "record-e",
+		Payload:  []byte(`{"record_id":"record-e"}`),
+	})
+	if err != nil {
+		t.Fatalf("OnDone: %v", err)
+	}
+	if len(enq.stageCalls) != 1 || enq.stageCalls[0].taskType != TaskResolveClaims {
+		t.Fatalf("low-confidence done must advance the record to claims; got %v", enq.stageCalls)
+	}
+}
+
 func TestFullPipelineHandlerSkipsTenantMatchForStaleGlobalEnrichment(t *testing.T) {
 	t.Parallel()
 
 	repo := &fakeRecordRepo{stale: true}
 	enq := &fakeEnqueuer{}
-	h := NewFullPipelineHandler(enq, repo, make(chan string, 1))
+	h := NewFullPipelineHandler(enq, repo)
 
 	payload, err := json.Marshal(GlobalRecordPayload{
 		RecordID:       "record-stale",
@@ -346,7 +414,7 @@ func TestFullPipelineHandlerEnqueuesInsightTriggers(t *testing.T) {
 	t.Parallel()
 
 	insights := &fakeInsightEnqueuer{}
-	h := NewFullPipelineHandler(&fakeEnqueuer{}, &fakeRecordRepo{}, make(chan string, 1)).
+	h := NewFullPipelineHandler(&fakeEnqueuer{}, &fakeRecordRepo{}).
 		WithInsightEnqueuer(insights)
 
 	payload, err := json.Marshal(TenantMatchPayload{

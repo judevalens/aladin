@@ -8,26 +8,47 @@ import (
 	"log/slog"
 
 	"aladin/backend_v2/internal/db"
-	"aladin/backend_v2/internal/search"
 )
 
-// FullPipelineHandler implements ResultHandler for the full enrichment pipeline:
-// first_pass → (optional search) → embed → graph → persist.
-// Adding a new pipeline variant means implementing a new ResultHandler — no other changes.
+// FullPipelineHandler implements ResultHandler for the record enrichment pipeline:
+//
+//	global_first_pass → ├─ tenant_match → insights
+//	                    └─ resolve_entities → [resolve_low_confidence] → resolve_claims → embed (terminal)
+//
+// resolve_low_confidence (web search for the entities the first pass was unsure about) sits IN the
+// entity→claims chain, not beside it: claims must ground on the COMPLETE resolved entity set, so a
+// record can't advance to claims until every entity — confident and low-confidence — is resolved.
+// It's only inserted when a searcher is configured; otherwise resolve_entities chains straight to
+// claims. Adding a new pipeline variant means implementing a new ResultHandler — no other changes.
 type FullPipelineHandler struct {
 	enqueuer        Enqueuer
 	repo            db.RecordRepository
 	matches         db.TenantItemMatchRepository
 	insightEnqueuer InsightEnqueuer
-	insights        chan<- string
+	graphEnabled    bool
+	lowConfEnabled  bool
+}
+
+// WithLowConfidenceSearch inserts the resolve_low_confidence stage into the entity→claims chain
+// (web search → resolve, between resolve_entities and resolve_claims). Off unless a searcher
+// (Tavily key) is configured — then resolve_entities chains straight to claims.
+func (h *FullPipelineHandler) WithLowConfidenceSearch(enabled bool) *FullPipelineHandler {
+	h.lowConfEnabled = enabled
+	return h
+}
+
+// WithGraphProjection enables enqueuing the Neo4j graph-projection stage after claims.
+// Off unless Neo4j is configured (so the stage is never enqueued without a worker to run it).
+func (h *FullPipelineHandler) WithGraphProjection(enabled bool) *FullPipelineHandler {
+	h.graphEnabled = enabled
+	return h
 }
 
 func NewFullPipelineHandler(
 	enqueuer Enqueuer,
 	repo db.RecordRepository,
-	insights chan<- string,
 ) *FullPipelineHandler {
-	return &FullPipelineHandler{enqueuer: enqueuer, repo: repo, insights: insights}
+	return &FullPipelineHandler{enqueuer: enqueuer, repo: repo}
 }
 
 func (h *FullPipelineHandler) WithTenantItemMatches(repo db.TenantItemMatchRepository) *FullPipelineHandler {
@@ -59,7 +80,7 @@ func (h *FullPipelineHandler) OnDone(ctx context.Context, result Result) error {
 
 	switch result.Type {
 	case ResultGlobalFirstPassDone:
-		log.Info("orchestrator: global enrichment complete, persisting")
+		log.Info("orchestrator: global enrichment complete, persisting", "checkpoint", "enriched")
 		return h.persistGlobalRecordEnrichment(ctx, log, result.Payload)
 
 	case ResultTenantMatchDone:
@@ -67,35 +88,43 @@ func (h *FullPipelineHandler) OnDone(ctx context.Context, result Result) error {
 		return h.enqueueInsightTriggers(ctx, log, result.Payload)
 
 	case ResultResolveEntitiesDone:
-		// Chain claim extraction after entities so claims can ground on the resolved
-		// entity set. The payloads share a shape, so forward it directly.
-		log.Info("orchestrator: entity resolution complete, routing to claims")
+		// Entities are resolved. When web search is configured, resolve the low-confidence
+		// entities BEFORE claims so claims ground on the complete entity set; otherwise chain
+		// straight to claims. Payloads share a shape, so forward directly.
+		if h.lowConfEnabled {
+			log.Info("orchestrator: entity resolution complete, routing to low-confidence search", "checkpoint", "entities_resolved")
+			return h.enqueue(ctx, TaskResolveLowConfidence, result.RecordID, result.Payload)
+		}
+		log.Info("orchestrator: entity resolution complete, routing to claims", "checkpoint", "entities_resolved")
 		return h.enqueue(ctx, TaskResolveClaims, result.RecordID, result.Payload)
 
 	case ResultResolveClaimsDone:
-		// Terminal: the worker has populated the claim layer directly.
-		log.Info("orchestrator: claim extraction complete")
-		return nil
-
-	case ResultFirstPassSearchNeeded:
-		log.Info("orchestrator: routing to search")
-		return h.enqueue(ctx, TaskSearch, result.RecordID, result.Payload)
-
-	case ResultFirstPassEmbedReady:
-		log.Info("orchestrator: skipping search, routing to embed")
-		return h.enqueue(ctx, TaskEmbed, result.RecordID, result.Payload)
-
-	case ResultSearchDone:
-		log.Info("orchestrator: routing to embed")
+		// Chain embedding after claims — the last step of the record→knowledge chain. When
+		// Neo4j is configured, also fan out the graph projection (parallel; it only needs the
+		// claims+entities just written, not the embedding). Payload shape is shared.
+		log.Info("orchestrator: claim extraction complete, routing to embed", "checkpoint", "claims_written")
+		if h.graphEnabled {
+			if err := h.enqueue(ctx, TaskGraphProject, result.RecordID, result.Payload); err != nil {
+				return err
+			}
+		}
 		return h.enqueue(ctx, TaskEmbed, result.RecordID, result.Payload)
 
 	case ResultEmbedDone:
-		log.Info("orchestrator: routing to graph")
-		return h.enqueue(ctx, TaskGraph, result.RecordID, result.Payload)
+		// Terminal: the worker has written the vector and marked the record complete.
+		log.Info("orchestrator: record complete", "checkpoint", "completed")
+		return nil
 
-	case ResultGraphDone:
-		log.Info("orchestrator: pipeline complete, persisting")
-		return h.persist(ctx, log, result.Payload)
+	case ResultGraphProjectDone:
+		// Terminal: the record's entity/claim slice is projected into Neo4j.
+		log.Info("orchestrator: graph projection complete", "checkpoint", "graph_projected")
+		return nil
+
+	case ResultResolveLowConfidenceDone:
+		// Low-confidence entities are now resolved into the layer too — the entity set is
+		// complete, so the record can finally advance to claims. Payload shape is shared.
+		log.Info("orchestrator: low-confidence resolution complete, routing to claims", "checkpoint", "low_confidence_resolved")
+		return h.enqueue(ctx, TaskResolveClaims, result.RecordID, result.Payload)
 
 	default:
 		return fmt.Errorf("orchestrator: unknown result type %q", result.Type)
@@ -174,6 +203,8 @@ func (h *FullPipelineHandler) persistGlobalRecordEnrichment(ctx context.Context,
 	if err := h.enqueue(ctx, TaskResolveEntities, p.RecordID, resolvePayload); err != nil {
 		return err
 	}
+	// Low-confidence search is NOT fanned out here — it's sequenced inside the entity→claims chain
+	// (after resolve_entities, before resolve_claims) so claims ground on the complete entity set.
 	log.Info("orchestrator: global record enrichment persisted", "record_id", p.RecordID, "source_revision", p.SourceRevision)
 	return nil
 }
@@ -197,7 +228,14 @@ func (h *FullPipelineHandler) handleError(ctx context.Context, log *slog.Logger,
 		return result.Err
 
 	case errors.As(result.Err, &permanentErr):
-		log.Error("orchestrator: permanent error, dropping", "err", result.Err)
+		// Mark the record failed so the failure is visible + re-drivable instead of
+		// silently dropped. Best-effort — never turn a permanent error into a retry.
+		log.Error("orchestrator: permanent error, marking record failed", "err", result.Err)
+		if result.RecordID != "" {
+			if markErr := h.repo.MarkFailed(ctx, result.RecordID, result.Err.Error()); markErr != nil {
+				log.Error("orchestrator: mark failed errored", "err", markErr)
+			}
+		}
 		return nil
 
 	default:
@@ -205,59 +243,6 @@ func (h *FullPipelineHandler) handleError(ctx context.Context, log *slog.Logger,
 		log.Warn("orchestrator: transient error", "err", result.Err)
 		return result.Err
 	}
-}
-
-func (h *FullPipelineHandler) persist(ctx context.Context, log *slog.Logger, payload []byte) error {
-	var p RecordPayload
-	if err := json.Unmarshal(payload, &p); err != nil {
-		return fmt.Errorf("persist: unmarshal: %w", err)
-	}
-
-	enrichment, err := json.Marshal(struct {
-		Summary       string                           `json:"summary,omitempty"`
-		Entities      []string                         `json:"entities,omitempty"`
-		Topics        []string                         `json:"topics,omitempty"`
-		KeyClaims     []string                         `json:"key_claims,omitempty"`
-		SearchContext map[string][]search.SearchResult `json:"search_context,omitempty"`
-	}{
-		Summary:       p.Summary,
-		Entities:      p.Entities,
-		Topics:        p.Topics,
-		KeyClaims:     p.KeyClaims,
-		SearchContext: p.SearchResolved,
-	})
-	if err != nil {
-		log.Error("orchestrator: marshal enrichment failed", "err", err)
-		return fmt.Errorf("persist: marshal enrichment: %w", err)
-	}
-
-	a := &db.CompletedRecord{
-		ID:             p.RecordID,
-		ExternalID:     p.ExternalID,
-		SourceRevision: p.SourceRevision,
-		Type:           p.Type,
-		Label:          p.Label,
-		Content:        p.Content,
-		SourceURL:      p.SourceURL,
-		Metadata:       p.Metadata,
-		Enrichment:     enrichment,
-		Embedding:      p.Embedding,
-	}
-
-	if err := h.repo.SaveComplete(ctx, a); err != nil {
-		log.Error("orchestrator: save failed", "err", err)
-		return err
-	}
-	select {
-	case h.insights <- p.KgID:
-	default:
-	}
-
-	log.Info("orchestrator: record persisted",
-		"correlation_id", p.CorrelationID,
-		"external_id", p.ExternalID,
-	)
-	return nil
 }
 
 func firstNonEmpty(values ...string) string {

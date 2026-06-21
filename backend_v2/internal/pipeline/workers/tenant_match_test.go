@@ -29,6 +29,22 @@ func (r tenantMatchRecordRepo) SaveEnrichment(ctx context.Context, enrichment *d
 	return true, nil
 }
 
+func (r tenantMatchRecordRepo) SaveEmbedding(ctx context.Context, recordID string, sourceRevision int64, vec []float32) (bool, error) {
+	return true, nil
+}
+
+func (r tenantMatchRecordRepo) ListStuck(ctx context.Context, olderThanSecs, limit int) ([]*db.Record, error) {
+	return nil, nil
+}
+
+func (r tenantMatchRecordRepo) MarkFailed(ctx context.Context, recordID, reason string) error {
+	return nil
+}
+
+func (r tenantMatchRecordRepo) ResetForRetry(ctx context.Context, recordID string) (bool, error) {
+	return false, nil
+}
+
 type tenantMatchStreamRepo struct {
 	stream *db.ProviderStream
 }
@@ -46,6 +62,7 @@ func (r tenantMatchStreamRepo) ClaimBatch(ctx context.Context, limit int) ([]*db
 }
 
 func (r tenantMatchStreamRepo) MarkSyncStarted(ctx context.Context, id string) error { return nil }
+func (r tenantMatchStreamRepo) Heartbeat(ctx context.Context, id string) error        { return nil }
 func (r tenantMatchStreamRepo) MarkSyncPage(ctx context.Context, id string, configUpdates map[string]any) error {
 	return nil
 }

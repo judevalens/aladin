@@ -1,10 +1,16 @@
 package app
 
 import (
+	"os"
 	"path/filepath"
 
+	"aladin/backend_v2/internal/claims"
 	"aladin/backend_v2/internal/config"
+	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/docsurface"
+	"aladin/backend_v2/internal/entities"
+	"aladin/backend_v2/internal/graph"
+	"aladin/backend_v2/internal/llm"
 	"aladin/backend_v2/internal/repo"
 	coreservice "aladin/backend_v2/internal/service"
 
@@ -22,6 +28,8 @@ type Dependencies interface {
 	Files() coreservice.FileService
 	Feed() coreservice.FeedService
 	Insights() coreservice.InsightService
+	// Signals is the claim-primary curated feed (the Signals surface).
+	Signals() coreservice.SignalService
 	ProviderConnections() coreservice.ProviderConnectionService
 	Realtime() coreservice.RealtimeEventService
 	RealtimeKeyResolver() coreservice.SubscriptionKeyResolver
@@ -39,6 +47,14 @@ type Dependencies interface {
 	ShardBuild() coreservice.ShardBuildService
 	// Relationships is the additive cross-world edge layer (artifacts ↔ records ↔ insights).
 	Relationships() coreservice.RelationshipService
+	// GraphPane assembles the "On the graph" side pane for a thesis (entity + claim layers).
+	GraphPane() coreservice.GraphPaneService
+	// EntityTags backs the tag / @entity picker: entity search + artifact↔entity links.
+	EntityTags() coreservice.EntityTagService
+	// AuthoredClaims extracts claims from a page grounded in its tagged/@mentioned entities.
+	AuthoredClaims() coreservice.AuthoredClaimsService
+	// GraphReader reads the Neo4j connection lens. Nil when Neo4j isn't configured.
+	GraphReader() coreservice.GraphReader
 }
 
 type StaticDependencies struct {
@@ -52,6 +68,7 @@ type StaticDependencies struct {
 	FilesSvc               coreservice.FileService
 	FeedSvc                coreservice.FeedService
 	InsightsSvc            coreservice.InsightService
+	SignalsSvc             coreservice.SignalService
 	ProviderConnectionsSvc coreservice.ProviderConnectionService
 	RealtimeSvc            coreservice.RealtimeEventService
 	RealtimeKeys           coreservice.SubscriptionKeyResolver
@@ -62,6 +79,10 @@ type StaticDependencies struct {
 	PreviewSvc             coreservice.PreviewService
 	ShardBuildSvc          coreservice.ShardBuildService
 	RelationshipsSvc       coreservice.RelationshipService
+	GraphPaneSvc           coreservice.GraphPaneService
+	EntityTagsSvc          coreservice.EntityTagService
+	AuthoredClaimsSvc      coreservice.AuthoredClaimsService
+	GraphReaderSvc         coreservice.GraphReader
 }
 
 func (d StaticDependencies) Auth() coreservice.AuthService          { return d.AuthSvc }
@@ -76,6 +97,7 @@ func (d StaticDependencies) PageDocuments() coreservice.PageDocumentService {
 func (d StaticDependencies) Files() coreservice.FileService       { return d.FilesSvc }
 func (d StaticDependencies) Feed() coreservice.FeedService        { return d.FeedSvc }
 func (d StaticDependencies) Insights() coreservice.InsightService { return d.InsightsSvc }
+func (d StaticDependencies) Signals() coreservice.SignalService    { return d.SignalsSvc }
 func (d StaticDependencies) ProviderConnections() coreservice.ProviderConnectionService {
 	return d.ProviderConnectionsSvc
 }
@@ -104,6 +126,18 @@ func (d StaticDependencies) ShardBuild() coreservice.ShardBuildService {
 func (d StaticDependencies) Relationships() coreservice.RelationshipService {
 	return d.RelationshipsSvc
 }
+func (d StaticDependencies) GraphPane() coreservice.GraphPaneService {
+	return d.GraphPaneSvc
+}
+func (d StaticDependencies) EntityTags() coreservice.EntityTagService {
+	return d.EntityTagsSvc
+}
+func (d StaticDependencies) AuthoredClaims() coreservice.AuthoredClaimsService {
+	return d.AuthoredClaimsSvc
+}
+func (d StaticDependencies) GraphReader() coreservice.GraphReader {
+	return d.GraphReaderSvc
+}
 
 type wiring struct {
 	auth                coreservice.AuthService
@@ -116,6 +150,7 @@ type wiring struct {
 	files               coreservice.FileService
 	feed                coreservice.FeedService
 	insights            coreservice.InsightService
+	signals             coreservice.SignalService
 	providerConnections coreservice.ProviderConnectionService
 	realtime            coreservice.RealtimeEventService
 	rtKeys              coreservice.SubscriptionKeyResolver
@@ -126,6 +161,10 @@ type wiring struct {
 	preview             coreservice.PreviewService
 	shardBuild          coreservice.ShardBuildService
 	relationships       coreservice.RelationshipService
+	graphPane           coreservice.GraphPaneService
+	entityTags          coreservice.EntityTagService
+	authoredClaims      coreservice.AuthoredClaimsService
+	graphReader         coreservice.GraphReader
 }
 
 func (w wiring) Auth() coreservice.AuthService          { return w.auth }
@@ -140,6 +179,7 @@ func (w wiring) PageDocuments() coreservice.PageDocumentService {
 func (w wiring) Files() coreservice.FileService       { return w.files }
 func (w wiring) Feed() coreservice.FeedService        { return w.feed }
 func (w wiring) Insights() coreservice.InsightService { return w.insights }
+func (w wiring) Signals() coreservice.SignalService   { return w.signals }
 func (w wiring) ProviderConnections() coreservice.ProviderConnectionService {
 	return w.providerConnections
 }
@@ -156,6 +196,12 @@ func (w wiring) WorkspaceRuntime() coreservice.WorkspaceRuntime { return w.works
 func (w wiring) Preview() coreservice.PreviewService            { return w.preview }
 func (w wiring) ShardBuild() coreservice.ShardBuildService      { return w.shardBuild }
 func (w wiring) Relationships() coreservice.RelationshipService { return w.relationships }
+func (w wiring) GraphPane() coreservice.GraphPaneService        { return w.graphPane }
+func (w wiring) EntityTags() coreservice.EntityTagService       { return w.entityTags }
+func (w wiring) AuthoredClaims() coreservice.AuthoredClaimsService {
+	return w.authoredClaims
+}
+func (w wiring) GraphReader() coreservice.GraphReader { return w.graphReader }
 
 func NewDependencies(pool *pgxpool.Pool) Dependencies {
 	return NewDependenciesWithProviderConnections(pool, config.LoadProviderConnections(), config.DataVolumePathOrDefault())
@@ -173,11 +219,34 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 	shardBuild := coreservice.NewShardBuildService(docRuntime, repo.NewShardBuildPostgres(pool))
 	feedRepo := repo.NewFeedPostgres(pool)
 	insightRepo := repo.NewInsightPostgres(pool)
+	signalRepo := repo.NewSignalPostgres(pool)
 	relationshipRepo := repo.NewRelationshipPostgres(pool)
+	graphPaneRepo := repo.NewGraphPanePostgres(pool)
+	entityTagRepo := repo.NewEntityTagPostgres(pool)
 	systemRepo := repo.NewSystemPostgres(pool)
+
+	// Authored claim extraction (P3): a page's tags/@mentions ground LLM claim extraction
+	// over its text. The extractor is nil-safe — without an OPENAI_API_KEY it degrades to
+	// a no-op (same as the record path), so the API boots fine without a key.
+	var claimExtractor llm.ClaimExtractor
+	if key := os.Getenv("OPENAI_API_KEY"); key != "" {
+		claimExtractor = llm.NewOpenAIClaimExtractor(key)
+	}
+	authoredClaims := claims.NewAuthoredExtractor(
+		claims.NewService(db.NewClaimRepository(pool), claimExtractor),
+		db.NewEntityRepository(pool),
+	)
+	// Graph reader (optional) — the Neo4j connection lens. Nil when NEO4J_URI is unset, and
+	// handlers degrade to a clear "graph not configured" response.
+	var graphReader coreservice.GraphReader
+	if uri := os.Getenv("NEO4J_URI"); uri != "" {
+		if rd, err := graph.NewProjector(uri, os.Getenv("NEO4J_USER"), os.Getenv("NEO4J_PASS")); err == nil {
+			graphReader = rd
+		}
+	}
 	providerConnectionRepo := repo.NewProviderConnectionPostgres(pool)
 	syncRepo := repo.NewSyncPostgres(pool)
-	syncSvc := coreservice.NewSyncService(syncRepo, repo.NewTreeSyncSource(pool))
+	syncSvc := coreservice.NewSyncService(syncRepo, repo.NewTreeSyncSource(pool), repo.NewSignalSyncSource(pool))
 	realtimeKeys := coreservice.NewSubscriptionKeyResolver()
 	realtime := coreservice.NewInMemoryRealtimeEventService(realtimeKeys)
 	outboxDrainer := coreservice.NewOutboxDrainer(syncRepo, realtime, 0)
@@ -206,6 +275,7 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		files:               coreservice.NewFileService(artifactRepo, artifactFiles),
 		feed:                coreservice.NewFeedService(feedRepo),
 		insights:            coreservice.NewInsightService(insightRepo),
+		signals:             coreservice.NewSignalService(signalRepo),
 		providerConnections: providerConnections,
 		realtime:            realtime,
 		rtKeys:              realtimeKeys,
@@ -216,6 +286,10 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		preview:             docPreview,
 		shardBuild:          shardBuild,
 		relationships:       coreservice.NewRelationshipService(relationshipRepo),
+		graphPane:           coreservice.NewGraphPaneService(graphPaneRepo),
+		entityTags:          coreservice.NewEntityTagService(entityTagRepo, entities.Normalize),
+		authoredClaims:      authoredClaims,
+		graphReader:         graphReader,
 	}
 }
 

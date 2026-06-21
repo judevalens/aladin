@@ -10,6 +10,8 @@ import {
   WorkspaceShellUI,
 } from "@/modules/workspace/ui/workspace-shell-ui";
 import { SourcesRoute } from "@/modules/sources/sources-route";
+import { SignalsUI } from "@/modules/signals/ui/signals-ui";
+import { InsightsUI } from "@/modules/insights/ui/insights-ui";
 import { SandboxSpike } from "@/modules/doc-surface/spike/sandbox-spike";
 
 function WorkspaceRoute() {
@@ -47,17 +49,8 @@ export const router = createBrowserRouter([
           { path: "/home", element: <WorkspaceRoute /> },
           { path: "/folders", element: <WorkspaceRoute /> },
           { path: "/sources", element: <SourcesRoute /> },
-          {
-            path: "/signals",
-            element: (
-              <PlaceholderDestinationUI
-                paneTitle="Signals"
-                paneBody="Signals will live here."
-                workTitle="Signals"
-                workBody="Signal triage is not wired yet."
-              />
-            ),
-          },
+          { path: "/signals", element: <SignalsUI /> },
+          { path: "/insights", element: <InsightsUI /> },
           {
             path: "/graph",
             element: (

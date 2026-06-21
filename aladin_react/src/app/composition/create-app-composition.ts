@@ -5,6 +5,10 @@ import { createArtifactApi } from "@/shared/api/artifact-api";
 import { createWorkspaceRepo } from "@/repos/workspace/workspace-repo";
 import { createArtifactRepo } from "@/repos/artifacts/artifact-repo";
 import { createSourcesRepo } from "@/repos/sources/sources-repo";
+import { createGraphPaneRepo } from "@/repos/graph/graph-pane-repo";
+import { createPipelineRepo } from "@/repos/pipeline/pipeline-repo";
+import { createInsightsRepo } from "@/repos/insights/insights-repo";
+import { createLocalSignalsRepo } from "@/repos/signals/local-signals-repo";
 import { createIntegrationRepo } from "@/repos/integrations/integration-repo";
 import { createPageAttributionRepo } from "@/repos/pages/page-attribution-repo";
 import { createApiClient } from "@/shared/api/client";
@@ -23,6 +27,7 @@ import { createShardApi } from "@/shared/api/shard-api";
 import { createAppEventProcessor } from "@/shared/realtime/app-event-processor";
 import { createWebSocketAppEventSource } from "@/shared/realtime/websocket-app-event-source";
 import { createShardBuildEventHandler } from "@/shared/realtime/shard-build-event-handler";
+import { useAppStore } from "@/app/state/store";
 import type { ApiRuntimeConfig } from "@/shared/api/client";
 
 // eventsWebSocketUrl resolves the realtime app-event endpoint. Desktop has an
@@ -63,6 +68,10 @@ export function createAppComposition() {
     sources: createSourcesRepo(apiClient),
     integrations: createIntegrationRepo(apiClient),
     pages: createPageAttributionRepo(apiClient),
+    graphPane: createGraphPaneRepo(apiClient),
+    pipeline: createPipelineRepo(apiClient),
+    insights: createInsightsRepo(apiClient),
+    localSignals: createLocalSignalsRepo(dataEvents),
   };
 
   const authSession = new AuthSessionService(repos.auth, desktopSession);
@@ -91,6 +100,12 @@ export function createAppComposition() {
     }
     if (event.type === "nodeDeleted") {
       workspaceSync.handleNodeChanged();
+      return;
+    }
+    // A new/updated claim pushed in: light the Signals rail unread dot. If the Signals view is
+    // open, useSignals clears it on the live refresh; otherwise it persists until the user looks.
+    if (event.type === "signalUpserted") {
+      useAppStore.getState().bumpSignals();
       return;
     }
   });

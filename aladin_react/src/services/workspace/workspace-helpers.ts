@@ -15,6 +15,7 @@ export function resolveWorkspaceDestination(pathname: string) {
   if (pathname.startsWith("/folders")) return "folders";
   if (pathname.startsWith("/sources")) return "sources";
   if (pathname.startsWith("/signals")) return "signals";
+  if (pathname.startsWith("/insights")) return "insights";
   if (pathname.startsWith("/graph")) return "graph";
   return "home";
 }

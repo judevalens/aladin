@@ -7,12 +7,19 @@ import { createWorkspaceSlice } from "@/app/state/workspace-slice";
 import type { WorkspaceSlice } from "@/app/state/workspace-slice";
 import { createShardBuildSlice } from "@/app/state/shard-build-slice";
 import type { ShardBuildSlice } from "@/app/state/shard-build-slice";
+import { createSignalsSlice } from "@/app/state/signals-slice";
+import type { SignalsSlice } from "@/app/state/signals-slice";
 
-export type AppStoreState = SessionSlice & WorkspaceSlice & ThemeSlice & ShardBuildSlice;
+export type AppStoreState = SessionSlice &
+  WorkspaceSlice &
+  ThemeSlice &
+  ShardBuildSlice &
+  SignalsSlice;
 
 export const useAppStore = create<AppStoreState>()((...args) => ({
   ...createSessionSlice(...args),
   ...createWorkspaceSlice(...args),
   ...createThemeSlice(...args),
   ...createShardBuildSlice(...args),
+  ...createSignalsSlice(...args),
 }));

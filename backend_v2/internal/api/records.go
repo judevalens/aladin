@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -84,6 +85,40 @@ func (s *Server) handleRecordsDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// GET /api/records/{id}/similar?limit=N — records vector-near the given one.
+func (s *Server) handleRecordSimilar(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeAPIError(w, r, http.StatusBadRequest, categoryBadRequest, "record id is required", nil)
+		return
+	}
+	limit := 0
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		limit, _ = strconv.Atoi(raw)
+	}
+	out, err := s.deps.Records().Similar(r.Context(), id, limit)
+	if err != nil {
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// POST /api/records/{id}/retry — re-drive a failed record back into the pipeline.
+func (s *Server) handleRecordsRetry(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeAPIError(w, r, http.StatusBadRequest, categoryBadRequest, "record id is required", nil)
+		return
+	}
+	retried, err := s.deps.Records().Retry(r.Context(), id)
+	if err != nil {
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"retried": retried})
 }
 
 func min(a, b int) int {

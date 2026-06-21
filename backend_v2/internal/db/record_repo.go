@@ -60,7 +60,8 @@ func (r *pgRecordRepo) UpsertCanonical(ctx context.Context, record *Record) (*Re
 			    content = EXCLUDED.content,
 			    source_url = EXCLUDED.source_url,
 			    metadata = EXCLUDED.metadata,
-			    status = CASE WHEN records.status = 'pending' THEN 'captured' ELSE records.status END
+			    status = CASE WHEN records.status = 'pending' THEN 'captured' ELSE records.status END,
+			    updated_at = now()
 			WHERE records.source_revision < EXCLUDED.source_revision
 			RETURNING records.*, (xmax = 0) AS inserted
 		)
@@ -97,7 +98,8 @@ func (r *pgRecordRepo) Get(ctx context.Context, id string) (*Record, error) {
 	record := &Record{}
 	var owner *string
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, provider_stream_id::text, provider, external_id, owner_user_id::text,
+		SELECT id, COALESCE(provider_stream_id::text, ''), COALESCE(provider, ''),
+		       COALESCE(external_id, ''), owner_user_id::text,
 		       type, label, COALESCE(source_url, ''), content, source_revision,
 		       metadata, COALESCE(enrichment, '{}'::jsonb), created_at, status
 		  FROM records
@@ -127,12 +129,96 @@ func (r *pgRecordRepo) SaveEnrichment(ctx context.Context, e *RecordEnrichment) 
 		UPDATE records
 		SET enrichment = $3::jsonb,
 		    embedding = COALESCE($4::vector, embedding),
-		    status = 'enriched'
+		    status = 'enriched',
+		    updated_at = now()
 		WHERE id = $1
 		  AND source_revision = $2
 	`, e.RecordID, e.SourceRevision, string(enrichment), embedding)
 	if err != nil {
 		return false, fmt.Errorf("Record SaveEnrichment: %w", err)
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+// SaveEmbedding writes a record's vector embedding and marks it `complete` — the terminal
+// status of the record→knowledge chain (after enrichment, entities, and claims). The
+// source_revision guard drops the write if a newer revision has superseded the record.
+func (r *pgRecordRepo) SaveEmbedding(ctx context.Context, recordID string, sourceRevision int64, vec []float32) (bool, error) {
+	if len(vec) == 0 {
+		return false, fmt.Errorf("Record SaveEmbedding: empty vector")
+	}
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE records
+		   SET embedding = $3::vector,
+		       status = 'complete',
+		       updated_at = now()
+		 WHERE id = $1
+		   AND source_revision = $2
+	`, recordID, sourceRevision, vectorToString(vec))
+	if err != nil {
+		return false, fmt.Errorf("Record SaveEmbedding: %w", err)
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+// ListStuck returns non-terminal records (not 'complete'/'failed') untouched for at least
+// olderThanSecs — candidates the reaper re-drives. Oldest first.
+func (r *pgRecordRepo) ListStuck(ctx context.Context, olderThanSecs, limit int) ([]*Record, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, COALESCE(provider_stream_id::text, ''), COALESCE(provider, ''),
+		       COALESCE(external_id, ''), owner_user_id::text,
+		       type, label, COALESCE(source_url, ''), content, source_revision,
+		       metadata, COALESCE(enrichment, '{}'::jsonb), created_at, status
+		  FROM records
+		 WHERE status NOT IN ('complete', 'failed')
+		   AND updated_at < now() - ($1 * interval '1 second')
+		 ORDER BY updated_at ASC
+		 LIMIT $2
+	`, olderThanSecs, limit)
+	if err != nil {
+		return nil, fmt.Errorf("Record ListStuck: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*Record
+	for rows.Next() {
+		var meta, enrichment []byte
+		var owner *string
+		record := &Record{}
+		if err := rows.Scan(&record.ID, &record.ProviderStreamID, &record.Provider, &record.ExternalID, &owner,
+			&record.Type, &record.Title, &record.SourceURL, &record.ContentExcerpt, &record.SourceRevision,
+			&meta, &enrichment, &record.CreatedAt, &record.Status); err != nil {
+			return nil, fmt.Errorf("Record ListStuck scan: %w", err)
+		}
+		record.OwnerUserID = owner
+		_ = json.Unmarshal(meta, &record.ProviderMetadata)
+		record.Enrichment = parseRecordEnrichment(record.ID, record.SourceRevision, enrichment)
+		out = append(out, record)
+	}
+	return out, rows.Err()
+}
+
+// MarkFailed moves a record to the terminal 'failed' status (after a permanent error), so
+// the failure is visible and re-drivable rather than silently dropped. No-op if terminal.
+func (r *pgRecordRepo) MarkFailed(ctx context.Context, recordID, reason string) error {
+	_, err := r.pool.Exec(ctx, `
+		UPDATE records SET status = 'failed', updated_at = now()
+		 WHERE id = $1 AND status NOT IN ('complete', 'failed')
+	`, recordID)
+	if err != nil {
+		return fmt.Errorf("Record MarkFailed: %w", err)
+	}
+	return nil
+}
+
+// ResetForRetry moves a 'failed' record back to 'captured' so the reaper re-drives it.
+func (r *pgRecordRepo) ResetForRetry(ctx context.Context, recordID string) (bool, error) {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE records SET status = 'captured', updated_at = now()
+		 WHERE id = $1 AND status = 'failed'
+	`, recordID)
+	if err != nil {
+		return false, fmt.Errorf("Record ResetForRetry: %w", err)
 	}
 	return tag.RowsAffected() > 0, nil
 }

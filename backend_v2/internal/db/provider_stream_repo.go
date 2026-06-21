@@ -61,12 +61,14 @@ func (r *pgProviderStreamRepo) ClaimBatch(ctx context.Context, limit int) ([]*Pr
 	rows, err := r.pool.Query(ctx, `
 		UPDATE provider_streams
 		SET sync_status = 'queued',
-		    last_picked_at = now()
+		    last_picked_at = now(),
+		    last_heartbeat_at = now()
 		WHERE id IN (
 			SELECT id FROM provider_streams
 			WHERE sync_mode = 'poll'
 			  AND sync_state = 'active'
-			  AND sync_status = 'idle'
+			  AND (
+			    ( sync_status = 'idle'
 			  AND (
 			      EXISTS (
 			          SELECT 1
@@ -90,6 +92,14 @@ func (r *pgProviderStreamRepo) ClaimBatch(ctx context.Context, limit int) ([]*Pr
 			      OR last_refresh_at + (
 			         COALESCE((config->>'sync_interval_seconds')::int, 10) * interval '1 second'
 			      ) <= now()
+			  ) )
+			    OR (
+			      -- Crash recovery: a stream stuck queued/syncing whose heartbeat went stale
+			      -- (>= ~2 missed beats; see streamHeartbeatInterval) is treated as dead — its
+			      -- worker crashed mid-fetch — and becomes re-claimable.
+			      sync_status IN ('queued', 'syncing')
+			      AND (last_heartbeat_at IS NULL OR last_heartbeat_at < now() - interval '90 seconds')
+			    )
 			  )
 			ORDER BY COALESCE(last_picked_at, to_timestamp(0)) ASC,
 			         COALESCE(last_refresh_at, to_timestamp(0)) ASC,
@@ -123,11 +133,22 @@ func (r *pgProviderStreamRepo) MarkSyncStarted(ctx context.Context, id string) e
 	_, err := r.pool.Exec(ctx, `
 		UPDATE provider_streams
 		SET sync_status = 'syncing',
-		    last_sync_started_at = now()
+		    last_sync_started_at = now(),
+		    last_heartbeat_at = now()
 		WHERE id = $1::uuid
 	`, id)
 	if err != nil {
 		return fmt.Errorf("ProviderStream MarkSyncStarted: %w", err)
+	}
+	return nil
+}
+
+// Heartbeat refreshes a held stream's liveness while a worker is fetching it, so a long page
+// isn't mistaken for a dead worker. ClaimBatch re-claims a stream whose heartbeat has gone stale.
+func (r *pgProviderStreamRepo) Heartbeat(ctx context.Context, id string) error {
+	_, err := r.pool.Exec(ctx, `UPDATE provider_streams SET last_heartbeat_at = now() WHERE id = $1::uuid`, id)
+	if err != nil {
+		return fmt.Errorf("ProviderStream Heartbeat: %w", err)
 	}
 	return nil
 }

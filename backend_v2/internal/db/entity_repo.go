@@ -308,6 +308,30 @@ func (r *pgEntityRepo) EntitiesForRecord(ctx context.Context, recordID string) (
 	return out, rows.Err()
 }
 
+// EntitiesForArtifact returns the distinct entities a page is linked to (its tags +
+// projected @mentions, via artifact_entities) — the grounding set for authored claim
+// extraction (P3, the manual counterpart to EntitiesForRecord).
+func (r *pgEntityRepo) EntitiesForArtifact(ctx context.Context, artifactID string) ([]EntityRef, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT DISTINCT e.id::text, e.canonical_name
+		  FROM artifact_entities ae JOIN entities e ON e.id = ae.entity_id
+		 WHERE ae.artifact_id = $1
+	`, artifactID)
+	if err != nil {
+		return nil, fmt.Errorf("entity EntitiesForArtifact: %w", err)
+	}
+	defer rows.Close()
+	var out []EntityRef
+	for rows.Next() {
+		var ref EntityRef
+		if err := rows.Scan(&ref.ID, &ref.Name); err != nil {
+			return nil, fmt.Errorf("entity EntitiesForArtifact scan: %w", err)
+		}
+		out = append(out, ref)
+	}
+	return out, rows.Err()
+}
+
 func (r *pgEntityRepo) CreateSharedEntity(ctx context.Context, p CreateEntityParams) (string, error) {
 	prov, err := json.Marshal(map[string]string{"first_record_id": p.FirstRecordID})
 	if err != nil {

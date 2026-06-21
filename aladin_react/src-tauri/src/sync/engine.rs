@@ -4,7 +4,7 @@ use std::sync::Arc;
 use rusqlite::Connection;
 
 use crate::api::sync::{Frame, FrameEntity};
-use crate::db::repo::nodes;
+use crate::db::repo::{nodes, signals};
 use crate::db::DbResult;
 use crate::events::DataEvent;
 
@@ -41,18 +41,35 @@ impl EntityHandler for TreeHandler {
     }
 }
 
+/// The signal handler: claim entities ("signal" kind) live in `signals`.
+struct SignalHandler;
+
+impl EntityHandler for SignalHandler {
+    fn apply(&self, conn: &Connection, entity: &FrameEntity) -> DbResult<Option<DataEvent>> {
+        signals::apply(
+            conn,
+            &entity.entity_id,
+            entity.seq as i64,
+            &entity.op,
+            entity.data.as_ref(),
+        )
+    }
+}
+
 /// Routes frame entities to handlers by entity kind.
 pub struct Registry {
     handlers: HashMap<String, Arc<dyn EntityHandler>>,
 }
 
 impl Registry {
-    /// The R1 registry: the tree kind (folder + artifact → `nodes`).
+    /// The registry: the tree kind (folder + artifact → `nodes`) and the signal
+    /// kind (claims → `signals`).
     pub fn tree() -> Self {
         let tree: Arc<dyn EntityHandler> = Arc::new(TreeHandler);
         let mut handlers: HashMap<String, Arc<dyn EntityHandler>> = HashMap::new();
         handlers.insert("folder".to_string(), tree.clone());
         handlers.insert("artifact".to_string(), tree);
+        handlers.insert("signal".to_string(), Arc::new(SignalHandler));
         Self { handlers }
     }
 

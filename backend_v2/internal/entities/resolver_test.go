@@ -119,6 +119,10 @@ func (f *fakeStore) EntitiesForRecord(_ context.Context, _ string) ([]db.EntityR
 	return nil, nil
 }
 
+func (f *fakeStore) EntitiesForArtifact(_ context.Context, _ string) ([]db.EntityRef, error) {
+	return nil, nil
+}
+
 // fakeEmbedder returns deterministic vectors keyed by the embed text.
 type fakeEmbedder struct{ vecs map[string][]float32 }
 

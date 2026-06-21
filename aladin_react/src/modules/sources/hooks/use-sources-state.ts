@@ -95,7 +95,7 @@ export function useSourcesState(): SourcesState {
         limit: string;
       }) => {
         await services.sources.createSource({
-          kind: "bluesky.search",
+          kind: "bluesky_search",
           name: title.trim() || undefined,
           query: query.trim(),
           limit: Number.parseInt(limit, 10) || 25,

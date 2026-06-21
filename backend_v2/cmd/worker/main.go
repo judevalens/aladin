@@ -20,6 +20,7 @@ import (
 	"aladin/backend_v2/internal/entities"
 	"aladin/backend_v2/internal/graph"
 	"aladin/backend_v2/internal/insights"
+	"aladin/backend_v2/internal/repo"
 	"aladin/backend_v2/internal/llm"
 	"aladin/backend_v2/internal/pipeline"
 	"aladin/backend_v2/internal/pipeline/workers"
@@ -94,41 +95,18 @@ func main() {
 
 	// Rate limiters
 	openaiLimiter := ratelimit.New(60)
-	tavilyLimiter := ratelimit.New(20)
-
-	// Search
-	tavilyClient := search.NewTavilyClient(cfg.TavilyAPIKey)
-	cachedSearcher := search.NewCachedSearcher(tavilyClient, redisClient, tavilyLimiter)
-
-	// Neo4j promoter (optional)
-	var graphPromoter workers.GraphPromoter
-	if cfg.Neo4jURI != "" {
-		p, err := graph.NewPromoter(cfg.Neo4jURI, cfg.Neo4jUser, cfg.Neo4jPass)
-		if err != nil {
-			slog.Error("neo4j: failed to create promoter", "component", "worker", "err", err)
-			os.Exit(1)
-		}
-		defer p.Close(ctx)
-		graphPromoter = p
-		slog.Info("neo4j: promoter ready", "component", "worker", "uri", cfg.Neo4jURI)
-	} else {
-		slog.Warn("neo4j: NEO4J_URI not set — graph promotion disabled", "component", "worker")
-	}
 
 	// LLM clients
 	enricher := llm.NewOpenAIEnricher(cfg.OpenAIAPIKey)
 	embedder := llm.NewOpenAIEmbedder(cfg.OpenAIAPIKey)
 
-	// Insight worker
-	insightCh := make(chan string, 256)
+	// Insight generation — driven by tenant_match via asynq (per matching KG).
 	gen := insights.NewGenerator(insightRepo, recordRepo, pool)
-	insightWorker := insights.NewWorker(gen, insightCh)
-	insightWorker.Start(ctx)
 	insightEnqueuer := insights.NewAsynqEnqueuer(asynqClient)
 
 	// Pipeline
 	pipelineEnqueuer := pipeline.NewAsynqEnqueuer(asynqClient)
-	handler := pipeline.NewFullPipelineHandler(pipelineEnqueuer, recordRepo, insightCh).
+	handler := pipeline.NewFullPipelineHandler(pipelineEnqueuer, recordRepo).
 		WithTenantItemMatches(tenantItemMatchRepo).
 		WithInsightEnqueuer(insightEnqueuer)
 	// Entity resolution. The embedder (vector matching + sense split) and the LLM
@@ -164,15 +142,74 @@ func main() {
 			}
 		}
 	}()
+	// Reaper (ambient) — re-drives records stranded in a non-terminal status (e.g. a
+	// capture whose enrichment enqueue was lost to a crash). Idempotent: deterministic task
+	// ids make re-enqueuing a still-queued task a no-op.
+	reaper := pipeline.NewReaper(recordRepo, pipelineEnqueuer)
+	go func() {
+		ticker := time.NewTicker(2 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if n, err := reaper.Sweep(ctx); err != nil {
+					slog.Error("reaper: sweep failed", "component", "reaper", "err", err)
+				} else if n > 0 {
+					slog.Info("reaper: re-drove stuck records", "component", "reaper", "count", n)
+				}
+			}
+		}
+	}()
+
+	// Graph projection (optional) — project the entity/claim layer into Neo4j (the connection
+	// lens). Built only when NEO4J_URI is set; otherwise the stage is never enqueued and the
+	// pipeline is unaffected.
+	var graphProjector *graph.Projector
+	if cfg.Neo4jURI != "" {
+		gp, err := graph.NewProjector(cfg.Neo4jURI, cfg.Neo4jUser, cfg.Neo4jPass)
+		if err != nil {
+			slog.Error("neo4j: projector init failed", "component", "worker", "err", err)
+			os.Exit(1)
+		}
+		defer gp.Close(ctx)
+		graphProjector = gp
+		handler.WithGraphProjection(true)
+		// Also use the graph as the second claim-retrieval channel: claim resolution now fuses
+		// pgvector candidates with graph-neighbour candidates (RRF) before adjudicating.
+		claimService.WithGraphCandidates(gp)
+		slog.Info("neo4j: graph projection + claim retrieval enabled", "component", "worker", "uri", cfg.Neo4jURI)
+	} else {
+		slog.Info("neo4j: NEO4J_URI unset — graph projection disabled", "component", "worker")
+	}
+
+	// Low-confidence entity search (optional) — resolve the entities the first pass was UNSURE
+	// about via web search → context → resolver. Built only when TAVILY_API_KEY is set; the
+	// CachedSearcher owns rate limiting, so the worker takes no limiter.
+	var lowConfWorker *workers.ResolveLowConfidenceWorker
+	if cfg.TavilyAPIKey != "" {
+		searcher := search.NewCachedSearcher(search.NewTavilyClient(cfg.TavilyAPIKey), redisClient, ratelimit.New(20))
+		lowConfWorker = workers.NewResolveLowConfidenceWorker(recordRepo, entityResolver, searcher, nil)
+		handler.WithLowConfidenceSearch(true)
+		slog.Info("search: low-confidence entity search enabled", "component", "worker")
+	} else {
+		slog.Info("search: TAVILY_API_KEY unset — low-confidence search disabled", "component", "worker")
+	}
+
 	orch := pipeline.NewOrchestrator(handler)
 	orch.Add(workers.NewGlobalFirstPassWorker(enricher, openaiLimiter))
 	orch.Add(workers.NewTenantMatchWorker(recordRepo, providerStreamRepo, sourceSubscriptionRepo, tenantItemMatchRepo))
 	orch.Add(workers.NewResolveEntitiesWorker(recordRepo, entityResolver))
-	orch.Add(workers.NewResolveClaimsWorker(recordRepo, entityRepo, claimService))
-	orch.Add(workers.NewFirstPassWorker(enricher, openaiLimiter))
-	orch.Add(workers.NewSearchWorker(cachedSearcher))
-	orch.Add(workers.NewEmbedWorker(embedder, openaiLimiter))
-	orch.Add(workers.NewGraphWorker(graphPromoter))
+	orch.Add(workers.NewResolveClaimsWorker(recordRepo, entityRepo, claimService).
+		WithSignalEmitter(repo.NewSignalSyncRepo(pool)))
+	orch.Add(workers.NewEmbedWorker(recordRepo, embedder, openaiLimiter))
+	if lowConfWorker != nil {
+		orch.Add(lowConfWorker)
+	}
+	if graphProjector != nil {
+		orch.Add(workers.NewGraphProjectWorker(repo.NewGraphProjectionPostgres(pool), graphProjector))
+	}
 
 	// Mux
 	mux := asynq.NewServeMux()
@@ -193,13 +230,12 @@ func main() {
 	queues := map[string]int{
 		pipeline.TaskGlobalFirstPass: 10,
 		pipeline.TaskTenantMatch:     10,
-		pipeline.TaskFirstPass:       10,
-		pipeline.TaskSearch:          5,
 		pipeline.TaskEmbed:           3,
-		pipeline.TaskGraph:           5,
-		pipeline.TaskResolveEntities: 5,
-		pipeline.TaskResolveClaims:   5,
-		insights.TaskGenerate:        5,
+		pipeline.TaskResolveEntities:      5,
+		pipeline.TaskResolveClaims:        5,
+		pipeline.TaskResolveLowConfidence: 3,
+		pipeline.TaskGraphProject:         3,
+		insights.TaskGenerate:             5,
 	}
 	for name, weight := range syncOrchestrator.Queues() {
 		queues[name] = weight

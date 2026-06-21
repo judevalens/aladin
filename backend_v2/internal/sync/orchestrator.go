@@ -264,7 +264,11 @@ func (q *Orchestrator) makeHandler(syncer Syncer) asynq.HandlerFunc {
 			}
 		}
 
+		// Keep the held stream's liveness fresh while we fetch, so a long page isn't mistaken for
+		// a dead worker and reclaimed. Stops the moment Execute returns.
+		stopHeartbeat := q.startHeartbeat(job.ProviderStreamID, log)
 		result, err := syncer.Execute(ctx, &job)
+		stopHeartbeat()
 		if err != nil {
 			log.Error("sync: execute failed", "err", err)
 			return q.resultHandler.HandleFailure(ctx, job, err)
@@ -310,4 +314,31 @@ func mapKeys(m map[string]any) []string {
 
 func (q *Orchestrator) markSyncStarted(ctx context.Context, id string) error {
 	return q.streams.MarkSyncStarted(ctx, id)
+}
+
+// streamHeartbeatInterval is how often a worker ticks a held stream's liveness while fetching.
+// ClaimBatch treats a stream stuck with no heartbeat for the '90 seconds' window in its SQL
+// (>= ~2 missed beats) as a crashed worker and reclaims it. Keep the two consistent.
+const streamHeartbeatInterval = 30 * time.Second
+
+// startHeartbeat ticks last_heartbeat_at for streamID every streamHeartbeatInterval until the
+// returned stop func is called. The ticker runs on a detached context (a heartbeat write must not
+// be aborted by the task ctx mid-flight); stop() ends it right after Execute returns.
+func (q *Orchestrator) startHeartbeat(streamID string, log *slog.Logger) func() {
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		ticker := time.NewTicker(streamHeartbeatInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := q.streams.Heartbeat(ctx, streamID); err != nil {
+					log.Warn("sync: heartbeat failed", "provider_stream_id", streamID, "err", err)
+				}
+			}
+		}
+	}()
+	return cancel
 }

@@ -6,30 +6,27 @@ import "context"
 const (
 	TaskGlobalFirstPass = "pipeline:global_first_pass"
 	TaskTenantMatch     = "pipeline:tenant_match"
-	TaskFirstPass       = "pipeline:first_pass"
-	TaskSearch          = "pipeline:search"
 	TaskEmbed           = "pipeline:embed"
-	TaskGraph           = "pipeline:graph"
-	TaskResolveEntities = "pipeline:resolve_entities"
-	TaskResolveClaims   = "pipeline:resolve_claims"
+	TaskResolveEntities      = "pipeline:resolve_entities"
+	TaskResolveClaims        = "pipeline:resolve_claims"
+	TaskResolveLowConfidence = "pipeline:resolve_low_confidence"
+	TaskGraphProject         = "pipeline:graph"
 )
 
 // Result discriminants — used by ResultHandler to route between stages.
 const (
-	ResultGlobalFirstPassDone   = "global_first_pass.done"
-	ResultTenantMatchDone       = "tenant_match.done"
-	ResultFirstPassSearchNeeded = "first_pass.search_needed"
-	ResultFirstPassEmbedReady   = "first_pass.embed_ready"
-	ResultSearchDone            = "search.done"
-	ResultEmbedDone             = "embed.done"
-	ResultGraphDone             = "graph.done"
-	ResultResolveEntitiesDone   = "resolve_entities.done"
-	ResultResolveClaimsDone     = "resolve_claims.done"
+	ResultGlobalFirstPassDone = "global_first_pass.done"
+	ResultTenantMatchDone     = "tenant_match.done"
+	ResultEmbedDone           = "embed.done"
+	ResultResolveEntitiesDone      = "resolve_entities.done"
+	ResultResolveClaimsDone        = "resolve_claims.done"
+	ResultResolveLowConfidenceDone = "resolve_low_confidence.done"
+	ResultGraphProjectDone         = "graph.done"
 )
 
 // Result is the outcome of a pipeline stage.
 // Type is the discriminant the ResultHandler switches on for routing.
-// Payload is the updated RecordPayload to forward to the next stage.
+// Payload is the (lean) stage payload to forward to the next stage.
 // TaskType identifies which worker produced this result (used for re-enqueue on error).
 // Err is non-nil if the stage failed.
 type Result struct {
@@ -49,7 +46,7 @@ type ResultHandler interface {
 }
 
 // Worker is a single pipeline stage.
-// It receives the accumulated RecordPayload as bytes, does its work,
+// It receives its stage payload as bytes, does its work,
 // and returns a Result with a discriminant type for routing.
 type Worker interface {
 	TaskType() string

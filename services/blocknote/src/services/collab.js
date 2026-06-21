@@ -30,6 +30,7 @@ import { Server } from "@hocuspocus/server";
 import { Database } from "@hocuspocus/extension-database";
 import { ServerBlockNoteEditor } from "@blocknote/server-util";
 import { BadRequest, errorMessage } from "../errors.js";
+import { pageSchema } from "./page-schema.js";
 
 // BlockNote binds its ProseMirror doc to a Y.XmlFragment named "document".
 const FRAGMENT = "document";
@@ -42,7 +43,9 @@ const VALID_OPS = new Set([
 ]);
 
 // One headless editor, reused for all conversions (same pattern as converter).
-const editor = ServerBlockNoteEditor.create();
+// Uses the Aladin page schema so custom inline nodes (e.g. @entity mentions) survive the
+// Y.Doc round-trip instead of being stripped as unknown.
+const editor = ServerBlockNoteEditor.create({ schema: pageSchema });
 
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 

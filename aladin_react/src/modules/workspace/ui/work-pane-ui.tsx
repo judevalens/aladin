@@ -1,10 +1,11 @@
 import { LineChart, Search, SlidersHorizontal, Star } from "lucide-react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { PlaceholderPane } from "@/components/ui/aladin";
 import { FileArtifactUI, LinkArtifactUI, VoiceArtifactUI } from "@/modules/artifacts/ui/artifact-ui";
 import { PageEditorUI } from "@/modules/pages/ui/page-editor-ui";
 import { DocSurfaceKeepAlive } from "@/modules/doc-surface/ui/doc-surface-ui";
+import { GraphSidePaneUI } from "@/modules/graph/ui/graph-side-pane-ui";
 import { useWorkPane, type WorkPaneCrumb } from "@/modules/workspace/hooks/use-workspace-state";
 import { cn } from "@/shared/lib/utils";
 
@@ -20,6 +21,7 @@ export function WorkPaneUI() {
     onToggleInspector,
     onJumpToFolder,
   } = useWorkPane();
+  const [graphOpen, setGraphOpen] = useState(false);
 
   return (
     <section className="flex min-w-0 flex-1 flex-col overflow-hidden bg-bg">
@@ -59,11 +61,14 @@ export function WorkPaneUI() {
           folders={breadcrumbFolders}
           artifactTitle={artifactTitle}
           inspectorOpen={inspectorOpen}
+          graphOpen={graphOpen}
+          onToggleGraph={() => setGraphOpen((open) => !open)}
           onToggleInspector={onToggleInspector}
           onJumpToFolder={onJumpToFolder}
         />
       ) : null}
-      <div className="min-h-0 flex-1 bg-bg">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div className="min-w-0 flex-1 bg-bg">
         {!activeArtifact ? (
           <PlaceholderPane
             title="Open a page"
@@ -96,6 +101,10 @@ export function WorkPaneUI() {
             </div>
           </ScrollArea>
         )}
+        </div>
+        {graphOpen && activeArtifact ? (
+          <GraphSidePaneUI artifactId={activeArtifact.id} onClose={() => setGraphOpen(false)} />
+        ) : null}
       </div>
     </section>
   );
@@ -105,12 +114,16 @@ function WorkPaneStatusBar({
   folders,
   artifactTitle,
   inspectorOpen,
+  graphOpen,
+  onToggleGraph,
   onToggleInspector,
   onJumpToFolder,
 }: {
   folders: WorkPaneCrumb[];
   artifactTitle: string | null;
   inspectorOpen: boolean;
+  graphOpen: boolean;
+  onToggleGraph: () => void;
   onToggleInspector: () => void;
   onJumpToFolder: (folderId: string) => void;
 }) {
@@ -144,7 +157,11 @@ function WorkPaneStatusBar({
         <StatusUtilityIcon ariaLabel="Favorite document" onClick={() => undefined}>
           <Star className="h-[15px] w-[15px]" strokeWidth={1.75} />
         </StatusUtilityIcon>
-        <StatusUtilityIcon ariaLabel="Open graph context" onClick={() => undefined}>
+        <StatusUtilityIcon
+          ariaLabel="Toggle graph context"
+          isActive={graphOpen}
+          onClick={onToggleGraph}
+        >
           <LineChart className="h-[15px] w-[15px]" strokeWidth={1.75} />
         </StatusUtilityIcon>
         <StatusUtilityIcon

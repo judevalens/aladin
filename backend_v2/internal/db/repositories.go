@@ -11,6 +11,18 @@ type RecordRepository interface {
 	UpsertCanonical(ctx context.Context, record *Record) (*RecordUpsertResult, error)
 	Get(ctx context.Context, id string) (*Record, error)
 	SaveEnrichment(ctx context.Context, enrichment *RecordEnrichment) (bool, error)
+	// SaveEmbedding writes a record's vector and marks it complete (the terminal stage of
+	// the record→knowledge chain). Revision-guarded; returns false if superseded.
+	SaveEmbedding(ctx context.Context, recordID string, sourceRevision int64, vec []float32) (bool, error)
+	// ListStuck returns non-terminal records untouched for olderThanSecs — records the
+	// reaper re-drives (e.g. stranded by a crash between upsert and enqueue).
+	ListStuck(ctx context.Context, olderThanSecs, limit int) ([]*Record, error)
+	// MarkFailed moves a record to the terminal 'failed' status (a permanent error). No-op
+	// if already terminal.
+	MarkFailed(ctx context.Context, recordID, reason string) error
+	// ResetForRetry moves a 'failed' record back to 'captured' so it re-enters the pipeline
+	// (the reaper picks it up). Returns false if the record wasn't failed.
+	ResetForRetry(ctx context.Context, recordID string) (bool, error)
 }
 
 type ProviderStreamRepository interface {
@@ -18,6 +30,7 @@ type ProviderStreamRepository interface {
 	Ensure(ctx context.Context, stream *ProviderStream) (*ProviderStream, error)
 	ClaimBatch(ctx context.Context, limit int) ([]*ProviderStream, error)
 	MarkSyncStarted(ctx context.Context, id string) error
+	Heartbeat(ctx context.Context, id string) error
 	MarkSyncPage(ctx context.Context, id string, configUpdates map[string]any) error
 	MarkSynced(ctx context.Context, id string, configUpdates map[string]any) error
 	MarkSyncFailed(ctx context.Context, id string) error
@@ -81,6 +94,9 @@ type EntityRepository interface {
 
 	// Claim layer grounding: the entities a record mentions.
 	EntitiesForRecord(ctx context.Context, recordID string) ([]EntityRef, error)
+	// Authored grounding (P3): the entities a page is tagged with / @mentions —
+	// the resolved set that grounds authored claim extraction.
+	EntitiesForArtifact(ctx context.Context, artifactID string) ([]EntityRef, error)
 }
 
 // DiscourseRepository sources bridges (shared entities mentioned by >=2 docs) + members

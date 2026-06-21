@@ -53,6 +53,7 @@ func NewWithDependencies(addr string, deps app.Dependencies) *Server {
 
 	mux.HandleFunc("GET /api/graph", s.handleEmptyGraph)
 	mux.HandleFunc("GET /api/graph-explore/full", s.handleEmptyGraph)
+	s.registerGraphRoutes(mux)
 
 	mux.HandleFunc("GET /api/worker/status", s.handleWorkerStatus)
 	mux.HandleFunc("GET /api/pipeline/stats", s.handlePipelineStats)
@@ -63,6 +64,8 @@ func NewWithDependencies(addr string, deps app.Dependencies) *Server {
 	s.registerContentRoutes(mux)
 	s.registerShardRoutes(mux)
 	s.registerRelationshipRoutes(mux)
+	s.registerGraphPaneRoutes(mux)
+	s.registerEntityTagRoutes(mux)
 	s.registerRealtimeRoutes(mux)
 	s.registerProviderConnectionRoutes(mux)
 	s.registerSyncRoutes(mux)
@@ -74,6 +77,8 @@ func NewWithDependencies(addr string, deps app.Dependencies) *Server {
 	mux.HandleFunc("GET /api/records/", s.handleRecordsList)
 	mux.HandleFunc("POST /api/records/", s.handleRecordsCreate)
 	mux.HandleFunc("DELETE /api/records/{id}", s.handleRecordsDelete)
+	mux.HandleFunc("POST /api/records/{id}/retry", s.handleRecordsRetry)
+	mux.HandleFunc("GET /api/records/{id}/similar", s.handleRecordSimilar)
 	mux.HandleFunc("GET /api/records/{id}/children", s.handleRecordChildren)
 
 	mux.HandleFunc("GET /api/feed/", s.handleFeedList)
@@ -82,6 +87,8 @@ func NewWithDependencies(addr string, deps app.Dependencies) *Server {
 	mux.HandleFunc("POST /api/feed/{id}/save", s.handleFeedSave)
 	mux.HandleFunc("POST /api/feed/{id}/dismiss", s.handleFeedDismiss)
 	mux.HandleFunc("POST /api/feed/{id}/unsave", s.handleFeedUnsave)
+
+	mux.HandleFunc("GET /api/signals", s.handleSignalsList)
 
 	mux.HandleFunc("GET /api/insights/", s.handleInsightsList)
 	mux.HandleFunc("GET /api/insights/stats", s.handleInsightsStats)

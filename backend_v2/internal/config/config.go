@@ -33,11 +33,13 @@ type WorkerConfig struct {
 	DatabaseURL  string
 	RedisURL     string
 	OpenAIAPIKey string
-	TavilyAPIKey string
-	Neo4jURI     string
-	Neo4jUser    string
-	Neo4jPass    string
 	Concurrency  int
+	// Tavily web search (optional) — empty ⇒ the resolve_low_confidence stage skips cleanly.
+	TavilyAPIKey string
+	// Neo4j graph projection (optional — empty URI ⇒ the graph stage skips cleanly).
+	Neo4jURI  string
+	Neo4jUser string
+	Neo4jPass string
 }
 
 type ProviderConnectionConfig struct {
@@ -88,19 +90,15 @@ func LoadWorker() (WorkerConfig, error) {
 	if err != nil {
 		return WorkerConfig{}, err
 	}
-	tavilyAPIKey, err := require("TAVILY_API_KEY")
-	if err != nil {
-		return WorkerConfig{}, err
-	}
 	return WorkerConfig{
 		DatabaseURL:  databaseURL,
 		RedisURL:     redisURL,
 		OpenAIAPIKey: openAIAPIKey,
-		TavilyAPIKey: tavilyAPIKey,
+		Concurrency:  optionalInt("WORKER_CONCURRENCY", 16),
+		TavilyAPIKey: os.Getenv("TAVILY_API_KEY"),
 		Neo4jURI:     os.Getenv("NEO4J_URI"),
 		Neo4jUser:    os.Getenv("NEO4J_USER"),
 		Neo4jPass:    os.Getenv("NEO4J_PASS"),
-		Concurrency:  optionalInt("WORKER_CONCURRENCY", 16),
 	}, nil
 }
 

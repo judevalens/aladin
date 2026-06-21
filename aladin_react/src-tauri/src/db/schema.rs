@@ -1,8 +1,9 @@
+
 use rusqlite::Connection;
 
 use super::DbResult;
 
-const CURRENT_VERSION: i32 = 12;
+const CURRENT_VERSION: i32 = 13;
 
 pub fn migrate(conn: &Connection) -> DbResult<()> {
     let version: i32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
@@ -42,9 +43,34 @@ pub fn migrate(conn: &Connection) -> DbResult<()> {
     if version < 12 {
         conn.execute_batch(MIGRATION_V12)?;
     }
+    if version < 13 {
+        conn.execute_batch(MIGRATION_V13)?;
+    }
     conn.execute_batch(&format!("PRAGMA user_version = {CURRENT_VERSION};"))?;
     Ok(())
 }
+
+// Data-layer: claims as a synced entity ("signal" kind). A separate read cache
+// from `nodes` (claims aren't tree nodes) fed by the same frame engine. seq +
+// is_deleted mirror the nodes guard; subjects_json holds the [{id,name}] array.
+const MIGRATION_V13: &str = "
+CREATE TABLE IF NOT EXISTS signals (
+    id            TEXT PRIMARY KEY,
+    text          TEXT NOT NULL,
+    polarity      TEXT,
+    trust_tier    TEXT,
+    subjects_json TEXT,
+    assert_count  INTEGER NOT NULL DEFAULT 0,
+    deny_count    INTEGER NOT NULL DEFAULT 0,
+    supports      INTEGER NOT NULL DEFAULT 0,
+    contradicts   INTEGER NOT NULL DEFAULT 0,
+    qualifies     INTEGER NOT NULL DEFAULT 0,
+    signal_score  REAL NOT NULL DEFAULT 0,
+    seq           INTEGER NOT NULL DEFAULT 0,
+    is_deleted    INTEGER NOT NULL DEFAULT 0,
+    updated_at    INTEGER NOT NULL DEFAULT 0
+);
+";
 
 // Data-layer redesign, cutover — drop the legacy local tables. The tree is now
 // the unified `nodes` model (V10) + the sync control plane (V9 field_seq/

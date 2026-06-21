@@ -51,9 +51,18 @@ func TestPipelineStats(t *testing.T) {
 	if byStatus["captured"] < 1 {
 		t.Fatalf("expected >=1 captured record, got %d", byStatus["captured"])
 	}
-	for _, k := range []string{"stuckOverOneHour", "enrichedLast24h", "oldestPendingSecs"} {
+	for _, k := range []string{"inFlight", "stuckOver15Min", "failed", "oldestInFlightSecs"} {
 		if _, present := records[k]; !present {
 			t.Fatalf("records section missing %q: %+v", k, records)
+		}
+	}
+	throughput, ok := stats["throughput"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing throughput section: %+v", stats)
+	}
+	for _, k := range []string{"completedLast1h", "completedLast24h", "avgLatencySecs"} {
+		if _, present := throughput[k]; !present {
+			t.Fatalf("throughput section missing %q: %+v", k, throughput)
 		}
 	}
 	if _, ok := stats["insights"].(map[string]any); !ok {
