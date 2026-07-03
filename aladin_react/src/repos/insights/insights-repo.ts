@@ -12,7 +12,10 @@ export function createInsightsRepo(client: ApiClient): InsightsRepo {
     list: (status, type) => {
       const params = new URLSearchParams({ status, limit: "100" });
       if (type) params.set("type", type);
-      return client.fetch<Insight[]>(`/api/insights/?${params.toString()}`);
+      // Backend wraps the list: {items, total, limit, offset}. Unwrap to the array.
+      return client
+        .fetch<{ items: Insight[] }>(`/api/insights/?${params.toString()}`)
+        .then((out) => out.items ?? []);
     },
     accept: (id) =>
       client

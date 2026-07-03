@@ -21,3 +21,8 @@ export interface ClaimSignal {
 }
 
 export type SignalSort = "recent" | "top";
+
+// The surface has two lenses. "inbox" is the shared fishing feed (discovered claims, served
+// from the local sync cache). "book" is your own authored theses, each marked to market by how
+// many discovered sources support (assertCount) vs contradict (denyCount) it — fetched over HTTP.
+export type SignalLens = "inbox" | "book";

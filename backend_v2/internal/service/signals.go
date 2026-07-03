@@ -17,6 +17,11 @@ type SignalListParams struct {
 	Limit  int
 	Offset int
 	Sort   string // "recent" (default) | "top" (by signal_score)
+	// Lens selects the surface. "" / "inbox" = the shared fishing feed (discovered claims).
+	// "book" = the caller's own authored theses, each marked to market by how many discovered
+	// sources support vs contradict it (requires OwnerUserID).
+	Lens        string
+	OwnerUserID string
 }
 
 // ClaimSubjectRef is an entity a claim is about.

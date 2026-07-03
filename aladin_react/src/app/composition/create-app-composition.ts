@@ -9,6 +9,7 @@ import { createGraphPaneRepo } from "@/repos/graph/graph-pane-repo";
 import { createPipelineRepo } from "@/repos/pipeline/pipeline-repo";
 import { createInsightsRepo } from "@/repos/insights/insights-repo";
 import { createLocalSignalsRepo } from "@/repos/signals/local-signals-repo";
+import { createBookSignalsRepo } from "@/repos/signals/book-signals-repo";
 import { createIntegrationRepo } from "@/repos/integrations/integration-repo";
 import { createPageAttributionRepo } from "@/repos/pages/page-attribution-repo";
 import { createApiClient } from "@/shared/api/client";
@@ -72,6 +73,7 @@ export function createAppComposition() {
     pipeline: createPipelineRepo(apiClient),
     insights: createInsightsRepo(apiClient),
     localSignals: createLocalSignalsRepo(dataEvents),
+    bookSignals: createBookSignalsRepo(apiClient),
   };
 
   const authSession = new AuthSessionService(repos.auth, desktopSession);
