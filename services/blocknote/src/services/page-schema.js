@@ -34,9 +34,35 @@ const entityMention = createInlineContentSpec(
   },
 );
 
+// artifactRef — an inline `#` reference to a claim, page, or shard. Same mirror rationale as
+// entityMention: the server must know the node so the Y.Doc round-trip doesn't drop it.
+const artifactRef = createInlineContentSpec(
+  {
+    type: "artifactRef",
+    propSchema: {
+      kind: { default: "" },
+      targetId: { default: "" },
+      label: { default: "" },
+      polarity: { default: "" },
+    },
+    content: "none",
+  },
+  {
+    render: (inlineContent) => {
+      const dom = document.createElement("span");
+      dom.className = "artifact-ref";
+      dom.setAttribute("data-ref-kind", inlineContent.props.kind || "");
+      dom.setAttribute("data-ref-target", inlineContent.props.targetId || "");
+      dom.textContent = "#" + (inlineContent.props.label || "");
+      return { dom };
+    },
+  },
+);
+
 export const pageSchema = BlockNoteSchema.create({
   inlineContentSpecs: {
     ...defaultInlineContentSpecs,
     entityMention,
+    artifactRef,
   },
 });

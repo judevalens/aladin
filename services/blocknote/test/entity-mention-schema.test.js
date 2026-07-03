@@ -37,3 +37,33 @@ test("entityMention survives the server Y.Doc round-trip with pageSchema", () =>
   assert.equal(mention.props.entityId, "e-openai");
   assert.equal(mention.props.label, "OpenAI");
 });
+
+test("artifactRef survives the server Y.Doc round-trip with pageSchema", () => {
+  const editor = ServerBlockNoteEditor.create({ schema: pageSchema });
+
+  const blocks = [
+    {
+      type: "paragraph",
+      content: [
+        { type: "text", text: "see ", styles: {} },
+        {
+          type: "artifactRef",
+          props: { kind: "claim", targetId: "c-123", label: "AGI by 2030", polarity: "assert" },
+        },
+      ],
+    },
+  ];
+
+  const ydoc = new Y.Doc();
+  const fragment = ydoc.getXmlFragment(FRAGMENT);
+  editor.blocksToYXmlFragment(blocks, fragment);
+
+  const out = editor.yXmlFragmentToBlocks(fragment);
+
+  const inline = out.flatMap((b) => (Array.isArray(b.content) ? b.content : []));
+  const ref = inline.find((ic) => ic.type === "artifactRef");
+  assert.ok(ref, "artifactRef should survive the round-trip");
+  assert.equal(ref.props.kind, "claim");
+  assert.equal(ref.props.targetId, "c-123");
+  assert.equal(ref.props.label, "AGI by 2030");
+});
