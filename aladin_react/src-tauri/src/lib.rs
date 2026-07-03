@@ -4,19 +4,21 @@ mod db;
 mod events;
 mod realtime;
 mod sync;
+mod terminal;
 mod vendor_cache;
 
 use tauri::Manager;
 
+use crate::api::workspace_write::HttpWorkspaceWriteApi;
 use crate::commands::{
     artifacts as artifact_cmd, browser as browser_cmd, nodes as node_cmd, pages as page_cmd,
-    signals as signal_cmd, sync as sync_cmd,
+    signals as signal_cmd, sync as sync_cmd, terminal as terminal_cmd,
 };
-use crate::api::workspace_write::HttpWorkspaceWriteApi;
 use crate::db::repo::workspace::WorkspaceRepo;
 use crate::db::Db;
 use crate::events::DataEventHub;
 use crate::sync::SyncHandle;
+use crate::terminal::TerminalManager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -52,6 +54,7 @@ pub fn run() {
             app.manage(events);
             app.manage(sync);
             app.manage(workspace);
+            app.manage(TerminalManager::default());
             Ok(())
         })
         // Local vendored-deps cache: `vendor://deps/<sha>` is served from a local
@@ -83,6 +86,10 @@ pub fn run() {
             sync_cmd::sync_subscribe_data_events,
             sync_cmd::sync_set_session,
             sync_cmd::sync_pull_now,
+            terminal_cmd::terminal_open,
+            terminal_cmd::terminal_write,
+            terminal_cmd::terminal_resize,
+            terminal_cmd::terminal_close,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

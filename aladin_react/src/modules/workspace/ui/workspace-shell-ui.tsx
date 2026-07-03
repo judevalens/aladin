@@ -1,7 +1,8 @@
-import { Command, Contrast, Folder, GitGraph, Home, Lightbulb, LogOut, Network, Plus, Signal } from "lucide-react";
+import { Command, Contrast, Folder, GitGraph, Home, Lightbulb, LogOut, Network, Plus, Signal, SquareTerminal } from "lucide-react";
 import { useEffect } from "react";
 import { Outlet } from "react-router-dom";
 import { CommandPalette } from "@/modules/workspace/ui/command-palette";
+import { TerminalDockUI } from "@/modules/terminal/ui/terminal-dock-ui";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -42,6 +43,8 @@ export function WorkspaceShellUI() {
   const commandOpen = useAppStore((state) => state.commandPaletteOpen);
   const setCommandOpen = useAppStore((state) => state.setCommandPaletteOpen);
   const signalsUnread = useAppStore((state) => state.signalsUnread);
+  const terminalOpen = useAppStore((state) => state.terminalOpen);
+  const toggleTerminal = useAppStore((state) => state.toggleTerminal);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -49,6 +52,11 @@ export function WorkspaceShellUI() {
         event.preventDefault();
         const store = useAppStore.getState();
         store.setCommandPaletteOpen(!store.commandPaletteOpen);
+      }
+      // Ctrl+` / ⌘` toggles the terminal dock (IDE convention).
+      if (event.key === "`" && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        useAppStore.getState().toggleTerminal();
       }
     };
     document.addEventListener("keydown", onKeyDown);
@@ -135,6 +143,26 @@ export function WorkspaceShellUI() {
                 <TooltipTrigger asChild>
                   <button
                     type="button"
+                    onClick={toggleTerminal}
+                    className={cn(
+                      "grid size-[38px] place-items-center rounded-[9px] transition-colors",
+                      terminalOpen
+                        ? "bg-[rgb(var(--sel))] text-ink"
+                        : "text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink",
+                    )}
+                    aria-label="Toggle terminal"
+                    aria-pressed={terminalOpen}
+                  >
+                    <SquareTerminal className="size-[18px]" strokeWidth={1.7} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right">Terminal · ⌘`</TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
                     onClick={toggleTheme}
                     className="grid size-[38px] place-items-center rounded-[9px] text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
                     aria-label="Toggle theme"
@@ -186,8 +214,11 @@ export function WorkspaceShellUI() {
             </div>
           </nav>
 
-        <main className="flex min-w-0 flex-1 overflow-hidden bg-bg">
-          <Outlet />
+        <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-bg">
+          <div className="flex min-h-0 flex-1 overflow-hidden">
+            <Outlet />
+          </div>
+          <TerminalDockUI />
         </main>
       </div>
     </TooltipProvider>
