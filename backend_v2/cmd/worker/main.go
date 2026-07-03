@@ -20,11 +20,12 @@ import (
 	"aladin/backend_v2/internal/entities"
 	"aladin/backend_v2/internal/graph"
 	"aladin/backend_v2/internal/insights"
-	"aladin/backend_v2/internal/repo"
 	"aladin/backend_v2/internal/llm"
+	"aladin/backend_v2/internal/pageingest"
 	"aladin/backend_v2/internal/pipeline"
 	"aladin/backend_v2/internal/pipeline/workers"
 	"aladin/backend_v2/internal/ratelimit"
+	"aladin/backend_v2/internal/repo"
 	"aladin/backend_v2/internal/search"
 	isync "aladin/backend_v2/internal/sync"
 	"aladin/backend_v2/internal/sync/syncers"
@@ -163,6 +164,32 @@ func main() {
 		}
 	}()
 
+	// You-stream ingestion (Y1) — fold authored pages into the engine once they've been idle
+	// ~10 min. Reuses the embedder-enabled claimService so authored claims get embedded
+	// (bridge-eligible) like records. The ambient sweep enqueues a coalescing per-page task;
+	// the worker reads live page state with revision + idle guards (supersede-on-new-edit).
+	ingestWorker := pageingest.NewWorker(
+		repo.NewArtifactsPostgres(pool),
+		claims.NewAuthoredExtractor(claimService, entityRepo),
+		asynqClient,
+	)
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if n, err := ingestWorker.Sweep(ctx, 50); err != nil {
+					slog.Error("pageingest: sweep failed", "component", "pageingest", "err", err)
+				} else if n > 0 {
+					slog.Info("pageingest: sweep enqueued", "component", "pageingest", "pages", n)
+				}
+			}
+		}
+	}()
+
 	// Graph projection (optional) — project the entity/claim layer into Neo4j (the connection
 	// lens). Built only when NEO4J_URI is set; otherwise the stage is never enqueued and the
 	// pipeline is unaffected.
@@ -215,6 +242,7 @@ func main() {
 	mux := asynq.NewServeMux()
 	orch.Register(mux)
 	insights.RegisterGenerateHandler(mux, gen)
+	pageingest.RegisterHandler(mux, ingestWorker)
 
 	// Sync orchestrator
 	seenStore := isync.NewRedisSeenStore(redisClient)
@@ -228,14 +256,15 @@ func main() {
 
 	// asynq server — built after syncOrchestrator so we can pull queue names from syncers
 	queues := map[string]int{
-		pipeline.TaskGlobalFirstPass: 10,
-		pipeline.TaskTenantMatch:     10,
-		pipeline.TaskEmbed:           3,
+		pipeline.TaskGlobalFirstPass:      10,
+		pipeline.TaskTenantMatch:          10,
+		pipeline.TaskEmbed:                3,
 		pipeline.TaskResolveEntities:      5,
 		pipeline.TaskResolveClaims:        5,
 		pipeline.TaskResolveLowConfidence: 3,
 		pipeline.TaskGraphProject:         3,
 		insights.TaskGenerate:             5,
+		pageingest.TaskIngestAuthoredPage: 3,
 	}
 	for name, weight := range syncOrchestrator.Queues() {
 		queues[name] = weight

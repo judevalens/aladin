@@ -62,14 +62,32 @@ func (r *PostgresEntityTagRepository) SearchEntities(ctx context.Context, ownerU
 	return out, rows.Err()
 }
 
-// CreateEntity mints a new shared (Tier 0) entity from the "create new" typeahead path.
-// Mirrors the resolver's create so it dedupes normally later.
+// CreateEntity is find-or-create for the "create new" typeahead path: if a shared (Tier 0)
+// entity already exists with the same normalized key (e.g. one the resolver minted from the
+// live stream), reuse it instead of minting a duplicate; otherwise create it. A typed
+// existing entity is preferred over an 'unknown' one. (The picker often creates with
+// kind='unknown', so deduping must ignore kind.) Best-effort: there is no unique constraint,
+// so two truly-concurrent creates of a brand-new key can still race — acceptable for this
+// manual path.
 func (r *PostgresEntityTagRepository) CreateEntity(ctx context.Context, kind, canonicalName, normalizedKey string) (coreservice.EntityHit, error) {
 	var h coreservice.EntityHit
 	err := r.pool.QueryRow(ctx, `
-		INSERT INTO entities (scope, kind, canonical_name, normalized_key, trust_tier, provenance)
-		VALUES ('shared', $1, $2, $3, 'believed', '{"source":"manual_tag"}'::jsonb)
-		RETURNING id::text, canonical_name, kind, scope, trust_tier
+		WITH existing AS (
+			SELECT id, canonical_name, kind, scope, trust_tier
+			  FROM entities
+			 WHERE scope = 'shared' AND normalized_key = $3
+			 ORDER BY (kind <> 'unknown') DESC, created_at ASC
+			 LIMIT 1
+		), inserted AS (
+			INSERT INTO entities (scope, kind, canonical_name, normalized_key, trust_tier, provenance)
+			SELECT 'shared', $1, $2, $3, 'believed', '{"source":"manual_tag"}'::jsonb
+			 WHERE NOT EXISTS (SELECT 1 FROM existing)
+			RETURNING id, canonical_name, kind, scope, trust_tier
+		)
+		SELECT id::text, canonical_name, kind, scope, trust_tier FROM inserted
+		UNION ALL
+		SELECT id::text, canonical_name, kind, scope, trust_tier FROM existing
+		LIMIT 1
 	`, kind, canonicalName, normalizedKey).Scan(&h.ID, &h.Name, &h.Kind, &h.Scope, &h.TrustTier)
 	if err != nil {
 		return coreservice.EntityHit{}, fmt.Errorf("entity tag create: %w", err)

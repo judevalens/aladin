@@ -205,3 +205,58 @@ func TestEntityTag_ReplaceMentions(t *testing.T) {
 		t.Fatalf("after empty sync expected only the tag, got %+v", att)
 	}
 }
+
+// TestEntityTag_CreateEntityDedup covers Y0.1: the "create new" path is find-or-create.
+// A second create with the same normalized key (e.g. the @-mention "create" path, which
+// passes kind='unknown') reuses the existing shared entity instead of minting a duplicate,
+// and the typed kind from the first create wins.
+func TestEntityTag_CreateEntityDedup(t *testing.T) {
+	ctx := context.Background()
+	ctxTO, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	pool := mustTestPool(ctxTO, t)
+	defer pool.Close()
+
+	tag := uuid.NewString()[:8]
+	name := "Dedupco" + tag
+	key := entities.Normalize(name)
+
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM entities WHERE normalized_key = $1`, key)
+	})
+
+	tagRepo := NewEntityTagPostgres(pool)
+
+	// First create mints the entity (typed).
+	first, err := tagRepo.CreateEntity(ctx, "org", name, key)
+	if err != nil {
+		t.Fatalf("create 1: %v", err)
+	}
+	if first.ID == "" {
+		t.Fatalf("create 1 returned empty id")
+	}
+
+	// Second create with the same key but kind='unknown' reuses it rather than duplicating,
+	// and keeps the typed kind.
+	second, err := tagRepo.CreateEntity(ctx, "unknown", name, key)
+	if err != nil {
+		t.Fatalf("create 2: %v", err)
+	}
+	if second.ID != first.ID {
+		t.Fatalf("expected dedup to reuse id %s, got %s", first.ID, second.ID)
+	}
+	if second.Kind != "org" {
+		t.Fatalf("expected reused entity kind 'org', got %q", second.Kind)
+	}
+
+	// Exactly one shared row exists for this key.
+	var count int
+	if err := pool.QueryRow(ctx,
+		`SELECT count(*) FROM entities WHERE normalized_key = $1 AND scope = 'shared'`, key,
+	).Scan(&count); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 shared entity row for key, got %d", count)
+	}
+}

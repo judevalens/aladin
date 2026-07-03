@@ -514,6 +514,92 @@ func (r *PostgresArtifactRepository) GetPageBlocks(ctx context.Context, artifact
 	return json.RawMessage(blocks), revision, nil
 }
 
+// --- You-stream ingestion (Y1) ------------------------------------------------------------
+// System-scoped page reads for the background ingest worker. Unlike the user-facing page
+// methods above, these run with NO authenticated principal (the worker is a system process),
+// so they key on artifact_id and return the owner from the row.
+
+// PageIngestCandidate is a page the idle-sweep found due for ingest.
+type PageIngestCandidate struct {
+	ArtifactID string
+	Revision   int64
+}
+
+// PageIngestSnapshot is the live page state the ingest worker reads at run time.
+type PageIngestSnapshot struct {
+	ArtifactID   string
+	OwnerID      string
+	Revision     int64
+	LastIngested int64
+	UpdatedAt    time.Time
+	Text         string
+}
+
+// ListPagesDueForIngest returns pages whose content moved past their last ingest and which
+// have been idle (no edits) for at least idleFor — the ambient-sweep candidate set. Ordered
+// oldest-edit-first, capped at limit. System-scoped (all users).
+func (r *PostgresArtifactRepository) ListPagesDueForIngest(ctx context.Context, idleFor time.Duration, limit int) ([]PageIngestCandidate, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT p.artifact_id, p.revision
+		  FROM page_documents p
+		  JOIN artifacts a ON a.id = p.artifact_id AND a.type = 'page'
+		 WHERE p.revision > p.last_ingested_revision
+		   AND p.updated_at < now() - make_interval(secs => $1)
+		 ORDER BY p.updated_at ASC
+		 LIMIT $2
+	`, idleFor.Seconds(), limit)
+	if err != nil {
+		return nil, fmt.Errorf("list pages due for ingest: %w", err)
+	}
+	defer rows.Close()
+	out := []PageIngestCandidate{}
+	for rows.Next() {
+		var c PageIngestCandidate
+		if err := rows.Scan(&c.ArtifactID, &c.Revision); err != nil {
+			return nil, fmt.Errorf("scan page ingest candidate: %w", err)
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// GetPageIngestSnapshot reads a page's live state for the ingest worker (system-scoped).
+// Returns ErrNotFound if the page/document is missing.
+func (r *PostgresArtifactRepository) GetPageIngestSnapshot(ctx context.Context, artifactID string) (PageIngestSnapshot, error) {
+	s := PageIngestSnapshot{ArtifactID: artifactID}
+	err := r.pool.QueryRow(ctx, `
+		SELECT a.user_id::text, p.revision, p.last_ingested_revision, p.updated_at, p.search_text
+		  FROM page_documents p
+		  JOIN artifacts a ON a.id = p.artifact_id AND a.type = 'page'
+		 WHERE p.artifact_id = $1
+	`, artifactID).Scan(&s.OwnerID, &s.Revision, &s.LastIngested, &s.UpdatedAt, &s.Text)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return PageIngestSnapshot{}, artifactservice.ErrNotFound
+		}
+		return PageIngestSnapshot{}, fmt.Errorf("get page ingest snapshot: %w", err)
+	}
+	return s, nil
+}
+
+// MarkPageIngested advances last_ingested_revision (system-scoped, monotonic). It MUST NOT
+// touch updated_at — that reflects edit time and drives the idle window; bumping it here
+// would re-trigger the sweep forever.
+func (r *PostgresArtifactRepository) MarkPageIngested(ctx context.Context, artifactID string, revision int64) error {
+	_, err := r.pool.Exec(ctx, `
+		UPDATE page_documents
+		   SET last_ingested_revision = $2
+		 WHERE artifact_id = $1 AND last_ingested_revision < $2
+	`, artifactID, revision)
+	if err != nil {
+		return fmt.Errorf("mark page ingested: %w", err)
+	}
+	return nil
+}
+
 func (r *PostgresArtifactRepository) DeleteArtifact(ctx context.Context, id string) error {
 	return r.withUserTx(ctx, func(tx pgx.Tx, userID string) error {
 		// Soft delete: tombstone the artifact's tree node (the entity spine; for
