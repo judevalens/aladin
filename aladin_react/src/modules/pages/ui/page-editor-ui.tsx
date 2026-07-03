@@ -1,7 +1,11 @@
-import { History, Sparkles } from "lucide-react";
+import { History, Link2, Sparkles } from "lucide-react";
 import { useRef, useState } from "react";
 import { useAppComposition } from "@/app/composition/app-composition";
+import { useAppStore } from "@/app/state/store";
+import type { ClaimConnection } from "@/modules/graph/graph-pane-types";
 import { BlockNotePageEditorDriver } from "@/modules/pages/editor/page-editor-driver";
+import { ConnectionsPanel } from "@/modules/pages/ui/connections-panel";
+import { EntityTagBar } from "@/modules/pages/ui/entity-tag-bar";
 import { PageHistoryPanel } from "@/modules/pages/ui/page-history-panel";
 import { useObservableState } from "@/shared/flow/use-observable-state";
 
@@ -21,8 +25,12 @@ export function PageEditorUI({ pageId }: { pageId: string }) {
   // Hooks before the early return (rules of hooks).
   const [historyOpen, setHistoryOpen] = useState(false);
   const getPlainText = useRef<(() => string) | null>(null);
+  const openArtifact = useAppStore((s) => s.openArtifact);
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeMsg, setAnalyzeMsg] = useState<string | null>(null);
+  const [connectOpen, setConnectOpen] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [connections, setConnections] = useState<ClaimConnection[]>([]);
 
   async function analyze() {
     const getText = getPlainText.current;
@@ -40,6 +48,22 @@ export function PageEditorUI({ pageId }: { pageId: string }) {
       setAnalyzeMsg("Analyze failed");
     } finally {
       setAnalyzing(false);
+    }
+  }
+
+  // Y3 "Connect": extract this page's claims, then surface what supports / contradicts them.
+  async function connect() {
+    const getText = getPlainText.current;
+    if (!getText || connecting) return;
+    setConnecting(true);
+    setConnectOpen(true);
+    try {
+      const result = await repos.graphPane.connect(pageId, getText());
+      setConnections(result.connections);
+    } catch {
+      setConnections([]);
+    } finally {
+      setConnecting(false);
     }
   }
 
@@ -66,6 +90,15 @@ export function PageEditorUI({ pageId }: { pageId: string }) {
           {analyzing ? "Analyzing…" : "Analyze"}
         </button>
         <button
+          onClick={connect}
+          disabled={connecting}
+          title="Extract this page's claims and surface what supports or contradicts them"
+          className="flex items-center gap-1.5 rounded-md border border-line bg-field/90 px-2.5 py-1 text-xs font-medium text-ink-2 backdrop-blur-sm hover:bg-raise hover:text-ink disabled:opacity-50"
+        >
+          <Link2 className="h-3.5 w-3.5" />
+          {connecting ? "Connecting…" : "Connect"}
+        </button>
+        <button
           onClick={() => setHistoryOpen((v) => !v)}
           title="Edit history"
           className="flex items-center gap-1.5 rounded-md border border-line bg-field/90 px-2.5 py-1 text-xs font-medium text-ink-2 backdrop-blur-sm hover:bg-raise hover:text-ink"
@@ -76,6 +109,7 @@ export function PageEditorUI({ pageId }: { pageId: string }) {
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">
         <div className="mx-auto flex h-full w-full max-w-workspace-max flex-col">
+          <EntityTagBar pageId={pageId} />
           <BlockNotePageEditorDriver
             key={pageId}
             pageId={pageId}
@@ -87,12 +121,24 @@ export function PageEditorUI({ pageId }: { pageId: string }) {
             onMentionsChange={(mentions) =>
               void repos.graphPane.syncMentions(pageId, mentions).catch(() => undefined)
             }
+            searchRefs={(q) => repos.graphPane.searchRefs(q)}
+            onRefsChange={(refs) =>
+              void repos.graphPane.syncRefs(pageId, refs).catch(() => undefined)
+            }
+            onOpenArtifact={(artifactId) => openArtifact(artifactId)}
             onReady={(api) => {
               getPlainText.current = api.getPlainText;
             }}
           />
         </div>
       </div>
+      {connectOpen ? (
+        <ConnectionsPanel
+          connections={connections}
+          loading={connecting}
+          onClose={() => setConnectOpen(false)}
+        />
+      ) : null}
       {historyOpen ? (
         <PageHistoryPanel pageId={pageId} onClose={() => setHistoryOpen(false)} />
       ) : null}

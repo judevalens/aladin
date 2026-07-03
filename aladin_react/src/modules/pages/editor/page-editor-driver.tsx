@@ -7,12 +7,18 @@ import { IndexeddbPersistence } from "y-indexeddb";
 import * as Y from "yjs";
 import "@blocknote/shadcn/style.css";
 
-import type { EntityHit, MentionRef } from "@/modules/graph/graph-pane-types";
+import type {
+  ArtifactRef,
+  EntityHit,
+  MentionRef,
+  RefHit,
+} from "@/modules/graph/graph-pane-types";
 import {
   editorPlainText,
   extractEntityMentions,
   pageSchema,
 } from "@/modules/pages/editor/entity-mention";
+import { extractArtifactRefs } from "@/modules/pages/editor/ref-mention";
 
 export interface PageEditorDriverProps {
   pageId: string;
@@ -23,9 +29,20 @@ export interface PageEditorDriverProps {
   searchEntities?: (query: string) => Promise<EntityHit[]>;
   createEntity?: (name: string) => Promise<EntityHit>;
   onMentionsChange?: (mentions: MentionRef[]) => void;
+  // `#` cross-references to claims/pages/shards (Y2). Optional.
+  searchRefs?: (query: string) => Promise<RefHit[]>;
+  onRefsChange?: (refs: ArtifactRef[]) => void;
+  // Navigate to a referenced page/shard when its chip is clicked.
+  onOpenArtifact?: (artifactId: string) => void;
   // Exposes a stable getter for the page's plain text (authored claim extraction, P3).
   onReady?: (api: { getPlainText: () => string }) => void;
 }
+
+const refGroupLabel: Record<string, string> = {
+  claim: "Claims",
+  page: "Pages",
+  shard: "Shards",
+};
 
 interface CollabResources {
   ydoc: Y.Doc;
@@ -52,6 +69,9 @@ export function BlockNotePageEditorDriver({
   searchEntities,
   createEntity,
   onMentionsChange,
+  searchRefs,
+  onRefsChange,
+  onOpenArtifact,
   onReady,
 }: PageEditorDriverProps) {
   // Created once per mount (key={pageId} guarantees one page per mount).
@@ -96,12 +116,15 @@ export function BlockNotePageEditorDriver({
     onReady?.({ getPlainText: () => editorPlainText(editor.document) });
   }, [editor, onReady]);
 
-  // Project @entity mentions out of the doc into the backend, debounced. Keyed off the
-  // local editor changes — enough to keep this client's edits in sync with the graph.
+  // Project @entity mentions + `#` refs out of the doc into the backend, debounced. Keyed
+  // off the local editor changes — enough to keep this client's edits in sync with the graph.
   const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    if (!onMentionsChange) return;
-    const flush = () => onMentionsChange(extractEntityMentions(editor.document));
+    if (!onMentionsChange && !onRefsChange) return;
+    const flush = () => {
+      if (onMentionsChange) onMentionsChange(extractEntityMentions(editor.document));
+      if (onRefsChange) onRefsChange(extractArtifactRefs(editor.document));
+    };
     const schedule = () => {
       if (flushTimer.current) clearTimeout(flushTimer.current);
       flushTimer.current = setTimeout(flush, 700);
@@ -111,7 +134,7 @@ export function BlockNotePageEditorDriver({
       if (flushTimer.current) clearTimeout(flushTimer.current);
       if (typeof unsubscribe === "function") unsubscribe();
     };
-  }, [editor, onMentionsChange]);
+  }, [editor, onMentionsChange, onRefsChange]);
 
   async function mentionItems(query: string): Promise<DefaultReactSuggestionItem[]> {
     if (!searchEntities) return [];
@@ -141,9 +164,47 @@ export function BlockNotePageEditorDriver({
     return items;
   }
 
+  // `#` picker: unified search across claims + pages + shards, sectioned by kind.
+  async function refItems(query: string): Promise<DefaultReactSuggestionItem[]> {
+    if (!searchRefs) return [];
+    const hits = await searchRefs(query);
+    return hits.map((hit) => ({
+      title: hit.label,
+      subtext: hit.kind === "claim" ? hit.detail || "claim" : hit.kind,
+      group: refGroupLabel[hit.kind] ?? hit.kind,
+      onItemClick: () => {
+        editor.insertInlineContent([
+          {
+            type: "artifactRef",
+            props: {
+              kind: hit.kind,
+              targetId: hit.id,
+              label: hit.label,
+              polarity: hit.kind === "claim" ? hit.detail ?? "" : "",
+            },
+          },
+          " ",
+        ]);
+      },
+    }));
+  }
+
+  // Delegated click: a page/shard ref chip opens that artifact in the workspace.
+  function onChipClick(e: React.MouseEvent<HTMLDivElement>) {
+    if (!onOpenArtifact) return;
+    const el = (e.target as HTMLElement).closest("[data-ref-target]");
+    if (!el) return;
+    const kind = el.getAttribute("data-ref-kind");
+    const target = el.getAttribute("data-ref-target");
+    if (target && (kind === "page" || kind === "shard")) {
+      e.preventDefault();
+      onOpenArtifact(target);
+    }
+  }
+
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 overflow-y-auto px-8 py-4">
+      <div className="min-h-0 flex-1 overflow-y-auto px-8 py-4" onClick={onChipClick}>
         <BlockNoteView
           editor={editor}
           slashMenu={true}
@@ -153,6 +214,9 @@ export function BlockNotePageEditorDriver({
         >
           {searchEntities ? (
             <SuggestionMenuController triggerCharacter="@" getItems={mentionItems} />
+          ) : null}
+          {searchRefs ? (
+            <SuggestionMenuController triggerCharacter="#" getItems={refItems} />
           ) : null}
         </BlockNoteView>
       </div>
