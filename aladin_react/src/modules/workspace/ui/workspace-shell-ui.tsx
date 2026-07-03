@@ -70,7 +70,9 @@ export function WorkspaceShellUI() {
         onOpenChange={setCommandOpen}
         actions={{ onCreateFolder, onCreateNote, onCreateLink, onCreateVoice }}
       />
-      <div className="flex h-screen overflow-hidden bg-bg font-sans text-ink">
+      {/* border-t defines the boundary between the OS title bar and the app content, so the
+          dark native bar reads as separate window chrome instead of blending into bg. */}
+      <div className="flex h-screen overflow-hidden border-t border-line bg-bg font-sans text-ink">
         {/* Activity rail */}
         <nav className="flex w-[52px] shrink-0 flex-col items-center gap-1 border-r border-line bg-rail py-3">
             <button
