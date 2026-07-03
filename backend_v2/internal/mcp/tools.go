@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"strings"
 
 	"aladin/backend_v2/internal/blocknote"
@@ -21,10 +22,15 @@ type toolServer struct {
 	pages     service.PageDocumentService
 	converter blocknote.Converter
 	bridge    blocknote.Bridge
+	// entityTags + artifactRefs project a page's @entity mentions / `#` refs into the
+	// knowledge layer after an MCP write (the editor does this client-side; agents don't
+	// have an editor). Nil-safe: projection is skipped when unset.
+	entityTags   service.EntityTagService
+	artifactRefs service.ArtifactRefService
 }
 
-func registerTools(server *sdkmcp.Server, artifacts service.ArtifactService, pages service.PageDocumentService, converter blocknote.Converter, bridge blocknote.Bridge) {
-	tools := toolServer{artifacts: artifacts, pages: pages, converter: converter, bridge: bridge}
+func registerTools(server *sdkmcp.Server, artifacts service.ArtifactService, pages service.PageDocumentService, converter blocknote.Converter, bridge blocknote.Bridge, entityTags service.EntityTagService, artifactRefs service.ArtifactRefService) {
+	tools := toolServer{artifacts: artifacts, pages: pages, converter: converter, bridge: bridge, entityTags: entityTags, artifactRefs: artifactRefs}
 
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "get_browser_tree",
@@ -288,6 +294,7 @@ func (t toolServer) createPage(ctx context.Context, _ *sdkmcp.CallToolRequest, i
 		}); err != nil {
 			return nil, createUpdatePageOutput{}, err
 		}
+		t.projectPage(ctx, created.Artifact.ID)
 	}
 	return nil, createUpdatePageOutput{
 		ID:        created.Artifact.ID,
@@ -351,6 +358,7 @@ func (t toolServer) updatePage(ctx context.Context, _ *sdkmcp.CallToolRequest, i
 		}); err != nil {
 			return nil, createUpdatePageOutput{}, err
 		}
+		t.projectPage(ctx, input.ID)
 	}
 	return nil, createUpdatePageOutput{
 		ID:        rec.ID,
@@ -411,6 +419,7 @@ func (t toolServer) updateBlock(ctx context.Context, _ *sdkmcp.CallToolRequest, 
 	if err != nil {
 		return nil, updateBlockOutput{}, err
 	}
+	t.projectPage(ctx, input.PageID)
 	return nil, updateBlockOutput{
 		PageID:             input.PageID,
 		BlockID:            input.BlockID,
@@ -442,6 +451,7 @@ func (t toolServer) insertBlocks(ctx context.Context, _ *sdkmcp.CallToolRequest,
 	if err != nil {
 		return nil, insertBlocksOutput{}, err
 	}
+	t.projectPage(ctx, input.PageID)
 	return nil, insertBlocksOutput{
 		PageID:           input.PageID,
 		InsertedBlockIDs: res.AffectedBlockIDs,
@@ -463,6 +473,7 @@ func (t toolServer) deleteBlock(ctx context.Context, _ *sdkmcp.CallToolRequest, 
 	}); err != nil {
 		return nil, deleteBlockOutput{}, err
 	}
+	t.projectPage(ctx, input.PageID)
 	return nil, deleteBlockOutput{
 		PageID:  input.PageID,
 		BlockID: input.BlockID,
@@ -659,6 +670,48 @@ func (t toolServer) applyBridge(ctx context.Context, op blocknote.BridgeOp) (blo
 		return blocknote.BridgeResult{}, service.BadRequest("collab bridge is not configured; cannot edit page content")
 	}
 	return t.bridge.ApplyOperation(ctx, op)
+}
+
+// projectPage reconciles a page's @entity mentions and `#` refs into the knowledge layer
+// after an MCP write — the server-side counterpart to the editor's client-side projection,
+// so agent-authored references become queryable (artifact_entities / artifact_refs). It
+// re-reads the full live doc (partial ops don't carry it), extracts the references, and runs
+// the same full-reconcile syncs the editor calls. Best-effort: a failure is logged, never
+// surfaced to the agent (the page write already succeeded), and mentions/refs project
+// independently so one failing (e.g. a mention with an unknown entity id, which the FK
+// rejects) doesn't drop the other.
+func (t toolServer) projectPage(ctx context.Context, pageID string) {
+	if t.bridge == nil || (t.entityTags == nil && t.artifactRefs == nil) {
+		return
+	}
+	page, err := t.bridge.GetPage(ctx, pageID)
+	if err != nil {
+		slog.Warn("mcp: project page: read live doc failed", "component", "mcp", "page", pageID, "err", err)
+		return
+	}
+	mentions, refs, err := blocknote.ExtractInlineRefs(page.Blocks)
+	if err != nil {
+		slog.Warn("mcp: project page: extract refs failed", "component", "mcp", "page", pageID, "err", err)
+		return
+	}
+	if t.artifactRefs != nil {
+		out := make([]service.ArtifactRef, len(refs))
+		for i, r := range refs {
+			out[i] = service.ArtifactRef{Kind: r.Kind, TargetID: r.TargetID, BlockID: r.BlockID, Surface: r.Surface}
+		}
+		if err := t.artifactRefs.SyncRefs(ctx, pageID, out); err != nil {
+			slog.Warn("mcp: project page: sync refs failed", "component", "mcp", "page", pageID, "err", err)
+		}
+	}
+	if t.entityTags != nil {
+		out := make([]service.MentionRef, len(mentions))
+		for i, m := range mentions {
+			out[i] = service.MentionRef{EntityID: m.EntityID, BlockID: m.BlockID, Surface: m.Surface}
+		}
+		if err := t.entityTags.SyncMentions(ctx, pageID, out); err != nil {
+			slog.Warn("mcp: project page: sync mentions failed (unknown entity id?)", "component", "mcp", "page", pageID, "err", err)
+		}
+	}
 }
 
 func agentToBridge(a *agentInput) *blocknote.BridgeAgent {
