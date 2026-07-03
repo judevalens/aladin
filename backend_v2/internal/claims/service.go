@@ -13,6 +13,7 @@ import (
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/graph"
 	"aladin/backend_v2/internal/llm"
+	coreservice "aladin/backend_v2/internal/service"
 )
 
 const (
@@ -183,6 +184,31 @@ func (s *Service) extract(ctx context.Context, sink claimSink, summary string, k
 // surface. A nil result is zero counts (e.g. the thesis has no embedding/subjects).
 func (s *Service) GetContradictions(ctx context.Context, thesisClaimID string) (db.ClaimStanceCounts, error) {
 	return s.store.ContradictionSurface(ctx, thesisClaimID, claimResolveMinCosine)
+}
+
+// ConnectionsForSource surfaces, for each claim a source mentions, how many distinct
+// discovered sources support vs contradict it — the Y3 payload. Reuses the C4
+// contradiction surface per claim.
+func (s *Service) ConnectionsForSource(ctx context.Context, sourceKind, sourceID string) ([]coreservice.ClaimConnection, error) {
+	claims, err := s.store.SourceClaims(ctx, sourceKind, sourceID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]coreservice.ClaimConnection, 0, len(claims))
+	for _, c := range claims {
+		counts, err := s.store.ContradictionSurface(ctx, c.ID, claimResolveMinCosine)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, coreservice.ClaimConnection{
+			ClaimID:    c.ID,
+			Text:       c.Text,
+			Polarity:   c.Polarity,
+			Support:    counts.Support,
+			Contradict: counts.Contradict,
+		})
+	}
+	return out, nil
 }
 
 // resolveClaim maps a claim to a canonical claim id + the source's stance on it. Order: exact

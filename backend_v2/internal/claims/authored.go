@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"aladin/backend_v2/internal/db"
+	coreservice "aladin/backend_v2/internal/service"
 )
 
 // EntityGroundingSource supplies the resolved entities a page is grounded in — its tags +
@@ -47,6 +48,27 @@ func (a *AuthoredExtractor) ForArtifact(ctx context.Context, artifactID, ownerID
 		KeyClaims:  keyClaimCandidates(text),
 		Entities:   refs,
 	})
+}
+
+// Connect runs authored extraction for a page (Y1's job, forced) and then surfaces the
+// support/contradiction on the page's claims (Y3 — the "magic moment"). Degrades to an empty
+// result when extraction is disabled or the page has no grounding.
+func (a *AuthoredExtractor) Connect(ctx context.Context, artifactID, ownerID, text string) (coreservice.ConnectResult, error) {
+	if a == nil || a.svc == nil {
+		return coreservice.ConnectResult{Connections: []coreservice.ClaimConnection{}}, nil
+	}
+	n, err := a.ForArtifact(ctx, artifactID, ownerID, text)
+	if err != nil {
+		return coreservice.ConnectResult{}, err
+	}
+	conns, err := a.svc.ConnectionsForSource(ctx, "artifact", artifactID)
+	if err != nil {
+		return coreservice.ConnectResult{}, err
+	}
+	if conns == nil {
+		conns = []coreservice.ClaimConnection{}
+	}
+	return coreservice.ConnectResult{ClaimsStored: n, Connections: conns}, nil
 }
 
 // keyClaimCandidates splits page text into candidate claim lines (the extraction context).

@@ -51,6 +51,8 @@ type Dependencies interface {
 	GraphPane() coreservice.GraphPaneService
 	// EntityTags backs the tag / @entity picker: entity search + artifact↔entity links.
 	EntityTags() coreservice.EntityTagService
+	// ArtifactRefs backs the `#` cross-reference picker: claim/page/shard search + links.
+	ArtifactRefs() coreservice.ArtifactRefService
 	// AuthoredClaims extracts claims from a page grounded in its tagged/@mentioned entities.
 	AuthoredClaims() coreservice.AuthoredClaimsService
 	// GraphReader reads the Neo4j connection lens. Nil when Neo4j isn't configured.
@@ -81,6 +83,7 @@ type StaticDependencies struct {
 	RelationshipsSvc       coreservice.RelationshipService
 	GraphPaneSvc           coreservice.GraphPaneService
 	EntityTagsSvc          coreservice.EntityTagService
+	ArtifactRefsSvc        coreservice.ArtifactRefService
 	AuthoredClaimsSvc      coreservice.AuthoredClaimsService
 	GraphReaderSvc         coreservice.GraphReader
 }
@@ -132,6 +135,9 @@ func (d StaticDependencies) GraphPane() coreservice.GraphPaneService {
 func (d StaticDependencies) EntityTags() coreservice.EntityTagService {
 	return d.EntityTagsSvc
 }
+func (d StaticDependencies) ArtifactRefs() coreservice.ArtifactRefService {
+	return d.ArtifactRefsSvc
+}
 func (d StaticDependencies) AuthoredClaims() coreservice.AuthoredClaimsService {
 	return d.AuthoredClaimsSvc
 }
@@ -163,6 +169,7 @@ type wiring struct {
 	relationships       coreservice.RelationshipService
 	graphPane           coreservice.GraphPaneService
 	entityTags          coreservice.EntityTagService
+	artifactRefs        coreservice.ArtifactRefService
 	authoredClaims      coreservice.AuthoredClaimsService
 	graphReader         coreservice.GraphReader
 }
@@ -198,6 +205,7 @@ func (w wiring) ShardBuild() coreservice.ShardBuildService      { return w.shard
 func (w wiring) Relationships() coreservice.RelationshipService { return w.relationships }
 func (w wiring) GraphPane() coreservice.GraphPaneService        { return w.graphPane }
 func (w wiring) EntityTags() coreservice.EntityTagService       { return w.entityTags }
+func (w wiring) ArtifactRefs() coreservice.ArtifactRefService   { return w.artifactRefs }
 func (w wiring) AuthoredClaims() coreservice.AuthoredClaimsService {
 	return w.authoredClaims
 }
@@ -223,19 +231,27 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 	relationshipRepo := repo.NewRelationshipPostgres(pool)
 	graphPaneRepo := repo.NewGraphPanePostgres(pool)
 	entityTagRepo := repo.NewEntityTagPostgres(pool)
+	artifactRefRepo := repo.NewArtifactRefPostgres(pool)
 	systemRepo := repo.NewSystemPostgres(pool)
 
 	// Authored claim extraction (P3): a page's tags/@mentions ground LLM claim extraction
 	// over its text. The extractor is nil-safe — without an OPENAI_API_KEY it degrades to
 	// a no-op (same as the record path), so the API boots fine without a key.
+	//
+	// When a key is present we also enable the embedder + adjudicator so the Connect path
+	// gets the SAME paraphrase-aware resolution (C1) as the worker (cmd/worker/main.go):
+	// without them resolveClaim falls back to exact-text match only — so re-running Connect
+	// on lightly-reworded extractions creates duplicate claims, and authored claims are stored
+	// with no embedding, which makes the Book lens contradiction surface unable to match them.
 	var claimExtractor llm.ClaimExtractor
+	claimSvc := claims.NewService(db.NewClaimRepository(pool), claimExtractor)
 	if key := os.Getenv("OPENAI_API_KEY"); key != "" {
 		claimExtractor = llm.NewOpenAIClaimExtractor(key)
+		claimSvc = claims.NewService(db.NewClaimRepository(pool), claimExtractor).
+			WithEmbedder(llm.NewOpenAIEmbedder(key)).
+			WithAdjudicator(llm.NewOpenAIClaimAdjudicator(key))
 	}
-	authoredClaims := claims.NewAuthoredExtractor(
-		claims.NewService(db.NewClaimRepository(pool), claimExtractor),
-		db.NewEntityRepository(pool),
-	)
+	authoredClaims := claims.NewAuthoredExtractor(claimSvc, db.NewEntityRepository(pool))
 	// Graph reader (optional) — the Neo4j connection lens. Nil when NEO4J_URI is unset, and
 	// handlers degrade to a clear "graph not configured" response.
 	var graphReader coreservice.GraphReader
@@ -288,6 +304,7 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		relationships:       coreservice.NewRelationshipService(relationshipRepo),
 		graphPane:           coreservice.NewGraphPaneService(graphPaneRepo),
 		entityTags:          coreservice.NewEntityTagService(entityTagRepo, entities.Normalize),
+		artifactRefs:        coreservice.NewArtifactRefService(artifactRefRepo),
 		authoredClaims:      authoredClaims,
 		graphReader:         graphReader,
 	}

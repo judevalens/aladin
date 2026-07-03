@@ -59,6 +59,10 @@ func (f *fakeClaimStore) ContradictionSurface(_ context.Context, _ string, _ flo
 	return db.ClaimStanceCounts{}, nil
 }
 
+func (f *fakeClaimStore) SourceClaims(_ context.Context, _, _ string) ([]db.SourceClaim, error) {
+	return nil, nil
+}
+
 func itoa(n int) string { return string(rune('0' + n)) } // small n only
 
 // fakeExtractor returns canned claims.

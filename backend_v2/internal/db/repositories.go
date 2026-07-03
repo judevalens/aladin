@@ -125,4 +125,15 @@ type ClaimRepository interface {
 
 	// C4: the contradiction surface for a thesis claim.
 	ContradictionSurface(ctx context.Context, thesisClaimID string, minCosine float64) (ClaimStanceCounts, error)
+
+	// SourceClaims lists the canonical claims a source (record | artifact) mentions — used
+	// by the Y3 Connect path to surface connections on a page's just-extracted claims.
+	SourceClaims(ctx context.Context, sourceKind, sourceID string) ([]SourceClaim, error)
+}
+
+// SourceClaim is a claim a given source mentions (the page's own claims, for Connect).
+type SourceClaim struct {
+	ID       string
+	Text     string
+	Polarity string
 }

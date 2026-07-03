@@ -271,6 +271,32 @@ func (r *pgClaimRepo) AddClaimEdge(ctx context.Context, p ClaimEdgeParams) (bool
 	return tag.RowsAffected() > 0, nil
 }
 
+// SourceClaims returns the distinct canonical claims a source asserts/denies (via
+// claim_mentions), newest first. For the Y3 Connect path: the claims a page just produced.
+func (r *pgClaimRepo) SourceClaims(ctx context.Context, sourceKind, sourceID string) ([]SourceClaim, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT DISTINCT c.id::text, c.canonical_text, c.polarity, max(m.created_at) AS seen
+		  FROM claim_mentions m JOIN claims c ON c.id = m.claim_id
+		 WHERE m.source_kind = $1 AND m.source_id = $2
+		 GROUP BY c.id, c.canonical_text, c.polarity
+		 ORDER BY seen DESC
+	`, sourceKind, sourceID)
+	if err != nil {
+		return nil, fmt.Errorf("claim SourceClaims: %w", err)
+	}
+	defer rows.Close()
+	var out []SourceClaim
+	for rows.Next() {
+		var c SourceClaim
+		var seen any
+		if err := rows.Scan(&c.ID, &c.Text, &c.Polarity, &seen); err != nil {
+			return nil, fmt.Errorf("claim SourceClaims scan: %w", err)
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
 func (r *pgClaimRepo) AddClaimMention(ctx context.Context, p ClaimMentionParams) error {
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO claim_mentions (claim_id, source_kind, source_id, stance, resolver)
