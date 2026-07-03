@@ -74,9 +74,11 @@ fn light_err(e: impl std::fmt::Display) -> crate::db::DbError {
 /// Last applied seq for a signal, INCLUDING tombstones (0 if never seen).
 pub fn stored_seq(conn: &Connection, id: &str) -> DbResult<i64> {
     Ok(conn
-        .query_row("SELECT seq FROM signals WHERE id = ?1", params![id], |row| {
-            row.get::<_, i64>(0)
-        })
+        .query_row(
+            "SELECT seq FROM signals WHERE id = ?1",
+            params![id],
+            |row| row.get::<_, i64>(0),
+        )
         .optional()?
         .unwrap_or(0))
 }

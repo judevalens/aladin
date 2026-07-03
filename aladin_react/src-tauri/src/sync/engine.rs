@@ -82,7 +82,11 @@ impl Registry {
 /// returns the events the repos chose to dispatch, in order. An unknown kind is
 /// skipped (forward-compat). Does NOT advance the cursor (the pull caller does;
 /// live does not) or emit — the caller emits post-commit.
-pub fn apply_frame(conn: &Connection, registry: &Registry, frame: &Frame) -> DbResult<Vec<DataEvent>> {
+pub fn apply_frame(
+    conn: &Connection,
+    registry: &Registry,
+    frame: &Frame,
+) -> DbResult<Vec<DataEvent>> {
     let mut events = Vec::new();
     for entity in &frame.entities {
         let Some(handler) = registry.get(&entity.entity_kind) else {

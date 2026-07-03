@@ -217,7 +217,11 @@ impl WorkspaceRepo {
 
     // --- writes (proxy to Go, then apply the committed result via nodes::apply) ---
 
-    pub fn create_browser_node(&self, db: &Db, input: BrowserNodeCreateInput) -> DbResult<BrowserCreateResult> {
+    pub fn create_browser_node(
+        &self,
+        db: &Db,
+        input: BrowserNodeCreateInput,
+    ) -> DbResult<BrowserCreateResult> {
         let config = self.config()?;
         let is_artifact = input.kind.eq_ignore_ascii_case("artifact");
         let kind = if is_artifact { "artifact" } else { "folder" }.to_string();
@@ -247,7 +251,14 @@ impl WorkspaceRepo {
             "sourceUrl": source_url,
         });
         let row = self
-            .apply_and_read(db, &res.node.kind, &res.node.id, res.node.seq as i64, "upsert", Some(data))?
+            .apply_and_read(
+                db,
+                &res.node.kind,
+                &res.node.id,
+                res.node.seq as i64,
+                "upsert",
+                Some(data),
+            )?
             .ok_or(DbError::NotInitialized)?; // a create always yields a live row
         let artifact = if row.kind.eq_ignore_ascii_case("artifact") {
             Some(artifact_row_from_node(&row))
@@ -260,10 +271,17 @@ impl WorkspaceRepo {
         })
     }
 
-    pub fn rename_browser_node(&self, db: &Db, input: BrowserMutationInput) -> DbResult<BrowserNodeRow> {
+    pub fn rename_browser_node(
+        &self,
+        db: &Db,
+        input: BrowserMutationInput,
+    ) -> DbResult<BrowserNodeRow> {
         let config = self.config()?;
         // A browser node here is a folder (artifacts rename via rename_artifact).
-        let res = self.api.rename_folder(&config, &input.id, &input.title).map_err(DbError::Api)?;
+        let res = self
+            .api
+            .rename_folder(&config, &input.id, &input.title)
+            .map_err(DbError::Api)?;
         let node = self
             .merge_rename(db, &res.id, &res.title, res.seq as i64)?
             .unwrap_or_else(|| NodeRow {
@@ -284,7 +302,10 @@ impl WorkspaceRepo {
 
     pub fn delete_browser_node(&self, db: &Db, input: BrowserDeleteInput) -> DbResult<()> {
         let config = self.config()?;
-        let res = self.api.delete_node(&config, &input.id).map_err(DbError::Api)?;
+        let res = self
+            .api
+            .delete_node(&config, &input.id)
+            .map_err(DbError::Api)?;
         self.apply_delete(db, &res.id, res.seq as i64)
     }
 
@@ -320,14 +341,24 @@ impl WorkspaceRepo {
             "sourceUrl": source_url,
         });
         let row = self
-            .apply_and_read(db, &res.node.kind, &res.node.id, res.node.seq as i64, "upsert", Some(data))?
+            .apply_and_read(
+                db,
+                &res.node.kind,
+                &res.node.id,
+                res.node.seq as i64,
+                "upsert",
+                Some(data),
+            )?
             .ok_or(DbError::NotInitialized)?;
         Ok(artifact_row_from_node(&row))
     }
 
     pub fn rename_artifact(&self, db: &Db, input: ArtifactMutationInput) -> DbResult<ArtifactRow> {
         let config = self.config()?;
-        let res = self.api.rename_artifact(&config, &input.id, &input.title).map_err(DbError::Api)?;
+        let res = self
+            .api
+            .rename_artifact(&config, &input.id, &input.title)
+            .map_err(DbError::Api)?;
         Ok(self
             .merge_rename(db, &res.id, &res.title, res.seq as i64)?
             .map(|n| artifact_row_from_node(&n))
@@ -338,7 +369,10 @@ impl WorkspaceRepo {
         let config = self.config()?;
         // Delete through the browser-node endpoint so the server tombstones the
         // node spine (and any subtree), not just the artifact row.
-        let res = self.api.delete_node(&config, &input.id).map_err(DbError::Api)?;
+        let res = self
+            .api
+            .delete_node(&config, &input.id)
+            .map_err(DbError::Api)?;
         self.apply_delete(db, &res.id, res.seq as i64)
     }
 

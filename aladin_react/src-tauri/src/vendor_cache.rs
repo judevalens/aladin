@@ -64,7 +64,13 @@ fn resolve<R: Runtime>(app: &AppHandle<R>, uri: &str) -> tauri::http::Response<V
 /// Extract the hex sha from `vendor://deps/<sha>` (traversal-proof: hex only).
 fn parse_sha(uri: &str) -> Option<String> {
     let tail = uri.rsplit('/').next().unwrap_or("");
-    let sha = tail.split('?').next().unwrap_or(tail).split('#').next().unwrap_or(tail);
+    let sha = tail
+        .split('?')
+        .next()
+        .unwrap_or(tail)
+        .split('#')
+        .next()
+        .unwrap_or(tail);
     if !sha.is_empty() && sha.chars().all(|c| c.is_ascii_hexdigit()) {
         Some(sha.to_string())
     } else {

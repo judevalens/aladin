@@ -224,7 +224,10 @@ impl BackendEventProcessor {
                 frame
                     .entities
                     .iter()
-                    .map(|e| format!("{}:{} op={} seq={}", e.entity_kind, e.entity_id, e.op, e.seq))
+                    .map(|e| format!(
+                        "{}:{} op={} seq={}",
+                        e.entity_kind, e.entity_id, e.op, e.seq
+                    ))
                     .collect::<Vec<_>>()
             ),
         }

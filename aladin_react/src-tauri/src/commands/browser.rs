@@ -16,7 +16,10 @@ use crate::db::{Db, DbResult};
 // committed result under the seq guard.
 
 #[tauri::command]
-pub fn db_list_browser_nodes(repo: State<'_, WorkspaceRepo>, db: State<'_, Db>) -> DbResult<Vec<BrowserNodeRow>> {
+pub fn db_list_browser_nodes(
+    repo: State<'_, WorkspaceRepo>,
+    db: State<'_, Db>,
+) -> DbResult<Vec<BrowserNodeRow>> {
     repo.list_browser_nodes(&db)
 }
 

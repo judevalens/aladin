@@ -82,11 +82,25 @@ pub struct DeleteNodeResult {
 
 pub trait WorkspaceWriteApi: Send + Sync {
     /// POST /api/browser/nodes — create a folder or artifact node.
-    fn create_node(&self, config: &SyncConfig, body: serde_json::Value) -> ApiResult<CreateNodeResult>;
+    fn create_node(
+        &self,
+        config: &SyncConfig,
+        body: serde_json::Value,
+    ) -> ApiResult<CreateNodeResult>;
     /// PATCH /api/folders/{id} — rename a folder.
-    fn rename_folder(&self, config: &SyncConfig, id: &str, title: &str) -> ApiResult<RenameFolderResult>;
+    fn rename_folder(
+        &self,
+        config: &SyncConfig,
+        id: &str,
+        title: &str,
+    ) -> ApiResult<RenameFolderResult>;
     /// PATCH /api/artifacts/{id} — rename (patch) an artifact.
-    fn rename_artifact(&self, config: &SyncConfig, id: &str, title: &str) -> ApiResult<WrittenArtifact>;
+    fn rename_artifact(
+        &self,
+        config: &SyncConfig,
+        id: &str,
+        title: &str,
+    ) -> ApiResult<WrittenArtifact>;
     /// DELETE /api/browser/nodes/{id} — soft-delete a node + its subtree.
     fn delete_node(&self, config: &SyncConfig, id: &str) -> ApiResult<DeleteNodeResult>;
 }
@@ -105,7 +119,11 @@ impl HttpWorkspaceWriteApi {
 }
 
 impl WorkspaceWriteApi for HttpWorkspaceWriteApi {
-    fn create_node(&self, config: &SyncConfig, body: serde_json::Value) -> ApiResult<CreateNodeResult> {
+    fn create_node(
+        &self,
+        config: &SyncConfig,
+        body: serde_json::Value,
+    ) -> ApiResult<CreateNodeResult> {
         let client = reqwest::blocking::Client::new();
         client
             .post(format!("{}/api/browser/nodes", Self::base(config)))
@@ -119,7 +137,12 @@ impl WorkspaceWriteApi for HttpWorkspaceWriteApi {
             .map_err(ApiError::from_reqwest)
     }
 
-    fn rename_folder(&self, config: &SyncConfig, id: &str, title: &str) -> ApiResult<RenameFolderResult> {
+    fn rename_folder(
+        &self,
+        config: &SyncConfig,
+        id: &str,
+        title: &str,
+    ) -> ApiResult<RenameFolderResult> {
         let client = reqwest::blocking::Client::new();
         client
             .patch(format!("{}/api/folders/{}", Self::base(config), id))
@@ -133,7 +156,12 @@ impl WorkspaceWriteApi for HttpWorkspaceWriteApi {
             .map_err(ApiError::from_reqwest)
     }
 
-    fn rename_artifact(&self, config: &SyncConfig, id: &str, title: &str) -> ApiResult<WrittenArtifact> {
+    fn rename_artifact(
+        &self,
+        config: &SyncConfig,
+        id: &str,
+        title: &str,
+    ) -> ApiResult<WrittenArtifact> {
         let client = reqwest::blocking::Client::new();
         client
             .patch(format!("{}/api/artifacts/{}", Self::base(config), id))
