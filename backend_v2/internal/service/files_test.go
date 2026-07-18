@@ -90,7 +90,7 @@ type fakeFileStore struct {
 	path string
 }
 
-func (f *fakeFileStore) SaveResource(_ string, _ string, _ io.Reader) (StoredArtifactResource, error) {
+func (f *fakeFileStore) SaveResource(_ string, _ string, _ string, _ io.Reader) (StoredArtifactResource, error) {
 	return StoredArtifactResource{
 		StorageKey: "file/file-blob.txt",
 	}, nil

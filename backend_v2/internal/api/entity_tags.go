@@ -15,8 +15,6 @@ func (s *Server) registerEntityTagRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/artifacts/{id}/entities", s.handleArtifactEntitiesAttach)
 	mux.HandleFunc("DELETE /api/artifacts/{id}/entities/{entityId}", s.handleArtifactEntitiesDetach)
 	mux.HandleFunc("PUT /api/artifacts/{id}/entity-mentions", s.handleArtifactMentionsSync)
-	mux.HandleFunc("POST /api/artifacts/{id}/extract-claims", s.handleArtifactExtractClaims)
-	mux.HandleFunc("POST /api/artifacts/{id}/ingest", s.handleArtifactConnect)
 }
 
 func principalUserID(r *http.Request) string {
@@ -117,45 +115,6 @@ func (s *Server) handleArtifactMentionsSync(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// POST /api/artifacts/{id}/extract-claims {text} — run authored claim extraction for a
-// page, grounded in its tags/@mentions. No-ops (claimsStored:0) when the page has no
-// entities or no LLM extractor is configured.
-func (s *Server) handleArtifactExtractClaims(w http.ResponseWriter, r *http.Request) {
-	var payload struct {
-		Text string `json:"text"`
-	}
-	if err := readJSON(r, &payload); err != nil {
-		writeDecodeError(w, r, err)
-		return
-	}
-	n, err := s.deps.AuthoredClaims().ForArtifact(r.Context(), r.PathValue("id"), principalUserID(r), payload.Text)
-	if err != nil {
-		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]int{"claimsStored": n})
-}
-
-// POST /api/artifacts/{id}/ingest {text} — the Y3 "Connect" trigger: extract authored
-// claims for the page, then surface what supports / contradicts them. Returns
-// {claimsStored, connections}. No-ops gracefully (empty connections) without grounding or
-// an LLM extractor.
-func (s *Server) handleArtifactConnect(w http.ResponseWriter, r *http.Request) {
-	var payload struct {
-		Text string `json:"text"`
-	}
-	if err := readJSON(r, &payload); err != nil {
-		writeDecodeError(w, r, err)
-		return
-	}
-	out, err := s.deps.AuthoredClaims().Connect(r.Context(), r.PathValue("id"), principalUserID(r), payload.Text)
-	if err != nil {
-		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
-		return
-	}
-	writeJSON(w, http.StatusOK, out)
 }
 
 // DELETE /api/artifacts/{id}/entities/{entityId} — remove a tag.

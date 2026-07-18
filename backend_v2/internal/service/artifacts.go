@@ -76,7 +76,7 @@ type StoredArtifactResource struct {
 }
 
 type ArtifactFileStore interface {
-	SaveResource(string, string, io.Reader) (StoredArtifactResource, error)
+	SaveResource(kind string, filename string, contentType string, body io.Reader) (StoredArtifactResource, error)
 	ResourcePath(string) (string, error)
 }
 
@@ -473,7 +473,7 @@ func (s *DefaultArtifactService) Upload(ctx context.Context, input ArtifactUploa
 	if filename == "" {
 		return ArtifactResponse{}, BadRequest("filename is required")
 	}
-	stored, err := s.files.SaveResource(artifactType, filename, body)
+	stored, err := s.files.SaveResource(artifactType, filename, input.ContentType, body)
 	if err != nil {
 		return ArtifactResponse{}, err
 	}

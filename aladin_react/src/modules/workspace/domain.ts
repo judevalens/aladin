@@ -144,6 +144,26 @@ export function findFolderChildren(tree: BrowserTreeNode[], folderId: string): B
   return null;
 }
 
+export interface FolderOption {
+  id: string | null;
+  title: string;
+  depth: number;
+}
+
+/** Flattens the tree into a depth-ordered list of folders for a picker. */
+export function flattenFolderOptions(tree: BrowserTreeNode[]): FolderOption[] {
+  const out: FolderOption[] = [];
+  const visit = (nodes: BrowserTreeNode[], depth: number) => {
+    for (const node of nodes) {
+      if (node.kind !== "folder") continue;
+      out.push({ id: node.id, title: node.title, depth });
+      if (node.children?.length) visit(node.children, depth + 1);
+    }
+  };
+  visit(tree, 0);
+  return out;
+}
+
 export function nextFolderTitle(tree: BrowserTreeNode[], folderId: string | null): string {
   const siblings = getFolderScopedNodes(tree, folderId);
   const existingTitles = new Set(

@@ -1,4 +1,4 @@
-import { FilePlus2, FolderPlus, Link2, Mic } from "lucide-react";
+import { FilePlus2, FolderPlus, Link2, Mic, Upload } from "lucide-react";
 import {
   CommandDialog,
   CommandEmpty,
@@ -13,6 +13,7 @@ export interface CommandPaletteActions {
   onCreateNote: () => void;
   onCreateLink: () => void;
   onCreateVoice: () => void;
+  onCreateFile: () => void;
 }
 
 /**
@@ -54,6 +55,10 @@ export function CommandPalette({
           <CommandItem value="new voice note" onSelect={() => run(actions.onCreateVoice)}>
             <Mic className="h-[15px] w-[15px] text-ink-3" strokeWidth={1.75} />
             New voice note
+          </CommandItem>
+          <CommandItem value="upload file" onSelect={() => run(actions.onCreateFile)}>
+            <Upload className="h-[15px] w-[15px] text-ink-3" strokeWidth={1.75} />
+            Upload file
           </CommandItem>
         </CommandGroup>
       </CommandList>

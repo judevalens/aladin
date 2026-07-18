@@ -22,7 +22,14 @@ describe("entityMention schema", () => {
     });
 
     const mentions = extractEntityMentions(editor.document);
-    expect(mentions).toEqual([{ entityId: "e-openai", blockId: expect.any(String), surface: "OpenAI" }]);
+    expect(mentions).toEqual([
+      {
+        entityId: "e-openai",
+        blockId: expect.any(String),
+        surface: "OpenAI",
+        snippet: expect.stringContaining("OpenAI"),
+      },
+    ]);
   });
 
   it("inserts an @entity at the cursor and keeps it in the document", () => {
@@ -39,6 +46,13 @@ describe("entityMention schema", () => {
     ]);
 
     const mentions = extractEntityMentions(editor.document);
-    expect(mentions).toEqual([{ entityId: "e1", blockId: first.id, surface: "Anthropic" }]);
+    expect(mentions).toEqual([
+      {
+        entityId: "e1",
+        blockId: first.id,
+        surface: "Anthropic",
+        snippet: expect.stringContaining("Anthropic"),
+      },
+    ]);
   });
 });

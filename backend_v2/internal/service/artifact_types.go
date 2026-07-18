@@ -154,11 +154,12 @@ type PageSearchParams struct {
 }
 
 type ArtifactUploadInput struct {
-	Type     string
-	Filename string
-	Title    *string
-	Summary  *string
-	FolderID *string
+	Type        string
+	Filename    string
+	ContentType string
+	Title       *string
+	Summary     *string
+	FolderID    *string
 }
 
 type ArtifactResource struct {

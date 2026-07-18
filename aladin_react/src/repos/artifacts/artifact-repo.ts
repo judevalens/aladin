@@ -1,14 +1,20 @@
 import type {
   Artifact,
   ArtifactKind,
+  ArtifactProperty,
   UserArtifact,
   UserArtifactCreateRequest,
   VoiceCaptureDraft,
 } from "@/shared/api/models";
 import type { ArtifactRow } from "@/repos/local-repo-types";
 import type { ArtifactRowRepo } from "@/repos/artifacts/artifact-row-repo";
-import { artifactToRow, rowToArtifact } from "@/repos/artifacts/artifact-mappers";
-import type { ArtifactApi } from "@/shared/api/artifact-api";
+import {
+  artifactToRow,
+  propertiesFromMetadataJson,
+  rowToArtifact,
+} from "@/repos/artifacts/artifact-mappers";
+import { mergePropertyDefs, type PropertyDef } from "@/repos/artifacts/property-defs";
+import type { ArtifactApi, FileUploadInput } from "@/shared/api/artifact-api";
 import type { ApiClient } from "@/shared/api/client";
 
 function artifactKind(type?: string | null): ArtifactKind {
@@ -44,6 +50,7 @@ function toArtifact(client: ApiClient, record: UserArtifact): Artifact {
     metadataString(record.metadata, "storageKey") ||
     "Untitled artifact";
 
+  const rawProperties = (record.metadata as { properties?: unknown } | null)?.properties;
   return {
     id: record.id,
     folderId: record.folderId,
@@ -55,6 +62,7 @@ function toArtifact(client: ApiClient, record: UserArtifact): Artifact {
     sourceUrl: record.sourceUrl,
     resourceUrl:
       kind === "voice" || kind === "file" ? artifactResourceUrl(client, record.id) : undefined,
+    properties: Array.isArray(rawProperties) ? (rawProperties as Artifact["properties"]) : null,
   };
 }
 
@@ -70,6 +78,11 @@ export interface ArtifactRepo {
   createArtifact(input: UserArtifactCreateRequest): Promise<Artifact>;
   renameArtifact(artifactId: string, title: string): Promise<Artifact>;
   uploadVoiceArtifact(draft: VoiceCaptureDraft): Promise<Artifact>;
+  uploadFileArtifact(input: FileUploadInput): Promise<Artifact>;
+  getResourceBlob(artifactId: string): Promise<Blob>;
+  updateProperties(artifactId: string, properties: ArtifactProperty[]): Promise<void>;
+  /** The reusable property-type set, derived from every cached artifact's properties. */
+  listPropertyDefs(): Promise<PropertyDef[]>;
 }
 
 export function createArtifactRepo(
@@ -127,6 +140,31 @@ export function createArtifactRepo(
     async uploadVoiceArtifact(draft) {
       const artifact = toArtifact(client, await api.uploadVoiceArtifact(draft));
       return cache(artifact);
+    },
+    async uploadFileArtifact(input) {
+      const artifact = toArtifact(client, await api.uploadFileArtifact(input));
+      return cache(artifact);
+    },
+    getResourceBlob(artifactId) {
+      return api.getResourceBlob(artifactId);
+    },
+    updateProperties(artifactId, properties) {
+      return artifacts.updateProperties(artifactId, properties);
+    },
+    async listPropertyDefs() {
+      const rows = await artifacts.listAll();
+      const defs: PropertyDef[] = [];
+      for (const row of rows) {
+        for (const p of propertiesFromMetadataJson(row.metadataJson) ?? []) {
+          defs.push({
+            key: p.key,
+            type: p.type,
+            // For tags, the used chip values ARE the known set (autocomplete source).
+            options: p.type === "tags" ? p.values ?? [] : p.options,
+          });
+        }
+      }
+      return mergePropertyDefs(defs);
     },
   };
 }

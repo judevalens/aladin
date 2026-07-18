@@ -31,13 +31,15 @@ type rowQuerier interface {
 // lightNodeData is the JSON `data` payload of an upsert frame entity — the light
 // fields a tree/list view needs. Folder rows omit type/sourceUrl.
 type lightNodeData struct {
-	ID        string  `json:"id"`
-	Kind      string  `json:"kind"`
-	ParentID  *string `json:"parentId"`
-	Position  int64   `json:"position"`
-	Title     *string `json:"title"`
-	Type      *string `json:"type,omitempty"`
-	SourceURL *string `json:"sourceUrl,omitempty"`
+	ID        string          `json:"id"`
+	Kind      string          `json:"kind"`
+	ParentID  *string         `json:"parentId"`
+	Position  int64           `json:"position"`
+	Title     *string         `json:"title"`
+	Type      *string         `json:"type,omitempty"`
+	SourceURL *string         `json:"sourceUrl,omitempty"`
+	Summary   *string         `json:"summary,omitempty"`
+	Metadata  json.RawMessage `json:"metadata,omitempty"`
 }
 
 // lightEntitySelect projects a tree_nodes row (joined to its artifact, if any)
@@ -47,7 +49,7 @@ type lightNodeData struct {
 const lightEntitySelect = `
 	SELECT n.id, n.kind, n.parent_id, n.position,
 	       CASE WHEN n.kind = 'folder' THEN n.title ELSE a.title END AS title,
-	       a.type, a.source_url, n.seq, n.is_deleted
+	       a.type, a.source_url, a.summary, a.metadata, n.seq, n.is_deleted
 	  FROM tree_nodes n
 	  LEFT JOIN artifacts a ON a.id = n.artifact_id AND a.user_id = n.user_id
 	 WHERE n.user_id = $1::uuid`
@@ -63,10 +65,12 @@ func scanLightEntity(row scanner) (service.FrameEntity, error) {
 		title     *string
 		aType     *string
 		sourceURL *string
+		summary   *string
+		metadata  []byte
 		seq       int64
 		isDeleted bool
 	)
-	if err := row.Scan(&id, &kind, &parentID, &position, &title, &aType, &sourceURL, &seq, &isDeleted); err != nil {
+	if err := row.Scan(&id, &kind, &parentID, &position, &title, &aType, &sourceURL, &summary, &metadata, &seq, &isDeleted); err != nil {
 		return service.FrameEntity{}, err
 	}
 	ent := service.FrameEntity{EntityKind: kind, EntityID: id, Seq: uint64(seq)}
@@ -78,6 +82,7 @@ func scanLightEntity(row scanner) (service.FrameEntity, error) {
 	data, err := json.Marshal(lightNodeData{
 		ID: id, Kind: kind, ParentID: parentID, Position: position,
 		Title: title, Type: aType, SourceURL: sourceURL,
+		Summary: summary, Metadata: json.RawMessage(metadata),
 	})
 	if err != nil {
 		return service.FrameEntity{}, err

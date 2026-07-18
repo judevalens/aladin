@@ -17,6 +17,7 @@ pub struct ArtifactRow {
     pub content: Option<String>,
     pub source_url: Option<String>,
     pub resource_url: Option<String>,
+    pub summary: Option<String>,
     pub metadata_json: Option<String>,
     pub updated_at: i64,
     pub sync_status: SyncStatus,

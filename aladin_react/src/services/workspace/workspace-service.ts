@@ -1,9 +1,11 @@
 import type { Observable } from "rxjs";
 import type { ArtifactRepo } from "@/repos/artifacts/artifact-repo";
+import type { FileUploadInput } from "@/shared/api/artifact-api";
 import type { WorkspaceRepo } from "@/repos/workspace/workspace-repo";
 import type { Result } from "@/shared/flow/result";
 import type {
   Artifact,
+  ArtifactProperty,
   BrowserTreeNode,
   UserArtifactCreateRequest,
   VoiceCaptureDraft,
@@ -49,5 +51,26 @@ export class WorkspaceService {
     const artifact = await this.artifactRepo.uploadVoiceArtifact(draft);
     this.sync.publishArtifact(artifact);
     return artifact;
+  }
+
+  async uploadFileArtifact(input: FileUploadInput) {
+    const artifact = await this.artifactRepo.uploadFileArtifact(input);
+    this.sync.publishArtifact(artifact);
+    this.sync.refreshTree();
+    return artifact;
+  }
+
+  /**
+   * Set an artifact's typed properties. The Rust command applies the write and
+   * emits a NodeUpserted frame, so the reactive `artifactById` stream updates on
+   * its own — no manual publish needed here.
+   */
+  async updateArtifactProperties(artifactId: string, properties: ArtifactProperty[]) {
+    await this.artifactRepo.updateProperties(artifactId, properties);
+  }
+
+  /** The reusable property-type set (presets are merged in by the caller/UI). */
+  listPropertyDefs() {
+    return this.artifactRepo.listPropertyDefs();
   }
 }

@@ -65,7 +65,7 @@ func (r *Resolver) WithEmbedder(e llm.Embedder) *Resolver {
 // Mention is one occurrence of an entity surface form in a record.
 type Mention struct {
 	Surface        string
-	Kind           string // "" → "unknown" in R0 (this branch's enrichment is untyped)
+	Kind           string // "" → "other" (generic typed kinds: person|org|concept|location|other)
 	RecordID       string
 	SourceRevision int64
 	ContextHint    string // optional surrounding context (e.g. record summary) for the context-embedding
@@ -81,7 +81,7 @@ func (r *Resolver) Resolve(ctx context.Context, m Mention) (string, error) {
 	}
 	kind := m.Kind
 	if kind == "" {
-		kind = "unknown"
+		kind = "other"
 	}
 	norm := Normalize(surface)
 	if norm == "" {
@@ -178,7 +178,7 @@ func (r *Resolver) ResolveTenant(ctx context.Context, ownerUserID string, m Ment
 	}
 	kind := m.Kind
 	if kind == "" {
-		kind = "unknown"
+		kind = "other"
 	}
 	norm := Normalize(surface)
 	if norm == "" {

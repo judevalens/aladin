@@ -204,7 +204,10 @@ impl WorkspaceRepo {
                 artifact_type: Some(row.kind.clone()),
                 content: row.content.clone(),
                 source_url: row.source_url.clone(),
-                summary: existing.as_ref().and_then(|n| n.summary.clone()),
+                summary: row
+                    .summary
+                    .clone()
+                    .or_else(|| existing.as_ref().and_then(|n| n.summary.clone())),
                 metadata_json: row.metadata_json.clone(),
                 updated_at: row.updated_at,
             };
@@ -339,6 +342,7 @@ impl WorkspaceRepo {
             "title": res.node.title,
             "type": a_type,
             "sourceUrl": source_url,
+            "summary": input.summary,
         });
         let row = self
             .apply_and_read(
@@ -351,6 +355,49 @@ impl WorkspaceRepo {
             )?
             .ok_or(DbError::NotInitialized)?;
         Ok(artifact_row_from_node(&row))
+    }
+
+    /// Set an artifact's typed properties. Proxies a metadata PATCH (server shallow-
+    /// merges `{properties}` into the metadata jsonb, preserving storageKey/mimeType,
+    /// and bumps the node seq), then applies the same result optimistically as a FULL
+    /// payload so the artifact stream updates reactively with no reload. The
+    /// authoritative server frame (same seq) is a dedup no-op.
+    pub fn update_artifact_properties(
+        &self,
+        db: &Db,
+        id: &str,
+        properties: serde_json::Value,
+    ) -> DbResult<()> {
+        let config = self.config()?;
+        let res = self
+            .api
+            .update_artifact_metadata(&config, id, json!({ "properties": properties.clone() }))
+            .map_err(DbError::Api)?;
+        // Optimistic apply — only if the node is already cached (the editor operates on
+        // an open artifact, so it will be). Mirror the server's shallow merge: set the
+        // `properties` key on the cached metadata bag, preserving the other keys.
+        if let Some(existing) = db.with_conn(|conn| nodes::get_node(conn, id))? {
+            let mut metadata = existing
+                .metadata_json
+                .as_deref()
+                .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+                .unwrap_or_else(|| json!({}));
+            if let Some(obj) = metadata.as_object_mut() {
+                obj.insert("properties".to_string(), properties);
+            }
+            let data = json!({
+                "kind": existing.kind,
+                "parentId": existing.parent_id,
+                "position": existing.position,
+                "title": existing.title,
+                "type": existing.artifact_type,
+                "sourceUrl": existing.source_url,
+                "summary": existing.summary,
+                "metadata": metadata,
+            });
+            self.apply_and_read(db, &existing.kind, id, res.seq as i64, "upsert", Some(data))?;
+        }
+        Ok(())
     }
 
     pub fn rename_artifact(&self, db: &Db, input: ArtifactMutationInput) -> DbResult<ArtifactRow> {
@@ -408,6 +455,13 @@ impl WorkspaceRepo {
         let Some(existing) = existing else {
             return Ok(None);
         };
+        // Full payload: thread summary + metadata through from the cached row (same as
+        // type/sourceUrl) so the optimistic apply doesn't drop them — the model is
+        // whole-row replace, not column-merge.
+        let metadata: Option<serde_json::Value> = existing
+            .metadata_json
+            .as_deref()
+            .and_then(|s| serde_json::from_str(s).ok());
         let data = json!({
             "kind": existing.kind,
             "parentId": existing.parent_id,
@@ -415,6 +469,8 @@ impl WorkspaceRepo {
             "title": title,
             "type": existing.artifact_type,
             "sourceUrl": existing.source_url,
+            "summary": existing.summary,
+            "metadata": metadata,
         });
         self.apply_and_read(db, &existing.kind, id, seq, "upsert", Some(data))
     }
@@ -485,11 +541,10 @@ pub(crate) fn artifact_row_from_node(node: &NodeRow) -> ArtifactRow {
         content: node.content.clone(),
         source_url: node.source_url.clone(),
         resource_url: None,
-        metadata_json: node
-            .summary
-            .clone()
-            .map(|summary| serde_json::json!({ "summary": summary }).to_string())
-            .or_else(|| node.metadata_json.clone()),
+        // summary + metadata are distinct first-class fields (no tunneling summary
+        // through metadata_json — that overload is gone).
+        summary: node.summary.clone(),
+        metadata_json: node.metadata_json.clone(),
         updated_at: node.updated_at,
         sync_status: SyncStatus::Pending,
         version: 0,

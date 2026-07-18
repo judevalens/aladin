@@ -82,6 +82,15 @@ type EntityRepository interface {
 	AcceptMerge(ctx context.Context, mergeID string) error
 	RevertMerge(ctx context.Context, mergeID string) error
 
+	// P1.3 judge sweep: placeholder resolution + ambiguous-band adjudication.
+	ListPlaceholders(ctx context.Context, limit int) ([]PlaceholderEntity, error)
+	FindMergeCandidatesAnyKind(ctx context.Context, entityID, normalizedKey string, minSim float64, limit int) ([]ScoredCandidate, error)
+	ListJudgeableMerges(ctx context.Context, limit int) ([]JudgeableMerge, error)
+	DecideMerge(ctx context.Context, mergeID, outcome, decidedBy string, evidence map[string]any) error
+	HasProposedMergeFor(ctx context.Context, entityID string) (bool, error)
+	PromoteEntity(ctx context.Context, entityID string) error
+	ListEntityAliases(ctx context.Context, entityID string) ([]string, error)
+
 	// R3: tenant tier (Tier 1 overlays + cross-tier bind + local-override read).
 	FindTenantByKey(ctx context.Context, ownerUserID, kind, normalizedKey string) ([]EntityCandidate, error)
 	CreateTenantEntity(ctx context.Context, p CreateTenantEntityParams) (string, error)

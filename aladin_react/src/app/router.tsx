@@ -13,6 +13,13 @@ import { SourcesRoute } from "@/modules/sources/sources-route";
 import { SignalsUI } from "@/modules/signals/ui/signals-ui";
 import { InsightsUI } from "@/modules/insights/ui/insights-ui";
 import { SandboxSpike } from "@/modules/doc-surface/spike/sandbox-spike";
+import { EditorPreview } from "@/modules/pages/editor/editor-preview";
+import { EntityContextSpike } from "@/modules/entities/ui/entity-context-spike";
+import { EntityContextRoute } from "@/modules/entities/ui/entity-context-route";
+import { EntitiesIndexUI } from "@/modules/entities/ui/entities-index-ui";
+import { EntitiesIndexSpike } from "@/modules/entities/ui/entities-index-spike";
+import { EntitiesInboxSpike } from "@/modules/entities/ui/entities-inbox-spike";
+import { EntitiesHomeSpike } from "@/modules/entities/ui/entities-home-spike";
 
 function WorkspaceRoute() {
   return (
@@ -40,6 +47,33 @@ export const router = createBrowserRouter([
     element: <SandboxSpike />,
   },
   {
+    // Dev-only editor preview — standalone, no auth/collab, for iterating on
+    // the block editor's look-and-feel outside the login wall.
+    path: "/spike/editor",
+    element: <EditorPreview />,
+  },
+  {
+    // Dev-only Entity Context spike — Phase A of the entity surface on mock
+    // data (design/ENTITY_CONTEXT_PRD.md), standalone, no auth.
+    path: "/spike/entity-context",
+    element: <EntityContextSpike />,
+  },
+  {
+    // Dev-only Entities index spike — the masonry cards on mock data, no auth.
+    path: "/spike/entities-index",
+    element: <EntitiesIndexSpike />,
+  },
+  {
+    // Dev-only Entities inbox spike — the default triage landing on mock data, no auth.
+    path: "/spike/entities-inbox",
+    element: <EntitiesInboxSpike />,
+  },
+  {
+    // Dev-only Entities HOME spike — the constellation/map reimagining on mock data.
+    path: "/spike/entities-home",
+    element: <EntitiesHomeSpike />,
+  },
+  {
     element: <ProtectedLayout />,
     children: [
       {
@@ -51,6 +85,10 @@ export const router = createBrowserRouter([
           { path: "/sources", element: <SourcesRoute /> },
           { path: "/signals", element: <SignalsUI /> },
           { path: "/insights", element: <InsightsUI /> },
+          { path: "/entities", element: <EntitiesIndexUI /> },
+          // The Entity Context surface. Router history is the back-trail, so an edge
+          // click ("pull the thread") is undone by the normal back gesture.
+          { path: "/entity/:entityId", element: <EntityContextRoute /> },
           {
             path: "/graph",
             element: (

@@ -38,6 +38,8 @@ export interface EntityHit {
   kind: string;
   scope: string;
   trustTier: string;
+  /** Other known surfaces (synonyms), excluding the canonical name — for picker display. */
+  aliases: string[];
 }
 
 /** An entity linked to a page (GET /api/artifacts/{id}/entities): a tag or projected mention. */
@@ -54,6 +56,8 @@ export interface MentionRef {
   entityId: string;
   blockId: string;
   surface: string;
+  /** The block's plain text — rendered verbatim as "your note" on the entity surface. */
+  snippet: string;
 }
 
 /** Reference target kind for the `#` picker. */
@@ -75,19 +79,12 @@ export interface ArtifactRef {
   surface: string;
 }
 
-/** A page claim with its discovered support/contradiction (POST …/ingest, Y3). */
-export interface ClaimConnection {
-  claimId: string;
-  text: string;
-  polarity: string;
-  support: number;
-  contradict: number;
-}
-
-/** The Y3 "Connect" payload. */
-export interface ConnectResult {
-  claimsStored: number;
-  connections: ClaimConnection[];
+/** Another artifact connected to the pane's subject. */
+export interface GraphLinkedArtifact {
+  id: string;
+  title: string;
+  kind: string; // artifact type: note | link | voice | file | app | page | shard
+  relation: "referenced_by" | "references" | "shared_entity";
 }
 
 export interface GraphPane {
@@ -95,4 +92,5 @@ export interface GraphPane {
   claims: GraphClaim[];
   cites: GraphCite[];
   entities: GraphEntity[];
+  linkedArtifacts: GraphLinkedArtifact[];
 }

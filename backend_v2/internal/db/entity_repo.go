@@ -449,12 +449,19 @@ func (r *pgEntityRepo) ListProposedMerges(ctx context.Context, limit int) ([]Pro
 
 // RejectMerge marks a proposed merge rejected. The row stays as negative evidence so
 // ProposeMerge never re-proposes the pair.
+//
+// Returns pgx.ErrNoRows when the row isn't pending (already decided, or unknown id) —
+// deliberately symmetric with AcceptMerge, which RETURNINGs. Callers exposing these to a
+// user need one predictable outcome for a double-click; previously this used Exec and
+// silently "succeeded" on an already-decided row while Accept errored.
 func (r *pgEntityRepo) RejectMerge(ctx context.Context, mergeID string) error {
-	_, err := r.pool.Exec(ctx, `
+	var id string
+	err := r.pool.QueryRow(ctx, `
 		UPDATE entity_merges
 		   SET status = 'rejected', decided_by = 'user', decided_at = now()
 		 WHERE id = $1::uuid AND status = 'proposed'
-	`, mergeID)
+		 RETURNING id::text
+	`, mergeID).Scan(&id)
 	if err != nil {
 		return fmt.Errorf("entity RejectMerge: %w", err)
 	}
@@ -522,4 +529,227 @@ func (r *pgEntityRepo) AcceptMerge(ctx context.Context, mergeID string) error {
 		return fmt.Errorf("entity AcceptMerge set root: %w", err)
 	}
 	return tx.Commit(ctx)
+}
+
+// ── P1.3: the judge sweep (entity-hardening plan) ────────────────────────────────────
+
+// PlaceholderEntity is an unresolved entity minted by the editor's @ create path,
+// awaiting background resolution (merge into an existing entity, or promotion).
+type PlaceholderEntity struct {
+	ID            string
+	Kind          string
+	CanonicalName string
+	NormalizedKey string
+	CreatedAt     time.Time
+}
+
+// JudgeableMerge is a proposed merge enriched for the judge sweep: kinds decide the
+// deterministic tier (cross-typed-kind pairs never auto-merge — sense splits), and the
+// judged filter (no 'judge' evidence key) guarantees one LLM judgment per pair, ever.
+type JudgeableMerge struct {
+	ID         string
+	FromID     string
+	FromName   string
+	FromKind   string
+	IntoID     string
+	IntoName   string
+	IntoKind   string
+	Confidence float64
+	Method     string
+}
+
+// ListPlaceholders returns unresolved placeholder entities (oldest first) that have not
+// already been merged away.
+func (r *pgEntityRepo) ListPlaceholders(ctx context.Context, limit int) ([]PlaceholderEntity, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, kind, canonical_name, normalized_key, created_at
+		  FROM entities
+		 WHERE trust_tier = 'placeholder' AND canonical_root_id IS NULL AND scope = 'shared'
+		 ORDER BY created_at ASC
+		 LIMIT $1
+	`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("entity ListPlaceholders: %w", err)
+	}
+	defer rows.Close()
+	var out []PlaceholderEntity
+	for rows.Next() {
+		var p PlaceholderEntity
+		if err := rows.Scan(&p.ID, &p.Kind, &p.CanonicalName, &p.NormalizedKey, &p.CreatedAt); err != nil {
+			return nil, fmt.Errorf("entity ListPlaceholders scan: %w", err)
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// FindMergeCandidatesAnyKind finds merge candidates for a placeholder across ALL kinds,
+// alias-aware, INCLUDING exact-key matches (for a placeholder, the same key under a
+// typed kind is the prime candidate — the opposite of FindSharedCandidates, which
+// excludes the exact key because its caller just created it). Excludes the entity
+// itself, merged-away rows, and tenant-scope rows.
+func (r *pgEntityRepo) FindMergeCandidatesAnyKind(ctx context.Context, entityID, normalizedKey string, minSim float64, limit int) ([]ScoredCandidate, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT e.id::text, e.kind, e.canonical_name, e.normalized_key,
+		       MAX(GREATEST(similarity(e.normalized_key, $2),
+		                    COALESCE(similarity(a.normalized, $2), 0))) AS sim
+		  FROM entities e
+		  LEFT JOIN entity_aliases a ON a.entity_id = e.id
+		 WHERE e.scope = 'shared' AND e.id <> $1::uuid AND e.canonical_root_id IS NULL
+		 GROUP BY e.id, e.kind, e.canonical_name, e.normalized_key
+		HAVING MAX(GREATEST(similarity(e.normalized_key, $2),
+		                    COALESCE(similarity(a.normalized, $2), 0))) >= $3
+		 ORDER BY sim DESC, e.created_at ASC
+		 LIMIT $4
+	`, entityID, normalizedKey, minSim, limit)
+	if err != nil {
+		return nil, fmt.Errorf("entity FindMergeCandidatesAnyKind: %w", err)
+	}
+	defer rows.Close()
+	var out []ScoredCandidate
+	for rows.Next() {
+		var c ScoredCandidate
+		if err := rows.Scan(&c.ID, &c.Kind, &c.CanonicalName, &c.NormalizedKey, &c.Similarity); err != nil {
+			return nil, fmt.Errorf("entity FindMergeCandidatesAnyKind scan: %w", err)
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// ListJudgeableMerges returns proposed merges that have not been judged yet (no 'judge'
+// key in evidence), enriched with both sides' kinds. Oldest first.
+func (r *pgEntityRepo) ListJudgeableMerges(ctx context.Context, limit int) ([]JudgeableMerge, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT m.id::text, m.from_entity_id::text, ef.canonical_name, ef.kind,
+		       m.into_entity_id::text, ei.canonical_name, ei.kind,
+		       COALESCE(m.confidence, 0), COALESCE(m.method, '')
+		  FROM entity_merges m
+		  JOIN entities ef ON ef.id = m.from_entity_id
+		  JOIN entities ei ON ei.id = m.into_entity_id
+		 WHERE m.status = 'proposed' AND NOT (m.evidence ? 'judge')
+		 ORDER BY m.created_at ASC
+		 LIMIT $1
+	`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("entity ListJudgeableMerges: %w", err)
+	}
+	defer rows.Close()
+	var out []JudgeableMerge
+	for rows.Next() {
+		var m JudgeableMerge
+		if err := rows.Scan(&m.ID, &m.FromID, &m.FromName, &m.FromKind,
+			&m.IntoID, &m.IntoName, &m.IntoKind, &m.Confidence, &m.Method); err != nil {
+			return nil, fmt.Errorf("entity ListJudgeableMerges scan: %w", err)
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// DecideMerge records the sweep's verdict on a proposed merge.
+//   - "applied": the pair is the same thing — status→applied, the from-entity's root is
+//     repointed at the into-entity's root, and any entities that pointed at from are
+//     re-pointed too (depth-1 invariant: canonical_root_id always names a true root, so
+//     single-hop reads stay exact).
+//   - "rejected": different things — negative evidence, the pair is never re-proposed.
+//   - "unsure": stays proposed for manual review; the evidence marks it judged so the
+//     sweep never re-spends an LLM call on it (one judgment per pair, ever).
+// The evidence map is merged into the row's evidence jsonb.
+func (r *pgEntityRepo) DecideMerge(ctx context.Context, mergeID, outcome, decidedBy string, evidence map[string]any) error {
+	ev, err := json.Marshal(evidence)
+	if err != nil {
+		return fmt.Errorf("entity DecideMerge marshal evidence: %w", err)
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("entity DecideMerge begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var status string
+	switch outcome {
+	case "applied", "rejected":
+		status = outcome
+	case "unsure":
+		status = "proposed"
+	default:
+		return fmt.Errorf("entity DecideMerge: unknown outcome %q", outcome)
+	}
+
+	var fromID, intoID string
+	err = tx.QueryRow(ctx, `
+		UPDATE entity_merges
+		   SET status = $2, decided_by = $3,
+		       decided_at = CASE WHEN $2 = 'proposed' THEN decided_at ELSE now() END,
+		       evidence = evidence || $4::jsonb
+		 WHERE id = $1::uuid AND status = 'proposed'
+		 RETURNING from_entity_id::text, into_entity_id::text
+	`, mergeID, status, decidedBy, ev).Scan(&fromID, &intoID)
+	if err != nil {
+		return fmt.Errorf("entity DecideMerge update: %w", err)
+	}
+
+	if outcome == "applied" {
+		if _, err := tx.Exec(ctx, `
+			WITH root AS (
+				SELECT COALESCE(canonical_root_id, id) AS id FROM entities WHERE id = $2::uuid
+			)
+			UPDATE entities e
+			   SET canonical_root_id = (SELECT id FROM root), updated_at = now()
+			 WHERE e.id = $1::uuid OR e.canonical_root_id = $1::uuid
+		`, fromID, intoID); err != nil {
+			return fmt.Errorf("entity DecideMerge set root: %w", err)
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+// HasProposedMergeFor reports whether any proposed merge involves the entity (used to
+// hold a placeholder's promotion while its candidate pairs await judgment/review).
+func (r *pgEntityRepo) HasProposedMergeFor(ctx context.Context, entityID string) (bool, error) {
+	var exists bool
+	err := r.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM entity_merges
+			 WHERE status = 'proposed'
+			   AND (from_entity_id = $1::uuid OR into_entity_id = $1::uuid)
+		)
+	`, entityID).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("entity HasProposedMergeFor: %w", err)
+	}
+	return exists, nil
+}
+
+// PromoteEntity resolves a placeholder in place: it is a real, distinct entity.
+func (r *pgEntityRepo) PromoteEntity(ctx context.Context, entityID string) error {
+	_, err := r.pool.Exec(ctx, `
+		UPDATE entities SET trust_tier = 'believed', updated_at = now()
+		 WHERE id = $1::uuid AND trust_tier = 'placeholder'
+	`, entityID)
+	if err != nil {
+		return fmt.Errorf("entity PromoteEntity: %w", err)
+	}
+	return nil
+}
+
+// ListEntityAliases returns an entity's known surfaces (judge input).
+func (r *pgEntityRepo) ListEntityAliases(ctx context.Context, entityID string) ([]string, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT surface FROM entity_aliases WHERE entity_id = $1::uuid ORDER BY created_at ASC
+	`, entityID)
+	if err != nil {
+		return nil, fmt.Errorf("entity ListEntityAliases: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, fmt.Errorf("entity ListEntityAliases scan: %w", err)
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
 }

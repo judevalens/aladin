@@ -24,7 +24,8 @@ func (s *Server) handleFilesUpload(w http.ResponseWriter, r *http.Request) {
 	defer file.Close()
 
 	rec, err := s.deps.Files().Upload(r.Context(), artifactservice.FileUploadInput{
-		Filename: header.Filename,
+		Filename:    header.Filename,
+		ContentType: header.Header.Get("Content-Type"),
 	}, file)
 	if err != nil {
 		if writeAccessError(w, r, err) {

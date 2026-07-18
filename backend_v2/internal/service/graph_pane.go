@@ -6,10 +6,21 @@ import "context"
 // claims about its entities (each grounded in N sources or not), the cited source
 // records, and the entities it is about. Surfaces the entity + claim layers.
 type GraphPane struct {
-	Thesis   *GraphThesis  `json:"thesis"`
-	Claims   []GraphClaim  `json:"claims"`
-	Cites    []GraphCite   `json:"cites"`
-	Entities []GraphEntity `json:"entities"`
+	Thesis          *GraphThesis          `json:"thesis"`
+	Claims          []GraphClaim          `json:"claims"`
+	Cites           []GraphCite           `json:"cites"`
+	Entities        []GraphEntity         `json:"entities"`
+	LinkedArtifacts []GraphLinkedArtifact `json:"linkedArtifacts"`
+}
+
+// GraphLinkedArtifact is another artifact connected to the pane's subject. Relation
+// records how: 'referenced_by' / 'references' (a # cross-reference in either direction)
+// or 'shared_entity' (both mention the same entity).
+type GraphLinkedArtifact struct {
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	Kind     string `json:"kind"`
+	Relation string `json:"relation"`
 }
 
 type GraphThesis struct {

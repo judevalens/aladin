@@ -1,6 +1,23 @@
 import type { ApiClient } from "@/shared/api/client";
-import type { Artifact, ArtifactKind } from "@/shared/api/models";
+import type { Artifact, ArtifactKind, ArtifactProperty } from "@/shared/api/models";
 import type { ArtifactRow, NodeRow } from "@/repos/local-repo-types";
+
+/** Serialize an artifact's typed properties into the metadata bag stored as metadata_json. */
+function propertiesToMetadataJson(properties: Artifact["properties"]): string | null {
+  if (!properties || properties.length === 0) return null;
+  return JSON.stringify({ properties });
+}
+
+/** Pull the typed properties array out of a stored metadata_json bag (tolerant of junk). */
+export function propertiesFromMetadataJson(metadataJson: string | null): ArtifactProperty[] | null {
+  if (!metadataJson) return null;
+  try {
+    const parsed = JSON.parse(metadataJson) as { properties?: ArtifactProperty[] };
+    return Array.isArray(parsed.properties) ? parsed.properties : null;
+  } catch {
+    return null;
+  }
+}
 
 export function artifactKindFromString(value: string | null | undefined): ArtifactKind {
   switch ((value ?? "").toLowerCase()) {
@@ -29,7 +46,8 @@ export function artifactToRow(artifact: Artifact, updatedAtMs: number): Artifact
     content: artifact.content ?? null,
     sourceUrl: artifact.sourceUrl ?? null,
     resourceUrl: artifact.resourceUrl ?? null,
-    metadataJson: artifact.summary ? JSON.stringify({ summary: artifact.summary }) : null,
+    summary: artifact.summary ?? null,
+    metadataJson: propertiesToMetadataJson(artifact.properties),
     updatedAt: updatedAtMs,
     syncStatus: "SYNCED",
     version: 0,
@@ -51,9 +69,9 @@ export function nodeRowToArtifactRow(node: NodeRow): ArtifactRow {
     content: node.content,
     sourceUrl: node.sourceUrl,
     resourceUrl: null,
-    metadataJson: node.summary
-      ? JSON.stringify({ summary: node.summary })
-      : node.metadataJson,
+    // summary + metadata are distinct columns now — pass both through untouched.
+    summary: node.summary,
+    metadataJson: node.metadataJson,
     updatedAt: node.updatedAt,
     syncStatus: "SYNCED",
     version: 0,
@@ -62,21 +80,12 @@ export function nodeRowToArtifactRow(node: NodeRow): ArtifactRow {
 
 export function rowToArtifact(client: ApiClient, row: ArtifactRow): Artifact {
   const kind = artifactKindFromString(row.kind);
-  let summary: string | null = null;
-  if (row.metadataJson) {
-    try {
-      const parsed = JSON.parse(row.metadataJson) as { summary?: string };
-      summary = parsed.summary ?? null;
-    } catch {
-      summary = null;
-    }
-  }
   return {
     id: row.id,
     folderId: row.folderId,
     title: row.title,
     content: row.content ?? "",
-    summary,
+    summary: row.summary,
     kind,
     updatedLabel: new Date(row.updatedAt).toISOString(),
     sourceUrl: row.sourceUrl,
@@ -84,5 +93,6 @@ export function rowToArtifact(client: ApiClient, row: ArtifactRow): Artifact {
       kind === "voice" || kind === "file"
         ? row.resourceUrl ?? client.resolveUrl(`/api/artifacts/${row.id}/resource`)
         : null,
+    properties: propertiesFromMetadataJson(row.metadataJson),
   };
 }

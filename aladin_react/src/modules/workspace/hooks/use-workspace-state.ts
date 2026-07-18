@@ -4,7 +4,8 @@ import { combineLatest, map, of, startWith, type Observable } from "rxjs";
 import { useAppComposition } from "@/app/composition/app-composition";
 import { useAppStore } from "@/app/state/store";
 import { useShellSession } from "@/modules/auth/hooks/use-auth-state";
-import type { BrowserTreeRow, RenameDraft } from "@/modules/workspace/domain";
+import type { BrowserTreeRow, FolderOption, RenameDraft } from "@/modules/workspace/domain";
+import { flattenFolderOptions } from "@/modules/workspace/domain";
 import {
   buildWorkspaceRows,
   createArtifactCommand,
@@ -23,7 +24,14 @@ import type {
 } from "@/shared/api/models";
 import { useObservableState } from "@/shared/flow/use-observable-state";
 
-export type WorkspaceDestination = "home" | "folders" | "sources" | "signals" | "insights" | "graph";
+export type WorkspaceDestination =
+  | "home"
+  | "folders"
+  | "sources"
+  | "signals"
+  | "insights"
+  | "entities"
+  | "graph";
 
 export interface WorkspaceShellState {
   selectedDestination: WorkspaceDestination;
@@ -34,8 +42,15 @@ export interface WorkspaceShellState {
   onLogout: () => Promise<void>;
   onCreateFolder: () => Promise<void>;
   onCreateNote: () => Promise<void>;
-  onCreateLink: () => Promise<void>;
+  onCreateLink: () => void;
   onCreateVoice: () => void;
+  onCreateFile: () => void;
+  linkDialogOpen: boolean;
+  onCloseLinkDialog: () => void;
+  onSubmitLink: (url: string, title?: string) => Promise<void>;
+  fileDialogOpen: boolean;
+  onCloseFileDialog: () => void;
+  onSubmitFile: (file: File, title?: string) => Promise<void>;
 }
 
 export interface BrowserPaneState {
@@ -84,7 +99,17 @@ export interface VoiceDraftState {
   draft: VoiceCaptureDraft | null;
   permissionError: string | null;
   pending: boolean;
+  /** Milliseconds elapsed in the current recording (paused time excluded). */
+  elapsedMs: number;
+  /** Live input level, 0..1, for the meter while recording. */
+  level: number;
+  /** True while recording is paused (mic held, clock frozen). */
+  paused: boolean;
+  /** Folders the note can be saved into (root first). */
+  folders: FolderOption[];
   onStartRecording: () => Promise<void>;
+  onPauseRecording: () => void;
+  onResumeRecording: () => void;
   onStopRecording: () => void;
   onClose: () => void;
   onPatchDraft: (patch: Partial<VoiceCaptureDraft>) => void;
@@ -99,6 +124,8 @@ export function useWorkspaceShell(): WorkspaceShellState {
   const openVoiceDraft = useAppStore((state) => state.openVoiceDraft);
   const [createFolderPending, setCreateFolderPending] = useState(false);
   const [createArtifactPending, setCreateArtifactPending] = useState(false);
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+  const [fileDialogOpen, setFileDialogOpen] = useState(false);
 
   const treeLoadable = useObservableState(services.workspace.tree());
 
@@ -134,19 +161,41 @@ export function useWorkspaceShell(): WorkspaceShellState {
         setCreateArtifactPending(false);
       }
     },
-    onCreateLink: async () => {
+    onCreateLink: () => setLinkDialogOpen(true),
+    onCreateVoice: () => {
+      const focusedFolderId = useAppStore.getState().workspace.focusedFolderId;
+      openVoiceDraft(createVoiceDraft(tree, focusedFolderId));
+    },
+    onCreateFile: () => setFileDialogOpen(true),
+    linkDialogOpen,
+    onCloseLinkDialog: () => setLinkDialogOpen(false),
+    onSubmitLink: async (url, title) => {
       try {
         setCreateArtifactPending(true);
         const artifact = await services.workspace.createArtifact(
-          createArtifactCommand(tree, null, "link"),
+          createArtifactCommand(tree, null, "link", { sourceUrl: url, title }),
         );
+        setLinkDialogOpen(false);
         useAppStore.getState().openArtifact(artifact.id);
       } finally {
         setCreateArtifactPending(false);
       }
     },
-    onCreateVoice: () => {
-      openVoiceDraft(createVoiceDraft(tree, null));
+    fileDialogOpen,
+    onCloseFileDialog: () => setFileDialogOpen(false),
+    onSubmitFile: async (file, title) => {
+      try {
+        setCreateArtifactPending(true);
+        const artifact = await services.workspace.uploadFileArtifact({
+          file,
+          folderId: null,
+          title,
+        });
+        setFileDialogOpen(false);
+        useAppStore.getState().openArtifact(artifact.id);
+      } finally {
+        setCreateArtifactPending(false);
+      }
     },
   };
 }
@@ -340,6 +389,43 @@ export function useRenameDialog(): RenameDialogState {
   };
 }
 
+/**
+ * Turns a getUserMedia/MediaRecorder failure into a message that tells the user
+ * what to actually do. macOS surfaces a denied mic as NotAllowedError/SecurityError;
+ * a machine with no input device as NotFoundError.
+ */
+function describeMicError(error: unknown): string {
+  const name = error instanceof DOMException ? error.name : "";
+  if (name === "NotAllowedError" || name === "SecurityError") {
+    return "Microphone access is blocked. Enable it under System Settings → Privacy & Security → Microphone, then try again.";
+  }
+  if (name === "NotFoundError" || name === "OverconstrainedError") {
+    return "No microphone was found. Connect an input device and try again.";
+  }
+  if (name === "NotReadableError") {
+    return "The microphone is in use by another app. Close it and try again.";
+  }
+  return error instanceof Error ? error.message : "Couldn't start recording.";
+}
+
+/**
+ * Picks a recording container the *playback* engine can also decode. WKWebView
+ * (macOS desktop) can't decode WebM/Opus but supports MP4/AAC, so we prefer mp4;
+ * Chromium only records webm, so it falls through to that. Returns undefined to
+ * let the browser choose when it supports none of our candidates.
+ */
+function pickAudioMimeType(): string | undefined {
+  if (typeof MediaRecorder === "undefined" || !MediaRecorder.isTypeSupported) {
+    return undefined;
+  }
+  for (const candidate of ["audio/mp4", "audio/webm;codecs=opus", "audio/webm"]) {
+    if (MediaRecorder.isTypeSupported(candidate)) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
 export function useVoiceDraft(): VoiceDraftState {
   const { services } = useAppComposition();
   const draft = useAppStore((state) => state.workspace.activeVoiceDraft);
@@ -349,23 +435,133 @@ export function useVoiceDraft(): VoiceDraftState {
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<number | null>(null);
+  // Elapsed time is accumulated across record segments so pauses don't count.
+  const accumulatedMsRef = useRef<number>(0);
+  const segmentStartRef = useRef<number>(0);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const meterDataRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const audioUrlRef = useRef<string | null>(null);
   const [permissionError, setPermissionError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const [level, setLevel] = useState(0);
+  const [paused, setPaused] = useState(false);
 
+  const treeLoadable = useObservableState(services.workspace.tree());
+  const folders = useMemo<FolderOption[]>(() => {
+    const tree = treeLoadable.status === "data" ? treeLoadable.value : [];
+    return [
+      { id: null, title: "Workspace", depth: 0 },
+      ...flattenFolderOptions(tree).map((f) => ({ ...f, depth: f.depth + 1 })),
+    ];
+  }, [treeLoadable]);
+
+  // Keep the latest preview URL in a ref so unmount cleanup can revoke it without
+  // re-running (and re-tearing-down the recorder) every time the URL changes.
+  useEffect(() => {
+    audioUrlRef.current = draft?.audioUrl ?? null;
+  }, [draft?.audioUrl]);
+
+  function startClock() {
+    segmentStartRef.current = Date.now();
+    if (timerRef.current === null) {
+      timerRef.current = window.setInterval(() => {
+        setElapsedMs(accumulatedMsRef.current + (Date.now() - segmentStartRef.current));
+      }, 200);
+    }
+  }
+
+  function stopClock() {
+    if (timerRef.current !== null) {
+      window.clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  }
+
+  function runMeterLoop() {
+    const analyser = analyserRef.current;
+    const data = meterDataRef.current;
+    if (!analyser || !data) return;
+    const tick = () => {
+      analyser.getByteTimeDomainData(data);
+      let peak = 0;
+      for (let i = 0; i < data.length; i += 1) {
+        const v = Math.abs(data[i] - 128) / 128;
+        if (v > peak) peak = v;
+      }
+      setLevel(peak);
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    tick();
+  }
+
+  function stopMeterLoop() {
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    setLevel(0);
+  }
+
+  function openMeter(stream: MediaStream) {
+    try {
+      const ctx = new AudioContext();
+      audioCtxRef.current = ctx;
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      source.connect(analyser);
+      analyserRef.current = analyser;
+      meterDataRef.current = new Uint8Array(analyser.frequencyBinCount);
+    } catch {
+      // Metering is best-effort; recording still works without a level meter.
+    }
+  }
+
+  function closeMeter() {
+    stopMeterLoop();
+    analyserRef.current = null;
+    meterDataRef.current = null;
+    audioCtxRef.current?.close().catch(() => {});
+    audioCtxRef.current = null;
+  }
+
+  function teardown() {
+    stopClock();
+    closeMeter();
+    setPaused(false);
+    if (recorderRef.current && recorderRef.current.state !== "inactive") {
+      recorderRef.current.stop();
+    }
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    recorderRef.current = null;
+  }
+
+  // Cleanup only on unmount — not on every draft.audioUrl change.
   useEffect(() => {
     return () => {
-      recorderRef.current?.stop();
-      streamRef.current?.getTracks().forEach((track) => track.stop());
-      if (draft?.audioUrl) {
-        URL.revokeObjectURL(draft.audioUrl);
+      teardown();
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
       }
     };
-  }, [draft?.audioUrl]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function startRecording() {
     if (!navigator.mediaDevices?.getUserMedia) {
-      setPermissionError("Audio capture is not available in this browser.");
+      setPermissionError("Audio capture isn't available here. Record from the desktop app.");
       return;
+    }
+
+    // Revoke a prior take's preview URL before starting a fresh one.
+    if (audioUrlRef.current) {
+      URL.revokeObjectURL(audioUrlRef.current);
+      audioUrlRef.current = null;
     }
 
     try {
@@ -373,7 +569,8 @@ export function useVoiceDraft(): VoiceDraftState {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
       chunksRef.current = [];
-      const recorder = new MediaRecorder(stream);
+      const mimeType = pickAudioMimeType();
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
       recorderRef.current = recorder;
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
@@ -381,10 +578,14 @@ export function useVoiceDraft(): VoiceDraftState {
         }
       };
       recorder.onstop = () => {
+        stopClock();
+        closeMeter();
+        setPaused(false);
         const blob = new Blob(chunksRef.current, {
           type: recorder.mimeType || "audio/webm",
         });
         const audioUrl = URL.createObjectURL(blob);
+        audioUrlRef.current = audioUrl;
         patchVoiceDraft({
           phase: "review",
           audioBlob: blob,
@@ -396,19 +597,55 @@ export function useVoiceDraft(): VoiceDraftState {
         recorderRef.current = null;
       };
       recorder.start();
+      accumulatedMsRef.current = 0;
+      setElapsedMs(0);
+      setPaused(false);
+      openMeter(stream);
+      startClock();
+      runMeterLoop();
       patchVoiceDraft({ phase: "recording", errorMessage: null });
     } catch (error) {
-      setPermissionError(error instanceof Error ? error.message : "Failed to start recording.");
+      teardown();
+      setPermissionError(describeMicError(error));
     }
+  }
+
+  function pauseRecording() {
+    const recorder = recorderRef.current;
+    if (!recorder || recorder.state !== "recording") return;
+    recorder.pause();
+    accumulatedMsRef.current += Date.now() - segmentStartRef.current;
+    stopClock();
+    stopMeterLoop();
+    setElapsedMs(accumulatedMsRef.current);
+    setPaused(true);
+  }
+
+  function resumeRecording() {
+    const recorder = recorderRef.current;
+    if (!recorder || recorder.state !== "paused") return;
+    recorder.resume();
+    startClock();
+    runMeterLoop();
+    setPaused(false);
   }
 
   return {
     draft,
     permissionError,
     pending,
+    elapsedMs,
+    level,
+    paused,
+    folders,
     onStartRecording: startRecording,
+    onPauseRecording: pauseRecording,
+    onResumeRecording: resumeRecording,
     onStopRecording: () => recorderRef.current?.stop(),
-    onClose: closeVoiceDraft,
+    onClose: () => {
+      teardown();
+      closeVoiceDraft();
+    },
     onPatchDraft: patchVoiceDraft,
     onSave: async () => {
       if (!draft) {

@@ -6,6 +6,7 @@ export interface ArtifactRow {
   content: string | null;
   sourceUrl: string | null;
   resourceUrl: string | null;
+  summary: string | null;
   metadataJson: string | null;
   updatedAt: number;
   syncStatus: string;

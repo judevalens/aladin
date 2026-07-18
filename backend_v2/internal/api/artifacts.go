@@ -200,11 +200,12 @@ func (s *Server) handleArtifactsUpload(w http.ResponseWriter, r *http.Request) {
 	summary := stringFormPtr(r, "summary")
 	folderID := stringFormPtr(r, "folderId")
 	rec, err := s.deps.Artifacts().Upload(r.Context(), artifactservice.ArtifactUploadInput{
-		Type:     typeValue,
-		Filename: header.Filename,
-		Title:    title,
-		Summary:  summary,
-		FolderID: folderID,
+		Type:        typeValue,
+		Filename:    header.Filename,
+		ContentType: header.Header.Get("Content-Type"),
+		Title:       title,
+		Summary:     summary,
+		FolderID:    folderID,
 	}, file)
 	if err != nil {
 		if writeAccessError(w, r, err) {

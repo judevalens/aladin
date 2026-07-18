@@ -101,6 +101,13 @@ pub trait WorkspaceWriteApi: Send + Sync {
         id: &str,
         title: &str,
     ) -> ApiResult<WrittenArtifact>;
+    /// PATCH /api/artifacts/{id} — update an artifact's metadata (e.g. typed properties).
+    fn update_artifact_metadata(
+        &self,
+        config: &SyncConfig,
+        id: &str,
+        metadata: serde_json::Value,
+    ) -> ApiResult<WrittenArtifact>;
     /// DELETE /api/browser/nodes/{id} — soft-delete a node + its subtree.
     fn delete_node(&self, config: &SyncConfig, id: &str) -> ApiResult<DeleteNodeResult>;
 }
@@ -167,6 +174,25 @@ impl WorkspaceWriteApi for HttpWorkspaceWriteApi {
             .patch(format!("{}/api/artifacts/{}", Self::base(config), id))
             .bearer_auth(Self::token(config))
             .json(&json!({ "title": title }))
+            .send()
+            .map_err(ApiError::from_reqwest)?
+            .error_for_status()
+            .map_err(ApiError::from_reqwest)?
+            .json()
+            .map_err(ApiError::from_reqwest)
+    }
+
+    fn update_artifact_metadata(
+        &self,
+        config: &SyncConfig,
+        id: &str,
+        metadata: serde_json::Value,
+    ) -> ApiResult<WrittenArtifact> {
+        let client = reqwest::blocking::Client::new();
+        client
+            .patch(format!("{}/api/artifacts/{}", Self::base(config), id))
+            .bearer_auth(Self::token(config))
+            .json(&json!({ "metadata": metadata }))
             .send()
             .map_err(ApiError::from_reqwest)?
             .error_for_status()

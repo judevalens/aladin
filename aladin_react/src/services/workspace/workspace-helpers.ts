@@ -16,6 +16,9 @@ export function resolveWorkspaceDestination(pathname: string) {
   if (pathname.startsWith("/sources")) return "sources";
   if (pathname.startsWith("/signals")) return "signals";
   if (pathname.startsWith("/insights")) return "insights";
+  // Both the index and the entity detail page (/entity/:id — note: NOT a prefix of
+  // "/entities") belong to the Entities destination.
+  if (pathname.startsWith("/entities") || pathname.startsWith("/entity/")) return "entities";
   if (pathname.startsWith("/graph")) return "graph";
   return "home";
 }
@@ -31,13 +34,15 @@ export function createArtifactCommand(
   tree: BrowserTreeNode[],
   folderId: string | null,
   kind: "note" | "link",
+  opts?: { title?: string; sourceUrl?: string },
 ) {
+  const title = opts?.title?.trim() || nextArtifactTitle(tree, folderId, kind);
   return {
     type: kind === "note" ? "page" : "link",
     folderId,
-    title: nextArtifactTitle(tree, folderId, kind),
+    title,
     content: kind === "note" ? "New artifact" : "",
-    sourceUrl: kind === "link" ? "https://example.com" : undefined,
+    sourceUrl: kind === "link" ? (opts?.sourceUrl ?? "") : undefined,
   };
 }
 

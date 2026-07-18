@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Shown in the macOS microphone-permission (TCC) prompt the first time a
+       voice note is recorded. Without this key WKWebView's getUserMedia is
+       denied outright and the voice-capture dialog dead-ends. -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Aladin records voice notes you capture into your workspace.</string>
+</dict>
+</plist>

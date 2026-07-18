@@ -250,7 +250,7 @@ func TestResolver_TenantTier_BindAndIsolation(t *testing.T) {
 	repo := db.NewEntityRepository(pool)
 	r := NewResolver(repo)
 
-	shared, err := repo.CreateSharedEntity(ctx, db.CreateEntityParams{Kind: "unknown", CanonicalName: key, NormalizedKey: key})
+	shared, err := repo.CreateSharedEntity(ctx, db.CreateEntityParams{Kind: "other", CanonicalName: key, NormalizedKey: key})
 	if err != nil {
 		t.Fatalf("create shared: %v", err)
 	}

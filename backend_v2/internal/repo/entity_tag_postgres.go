@@ -19,10 +19,12 @@ func NewEntityTagPostgres(pool *pgxpool.Pool) *PostgresEntityTagRepository {
 	return &PostgresEntityTagRepository{pool: pool}
 }
 
-// SearchEntities matches entities for the typeahead: a tenant's own (Tier 1) entities and
-// shared (Tier 0) entities whose name contains the query or whose normalized key is
-// trigram-similar. Tenant matches and prefix matches rank first. ownerUserID "" → shared
-// only.
+// SearchEntities matches entities for the typeahead, alias-aware (P1.1): the query is
+// matched against every known surface in entity_aliases (exact > prefix > trigram) AND
+// against the entities' own canonical fields (so rows without alias backfill still match).
+// Every match is resolved through the merge overlay to its canonical root and deduped —
+// a query hitting a merged-away synonym returns one row, the root. Each hit carries its
+// alias list for synonym display. ownerUserID "" → shared only.
 func (r *PostgresEntityTagRepository) SearchEntities(ctx context.Context, ownerUserID, query string, limit int) ([]coreservice.EntityHit, error) {
 	key := entities.Normalize(query)
 	like := "%" + strings.ToLower(strings.TrimSpace(query)) + "%"
@@ -34,15 +36,42 @@ func (r *PostgresEntityTagRepository) SearchEntities(ctx context.Context, ownerU
 	}
 
 	rows, err := r.pool.Query(ctx, `
-		SELECT id::text, canonical_name, kind, scope, trust_tier,
-		       GREATEST(similarity(normalized_key, $1), 0) AS sim
-		  FROM entities
-		 WHERE (scope = 'shared' OR (scope = 'tenant' AND owner_user_id = $2::uuid))
-		   AND (lower(canonical_name) LIKE $3 OR normalized_key LIKE $4 OR similarity(normalized_key, $1) >= 0.2)
-		 ORDER BY (scope = 'tenant') DESC,
-		          (normalized_key LIKE $4) DESC,
-		          sim DESC,
-		          canonical_name ASC
+		WITH alias_matches AS (
+			SELECT a.entity_id,
+			       MAX(CASE WHEN a.normalized = $1 THEN 3
+			                WHEN a.normalized LIKE $4 THEN 2
+			                ELSE 1 END) AS tier,
+			       MAX(similarity(a.normalized, $1)) AS sim
+			  FROM entity_aliases a
+			 WHERE a.normalized LIKE $4 OR similarity(a.normalized, $1) >= 0.25
+			 GROUP BY a.entity_id
+		), direct_matches AS (
+			SELECT e.id AS entity_id,
+			       CASE WHEN e.normalized_key = $1 THEN 3
+			            WHEN e.normalized_key LIKE $4 THEN 2
+			            ELSE 1 END AS tier,
+			       GREATEST(similarity(e.normalized_key, $1), 0) AS sim
+			  FROM entities e
+			 WHERE lower(e.canonical_name) LIKE $3 OR e.normalized_key LIKE $4
+			    OR similarity(e.normalized_key, $1) >= 0.25
+		), all_matches AS (
+			SELECT entity_id, MAX(tier) AS tier, MAX(sim) AS sim
+			  FROM (SELECT * FROM alias_matches UNION ALL SELECT * FROM direct_matches) m
+			 GROUP BY entity_id
+		)
+		SELECT root.id::text, root.canonical_name, root.kind, root.scope, root.trust_tier,
+		       MAX(m.tier) AS tier, MAX(m.sim) AS sim,
+		       COALESCE(array_agg(DISTINCT al.surface)
+		                FILTER (WHERE al.surface IS NOT NULL
+		                          AND lower(al.surface) <> lower(root.canonical_name)), '{}') AS aliases
+		  FROM all_matches m
+		  JOIN entities e ON e.id = m.entity_id
+		  JOIN entities root ON root.id = COALESCE(e.canonical_root_id, e.id)
+		  LEFT JOIN entity_aliases al ON al.entity_id = root.id
+		 WHERE (e.scope = 'shared' OR (e.scope = 'tenant' AND e.owner_user_id = $2::uuid))
+		   AND (root.scope = 'shared' OR (root.scope = 'tenant' AND root.owner_user_id = $2::uuid))
+		 GROUP BY root.id, root.canonical_name, root.kind, root.scope, root.trust_tier
+		 ORDER BY (root.scope = 'tenant') DESC, tier DESC, sim DESC, root.canonical_name ASC
 		 LIMIT $5
 	`, key, owner, like, prefix, limit)
 	if err != nil {
@@ -53,8 +82,9 @@ func (r *PostgresEntityTagRepository) SearchEntities(ctx context.Context, ownerU
 	out := []coreservice.EntityHit{}
 	for rows.Next() {
 		var h coreservice.EntityHit
+		var tier int
 		var sim float64
-		if err := rows.Scan(&h.ID, &h.Name, &h.Kind, &h.Scope, &h.TrustTier, &sim); err != nil {
+		if err := rows.Scan(&h.ID, &h.Name, &h.Kind, &h.Scope, &h.TrustTier, &tier, &sim, &h.Aliases); err != nil {
 			return nil, fmt.Errorf("entity tag search scan: %w", err)
 		}
 		out = append(out, h)
@@ -62,27 +92,46 @@ func (r *PostgresEntityTagRepository) SearchEntities(ctx context.Context, ownerU
 	return out, rows.Err()
 }
 
-// CreateEntity is find-or-create for the "create new" typeahead path: if a shared (Tier 0)
-// entity already exists with the same normalized key (e.g. one the resolver minted from the
-// live stream), reuse it instead of minting a duplicate; otherwise create it. A typed
-// existing entity is preferred over an 'unknown' one. (The picker often creates with
-// kind='unknown', so deduping must ignore kind.) Best-effort: there is no unique constraint,
-// so two truly-concurrent creates of a brand-new key can still race — acceptable for this
-// manual path.
+// CreateEntity is the editor's "@ created something" path (P1.2): alias-aware EXACT
+// find-or-create. If ANY known surface — an entity's canonical key OR any alias,
+// including a placeholder minted by an earlier @ — already resolves to this key, reuse
+// it (resolved through the merge overlay to its canonical root; resolved entities are
+// preferred over placeholders, typed over untyped). Otherwise mint a PLACEHOLDER:
+// trust_tier='placeholder', canonical alias seeded, no fuzzy work — this path must be
+// instant and deterministic. The background judge resolves placeholders later (merge
+// into an existing entity, or promote in place). Dedup ignores kind (dedup-by-key), and
+// is best-effort: no unique constraint exists (sense-splitting precludes one), so two
+// truly-concurrent creates of a brand-new key can still race — acceptable here.
 func (r *PostgresEntityTagRepository) CreateEntity(ctx context.Context, kind, canonicalName, normalizedKey string) (coreservice.EntityHit, error) {
 	var h coreservice.EntityHit
 	err := r.pool.QueryRow(ctx, `
-		WITH existing AS (
-			SELECT id, canonical_name, kind, scope, trust_tier
-			  FROM entities
-			 WHERE scope = 'shared' AND normalized_key = $3
-			 ORDER BY (kind <> 'unknown') DESC, created_at ASC
+		WITH matched AS (
+			SELECT e.id, e.canonical_root_id
+			  FROM entities e
+			 WHERE e.scope = 'shared' AND e.normalized_key = $3
+			 UNION
+			SELECT a.entity_id AS id, e2.canonical_root_id
+			  FROM entity_aliases a
+			  JOIN entities e2 ON e2.id = a.entity_id
+			 WHERE a.normalized = $3 AND e2.scope = 'shared'
+		), existing AS (
+			SELECT root.id, root.canonical_name, root.kind, root.scope, root.trust_tier
+			  FROM matched m
+			  JOIN entities root ON root.id = COALESCE(m.canonical_root_id, m.id)
+			 ORDER BY (root.trust_tier <> 'placeholder') DESC,
+			          (root.kind NOT IN ('unknown', 'other')) DESC,
+			          root.created_at ASC
 			 LIMIT 1
 		), inserted AS (
 			INSERT INTO entities (scope, kind, canonical_name, normalized_key, trust_tier, provenance)
-			SELECT 'shared', $1, $2, $3, 'believed', '{"source":"manual_tag"}'::jsonb
+			SELECT 'shared', $1, $2, $3, 'placeholder', '{"source":"manual_tag"}'::jsonb
 			 WHERE NOT EXISTS (SELECT 1 FROM existing)
 			RETURNING id, canonical_name, kind, scope, trust_tier
+		), seeded AS (
+			-- canonical-as-alias invariant for freshly minted rows (00020 backfills old ones)
+			INSERT INTO entity_aliases (entity_id, surface, normalized, kind, source)
+			SELECT id, $2, $3, $1, 'canonical' FROM inserted
+			ON CONFLICT (entity_id, normalized) DO NOTHING
 		)
 		SELECT id::text, canonical_name, kind, scope, trust_tier FROM inserted
 		UNION ALL
@@ -92,6 +141,8 @@ func (r *PostgresEntityTagRepository) CreateEntity(ctx context.Context, kind, ca
 	if err != nil {
 		return coreservice.EntityHit{}, fmt.Errorf("entity tag create: %w", err)
 	}
+	// Keep the wire contract uniform with search: aliases is always an array, never null.
+	h.Aliases = []string{}
 	return h, nil
 }
 
@@ -151,12 +202,18 @@ func (r *PostgresEntityTagRepository) ReplaceMentions(ctx context.Context, artif
 		if strings.TrimSpace(m.BlockID) != "" {
 			block = m.BlockID
 		}
+		var snippet any
+		if strings.TrimSpace(m.Snippet) != "" {
+			snippet = m.Snippet
+		}
+		// The unique key excludes snippet: editing a block's prose around an existing
+		// mention updates the snippet in place rather than duplicating the row.
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO artifact_entities (artifact_id, entity_id, origin, block_id, surface)
-			VALUES ($1, $2::uuid, 'mention', $3, $4)
+			INSERT INTO artifact_entities (artifact_id, entity_id, origin, block_id, surface, snippet)
+			VALUES ($1, $2::uuid, 'mention', $3, $4, $5)
 			ON CONFLICT (artifact_id, entity_id, origin, COALESCE(block_id, ''), COALESCE(surface, ''))
-			DO NOTHING
-		`, artifactID, m.EntityID, block, surface); err != nil {
+			DO UPDATE SET snippet = EXCLUDED.snippet
+		`, artifactID, m.EntityID, block, surface, snippet); err != nil {
 			return fmt.Errorf("entity mention sync insert: %w", err)
 		}
 	}

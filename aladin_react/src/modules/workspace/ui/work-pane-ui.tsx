@@ -103,7 +103,7 @@ export function WorkPaneUI() {
         )}
         </div>
         {graphOpen && activeArtifact ? (
-          <GraphSidePaneUI artifactId={activeArtifact.id} onClose={() => setGraphOpen(false)} />
+          <GraphSidePaneUI artifact={activeArtifact} onClose={() => setGraphOpen(false)} />
         ) : null}
       </div>
     </section>

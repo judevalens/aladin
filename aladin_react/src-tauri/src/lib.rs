@@ -71,6 +71,7 @@ pub fn run() {
             artifact_cmd::db_create_artifact,
             artifact_cmd::db_rename_artifact,
             artifact_cmd::db_delete_artifact,
+            artifact_cmd::db_update_artifact_properties,
             browser_cmd::db_list_browser_nodes,
             browser_cmd::db_get_browser_node,
             browser_cmd::db_upsert_browser_node,

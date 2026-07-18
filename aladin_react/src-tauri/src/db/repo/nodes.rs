@@ -51,6 +51,13 @@ struct LightNodeData {
     #[serde(rename = "type")]
     artifact_type: Option<String>,
     source_url: Option<String>,
+    // Light-but-reactive artifact fields. Carried on the full payload like the
+    // others (server SELECT + optimistic reconstruction), so a straight replace is
+    // correct — no column-merge. `metadata` is a JSON object; stored as TEXT.
+    #[serde(default)]
+    summary: Option<String>,
+    #[serde(default)]
+    metadata: Option<serde_json::Value>,
 }
 
 /// Last applied seq for an entity, INCLUDING tombstoned rows (0 if never seen).
@@ -66,8 +73,9 @@ pub fn stored_seq(conn: &Connection, id: &str) -> DbResult<i64> {
 }
 
 /// Applies one upsert frame entity: writes the light columns, sets seq, clears
-/// the tombstone. Content/summary/metadata are NOT touched (not on the wire) so
-/// any cached body survives. Caller has already passed the seq guard.
+/// the tombstone. `content` is the one out-of-band column NOT touched (heavy, not
+/// on the wire) so the cached note body survives; `summary`/`metadata` ARE on the
+/// wire (full payload) and replaced straight. Caller has already passed the seq guard.
 pub fn apply_upsert(
     conn: &Connection,
     id: &str,
@@ -88,9 +96,10 @@ pub fn apply_upsert(
             )),
         ))
     })?;
+    let metadata_json = light.metadata.as_ref().map(|v| v.to_string());
     conn.execute(
-        "INSERT INTO nodes (id, kind, parent_id, position, title, artifact_type, source_url, seq, is_deleted, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?8)
+        "INSERT INTO nodes (id, kind, parent_id, position, title, artifact_type, source_url, summary, metadata_json, seq, is_deleted, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 0, ?10)
          ON CONFLICT(id) DO UPDATE SET
             kind = excluded.kind,
             parent_id = excluded.parent_id,
@@ -98,6 +107,8 @@ pub fn apply_upsert(
             title = excluded.title,
             artifact_type = excluded.artifact_type,
             source_url = excluded.source_url,
+            summary = excluded.summary,
+            metadata_json = excluded.metadata_json,
             seq = excluded.seq,
             is_deleted = 0,
             updated_at = excluded.updated_at",
@@ -109,6 +120,8 @@ pub fn apply_upsert(
             light.title,
             light.artifact_type,
             light.source_url,
+            light.summary,
+            metadata_json,
             seq,
         ],
     )?;

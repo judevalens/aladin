@@ -54,8 +54,10 @@ func TestEntityTag_SearchAttachDetach(t *testing.T) {
 		t.Fatalf("create hit = %+v", hit)
 	}
 
-	// Typeahead finds it.
-	hits, err := tagRepo.SearchEntities(ctx, userID, "Tagco", 10)
+	// Typeahead finds it. Search the full unique name: a bare "Tagco" prefix query is
+	// nondeterministic against rows leaked by killed test runs (alphabetical tiebreak
+	// over random suffixes decides who makes the LIMIT), which made this test flaky.
+	hits, err := tagRepo.SearchEntities(ctx, userID, name, 10)
 	if err != nil {
 		t.Fatalf("search: %v", err)
 	}
@@ -258,5 +260,186 @@ func TestEntityTag_CreateEntityDedup(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("expected 1 shared entity row for key, got %d", count)
+	}
+}
+
+// TestEntityTag_AliasAwareSearch covers P1.1: the typeahead matches ANY known surface
+// (alias) of an entity, returns the synonym list on each hit, resolves merged-away
+// entities to their canonical root (deduped), and still finds entities that have no
+// alias rows at all (pre-00020-backfill rows, via the direct-match arm).
+func TestEntityTag_AliasAwareSearch(t *testing.T) {
+	ctx := context.Background()
+	ctxTO, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	pool := mustTestPool(ctxTO, t)
+	defer pool.Close()
+
+	tag := uuid.NewString()[:8]
+	rootName := "Nvidia" + tag
+	aliasSurface := "NVDA" + tag
+	mergedName := "NvidiaCorp" + tag
+
+	var rootID, mergedID string
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO entities (scope, kind, canonical_name, normalized_key)
+		VALUES ('shared', 'org', $1, $2) RETURNING id::text
+	`, rootName, entities.Normalize(rootName)).Scan(&rootID); err != nil {
+		t.Fatalf("seed root entity: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO entities (scope, kind, canonical_name, normalized_key, canonical_root_id)
+		VALUES ('shared', 'org', $1, $2, $3::uuid) RETURNING id::text
+	`, mergedName, entities.Normalize(mergedName), rootID).Scan(&mergedID); err != nil {
+		t.Fatalf("seed merged entity: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO entity_aliases (entity_id, surface, normalized) VALUES ($1::uuid, $2, $3)
+	`, rootID, aliasSurface, entities.Normalize(aliasSurface)); err != nil {
+		t.Fatalf("seed alias: %v", err)
+	}
+	t.Cleanup(func() {
+		bg := context.Background()
+		_, _ = pool.Exec(bg, `DELETE FROM entities WHERE id IN ($1::uuid, $2::uuid)`, mergedID, rootID)
+	})
+
+	tagRepo := NewEntityTagPostgres(pool)
+
+	// 1. Searching by the ALIAS surface finds the entity; the hit carries the synonym.
+	hits, err := tagRepo.SearchEntities(ctx, "", aliasSurface, 10)
+	if err != nil {
+		t.Fatalf("search by alias: %v", err)
+	}
+	if len(hits) == 0 || hits[0].ID != rootID {
+		t.Fatalf("expected first hit %s for alias query, got %+v", rootID, hits)
+	}
+	foundAlias := false
+	for _, a := range hits[0].Aliases {
+		if a == aliasSurface {
+			foundAlias = true
+		}
+	}
+	if !foundAlias {
+		t.Fatalf("expected hit to carry alias %q, got %v", aliasSurface, hits[0].Aliases)
+	}
+
+	// 2. The canonical name still matches even though it has NO alias row (direct arm).
+	hits, err = tagRepo.SearchEntities(ctx, "", rootName, 10)
+	if err != nil {
+		t.Fatalf("search by canonical: %v", err)
+	}
+	if len(hits) == 0 || hits[0].ID != rootID {
+		t.Fatalf("expected first hit %s for canonical query, got %+v", rootID, hits)
+	}
+
+	// 3. A query matching a merged-away entity resolves to the ROOT, deduped: the
+	// merged-away id never appears.
+	hits, err = tagRepo.SearchEntities(ctx, "", mergedName, 10)
+	if err != nil {
+		t.Fatalf("search by merged name: %v", err)
+	}
+	if len(hits) == 0 || hits[0].ID != rootID {
+		t.Fatalf("expected merged-away query to resolve to root %s, got %+v", rootID, hits)
+	}
+	for _, h := range hits {
+		if h.ID == mergedID {
+			t.Fatalf("merged-away entity %s leaked into results: %+v", mergedID, hits)
+		}
+	}
+}
+
+// TestEntityTag_PlaceholderCreate covers P1.2: create is alias-aware exact find-or-create.
+// A miss mints a PLACEHOLDER (trust_tier='placeholder') with its canonical alias seeded;
+// a repeat create reuses the same placeholder; a name matching an existing entity's ALIAS
+// reuses that entity; a name matching a merged-away entity resolves to its root.
+func TestEntityTag_PlaceholderCreate(t *testing.T) {
+	ctx := context.Background()
+	ctxTO, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	pool := mustTestPool(ctxTO, t)
+	defer pool.Close()
+
+	tag := uuid.NewString()[:8]
+	freshName := "Ghost" + tag
+	aliasedName := "Alia" + tag
+	aliasSurface := "Synon" + tag
+	mergedName := "Oldco" + tag
+	rootName := "Newco" + tag
+
+	tagRepo := NewEntityTagPostgres(pool)
+
+	t.Cleanup(func() {
+		bg := context.Background()
+		_, _ = pool.Exec(bg, `DELETE FROM entities WHERE canonical_name IN ($1, $2, $3, $4)`,
+			freshName, aliasedName, mergedName, rootName)
+	})
+
+	// 1. Miss → placeholder minted, canonical alias seeded.
+	first, err := tagRepo.CreateEntity(ctx, "other", freshName, entities.Normalize(freshName))
+	if err != nil {
+		t.Fatalf("create placeholder: %v", err)
+	}
+	if first.TrustTier != "placeholder" {
+		t.Fatalf("expected trust_tier placeholder, got %q", first.TrustTier)
+	}
+	var aliasCount int
+	if err := pool.QueryRow(ctx,
+		`SELECT count(*) FROM entity_aliases WHERE entity_id = $1::uuid AND normalized = $2`,
+		first.ID, entities.Normalize(freshName)).Scan(&aliasCount); err != nil {
+		t.Fatalf("alias count: %v", err)
+	}
+	if aliasCount != 1 {
+		t.Fatalf("expected canonical alias seeded, count = %d", aliasCount)
+	}
+
+	// 2. Repeat create reuses the placeholder (no dupe one level up).
+	again, err := tagRepo.CreateEntity(ctx, "other", freshName, entities.Normalize(freshName))
+	if err != nil {
+		t.Fatalf("repeat create: %v", err)
+	}
+	if again.ID != first.ID {
+		t.Fatalf("expected placeholder reuse %s, got %s", first.ID, again.ID)
+	}
+
+	// 3. A name matching an existing entity's ALIAS reuses that entity.
+	var aliasedID string
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO entities (scope, kind, canonical_name, normalized_key, trust_tier)
+		VALUES ('shared', 'org', $1, $2, 'believed') RETURNING id::text
+	`, aliasedName, entities.Normalize(aliasedName)).Scan(&aliasedID); err != nil {
+		t.Fatalf("seed aliased entity: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO entity_aliases (entity_id, surface, normalized) VALUES ($1::uuid, $2, $3)
+	`, aliasedID, aliasSurface, entities.Normalize(aliasSurface)); err != nil {
+		t.Fatalf("seed alias: %v", err)
+	}
+	viaAlias, err := tagRepo.CreateEntity(ctx, "other", aliasSurface, entities.Normalize(aliasSurface))
+	if err != nil {
+		t.Fatalf("create via alias: %v", err)
+	}
+	if viaAlias.ID != aliasedID {
+		t.Fatalf("expected alias-aware dedup to reuse %s, got %s", aliasedID, viaAlias.ID)
+	}
+
+	// 4. A name matching a merged-away entity resolves to its canonical root.
+	var rootID, mergedID string
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO entities (scope, kind, canonical_name, normalized_key, trust_tier)
+		VALUES ('shared', 'org', $1, $2, 'believed') RETURNING id::text
+	`, rootName, entities.Normalize(rootName)).Scan(&rootID); err != nil {
+		t.Fatalf("seed root: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO entities (scope, kind, canonical_name, normalized_key, canonical_root_id)
+		VALUES ('shared', 'org', $1, $2, $3::uuid) RETURNING id::text
+	`, mergedName, entities.Normalize(mergedName), rootID).Scan(&mergedID); err != nil {
+		t.Fatalf("seed merged: %v", err)
+	}
+	viaMerged, err := tagRepo.CreateEntity(ctx, "other", mergedName, entities.Normalize(mergedName))
+	if err != nil {
+		t.Fatalf("create via merged name: %v", err)
+	}
+	if viaMerged.ID != rootID {
+		t.Fatalf("expected merged-away create to resolve to root %s, got %s", rootID, viaMerged.ID)
 	}
 }

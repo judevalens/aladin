@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { ArtifactProperty } from "@/shared/api/models";
 import type {
   ArtifactRow,
   LocalDeleteInput,
@@ -13,6 +14,7 @@ export interface ArtifactRowRepo {
   create(input: LocalArtifactMutationInput): Promise<ArtifactRow>;
   rename(input: LocalArtifactMutationInput): Promise<ArtifactRow>;
   deleteById(input: LocalDeleteInput): Promise<void>;
+  updateProperties(id: string, properties: ArtifactProperty[]): Promise<void>;
 }
 
 export function createArtifactRowRepo(): ArtifactRowRepo {
@@ -24,5 +26,9 @@ export function createArtifactRowRepo(): ArtifactRowRepo {
     create: (input) => invoke<ArtifactRow>("db_create_artifact", { input }),
     rename: (input) => invoke<ArtifactRow>("db_rename_artifact", { input }),
     deleteById: (input) => invoke("db_delete_artifact", { input }),
+    // Reactive: the Rust command applies + emits a NodeUpserted frame, so the
+    // artifact stream updates on its own — no return value needed here.
+    updateProperties: (id, properties) =>
+      invoke("db_update_artifact_properties", { id, properties }),
   };
 }

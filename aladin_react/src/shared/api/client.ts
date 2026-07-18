@@ -43,6 +43,12 @@ export interface SessionTokenStore {
 
 export interface ApiClient {
   fetch<T>(path: string, init?: RequestInit): Promise<T>;
+  /**
+   * Authenticated binary GET. Needed for resource blobs (audio/file) because a
+   * native <audio>/<img> element can't attach the Bearer token this client uses,
+   * so those requests must be fetched here and handed to the element as an object URL.
+   */
+  fetchBlob(path: string, init?: RequestInit): Promise<Blob>;
   resolveUrl(path: string): string;
 }
 
@@ -78,6 +84,23 @@ export function createApiClient(
         headers,
       });
       return parseResponse<T>(response);
+    },
+    async fetchBlob(path, init) {
+      const token = sessionStore.getToken();
+      const headers = new Headers(init?.headers ?? undefined);
+      if (token && !headers.has("Authorization")) {
+        headers.set("Authorization", `Bearer ${token}`);
+      }
+
+      const response = await fetch(resolveUrl(runtimeConfig.apiBaseUrl, path), {
+        ...init,
+        credentials: "omit",
+        headers,
+      });
+      if (!response.ok) {
+        throw new ApiError(`${response.status} ${response.statusText}`, response.status, response.statusText);
+      }
+      return response.blob();
     },
   };
 }

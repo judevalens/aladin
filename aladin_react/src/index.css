@@ -66,6 +66,76 @@
         --bn-colors-border: rgb(var(--line)) !important;
         --bn-colors-shadow: rgb(0 0 0 / 0.5) !important;
     }
+    /* Typography — the editor content in Aladin's own type ramp. Fonts aren't
+       reachable through the color vars above, so set them on the content elements.
+       BlockNote's own rules are unlayered, so !important is required to win (same
+       reason the color block above uses it). */
+    .bn-container .bn-default-styles {
+        font-family: var(--font-sans) !important;
+    }
+    .bn-container [data-content-type="heading"] {
+        font-family: var(--font-display) !important;
+        letter-spacing: -0.015em;
+    }
+    /* Tighter heading scale than BlockNote's 3em/2em/1.3em — a dark-minimal IDE,
+       not a billboard. Overriding --level (which font-size reads) keeps BlockNote's
+       transition machinery intact. */
+    .bn-container [data-content-type="heading"]:not([data-level]) {
+        --level: 1.9em !important;
+    }
+    .bn-container [data-content-type="heading"][data-level="2"] {
+        --level: 1.45em !important;
+    }
+    .bn-container [data-content-type="heading"][data-level="3"] {
+        --level: 1.15em !important;
+    }
+    /* The drag handle is top-anchored to the block and centered inside a fixed-height
+       side menu, so BlockNote hardcodes that height per level to land the handle on
+       the first line's center: 2 × the 18px heading padding-top + the line box
+       (level × 16px base × 1.5 line-height). Those hardcoded heights assume the
+       3em/2em/1.3em scale overridden above, so they have to be recomputed here or
+       the handle sits below a heading. */
+    .bn-container .bn-side-menu[data-block-type="heading"][data-level="1"] {
+        height: 81.6px !important; /* 36 + 1.5 × 1.9em */
+    }
+    .bn-container .bn-side-menu[data-block-type="heading"][data-level="2"] {
+        height: 70.8px !important; /* 36 + 1.5 × 1.45em */
+    }
+    .bn-container .bn-side-menu[data-block-type="heading"][data-level="3"] {
+        height: 63.6px !important; /* 36 + 1.5 × 1.15em */
+    }
+    .bn-container [data-content-type="codeBlock"],
+    .bn-container [data-content-type="codeBlock"] > pre,
+    .bn-container .bn-inline-content code {
+        font-family: var(--font-mono) !important;
+    }
+    /* Block surfaces → Aladin tokens (BlockNote hardcodes #161616 / #7d797a / #ddd,
+       which read wrong on the dark surfaces). */
+    .bn-container [data-content-type="codeBlock"] {
+        background-color: var(--field) !important;
+        color: var(--ink) !important;
+        border: 1px solid rgb(var(--line)) !important;
+    }
+    .bn-container .bn-inline-content code {
+        background-color: var(--raise);
+        border-radius: 4px;
+        padding: 0.1em 0.3em;
+        font-size: 0.9em;
+    }
+    .bn-container [data-content-type="quote"] blockquote {
+        color: var(--ink-2) !important;
+        border-left-color: rgb(var(--amber-line)) !important;
+    }
+    .bn-container [data-content-type="divider"] hr {
+        border-top-color: rgb(var(--line)) !important;
+    }
+    .bn-container [data-content-type="table"] th,
+    .bn-container [data-content-type="table"] td {
+        border-color: rgb(var(--line)) !important;
+    }
+    .bn-container [data-content-type="table"] th {
+        background-color: var(--field) !important;
+    }
 }
 
 .scrollbar-hidden {

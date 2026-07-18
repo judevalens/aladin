@@ -14,7 +14,6 @@ import type {
   RefHit,
 } from "@/modules/graph/graph-pane-types";
 import {
-  editorPlainText,
   extractEntityMentions,
   pageSchema,
 } from "@/modules/pages/editor/entity-mention";
@@ -32,10 +31,13 @@ export interface PageEditorDriverProps {
   // `#` cross-references to claims/pages/shards (Y2). Optional.
   searchRefs?: (query: string) => Promise<RefHit[]>;
   onRefsChange?: (refs: ArtifactRef[]) => void;
+  // Create-on-link: mint a new page for an unmatched `#` query and return it for the chip.
+  // Desktop-only (page creation goes through the local browser store) — omit on web.
+  createPageRef?: (title: string) => Promise<{ id: string; label: string } | null>;
   // Navigate to a referenced page/shard when its chip is clicked.
   onOpenArtifact?: (artifactId: string) => void;
-  // Exposes a stable getter for the page's plain text (authored claim extraction, P3).
-  onReady?: (api: { getPlainText: () => string }) => void;
+  // Navigate to a mentioned entity's context when its @chip is clicked.
+  onOpenEntity?: (entityId: string) => void;
 }
 
 const refGroupLabel: Record<string, string> = {
@@ -71,8 +73,9 @@ export function BlockNotePageEditorDriver({
   onMentionsChange,
   searchRefs,
   onRefsChange,
+  createPageRef,
   onOpenArtifact,
-  onReady,
+  onOpenEntity,
 }: PageEditorDriverProps) {
   // Created once per mount (key={pageId} guarantees one page per mount).
   const [resources] = useState<CollabResources>(() => {
@@ -110,11 +113,6 @@ export function BlockNotePageEditorDriver({
       user,
     },
   });
-
-  // Expose a stable plain-text getter for authored extraction (read at click time).
-  useEffect(() => {
-    onReady?.({ getPlainText: () => editorPlainText(editor.document) });
-  }, [editor, onReady]);
 
   // Project @entity mentions + `#` refs out of the doc into the backend, debounced. Keyed
   // off the local editor changes — enough to keep this client's edits in sync with the graph.
@@ -168,7 +166,7 @@ export function BlockNotePageEditorDriver({
   async function refItems(query: string): Promise<DefaultReactSuggestionItem[]> {
     if (!searchRefs) return [];
     const hits = await searchRefs(query);
-    return hits.map((hit) => ({
+    const items: DefaultReactSuggestionItem[] = hits.map((hit) => ({
       title: hit.label,
       subtext: hit.kind === "claim" ? hit.detail || "claim" : hit.kind,
       group: refGroupLabel[hit.kind] ?? hit.kind,
@@ -187,18 +185,58 @@ export function BlockNotePageEditorDriver({
         ]);
       },
     }));
+    // Create-on-link (desktop only): offer to mint a page for an unmatched query, so a
+    // `#` to a page you haven't written yet just works — the chip is inserted only after
+    // the artifact exists, keeping the "refs never dangle" invariant.
+    const q = query.trim();
+    if (
+      q &&
+      createPageRef &&
+      !hits.some((h) => h.kind === "page" && h.label.toLowerCase() === q.toLowerCase())
+    ) {
+      items.push({
+        title: `Create page “${q}”`,
+        subtext: "new page",
+        group: refGroupLabel.page,
+        onItemClick: async () => {
+          const created = await createPageRef(q);
+          if (!created) return;
+          editor.insertInlineContent([
+            {
+              type: "artifactRef",
+              props: { kind: "page", targetId: created.id, label: created.label, polarity: "" },
+            },
+            " ",
+          ]);
+        },
+      });
+    }
+    return items;
   }
 
-  // Delegated click: a page/shard ref chip opens that artifact in the workspace.
+  // Delegated click: an @entity mention opens its context; a page/shard ref chip opens that
+  // artifact in the workspace. Both are keyed off the inline node's data-* attributes.
   function onChipClick(e: React.MouseEvent<HTMLDivElement>) {
+    const target = e.target as HTMLElement;
+
+    const entityEl = target.closest("[data-entity-id]");
+    if (entityEl) {
+      const entityId = entityEl.getAttribute("data-entity-id");
+      if (entityId && onOpenEntity) {
+        e.preventDefault();
+        onOpenEntity(entityId);
+      }
+      return;
+    }
+
     if (!onOpenArtifact) return;
-    const el = (e.target as HTMLElement).closest("[data-ref-target]");
+    const el = target.closest("[data-ref-target]");
     if (!el) return;
     const kind = el.getAttribute("data-ref-kind");
-    const target = el.getAttribute("data-ref-target");
-    if (target && (kind === "page" || kind === "shard")) {
+    const refTarget = el.getAttribute("data-ref-target");
+    if (refTarget && (kind === "page" || kind === "shard")) {
       e.preventDefault();
-      onOpenArtifact(target);
+      onOpenArtifact(refTarget);
     }
   }
 

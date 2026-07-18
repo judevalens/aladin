@@ -18,12 +18,13 @@ type FileRepository interface {
 }
 
 type FileStore interface {
-	SaveResource(string, string, io.Reader) (StoredArtifactResource, error)
+	SaveResource(kind string, filename string, contentType string, body io.Reader) (StoredArtifactResource, error)
 	ResourcePath(string) (string, error)
 }
 
 type FileUploadInput struct {
-	Filename string
+	Filename    string
+	ContentType string
 }
 
 type FileRecord struct {
@@ -55,7 +56,7 @@ func (s *DefaultFileService) Upload(ctx context.Context, input FileUploadInput, 
 	if filename == "" {
 		return FileRecord{}, BadRequest("filename is required")
 	}
-	stored, err := s.store.SaveResource("file", filename, body)
+	stored, err := s.store.SaveResource("file", filename, input.ContentType, body)
 	if err != nil {
 		return FileRecord{}, err
 	}

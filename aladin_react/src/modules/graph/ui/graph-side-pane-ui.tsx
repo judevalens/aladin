@@ -1,14 +1,19 @@
 import { useState } from "react";
-import { Check, Link2, Plus, Quote, X, Zap } from "lucide-react";
+import { Check, FileText, Link2, Plus, Quote, X, Zap } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useAppComposition } from "@/app/composition/app-composition";
+import { useAppStore } from "@/app/state/store";
 import { useGraphPane } from "@/modules/graph/hooks/use-graph-pane";
 import { EntityPicker } from "@/modules/graph/ui/entity-picker";
+import { EntityPeek } from "@/modules/entities/ui/entity-peek-ui";
+import { PropertiesSection } from "@/modules/artifacts/ui/properties-editor-ui";
+import type { Artifact } from "@/shared/api/models";
 import type {
   GraphCite,
   GraphClaim,
   GraphEntity,
+  GraphLinkedArtifact,
   GraphPane,
   GraphThesis,
 } from "@/modules/graph/graph-pane-types";
@@ -62,10 +67,12 @@ function EntityList({
   artifactId,
   entities,
   onChanged,
+  onOpenEntity,
 }: {
   artifactId: string;
   entities: GraphEntity[];
   onChanged: () => void;
+  onOpenEntity: (entityId: string) => void;
 }) {
   const { repos } = useAppComposition();
   const [picking, setPicking] = useState(false);
@@ -125,25 +132,32 @@ function EntityList({
               <li
                 key={e.id}
                 className={cn(
-                  "flex items-center gap-2 rounded-chip border bg-raise px-2.5 py-1",
+                  "flex items-center rounded-chip border bg-raise",
                   e.origin === "tag" ? "border-amber-line" : "border-line",
                   pendingId === e.id && "opacity-50",
                 )}
               >
-                <span className={cn("font-mono text-[10px] uppercase", kindHue(e.kind))}>
-                  {e.kind || "entity"}
-                </span>
-                <span className="text-[13px] text-ink">{e.name}</span>
-                {e.mentions > 0 ? (
-                  <span className="font-mono text-[11px] text-ink-4">{e.mentions}×</span>
-                ) : null}
+                <button
+                  type="button"
+                  aria-label={`Open ${e.name}`}
+                  onClick={() => onOpenEntity(e.id)}
+                  className="flex items-center gap-2 rounded-chip px-2.5 py-1 text-left transition-colors hover:bg-[rgb(var(--hover))]"
+                >
+                  <span className={cn("font-mono text-[10px] uppercase", kindHue(e.kind))}>
+                    {e.kind || "entity"}
+                  </span>
+                  <span className="text-[13px] text-ink">{e.name}</span>
+                  {e.mentions > 0 ? (
+                    <span className="font-mono text-[11px] text-ink-4">{e.mentions}×</span>
+                  ) : null}
+                </button>
                 {removable ? (
                   <button
                     type="button"
                     aria-label={`Remove ${e.name}`}
                     onClick={() => detach(e.id)}
                     disabled={pendingId === e.id}
-                    className="-mr-0.5 flex size-4 items-center justify-center rounded text-ink-4 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
+                    className="mr-1.5 flex size-4 items-center justify-center rounded text-ink-4 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
                   >
                     <X className="size-3" />
                   </button>
@@ -231,19 +245,74 @@ function CiteList({ cites }: { cites: GraphCite[] }) {
   );
 }
 
+function linkedRelationLabel(relation: GraphLinkedArtifact["relation"]): string {
+  switch (relation) {
+    case "referenced_by":
+      return "Links here";
+    case "references":
+      return "Referenced";
+    case "shared_entity":
+      return "Shared entity";
+  }
+}
+
+function LinkedArtifactRow({ item }: { item: GraphLinkedArtifact }) {
+  const openArtifact = useAppStore((state) => state.openArtifact);
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => openArtifact(item.id)}
+        className="flex w-full items-center gap-2 rounded-card border border-line bg-card px-3 py-2 text-left transition-colors hover:bg-raise"
+      >
+        <FileText className="size-4 shrink-0 text-ink-4" />
+        <span className="min-w-0 flex-1 truncate text-[13px] text-ink-2">{item.title || item.id}</span>
+        <span className="shrink-0 rounded-chip border border-line px-1.5 py-0.5 font-mono text-[10px] text-ink-4">
+          {linkedRelationLabel(item.relation)}
+        </span>
+      </button>
+    </li>
+  );
+}
+
+function LinkedArtifactList({ items }: { items: GraphLinkedArtifact[] }) {
+  return (
+    <section>
+      <SectionLabel>Linked artifacts · {items.length}</SectionLabel>
+      {items.length === 0 ? (
+        <p className="text-[13px] text-ink-4">No other artifacts connected yet.</p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {items.map((item) => (
+            <LinkedArtifactRow key={`${item.relation}-${item.id}`} item={item} />
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 function PaneBody({
   artifactId,
   pane,
   onChanged,
+  onOpenEntity,
 }: {
   artifactId: string;
   pane: GraphPane;
   onChanged: () => void;
+  onOpenEntity: (entityId: string) => void;
 }) {
   return (
     <div className="flex flex-col gap-5">
       {pane.thesis ? <ThesisCard thesis={pane.thesis} /> : null}
-      <EntityList artifactId={artifactId} entities={pane.entities} onChanged={onChanged} />
+      <EntityList
+        artifactId={artifactId}
+        entities={pane.entities}
+        onChanged={onChanged}
+        onOpenEntity={onOpenEntity}
+      />
+      <LinkedArtifactList items={pane.linkedArtifacts} />
       <ClaimList claims={pane.claims} />
       <CiteList cites={pane.cites} />
     </div>
@@ -256,13 +325,15 @@ function PaneBody({
  * knowledge graph — entities, connected claims, and cited sources.
  */
 export function GraphSidePaneUI({
-  artifactId,
+  artifact,
   onClose,
 }: {
-  artifactId: string;
+  artifact: Artifact;
   onClose: () => void;
 }) {
+  const artifactId = artifact.id;
   const { pane, loading, error, reload } = useGraphPane(artifactId);
+  const [peekEntityId, setPeekEntityId] = useState<string | null>(null);
 
   return (
     <aside className="flex h-full w-[340px] shrink-0 flex-col overflow-hidden border-l border-line bg-panel">
@@ -279,14 +350,25 @@ export function GraphSidePaneUI({
       </header>
 
       <div className="min-h-0 flex-1 overflow-auto px-3 py-4">
-        {loading ? (
-          <p className="mt-6 text-[13px] text-ink-4">Loading…</p>
-        ) : error ? (
-          <p className="mt-6 text-[13px] text-against">{error}</p>
-        ) : pane ? (
-          <PaneBody artifactId={artifactId} pane={pane} onChanged={reload} />
-        ) : null}
+        <div className="flex flex-col gap-5">
+          {/* Properties come from the artifact itself, so they render immediately —
+              independent of the graph pane's load state. */}
+          <PropertiesSection artifact={artifact} />
+          {loading ? (
+            <p className="text-[13px] text-ink-4">Loading…</p>
+          ) : error ? (
+            <p className="text-[13px] text-against">{error}</p>
+          ) : pane ? (
+            <PaneBody
+              artifactId={artifactId}
+              pane={pane}
+              onChanged={reload}
+              onOpenEntity={setPeekEntityId}
+            />
+          ) : null}
+        </div>
       </div>
+      <EntityPeek entityId={peekEntityId} onClose={() => setPeekEntityId(null)} />
     </aside>
   );
 }

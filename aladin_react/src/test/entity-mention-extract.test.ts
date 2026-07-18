@@ -31,10 +31,18 @@ describe("extractEntityMentions", () => {
     ];
 
     const mentions = extractEntityMentions(doc);
+    // Each mention carries its block's plain text: chips render as their labels, so the
+    // snippet reads the way the block looks. This is what the Entity Context surface
+    // shows as "your note".
     expect(mentions).toEqual([
-      { entityId: "e-openai", blockId: "b1", surface: "OpenAI" },
-      { entityId: "e-anthropic", blockId: "b2", surface: "Anthropic" },
-      { entityId: "e-altman", blockId: "b3", surface: "Sam Altman" },
+      {
+        entityId: "e-openai",
+        blockId: "b1",
+        surface: "OpenAI",
+        snippet: "OpenAI OpenAI and again OpenAI",
+      },
+      { entityId: "e-anthropic", blockId: "b2", surface: "Anthropic", snippet: "Anthropic" },
+      { entityId: "e-altman", blockId: "b3", surface: "Sam Altman", snippet: "Sam Altman" },
     ]);
   });
 

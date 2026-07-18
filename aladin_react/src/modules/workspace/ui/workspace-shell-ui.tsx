@@ -1,7 +1,9 @@
-import { Command, Contrast, Folder, GitGraph, Home, Lightbulb, LogOut, Network, Plus, Signal, SquareTerminal } from "lucide-react";
+import { Command, Contrast, Folder, GitGraph, Globe, Home, Lightbulb, LogOut, Network, Plus, Signal, SquareTerminal } from "lucide-react";
 import { useEffect } from "react";
 import { Outlet } from "react-router-dom";
 import { CommandPalette } from "@/modules/workspace/ui/command-palette";
+import { LinkCaptureDialogUI } from "@/modules/workspace/ui/link-capture-dialog-ui";
+import { FileUploadDialogUI } from "@/modules/workspace/ui/file-upload-dialog-ui";
 import { TerminalDockUI } from "@/modules/terminal/ui/terminal-dock-ui";
 import {
   DropdownMenu,
@@ -22,6 +24,7 @@ const navItems = [
   { key: "folders", label: "Folders", icon: Folder, path: "/folders" },
   { key: "signals", label: "Signals", icon: Signal, path: "/signals" },
   { key: "insights", label: "Insights", icon: Lightbulb, path: "/insights" },
+  { key: "entities", label: "Entities", icon: Globe, path: "/entities" },
   { key: "sources", label: "Sources", icon: Network, path: "/sources" },
   { key: "graph", label: "Graph", icon: GitGraph, path: "/graph" },
 ] as const;
@@ -37,6 +40,14 @@ export function WorkspaceShellUI() {
     onCreateNote,
     onCreateLink,
     onCreateVoice,
+    onCreateFile,
+    linkDialogOpen,
+    onCloseLinkDialog,
+    onSubmitLink,
+    fileDialogOpen,
+    onCloseFileDialog,
+    onSubmitFile,
+    createPending,
   } = useWorkspaceShell();
   const theme = useAppStore((state) => state.theme);
   const toggleTheme = useAppStore((state) => state.toggleTheme);
@@ -68,7 +79,19 @@ export function WorkspaceShellUI() {
       <CommandPalette
         open={commandOpen}
         onOpenChange={setCommandOpen}
-        actions={{ onCreateFolder, onCreateNote, onCreateLink, onCreateVoice }}
+        actions={{ onCreateFolder, onCreateNote, onCreateLink, onCreateVoice, onCreateFile }}
+      />
+      <LinkCaptureDialogUI
+        open={linkDialogOpen}
+        pending={createPending}
+        onOpenChange={(open) => !open && onCloseLinkDialog()}
+        onSubmit={onSubmitLink}
+      />
+      <FileUploadDialogUI
+        open={fileDialogOpen}
+        pending={createPending}
+        onOpenChange={(open) => !open && onCloseFileDialog()}
+        onSubmit={onSubmitFile}
       />
       {/* border-t defines the boundary between the OS title bar and the app content, so the
           dark native bar reads as separate window chrome instead of blending into bg. */}
@@ -106,6 +129,7 @@ export function WorkspaceShellUI() {
                 <DropdownMenuItem onClick={onCreateNote}>New note</DropdownMenuItem>
                 <DropdownMenuItem onClick={onCreateLink}>New link</DropdownMenuItem>
                 <DropdownMenuItem onClick={onCreateVoice}>New voice note</DropdownMenuItem>
+                <DropdownMenuItem onClick={onCreateFile}>Upload file</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
 

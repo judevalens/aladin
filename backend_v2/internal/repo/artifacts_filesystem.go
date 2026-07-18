@@ -20,7 +20,7 @@ func NewFilesystemArtifactStore(uploadDir string, audioDir string) *FilesystemAr
 	return &FilesystemArtifactStore{uploadDir: uploadDir, audioDir: audioDir}
 }
 
-func (s *FilesystemArtifactStore) SaveResource(kind string, filename string, body io.Reader) (coreservice.StoredArtifactResource, error) {
+func (s *FilesystemArtifactStore) SaveResource(kind string, filename string, contentType string, body io.Reader) (coreservice.StoredArtifactResource, error) {
 	baseDir := s.baseDir(kind)
 	if baseDir == "" {
 		return coreservice.StoredArtifactResource{}, fmt.Errorf("unsupported artifact resource kind: %s", kind)
@@ -40,14 +40,20 @@ func (s *FilesystemArtifactStore) SaveResource(kind string, filename string, bod
 	if err != nil {
 		return coreservice.StoredArtifactResource{}, err
 	}
-	contentType := mime.TypeByExtension(ext)
-	if contentType == "" {
-		contentType = "application/octet-stream"
+	// Trust the uploaded content-type (set from the browser's blob type) — the
+	// client knows the real codec. Fall back to the file extension only when the
+	// upload gave us nothing usable.
+	resolvedType := strings.TrimSpace(contentType)
+	if resolvedType == "" || resolvedType == "application/octet-stream" {
+		resolvedType = mime.TypeByExtension(ext)
+	}
+	if resolvedType == "" {
+		resolvedType = "application/octet-stream"
 	}
 	return coreservice.StoredArtifactResource{
 		StorageKey:       storageKey,
 		ResourceKind:     kind,
-		MIMEType:         contentType,
+		MIMEType:         resolvedType,
 		OriginalFilename: filepath.Base(filename),
 		SizeBytes:        size,
 	}, nil

@@ -82,19 +82,11 @@ func (s *DefaultArtifactRefService) Search(ctx context.Context, ownerUserID, que
 	if perKind <= 0 || perKind > artifactRefSearchMaxPerKind {
 		perKind = artifactRefSearchMaxPerKind
 	}
-	claims, err := s.repo.SearchClaims(ctx, ownerUserID, query, perKind)
-	if err != nil {
-		return nil, err
-	}
-	arts, err := s.repo.SearchArtifacts(ctx, ownerUserID, query, perKind)
-	if err != nil {
-		return nil, err
-	}
-	// Claims first (the differentiator), then artifacts; the frontend sections by kind.
-	out := make([]RefHit, 0, len(claims)+len(arts))
-	out = append(out, claims...)
-	out = append(out, arts...)
-	return out, nil
+	// Claims are deliberately NOT searched for now (claim layer deprioritized with the
+	// trading pivot, 2026-07-16) — the picker offers pages + shards only. Existing claim
+	// refs in documents still render and project (SyncRefs/ListForArtifact accept them).
+	// To revive: re-add the repo.SearchClaims call here, claims-first.
+	return s.repo.SearchArtifacts(ctx, ownerUserID, query, perKind)
 }
 
 func (s *DefaultArtifactRefService) SyncRefs(ctx context.Context, artifactID string, refs []ArtifactRef) error {

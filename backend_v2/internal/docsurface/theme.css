@@ -43,6 +43,7 @@
     --color-against: var(--against);
     --color-catalyst: var(--catalyst);
     --color-echo: var(--echo);
+    --color-qualify: var(--qualify);
     --color-neutral: var(--neutral);
 
     /* shadcn semantic tokens (so existing primitives inherit the theme) */
@@ -149,6 +150,7 @@
     --against: #d8796b;
     --catalyst: #5b9bd8;
     --echo: #9a8cd8;
+    --qualify: #bd9a63;
     --neutral: #7f8aa0;
 
     --radius: 0.625rem;

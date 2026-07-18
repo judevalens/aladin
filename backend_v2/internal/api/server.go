@@ -66,6 +66,7 @@ func NewWithDependencies(addr string, deps app.Dependencies) *Server {
 	s.registerRelationshipRoutes(mux)
 	s.registerGraphPaneRoutes(mux)
 	s.registerEntityTagRoutes(mux)
+	s.registerEntityContextRoutes(mux)
 	s.registerArtifactRefRoutes(mux)
 	s.registerRealtimeRoutes(mux)
 	s.registerProviderConnectionRoutes(mux)
@@ -171,7 +172,7 @@ func cors(next http.Handler) http.Handler {
 		}
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return

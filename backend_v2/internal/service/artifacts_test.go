@@ -411,7 +411,7 @@ func (f *fakeArtifactRepository) FolderBreadcrumbs(context.Context, string) ([]B
 
 type fakeArtifactFiles struct{}
 
-func (f *fakeArtifactFiles) SaveResource(kind string, filename string, body io.Reader) (StoredArtifactResource, error) {
+func (f *fakeArtifactFiles) SaveResource(kind string, filename string, _ string, body io.Reader) (StoredArtifactResource, error) {
 	_, _ = io.ReadAll(body)
 	return StoredArtifactResource{
 		StorageKey:       kind + "/resource-1",

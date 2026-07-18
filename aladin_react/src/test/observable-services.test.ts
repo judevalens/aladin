@@ -73,6 +73,10 @@ describe("observable services", () => {
       createArtifact: vi.fn(),
       renameArtifact: vi.fn(),
       uploadVoiceArtifact: vi.fn(),
+      uploadFileArtifact: vi.fn(),
+      getResourceBlob: vi.fn(),
+      updateProperties: vi.fn(),
+      listPropertyDefs: vi.fn(),
     };
     const service = new WorkspaceSyncService(workspaceRepo, artifactRepo);
 

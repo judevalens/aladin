@@ -34,7 +34,7 @@ aladin_react/.claude/
 .codex-skill-build/
 .codex-skill-drafts/
 backend_v2/.gocache/
-backend_v2/audio/voice-*.webm
+backend_v2/audio/voice-*
 backend_v2/uploads/
 logs/
 scripts/ops/__pycache__/

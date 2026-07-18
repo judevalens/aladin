@@ -271,7 +271,10 @@ func (r *PostgresArtifactRepository) UpdateArtifact(ctx context.Context, id stri
 			       content = COALESCE($5, content),
 			       summary = COALESCE($6, summary),
 			       source_url = COALESCE($7, source_url),
-			       metadata = COALESCE($8::jsonb, metadata),
+			       -- Shallow-merge metadata (top-level keys) so a partial patch — e.g.
+			       -- {"properties": …} — preserves existing keys like storageKey/mimeType.
+			       metadata = CASE WHEN $8::jsonb IS NULL THEN metadata
+			                       ELSE COALESCE(metadata, '{}'::jsonb) || $8::jsonb END,
 			       updated_at = now()
 			 WHERE id = $1 AND user_id = $2::uuid
 		`, id, userID, patch.Type, patch.Title, patch.Content, patch.Summary, patch.SourceURL, metadataJSON)

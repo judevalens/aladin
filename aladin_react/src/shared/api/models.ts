@@ -186,6 +186,20 @@ export interface BreadcrumbRecord {
 
 export type ArtifactKind = "note" | "link" | "voice" | "file" | "app";
 
+export type ArtifactPropertyType = "text" | "number" | "date" | "select" | "url" | "tags";
+
+/** One typed user-defined property on an artifact (stored under metadata.properties). */
+export interface ArtifactProperty {
+  key: string;
+  type: ArtifactPropertyType;
+  /** Scalar value for text/number/date/select/url. */
+  value: string;
+  /** Chips for the `tags` (multi-value) type. */
+  values?: string[];
+  /** Choices for `select`-typed properties. */
+  options?: string[];
+}
+
 export interface Artifact {
   id: string;
   folderId?: string | null;
@@ -196,6 +210,7 @@ export interface Artifact {
   updatedLabel: string;
   sourceUrl?: string | null;
   resourceUrl?: string | null;
+  properties?: ArtifactProperty[] | null;
 }
 
 export interface FolderNode {

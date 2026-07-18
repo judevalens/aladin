@@ -123,6 +123,28 @@ func (f *fakeStore) EntitiesForArtifact(_ context.Context, _ string) ([]db.Entit
 	return nil, nil
 }
 
+// P1.3 judge-sweep methods — no-op stubs; the sweep has its own dedicated fake in
+// judge_sweeper_test.go (fakeJudgeStore), these only satisfy db.EntityRepository.
+func (f *fakeStore) ListPlaceholders(_ context.Context, _ int) ([]db.PlaceholderEntity, error) {
+	return nil, nil
+}
+func (f *fakeStore) FindMergeCandidatesAnyKind(_ context.Context, _, _ string, _ float64, _ int) ([]db.ScoredCandidate, error) {
+	return nil, nil
+}
+func (f *fakeStore) ListJudgeableMerges(_ context.Context, _ int) ([]db.JudgeableMerge, error) {
+	return nil, nil
+}
+func (f *fakeStore) DecideMerge(_ context.Context, _, _, _ string, _ map[string]any) error {
+	return nil
+}
+func (f *fakeStore) HasProposedMergeFor(_ context.Context, _ string) (bool, error) {
+	return false, nil
+}
+func (f *fakeStore) PromoteEntity(_ context.Context, _ string) error { return nil }
+func (f *fakeStore) ListEntityAliases(_ context.Context, _ string) ([]string, error) {
+	return nil, nil
+}
+
 // fakeEmbedder returns deterministic vectors keyed by the embed text.
 type fakeEmbedder struct{ vecs map[string][]float32 }
 
@@ -183,7 +205,7 @@ func TestResolver_SameSenseResolvesToExisting(t *testing.T) {
 
 func TestResolver_TenantBindsToSharedWhenPresent(t *testing.T) {
 	s := newFakeStore()
-	s.byKey[storeKey("unknown", "acme")] = "shared-acme" // a shared canonical exists
+	s.byKey[storeKey("other", "acme")] = "shared-acme" // a shared canonical exists (default kind)
 	r := NewResolver(s)
 
 	id, err := r.ResolveTenant(context.Background(), "owner-1", Mention{Surface: "Acme", RecordID: "r"})

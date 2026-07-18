@@ -1,12 +1,12 @@
-import { History, Link2, Sparkles } from "lucide-react";
-import { useRef, useState } from "react";
+import { History } from "lucide-react";
+import { useState } from "react";
 import { useAppComposition } from "@/app/composition/app-composition";
 import { useAppStore } from "@/app/state/store";
-import type { ClaimConnection } from "@/modules/graph/graph-pane-types";
+import { EntityPeek } from "@/modules/entities/ui/entity-peek-ui";
 import { BlockNotePageEditorDriver } from "@/modules/pages/editor/page-editor-driver";
-import { ConnectionsPanel } from "@/modules/pages/ui/connections-panel";
 import { EntityTagBar } from "@/modules/pages/ui/entity-tag-bar";
 import { PageHistoryPanel } from "@/modules/pages/ui/page-history-panel";
+import type { BrowserTreeNode } from "@/shared/api/models";
 import { useObservableState } from "@/shared/flow/use-observable-state";
 
 // Stable, readable cursor color per user id (awareness).
@@ -19,53 +19,24 @@ function colorForUser(id: string): string {
   return `hsl(${hue} 70% 45%)`;
 }
 
+// The folder containing the given page in the browser tree.
+// Returns null for "at root", undefined for "not found".
+function folderOfPage(nodes: BrowserTreeNode[], pageId: string): string | null | undefined {
+  for (const node of nodes) {
+    if (node.artifactId === pageId) return node.parentId ?? null;
+    const found = folderOfPage(node.children ?? [], pageId);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
 export function PageEditorUI({ pageId }: { pageId: string }) {
   const { runtime, services, repos } = useAppComposition();
   const authState = useObservableState(services.auth.session.session());
   // Hooks before the early return (rules of hooks).
   const [historyOpen, setHistoryOpen] = useState(false);
-  const getPlainText = useRef<(() => string) | null>(null);
+  const [peekEntityId, setPeekEntityId] = useState<string | null>(null);
   const openArtifact = useAppStore((s) => s.openArtifact);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [analyzeMsg, setAnalyzeMsg] = useState<string | null>(null);
-  const [connectOpen, setConnectOpen] = useState(false);
-  const [connecting, setConnecting] = useState(false);
-  const [connections, setConnections] = useState<ClaimConnection[]>([]);
-
-  async function analyze() {
-    const getText = getPlainText.current;
-    if (!getText || analyzing) return;
-    setAnalyzing(true);
-    setAnalyzeMsg(null);
-    try {
-      const { claimsStored } = await repos.graphPane.extractClaims(pageId, getText());
-      setAnalyzeMsg(
-        claimsStored > 0
-          ? `${claimsStored} claim${claimsStored === 1 ? "" : "s"} extracted`
-          : "No new claims",
-      );
-    } catch {
-      setAnalyzeMsg("Analyze failed");
-    } finally {
-      setAnalyzing(false);
-    }
-  }
-
-  // Y3 "Connect": extract this page's claims, then surface what supports / contradicts them.
-  async function connect() {
-    const getText = getPlainText.current;
-    if (!getText || connecting) return;
-    setConnecting(true);
-    setConnectOpen(true);
-    try {
-      const result = await repos.graphPane.connect(pageId, getText());
-      setConnections(result.connections);
-    } catch {
-      setConnections([]);
-    } finally {
-      setConnecting(false);
-    }
-  }
 
   const user = authState.status === "data" ? authState.value.user : null;
   if (!user) {
@@ -79,25 +50,6 @@ export function PageEditorUI({ pageId }: { pageId: string }) {
   return (
     <div className="relative flex h-full min-h-0 flex-col">
       <div className="absolute right-3 top-2 z-10 flex items-center gap-2">
-        {analyzeMsg ? <span className="text-xs text-ink-4">{analyzeMsg}</span> : null}
-        <button
-          onClick={analyze}
-          disabled={analyzing}
-          title="Extract claims from this page (grounded in its entities)"
-          className="flex items-center gap-1.5 rounded-md border border-line bg-field/90 px-2.5 py-1 text-xs font-medium text-ink-2 backdrop-blur-sm hover:bg-raise hover:text-ink disabled:opacity-50"
-        >
-          <Sparkles className="h-3.5 w-3.5" />
-          {analyzing ? "Analyzing…" : "Analyze"}
-        </button>
-        <button
-          onClick={connect}
-          disabled={connecting}
-          title="Extract this page's claims and surface what supports or contradicts them"
-          className="flex items-center gap-1.5 rounded-md border border-line bg-field/90 px-2.5 py-1 text-xs font-medium text-ink-2 backdrop-blur-sm hover:bg-raise hover:text-ink disabled:opacity-50"
-        >
-          <Link2 className="h-3.5 w-3.5" />
-          {connecting ? "Connecting…" : "Connect"}
-        </button>
         <button
           onClick={() => setHistoryOpen((v) => !v)}
           title="Edit history"
@@ -117,7 +69,7 @@ export function PageEditorUI({ pageId }: { pageId: string }) {
             token={token}
             user={{ name: user.email, color: colorForUser(user.id) }}
             searchEntities={(q) => repos.graphPane.searchEntities(q)}
-            createEntity={(name) => repos.graphPane.createEntity(name, "unknown")}
+            createEntity={(name) => repos.graphPane.createEntity(name, "other")}
             onMentionsChange={(mentions) =>
               void repos.graphPane.syncMentions(pageId, mentions).catch(() => undefined)
             }
@@ -125,23 +77,35 @@ export function PageEditorUI({ pageId }: { pageId: string }) {
             onRefsChange={(refs) =>
               void repos.graphPane.syncRefs(pageId, refs).catch(() => undefined)
             }
+            createPageRef={
+              // Page creation flows through the local browser store — desktop only.
+              runtime.config.isDesktopApp
+                ? async (title) => {
+                    try {
+                      const tree = await repos.workspace.getLocalNodeTree();
+                      const artifact = await services.workspace.createArtifact({
+                        type: "page",
+                        folderId: folderOfPage(tree, pageId) ?? null,
+                        title,
+                        content: "",
+                      });
+                      return { id: artifact.id, label: artifact.title || title };
+                    } catch {
+                      return null;
+                    }
+                  }
+                : undefined
+            }
             onOpenArtifact={(artifactId) => openArtifact(artifactId)}
-            onReady={(api) => {
-              getPlainText.current = api.getPlainText;
-            }}
+            onOpenEntity={(entityId) => setPeekEntityId(entityId)}
           />
         </div>
       </div>
-      {connectOpen ? (
-        <ConnectionsPanel
-          connections={connections}
-          loading={connecting}
-          onClose={() => setConnectOpen(false)}
-        />
-      ) : null}
       {historyOpen ? (
         <PageHistoryPanel pageId={pageId} onClose={() => setHistoryOpen(false)} />
       ) : null}
+      {/* Clicking an inline @entity opens its context in a peek modal — no navigating away. */}
+      <EntityPeek entityId={peekEntityId} onClose={() => setPeekEntityId(null)} />
     </div>
   );
 }

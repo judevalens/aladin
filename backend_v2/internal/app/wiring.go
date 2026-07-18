@@ -4,13 +4,11 @@ import (
 	"os"
 	"path/filepath"
 
-	"aladin/backend_v2/internal/claims"
 	"aladin/backend_v2/internal/config"
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/docsurface"
 	"aladin/backend_v2/internal/entities"
 	"aladin/backend_v2/internal/graph"
-	"aladin/backend_v2/internal/llm"
 	"aladin/backend_v2/internal/repo"
 	coreservice "aladin/backend_v2/internal/service"
 
@@ -53,8 +51,11 @@ type Dependencies interface {
 	EntityTags() coreservice.EntityTagService
 	// ArtifactRefs backs the `#` cross-reference picker: claim/page/shard search + links.
 	ArtifactRefs() coreservice.ArtifactRefService
-	// AuthoredClaims extracts claims from a page grounded in its tagged/@mentioned entities.
-	AuthoredClaims() coreservice.AuthoredClaimsService
+	// EntityContext backs the Entity Context surface: one entity's identity, its typed
+	// edges, the verbatim material accreted under it, and its pending merge decisions.
+	EntityContext() coreservice.EntityContextService
+	// EntityList backs the Entities index: browse/search the entity registry.
+	EntityList() coreservice.EntityListService
 	// GraphReader reads the Neo4j connection lens. Nil when Neo4j isn't configured.
 	GraphReader() coreservice.GraphReader
 }
@@ -84,7 +85,8 @@ type StaticDependencies struct {
 	GraphPaneSvc           coreservice.GraphPaneService
 	EntityTagsSvc          coreservice.EntityTagService
 	ArtifactRefsSvc        coreservice.ArtifactRefService
-	AuthoredClaimsSvc      coreservice.AuthoredClaimsService
+	EntityContextSvc       coreservice.EntityContextService
+	EntityListSvc          coreservice.EntityListService
 	GraphReaderSvc         coreservice.GraphReader
 }
 
@@ -138,8 +140,11 @@ func (d StaticDependencies) EntityTags() coreservice.EntityTagService {
 func (d StaticDependencies) ArtifactRefs() coreservice.ArtifactRefService {
 	return d.ArtifactRefsSvc
 }
-func (d StaticDependencies) AuthoredClaims() coreservice.AuthoredClaimsService {
-	return d.AuthoredClaimsSvc
+func (d StaticDependencies) EntityContext() coreservice.EntityContextService {
+	return d.EntityContextSvc
+}
+func (d StaticDependencies) EntityList() coreservice.EntityListService {
+	return d.EntityListSvc
 }
 func (d StaticDependencies) GraphReader() coreservice.GraphReader {
 	return d.GraphReaderSvc
@@ -170,7 +175,8 @@ type wiring struct {
 	graphPane           coreservice.GraphPaneService
 	entityTags          coreservice.EntityTagService
 	artifactRefs        coreservice.ArtifactRefService
-	authoredClaims      coreservice.AuthoredClaimsService
+	entityContext       coreservice.EntityContextService
+	entityList          coreservice.EntityListService
 	graphReader         coreservice.GraphReader
 }
 
@@ -206,8 +212,11 @@ func (w wiring) Relationships() coreservice.RelationshipService { return w.relat
 func (w wiring) GraphPane() coreservice.GraphPaneService        { return w.graphPane }
 func (w wiring) EntityTags() coreservice.EntityTagService       { return w.entityTags }
 func (w wiring) ArtifactRefs() coreservice.ArtifactRefService   { return w.artifactRefs }
-func (w wiring) AuthoredClaims() coreservice.AuthoredClaimsService {
-	return w.authoredClaims
+func (w wiring) EntityContext() coreservice.EntityContextService {
+	return w.entityContext
+}
+func (w wiring) EntityList() coreservice.EntityListService {
+	return w.entityList
 }
 func (w wiring) GraphReader() coreservice.GraphReader { return w.graphReader }
 
@@ -234,24 +243,6 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 	artifactRefRepo := repo.NewArtifactRefPostgres(pool)
 	systemRepo := repo.NewSystemPostgres(pool)
 
-	// Authored claim extraction (P3): a page's tags/@mentions ground LLM claim extraction
-	// over its text. The extractor is nil-safe — without an OPENAI_API_KEY it degrades to
-	// a no-op (same as the record path), so the API boots fine without a key.
-	//
-	// When a key is present we also enable the embedder + adjudicator so the Connect path
-	// gets the SAME paraphrase-aware resolution (C1) as the worker (cmd/worker/main.go):
-	// without them resolveClaim falls back to exact-text match only — so re-running Connect
-	// on lightly-reworded extractions creates duplicate claims, and authored claims are stored
-	// with no embedding, which makes the Book lens contradiction surface unable to match them.
-	var claimExtractor llm.ClaimExtractor
-	claimSvc := claims.NewService(db.NewClaimRepository(pool), claimExtractor)
-	if key := os.Getenv("OPENAI_API_KEY"); key != "" {
-		claimExtractor = llm.NewOpenAIClaimExtractor(key)
-		claimSvc = claims.NewService(db.NewClaimRepository(pool), claimExtractor).
-			WithEmbedder(llm.NewOpenAIEmbedder(key)).
-			WithAdjudicator(llm.NewOpenAIClaimAdjudicator(key))
-	}
-	authoredClaims := claims.NewAuthoredExtractor(claimSvc, db.NewEntityRepository(pool))
 	// Graph reader (optional) — the Neo4j connection lens. Nil when NEO4J_URI is unset, and
 	// handlers degrade to a clear "graph not configured" response.
 	var graphReader coreservice.GraphReader
@@ -305,7 +296,11 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		graphPane:           coreservice.NewGraphPaneService(graphPaneRepo),
 		entityTags:          coreservice.NewEntityTagService(entityTagRepo, entities.Normalize),
 		artifactRefs:        coreservice.NewArtifactRefService(artifactRefRepo),
-		authoredClaims:      authoredClaims,
+		entityContext: coreservice.NewEntityContextService(
+			repo.NewEntityContextPostgres(pool),
+			db.NewEntityRepository(pool), // merge decisions land in the shared registry
+		),
+		entityList:          coreservice.NewEntityListService(repo.NewEntityListPostgres(pool)),
 		graphReader:         graphReader,
 	}
 }

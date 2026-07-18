@@ -13,6 +13,9 @@ type EntityHit struct {
 	Kind      string `json:"kind"`
 	Scope     string `json:"scope"`
 	TrustTier string `json:"trustTier"`
+	// Aliases are the entity's other known surfaces (synonyms), shown in the picker so
+	// "NVDA · Nvidia, NVIDIA Corp" reads as one thing. Excludes the canonical name.
+	Aliases []string `json:"aliases"`
 }
 
 // AttachedEntity is an entity linked to an artifact (a tag or a projected @mention).
@@ -38,11 +41,14 @@ type AttachEntityInput struct {
 }
 
 // MentionRef is one projected @entity occurrence in a page: the entity referenced, the
-// block it sits in, and the literal label shown.
+// block it sits in, the literal label shown, and the block's plain text.
 type MentionRef struct {
 	EntityID string `json:"entityId"`
 	BlockID  string `json:"blockId"`
 	Surface  string `json:"surface"`
+	// Snippet is the block's text, verbatim — what the Entity Context surface renders as
+	// "your note". Without it we'd know a page mentions an entity but not what it said.
+	Snippet string `json:"snippet"`
 }
 
 var ErrInvalidEntityTag = errors.New("invalid entity tag request")
@@ -99,8 +105,11 @@ func (s *DefaultEntityTagService) CreateEntity(ctx context.Context, in CreateEnt
 	if name == "" {
 		return EntityHit{}, ErrInvalidEntityTag
 	}
-	if kind == "" {
-		kind = "unknown"
+	// "unknown" is retired (00020); map it and empty to the generic "other" so legacy
+	// callers keep working. Kind is usually backfilled later by the judge anyway —
+	// create is deliberately a zero-decision path (P1.2).
+	if kind == "" || kind == "unknown" {
+		kind = "other"
 	}
 	key := s.normalize(name)
 	if key == "" {

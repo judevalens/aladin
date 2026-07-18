@@ -69,3 +69,13 @@ pub fn db_delete_artifact(
 ) -> DbResult<()> {
     repo.delete_artifact(&db, input)
 }
+
+#[tauri::command]
+pub fn db_update_artifact_properties(
+    repo: State<'_, WorkspaceRepo>,
+    db: State<'_, Db>,
+    id: String,
+    properties: serde_json::Value,
+) -> DbResult<()> {
+    repo.update_artifact_properties(&db, &id, properties)
+}

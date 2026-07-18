@@ -215,14 +215,42 @@ func main() {
 	// about via web search → context → resolver. Built only when TAVILY_API_KEY is set; the
 	// CachedSearcher owns rate limiting, so the worker takes no limiter.
 	var lowConfWorker *workers.ResolveLowConfidenceWorker
+	var webSearcher search.Searcher
 	if cfg.TavilyAPIKey != "" {
 		searcher := search.NewCachedSearcher(search.NewTavilyClient(cfg.TavilyAPIKey), redisClient, ratelimit.New(20))
+		webSearcher = searcher
 		lowConfWorker = workers.NewResolveLowConfidenceWorker(recordRepo, entityResolver, searcher, nil)
 		handler.WithLowConfidenceSearch(true)
 		slog.Info("search: low-confidence entity search enabled", "component", "worker")
 	} else {
 		slog.Info("search: TAVILY_API_KEY unset — low-confidence search disabled", "component", "worker")
 	}
+
+	// Entity judge sweep (ambient, P1.3) — resolves editor-minted placeholders and the
+	// ambiguous merge band: deterministic auto-merge on strong same-kind matches, LLM
+	// judge for the rest, web-search escalation on unsure (when Tavily is configured).
+	// Every layer degrades gracefully: no key → deterministic tier only; unsure rows
+	// stay proposed for manual review. One LLM judgment per pair, ever.
+	judgeSweeper := entities.NewJudgeSweeper(entityRepo, llm.NewOpenAIEntityAdjudicator(cfg.OpenAIAPIKey))
+	if webSearcher != nil {
+		judgeSweeper = judgeSweeper.WithSearcher(webSearcher)
+	}
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if n, err := judgeSweeper.Sweep(ctx, 50); err != nil {
+					slog.Error("entities: judge sweep failed", "component", "entities", "err", err)
+				} else if n > 0 {
+					slog.Info("entities: judge sweep complete", "component", "entities", "acted", n)
+				}
+			}
+		}
+	}()
 
 	orch := pipeline.NewOrchestrator(handler)
 	orch.Add(workers.NewGlobalFirstPassWorker(enricher, openaiLimiter))
