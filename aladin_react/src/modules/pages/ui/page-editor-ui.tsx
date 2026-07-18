@@ -4,7 +4,6 @@ import { useAppComposition } from "@/app/composition/app-composition";
 import { useAppStore } from "@/app/state/store";
 import { EntityPeek } from "@/modules/entities/ui/entity-peek-ui";
 import { BlockNotePageEditorDriver } from "@/modules/pages/editor/page-editor-driver";
-import { EntityTagBar } from "@/modules/pages/ui/entity-tag-bar";
 import { PageHistoryPanel } from "@/modules/pages/ui/page-history-panel";
 import type { BrowserTreeNode } from "@/shared/api/models";
 import { useObservableState } from "@/shared/flow/use-observable-state";
@@ -61,7 +60,6 @@ export function PageEditorUI({ pageId }: { pageId: string }) {
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">
         <div className="mx-auto flex h-full w-full max-w-workspace-max flex-col">
-          <EntityTagBar pageId={pageId} />
           <BlockNotePageEditorDriver
             key={pageId}
             pageId={pageId}
