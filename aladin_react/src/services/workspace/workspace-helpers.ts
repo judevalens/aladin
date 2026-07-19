@@ -12,6 +12,7 @@ import {
 } from "@/modules/workspace/domain";
 
 export function resolveWorkspaceDestination(pathname: string) {
+  if (pathname.startsWith("/markets") || pathname.startsWith("/ticker/")) return "markets";
   if (pathname.startsWith("/folders")) return "folders";
   if (pathname.startsWith("/sources")) return "sources";
   if (pathname.startsWith("/signals")) return "signals";

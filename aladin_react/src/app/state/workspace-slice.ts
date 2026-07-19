@@ -6,6 +6,10 @@ export interface WorkspaceSlice {
   workspace: WorkspaceShellState;
   commandPaletteOpen: boolean;
   setCommandPaletteOpen: (open: boolean) => void;
+  /** Symbol shown in the global ticker modal; null → closed. */
+  openTickerSymbol: string | null;
+  openTicker: (symbol: string) => void;
+  closeTicker: () => void;
   openArtifact: (artifactId: string) => void;
   activateArtifact: (artifactId: string) => void;
   closeArtifact: (artifactId: string) => void;
@@ -26,6 +30,9 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice, [], [], Workspac
   workspace: initialWorkspaceShellState,
   commandPaletteOpen: false,
   setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
+  openTickerSymbol: null,
+  openTicker: (symbol) => set({ openTickerSymbol: symbol }),
+  closeTicker: () => set({ openTickerSymbol: null }),
   openArtifact: (artifactId) =>
     set((state) => {
       const openArtifactIds = state.workspace.openArtifactIds.includes(artifactId)

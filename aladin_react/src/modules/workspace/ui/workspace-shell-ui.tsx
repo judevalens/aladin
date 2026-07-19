@@ -2,6 +2,7 @@ import { CandlestickChart, Check, Command, Contrast, Folder, GitGraph, Globe, Ho
 import { useEffect } from "react";
 import { Outlet } from "react-router-dom";
 import { CommandPalette } from "@/modules/workspace/ui/command-palette";
+import { TickerModal } from "@/modules/markets/ui/ticker-modal";
 import { LinkCaptureDialogUI } from "@/modules/workspace/ui/link-capture-dialog-ui";
 import { FileUploadDialogUI } from "@/modules/workspace/ui/file-upload-dialog-ui";
 import { TerminalDockUI } from "@/modules/terminal/ui/terminal-dock-ui";
@@ -83,6 +84,7 @@ export function WorkspaceShellUI() {
         onOpenChange={setCommandOpen}
         actions={{ onCreateFolder, onCreateNote, onCreateLink, onCreateVoice, onCreateFile }}
       />
+      <TickerModal />
       <LinkCaptureDialogUI
         open={linkDialogOpen}
         pending={createPending}

@@ -22,6 +22,7 @@ import { EntitiesInboxSpike } from "@/modules/entities/ui/entities-inbox-spike";
 import { EntitiesHomeSpike } from "@/modules/entities/ui/entities-home-spike";
 import { TickerRoute } from "@/modules/tickers/ui/ticker-route";
 import { MarketsUI } from "@/modules/markets/ui/markets-ui";
+import { TickerModal } from "@/modules/markets/ui/ticker-modal";
 
 function WorkspaceRoute() {
   return (
@@ -47,6 +48,16 @@ export const router = createBrowserRouter([
     // Phase 0 Doc Surface spike — standalone, no auth, for browser + tauri:dev.
     path: "/spike/sandbox",
     element: <SandboxSpike />,
+  },
+  {
+    // Dev-only Markets spike — the trading surface on placeholder data, no auth.
+    path: "/spike/markets",
+    element: (
+      <div className="flex h-screen overflow-hidden">
+        <MarketsUI />
+        <TickerModal />
+      </div>
+    ),
   },
   {
     // Dev-only editor preview — standalone, no auth/collab, for iterating on

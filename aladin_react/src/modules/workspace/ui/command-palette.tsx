@@ -1,6 +1,19 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { CandlestickChart, FilePlus2, FolderPlus, Link2, Mic, Upload } from "lucide-react";
+import {
+  Building2,
+  CandlestickChart,
+  FilePlus2,
+  FileText,
+  FolderPlus,
+  Globe,
+  Layers,
+  Link2,
+  Mic,
+  Upload,
+  User,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import {
   CommandDialog,
   CommandEmpty,
@@ -10,7 +23,8 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { useAppComposition } from "@/app/composition/app-composition";
-import type { InstrumentHit } from "@/shared/api/models";
+import { useAppStore } from "@/app/state/store";
+import type { SearchHit, SearchSection } from "@/shared/api/models";
 
 export interface CommandPaletteActions {
   onCreateFolder: () => void;
@@ -20,10 +34,22 @@ export interface CommandPaletteActions {
   onCreateFile: () => void;
 }
 
+// Presentation-only: hit.kind → row icon. Routing/icons are legitimately client concerns;
+// the search logic (federation, sections, order) is owned by the backend.
+const KIND_ICON: Record<string, LucideIcon> = {
+  ticker: CandlestickChart,
+  company: Building2,
+  person: User,
+  entity: Globe,
+  page: FileText,
+  shard: Layers,
+};
+
 /**
- * ⌘K command palette. Empty query → the create actions. Typing → ticker search over the
- * instruments registry (server-filtered, so cmdk's own filter is off). Selecting a ticker
- * routes to its detail surface. Ask-my-graph and richer navigation land later.
+ * ⌘K command palette — a GLOBAL search. Empty query → the create actions. Typing calls the
+ * one federated /api/search endpoint and renders whatever sections it returns, generically.
+ * The backend owns which sources exist, how they're grouped, and their order; this component
+ * just maps each hit's `kind` to an icon and a route.
  */
 export function CommandPalette({
   open,
@@ -36,8 +62,10 @@ export function CommandPalette({
 }) {
   const { repos } = useAppComposition();
   const navigate = useNavigate();
+  const openArtifact = useAppStore((state) => state.openArtifact);
+  const openTicker = useAppStore((state) => state.openTicker);
   const [query, setQuery] = useState("");
-  const [tickers, setTickers] = useState<InstrumentHit[]>([]);
+  const [sections, setSections] = useState<SearchSection[]>([]);
   const [searching, setSearching] = useState(false);
 
   // Reset the query each time the palette opens so it never reopens mid-search.
@@ -45,24 +73,24 @@ export function CommandPalette({
     if (open) setQuery("");
   }, [open]);
 
-  // Debounced ticker search. Empty query clears results without a request.
+  // Debounced global search — one call, backend-federated.
   useEffect(() => {
     const q = query.trim();
     if (!q) {
-      setTickers([]);
+      setSections([]);
       setSearching(false);
       return;
     }
     setSearching(true);
     let cancelled = false;
     const handle = setTimeout(() => {
-      repos.instruments
-        .search(q)
-        .then((hits) => {
-          if (!cancelled) setTickers(hits);
+      repos.search
+        .query(q)
+        .then((res) => {
+          if (!cancelled) setSections(res.sections);
         })
         .catch(() => {
-          if (!cancelled) setTickers([]);
+          if (!cancelled) setSections([]);
         })
         .finally(() => {
           if (!cancelled) setSearching(false);
@@ -72,23 +100,37 @@ export function CommandPalette({
       cancelled = true;
       clearTimeout(handle);
     };
-  }, [query, repos.instruments]);
+  }, [query, repos.search]);
 
   const run = (fn: () => void) => {
     onOpenChange(false);
     fn();
   };
 
-  const openTicker = (symbol: string) => {
+  // hit.kind → navigation. Tickers open the ticker detail; entity kinds open the entity
+  // surface; pages/shards open the artifact in the workspace.
+  const openHit = (hit: SearchHit) => {
     onOpenChange(false);
-    navigate(`/ticker/${encodeURIComponent(symbol)}`);
+    if (hit.kind === "ticker") {
+      openTicker(hit.title);
+    } else if (hit.kind === "page" || hit.kind === "shard") {
+      openArtifact(hit.id);
+      navigate("/folders");
+    } else {
+      navigate(`/entity/${hit.id}`);
+    }
   };
 
   const hasQuery = query.trim().length > 0;
+  const empty = hasQuery && !searching && sections.length === 0;
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange} shouldFilter={false}>
-      <CommandInput placeholder="Search tickers, or type a command…" value={query} onValueChange={setQuery} />
+      <CommandInput
+        placeholder="Search tickers, companies, people, pages… or type a command"
+        value={query}
+        onValueChange={setQuery}
+      />
       <CommandList>
         {!hasQuery && (
           <CommandGroup heading="Create">
@@ -115,20 +157,27 @@ export function CommandPalette({
           </CommandGroup>
         )}
 
-        {hasQuery && tickers.length > 0 && (
-          <CommandGroup heading="Tickers">
-            {tickers.map((t) => (
-              <CommandItem key={t.id} value={t.id} onSelect={() => openTicker(t.symbol)}>
-                <CandlestickChart className="h-[15px] w-[15px] text-ink-3" strokeWidth={1.75} />
-                <span className="font-mono text-ink">{t.symbol}</span>
-                <span className="truncate text-ink-3">{t.name}</span>
-                <span className="ml-auto shrink-0 font-mono text-[10px] text-ink-4">{t.exchange}</span>
-              </CommandItem>
-            ))}
+        {sections.map((section) => (
+          <CommandGroup key={section.type} heading={section.label}>
+            {section.hits.map((hit) => {
+              const Icon = KIND_ICON[hit.kind] ?? Globe;
+              return (
+                <CommandItem key={`${hit.kind}-${hit.id}`} value={`${hit.kind}-${hit.id}`} onSelect={() => openHit(hit)}>
+                  <Icon className="h-[15px] w-[15px] text-ink-3" strokeWidth={1.75} />
+                  <span className={hit.kind === "ticker" ? "font-mono text-ink" : "text-ink"}>
+                    {hit.title}
+                  </span>
+                  {hit.subtitle && <span className="truncate text-ink-3">{hit.subtitle}</span>}
+                  <span className="ml-auto shrink-0 font-mono text-[10px] uppercase text-ink-4">
+                    {hit.kind}
+                  </span>
+                </CommandItem>
+              );
+            })}
           </CommandGroup>
-        )}
+        ))}
 
-        {hasQuery && !searching && tickers.length === 0 && <CommandEmpty>No tickers found.</CommandEmpty>}
+        {empty && <CommandEmpty>No results.</CommandEmpty>}
       </CommandList>
     </CommandDialog>
   );
