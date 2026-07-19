@@ -1,4 +1,4 @@
-import { Check, Command, Contrast, Folder, GitGraph, Globe, Home, Lightbulb, LogOut, Network, Plus, Signal, SquareTerminal } from "lucide-react";
+import { CandlestickChart, Check, Command, Contrast, Folder, GitGraph, Globe, Home, Lightbulb, LogOut, Network, Plus, Signal, SquareTerminal } from "lucide-react";
 import { useEffect } from "react";
 import { Outlet } from "react-router-dom";
 import { CommandPalette } from "@/modules/workspace/ui/command-palette";
@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   { key: "home", label: "Home", icon: Home, path: "/home" },
+  { key: "markets", label: "Markets", icon: CandlestickChart, path: "/markets" },
   { key: "folders", label: "Folders", icon: Folder, path: "/folders" },
   { key: "signals", label: "Signals", icon: Signal, path: "/signals" },
   { key: "insights", label: "Insights", icon: Lightbulb, path: "/insights" },

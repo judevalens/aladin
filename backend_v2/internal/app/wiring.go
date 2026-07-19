@@ -58,6 +58,8 @@ type Dependencies interface {
 	EntityList() coreservice.EntityListService
 	// Instruments backs ticker search (the command-box typeahead) over the securities registry.
 	Instruments() coreservice.InstrumentService
+	// Watchlist backs the Markets surface: the tickers a user is tracking.
+	Watchlist() coreservice.WatchlistService
 	// GraphReader reads the Neo4j connection lens. Nil when Neo4j isn't configured.
 	GraphReader() coreservice.GraphReader
 }
@@ -91,6 +93,7 @@ type StaticDependencies struct {
 	EntityListSvc          coreservice.EntityListService
 	GraphReaderSvc         coreservice.GraphReader
 	InstrumentsSvc         coreservice.InstrumentService
+	WatchlistSvc           coreservice.WatchlistService
 }
 
 func (d StaticDependencies) Auth() coreservice.AuthService          { return d.AuthSvc }
@@ -152,6 +155,9 @@ func (d StaticDependencies) EntityList() coreservice.EntityListService {
 func (d StaticDependencies) Instruments() coreservice.InstrumentService {
 	return d.InstrumentsSvc
 }
+func (d StaticDependencies) Watchlist() coreservice.WatchlistService {
+	return d.WatchlistSvc
+}
 func (d StaticDependencies) GraphReader() coreservice.GraphReader {
 	return d.GraphReaderSvc
 }
@@ -185,6 +191,7 @@ type wiring struct {
 	entityList          coreservice.EntityListService
 	graphReader         coreservice.GraphReader
 	instruments         coreservice.InstrumentService
+	watchlist           coreservice.WatchlistService
 }
 
 func (w wiring) Auth() coreservice.AuthService          { return w.auth }
@@ -227,6 +234,7 @@ func (w wiring) EntityList() coreservice.EntityListService {
 }
 func (w wiring) GraphReader() coreservice.GraphReader       { return w.graphReader }
 func (w wiring) Instruments() coreservice.InstrumentService { return w.instruments }
+func (w wiring) Watchlist() coreservice.WatchlistService    { return w.watchlist }
 
 func NewDependencies(pool *pgxpool.Pool) Dependencies {
 	return NewDependenciesWithProviderConnections(pool, config.LoadProviderConnections(), config.DataVolumePathOrDefault())
@@ -311,6 +319,7 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		entityList:  coreservice.NewEntityListService(repo.NewEntityListPostgres(pool)),
 		graphReader: graphReader,
 		instruments: coreservice.NewInstrumentService(repo.NewInstrumentPostgres(pool)),
+		watchlist:   coreservice.NewWatchlistService(repo.NewWatchlistPostgres(pool)),
 	}
 }
 

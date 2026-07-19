@@ -196,6 +196,15 @@ export interface InstrumentHit {
   isActive: boolean;
 }
 
+/** One tracked security on the Markets watchlist. */
+export interface WatchlistItem {
+  instrumentId: string;
+  symbol: string;
+  name: string;
+  exchange: string;
+  addedAt: string;
+}
+
 export type ArtifactPropertyType = "text" | "number" | "date" | "select" | "url" | "tags";
 
 /** One typed user-defined property on an artifact (stored under metadata.properties). */

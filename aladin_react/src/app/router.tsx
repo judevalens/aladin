@@ -21,6 +21,7 @@ import { EntitiesIndexSpike } from "@/modules/entities/ui/entities-index-spike";
 import { EntitiesInboxSpike } from "@/modules/entities/ui/entities-inbox-spike";
 import { EntitiesHomeSpike } from "@/modules/entities/ui/entities-home-spike";
 import { TickerRoute } from "@/modules/tickers/ui/ticker-route";
+import { MarketsUI } from "@/modules/markets/ui/markets-ui";
 
 function WorkspaceRoute() {
   return (
@@ -82,6 +83,7 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <Navigate to="/home" replace /> },
           { path: "/home", element: <WorkspaceRoute /> },
+          { path: "/markets", element: <MarketsUI /> },
           { path: "/folders", element: <WorkspaceRoute /> },
           { path: "/sources", element: <SourcesRoute /> },
           { path: "/signals", element: <SignalsUI /> },
