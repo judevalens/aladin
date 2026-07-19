@@ -1,8 +1,16 @@
-import { HelpCircle, Link2, Plus, Quote, Waypoints } from "lucide-react";
+import { Building2, Fingerprint, HelpCircle, Link2, Plus, Quote, SlidersHorizontal, Waypoints } from "lucide-react";
 import { useMemo } from "react";
 
 import { cn } from "@/lib/utils";
-import type { ContextItem, Edge, Entity, Tone } from "../entity-context-types";
+import type {
+  CompanyFacts,
+  ContextItem,
+  DataPoint,
+  Edge,
+  Entity,
+  ExternalId,
+  Tone,
+} from "../entity-context-types";
 import { CTX_META, groupEdgesByRel, relMeta } from "../entity-context-vocab";
 import { PlatChip } from "./plat-chip";
 
@@ -229,10 +237,97 @@ function SectionHeader({
   );
 }
 
+// ── one typed data point — the cell renderer switches on `type` (type-driven, generic) ──
+function DataPointCell({ point }: { point: DataPoint }) {
+  const label = point.name;
+  let value: React.ReactNode = point.value ?? "";
+  if (point.type === "reference") {
+    value = <span className="font-mono text-ink">{point.label ?? point.refId ?? "—"}</span>;
+  } else if (point.type === "url" && point.value) {
+    value = (
+      <a
+        href={point.value}
+        target="_blank"
+        rel="noreferrer"
+        className="truncate text-echo hover:underline"
+      >
+        {point.value}
+      </a>
+    );
+  } else if (point.type === "select" && point.value) {
+    value = (
+      <span className="inline-flex rounded-chip border border-line px-[7px] py-[1px] text-[11px] text-ink">
+        {point.value}
+      </span>
+    );
+  }
+  return (
+    <div className="flex items-baseline gap-2">
+      <span className="w-[108px] shrink-0 font-mono text-[10.5px] uppercase tracking-[0.4px] text-ink-4">
+        {label}
+      </span>
+      <span className="min-w-0 text-[12.5px] text-ink-2">{value}</span>
+    </div>
+  );
+}
+
+// ── the kind='company' extension row — objective facts as real fields ──
+function CompanyFactsBlock({ company }: { company: CompanyFacts }) {
+  const chips = [company.sector, company.industry, company.country].filter(Boolean) as string[];
+  return (
+    <div className="mb-[10px] flex flex-col gap-[9px]">
+      {chips.length > 0 && (
+        <div className="flex flex-wrap gap-[6px]">
+          {chips.map((c) => (
+            <span
+              key={c}
+              className="inline-flex rounded-chip border border-line bg-card px-[8px] py-[2px] text-[11px] text-ink-2"
+            >
+              {c}
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="flex flex-wrap gap-x-6 gap-y-1 font-mono text-[11px] text-ink-3">
+        {company.employees ? <span>{company.employees.toLocaleString()} employees</span> : null}
+        {company.foundedYear ? <span>founded {company.foundedYear}</span> : null}
+        {company.website ? (
+          <a href={company.website} target="_blank" rel="noreferrer" className="text-echo hover:underline">
+            {company.website.replace(/^https?:\/\//, "")}
+          </a>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+// ── hard cross-system identity keys (CIK/LEI/…) ──
+function ExternalIdRow({ ids }: { ids: ExternalId[] }) {
+  return (
+    <div className="mt-[10px] flex flex-wrap items-center gap-[6px]">
+      <Fingerprint size={12} strokeWidth={1.7} className="shrink-0 text-ink-4" />
+      {ids.map((x) => (
+        <span
+          key={`${x.system}-${x.value}`}
+          className="inline-flex items-center gap-[5px] rounded-chip border border-line px-[7px] py-[1px] font-mono text-[10.5px] text-ink-3"
+        >
+          <span className="uppercase text-ink-4">{x.system}</span>
+          <span className="text-ink-2">{x.value}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export interface EntityContextViewProps {
   entity: Entity;
   edges: Edge[];
   context: ContextItem[];
+  /** kind='company' extension facts; null for other kinds. */
+  company?: CompanyFacts | null;
+  /** Typed attributes and hard identity keys. */
+  dataPoints?: DataPoint[];
+  externalIds?: ExternalId[];
   /** Pending suggested edge; null → the amber banner doesn't render (PRD §5). */
   suggestion?: Edge | null;
   onKeepEdge?: () => void;
@@ -258,6 +353,9 @@ export function EntityContextView({
   entity,
   edges,
   context,
+  company = null,
+  dataPoints = [],
+  externalIds = [],
   suggestion = null,
   onKeepEdge,
   onDismissSuggestion,
@@ -302,6 +400,35 @@ export function EntityContextView({
           </p>
         ) : (
           <div className="mb-[26px]" />
+        )}
+
+        {/* DETAILS — what this entity IS (company facts · typed data points · hard ids),
+            before "how it relates". Type-driven: company widget by kind, cells by type. */}
+        {(company || dataPoints.length > 0 || externalIds.length > 0) && (
+          <div className="mb-[26px]">
+            <SectionHeader
+              className="mb-[13px]"
+              icon={
+                company ? (
+                  <Building2 size={16} strokeWidth={1.7} className="shrink-0 text-ink-2" />
+                ) : (
+                  <SlidersHorizontal size={16} strokeWidth={1.7} className="shrink-0 text-ink-2" />
+                )
+              }
+              title="Details"
+              hint={company ? "company facts" : "typed data points"}
+              count={`${dataPoints.length}`}
+            />
+            {company && <CompanyFactsBlock company={company} />}
+            {dataPoints.length > 0 && (
+              <div className="flex flex-col gap-[7px] border-t border-line-2 pt-[11px]">
+                {dataPoints.map((p, i) => (
+                  <DataPointCell key={`${p.name}-${i}`} point={p} />
+                ))}
+              </div>
+            )}
+            {externalIds.length > 0 && <ExternalIdRow ids={externalIds} />}
+          </div>
         )}
 
         {suggestion && (

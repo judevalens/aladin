@@ -3,11 +3,13 @@ package repo
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	coreservice "aladin/backend_v2/internal/service"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -57,6 +59,67 @@ func (r *PostgresEntityContextRepository) Exists(ctx context.Context, entityID s
 		return false, fmt.Errorf("entity context exists: %w", err)
 	}
 	return ok, nil
+}
+
+// DataPointsFor returns the entity's typed data-point map ({name,type,value|id}),
+// decoded from the entities.data_points jsonb array. Unknown/malformed entries are skipped.
+func (r *PostgresEntityContextRepository) DataPointsFor(ctx context.Context, entityID string) ([]coreservice.EntityDataPoint, error) {
+	var raw []byte
+	if err := r.pool.QueryRow(ctx,
+		`SELECT COALESCE(data_points, '[]'::jsonb) FROM entities WHERE id = $1::uuid`, entityID).Scan(&raw); err != nil {
+		return nil, fmt.Errorf("entity data points: %w", err)
+	}
+	var points []coreservice.EntityDataPoint
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &points); err != nil {
+			return nil, fmt.Errorf("entity data points decode: %w", err)
+		}
+	}
+	return points, nil
+}
+
+// ExternalIdsFor returns the entity's hard cross-system identity keys, system then value.
+func (r *PostgresEntityContextRepository) ExternalIdsFor(ctx context.Context, entityID string) ([]coreservice.EntityExternalID, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT system, value FROM entity_external_ids
+		 WHERE entity_id = $1::uuid ORDER BY system, value
+	`, entityID)
+	if err != nil {
+		return nil, fmt.Errorf("entity external ids: %w", err)
+	}
+	defer rows.Close()
+	var out []coreservice.EntityExternalID
+	for rows.Next() {
+		var e coreservice.EntityExternalID
+		if err := rows.Scan(&e.System, &e.Value); err != nil {
+			return nil, fmt.Errorf("entity external ids scan: %w", err)
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// CompanyFor returns the kind='company' extension row, or nil when the entity has none.
+func (r *PostgresEntityContextRepository) CompanyFor(ctx context.Context, entityID string) (*coreservice.CompanyFacts, error) {
+	var c coreservice.CompanyFacts
+	var employees, foundedYear *int
+	err := r.pool.QueryRow(ctx, `
+		SELECT sector, industry, description, website, country, employees, founded_year
+		  FROM companies WHERE entity_id = $1::uuid
+	`, entityID).Scan(&c.Sector, &c.Industry, &c.Description, &c.Website, &c.Country, &employees, &foundedYear)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("entity company facts: %w", err)
+	}
+	if employees != nil {
+		c.Employees = *employees
+	}
+	if foundedYear != nil {
+		c.FoundedYear = *foundedYear
+	}
+	return &c, nil
 }
 
 // Identity returns the focused node. `Since` carries only the AGE phrase here (e.g.

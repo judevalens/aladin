@@ -127,6 +127,35 @@ type MergeQueueItem struct {
 	Why        string  `json:"why"`
 }
 
+// EntityDataPoint is one typed attribute from the entity's data-point map
+// ({name,type,value|id}). Scalars carry Value; a `reference` type carries RefID (+ a cached
+// Label for instant render) — the fast-follow. Read-only on this surface for now.
+type EntityDataPoint struct {
+	Name  string `json:"name"`
+	Type  string `json:"type"`
+	Value string `json:"value,omitempty"`
+	RefID string `json:"refId,omitempty"`
+	Label string `json:"label,omitempty"`
+}
+
+// EntityExternalID is one hard cross-system identity key (CIK/LEI/CUSIP/…).
+type EntityExternalID struct {
+	System string `json:"system"`
+	Value  string `json:"value"`
+}
+
+// CompanyFacts is the kind='company' extension row — objective, rankable facts as real
+// columns. Nil on the payload for any non-company entity.
+type CompanyFacts struct {
+	Sector      string `json:"sector,omitempty"`
+	Industry    string `json:"industry,omitempty"`
+	Description string `json:"description,omitempty"`
+	Website     string `json:"website,omitempty"`
+	Country     string `json:"country,omitempty"`
+	Employees   int    `json:"employees,omitempty"`
+	FoundedYear int    `json:"foundedYear,omitempty"`
+}
+
 // EntityContext is the whole surface payload for one entity.
 type EntityContext struct {
 	Entity  EntityIdentity      `json:"entity"`
@@ -134,6 +163,11 @@ type EntityContext struct {
 	Context []EntityContextItem `json:"context"`
 	// Merges are the judge's open questions about this entity's identity.
 	Merges []PendingMerge `json:"merges"`
+	// DataPoints are the entity's typed attributes; ExternalIds its hard identity keys.
+	DataPoints  []EntityDataPoint  `json:"dataPoints"`
+	ExternalIds []EntityExternalID `json:"externalIds"`
+	// Company is the extension row for kind='company'; nil otherwise.
+	Company *CompanyFacts `json:"company,omitempty"`
 }
 
 // DrawEdgeInput is the typed, provenance-carrying edge write (PRD §4.2/§4.5): who
@@ -195,6 +229,12 @@ type EntityContextRepository interface {
 	// Exists reports whether an entity id is real (endpoint integrity for edge writes:
 	// relationships deliberately has no FKs on its polymorphic endpoints).
 	Exists(ctx context.Context, entityID string) (bool, error)
+	// DataPointsFor returns the entity's typed data-point map.
+	DataPointsFor(ctx context.Context, entityID string) ([]EntityDataPoint, error)
+	// ExternalIdsFor returns the entity's hard cross-system identity keys.
+	ExternalIdsFor(ctx context.Context, entityID string) ([]EntityExternalID, error)
+	// CompanyFor returns the kind='company' extension row, or nil if the entity has none.
+	CompanyFor(ctx context.Context, entityID string) (*CompanyFacts, error)
 }
 
 type DefaultEntityContextService struct {
@@ -244,8 +284,32 @@ func (s *DefaultEntityContextService) Get(ctx context.Context, ownerUserID, enti
 	if merges == nil {
 		merges = []PendingMerge{}
 	}
+	dataPoints, err := s.repo.DataPointsFor(ctx, root)
+	if err != nil {
+		return EntityContext{}, err
+	}
+	externalIds, err := s.repo.ExternalIdsFor(ctx, root)
+	if err != nil {
+		return EntityContext{}, err
+	}
+	var company *CompanyFacts
+	if identity.Kind == "company" {
+		company, err = s.repo.CompanyFor(ctx, root)
+		if err != nil {
+			return EntityContext{}, err
+		}
+	}
+	if dataPoints == nil {
+		dataPoints = []EntityDataPoint{}
+	}
+	if externalIds == nil {
+		externalIds = []EntityExternalID{}
+	}
 	identity.Since = provenanceLine(identity.Since, len(items))
-	return EntityContext{Entity: identity, Edges: edges, Context: items, Merges: merges}, nil
+	return EntityContext{
+		Entity: identity, Edges: edges, Context: items, Merges: merges,
+		DataPoints: dataPoints, ExternalIds: externalIds, Company: company,
+	}, nil
 }
 
 func (s *DefaultEntityContextService) MergeQueue(ctx context.Context, limit int) ([]MergeQueueItem, error) {

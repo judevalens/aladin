@@ -2,9 +2,12 @@ import { useCallback, useEffect, useState } from "react";
 
 import { useAppComposition } from "@/app/composition/app-composition";
 import type {
+  CompanyFacts,
   ContextItem,
+  DataPoint,
   Edge,
   Entity,
+  ExternalId,
   PendingMerge,
 } from "@/modules/entities/entity-context-types";
 
@@ -14,6 +17,10 @@ export interface UseEntityContext {
   context: ContextItem[];
   /** The judge's pending identity questions ("Same, or just similar?"). */
   merges: PendingMerge[];
+  /** Typed data points, hard identity keys, and (company only) the extension facts. */
+  dataPoints: DataPoint[];
+  externalIds: ExternalId[];
+  company: CompanyFacts | null;
   loading: boolean;
   error: string | null;
   /** Draw a connection: writes a YOURS edge, then reloads so the graph visibly grows. */
@@ -33,6 +40,9 @@ export function useEntityContext(entityId: string): UseEntityContext {
   const [edges, setEdges] = useState<Edge[]>([]);
   const [context, setContext] = useState<ContextItem[]>([]);
   const [merges, setMerges] = useState<PendingMerge[]>([]);
+  const [dataPoints, setDataPoints] = useState<DataPoint[]>([]);
+  const [externalIds, setExternalIds] = useState<ExternalId[]>([]);
+  const [company, setCompany] = useState<CompanyFacts | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
@@ -49,6 +59,9 @@ export function useEntityContext(entityId: string): UseEntityContext {
         setEdges(result.edges);
         setContext(result.context);
         setMerges(result.merges);
+        setDataPoints(result.dataPoints ?? []);
+        setExternalIds(result.externalIds ?? []);
+        setCompany(result.company ?? null);
       })
       .catch((err: unknown) => {
         if (!cancelled) {
@@ -89,5 +102,8 @@ export function useEntityContext(entityId: string): UseEntityContext {
     [repos, entityId],
   );
 
-  return { entity, edges, context, merges, loading, error, drawEdge, acceptMerge, rejectMerge };
+  return {
+    entity, edges, context, merges, dataPoints, externalIds, company,
+    loading, error, drawEdge, acceptMerge, rejectMerge,
+  };
 }

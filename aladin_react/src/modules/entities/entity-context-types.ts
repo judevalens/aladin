@@ -80,12 +80,46 @@ export interface PendingMerge {
   reason?: string;
 }
 
+/** One typed attribute from the entity's data-point map ({name,type,value|id}). */
+export interface DataPoint {
+  name: string;
+  /** text | number | date | select | url | tags | reference */
+  type: string;
+  /** Scalar value; absent for reference-typed points. */
+  value?: string;
+  /** Reference target id (for the `reference` type). */
+  refId?: string;
+  /** Cached label for a reference, so a chip renders without a join. */
+  label?: string;
+}
+
+/** One hard cross-system identity key (CIK/LEI/CUSIP/…). */
+export interface ExternalId {
+  system: string;
+  value: string;
+}
+
+/** The kind='company' extension row — objective facts as real fields. */
+export interface CompanyFacts {
+  sector?: string;
+  industry?: string;
+  description?: string;
+  website?: string;
+  country?: string;
+  employees?: number;
+  foundedYear?: number;
+}
+
 /** GET /api/entities/{id}/context — the whole surface payload for one entity. */
 export interface EntityContextPayload {
   entity: Entity;
   edges: Edge[];
   context: ContextItem[];
   merges: PendingMerge[];
+  /** Typed attributes + hard identity keys; company is present only for kind='company'. */
+  dataPoints: DataPoint[];
+  externalIds: ExternalId[];
+  company?: CompanyFacts | null;
 }
 
 /** Semantic tone keys — resolved to Aladin theme tokens by the UI. */

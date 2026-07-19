@@ -34,8 +34,10 @@ export function EntitySurface({
   entityId: string;
   onOpenEntity: (id: string) => void;
 }) {
-  const { entity, edges, context, merges, loading, error, drawEdge, acceptMerge, rejectMerge } =
-    useEntityContext(entityId);
+  const {
+    entity, edges, context, merges, dataPoints, externalIds, company,
+    loading, error, drawEdge, acceptMerge, rejectMerge,
+  } = useEntityContext(entityId);
   const [drawing, setDrawing] = useState(false);
 
   if (loading) return <EntitySurfaceSkeleton />;
@@ -53,6 +55,9 @@ export function EntitySurface({
       entity={entity}
       edges={edges}
       context={context}
+      dataPoints={dataPoints}
+      externalIds={externalIds}
+      company={company}
       onOpenEntity={onOpenEntity}
       onDrawConnection={() => setDrawing(true)}
       mergeSlot={<MergeReviewUI merges={merges} onAccept={acceptMerge} onReject={rejectMerge} />}
