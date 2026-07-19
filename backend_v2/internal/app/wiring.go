@@ -60,6 +60,8 @@ type Dependencies interface {
 	Instruments() coreservice.InstrumentService
 	// Watchlist backs the Markets surface: the tickers a user is tracking.
 	Watchlist() coreservice.WatchlistService
+	// Search is the global command-box search: federates instruments + entities + artifacts.
+	Search() coreservice.SearchService
 	// GraphReader reads the Neo4j connection lens. Nil when Neo4j isn't configured.
 	GraphReader() coreservice.GraphReader
 }
@@ -94,6 +96,7 @@ type StaticDependencies struct {
 	GraphReaderSvc         coreservice.GraphReader
 	InstrumentsSvc         coreservice.InstrumentService
 	WatchlistSvc           coreservice.WatchlistService
+	SearchSvc              coreservice.SearchService
 }
 
 func (d StaticDependencies) Auth() coreservice.AuthService          { return d.AuthSvc }
@@ -158,6 +161,9 @@ func (d StaticDependencies) Instruments() coreservice.InstrumentService {
 func (d StaticDependencies) Watchlist() coreservice.WatchlistService {
 	return d.WatchlistSvc
 }
+func (d StaticDependencies) Search() coreservice.SearchService {
+	return d.SearchSvc
+}
 func (d StaticDependencies) GraphReader() coreservice.GraphReader {
 	return d.GraphReaderSvc
 }
@@ -192,6 +198,7 @@ type wiring struct {
 	graphReader         coreservice.GraphReader
 	instruments         coreservice.InstrumentService
 	watchlist           coreservice.WatchlistService
+	search              coreservice.SearchService
 }
 
 func (w wiring) Auth() coreservice.AuthService          { return w.auth }
@@ -235,6 +242,7 @@ func (w wiring) EntityList() coreservice.EntityListService {
 func (w wiring) GraphReader() coreservice.GraphReader       { return w.graphReader }
 func (w wiring) Instruments() coreservice.InstrumentService { return w.instruments }
 func (w wiring) Watchlist() coreservice.WatchlistService    { return w.watchlist }
+func (w wiring) Search() coreservice.SearchService          { return w.search }
 
 func NewDependencies(pool *pgxpool.Pool) Dependencies {
 	return NewDependenciesWithProviderConnections(pool, config.LoadProviderConnections(), config.DataVolumePathOrDefault())
@@ -287,6 +295,17 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		coreservice.WithNangoWebhookSigningKey(providerConfig.NangoWebhookSigningKey),
 	)
 
+	// Global search federates the existing search services (instruments + entities +
+	// artifacts), so they're built as vars here and shared with the search providers.
+	instrumentsSvc := coreservice.NewInstrumentService(repo.NewInstrumentPostgres(pool))
+	entityTagsSvc := coreservice.NewEntityTagService(entityTagRepo, entities.Normalize)
+	artifactRefsSvc := coreservice.NewArtifactRefService(artifactRefRepo)
+	searchSvc := coreservice.NewSearchService(
+		coreservice.NewInstrumentSearchProvider(instrumentsSvc),
+		coreservice.NewEntitySearchProvider(entityTagsSvc),
+		coreservice.NewArtifactSearchProvider(artifactRefsSvc),
+	)
+
 	return wiring{
 		auth:                coreservice.NewAuthService(authRepo, coreservice.NewPasswordHasher()),
 		system:              coreservice.NewSystemService(systemRepo),
@@ -310,16 +329,17 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		shardBuild:          shardBuild,
 		relationships:       coreservice.NewRelationshipService(relationshipRepo),
 		graphPane:           coreservice.NewGraphPaneService(graphPaneRepo),
-		entityTags:          coreservice.NewEntityTagService(entityTagRepo, entities.Normalize),
-		artifactRefs:        coreservice.NewArtifactRefService(artifactRefRepo),
+		entityTags:          entityTagsSvc,
+		artifactRefs:        artifactRefsSvc,
 		entityContext: coreservice.NewEntityContextService(
 			repo.NewEntityContextPostgres(pool),
 			db.NewEntityRepository(pool), // merge decisions land in the shared registry
 		),
 		entityList:  coreservice.NewEntityListService(repo.NewEntityListPostgres(pool)),
 		graphReader: graphReader,
-		instruments: coreservice.NewInstrumentService(repo.NewInstrumentPostgres(pool)),
+		instruments: instrumentsSvc,
 		watchlist:   coreservice.NewWatchlistService(repo.NewWatchlistPostgres(pool)),
+		search:      searchSvc,
 	}
 }
 

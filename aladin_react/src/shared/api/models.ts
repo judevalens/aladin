@@ -196,6 +196,27 @@ export interface InstrumentHit {
   isActive: boolean;
 }
 
+/** One global-search result row. `kind` drives the client's icon + route. */
+export interface SearchHit {
+  kind: string; // ticker | company | person | entity | page | shard
+  id: string;
+  title: string;
+  subtitle?: string;
+  score: number;
+}
+
+/** One typed group of search hits (backend-ordered). */
+export interface SearchSection {
+  type: string; // entity | artifact
+  label: string;
+  hits: SearchHit[];
+}
+
+/** GET /api/search — the whole federated, sectioned command-box payload. */
+export interface SearchResponse {
+  sections: SearchSection[];
+}
+
 /** One tracked security on the Markets watchlist. */
 export interface WatchlistItem {
   instrumentId: string;

@@ -10,6 +10,7 @@ import { createPipelineRepo } from "@/repos/pipeline/pipeline-repo";
 import { createInsightsRepo } from "@/repos/insights/insights-repo";
 import { createInstrumentsRepo } from "@/repos/instruments/instruments-repo";
 import { createWatchlistRepo } from "@/repos/watchlist/watchlist-repo";
+import { createSearchRepo } from "@/repos/search/search-repo";
 import { createLocalSignalsRepo } from "@/repos/signals/local-signals-repo";
 import { createBookSignalsRepo } from "@/repos/signals/book-signals-repo";
 import { createIntegrationRepo } from "@/repos/integrations/integration-repo";
@@ -76,6 +77,7 @@ export function createAppComposition() {
     insights: createInsightsRepo(apiClient),
     instruments: createInstrumentsRepo(apiClient),
     watchlist: createWatchlistRepo(apiClient),
+    search: createSearchRepo(apiClient),
     localSignals: createLocalSignalsRepo(dataEvents),
     bookSignals: createBookSignalsRepo(apiClient),
   };

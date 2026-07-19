@@ -67,6 +67,7 @@ func NewWithDependencies(addr string, deps app.Dependencies) *Server {
 	s.registerGraphPaneRoutes(mux)
 	s.registerEntityTagRoutes(mux)
 	s.registerInstrumentRoutes(mux)
+	s.registerSearchRoutes(mux)
 	s.registerWatchlistRoutes(mux)
 	s.registerEntityContextRoutes(mux)
 	s.registerArtifactRefRoutes(mux)
