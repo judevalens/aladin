@@ -56,6 +56,8 @@ type Dependencies interface {
 	EntityContext() coreservice.EntityContextService
 	// EntityList backs the Entities index: browse/search the entity registry.
 	EntityList() coreservice.EntityListService
+	// Instruments backs ticker search (the command-box typeahead) over the securities registry.
+	Instruments() coreservice.InstrumentService
 	// GraphReader reads the Neo4j connection lens. Nil when Neo4j isn't configured.
 	GraphReader() coreservice.GraphReader
 }
@@ -88,6 +90,7 @@ type StaticDependencies struct {
 	EntityContextSvc       coreservice.EntityContextService
 	EntityListSvc          coreservice.EntityListService
 	GraphReaderSvc         coreservice.GraphReader
+	InstrumentsSvc         coreservice.InstrumentService
 }
 
 func (d StaticDependencies) Auth() coreservice.AuthService          { return d.AuthSvc }
@@ -102,7 +105,7 @@ func (d StaticDependencies) PageDocuments() coreservice.PageDocumentService {
 func (d StaticDependencies) Files() coreservice.FileService       { return d.FilesSvc }
 func (d StaticDependencies) Feed() coreservice.FeedService        { return d.FeedSvc }
 func (d StaticDependencies) Insights() coreservice.InsightService { return d.InsightsSvc }
-func (d StaticDependencies) Signals() coreservice.SignalService    { return d.SignalsSvc }
+func (d StaticDependencies) Signals() coreservice.SignalService   { return d.SignalsSvc }
 func (d StaticDependencies) ProviderConnections() coreservice.ProviderConnectionService {
 	return d.ProviderConnectionsSvc
 }
@@ -146,6 +149,9 @@ func (d StaticDependencies) EntityContext() coreservice.EntityContextService {
 func (d StaticDependencies) EntityList() coreservice.EntityListService {
 	return d.EntityListSvc
 }
+func (d StaticDependencies) Instruments() coreservice.InstrumentService {
+	return d.InstrumentsSvc
+}
 func (d StaticDependencies) GraphReader() coreservice.GraphReader {
 	return d.GraphReaderSvc
 }
@@ -178,6 +184,7 @@ type wiring struct {
 	entityContext       coreservice.EntityContextService
 	entityList          coreservice.EntityListService
 	graphReader         coreservice.GraphReader
+	instruments         coreservice.InstrumentService
 }
 
 func (w wiring) Auth() coreservice.AuthService          { return w.auth }
@@ -218,7 +225,8 @@ func (w wiring) EntityContext() coreservice.EntityContextService {
 func (w wiring) EntityList() coreservice.EntityListService {
 	return w.entityList
 }
-func (w wiring) GraphReader() coreservice.GraphReader { return w.graphReader }
+func (w wiring) GraphReader() coreservice.GraphReader       { return w.graphReader }
+func (w wiring) Instruments() coreservice.InstrumentService { return w.instruments }
 
 func NewDependencies(pool *pgxpool.Pool) Dependencies {
 	return NewDependenciesWithProviderConnections(pool, config.LoadProviderConnections(), config.DataVolumePathOrDefault())
@@ -300,8 +308,9 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 			repo.NewEntityContextPostgres(pool),
 			db.NewEntityRepository(pool), // merge decisions land in the shared registry
 		),
-		entityList:          coreservice.NewEntityListService(repo.NewEntityListPostgres(pool)),
-		graphReader:         graphReader,
+		entityList:  coreservice.NewEntityListService(repo.NewEntityListPostgres(pool)),
+		graphReader: graphReader,
+		instruments: coreservice.NewInstrumentService(repo.NewInstrumentPostgres(pool)),
 	}
 }
 

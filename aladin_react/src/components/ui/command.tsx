@@ -20,10 +20,13 @@ export function CommandDialog({
   open,
   onOpenChange,
   children,
+  shouldFilter,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   children: React.ReactNode;
+  /** Forwarded to the cmdk root — set false when results are already server-filtered. */
+  shouldFilter?: boolean;
 }) {
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
@@ -31,7 +34,7 @@ export function CommandDialog({
         <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-[rgba(6,6,8,0.5)] backdrop-blur-[2px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
         <DialogPrimitive.Content className="fixed left-1/2 top-[18%] z-50 w-[min(620px,calc(100vw-80px))] -translate-x-1/2 overflow-hidden rounded-modal border border-line bg-explorer shadow-modal animate-pop">
           <DialogPrimitive.Title className="sr-only">Command palette</DialogPrimitive.Title>
-          <Command>{children}</Command>
+          <Command shouldFilter={shouldFilter}>{children}</Command>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>

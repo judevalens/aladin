@@ -20,6 +20,7 @@ import { EntitiesIndexUI } from "@/modules/entities/ui/entities-index-ui";
 import { EntitiesIndexSpike } from "@/modules/entities/ui/entities-index-spike";
 import { EntitiesInboxSpike } from "@/modules/entities/ui/entities-inbox-spike";
 import { EntitiesHomeSpike } from "@/modules/entities/ui/entities-home-spike";
+import { TickerRoute } from "@/modules/tickers/ui/ticker-route";
 
 function WorkspaceRoute() {
   return (
@@ -89,6 +90,8 @@ export const router = createBrowserRouter([
           // The Entity Context surface. Router history is the back-trail, so an edge
           // click ("pull the thread") is undone by the normal back gesture.
           { path: "/entity/:entityId", element: <EntityContextRoute /> },
+          // Ticker detail — the landing for a security selected from the command box.
+          { path: "/ticker/:symbol", element: <TickerRoute /> },
           {
             path: "/graph",
             element: (

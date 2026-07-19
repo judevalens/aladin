@@ -102,6 +102,30 @@ func LoadWorker() (WorkerConfig, error) {
 	}, nil
 }
 
+// AlpacaConfig authenticates the market-data + trading integration. Same key/secret pair
+// works for the data API and the (paper or live) trading API — only the base URL differs.
+// Empty keys ⇒ the assets sync skips cleanly (the seeded universe stays in place).
+type AlpacaConfig struct {
+	APIKey    string
+	APISecret string
+	// TradingBaseURL — where the Assets API lives. Defaults to PAPER (safe): paper and
+	// live share the same asset universe, so asset sync never needs the live endpoint.
+	TradingBaseURL string
+	// DataBaseURL — historical bars + the real-time WS feed derive from here (T1+).
+	DataBaseURL string
+}
+
+func (c AlpacaConfig) Configured() bool { return c.APIKey != "" && c.APISecret != "" }
+
+func LoadAlpaca() AlpacaConfig {
+	return AlpacaConfig{
+		APIKey:         os.Getenv("ALPACA_API_KEY"),
+		APISecret:      os.Getenv("ALPACA_API_SECRET"),
+		TradingBaseURL: optional("ALPACA_TRADING_BASE_URL", "https://paper-api.alpaca.markets"),
+		DataBaseURL:    optional("ALPACA_DATA_BASE_URL", "https://data.alpaca.markets"),
+	}
+}
+
 func LoadProviderConnections() ProviderConnectionConfig {
 	return ProviderConnectionConfig{
 		NangoBaseURL:                 optional("NANGO_BASE_URL", "https://api.nango.dev"),

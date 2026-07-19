@@ -186,6 +186,16 @@ export interface BreadcrumbRecord {
 
 export type ArtifactKind = "note" | "link" | "voice" | "file" | "app";
 
+/** One ticker-search hit — a security (e.g. NVDA), the command-box typeahead row. */
+export interface InstrumentHit {
+  id: string;
+  symbol: string;
+  name: string;
+  exchange: string;
+  assetClass: string;
+  isActive: boolean;
+}
+
 export type ArtifactPropertyType = "text" | "number" | "date" | "select" | "url" | "tags";
 
 /** One typed user-defined property on an artifact (stored under metadata.properties). */

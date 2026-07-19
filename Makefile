@@ -1,4 +1,4 @@
-.PHONY: help backend mcp blocknote blocknote-test check-blocknote-versions tokens check-tokens nuke-local-db nuke-clients tauri-client-b db-up db-down test-db-up test-db-down test-go nango-up nango-down nango-logs env-nango ngrok-ensure worker-go api-go ops-status ops-errors ops-streams ops-queues ops-force-stream ops-reset-stuck-cycles
+.PHONY: help backend mcp blocknote blocknote-test check-blocknote-versions tokens check-tokens nuke-local-db nuke-clients tauri-client-b db-up db-down test-db-up test-db-down test-go nango-up nango-down nango-logs env-nango ngrok-ensure worker-go api-go ops-status ops-errors ops-streams ops-queues ops-force-stream ops-reset-stuck-cycles ops-backfill-instruments
 
 # --- Isolated sandbox stack (docker-compose.test.yml) -----------------------
 # A throwaway mirror of the dev infra on DISTINCT ports, namespaced under the
@@ -99,6 +99,9 @@ ops-backfill-entities: ## Resolve entities for all enriched records into the ent
 
 ops-backfill-graph: ## Project the entity + claim layer into Neo4j (the connection lens). Needs NEO4J_URI.
 	eval "$$(python3 scripts/ops/read_env_keys.py --env backend_v2/.env)" && cd backend_v2 && go run ./cmd/backfill-graph
+
+ops-backfill-instruments: ## Pull the Alpaca Assets universe into the instruments registry (T1). Needs ALPACA_API_KEY/SECRET.
+	eval "$$(python3 scripts/ops/read_env_keys.py --env backend_v2/.env)" && cd backend_v2 && go run ./cmd/backfill-instruments
 
 ops-backfill-signals: ## Re-emit durable signal frames for all existing claims to their subscribers (Signals sync backfill).
 	eval "$$(python3 scripts/ops/read_env_keys.py --env backend_v2/.env)" && cd backend_v2 && go run ./cmd/backfill-signals
