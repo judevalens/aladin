@@ -45,6 +45,14 @@ func TestEntityContext_ReadPath(t *testing.T) {
 	`, artID, userID); err != nil {
 		t.Fatalf("seed artifact: %v", err)
 	}
+	// ReplaceMentions now emits a node frame → needs a principal + the artifact's tree_nodes row.
+	ctx = adminContext(userID)
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO tree_nodes (id, user_id, kind, artifact_id, position, created_at, updated_at)
+		VALUES ($1, $2::uuid, 'artifact', $1, 0, now(), now())
+	`, artID, userID); err != nil {
+		t.Fatalf("seed node: %v", err)
+	}
 	if _, err := pool.Exec(ctx, `
 		INSERT INTO records (id, type, label, content, status, source_revision, provider, metadata)
 		VALUES ($1, 'story', 'post', $2, 'enriched', 1, 'bluesky', '{"author_handle":"swyx"}'::jsonb)

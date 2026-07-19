@@ -15,6 +15,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -44,6 +45,13 @@ type Extractor interface {
 	ForArtifact(ctx context.Context, artifactID, ownerID, text string) (int, error)
 }
 
+// Emitter appends a node-change frame to the page owner's outbox after ingest writes
+// the page's claims, so reactive views (the graph pane) refetch. Satisfied by
+// *repo.NodeEmitter. Optional (nil = no emit).
+type Emitter interface {
+	EmitNodeChange(ctx context.Context, userID, artifactID string) error
+}
+
 type payload struct {
 	ArtifactID string `json:"artifact_id"`
 }
@@ -54,11 +62,18 @@ type Worker struct {
 	pages     PageStore
 	extractor Extractor
 	client    *asynq.Client
+	emitter   Emitter
 	idle      time.Duration
 }
 
 func NewWorker(pages PageStore, extractor Extractor, client *asynq.Client) *Worker {
 	return &Worker{pages: pages, extractor: extractor, client: client, idle: DefaultIdle}
+}
+
+// WithEmitter wires the node-change emitter (reactivity for the graph pane after ingest).
+func (w *Worker) WithEmitter(e Emitter) *Worker {
+	w.emitter = e
+	return w
 }
 
 // WithIdle overrides the idle window (tests).
@@ -133,6 +148,15 @@ func (w *Worker) Ingest(ctx context.Context, artifactID string, force bool) (int
 	}
 	if err := w.pages.MarkPageIngested(ctx, artifactID, snap.Revision); err != nil {
 		return n, err
+	}
+	// The page's claims (→ pane claims/entities) changed → emit a node frame so reactive
+	// views refetch. Best-effort: a failed emit shouldn't fail the ingest (the pane refreshes
+	// on the next node change regardless).
+	if n > 0 && w.emitter != nil {
+		if err := w.emitter.EmitNodeChange(ctx, snap.OwnerID, artifactID); err != nil {
+			slog.Warn("pageingest: emit node change failed", "component", "pageingest",
+				"artifact_id", artifactID, "err", err)
+		}
 	}
 	return n, nil
 }

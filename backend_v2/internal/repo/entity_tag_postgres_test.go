@@ -26,6 +26,7 @@ func TestEntityTag_SearchAttachDetach(t *testing.T) {
 	userID := uuid.NewString()
 	artID := "tag-art-" + uuid.NewString()
 	name := "Tagco" + tag
+	ctx = adminContext(userID) // attach/detach now emit a node frame → need a principal
 
 	if _, err := pool.Exec(ctx, `INSERT INTO users (id, email, created_at) VALUES ($1::uuid, $2, now())`,
 		userID, "u-"+tag+"@test.local"); err != nil {
@@ -35,6 +36,13 @@ func TestEntityTag_SearchAttachDetach(t *testing.T) {
 		INSERT INTO artifacts (id, user_id, type, title, content) VALUES ($1, $2::uuid, 'page', 'History test', '')
 	`, artID, userID); err != nil {
 		t.Fatalf("seed artifact: %v", err)
+	}
+	// The tag/mention writes now emit a node frame; that needs the artifact's tree_nodes row.
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO tree_nodes (id, user_id, kind, artifact_id, position, created_at, updated_at)
+		VALUES ($1, $2::uuid, 'artifact', $1, 0, now(), now())
+	`, artID, userID); err != nil {
+		t.Fatalf("seed node: %v", err)
 	}
 	t.Cleanup(func() {
 		bg := context.Background()
@@ -129,6 +137,7 @@ func TestEntityTag_ReplaceMentions(t *testing.T) {
 	tag := uuid.NewString()[:8]
 	userID := uuid.NewString()
 	artID := "men-art-" + uuid.NewString()
+	ctx = adminContext(userID) // mention/tag writes now emit a node frame → need a principal
 
 	if _, err := pool.Exec(ctx, `INSERT INTO users (id, email, created_at) VALUES ($1::uuid, $2, now())`,
 		userID, "u-"+tag+"@test.local"); err != nil {
@@ -138,6 +147,12 @@ func TestEntityTag_ReplaceMentions(t *testing.T) {
 		INSERT INTO artifacts (id, user_id, type, title, content) VALUES ($1, $2::uuid, 'page', 'Mentions test', '')
 	`, artID, userID); err != nil {
 		t.Fatalf("seed artifact: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO tree_nodes (id, user_id, kind, artifact_id, position, created_at, updated_at)
+		VALUES ($1, $2::uuid, 'artifact', $1, 0, now(), now())
+	`, artID, userID); err != nil {
+		t.Fatalf("seed node: %v", err)
 	}
 
 	tagRepo := NewEntityTagPostgres(pool)

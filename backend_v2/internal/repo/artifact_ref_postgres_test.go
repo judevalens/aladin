@@ -26,6 +26,7 @@ func TestArtifactRef_SearchAndReconcile(t *testing.T) {
 	targetPage := "ref-tgt-" + uuid.NewString() // a page it references
 	targetShard := "ref-shd-" + uuid.NewString()
 	var claimID string
+	ctx = adminContext(userID) // ReplaceRefs now emits a node frame → need a principal
 
 	if _, err := pool.Exec(ctx, `INSERT INTO users (id, email, created_at) VALUES ($1::uuid, $2, now())`,
 		userID, "u-"+tag+"@test.local"); err != nil {
@@ -38,6 +39,13 @@ func TestArtifactRef_SearchAndReconcile(t *testing.T) {
 			($3, $5::uuid, 'app',  'Reftarget shard '||$4, '')
 	`, pageID, targetPage, targetShard, tag, userID); err != nil {
 		t.Fatalf("seed artifacts: %v", err)
+	}
+	// ReplaceRefs emits a node frame for the holding page → it needs a tree_nodes row.
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO tree_nodes (id, user_id, kind, artifact_id, position, created_at, updated_at)
+		VALUES ($1, $2::uuid, 'artifact', $1, 0, now(), now())
+	`, pageID, userID); err != nil {
+		t.Fatalf("seed node: %v", err)
 	}
 	// A tenant thesis claim to reference.
 	if err := pool.QueryRow(ctx, `

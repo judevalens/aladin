@@ -100,11 +100,21 @@ func (r *PostgresArtifactRefRepository) SearchArtifacts(ctx context.Context, own
 // all existing origin='reference' rows for the page and inserts the given set. The set is the
 // source of truth, derived from the page's ydoc on save.
 func (r *PostgresArtifactRefRepository) ReplaceRefs(ctx context.Context, artifactID string, refs []coreservice.ArtifactRef) error {
+	principal, err := coreservice.RequirePrincipal(ctx)
+	if err != nil {
+		return err
+	}
+	userID := principal.UserID
+
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("artifact ref sync begin: %w", err)
 	}
 	defer tx.Rollback(ctx)
+
+	if err := LockUser(ctx, tx, userID); err != nil {
+		return err
+	}
 
 	if _, err := tx.Exec(ctx, `
 		DELETE FROM artifact_refs WHERE artifact_id = $1 AND origin = 'reference'
@@ -129,6 +139,10 @@ func (r *PostgresArtifactRefRepository) ReplaceRefs(ctx context.Context, artifac
 		`, artifactID, ref.Kind, ref.TargetID, block, surface); err != nil {
 			return fmt.Errorf("artifact ref sync insert: %w", err)
 		}
+	}
+	// The page's # links changed → emit a node frame so reactive views (graph pane) refetch.
+	if err := emitNodeUpsert(ctx, tx, userID, artifactID); err != nil {
+		return err
 	}
 	return tx.Commit(ctx)
 }

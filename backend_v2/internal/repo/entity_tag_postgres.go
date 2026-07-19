@@ -148,32 +148,64 @@ func (r *PostgresEntityTagRepository) CreateEntity(ctx context.Context, kind, ca
 
 // AttachTag links an entity to an artifact as a page-level tag (idempotent).
 func (r *PostgresEntityTagRepository) AttachTag(ctx context.Context, artifactID, entityID, addedBy string) error {
+	principal, err := coreservice.RequirePrincipal(ctx)
+	if err != nil {
+		return err
+	}
+	userID := principal.UserID
 	var added any
 	if strings.TrimSpace(addedBy) != "" {
 		added = addedBy
 	}
-	_, err := r.pool.Exec(ctx, `
+
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("entity tag attach begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	if err := LockUser(ctx, tx, userID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
 		INSERT INTO artifact_entities (artifact_id, entity_id, origin, added_by)
 		VALUES ($1, $2::uuid, 'tag', $3::uuid)
 		ON CONFLICT (artifact_id, entity_id, origin, COALESCE(block_id, ''), COALESCE(surface, ''))
 		DO NOTHING
-	`, artifactID, entityID, added)
-	if err != nil {
+	`, artifactID, entityID, added); err != nil {
 		return fmt.Errorf("entity tag attach: %w", err)
 	}
-	return nil
+	if err := emitNodeUpsert(ctx, tx, userID, artifactID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // DetachTag removes a page-level tag (does not touch projected @mention rows).
 func (r *PostgresEntityTagRepository) DetachTag(ctx context.Context, artifactID, entityID string) error {
-	_, err := r.pool.Exec(ctx, `
+	principal, err := coreservice.RequirePrincipal(ctx)
+	if err != nil {
+		return err
+	}
+	userID := principal.UserID
+
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("entity tag detach begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	if err := LockUser(ctx, tx, userID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
 		DELETE FROM artifact_entities
 		 WHERE artifact_id = $1 AND entity_id = $2::uuid AND origin = 'tag'
-	`, artifactID, entityID)
-	if err != nil {
+	`, artifactID, entityID); err != nil {
 		return fmt.Errorf("entity tag detach: %w", err)
 	}
-	return nil
+	if err := emitNodeUpsert(ctx, tx, userID, artifactID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // ReplaceMentions reconciles the projected @entity mentions for an artifact: in one
@@ -181,11 +213,21 @@ func (r *PostgresEntityTagRepository) DetachTag(ctx context.Context, artifactID,
 // given set (tags, origin='tag', are untouched). The set is the source of truth, derived
 // from the page's ydoc on save.
 func (r *PostgresEntityTagRepository) ReplaceMentions(ctx context.Context, artifactID string, mentions []coreservice.MentionRef) error {
+	principal, err := coreservice.RequirePrincipal(ctx)
+	if err != nil {
+		return err
+	}
+	userID := principal.UserID
+
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("entity mention sync begin: %w", err)
 	}
 	defer tx.Rollback(ctx)
+
+	if err := LockUser(ctx, tx, userID); err != nil {
+		return err
+	}
 
 	if _, err := tx.Exec(ctx, `
 		DELETE FROM artifact_entities WHERE artifact_id = $1 AND origin = 'mention'
@@ -216,6 +258,10 @@ func (r *PostgresEntityTagRepository) ReplaceMentions(ctx context.Context, artif
 		`, artifactID, m.EntityID, block, surface, snippet); err != nil {
 			return fmt.Errorf("entity mention sync insert: %w", err)
 		}
+	}
+	// The page's entity set changed → emit a node frame so reactive views (graph pane) refetch.
+	if err := emitNodeUpsert(ctx, tx, userID, artifactID); err != nil {
+		return err
 	}
 	return tx.Commit(ctx)
 }

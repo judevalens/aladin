@@ -354,17 +354,19 @@ export function GraphSidePaneUI({
           {/* Properties come from the artifact itself, so they render immediately —
               independent of the graph pane's load state. */}
           <PropertiesSection artifact={artifact} />
-          {loading ? (
-            <p className="text-[13px] text-ink-4">Loading…</p>
-          ) : error ? (
-            <p className="text-[13px] text-against">{error}</p>
-          ) : pane ? (
+          {/* Once we have a pane, keep showing it during a background refetch — otherwise
+              a reactive refresh (every mention/ref sync) flashes the "Loading…" state. */}
+          {pane ? (
             <PaneBody
               artifactId={artifactId}
               pane={pane}
               onChanged={reload}
               onOpenEntity={setPeekEntityId}
             />
+          ) : loading ? (
+            <p className="text-[13px] text-ink-4">Loading…</p>
+          ) : error ? (
+            <p className="text-[13px] text-against">{error}</p>
           ) : null}
         </div>
       </div>

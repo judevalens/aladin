@@ -2,7 +2,7 @@ import { useCreateBlockNote, SuggestionMenuController } from "@blocknote/react";
 import type { DefaultReactSuggestionItem } from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/shadcn";
 import { HocuspocusProvider } from "@hocuspocus/provider";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { IndexeddbPersistence } from "y-indexeddb";
 import * as Y from "yjs";
 import "@blocknote/shadcn/style.css";
@@ -50,6 +50,32 @@ interface CollabResources {
   ydoc: Y.Doc;
   provider: HocuspocusProvider;
   idb: IndexeddbPersistence;
+}
+
+// blockHasChip reports whether a block's inline content holds an @entity / # chip. Used to gate
+// projection: a change can only move the mention/ref set if a block it touched carries a chip.
+function blockHasChip(block: unknown): boolean {
+  const content = (block as { content?: unknown } | null)?.content;
+  if (!Array.isArray(content)) return false;
+  return content.some((ic) => {
+    const type = (ic as { type?: string } | null)?.type;
+    return type === "entityMention" || type === "artifactRef";
+  });
+}
+
+// chipKeys is a stable, order-independent identity of a block's chips (entity ids + ref targets).
+// Comparing a change's block vs prevBlock tells a STRUCTURAL edit (a chip added/removed → the set
+// changed) apart from an incidental one (same chips, surrounding text moved → only snippets drift).
+function chipKeys(block: unknown): string {
+  const content = (block as { content?: unknown } | null)?.content;
+  if (!Array.isArray(content)) return "";
+  const keys: string[] = [];
+  for (const ic of content) {
+    const item = ic as { type?: string; props?: { entityId?: string; targetId?: string } } | null;
+    if (item?.type === "entityMention") keys.push(`e:${item.props?.entityId ?? ""}`);
+    else if (item?.type === "artifactRef") keys.push(`r:${item.props?.targetId ?? ""}`);
+  }
+  return keys.sort().join("|");
 }
 
 // Collaborative BlockNote editor (M8). The editor binds to a Y.Doc that is
@@ -114,25 +140,76 @@ export function BlockNotePageEditorDriver({
     },
   });
 
-  // Project @entity mentions + `#` refs out of the doc into the backend, debounced. Keyed
-  // off the local editor changes — enough to keep this client's edits in sync with the graph.
+  // Project @entity mentions + `#` refs out of the doc into the backend — event-based. Menu
+  // inserts flush directly (see mentionItems/refItems → flush() right after insertInlineContent).
+  // Everything else comes through onChange, which BlockNote hands a block-level change list: we
+  // (a) GATE on it — skip entirely unless a change touched a chip-bearing block (so plain prose
+  // typing does no work), and (b) classify — a STRUCTURAL change (chip added/removed, by comparing
+  // block vs prevBlock chip identity) or any non-local edit flushes immediately; only incidental
+  // local edits (same chips, surrounding text moved) are debounced. So adding AND deleting a chip
+  // are both instant. The full-doc walk in flush() still builds the set (ReplaceMentions is a
+  // full-set replace); getChanges only decides whether/when to run it. Every path stays idempotent.
   const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Last-projected mentions/refs (serialized) — only sync when they actually change, so
+  // typing near/around a mention (or plain text) doesn't fire a no-op write + node frame,
+  // which would otherwise make reactive views (the graph pane) refetch on every pause.
+  const lastMentions = useRef<string | null>(null);
+  const lastRefs = useRef<string | null>(null);
+  const flush = useCallback(() => {
+    if (onMentionsChange) {
+      const mentions = extractEntityMentions(editor.document);
+      const key = JSON.stringify(mentions);
+      if (key !== lastMentions.current) {
+        lastMentions.current = key;
+        onMentionsChange(mentions);
+      }
+    }
+    if (onRefsChange) {
+      const refs = extractArtifactRefs(editor.document);
+      const key = JSON.stringify(refs);
+      if (key !== lastRefs.current) {
+        lastRefs.current = key;
+        onRefsChange(refs);
+      }
+    }
+  }, [editor, onMentionsChange, onRefsChange]);
   useEffect(() => {
     if (!onMentionsChange && !onRefsChange) return;
-    const flush = () => {
-      if (onMentionsChange) onMentionsChange(extractEntityMentions(editor.document));
-      if (onRefsChange) onRefsChange(extractArtifactRefs(editor.document));
-    };
-    const schedule = () => {
+    const handleChange = (
+      _editor: typeof editor,
+      ctx: {
+        getChanges: () => Array<{
+          block?: unknown;
+          prevBlock?: unknown;
+          source: { type: string };
+        }>;
+      },
+    ) => {
+      const changes = ctx.getChanges();
+      // Gate: only edits that touch a chip-bearing block (before or after) can move the set.
+      // Prose typing in a chip-free block is a no-op here — no walk, no timer.
+      const touchesChip = changes.some(
+        (c) => blockHasChip(c.block) || blockHasChip(c.prevBlock),
+      );
+      if (!touchesChip) return;
       if (flushTimer.current) clearTimeout(flushTimer.current);
-      flushTimer.current = setTimeout(flush, 700);
+      // Structural (a chip added OR removed) → project now, even when local: an insert/delete is
+      // a discrete event, not a burst. Only INCIDENTAL local edits (same chips, text moved around
+      // them → snippets drift) are debounced. Paste/drop/undo-redo/remote are always immediate.
+      const structural = changes.some((c) => chipKeys(c.block) !== chipKeys(c.prevBlock));
+      const immediate = structural || changes.some((c) => c.source.type !== "local");
+      if (immediate) {
+        flush();
+      } else {
+        flushTimer.current = setTimeout(flush, 700);
+      }
     };
-    const unsubscribe = editor.onChange ? editor.onChange(schedule) : undefined;
+    const unsubscribe = editor.onChange ? editor.onChange(handleChange) : undefined;
     return () => {
       if (flushTimer.current) clearTimeout(flushTimer.current);
       if (typeof unsubscribe === "function") unsubscribe();
     };
-  }, [editor, onMentionsChange, onRefsChange]);
+  }, [editor, onMentionsChange, onRefsChange, flush]);
 
   async function mentionItems(query: string): Promise<DefaultReactSuggestionItem[]> {
     if (!searchEntities) return [];
@@ -141,6 +218,7 @@ export function BlockNotePageEditorDriver({
         { type: "entityMention", props: { entityId: hit.id, label: hit.name, kind: hit.kind } },
         " ",
       ]);
+      flush(); // event-based: project the new mention now, not on the onChange debounce
     };
     const hits = await searchEntities(query);
     const items: DefaultReactSuggestionItem[] = hits.map((hit) => ({
@@ -183,6 +261,7 @@ export function BlockNotePageEditorDriver({
           },
           " ",
         ]);
+        flush(); // event-based: project the new ref now
       },
     }));
     // Create-on-link (desktop only): offer to mint a page for an unmatched query, so a
@@ -208,6 +287,7 @@ export function BlockNotePageEditorDriver({
             },
             " ",
           ]);
+          flush(); // event-based: project the new ref now
         },
       });
     }

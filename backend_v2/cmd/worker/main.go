@@ -172,7 +172,7 @@ func main() {
 		repo.NewArtifactsPostgres(pool),
 		claims.NewAuthoredExtractor(claimService, entityRepo),
 		asynqClient,
-	)
+	).WithEmitter(repo.NewNodeEmitter(pool))
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
