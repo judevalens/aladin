@@ -7,9 +7,9 @@
 
 @source "../node_modules/@blocknote/shadcn";
 
-/* Both Aladin themes (dark + soft) are dark-family, so `dark:` utilities should
-   always apply once a data-theme is set on <html>. */
-@custom-variant dark (&:where([data-theme] *));
+/* The dark-family themes (dark, soft, cool) should always resolve `dark:` utilities;
+   the light theme must NOT — so scope the variant to the dark family explicitly. */
+@custom-variant dark (&:where([data-theme="dark"] *, [data-theme="soft"] *, [data-theme="cool"] *, [data-theme="contrast"] *, [data-theme="linear"] *, [data-theme="apple-dark"] *));
 
 /* SOFT — lifts surfaces + softens contrast. Only the raw vars change; the shadcn
    semantic mappings above reference var(--bg) etc., so they follow automatically.
@@ -30,6 +30,192 @@
     --amber: #c69566;
     --amber-soft: 198 149 102 / 0.13;
     --amber-line: 198 149 102 / 0.3;
+}
+
+/* COOL — a cooler, higher-contrast dark. Blue-tinted slate surfaces, a brighter ink
+   ramp, and stronger (cool-white) lines. Keeps the amber accent so the brand pop still
+   reads warm against the cool ground. Dark-family, so it inherits semantic hues + shadcn
+   mappings from the dark :root block. Must come after that block. */
+[data-theme="cool"] {
+    --rail: #0a0c11;
+    --panel: #0e1118;
+    --bg: #0c0e14;
+    --chrome: #0a0c11;
+    --field: #151a24;
+    --card: #10131b;
+    --raise: #171d29;
+    --explorer: #0e1016;
+    --ink: #f1f3f8;
+    --ink-2: #a6aec0;
+    --ink-3: #6b7488;
+    --ink-4: #464d5d;
+    /* stronger, cool-tinted lines/states for the extra contrast */
+    --line: 208 222 255 / 0.11;
+    --line-2: 208 222 255 / 0.06;
+    --hover: 208 222 255 / 0.05;
+    --sel: 130 170 255 / 0.15;
+}
+
+/* CONTRAST — a high-contrast dark: true-black surfaces, pure-white ink, and stronger
+   white lines. Maximum legibility / punch. Keeps the amber accent (reads cleanly on
+   black). Dark-family, so semantic hues + shadcn mappings inherit from the dark :root. */
+[data-theme="contrast"] {
+    --rail: #060608;
+    --panel: #0a0a0c;
+    --bg: #070709;
+    --chrome: #060608;
+    --field: #141416;
+    --card: #0e0e10;
+    --raise: #161618;
+    --explorer: #0a0a0c;
+    --ink: #ffffff;
+    --ink-2: #c3c3c8;
+    --ink-3: #87878e;
+    --ink-4: #56565d;
+    /* stronger pure-white lines/states for the extra separation */
+    --line: 255 255 255 / 0.14;
+    --line-2: 255 255 255 / 0.09;
+    --hover: 255 255 255 / 0.06;
+    --sel: 255 255 255 / 0.11;
+}
+
+/* LINEAR — inspired by linear.app: cool graphite surfaces with a faint blue cast, soft
+   off-white ink (not pure white), whisper-thin borders, and Linear's signature indigo
+   accent (#5e6ad2) in the amber slot. Dark-family. The indigo primary needs light text,
+   so primary-foreground flips to near-white. */
+[data-theme="linear"] {
+    --rail: #08090a;
+    --panel: #0d0e11;
+    --bg: #0a0b0d;
+    --chrome: #08090a;
+    --field: #16171a;
+    --card: #101114;
+    --raise: #17181c;
+    --explorer: #0d0e11;
+    --ink: #f7f8f8;
+    --ink-2: #b3b8c2;
+    --ink-3: #8a8f99;
+    --ink-4: #565c67;
+    /* whisper-thin, faintly cool lines */
+    --line: 255 255 255 / 0.08;
+    --line-2: 255 255 255 / 0.05;
+    --hover: 255 255 255 / 0.04;
+    --sel: 94 106 210 / 0.20;
+    /* Linear indigo accent */
+    --amber: #5e6ad2;
+    --amber-soft: 94 106 210 / 0.16;
+    --amber-line: 94 106 210 / 0.42;
+    /* indigo primary → light text */
+    --primary-foreground: #f7f8fb;
+    --sidebar-primary-foreground: #f7f8fb;
+}
+
+/* APPLE DARK — macOS/iOS dark mode: layered neutral system grays, white label ink with
+   the cool-tinted secondary grays, and Apple's system blue accent (#0a84ff). Semantic hues
+   swapped for the authentic iOS dark system colors. Dark-family. */
+[data-theme="apple-dark"] {
+    --rail: #1a1a1c;
+    --panel: #1e1e20;
+    --bg: #1c1c1e;
+    --chrome: #1a1a1c;
+    --field: #2c2c2e;
+    --card: #242426;
+    --raise: #2c2c2e;
+    --explorer: #1e1e20;
+    --ink: #ffffff;
+    --ink-2: #98989e;
+    --ink-3: #6c6c70;
+    --ink-4: #48484a;
+    --line: 235 235 245 / 0.11;
+    --line-2: 235 235 245 / 0.07;
+    --hover: 235 235 245 / 0.05;
+    --sel: 10 132 255 / 0.22;
+    /* Apple system blue (dark) */
+    --amber: #0a84ff;
+    --amber-soft: 10 132 255 / 0.16;
+    --amber-line: 10 132 255 / 0.42;
+    /* iOS dark system colors */
+    --for: #30d158;
+    --against: #ff453a;
+    --catalyst: #0a84ff;
+    --echo: #bf5af2;
+    --qualify: #ff9f0a;
+    --neutral: #8e8e93;
+    --primary-foreground: #ffffff;
+    --sidebar-primary-foreground: #ffffff;
+}
+
+/* APPLE LIGHT — macOS/iOS light mode: grouped-background gray behind white cards, the
+   Apple near-black label + system grays, and the light-mode system blue (#007aff). Hues
+   are the iOS light system colors, deepened where needed for text legibility. Light-family
+   (index.css scopes `dark:` away from it). */
+[data-theme="apple-light"] {
+    --rail: #e8e8ed;
+    --panel: #ffffff;
+    --bg: #f2f2f7;
+    --chrome: #e8e8ed;
+    --field: #ffffff;
+    --card: #ffffff;
+    --raise: #ffffff;
+    --explorer: #eeeef2;
+    --ink: #1d1d1f;
+    --ink-2: #6e6e73;
+    --ink-3: #8a8a8e;
+    --ink-4: #b0b0b5;
+    --line: 60 60 67 / 0.13;
+    --line-2: 60 60 67 / 0.08;
+    --hover: 60 60 67 / 0.04;
+    --sel: 0 122 255 / 0.14;
+    /* Apple system blue (light) */
+    --amber: #007aff;
+    --amber-soft: 0 122 255 / 0.12;
+    --amber-line: 0 122 255 / 0.4;
+    /* iOS light system colors (deepened for legibility on white) */
+    --for: #248a3d;
+    --against: #d70015;
+    --catalyst: #007aff;
+    --echo: #8944ab;
+    --qualify: #b25000;
+    --neutral: #6e6e73;
+    --primary-foreground: #ffffff;
+    --sidebar-primary-foreground: #ffffff;
+}
+
+/* LIGHT — a light-family theme (index.css scopes `dark:` away from the light family).
+   Paper surfaces + a dark ink ramp; lines/states flip to black-on-light; semantic hues +
+   amber are deepened so they hold contrast on a light ground. The shadcn semantic tokens
+   follow automatically (they resolve through var(--bg)/var(--ink)/… in :root). */
+[data-theme="light"] {
+    --rail: #eae8e4;
+    --panel: #f2f1ed;
+    --bg: #f7f6f3;
+    --chrome: #eae8e4;
+    --field: #ffffff;
+    --card: #ffffff;
+    --raise: #ffffff;
+    --explorer: #f1f0ec;
+    --ink: #1c1b22;
+    --ink-2: #55535f;
+    --ink-3: #86838f;
+    --ink-4: #b4b1ba;
+    /* black-on-light lines/states (dark family uses white channels) */
+    --line: 22 20 30 / 0.12;
+    --line-2: 22 20 30 / 0.07;
+    --hover: 22 20 30 / 0.04;
+    --sel: 179 121 47 / 0.15;
+    /* deepened accent + hues for contrast on a light ground */
+    --amber: #b3792f;
+    --amber-soft: 179 121 47 / 0.13;
+    --amber-line: 179 121 47 / 0.38;
+    --for: #3f9d72;
+    --against: #c65f4f;
+    --catalyst: #3d7fbf;
+    --echo: #7563bf;
+    --qualify: #a07a3e;
+    --neutral: #5f6b82;
+    /* amber is deep enough here that light button text reads best on it */
+    --primary-foreground: #fbfaf7;
+    --sidebar-primary-foreground: #fbfaf7;
 }
 
 @layer base {

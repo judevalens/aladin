@@ -1,4 +1,4 @@
-import { Command, Contrast, Folder, GitGraph, Globe, Home, Lightbulb, LogOut, Network, Plus, Signal, SquareTerminal } from "lucide-react";
+import { Check, Command, Contrast, Folder, GitGraph, Globe, Home, Lightbulb, LogOut, Network, Plus, Signal, SquareTerminal } from "lucide-react";
 import { useEffect } from "react";
 import { Outlet } from "react-router-dom";
 import { CommandPalette } from "@/modules/workspace/ui/command-palette";
@@ -17,6 +17,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { PlaceholderPane } from "@/components/ui/aladin";
 import { useWorkspaceShell } from "@/modules/workspace/hooks/use-workspace-state";
 import { useAppStore } from "@/app/state/store";
+import { THEMES } from "@/app/state/theme-slice";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -50,7 +51,7 @@ export function WorkspaceShellUI() {
     createPending,
   } = useWorkspaceShell();
   const theme = useAppStore((state) => state.theme);
-  const toggleTheme = useAppStore((state) => state.toggleTheme);
+  const setTheme = useAppStore((state) => state.setTheme);
   const commandOpen = useAppStore((state) => state.commandPaletteOpen);
   const setCommandOpen = useAppStore((state) => state.setCommandPaletteOpen);
   const signalsUnread = useAppStore((state) => state.signalsUnread);
@@ -185,19 +186,45 @@ export function WorkspaceShellUI() {
                 <TooltipContent side="right">Terminal · ⌘`</TooltipContent>
               </Tooltip>
 
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    onClick={toggleTheme}
-                    className="grid size-[38px] place-items-center rounded-[9px] text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
-                    aria-label="Toggle theme"
-                  >
-                    <Contrast className="size-[17px]" strokeWidth={1.7} />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="right">{theme === "dark" ? "Soft theme" : "Dark theme"}</TooltipContent>
-              </Tooltip>
+              <DropdownMenu>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        className="grid size-[38px] place-items-center rounded-[9px] text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink aria-expanded:bg-[rgb(var(--sel))] aria-expanded:text-ink"
+                        aria-label="Theme"
+                      >
+                        <Contrast className="size-[17px]" strokeWidth={1.7} />
+                      </button>
+                    </DropdownMenuTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">Theme</TooltipContent>
+                </Tooltip>
+                <DropdownMenuContent side="right" align="end" className="w-52">
+                  <DropdownMenuLabel>Theme</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {THEMES.map((t) => (
+                    <DropdownMenuItem
+                      key={t.name}
+                      onClick={() => setTheme(t.name)}
+                      className="flex items-start gap-2"
+                    >
+                      <Check
+                        className={cn(
+                          "mt-0.5 size-3.5 shrink-0",
+                          theme === t.name ? "text-amber" : "text-transparent",
+                        )}
+                        strokeWidth={2.4}
+                      />
+                      <span className="flex min-w-0 flex-col">
+                        <span className="text-[13px] text-ink">{t.label}</span>
+                        <span className="font-mono text-[10px] text-ink-4">{t.hint}</span>
+                      </span>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
 
               <DropdownMenu>
                 <Tooltip>
