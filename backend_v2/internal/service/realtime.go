@@ -14,7 +14,11 @@ import (
 
 const (
 	WorkspaceStream = "workspace"
-	AnyResource     = "*"
+	// MarketStream is a BROADCAST stream: its events reach every subscriber regardless of
+	// tenant (a NVDA quote isn't owned by anyone). The first user of the generic broadcast
+	// scope below; add more broadcast streams by registering them in broadcastStreams.
+	MarketStream = "market"
+	AnyResource  = "*"
 	// FrameOperation is the live data-event operation. The CDC outbox drain
 	// publishes each committed frame as eventType "*.frame" — intentionally
 	// cross-resource, since one frame can carry entities of any kind — and the
@@ -29,6 +33,17 @@ var allowedWorkspaceResourceKinds = map[string]bool{
 	"artifact":  true,
 	"folder":    true,
 	"page":      true,
+}
+
+// broadcastStreams are tenant-agnostic: an event on one reaches every subscriber of the same
+// stream+resource, regardless of tenant. Each maps to the resource kinds it permits.
+var broadcastStreams = map[string]map[string]bool{
+	MarketStream: {AnyResource: true, "quote": true},
+}
+
+func isBroadcastStream(stream string) bool {
+	_, ok := broadcastStreams[stream]
+	return ok
 }
 
 type SubscriptionKey struct {
@@ -109,6 +124,21 @@ func (r *DefaultSubscriptionKeyResolver) ResolveSubscribeKeys(ctx context.Contex
 		resourceKind := defaultString(sub.ResourceKind, AnyResource)
 		resourceID := defaultString(sub.ResourceID, AnyResource)
 		eventKind := strings.TrimSpace(sub.EventKind)
+		// Broadcast streams: tenant-agnostic key (no TenantID), resource kind validated against
+		// the stream's own allow-set. Auth is still required (RequirePrincipal above).
+		if isBroadcastStream(stream) {
+			if !broadcastStreams[stream][resourceKind] {
+				return nil, BadRequest("unsupported broadcast resource kind")
+			}
+			keys = append(keys, SubscriptionKey{
+				EventKind:    eventKind,
+				Stream:       stream,
+				ResourceKind: resourceKind,
+				ResourceID:   resourceID,
+				Qualifiers:   normalizeQualifiers(sub.Qualifiers),
+			})
+			continue
+		}
 		if stream != WorkspaceStream {
 			return nil, BadRequest("unsupported realtime stream")
 		}
@@ -154,6 +184,28 @@ func validateWorkspaceEventKind(eventKind, resourceKind string) error {
 }
 
 func (r *DefaultSubscriptionKeyResolver) ResolvePublishKeys(ctx context.Context, target PublishTarget) ([]SubscriptionKey, string, error) {
+	stream := defaultString(target.Stream, WorkspaceStream)
+	resourceKind := defaultString(target.ResourceKind, AnyResource)
+	resourceID := defaultString(target.ResourceID, AnyResource)
+	operation := strings.TrimSpace(target.Operation)
+	if operation == "" {
+		operation = "updated"
+	}
+	qualifiers := normalizeQualifiers(target.Qualifiers)
+
+	// Broadcast streams: tenant-agnostic keys (no principal / TenantID). A specific-resource
+	// key + an AnyResource key so both symbol-specific and "all quotes" subscribers match.
+	if isBroadcastStream(stream) {
+		if !broadcastStreams[stream][resourceKind] {
+			return nil, "", BadRequest("unsupported broadcast resource kind")
+		}
+		eventType := resourceKind + "." + operation
+		return []SubscriptionKey{
+			{EventKind: eventType, Stream: stream, ResourceKind: resourceKind, ResourceID: resourceID, Qualifiers: qualifiers},
+			{EventKind: eventType, Stream: stream, ResourceKind: AnyResource, ResourceID: AnyResource},
+		}, eventType, nil
+	}
+
 	tenantID := strings.TrimSpace(target.TenantID)
 	if tenantID == "" {
 		principal, err := RequirePrincipal(ctx)
@@ -162,21 +214,13 @@ func (r *DefaultSubscriptionKeyResolver) ResolvePublishKeys(ctx context.Context,
 		}
 		tenantID = principal.UserID
 	}
-	stream := defaultString(target.Stream, WorkspaceStream)
-	resourceKind := defaultString(target.ResourceKind, AnyResource)
-	resourceID := defaultString(target.ResourceID, AnyResource)
 	if stream != WorkspaceStream {
 		return nil, "", BadRequest("unsupported realtime stream")
 	}
 	if !allowedWorkspaceResourceKinds[resourceKind] {
 		return nil, "", BadRequest("unsupported workspace resource kind")
 	}
-	operation := strings.TrimSpace(target.Operation)
-	if operation == "" {
-		operation = "updated"
-	}
 	eventType := resourceKind + "." + operation
-	qualifiers := normalizeQualifiers(target.Qualifiers)
 
 	return []SubscriptionKey{
 		{
@@ -335,7 +379,12 @@ func subscriberMatchesAny(subscriberKeys []SubscriptionKey, publishedKeys []Subs
 }
 
 func (k SubscriptionKey) Matches(other SubscriptionKey) bool {
-	if k.TenantID != other.TenantID || k.Stream != other.Stream {
+	if k.Stream != other.Stream {
+		return false
+	}
+	// Broadcast streams are tenant-agnostic — a global resource reaches every subscriber.
+	// Tenant streams (workspace) keep the strict tenant-isolation check.
+	if !isBroadcastStream(k.Stream) && k.TenantID != other.TenantID {
 		return false
 	}
 	if k.EventKind != "" && k.EventKind != other.EventKind {

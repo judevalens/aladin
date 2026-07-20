@@ -111,11 +111,16 @@ type AlpacaConfig struct {
 	// TradingBaseURL — where the Assets API lives. Defaults to PAPER (safe): paper and
 	// live share the same asset universe, so asset sync never needs the live endpoint.
 	TradingBaseURL string
-	// DataBaseURL — historical bars + the real-time WS feed derive from here (T1+).
+	// DataBaseURL — historical bars REST API.
 	DataBaseURL string
+	// StreamBaseURL + Feed — the real-time market-data WebSocket. `iex` is free; `sip` is paid.
+	StreamBaseURL string
+	Feed          string
 }
 
-func (c AlpacaConfig) Configured() bool { return c.APIKey != "" && c.APISecret != "" }
+// Configured needs only the API key — the market-data stream auths with the key; the secret
+// is sent only when present (command.Secret is omitempty). Trading/REST still want both.
+func (c AlpacaConfig) Configured() bool { return c.APIKey != "" }
 
 func LoadAlpaca() AlpacaConfig {
 	return AlpacaConfig{
@@ -123,6 +128,8 @@ func LoadAlpaca() AlpacaConfig {
 		APISecret:      os.Getenv("ALPACA_API_SECRET"),
 		TradingBaseURL: optional("ALPACA_TRADING_BASE_URL", "https://paper-api.alpaca.markets"),
 		DataBaseURL:    optional("ALPACA_DATA_BASE_URL", "https://data.alpaca.markets"),
+		StreamBaseURL:  optional("ALPACA_STREAM_BASE_URL", "wss://stream.data.alpaca.markets/v2"),
+		Feed:           optional("ALPACA_FEED", "iex"),
 	}
 }
 

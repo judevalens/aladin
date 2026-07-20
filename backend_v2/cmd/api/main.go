@@ -59,6 +59,10 @@ func main() {
 	// converges via the client's periodic/reconnect pull, never live.
 	deps.OutboxDrainer().Start(ctx)
 
+	// Live market data: hold the (single) upstream Alpaca WS and publish ticks to the outbox
+	// for the drainer to fan out. No-op without Alpaca keys.
+	deps.MarketData().Start(ctx)
+
 	go func() {
 		<-ctx.Done()
 		if err := server.Shutdown(context.Background()); err != nil {

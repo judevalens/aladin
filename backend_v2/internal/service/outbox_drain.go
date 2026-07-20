@@ -95,12 +95,22 @@ func (d *OutboxDrainer) drainOnce(ctx context.Context, cursor uint64) (uint64, e
 			// App-event lane: publish under its own eventType (e.g.
 			// "artifact.build-status") — NOT the data-sync "*.frame" stream — so
 			// the UI reacts but the offline data engine ignores it.
+			// A broadcast-stream app-event (e.g. "market") fans out to all subscribers:
+			// its stream is honored and the tenant is left unbound (the row's UserID is a
+			// sentinel and irrelevant to broadcast routing).
+			stream := e.AppEvent.Stream
+			tenantID := e.UserID
+			if isBroadcastStream(stream) {
+				tenantID = ""
+			} else {
+				stream = WorkspaceStream
+			}
 			if err := d.realtime.Publish(ctx, PublishTarget{
-				Stream:       WorkspaceStream,
+				Stream:       stream,
 				ResourceKind: e.AppEvent.ResourceKind,
 				ResourceID:   e.AppEvent.ResourceID,
 				Operation:    e.AppEvent.Operation,
-				TenantID:     e.UserID,
+				TenantID:     tenantID,
 			}, e.AppEvent.Payload); err != nil {
 				slog.Warn("outbox drain publish app-event", "xid", e.Xid, "user", e.UserID, "err", err)
 			}

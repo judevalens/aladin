@@ -444,3 +444,49 @@ func realtimeTestContext(userID string, actorType string, scopes []string) conte
 		Scopes:    scopes,
 	})
 }
+
+// A broadcast-stream ('market') event reaches subscribers on DIFFERENT tenants — proving the
+// broadcast-scope matcher fans out across users (unlike the tenant-isolated workspace stream).
+func TestInMemoryRealtimeBroadcastsMarketToAllTenants(t *testing.T) {
+	resolver := NewSubscriptionKeyResolver()
+	realtime := NewInMemoryRealtimeEventService(resolver)
+	userACtx := realtimeTestContext("user-a", ActorTypeUserSession, nil)
+	userBCtx := realtimeTestContext("user-b", ActorTypeUserSession, nil)
+
+	marketSub := SubscriptionOptions{Subscriptions: []PublicSubscriptionKey{
+		{Stream: MarketStream, ResourceKind: "quote", ResourceID: "NVDA-id"},
+	}}
+	aKeys, err := resolver.ResolveSubscribeKeys(userACtx, marketSub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bKeys, err := resolver.ResolveSubscribeKeys(userBCtx, marketSub)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	aEvents, unsubA, err := realtime.Subscribe(userACtx, aKeys, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unsubA()
+	bEvents, unsubB, err := realtime.Subscribe(userBCtx, bKeys, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unsubB()
+
+	// Broadcast publish (tenant-agnostic) — one write.
+	if err := realtime.Publish(context.Background(), PublishTarget{
+		Stream:       MarketStream,
+		ResourceKind: "quote",
+		ResourceID:   "NVDA-id",
+		Operation:    "update",
+	}, map[string]any{"last": 1183.56}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Both tenants receive it — fan-out.
+	expectRealtimeEvent(t, aEvents, "quote.update")
+	expectRealtimeEvent(t, bEvents, "quote.update")
+}

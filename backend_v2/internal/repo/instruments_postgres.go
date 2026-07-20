@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -60,6 +61,21 @@ func (r *PostgresInstrumentRepository) SearchInstruments(ctx context.Context, qu
 		return nil, fmt.Errorf("instrument search rows: %w", err)
 	}
 	return hits, nil
+}
+
+// ResolveInstrumentID maps an active symbol to its stable instrument_id.
+func (r *PostgresInstrumentRepository) ResolveInstrumentID(ctx context.Context, symbol string) (string, bool, error) {
+	var id string
+	err := r.pool.QueryRow(ctx,
+		`SELECT instrument_id::text FROM instruments WHERE upper(symbol) = upper($1) AND is_active LIMIT 1`,
+		strings.TrimSpace(symbol)).Scan(&id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("instrument resolve id: %w", err)
+	}
+	return id, true, nil
 }
 
 // UpsertInstruments writes reference data idempotently, keyed on the active-listing symbol

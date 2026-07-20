@@ -9,6 +9,7 @@ import (
 	"aladin/backend_v2/internal/docsurface"
 	"aladin/backend_v2/internal/entities"
 	"aladin/backend_v2/internal/graph"
+	"aladin/backend_v2/internal/market/alpaca"
 	"aladin/backend_v2/internal/repo"
 	coreservice "aladin/backend_v2/internal/service"
 
@@ -62,6 +63,10 @@ type Dependencies interface {
 	Watchlist() coreservice.WatchlistService
 	// Search is the global command-box search: federates instruments + entities + artifacts.
 	Search() coreservice.SearchService
+	// Bars is the OHLCV history store behind the ticker chart.
+	Bars() coreservice.BarService
+	// MarketData is the demand-driven live-quote hub (one Alpaca WS → outbox fan-out).
+	MarketData() coreservice.MarketDataService
 	// GraphReader reads the Neo4j connection lens. Nil when Neo4j isn't configured.
 	GraphReader() coreservice.GraphReader
 }
@@ -97,6 +102,8 @@ type StaticDependencies struct {
 	InstrumentsSvc         coreservice.InstrumentService
 	WatchlistSvc           coreservice.WatchlistService
 	SearchSvc              coreservice.SearchService
+	BarsSvc                coreservice.BarService
+	MarketDataSvc          coreservice.MarketDataService
 }
 
 func (d StaticDependencies) Auth() coreservice.AuthService          { return d.AuthSvc }
@@ -164,6 +171,12 @@ func (d StaticDependencies) Watchlist() coreservice.WatchlistService {
 func (d StaticDependencies) Search() coreservice.SearchService {
 	return d.SearchSvc
 }
+func (d StaticDependencies) Bars() coreservice.BarService {
+	return d.BarsSvc
+}
+func (d StaticDependencies) MarketData() coreservice.MarketDataService {
+	return d.MarketDataSvc
+}
 func (d StaticDependencies) GraphReader() coreservice.GraphReader {
 	return d.GraphReaderSvc
 }
@@ -199,6 +212,8 @@ type wiring struct {
 	instruments         coreservice.InstrumentService
 	watchlist           coreservice.WatchlistService
 	search              coreservice.SearchService
+	bars                coreservice.BarService
+	marketData          coreservice.MarketDataService
 }
 
 func (w wiring) Auth() coreservice.AuthService          { return w.auth }
@@ -243,6 +258,8 @@ func (w wiring) GraphReader() coreservice.GraphReader       { return w.graphRead
 func (w wiring) Instruments() coreservice.InstrumentService { return w.instruments }
 func (w wiring) Watchlist() coreservice.WatchlistService    { return w.watchlist }
 func (w wiring) Search() coreservice.SearchService          { return w.search }
+func (w wiring) Bars() coreservice.BarService               { return w.bars }
+func (w wiring) MarketData() coreservice.MarketDataService  { return w.marketData }
 
 func NewDependencies(pool *pgxpool.Pool) Dependencies {
 	return NewDependenciesWithProviderConnections(pool, config.LoadProviderConnections(), config.DataVolumePathOrDefault())
@@ -295,9 +312,29 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		coreservice.WithNangoWebhookSigningKey(providerConfig.NangoWebhookSigningKey),
 	)
 
+	// Alpaca REST client (nil without keys) feeds the read-through caches: bars and instruments
+	// fill from the vendor on a local miss/stale rather than bulk backfill.
+	alpacaCfg := config.LoadAlpaca()
+	var barSource coreservice.BarSource
+	var assetLookup coreservice.AssetLookup
+	var snapshotSource coreservice.QuoteSnapshotSource
+	if alpacaCfg.Configured() {
+		restClient := alpaca.NewClient(alpacaCfg.APIKey, alpacaCfg.APISecret, alpacaCfg.TradingBaseURL, alpacaCfg.DataBaseURL)
+		barSource = alpacaBarSource{c: restClient}
+		assetLookup = alpacaAssetLookup{c: restClient}
+		snapshotSource = alpacaSnapshotSource{c: restClient}
+	}
+
 	// Global search federates the existing search services (instruments + entities +
 	// artifacts), so they're built as vars here and shared with the search providers.
 	instrumentsSvc := coreservice.NewInstrumentService(repo.NewInstrumentPostgres(pool))
+	if assetLookup != nil {
+		instrumentsSvc = instrumentsSvc.WithAssetLookup(assetLookup)
+	}
+	barsSvc := coreservice.NewBarService(repo.NewBarPostgres(pool))
+	if barSource != nil {
+		barsSvc = barsSvc.WithSource(barSource)
+	}
 	entityTagsSvc := coreservice.NewEntityTagService(entityTagRepo, entities.Normalize)
 	artifactRefsSvc := coreservice.NewArtifactRefService(artifactRefRepo)
 	searchSvc := coreservice.NewSearchService(
@@ -305,6 +342,17 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		coreservice.NewEntitySearchProvider(entityTagsSvc),
 		coreservice.NewArtifactSearchProvider(artifactRefsSvc),
 	)
+
+	// Live market data: the quote hub publishes upstream Alpaca ticks to the outbox (broadcast
+	// 'market' stream); the OutboxDrainer fans them out. No keys ⇒ the hub is a no-op stream.
+	quoteSvc := coreservice.NewQuoteService(syncRepo)
+	marketDataSvc := coreservice.NewMarketDataService(coreservice.MarketDataConfig{
+		Configured:    alpacaCfg.Configured(),
+		StreamBaseURL: alpacaCfg.StreamBaseURL,
+		Feed:          alpacaCfg.Feed,
+		APIKey:        alpacaCfg.APIKey,
+		APISecret:     alpacaCfg.APISecret,
+	}, quoteSvc, instrumentsSvc, snapshotSource)
 
 	return wiring{
 		auth:                coreservice.NewAuthService(authRepo, coreservice.NewPasswordHasher()),
@@ -340,6 +388,8 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		instruments: instrumentsSvc,
 		watchlist:   coreservice.NewWatchlistService(repo.NewWatchlistPostgres(pool)),
 		search:      searchSvc,
+		bars:        barsSvc,
+		marketData:  marketDataSvc,
 	}
 }
 

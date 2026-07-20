@@ -72,7 +72,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	client := alpaca.NewClient(alpacaCfg.APIKey, alpacaCfg.APISecret, alpacaCfg.TradingBaseURL)
+	client := alpaca.NewClient(alpacaCfg.APIKey, alpacaCfg.APISecret, alpacaCfg.TradingBaseURL, alpacaCfg.DataBaseURL)
 	svc := coreservice.NewInstrumentService(repo.NewInstrumentPostgres(pool))
 
 	slog.Info("backfill-instruments: fetching Alpaca assets", "base", alpacaCfg.TradingBaseURL)

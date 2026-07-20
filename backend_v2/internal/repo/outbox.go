@@ -57,6 +57,31 @@ func appendAppEvent(ctx context.Context, tx pgx.Tx, userID string, ev service.Ou
 	return nil
 }
 
+// marketQuoteUserID is the sentinel owner for broadcast 'market' rows: outbox_events.user_id
+// is NOT NULL, but broadcast routing ignores it (the drain publishes untenanted).
+const marketQuoteUserID = "00000000-0000-0000-0000-000000000000"
+
+// AppendMarketQuote appends a broadcast 'market' app_event carrying a quote payload, keyed on
+// the instrument's distinct id. Own tx — the market-data hub holds no request tx.
+func (r *SyncRepo) AppendMarketQuote(ctx context.Context, instrumentID string, payload []byte) error {
+	ev := service.OutboxAppEvent{
+		Stream:       service.MarketStream,
+		ResourceKind: "quote",
+		ResourceID:   instrumentID,
+		Operation:    "update",
+		Payload:      payload,
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("sync: begin market quote: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := appendAppEvent(ctx, tx, marketQuoteUserID, ev); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 // Horizon returns the current log horizon: pg_snapshot_xmin of the current
 // snapshot, i.e. the smallest still-in-progress xid. Every xid below it is
 // committed, so reading `xid < horizon` is gap-free regardless of commit order.

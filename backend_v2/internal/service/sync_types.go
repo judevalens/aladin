@@ -48,6 +48,9 @@ type Frame struct {
 // (clients never store it); only the live drain forwards it, publishing a
 // realtime event of type "<ResourceKind>.<Operation>" carrying Payload verbatim.
 type OutboxAppEvent struct {
+	// Stream routes the event. Empty ⇒ the tenant-scoped workspace stream (back-compat);
+	// a broadcast stream (e.g. "market") fans out to all subscribers regardless of tenant.
+	Stream       string          `json:"stream,omitempty"`
 	ResourceKind string          `json:"resourceKind"`
 	ResourceID   string          `json:"resourceId"`
 	Operation    string          `json:"operation"`
