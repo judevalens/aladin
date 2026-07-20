@@ -1,8 +1,28 @@
 import { useCallback, useMemo } from "react";
 
 import { useAppComposition } from "@/app/composition/app-composition";
+import { useAppStore } from "@/app/state/store";
+import type { LiveQuote } from "@/app/state/market-slice";
 import { useWatchlist } from "@/modules/markets/hooks/use-watchlist";
 import { type Quote, DEFAULT_UNIVERSE, buildQuote } from "@/modules/markets/market-data";
+
+// overlay applies a live tick onto a placeholder quote: the real last price, with change /
+// changePct recomputed against the (placeholder) prev close. Sparkline/stats stay placeholder
+// until bars feed them.
+function overlay(base: Quote, live: LiveQuote | undefined): Quote {
+  if (!live) return base;
+  // Prefer the seeded real prevClose (snapshot); fall back to the placeholder's. Change is
+  // recomputed from it so bare WS ticks (last only) stay consistent.
+  const prevClose = live.prevClose ?? base.prevClose;
+  const change = live.last - prevClose;
+  return {
+    ...base,
+    last: live.last,
+    prevClose,
+    change,
+    changePct: prevClose ? (change / prevClose) * 100 : base.changePct,
+  };
+}
 
 export interface UseMarketData {
   quotes: Quote[];
@@ -34,10 +54,17 @@ export function useMarketData(): UseMarketData {
     return out;
   }, [items]);
 
-  const quotes = useMemo(() => symbols.map((s) => buildQuote(s)), [symbols]);
+  const liveQuotes = useAppStore((s) => s.liveQuotes);
+  const quotes = useMemo(
+    () => symbols.map((s) => overlay(buildQuote(s), liveQuotes[s.toUpperCase()])),
+    [symbols, liveQuotes],
+  );
   const watched = useMemo(() => new Set(items.map((i) => i.symbol)), [items]);
 
-  const getQuote = useCallback((symbol: string) => buildQuote(symbol), []);
+  const getQuote = useCallback(
+    (symbol: string) => overlay(buildQuote(symbol), liveQuotes[symbol.toUpperCase()]),
+    [liveQuotes],
+  );
 
   // Persisted toggle: remove uses the known watchlist instrument id; add resolves it via
   // ticker search (the market universe may include symbols not yet in the watchlist).

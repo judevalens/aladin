@@ -2,14 +2,15 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 
 import { useAppStore } from "@/app/state/store";
-import { buildQuote } from "@/modules/markets/market-data";
 import { useMarketData } from "@/modules/markets/hooks/use-market-data";
+import { useQuoteSubscription } from "@/modules/markets/hooks/use-quote-subscription";
 import { TickerDetail } from "@/modules/markets/ui/ticker-detail";
 
 // The inner content mounts only while open, so the watchlist fetch doesn't run otherwise.
 function TickerModalBody({ symbol, onClose }: { symbol: string; onClose: () => void }) {
-  const { watched, toggleWatch } = useMarketData();
-  const quote = buildQuote(symbol);
+  const { watched, toggleWatch, getQuote } = useMarketData();
+  useQuoteSubscription([symbol]);
+  const quote = getQuote(symbol);
   return (
     <div className="flex h-[min(760px,88vh)] flex-col overflow-hidden">
       <div className="flex items-center justify-between border-b border-line px-4 py-2">

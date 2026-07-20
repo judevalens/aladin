@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { type Quote, INDICES, fmtPct } from "@/modules/markets/market-data";
 import { useMarketData } from "@/modules/markets/hooks/use-market-data";
+import { useQuoteSubscription } from "@/modules/markets/hooks/use-quote-subscription";
 import { MarketMap } from "@/modules/markets/ui/market-map";
 import { QuoteTable } from "@/modules/markets/ui/quote-table";
 import { TickerDetail } from "@/modules/markets/ui/ticker-detail";
@@ -66,6 +67,9 @@ export function MarketsUI() {
 
   const mapQuotes = useMemo(() => pickDataset(quotes, watched, mapDataset), [quotes, watched, mapDataset]);
   const datasetLabel = MAP_DATASETS.find((d) => d.key === mapDataset)?.label ?? "All Symbols";
+
+  // Register live-quote demand for every symbol on the surface.
+  useQuoteSubscription(useMemo(() => quotes.map((q) => q.symbol), [quotes]));
 
   // Default the detail panel to the first quote once data is in.
   useEffect(() => {

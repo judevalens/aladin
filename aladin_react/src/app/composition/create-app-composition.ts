@@ -31,6 +31,8 @@ import { createShardApi } from "@/shared/api/shard-api";
 import { createAppEventProcessor } from "@/shared/realtime/app-event-processor";
 import { createWebSocketAppEventSource } from "@/shared/realtime/websocket-app-event-source";
 import { createShardBuildEventHandler } from "@/shared/realtime/shard-build-event-handler";
+import { createQuoteEventHandler } from "@/shared/realtime/quote-event-handler";
+import { createMarketRepo } from "@/repos/market/market-repo";
 import { useAppStore } from "@/app/state/store";
 import type { ApiRuntimeConfig } from "@/shared/api/client";
 
@@ -78,6 +80,7 @@ export function createAppComposition() {
     instruments: createInstrumentsRepo(apiClient),
     watchlist: createWatchlistRepo(apiClient),
     search: createSearchRepo(apiClient),
+    market: createMarketRepo(apiClient),
     localSignals: createLocalSignalsRepo(dataEvents),
     bookSignals: createBookSignalsRepo(apiClient),
   };
@@ -125,10 +128,16 @@ export function createAppComposition() {
   // unchanged.
   const appEvents = createAppEventProcessor();
   appEvents.register(createShardBuildEventHandler());
+  appEvents.register(createQuoteEventHandler());
   const appEventSource = createWebSocketAppEventSource({
     url: eventsWebSocketUrl(config),
     token: () => desktopSession.getToken(),
-    subscriptions: [], // empty → backend defaults to the whole workspace stream
+    // Explicit list (a non-empty list disables the backend's workspace default), so we keep
+    // the workspace wildcard (build-status etc.) AND add the broadcast market stream (quotes).
+    subscriptions: [
+      { stream: "workspace", resourceKind: "*", resourceId: "*" },
+      { stream: "market", resourceKind: "quote", resourceId: "*" },
+    ],
     onEvent: (event) => appEvents.dispatch(event),
   });
 

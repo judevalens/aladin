@@ -11,13 +11,16 @@ import { createSignalsSlice } from "@/app/state/signals-slice";
 import type { SignalsSlice } from "@/app/state/signals-slice";
 import { createTerminalSlice } from "@/app/state/terminal-slice";
 import type { TerminalSlice } from "@/app/state/terminal-slice";
+import { createMarketSlice } from "@/app/state/market-slice";
+import type { MarketSlice } from "@/app/state/market-slice";
 
 export type AppStoreState = SessionSlice &
   WorkspaceSlice &
   ThemeSlice &
   ShardBuildSlice &
   SignalsSlice &
-  TerminalSlice;
+  TerminalSlice &
+  MarketSlice;
 
 export const useAppStore = create<AppStoreState>()((...args) => ({
   ...createSessionSlice(...args),
@@ -26,4 +29,5 @@ export const useAppStore = create<AppStoreState>()((...args) => ({
   ...createShardBuildSlice(...args),
   ...createSignalsSlice(...args),
   ...createTerminalSlice(...args),
+  ...createMarketSlice(...args),
 }));
