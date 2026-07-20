@@ -40,3 +40,6 @@ logs/
 scripts/ops/__pycache__/
 
 *.lock
+
+# compiled Go API binary (go build -o api ./cmd/api)
+/backend_v2/api
