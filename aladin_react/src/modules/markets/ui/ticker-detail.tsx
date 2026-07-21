@@ -15,6 +15,7 @@ import {
   seriesFor,
 } from "@/modules/markets/market-data";
 import { AreaChart } from "@/modules/markets/ui/charts";
+import { useBars } from "@/modules/markets/hooks/use-bars";
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
@@ -53,7 +54,10 @@ export function TickerDetail({
 }) {
   const [tf, setTf] = useState<Timeframe>("1D");
   const up = quote.change >= 0;
-  const series = useMemo(() => seriesFor(quote, tf), [quote, tf]);
+  // Real bars when we have them; otherwise the deterministic placeholder so the chart never blanks.
+  const { series: barSeries } = useBars(quote.symbol, tf);
+  const placeholder = useMemo(() => seriesFor(quote, tf), [quote, tf]);
+  const series = barSeries.length > 1 ? barSeries : placeholder;
   const news = useMemo(() => headlinesFor(quote.symbol), [quote.symbol]);
 
   return (

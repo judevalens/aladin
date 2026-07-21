@@ -217,6 +217,16 @@ export interface SearchResponse {
   sections: SearchSection[];
 }
 
+/** One OHLCV bar from GET /api/instruments/{symbol}/bars (raw/unadjusted). */
+export interface Bar {
+  t: string; // RFC-3339 bar start
+  o: number;
+  h: number;
+  l: number;
+  c: number;
+  v: number;
+}
+
 /** One tracked security on the Markets watchlist. */
 export interface WatchlistItem {
   instrumentId: string;
