@@ -7,6 +7,12 @@
 TEST_COMPOSE := docker compose -f docker-compose.test.yml -p aladin-test
 TEST_DATABASE_URL := postgres://aladin:password@localhost:5444/aladin
 
+# PROD stack (isolated third stack; see PROD.md). Compose reads secrets from
+# backend_v2/.env.prod via --env-file. PROD_PROFILES selects which app processes
+# start (override to run lean, e.g. PROD_PROFILES=api,collab for notes-only).
+PROD_COMPOSE := docker compose -p aladin-prod --env-file backend_v2/.env.prod -f docker-compose.prod.yml
+PROD_PROFILES ?= api,worker,mcp,collab
+
 # Doc Surface page file store (users/{userId}/pages/{pageId}/...). The API
 # process SERVES built dist from here; the MCP process WRITES files + BUILDS into
 # it. Both MUST resolve to the same path — set it once here. Override with
@@ -127,3 +133,52 @@ ops-force-stream: ## Force one stream due; requires PROVIDER=... STREAM_KEY="...
 
 ops-reset-stuck-cycles: ## Close stale active/running cycles; optional AGE=30m
 	python3 scripts/ops/aladin_ops.py reset-stuck-cycles --age $(or $(AGE),30m)
+
+# --- PROD stack ---------------------------------------------------------------
+.PHONY: prod-env prod-check-env prod-build prod-up prod-down prod-restart prod-ps prod-logs prod-psql prod-backup prod-app prod-app-clear prod-app-uninstall
+
+prod-env: ## Generate backend_v2/.env.prod (random infra passwords + OpenAI/Tavily from .env); FORCE=1 to regenerate
+	bash scripts/ops/gen_prod_env.sh
+
+prod-check-env:
+	@test -f backend_v2/.env.prod || { echo ">> backend_v2/.env.prod missing — run 'make prod-env' first"; exit 1; }
+
+prod-build: prod-check-env ## Build the prod backend + blocknote images (backend built once via `api`)
+	$(PROD_COMPOSE) build api blocknote
+
+prod-up: prod-build ## Build + start the prod stack (PROD_PROFILES selects processes)
+	COMPOSE_PROFILES=$(PROD_PROFILES) $(PROD_COMPOSE) up -d
+	@echo ">> prod up (profiles: $(PROD_PROFILES)). API http://localhost:8080  collab ws://localhost:3511  mcp http://localhost:8091"
+
+prod-down: prod-check-env ## Stop the prod stack (ARGS=-v also drops prod volumes — DESTROYS DATA)
+	COMPOSE_PROFILES=api,worker,mcp,collab $(PROD_COMPOSE) down $(ARGS)
+
+prod-restart: prod-build ## Rebuild images + recreate prod services
+	COMPOSE_PROFILES=$(PROD_PROFILES) $(PROD_COMPOSE) up -d --force-recreate
+
+prod-ps: prod-check-env ## Show prod stack status
+	COMPOSE_PROFILES=api,worker,mcp,collab $(PROD_COMPOSE) ps
+
+prod-logs: prod-check-env ## Tail prod logs (SERVICE=api|worker|mcp|blocknote to scope)
+	COMPOSE_PROFILES=api,worker,mcp,collab $(PROD_COMPOSE) logs -f $(SERVICE)
+
+prod-psql: ## Open psql on the prod Postgres
+	docker exec -it aladin-prod-postgres psql -U aladin -d aladin
+
+prod-backup: ## Run a one-off prod Postgres backup (pg_dump -Fc, retained)
+	bash scripts/ops/backup_prod.sh
+
+prod-app: ## Build the desktop app pointed at prod + install it to /Applications (identifier com.aladin.app)
+	cd aladin_react && VITE_DESKTOP_API_BASE_URL=http://localhost:8080 VITE_COLLAB_WS_URL=ws://localhost:3511 \
+		npm run tauri:build -- --bundles app \
+		--config '{"identifier":"com.aladin.app","productName":"Aladin"}'
+	@echo ">> installing to /Applications/Aladin.app"
+	rm -rf "/Applications/Aladin.app"
+	cp -R "aladin_react/src-tauri/target/release/bundle/macos/Aladin.app" "/Applications/Aladin.app"
+	@echo ">> installed. Launch it from /Applications (open -a Aladin)."
+
+prod-app-clear: ## Wipe the prod app's LOCAL state (keep the app) — use after a prod DB wipe; FORCE=1 if it's running
+	bash scripts/ops/prod_app_remove.sh clear
+
+prod-app-uninstall: ## Remove /Applications/Aladin.app AND its local state (backend/notes untouched); FORCE=1 if running
+	bash scripts/ops/prod_app_remove.sh uninstall

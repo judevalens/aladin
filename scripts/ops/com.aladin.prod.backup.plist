@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Daily Aladin PROD Postgres backup (macOS launchd LaunchAgent).
+
+  Install:
+    cp scripts/ops/com.aladin.prod.backup.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.aladin.prod.backup.plist
+
+  Run once now (test):
+    launchctl start com.aladin.prod.backup
+
+  Uninstall:
+    launchctl unload ~/Library/LaunchAgents/com.aladin.prod.backup.plist
+
+  Runs at 03:00 daily. If the Mac is asleep at 03:00, launchd runs it at wake.
+  Logs -> ~/aladin-backups/backup.log.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.aladin.prod.backup</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/judepaulemon/Documents/aladin/scripts/ops/backup_prod.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/judepaulemon/Documents/aladin</string>
+
+    <!-- launchd's PATH is minimal; add Docker Desktop's CLI location. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>/Users/judepaulemon</string>
+    </dict>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>3</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/judepaulemon/aladin-backups/backup.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/judepaulemon/aladin-backups/backup.log</string>
+</dict>
+</plist>

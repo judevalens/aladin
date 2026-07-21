@@ -27,6 +27,9 @@ aladin_react/.claude/
 
 *.env
 .env.test
+# Prod secrets (the .example template stays tracked).
+.env.prod
+*.env.prod
 
 # Ignore all Claude state EXCEPT committed, shared orchestration workflows.
 .claude/*

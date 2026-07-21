@@ -1,0 +1,166 @@
+# Aladin PROD stack (project: aladin-prod).
+#
+# A third stack alongside dev (docker-compose.yml) and the sandbox
+# (docker-compose.test.yml). Fully isolated: its own volumes (aladin-prod_*) and
+# its own host ports, so `make db-up` / `make nuke-*` / a dev DB reset can never
+# touch it.
+#
+# CONFIGURABLE PROCESSES — each app process is a compose *profile*, toggled via
+# COMPOSE_PROFILES (the Makefile drives this with PROD_PROFILES):
+#   api      -> the HTTP API the desktop app talks to
+#   collab   -> the blocknote sidecar (page editing: converter + Hocuspocus WS)
+#   mcp      -> the MCP page server
+#   worker   -> enrichment pipeline + syncers  (pulls in redis + neo4j)
+# postgres has no profile: it is the shared canonical store, always started.
+#
+# Secrets/config come from backend_v2/.env.prod via `--env-file` (interpolation)
+# and `env_file` (container env). Nothing secret lives in this committed file.
+#
+# Bring up:  make prod-up                 (full engine)
+#            make prod-up PROD_PROFILES=api,collab   (notes-only)
+
+services:
+  # --- canonical store (always on) ------------------------------------------
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: aladin-prod-postgres
+    environment:
+      POSTGRES_DB: aladin
+      POSTGRES_USER: aladin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in backend_v2/.env.prod}
+    ports:
+      - "5455:5432"          # host 5455 -> backups / psql (dev is 5433, sandbox 5444)
+    volumes:
+      - prod_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aladin -d aladin"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # --- queue + cache (only needed by the worker) ----------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: aladin-prod-redis
+    profiles: ["worker"]
+    command: redis-server --appendonly yes
+    volumes:
+      - prod_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # --- graph lens (projection; only the worker writes it) -------------------
+  neo4j:
+    image: neo4j:5
+    container_name: aladin-prod-neo4j
+    profiles: ["worker"]
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:?set NEO4J_PASSWORD in backend_v2/.env.prod}
+    ports:
+      - "7476:7474"          # browser  (dev 7474, sandbox 7475)
+      - "7689:7687"          # bolt     (dev 7687, sandbox 7688)
+    volumes:
+      - prod_neo4j_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  # --- HTTP API (desktop app talks to this) ---------------------------------
+  api:
+    build: ./backend_v2
+    image: aladin-backend:prod
+    container_name: aladin-prod-api
+    profiles: ["api"]
+    command: ["api"]
+    env_file: [backend_v2/.env.prod]
+    environment:
+      API_ADDR: ":8000"
+      DATA_VOLUME_PATH: /data
+    ports:
+      - "8080:8000"          # host 8080 -> API (dev api is host 8000)
+    volumes:
+      - prod_app_data:/data  # shared with mcp: api serves, mcp builds
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # --- enrichment worker (entities/claims/insights/graph + syncers) ---------
+  worker:
+    # Shares the api's image (aladin-backend:prod); only `api` carries `build:`
+    # so the tag isn't built by three services in parallel. `make prod-build`
+    # builds it once via the api service.
+    image: aladin-backend:prod
+    container_name: aladin-prod-worker
+    profiles: ["worker"]
+    command: ["worker"]
+    env_file: [backend_v2/.env.prod]
+    depends_on:
+      api:                       # api migrates first (alone) — avoids the goose
+        condition: service_healthy   # CREATE EXTENSION cold-start race
+      redis:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # --- MCP page server ------------------------------------------------------
+  mcp:
+    image: aladin-backend:prod   # shares the api's image (see worker note)
+    container_name: aladin-prod-mcp
+    profiles: ["mcp"]
+    command: ["mcp"]
+    env_file: [backend_v2/.env.prod]
+    environment:
+      MCP_HTTP_ADDR: ":8090"
+      DATA_VOLUME_PATH: /data
+      CONVERTER_URL: http://blocknote:3500
+    ports:
+      - "8091:8090"          # host 8091 -> MCP (dev mcp is host 8090)
+    volumes:
+      - prod_app_data:/data  # shared with api
+    depends_on:
+      api:                   # migrate through api first (see worker note)
+        condition: service_healthy
+    restart: unless-stopped
+
+  # --- collab sidecar (page editing) ----------------------------------------
+  blocknote:
+    build: ./services/blocknote
+    image: aladin-blocknote:prod
+    container_name: aladin-prod-blocknote
+    profiles: ["collab"]
+    env_file: [backend_v2/.env.prod]
+    environment:
+      PORT: 3500
+      COLLAB_PORT: 3501
+      BLOCKNOTE_DATABASE_URL: postgres://aladin:${POSTGRES_PASSWORD}@postgres:5432/aladin?sslmode=disable
+      BLOCKNOTE_AUTH_RESOLVE_URL: http://api:8000/api/auth/resolve
+    ports:
+      - "3510:3500"          # converter (dev 3500)
+      - "3511:3501"          # Hocuspocus collab WS (dev 3501) — desktop app connects here
+    depends_on:
+      api:                   # needs the schema (page_ydoc) migrated + api auth up
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3500/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  prod_postgres_data:
+  prod_redis_data:
+  prod_neo4j_data:
+  prod_app_data:

@@ -1,0 +1,6 @@
+# Keep secrets and runtime data out of the image / build context.
+.env
+.env.*
+!.env.prod.example
+data/
+*.log
