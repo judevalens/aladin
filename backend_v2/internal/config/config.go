@@ -144,7 +144,7 @@ type CopilotConfig struct {
 func LoadCopilot() CopilotConfig {
 	return CopilotConfig{
 		OpenAIAPIKey: os.Getenv("OPENAI_API_KEY"),
-		Model:        optional("COPILOT_MODEL", "gpt-4o-mini"),
+		Model:        optional("COPILOT_MODEL", "gpt-4o"),
 	}
 }
 
