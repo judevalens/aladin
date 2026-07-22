@@ -133,6 +133,21 @@ func LoadAlpaca() AlpacaConfig {
 	}
 }
 
+// CopilotConfig configures the in-app agentic LLM interface (runs in the API process,
+// reusing the same OpenAI client the worker's extraction judges use). Empty key ⇒ the
+// copilot endpoint degrades cleanly ("copilot not configured"), like the market hub.
+type CopilotConfig struct {
+	OpenAIAPIKey string
+	Model        string
+}
+
+func LoadCopilot() CopilotConfig {
+	return CopilotConfig{
+		OpenAIAPIKey: os.Getenv("OPENAI_API_KEY"),
+		Model:        optional("COPILOT_MODEL", "gpt-4o-mini"),
+	}
+}
+
 func LoadProviderConnections() ProviderConnectionConfig {
 	return ProviderConnectionConfig{
 		NangoBaseURL:                 optional("NANGO_BASE_URL", "https://api.nango.dev"),

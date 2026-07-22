@@ -33,6 +33,9 @@ var allowedWorkspaceResourceKinds = map[string]bool{
 	"artifact":  true,
 	"folder":    true,
 	"page":      true,
+	// copilot streams token/tool/message/done events per user (tenant-scoped workspace
+	// stream), published in-process by the CopilotService agent loop.
+	"copilot": true,
 }
 
 // broadcastStreams are tenant-agnostic: an event on one reaches every subscriber of the same

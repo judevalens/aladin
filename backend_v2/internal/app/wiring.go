@@ -9,6 +9,7 @@ import (
 	"aladin/backend_v2/internal/docsurface"
 	"aladin/backend_v2/internal/entities"
 	"aladin/backend_v2/internal/graph"
+	"aladin/backend_v2/internal/llm"
 	"aladin/backend_v2/internal/market/alpaca"
 	"aladin/backend_v2/internal/repo"
 	coreservice "aladin/backend_v2/internal/service"
@@ -69,6 +70,8 @@ type Dependencies interface {
 	MarketData() coreservice.MarketDataService
 	// GraphReader reads the Neo4j connection lens. Nil when Neo4j isn't configured.
 	GraphReader() coreservice.GraphReader
+	// Copilot is the in-app agentic LLM interface (streaming, tool-grounded on Aladin data).
+	Copilot() coreservice.CopilotService
 }
 
 type StaticDependencies struct {
@@ -104,6 +107,7 @@ type StaticDependencies struct {
 	SearchSvc              coreservice.SearchService
 	BarsSvc                coreservice.BarService
 	MarketDataSvc          coreservice.MarketDataService
+	CopilotSvc             coreservice.CopilotService
 }
 
 func (d StaticDependencies) Auth() coreservice.AuthService          { return d.AuthSvc }
@@ -180,6 +184,9 @@ func (d StaticDependencies) MarketData() coreservice.MarketDataService {
 func (d StaticDependencies) GraphReader() coreservice.GraphReader {
 	return d.GraphReaderSvc
 }
+func (d StaticDependencies) Copilot() coreservice.CopilotService {
+	return d.CopilotSvc
+}
 
 type wiring struct {
 	auth                coreservice.AuthService
@@ -214,6 +221,7 @@ type wiring struct {
 	search              coreservice.SearchService
 	bars                coreservice.BarService
 	marketData          coreservice.MarketDataService
+	copilot             coreservice.CopilotService
 }
 
 func (w wiring) Auth() coreservice.AuthService          { return w.auth }
@@ -260,6 +268,7 @@ func (w wiring) Watchlist() coreservice.WatchlistService    { return w.watchlist
 func (w wiring) Search() coreservice.SearchService          { return w.search }
 func (w wiring) Bars() coreservice.BarService               { return w.bars }
 func (w wiring) MarketData() coreservice.MarketDataService  { return w.marketData }
+func (w wiring) Copilot() coreservice.CopilotService        { return w.copilot }
 
 func NewDependencies(pool *pgxpool.Pool) Dependencies {
 	return NewDependenciesWithProviderConnections(pool, config.LoadProviderConnections(), config.DataVolumePathOrDefault())
@@ -354,17 +363,48 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		APISecret:     alpacaCfg.APISecret,
 	}, quoteSvc, instrumentsSvc, snapshotSource)
 
+	// Services the copilot exposes as read tools are shared with it, so build them as vars.
+	insightsSvc := coreservice.NewInsightService(insightRepo)
+	artifactsSvc := coreservice.NewArtifactService(artifactRepo, artifactFiles)
+	pagesSvc := coreservice.NewPageService(artifactRepo)
+	watchlistSvc := coreservice.NewWatchlistService(repo.NewWatchlistPostgres(pool))
+	entityContextSvc := coreservice.NewEntityContextService(
+		repo.NewEntityContextPostgres(pool),
+		db.NewEntityRepository(pool), // merge decisions land in the shared registry
+	)
+
+	// Copilot — the in-app agentic LLM interface. Reuses the same OpenAI key the worker's
+	// extraction judges use; nil agent (no key) ⇒ the endpoint degrades cleanly.
+	copilotCfg := config.LoadCopilot()
+	var chatAgent llm.ChatAgent
+	if copilotCfg.OpenAIAPIKey != "" {
+		chatAgent = llm.NewOpenAIChatAgent(copilotCfg.OpenAIAPIKey, copilotCfg.Model)
+	}
+	copilotSvc := coreservice.NewCopilotService(coreservice.CopilotDeps{
+		Store:     repo.NewCopilotPostgres(pool),
+		Agent:     chatAgent,
+		Realtime:  realtime,
+		Search:    searchSvc,
+		Entities:  entityContextSvc,
+		Insights:  insightsSvc,
+		Artifacts: artifactsSvc,
+		Pages:     pagesSvc,
+		Watchlist: watchlistSvc,
+		Bars:      barsSvc,
+		Snapshots: snapshotSource,
+	})
+
 	return wiring{
 		auth:                coreservice.NewAuthService(authRepo, coreservice.NewPasswordHasher()),
 		system:              coreservice.NewSystemService(systemRepo),
 		sources:             coreservice.NewSourceService(sourceRepo),
 		records:             coreservice.NewRecordService(recordRepo),
-		artifacts:           coreservice.NewArtifactService(artifactRepo, artifactFiles),
-		pages:               coreservice.NewPageService(artifactRepo),
+		artifacts:           artifactsSvc,
+		pages:               pagesSvc,
 		pageDocuments:       coreservice.NewPageDocumentService(artifactRepo),
 		files:               coreservice.NewFileService(artifactRepo, artifactFiles),
 		feed:                coreservice.NewFeedService(feedRepo),
-		insights:            coreservice.NewInsightService(insightRepo),
+		insights:            insightsSvc,
 		signals:             coreservice.NewSignalService(signalRepo),
 		providerConnections: providerConnections,
 		realtime:            realtime,
@@ -379,17 +419,15 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		graphPane:           coreservice.NewGraphPaneService(graphPaneRepo),
 		entityTags:          entityTagsSvc,
 		artifactRefs:        artifactRefsSvc,
-		entityContext: coreservice.NewEntityContextService(
-			repo.NewEntityContextPostgres(pool),
-			db.NewEntityRepository(pool), // merge decisions land in the shared registry
-		),
-		entityList:  coreservice.NewEntityListService(repo.NewEntityListPostgres(pool)),
-		graphReader: graphReader,
-		instruments: instrumentsSvc,
-		watchlist:   coreservice.NewWatchlistService(repo.NewWatchlistPostgres(pool)),
-		search:      searchSvc,
-		bars:        barsSvc,
-		marketData:  marketDataSvc,
+		entityContext:       entityContextSvc,
+		entityList:          coreservice.NewEntityListService(repo.NewEntityListPostgres(pool)),
+		graphReader:         graphReader,
+		instruments:         instrumentsSvc,
+		watchlist:           watchlistSvc,
+		search:              searchSvc,
+		bars:                barsSvc,
+		marketData:          marketDataSvc,
+		copilot:             copilotSvc,
 	}
 }
 
