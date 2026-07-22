@@ -164,11 +164,17 @@ func (r *PostgresArtifactRepository) LightNode(ctx context.Context, id string) (
 		title        *string
 		aType        *string
 		sourceURL    *string
+		summary      *string // lightEntitySelect columns 8–9; unused here but must be scanned
+		metadata     []byte
 		seq          int64
 		isDeleted    bool
 	)
+	// lightEntitySelect projects 11 columns (…, source_url, summary, metadata, seq, is_deleted);
+	// scan them all — omitting summary/metadata is a "got 11 and 9" scan mismatch.
 	err = r.pool.QueryRow(ctx, lightEntitySelect+` AND n.id = $2`, userID, id).
-		Scan(&nodeID, &kind, &parentID, &position, &title, &aType, &sourceURL, &seq, &isDeleted)
+		Scan(&nodeID, &kind, &parentID, &position, &title, &aType, &sourceURL, &summary, &metadata, &seq, &isDeleted)
+	_ = summary
+	_ = metadata
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return artifactservice.BrowserNodeResponse{}, artifactservice.ErrNotFound
