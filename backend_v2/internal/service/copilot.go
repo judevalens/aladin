@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -394,6 +395,7 @@ func (s *defaultCopilotService) runAgent(principal Principal, threadID, sessionI
 			}
 			result, cites, terr := s.runTool(ctx, userID, tc.Name, tc.Arguments)
 			if terr != nil {
+				slog.Error("copilot: tool failed", "component", "copilot", "tool", tc.Name, "args", tc.Arguments, "err", terr)
 				result = fmt.Sprintf(`{"error":%q}`, terr.Error())
 			}
 			for _, c := range cites {
@@ -511,7 +513,8 @@ The workspace holds several artifact kinds: pages (the user's writing), shards (
 You CAN create and author shards: create_shard to make one, write_shard_file/edit_shard_file to author it (each write auto-builds and returns diagnostics — read them and fix errors), build_shard to recompile. Preview it with preview_open then preview_snapshot to confirm it rendered; publish_shard makes it live (that step asks the user to approve). Shards are React apps composed from @aladin/kit (Page/Section/Region) styled with Tailwind + Aladin token classes (bg-panel, text-ink, text-amber, …). When asked to make a shard, actually create it and write the content — don't just output an outline.
 You CAN also author pages (the user's writing): create_page from markdown; for edits, get_page_blocks to find block ids, then insert_blocks / update_block for surgical changes (update_page replaces the whole body and delete_block remove content — both ask the user to approve). And light actions: add_to_watchlist (by symbol), draw_edge (link two entities).
 Prefer specific, concise answers. When you reference an entity, artifact, or ticker, use the tool that fetches it so the app can cite it.
-If the tools return nothing relevant, say so plainly rather than guessing.`)
+If the tools return nothing relevant, say so plainly rather than guessing.
+If a tool returns an {"error": ...}, tell the user the EXACT error message verbatim and what you were trying to do — never vaguely say "a technical issue" or claim the action is impossible. The capability exists; a specific error means something is misconfigured (e.g. a service is down) and the exact text helps fix it.`)
 	if hint := surfaceHint(surface); hint != "" {
 		b.WriteString("\n\n")
 		b.WriteString(hint)
