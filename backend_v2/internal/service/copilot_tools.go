@@ -83,6 +83,10 @@ func (s *defaultCopilotService) toolDefs() []llm.ChatToolDef {
 			}, "symbol"),
 		})
 	}
+	// Shard authoring — only when the doc-surface services are wired.
+	if s.DocStore != nil && s.ShardBuild != nil {
+		defs = append(defs, shardToolDefs()...)
+	}
 	return defs
 }
 
@@ -238,6 +242,9 @@ func (s *defaultCopilotService) runTool(ctx context.Context, userID, name, args 
 		return jsonString(q), []Citation{{Kind: "ticker", ID: sym, Title: sym}}, nil
 
 	default:
+		if res, cites, ok, err := s.runShardTool(ctx, name, args); ok {
+			return res, cites, err
+		}
 		return "", nil, fmt.Errorf("unknown tool: %s", name)
 	}
 }
@@ -364,6 +371,14 @@ func toolLabel(name string) string {
 		return "Reading price history"
 	case "get_quote":
 		return "Fetching a live quote"
+	case "create_shard":
+		return "Creating a shard"
+	case "list_shard_files", "read_shard_file":
+		return "Reading shard files"
+	case "write_shard_file", "edit_shard_file":
+		return "Writing shard code"
+	case "build_shard":
+		return "Building the shard"
 	default:
 		return "Working"
 	}

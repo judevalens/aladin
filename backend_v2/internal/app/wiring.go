@@ -381,17 +381,19 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		chatAgent = llm.NewOpenAIChatAgent(copilotCfg.OpenAIAPIKey, copilotCfg.Model)
 	}
 	copilotSvc := coreservice.NewCopilotService(coreservice.CopilotDeps{
-		Store:     repo.NewCopilotPostgres(pool),
-		Agent:     chatAgent,
-		Realtime:  realtime,
-		Search:    searchSvc,
-		Entities:  entityContextSvc,
-		Insights:  insightsSvc,
-		Artifacts: artifactsSvc,
-		Pages:     pagesSvc,
-		Watchlist: watchlistSvc,
-		Bars:      barsSvc,
-		Snapshots: snapshotSource,
+		Store:      repo.NewCopilotPostgres(pool),
+		Agent:      chatAgent,
+		Realtime:   realtime,
+		Search:     searchSvc,
+		Entities:   entityContextSvc,
+		Insights:   insightsSvc,
+		Artifacts:  artifactsSvc,
+		Pages:      pagesSvc,
+		Watchlist:  watchlistSvc,
+		Bars:       barsSvc,
+		Snapshots:  snapshotSource,
+		DocStore:   docStore,
+		ShardBuild: shardBuild,
 	})
 
 	return wiring{
