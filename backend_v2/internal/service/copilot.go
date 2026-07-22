@@ -139,9 +139,11 @@ type CopilotDeps struct {
 }
 
 const (
-	copilotResourceKind  = "copilot"
-	maxCopilotIterations = 6
-	copilotTurnTimeout   = 120 * time.Second
+	copilotResourceKind = "copilot"
+	// Authoring a shard/page is multi-step (create → write → build → fix → build → preview),
+	// so the loop needs real headroom; a Q&A answers in 1–3. The timeout is the hard backstop.
+	maxCopilotIterations = 24
+	copilotTurnTimeout   = 5 * time.Minute
 	maxToolResultChars   = 12000
 )
 
