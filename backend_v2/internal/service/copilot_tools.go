@@ -65,6 +65,26 @@ func (s *defaultCopilotService) toolDefs() []llm.ChatToolDef {
 			Parameters:  objSchema(map[string]any{}),
 		},
 		{
+			Name:        "get_browser_tree",
+			Description: "The user's full workspace tree: folders and the artifacts (pages, shards, links, files) inside them.",
+			Parameters:  objSchema(map[string]any{}),
+		},
+		{
+			Name:        "list_folders",
+			Description: "List folders. Omit parentId for root folders, or pass a folder id for its child folders.",
+			Parameters: objSchema(map[string]any{
+				"parentId": strProp("Optional parent folder id."),
+			}),
+		},
+		{
+			Name:        "search_pages",
+			Description: "Search the user's pages by title, summary, and body text. Returns matching pages.",
+			Parameters: objSchema(map[string]any{
+				"query": strProp("The search query."),
+				"limit": intProp("Max results (default 10)."),
+			}, "query"),
+		},
+		{
 			Name:        "get_bars",
 			Description: "OHLCV price history for a ticker symbol. timeframe is e.g. 1Day or 5Min; returns oldest→newest.",
 			Parameters: objSchema(map[string]any{
@@ -205,6 +225,47 @@ func (s *defaultCopilotService) runTool(ctx context.Context, userID, name, args 
 			return "", nil, err
 		}
 		return jsonString(map[string]any{"items": items}), nil, nil
+
+	case "get_browser_tree":
+		tree, err := s.Artifacts.BrowserTree(ctx)
+		if err != nil {
+			return "", nil, err
+		}
+		return jsonString(map[string]any{"tree": tree}), nil, nil
+
+	case "list_folders":
+		var a struct {
+			ParentID string `json:"parentId"`
+		}
+		_ = json.Unmarshal([]byte(args), &a)
+		var parent *string
+		if p := strings.TrimSpace(a.ParentID); p != "" {
+			parent = &p
+		}
+		folders, err := s.Artifacts.ListFolders(ctx, parent)
+		if err != nil {
+			return "", nil, err
+		}
+		return jsonString(map[string]any{"folders": folders}), nil, nil
+
+	case "search_pages":
+		var a struct {
+			Query string `json:"query"`
+			Limit int    `json:"limit"`
+		}
+		_ = json.Unmarshal([]byte(args), &a)
+		if a.Limit <= 0 {
+			a.Limit = 10
+		}
+		pages, err := s.Artifacts.SearchPages(ctx, PageSearchParams{Query: a.Query, Limit: a.Limit})
+		if err != nil {
+			return "", nil, err
+		}
+		cites := make([]Citation, 0, len(pages))
+		for _, p := range pages {
+			cites = append(cites, Citation{Kind: citationKindForArtifact(p.Type), ID: p.ID, Title: p.Title})
+		}
+		return jsonString(map[string]any{"pages": pages}), cites, nil
 
 	case "get_bars":
 		var a struct {
@@ -367,6 +428,10 @@ func toolLabel(name string) string {
 		return "Reading a page"
 	case "get_watchlist":
 		return "Checking your watchlist"
+	case "get_browser_tree", "list_folders":
+		return "Browsing your workspace"
+	case "search_pages":
+		return "Searching your pages"
 	case "get_bars":
 		return "Reading price history"
 	case "get_quote":
