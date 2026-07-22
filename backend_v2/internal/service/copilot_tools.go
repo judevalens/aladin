@@ -263,6 +263,123 @@ func intProp(desc string) map[string]any {
 	return map[string]any{"type": "integer", "description": desc}
 }
 
+const maxSurfaceContextChars = 1800
+
+// surfaceContext builds a compact "current context" block from what the user is looking at, so
+// the agent can answer about the current surface WITHOUT a tool round-trip. Best-effort: any
+// missing field or fetch error yields an empty (skipped) block.
+func (s *defaultCopilotService) surfaceContext(ctx context.Context, userID string, surface CopilotSurface) string {
+	switch strings.TrimSpace(surface.Kind) {
+	case "ticker":
+		sym := strings.ToUpper(strings.TrimSpace(surface.Symbol))
+		if sym == "" || s.Snapshots == nil {
+			return ""
+		}
+		q, ok, err := s.Snapshots.FetchSnapshot(ctx, sym)
+		if err != nil || !ok {
+			return ""
+		}
+		return fmt.Sprintf("Current context — the user is viewing ticker %s. Latest snapshot: last %.2f, previous close %.2f, change %.2f%%.",
+			sym, q.Last, q.PrevClose, q.ChangePct)
+
+	case "artifact", "page", "shard":
+		if strings.TrimSpace(surface.ID) == "" {
+			return ""
+		}
+		art, err := s.Artifacts.Get(ctx, surface.ID)
+		if err != nil {
+			return ""
+		}
+		body := strings.TrimSpace(art.Content)
+		if len(art.Blocks) > 0 {
+			if text, terr := blocknote.ExtractText(art.Blocks); terr == nil && strings.TrimSpace(text) != "" {
+				body = strings.TrimSpace(text)
+			}
+		}
+		header := fmt.Sprintf("Current context — the user is viewing the %s %q.", artifactNoun(art.Type), art.Title)
+		if body == "" {
+			return header
+		}
+		return capText(header+" Its content:\n"+body, maxSurfaceContextChars)
+
+	case "entity":
+		if strings.TrimSpace(surface.ID) == "" {
+			return ""
+		}
+		ec, err := s.Entities.Get(ctx, userID, surface.ID)
+		if err != nil {
+			return ""
+		}
+		var b strings.Builder
+		fmt.Fprintf(&b, "Current context — the user is viewing the entity %q (%s).", ec.Entity.Name, ec.Entity.Kind)
+		if g := strings.TrimSpace(ec.Entity.Gist); g != "" {
+			fmt.Fprintf(&b, " %s", g)
+		}
+		rels := make([]string, 0, 5)
+		for _, e := range ec.Edges {
+			if len(rels) >= 5 {
+				break
+			}
+			if strings.TrimSpace(e.To) != "" {
+				rels = append(rels, e.To)
+			}
+		}
+		if len(rels) > 0 {
+			fmt.Fprintf(&b, " Related: %s.", strings.Join(rels, ", "))
+		}
+		return capText(b.String(), maxSurfaceContextChars)
+
+	case "markets":
+		items, err := s.Watchlist.List(ctx, userID)
+		if err != nil || len(items) == 0 {
+			return ""
+		}
+		syms := make([]string, 0, len(items))
+		for _, it := range items {
+			syms = append(syms, it.Symbol)
+		}
+		return capText("Current context — the user is on the Markets surface. Watchlist: "+strings.Join(syms, ", ")+".", maxSurfaceContextChars)
+	}
+	return ""
+}
+
+// toolLabel is the human-facing phrase shown while a tool runs (a "Searching…" affordance).
+func toolLabel(name string) string {
+	switch name {
+	case "search":
+		return "Searching your workspace"
+	case "get_entity":
+		return "Looking up an entity"
+	case "get_insights":
+		return "Reading your insights"
+	case "list_artifacts":
+		return "Listing your artifacts"
+	case "get_artifact":
+		return "Reading an artifact"
+	case "get_page":
+		return "Reading a page"
+	case "get_watchlist":
+		return "Checking your watchlist"
+	case "get_bars":
+		return "Reading price history"
+	case "get_quote":
+		return "Fetching a live quote"
+	default:
+		return "Working"
+	}
+}
+
+func artifactNoun(t string) string {
+	switch t {
+	case "app":
+		return "shard"
+	case "page":
+		return "page"
+	default:
+		return "artifact"
+	}
+}
+
 // citationKindForArtifact maps an artifact type to the citation kind the client routes on.
 // "app" is a shard; every artifact kind opens in the work pane, which the client's nav does
 // for both "page" and "shard", so non-shard artifacts route as "page".

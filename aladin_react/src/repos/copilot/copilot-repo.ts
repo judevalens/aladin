@@ -40,6 +40,8 @@ interface CopilotMessageWire {
 export interface CopilotRepo {
   /** Start/continue a thread. Returns immediately; the answer streams over the realtime WS. */
   sendMessage(req: CopilotSendRequest): Promise<CopilotSendResult>;
+  /** Stop an in-flight turn (halts the backend work + cost). */
+  cancel(sessionId: string): Promise<void>;
   listThreads(): Promise<CopilotThreadView[]>;
   getThread(threadId: string): Promise<CopilotThreadDetail>;
 }
@@ -64,6 +66,14 @@ export function createCopilotRepo(client: ApiClient): CopilotRepo {
           surface: req.surface,
         }),
       }),
+
+    cancel: (sessionId) =>
+      client
+        .fetch<{ ok: boolean }>("/api/copilot/cancel", {
+          method: "POST",
+          body: JSON.stringify({ sessionId }),
+        })
+        .then(() => undefined),
 
     listThreads: () =>
       client

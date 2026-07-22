@@ -20,8 +20,13 @@ export function createCopilotEventHandler() {
         return;
       }
       case "copilot.tool": {
-        const name = typeof payload?.name === "string" ? payload.name : "";
-        if (name) store.setCopilotTool(sessionId, name);
+        const label =
+          typeof payload?.label === "string" && payload.label
+            ? payload.label
+            : typeof payload?.name === "string"
+              ? payload.name
+              : "";
+        if (label) store.setCopilotTool(sessionId, label);
         return;
       }
       case "copilot.message": {

@@ -2,12 +2,34 @@ package service
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"aladin/backend_v2/internal/llm"
 )
+
+type fakeSnapshot struct{}
+
+func (fakeSnapshot) FetchSnapshot(_ context.Context, sym string) (Quote, bool, error) {
+	return Quote{Symbol: sym, Last: 184.5, PrevClose: 180.0, ChangePct: 2.5}, true, nil
+}
+
+// TestCopilotSurfaceContext — ambient context: a ticker surface preloads the live snapshot,
+// and a surface with no data source yields an empty (skipped) block.
+func TestCopilotSurfaceContext(t *testing.T) {
+	withSnap := &defaultCopilotService{CopilotDeps: CopilotDeps{Snapshots: fakeSnapshot{}}, running: map[string]runningTurn{}}
+	block := withSnap.surfaceContext(context.Background(), "u1", CopilotSurface{Kind: "ticker", Symbol: "nvda"})
+	if !strings.Contains(block, "NVDA") || !strings.Contains(block, "184.50") {
+		t.Fatalf("expected NVDA snapshot in context, got %q", block)
+	}
+
+	noSnap := &defaultCopilotService{CopilotDeps: CopilotDeps{}, running: map[string]runningTurn{}}
+	if got := noSnap.surfaceContext(context.Background(), "u1", CopilotSurface{Kind: "ticker", Symbol: "NVDA"}); got != "" {
+		t.Fatalf("expected empty context with no snapshot source, got %q", got)
+	}
+}
 
 // fakeChatAgent replays scripted turns: each turn may stream text via onEvent and returns
 // an assistant message (with tool calls or final content).
@@ -211,6 +233,69 @@ loop:
 	}
 	if msgs[1].Content != "NVDA looks strong." {
 		t.Errorf("stored assistant content = %q", msgs[1].Content)
+	}
+}
+
+// blockingAgent signals when its turn starts, then blocks until the context is cancelled.
+type blockingAgent struct{ started chan struct{} }
+
+func (a *blockingAgent) Chat(ctx context.Context, _ []llm.ChatMessage, _ []llm.ChatToolDef, _ func(llm.ChatEvent)) (llm.ChatMessage, error) {
+	close(a.started)
+	<-ctx.Done()
+	return llm.ChatMessage{}, ctx.Err()
+}
+
+// TestCopilotCancelStops — a running turn cancels cleanly (a done event, no error), and a
+// non-owner cannot cancel it.
+func TestCopilotCancelStops(t *testing.T) {
+	const userID = "22222222-2222-2222-2222-222222222222"
+	store := newFakeStore()
+	realtime := NewInMemoryRealtimeEventService(NewSubscriptionKeyResolver())
+	agent := &blockingAgent{started: make(chan struct{})}
+	svc := NewCopilotService(CopilotDeps{Store: store, Agent: agent, Realtime: realtime})
+
+	keys := []SubscriptionKey{{TenantID: userID, Stream: WorkspaceStream, ResourceKind: copilotResourceKind, ResourceID: AnyResource}}
+	events, unsubscribe, err := realtime.Subscribe(context.Background(), keys, "")
+	if err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+	defer unsubscribe()
+
+	res, err := svc.SendMessage(context.Background(), CopilotSendInput{Principal: Principal{UserID: userID}, Text: "hi"})
+	if err != nil {
+		t.Fatalf("send: %v", err)
+	}
+
+	select {
+	case <-agent.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("agent turn never started")
+	}
+
+	if err := svc.Cancel(context.Background(), "someone-else", res.SessionID); err == nil {
+		t.Error("expected a non-owner cancel to be rejected")
+	}
+	if err := svc.Cancel(context.Background(), userID, res.SessionID); err != nil {
+		t.Fatalf("owner cancel: %v", err)
+	}
+
+	gotDone, gotError := false, false
+	deadline := time.After(2 * time.Second)
+	for !gotDone {
+		select {
+		case ev := <-events:
+			switch ev.Type {
+			case copilotResourceKind + ".done":
+				gotDone = true
+			case copilotResourceKind + ".error":
+				gotError = true
+			}
+		case <-deadline:
+			t.Fatal("timed out waiting for copilot.done after cancel")
+		}
+	}
+	if gotError {
+		t.Error("a cancelled turn should not emit an error event")
 	}
 }
 

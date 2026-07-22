@@ -56,6 +56,8 @@ export interface CopilotSlice {
   finishCopilotMessage: (sessionId: string, message: CopilotMessageView) => void;
   endCopilotTurn: (sessionId: string) => void;
   setCopilotError: (sessionId: string, message: string) => void;
+  /** User hit stop: keep whatever streamed so far as a message and end the turn. */
+  stopCopilotTurn: () => void;
 }
 
 export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice> = (set) => ({
@@ -143,5 +145,23 @@ export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice
     set((state) => {
       if (state.copilotSessionId !== sessionId) return {};
       return { copilotError: message, copilotStatus: "idle", copilotActiveTool: null, copilotStreaming: "" };
+    }),
+
+  stopCopilotTurn: () =>
+    set((state) => {
+      const partial = state.copilotStreaming.trim();
+      const messages = partial
+        ? [
+            ...state.copilotMessages,
+            { id: `local-stop-${Date.now()}`, role: "assistant" as const, content: state.copilotStreaming, citations: [] },
+          ]
+        : state.copilotMessages;
+      return {
+        copilotMessages: messages,
+        copilotStreaming: "",
+        copilotStatus: "idle" as CopilotStatus,
+        copilotSessionId: null,
+        copilotActiveTool: null,
+      };
     }),
 });

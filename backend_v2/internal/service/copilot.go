@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"aladin/backend_v2/internal/llm"
@@ -23,6 +24,8 @@ type CopilotService interface {
 	SendMessage(ctx context.Context, in CopilotSendInput) (CopilotSendResult, error)
 	ListThreads(ctx context.Context, userID string) ([]CopilotThread, error)
 	GetThread(ctx context.Context, userID, threadID string) (CopilotThreadDetail, error)
+	// Cancel stops an in-flight turn (halting the work + cost), scoped to its owner.
+	Cancel(ctx context.Context, userID, sessionID string) error
 	// Configured reports whether an LLM backend is wired (OpenAI key present).
 	Configured() bool
 }
@@ -118,15 +121,39 @@ const (
 	maxToolResultChars   = 12000
 )
 
+// runningTurn is a live agent turn's cancel handle, kept so the owner can stop it.
+type runningTurn struct {
+	userID string
+	cancel context.CancelFunc
+}
+
 type defaultCopilotService struct {
 	CopilotDeps
+	mu      sync.Mutex
+	running map[string]runningTurn // sessionID → cancel handle
 }
 
 func NewCopilotService(deps CopilotDeps) CopilotService {
-	return &defaultCopilotService{CopilotDeps: deps}
+	return &defaultCopilotService{CopilotDeps: deps, running: map[string]runningTurn{}}
 }
 
 func (s *defaultCopilotService) Configured() bool { return s.Agent != nil }
+
+// Cancel stops the in-flight turn for sessionID if it belongs to userID. Idempotent: cancelling
+// an already-finished (or unknown) session is a no-op.
+func (s *defaultCopilotService) Cancel(_ context.Context, userID, sessionID string) error {
+	s.mu.Lock()
+	rt, ok := s.running[sessionID]
+	s.mu.Unlock()
+	if !ok {
+		return nil
+	}
+	if rt.userID != userID {
+		return ErrNotFound
+	}
+	rt.cancel()
+	return nil
+}
 
 func (s *defaultCopilotService) SendMessage(ctx context.Context, in CopilotSendInput) (CopilotSendResult, error) {
 	if s.Agent == nil {
@@ -200,13 +227,29 @@ func (s *defaultCopilotService) runAgent(principal Principal, threadID, sessionI
 	defer cancel()
 	userID := principal.UserID
 
+	// Register the cancel handle so the owner can stop this turn; deregister on exit.
+	s.mu.Lock()
+	s.running[sessionID] = runningTurn{userID: userID, cancel: cancel}
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		delete(s.running, sessionID)
+		s.mu.Unlock()
+	}()
+
 	history, err := s.Store.ListMessages(ctx, threadID)
 	if err != nil {
 		s.fail(userID, threadID, sessionID, "failed to load conversation")
 		return
 	}
 
-	messages := []llm.ChatMessage{{Role: llm.ChatRoleSystem, Content: s.systemPrompt(surface)}}
+	// Ambient context: preload what the user is looking at into the system prompt so the agent
+	// can answer surface questions instantly, without a tool round-trip.
+	sysPrompt := s.systemPrompt(surface)
+	if block := s.surfaceContext(ctx, userID, surface); block != "" {
+		sysPrompt += "\n\n" + block
+	}
+	messages := []llm.ChatMessage{{Role: llm.ChatRoleSystem, Content: sysPrompt}}
 	for _, m := range history {
 		role := llm.ChatRoleUser
 		if m.Role == "assistant" {
@@ -223,10 +266,18 @@ func (s *defaultCopilotService) runAgent(principal Principal, threadID, sessionI
 			case llm.ChatEventText:
 				s.publish(userID, threadID, "token", copilotTokenPayload{sessionID, threadID, ev.Text})
 			case llm.ChatEventToolCall:
-				s.publish(userID, threadID, "tool", copilotToolPayload{sessionID, threadID, ev.ToolCall.Name})
+				s.publish(userID, threadID, "tool", copilotToolPayload{
+					SessionID: sessionID, ThreadID: threadID,
+					Name: ev.ToolCall.Name, Label: toolLabel(ev.ToolCall.Name),
+				})
 			}
 		})
 		if err != nil {
+			// A cancelled/timed-out turn is a clean stop (the user hit stop), not an error.
+			if ctx.Err() != nil {
+				s.publish(userID, threadID, "done", copilotDonePayload{sessionID, threadID})
+				return
+			}
 			s.fail(userID, threadID, sessionID, "the assistant hit an error")
 			return
 		}
@@ -290,6 +341,7 @@ type copilotToolPayload struct {
 	SessionID string `json:"sessionId"`
 	ThreadID  string `json:"threadId"`
 	Name      string `json:"name"`
+	Label     string `json:"label"`
 }
 type copilotMessagePayload struct {
 	SessionID string     `json:"sessionId"`

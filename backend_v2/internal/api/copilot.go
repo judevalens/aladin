@@ -9,6 +9,7 @@ import (
 
 func (s *Server) registerCopilotRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/copilot/message", s.handleCopilotMessage)
+	mux.HandleFunc("POST /api/copilot/cancel", s.handleCopilotCancel)
 	mux.HandleFunc("GET /api/copilot/threads", s.handleCopilotThreads)
 	mux.HandleFunc("GET /api/copilot/threads/{id}", s.handleCopilotThread)
 }
@@ -44,6 +45,22 @@ func (s *Server) handleCopilotMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusAccepted, result)
+}
+
+// POST /api/copilot/cancel {sessionId} — stop an in-flight turn owned by the caller.
+func (s *Server) handleCopilotCancel(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		SessionID string `json:"sessionId"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeDecodeError(w, r, err)
+		return
+	}
+	if err := s.deps.Copilot().Cancel(r.Context(), principalUserID(r), req.SessionID); err != nil {
+		s.writeCopilotError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 // GET /api/copilot/threads — the signed-in user's copilot threads, newest first.

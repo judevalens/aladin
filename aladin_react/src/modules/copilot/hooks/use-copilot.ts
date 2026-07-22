@@ -61,6 +61,12 @@ export function useCopilot() {
     [repos.copilot],
   );
 
+  const stop = useCallback(() => {
+    const sessionId = useAppStore.getState().copilotSessionId;
+    if (sessionId) void repos.copilot.cancel(sessionId).catch(() => {});
+    useAppStore.getState().stopCopilotTurn();
+  }, [repos.copilot]);
+
   const newThread = useCallback(() => useAppStore.getState().newCopilotThread(), []);
   const setOpen = useCallback((next: boolean) => useAppStore.getState().setCopilotOpen(next), []);
 
@@ -76,6 +82,7 @@ export function useCopilot() {
     error,
     surface,
     send,
+    stop,
     loadThreads,
     openThread,
     newThread,

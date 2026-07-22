@@ -1,5 +1,6 @@
-import { ArrowUp, ChevronDown, Plus, Sparkles, X } from "lucide-react";
+import { ArrowUp, ChevronDown, Plus, Sparkles, Square, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import type { CopilotSurface } from "@/repos/copilot/copilot-repo";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,8 +11,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useCopilot } from "@/modules/copilot/hooks/use-copilot";
 import { useCitationNav } from "@/modules/copilot/hooks/use-citation-nav";
+import { CopilotMarkdown, StreamCaret } from "@/modules/copilot/ui/copilot-markdown";
 import type { CopilotCitation, CopilotMessageView } from "@/app/state/copilot-slice";
-import { cn } from "@/lib/utils";
 
 const DOCK_WIDTH = 384;
 
@@ -33,6 +34,7 @@ export function CopilotDockUI() {
     error,
     surface,
     send,
+    stop,
     loadThreads,
     openThread,
     newThread,
@@ -40,11 +42,15 @@ export function CopilotDockUI() {
 
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const busy = status === "sending" || status === "streaming";
 
-  // Load the thread list when the dock first opens.
+  // Load the thread list + focus the composer when the dock opens.
   useEffect(() => {
-    if (open) void loadThreads();
+    if (open) {
+      void loadThreads();
+      inputRef.current?.focus();
+    }
   }, [open, loadThreads]);
 
   // Keep the transcript pinned to the latest turn / streamed token.
@@ -124,7 +130,7 @@ export function CopilotDockUI() {
         {/* Transcript */}
         <div ref={scrollRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-4">
           {messages.length === 0 && !streaming ? (
-            <div className="mt-6 flex flex-col items-center gap-2 px-4 text-center">
+            <div className="mt-6 flex flex-col items-center gap-3 px-4 text-center">
               <Sparkles className="size-5 text-ink-4" strokeWidth={1.5} />
               <p className="text-[13px] text-ink-3">
                 Ask about your research — grounded in your Aladin data.
@@ -132,6 +138,18 @@ export function CopilotDockUI() {
               {surfaceLabel ? (
                 <p className="font-mono text-[10px] text-ink-4">Looking at {surfaceLabel}</p>
               ) : null}
+              <div className="mt-1 flex flex-col items-stretch gap-1.5">
+                {suggestionsFor(surface).map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => void send(s)}
+                    className="rounded-chip border border-line px-3 py-1.5 text-left text-[12px] text-ink-2 transition-colors hover:border-amber-line hover:text-ink"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
             </div>
           ) : null}
 
@@ -144,9 +162,9 @@ export function CopilotDockUI() {
           ) : null}
 
           {activeTool ? (
-            <p className="font-mono text-[10px] text-ink-4">running {activeTool}…</p>
+            <p className="animate-pulse font-mono text-[10px] text-ink-4">{activeTool}…</p>
           ) : status === "sending" ? (
-            <p className="font-mono text-[10px] text-ink-4">thinking…</p>
+            <p className="animate-pulse font-mono text-[10px] text-ink-4">thinking…</p>
           ) : null}
 
           {error ? (
@@ -166,27 +184,43 @@ export function CopilotDockUI() {
           ) : null}
           <div className="flex items-end gap-2 rounded-card border border-line bg-field px-2.5 py-2 focus-within:border-amber-line">
             <textarea
+              ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
                   submit();
+                } else if (e.key === "Escape") {
+                  e.preventDefault();
+                  setOpen(false);
                 }
               }}
               rows={1}
               placeholder="Ask the copilot…"
               className="max-h-32 min-h-[20px] flex-1 resize-none bg-transparent text-[13px] leading-snug text-ink outline-none placeholder:text-ink-4"
             />
-            <button
-              type="button"
-              onClick={submit}
-              disabled={!input.trim() || busy}
-              aria-label="Send"
-              className="grid size-7 shrink-0 place-items-center rounded-chip bg-amber text-[#0f0f12] transition-opacity disabled:opacity-40"
-            >
-              <ArrowUp className="size-4" strokeWidth={2} />
-            </button>
+            {busy ? (
+              <button
+                type="button"
+                onClick={stop}
+                aria-label="Stop"
+                title="Stop"
+                className="grid size-7 shrink-0 place-items-center rounded-chip bg-raise text-ink transition-colors hover:text-against"
+              >
+                <Square className="size-3.5 fill-current" strokeWidth={2} />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={submit}
+                disabled={!input.trim()}
+                aria-label="Send"
+                className="grid size-7 shrink-0 place-items-center rounded-chip bg-amber text-[#0f0f12] transition-opacity disabled:opacity-40"
+              >
+                <ArrowUp className="size-4" strokeWidth={2} />
+              </button>
+            )}
           </div>
         </div>
       </aside>
@@ -201,6 +235,25 @@ function activeThread(
   if (!activeId) return null;
   const found = threads.find((t) => t.id === activeId);
   return found ? found.title || "Untitled" : null;
+}
+
+function suggestionsFor(surface: CopilotSurface): string[] {
+  switch (surface.kind) {
+    case "ticker": {
+      const s = surface.symbol ?? "this ticker";
+      return [`What's my thesis on ${s}?`, `How does ${s} look technically?`, `Any recent notes on ${s}?`];
+    }
+    case "entity":
+      return ["What do I know about this?", "What's it connected to?"];
+    case "artifact":
+    case "page":
+    case "shard":
+      return ["Summarize what I'm looking at", "What are the key claims here?"];
+    case "markets":
+      return ["What am I watching?", "Anything notable in my watchlist?"];
+    default:
+      return ["What have I been researching?", "Summarize my recent insights"];
+  }
 }
 
 function describeSurface(surface: { kind: string; symbol?: string; label?: string }): string | null {
@@ -245,9 +298,9 @@ function AssistantBubble({
   });
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-ink-2">
-        {content}
-        {streaming ? <span className="ml-0.5 inline-block h-3.5 w-[2px] animate-pulse bg-amber align-middle" /> : null}
+      <div>
+        <CopilotMarkdown text={content} />
+        {streaming ? <StreamCaret /> : null}
       </div>
       {unique.length > 0 ? (
         <div className="flex flex-wrap gap-1.5">
