@@ -105,7 +105,7 @@ func (s *defaultCopilotService) toolDefs() []llm.ChatToolDef {
 	}
 	// Shard authoring — only when the doc-surface services are wired.
 	if s.DocStore != nil && s.ShardBuild != nil {
-		defs = append(defs, shardToolDefs()...)
+		defs = append(defs, shardToolDefs(s.Preview != nil)...)
 	}
 	return defs
 }
@@ -446,6 +446,10 @@ func toolLabel(name string) string {
 		return "Building the shard"
 	case "delete_shard_file":
 		return "Deleting a shard file"
+	case "publish_shard":
+		return "Publishing the shard"
+	case "preview_open", "preview_navigate", "preview_snapshot", "preview_eval", "preview_click", "preview_console", "preview_close", "preview_restart":
+		return "Previewing the shard"
 	default:
 		return "Working"
 	}

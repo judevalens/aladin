@@ -394,6 +394,7 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		Snapshots:  snapshotSource,
 		DocStore:   docStore,
 		ShardBuild: shardBuild,
+		Preview:    docPreview,
 	})
 
 	return wiring{

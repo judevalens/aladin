@@ -38,6 +38,7 @@ type CopilotService interface {
 // directly. (Extended as page/publish tools land.)
 var destructiveActions = map[string]bool{
 	"delete_shard_file": true,
+	"publish_shard":     true,
 }
 
 // CopilotSurface is what the user is looking at when they ask — makes the agent context-aware.
@@ -125,6 +126,7 @@ type CopilotDeps struct {
 	// Shard authoring (doc-surface): all already wired in the API process.
 	DocStore   DocSurfaceStore
 	ShardBuild ShardBuildService
+	Preview    PreviewService // optional: headless preview loop (degrades without Chrome)
 }
 
 const (
@@ -480,6 +482,8 @@ func proposalSummary(tool, args string) string {
 			return "Delete file " + a.Path + " from the shard"
 		}
 		return "Delete a shard file"
+	case "publish_shard":
+		return "Publish the shard (make it live)"
 	default:
 		return "Run " + tool
 	}
@@ -492,7 +496,7 @@ func (s *defaultCopilotService) systemPrompt(surface CopilotSurface) string {
 	b.WriteString(`You are Aladin's Copilot — a research assistant for a personal algo/swing-trading workspace (US equities).
 Ground every answer in the user's own Aladin data by calling the available tools before answering; do not invent tickers, entities, prices, pages, or shards.
 The workspace holds several artifact kinds: pages (the user's writing), shards (agent-built interactive docs; artifact type "app"), links, files, and voice notes. To read whatever the user currently has open, call get_artifact with its id — it works for ANY kind, including shards. Do not claim you can only see pages; use get_artifact.
-You CAN create and author shards: create_shard to make one, write_shard_file/edit_shard_file to author it (each write auto-builds and returns diagnostics — read them and fix errors), build_shard to recompile. Shards are React apps composed from @aladin/kit (Page/Section/Region) styled with Tailwind + Aladin token classes (bg-panel, text-ink, text-amber, …). When asked to make a shard, actually create it and write the content — don't just output an outline.
+You CAN create and author shards: create_shard to make one, write_shard_file/edit_shard_file to author it (each write auto-builds and returns diagnostics — read them and fix errors), build_shard to recompile. Preview it with preview_open then preview_snapshot to confirm it rendered; publish_shard makes it live (that step asks the user to approve). Shards are React apps composed from @aladin/kit (Page/Section/Region) styled with Tailwind + Aladin token classes (bg-panel, text-ink, text-amber, …). When asked to make a shard, actually create it and write the content — don't just output an outline.
 Prefer specific, concise answers. When you reference an entity, artifact, or ticker, use the tool that fetches it so the app can cite it.
 If the tools return nothing relevant, say so plainly rather than guessing.`)
 	if hint := surfaceHint(surface); hint != "" {
