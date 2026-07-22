@@ -50,6 +50,30 @@ func copilotProvenance() map[string]any {
 	return map[string]any{"agent": map[string]any{"source": "copilot"}}
 }
 
+// kitAuthoringGuide is the @aladin/kit reference, returned from create_shard so the agent writes
+// VALID code (its usual failure is guessing components/props it doesn't know). Distilled from the
+// kit source — keep it accurate.
+const kitAuthoringGuide = `Author the shard in index.tsx (and extra .tsx/.css files you write). Import components from "@aladin/kit". Style with Tailwind + Aladin tokens ONLY — never arbitrary hex.
+
+index.tsx MUST end with:
+  import { createRoot } from "react-dom/client";
+  createRoot(document.getElementById("root")!).render(<App />);
+
+@aladin/kit exports (all token-styled, self-contained):
+- Layout: <Page>, <Section> (centered, max-w-3xl), <Panel>, <Card>, <Toolbar>, <Divider/>
+- Regions (wrap each addressable part; add a matching entry in anchors.json): <Region anchor="intro" kind="narrative|metric|chart|collection|control">…</Region>
+- Routing (hash, for multi-view shards): <Route path="/x">…</Route>, <Link to="/x">…</Link>, useRoute()
+- UI: <Button variant="primary|outline|ghost|danger" size="sm|md">, <Badge tone="neutral|amber|for|against">, <Callout tone="info|warn|for|against" title="…">, <Stat label={…} value={…} sub={…}/>, <Tabs tabs={[{id,label,content}]}/>, <Dialog open onClose title>, <Input>, <Textarea>, <Field label hint>
+- Semantic colored text: <For>, <Against>, <Catalyst>, <Echo>
+
+Tokens (Tailwind classes): surfaces bg-bg/bg-panel/bg-card/bg-raise/bg-field; ink text-ink/text-ink-2/text-ink-3/text-ink-4; accent text-amber, border-amber-line; lines border-line; radius rounded-card/rounded-chip/rounded-modal; fonts font-display/font-mono/font-sans.
+
+Charts: run install_lib "recharts" first, import from "recharts", theme via the kit: <XAxis {...chartAxis()}/>, <CartesianGrid {...chartGrid()}/>, <Tooltip {...chartTooltip()}/>, and series colors from chartSeries()[i]. (import { chartAxis, chartGrid, chartTooltip, chartSeries } from "@aladin/kit")
+
+Animations: Tailwind (transition-*, hover:*, animate-pulse) or your own CSS keyframes in a .css file you write_shard_file and import.
+
+Loop: after each write_shard_file, READ the returned build.log — if it has errors, fix the exact file and write again until build.ok is true. Keep components small and valid; prefer kit primitives over hand-rolled markup.`
+
 // shardToolDefs returns the shard tools; hasPreview gates the headless preview loop.
 func shardToolDefs(hasPreview bool) []llm.ChatToolDef {
 	defs := []llm.ChatToolDef{
@@ -215,7 +239,7 @@ func (s *defaultCopilotService) runShardTool(ctx context.Context, name, args str
 			_, _ = s.Artifacts.Delete(ctx, id)
 			return "", nil, true, err
 		}
-		res := jsonString(map[string]any{"id": id, "title": created.Artifact.Title})
+		res := jsonString(map[string]any{"id": id, "title": created.Artifact.Title, "authoring_guide": kitAuthoringGuide})
 		return res, []Citation{{Kind: "shard", ID: id, Title: created.Artifact.Title}}, true, nil
 
 	case "list_shard_files":
