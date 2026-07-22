@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"aladin/backend_v2/internal/blocknote"
 	"aladin/backend_v2/internal/config"
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/docsurface"
@@ -380,21 +381,28 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 	if copilotCfg.OpenAIAPIKey != "" {
 		chatAgent = llm.NewOpenAIChatAgent(copilotCfg.OpenAIAPIKey, copilotCfg.Model)
 	}
+	// Blocknote sidecar client (converter + live-doc bridge) for the copilot's page tools.
+	bnCfg := config.LoadBlocknote()
+	bnClient := blocknote.NewClient(bnCfg.ConverterURL, blocknote.ClientOptions{AdminSecret: bnCfg.AdminSecret})
+
 	copilotSvc := coreservice.NewCopilotService(coreservice.CopilotDeps{
-		Store:      repo.NewCopilotPostgres(pool),
-		Agent:      chatAgent,
-		Realtime:   realtime,
-		Search:     searchSvc,
-		Entities:   entityContextSvc,
-		Insights:   insightsSvc,
-		Artifacts:  artifactsSvc,
-		Pages:      pagesSvc,
-		Watchlist:  watchlistSvc,
-		Bars:       barsSvc,
-		Snapshots:  snapshotSource,
-		DocStore:   docStore,
-		ShardBuild: shardBuild,
-		Preview:    docPreview,
+		Store:       repo.NewCopilotPostgres(pool),
+		Agent:       chatAgent,
+		Realtime:    realtime,
+		Search:      searchSvc,
+		Entities:    entityContextSvc,
+		Insights:    insightsSvc,
+		Artifacts:   artifactsSvc,
+		Pages:       pagesSvc,
+		Watchlist:   watchlistSvc,
+		Bars:        barsSvc,
+		Snapshots:   snapshotSource,
+		DocStore:    docStore,
+		ShardBuild:  shardBuild,
+		Preview:     docPreview,
+		Converter:   bnClient,
+		Bridge:      bnClient,
+		Instruments: instrumentsSvc,
 	})
 
 	return wiring{

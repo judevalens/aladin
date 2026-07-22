@@ -148,6 +148,20 @@ func LoadCopilot() CopilotConfig {
 	}
 }
 
+// BlocknoteConfig points at the Node blocknote sidecar (markdown⇄blocks converter + the
+// live-doc collab bridge). Used by the copilot's page-authoring tools in the API process.
+type BlocknoteConfig struct {
+	ConverterURL string
+	AdminSecret  string
+}
+
+func LoadBlocknote() BlocknoteConfig {
+	return BlocknoteConfig{
+		ConverterURL: optional("CONVERTER_URL", "http://localhost:3500"),
+		AdminSecret:  optional("BLOCKNOTE_ADMIN_SHARED_SECRET", "local-dev-admin-secret"),
+	}
+}
+
 func LoadProviderConnections() ProviderConnectionConfig {
 	return ProviderConnectionConfig{
 		NangoBaseURL:                 optional("NANGO_BASE_URL", "https://api.nango.dev"),

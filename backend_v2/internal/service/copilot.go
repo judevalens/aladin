@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"aladin/backend_v2/internal/blocknote"
 	"aladin/backend_v2/internal/llm"
 
 	"github.com/google/uuid"
@@ -39,6 +40,8 @@ type CopilotService interface {
 var destructiveActions = map[string]bool{
 	"delete_shard_file": true,
 	"publish_shard":     true,
+	"update_page":       true, // full-document replace wipes block ids
+	"delete_block":      true,
 }
 
 // CopilotSurface is what the user is looking at when they ask — makes the agent context-aware.
@@ -127,6 +130,11 @@ type CopilotDeps struct {
 	DocStore   DocSurfaceStore
 	ShardBuild ShardBuildService
 	Preview    PreviewService // optional: headless preview loop (degrades without Chrome)
+	// Page authoring: the blocknote sidecar (markdown⇄blocks + live-doc bridge). Both are the
+	// same *blocknote.Client; nil ⇒ page tools are not exposed. Instruments resolves symbols.
+	Converter   blocknote.Converter
+	Bridge      blocknote.Bridge
+	Instruments InstrumentService
 }
 
 const (
@@ -484,6 +492,10 @@ func proposalSummary(tool, args string) string {
 		return "Delete a shard file"
 	case "publish_shard":
 		return "Publish the shard (make it live)"
+	case "update_page":
+		return "Replace the page's entire content"
+	case "delete_block":
+		return "Delete a block from the page"
 	default:
 		return "Run " + tool
 	}
@@ -497,6 +509,7 @@ func (s *defaultCopilotService) systemPrompt(surface CopilotSurface) string {
 Ground every answer in the user's own Aladin data by calling the available tools before answering; do not invent tickers, entities, prices, pages, or shards.
 The workspace holds several artifact kinds: pages (the user's writing), shards (agent-built interactive docs; artifact type "app"), links, files, and voice notes. To read whatever the user currently has open, call get_artifact with its id — it works for ANY kind, including shards. Do not claim you can only see pages; use get_artifact.
 You CAN create and author shards: create_shard to make one, write_shard_file/edit_shard_file to author it (each write auto-builds and returns diagnostics — read them and fix errors), build_shard to recompile. Preview it with preview_open then preview_snapshot to confirm it rendered; publish_shard makes it live (that step asks the user to approve). Shards are React apps composed from @aladin/kit (Page/Section/Region) styled with Tailwind + Aladin token classes (bg-panel, text-ink, text-amber, …). When asked to make a shard, actually create it and write the content — don't just output an outline.
+You CAN also author pages (the user's writing): create_page from markdown; for edits, get_page_blocks to find block ids, then insert_blocks / update_block for surgical changes (update_page replaces the whole body and delete_block remove content — both ask the user to approve). And light actions: add_to_watchlist (by symbol), draw_edge (link two entities).
 Prefer specific, concise answers. When you reference an entity, artifact, or ticker, use the tool that fetches it so the app can cite it.
 If the tools return nothing relevant, say so plainly rather than guessing.`)
 	if hint := surfaceHint(surface); hint != "" {

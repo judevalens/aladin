@@ -107,6 +107,10 @@ func (s *defaultCopilotService) toolDefs() []llm.ChatToolDef {
 	if s.DocStore != nil && s.ShardBuild != nil {
 		defs = append(defs, shardToolDefs(s.Preview != nil)...)
 	}
+	// Page authoring — only when the blocknote converter/bridge are wired.
+	if s.Converter != nil && s.Bridge != nil {
+		defs = append(defs, pageToolDefs()...)
+	}
 	return defs
 }
 
@@ -306,6 +310,9 @@ func (s *defaultCopilotService) runTool(ctx context.Context, userID, name, args 
 		if res, cites, ok, err := s.runShardTool(ctx, name, args); ok {
 			return res, cites, err
 		}
+		if res, cites, ok, err := s.runPageTool(ctx, userID, name, args); ok {
+			return res, cites, err
+		}
 		return "", nil, fmt.Errorf("unknown tool: %s", name)
 	}
 }
@@ -450,6 +457,18 @@ func toolLabel(name string) string {
 		return "Publishing the shard"
 	case "preview_open", "preview_navigate", "preview_snapshot", "preview_eval", "preview_click", "preview_console", "preview_close", "preview_restart":
 		return "Previewing the shard"
+	case "create_page":
+		return "Creating a page"
+	case "get_page_blocks":
+		return "Reading page blocks"
+	case "insert_blocks", "update_block", "update_page":
+		return "Editing the page"
+	case "delete_block":
+		return "Removing a block"
+	case "add_to_watchlist":
+		return "Updating your watchlist"
+	case "draw_edge":
+		return "Linking entities"
 	default:
 		return "Working"
 	}
