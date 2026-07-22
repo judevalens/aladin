@@ -53,9 +53,9 @@ func copilotProvenance() map[string]any {
 // kitAuthoringGuide is the @aladin/kit reference, returned from create_shard so the agent writes
 // VALID code (its usual failure is guessing components/props it doesn't know). Distilled from the
 // kit source — keep it accurate.
-const kitAuthoringGuide = `Author the shard in index.tsx (and extra .tsx/.css files you write). Import components from "@aladin/kit". Style with Tailwind + Aladin tokens ONLY — never arbitrary hex.
+const kitAuthoringGuide = `A shard is a REACT app written in TypeScript/TSX. It already has a working, buildable index.tsx (returned as current_index_tsx) — write_shard_file a COMPLETE, valid index.tsx that EXTENDS it: a full module with the React imports at the top, your <App/> component, and the createRoot render at the bottom. Never write a fragment, markdown, or prose into a .tsx file. Import components from "@aladin/kit". Style with Tailwind + Aladin tokens ONLY — never arbitrary hex.
 
-index.tsx MUST end with:
+index.tsx MUST be a complete module and end with:
   import { createRoot } from "react-dom/client";
   createRoot(document.getElementById("root")!).render(<App />);
 
@@ -239,7 +239,14 @@ func (s *defaultCopilotService) runShardTool(ctx context.Context, name, args str
 			_, _ = s.Artifacts.Delete(ctx, id)
 			return "", nil, true, err
 		}
-		res := jsonString(map[string]any{"id": id, "title": created.Artifact.Title, "authoring_guide": kitAuthoringGuide})
+		res := jsonString(map[string]any{
+			"id":              id,
+			"title":           created.Artifact.Title,
+			"authoring_guide": kitAuthoringGuide,
+			// The shard already has this WORKING, buildable index.tsx. The agent should EXTEND it
+			// (keep the imports + the createRoot render at the bottom), not overwrite with a fragment.
+			"current_index_tsx": copilotStarterIndexTSX,
+		})
 		return res, []Citation{{Kind: "shard", ID: id, Title: created.Artifact.Title}}, true, nil
 
 	case "list_shard_files":
