@@ -299,6 +299,80 @@ func TestCopilotCancelStops(t *testing.T) {
 	}
 }
 
+// TestCopilotProposesDestructive — a destructive tool is proposed (not executed); the pending
+// registry holds it; a non-owner cannot approve; reject clears it.
+func TestCopilotProposesDestructive(t *testing.T) {
+	const userID = "33333333-3333-3333-3333-333333333333"
+	store := newFakeStore()
+	realtime := NewInMemoryRealtimeEventService(NewSubscriptionKeyResolver())
+	agent := &fakeChatAgent{turns: []func(func(llm.ChatEvent)) llm.ChatMessage{
+		func(_ func(llm.ChatEvent)) llm.ChatMessage {
+			return llm.ChatMessage{Role: llm.ChatRoleAssistant, ToolCalls: []llm.ChatToolCall{
+				{ID: "c1", Name: "delete_shard_file", Arguments: `{"shardId":"s1","path":"old.tsx"}`},
+			}}
+		},
+		func(onEvent func(llm.ChatEvent)) llm.ChatMessage {
+			onEvent(llm.ChatEvent{Kind: llm.ChatEventText, Text: "I've proposed deleting it."})
+			return llm.ChatMessage{Role: llm.ChatRoleAssistant, Content: "I've proposed deleting it."}
+		},
+	}}
+	svc := NewCopilotService(CopilotDeps{Store: store, Agent: agent, Realtime: realtime})
+
+	keys := []SubscriptionKey{{TenantID: userID, Stream: WorkspaceStream, ResourceKind: copilotResourceKind, ResourceID: AnyResource}}
+	events, unsubscribe, err := realtime.Subscribe(context.Background(), keys, "")
+	if err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+	defer unsubscribe()
+
+	if _, err := svc.SendMessage(context.Background(), CopilotSendInput{Principal: Principal{UserID: userID}, Text: "delete old.tsx"}); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+
+	var actionID string
+	deadline := time.After(3 * time.Second)
+drain:
+	for {
+		select {
+		case ev := <-events:
+			if ev.Type == copilotResourceKind+".proposed_action" {
+				if p, ok := ev.Payload.(copilotProposedPayload); ok {
+					actionID = p.ActionID
+				}
+			}
+			if ev.Type == copilotResourceKind+".done" {
+				break drain
+			}
+		case <-deadline:
+			t.Fatal("timed out waiting for done")
+		}
+	}
+	if actionID == "" {
+		t.Fatal("expected a proposed_action event with an actionId")
+	}
+
+	impl := svc.(*defaultCopilotService)
+	impl.mu.Lock()
+	n := len(impl.pending)
+	impl.mu.Unlock()
+	if n != 1 {
+		t.Fatalf("expected 1 pending action, got %d", n)
+	}
+
+	if err := svc.ApproveAction(context.Background(), "someone-else", actionID); err == nil {
+		t.Error("a non-owner approve should be rejected")
+	}
+	if err := svc.RejectAction(context.Background(), userID, actionID); err != nil {
+		t.Fatalf("reject: %v", err)
+	}
+	impl.mu.Lock()
+	n = len(impl.pending)
+	impl.mu.Unlock()
+	if n != 0 {
+		t.Fatalf("expected pending cleared after reject, got %d", n)
+	}
+}
+
 // TestCopilotNotConfigured — no agent ⇒ Configured()=false and SendMessage rejects cleanly.
 func TestCopilotNotConfigured(t *testing.T) {
 	svc := NewCopilotService(CopilotDeps{Store: newFakeStore(), Realtime: NewInMemoryRealtimeEventService(NewSubscriptionKeyResolver())})

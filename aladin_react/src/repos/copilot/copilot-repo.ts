@@ -42,6 +42,9 @@ export interface CopilotRepo {
   sendMessage(req: CopilotSendRequest): Promise<CopilotSendResult>;
   /** Stop an in-flight turn (halts the backend work + cost). */
   cancel(sessionId: string): Promise<void>;
+  /** Approve / reject a proposed destructive action. */
+  approveAction(actionId: string): Promise<void>;
+  rejectAction(actionId: string): Promise<void>;
   listThreads(): Promise<CopilotThreadView[]>;
   getThread(threadId: string): Promise<CopilotThreadDetail>;
 }
@@ -73,6 +76,16 @@ export function createCopilotRepo(client: ApiClient): CopilotRepo {
           method: "POST",
           body: JSON.stringify({ sessionId }),
         })
+        .then(() => undefined),
+
+    approveAction: (actionId) =>
+      client
+        .fetch<{ ok: boolean }>(`/api/copilot/action/${encodeURIComponent(actionId)}/approve`, { method: "POST" })
+        .then(() => undefined),
+
+    rejectAction: (actionId) =>
+      client
+        .fetch<{ ok: boolean }>(`/api/copilot/action/${encodeURIComponent(actionId)}/reject`, { method: "POST" })
         .then(() => undefined),
 
     listThreads: () =>

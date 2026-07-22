@@ -379,6 +379,8 @@ func toolLabel(name string) string {
 		return "Writing shard code"
 	case "build_shard":
 		return "Building the shard"
+	case "delete_shard_file":
+		return "Deleting a shard file"
 	default:
 		return "Working"
 	}

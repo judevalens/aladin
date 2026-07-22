@@ -9,9 +9,20 @@ export function createCopilotEventHandler() {
   return function handle(event: AppEventEnvelope) {
     if (!event.type.startsWith("copilot.")) return;
     const payload = event.payload as Record<string, unknown> | null;
+    const store = useAppStore.getState();
+
+    // action_result resolves a proposal by actionId — it carries no sessionId, so handle it
+    // before the session gate below.
+    if (event.type === "copilot.action_result") {
+      const actionId = typeof payload?.actionId === "string" ? payload.actionId : "";
+      const ok = payload?.ok === true;
+      const message = typeof payload?.message === "string" ? payload.message : "";
+      if (actionId) store.resolveCopilotProposal(actionId, ok, message);
+      return;
+    }
+
     const sessionId = payload && typeof payload.sessionId === "string" ? payload.sessionId : "";
     if (!sessionId) return;
-    const store = useAppStore.getState();
 
     switch (event.type) {
       case "copilot.token": {
@@ -36,6 +47,13 @@ export function createCopilotEventHandler() {
           ? (payload?.citations as CopilotCitation[])
           : [];
         store.finishCopilotMessage(sessionId, { id, role: "assistant", content, citations });
+        return;
+      }
+      case "copilot.proposed_action": {
+        const actionId = typeof payload?.actionId === "string" ? payload.actionId : "";
+        const tool = typeof payload?.tool === "string" ? payload.tool : "";
+        const summary = typeof payload?.summary === "string" ? payload.summary : tool;
+        if (actionId) store.addCopilotProposal({ actionId, tool, summary });
         return;
       }
       case "copilot.done":

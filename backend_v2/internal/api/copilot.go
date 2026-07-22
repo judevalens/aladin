@@ -10,8 +10,28 @@ import (
 func (s *Server) registerCopilotRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/copilot/message", s.handleCopilotMessage)
 	mux.HandleFunc("POST /api/copilot/cancel", s.handleCopilotCancel)
+	mux.HandleFunc("POST /api/copilot/action/{id}/approve", s.handleCopilotApprove)
+	mux.HandleFunc("POST /api/copilot/action/{id}/reject", s.handleCopilotReject)
 	mux.HandleFunc("GET /api/copilot/threads", s.handleCopilotThreads)
 	mux.HandleFunc("GET /api/copilot/threads/{id}", s.handleCopilotThread)
+}
+
+// POST /api/copilot/action/{id}/approve — run a proposed destructive action.
+func (s *Server) handleCopilotApprove(w http.ResponseWriter, r *http.Request) {
+	if err := s.deps.Copilot().ApproveAction(r.Context(), principalUserID(r), r.PathValue("id")); err != nil {
+		s.writeCopilotError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// POST /api/copilot/action/{id}/reject — discard a proposed action.
+func (s *Server) handleCopilotReject(w http.ResponseWriter, r *http.Request) {
+	if err := s.deps.Copilot().RejectAction(r.Context(), principalUserID(r), r.PathValue("id")); err != nil {
+		s.writeCopilotError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 type copilotMessageRequest struct {

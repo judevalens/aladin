@@ -20,6 +20,7 @@ export function useCopilot() {
   const status = useAppStore((s) => s.copilotStatus);
   const activeTool = useAppStore((s) => s.copilotActiveTool);
   const error = useAppStore((s) => s.copilotError);
+  const proposals = useAppStore((s) => s.copilotProposals);
 
   const loadThreads = useCallback(async () => {
     try {
@@ -67,6 +68,19 @@ export function useCopilot() {
     useAppStore.getState().stopCopilotTurn();
   }, [repos.copilot]);
 
+  const approveProposal = useCallback(
+    (actionId: string) => void repos.copilot.approveAction(actionId).catch(() => {}),
+    [repos.copilot],
+  );
+
+  const rejectProposal = useCallback(
+    (actionId: string) => {
+      useAppStore.getState().resolveCopilotProposal(actionId, false, "Dismissed.");
+      void repos.copilot.rejectAction(actionId).catch(() => {});
+    },
+    [repos.copilot],
+  );
+
   const newThread = useCallback(() => useAppStore.getState().newCopilotThread(), []);
   const setOpen = useCallback((next: boolean) => useAppStore.getState().setCopilotOpen(next), []);
 
@@ -81,8 +95,11 @@ export function useCopilot() {
     activeTool,
     error,
     surface,
+    proposals,
     send,
     stop,
+    approveProposal,
+    rejectProposal,
     loadThreads,
     openThread,
     newThread,

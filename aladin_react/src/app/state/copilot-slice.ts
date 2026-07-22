@@ -24,6 +24,15 @@ export interface CopilotThreadView {
 
 export type CopilotStatus = "idle" | "sending" | "streaming";
 
+/** A destructive action the agent proposed, awaiting the user's approve/reject. */
+export interface CopilotProposal {
+  actionId: string;
+  tool: string;
+  summary: string;
+  status: "pending" | "approved" | "rejected";
+  message?: string;
+}
+
 export interface CopilotSlice {
   copilotOpen: boolean;
   copilotThreads: CopilotThreadView[];
@@ -39,6 +48,8 @@ export interface CopilotSlice {
   /** The session id of the in-flight turn — gates streaming events to the right turn. */
   copilotSessionId: string | null;
   copilotError: string | null;
+  /** Destructive actions the agent proposed for the active thread. */
+  copilotProposals: CopilotProposal[];
 
   toggleCopilot: () => void;
   setCopilotOpen: (open: boolean) => void;
@@ -58,6 +69,8 @@ export interface CopilotSlice {
   setCopilotError: (sessionId: string, message: string) => void;
   /** User hit stop: keep whatever streamed so far as a message and end the turn. */
   stopCopilotTurn: () => void;
+  addCopilotProposal: (proposal: { actionId: string; tool: string; summary: string }) => void;
+  resolveCopilotProposal: (actionId: string, ok: boolean, message: string) => void;
 }
 
 export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice> = (set) => ({
@@ -70,6 +83,7 @@ export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice
   copilotActiveTool: null,
   copilotSessionId: null,
   copilotError: null,
+  copilotProposals: [],
 
   toggleCopilot: () => set((state) => ({ copilotOpen: !state.copilotOpen })),
   setCopilotOpen: (open) => set({ copilotOpen: open }),
@@ -84,6 +98,7 @@ export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice
       copilotActiveTool: null,
       copilotSessionId: null,
       copilotError: null,
+      copilotProposals: [],
     }),
 
   newCopilotThread: () =>
@@ -95,6 +110,7 @@ export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice
       copilotActiveTool: null,
       copilotSessionId: null,
       copilotError: null,
+      copilotProposals: [],
     }),
 
   appendCopilotUserMessage: (text) =>
@@ -164,4 +180,21 @@ export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice
         copilotActiveTool: null,
       };
     }),
+
+  addCopilotProposal: (proposal) =>
+    set((state) => ({
+      copilotProposals: [
+        ...state.copilotProposals,
+        { ...proposal, status: "pending" as const },
+      ],
+    })),
+
+  resolveCopilotProposal: (actionId, ok, message) =>
+    set((state) => ({
+      copilotProposals: state.copilotProposals.map((p) =>
+        p.actionId === actionId
+          ? { ...p, status: ok ? ("approved" as const) : ("rejected" as const), message }
+          : p,
+      ),
+    })),
 });

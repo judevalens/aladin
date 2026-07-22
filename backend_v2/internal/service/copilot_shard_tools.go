@@ -104,6 +104,14 @@ func shardToolDefs() []llm.ChatToolDef {
 				"shardId": strProp("The shard id."),
 			}, "shardId"),
 		},
+		{
+			Name:        "delete_shard_file",
+			Description: "Delete a file from a shard. Destructive — the user is asked to approve before it runs.",
+			Parameters: objSchema(map[string]any{
+				"shardId": strProp("The shard id."),
+				"path":    strProp("File path to delete."),
+			}, "shardId", "path"),
+		},
 	}
 }
 
@@ -238,6 +246,23 @@ func (s *defaultCopilotService) runShardTool(ctx context.Context, name, args str
 			return "", nil, true, err
 		}
 		return jsonString(map[string]any{"build": s.draftBuild(ctx, a.ShardID)}), nil, true, nil
+
+	case "delete_shard_file":
+		var a struct {
+			ShardID string `json:"shardId"`
+			Path    string `json:"path"`
+		}
+		_ = json.Unmarshal([]byte(args), &a)
+		if err := s.requireShard(ctx, a.ShardID); err != nil {
+			return "", nil, true, err
+		}
+		if strings.TrimSpace(a.Path) == "" {
+			return "", nil, true, BadRequest("path is required")
+		}
+		if err := s.DocStore.DeleteFile(ctx, a.ShardID, a.Path); err != nil {
+			return "", nil, true, err
+		}
+		return jsonString(map[string]any{"ok": true, "deleted": a.Path, "build": s.draftBuild(ctx, a.ShardID)}), nil, true, nil
 	}
 	return "", nil, false, nil
 }

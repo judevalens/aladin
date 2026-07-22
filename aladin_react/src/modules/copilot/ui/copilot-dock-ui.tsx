@@ -1,6 +1,7 @@
-import { ArrowUp, ChevronDown, Plus, Sparkles, Square, X } from "lucide-react";
+import { AlertTriangle, ArrowUp, Check, ChevronDown, Plus, Sparkles, Square, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { CopilotSurface } from "@/repos/copilot/copilot-repo";
+import type { CopilotProposal } from "@/app/state/copilot-slice";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,6 +14,7 @@ import { useCopilot } from "@/modules/copilot/hooks/use-copilot";
 import { useCitationNav } from "@/modules/copilot/hooks/use-citation-nav";
 import { CopilotMarkdown, StreamCaret } from "@/modules/copilot/ui/copilot-markdown";
 import type { CopilotCitation, CopilotMessageView } from "@/app/state/copilot-slice";
+import { cn } from "@/lib/utils";
 
 const DOCK_WIDTH = 384;
 
@@ -33,8 +35,11 @@ export function CopilotDockUI() {
     activeTool,
     error,
     surface,
+    proposals,
     send,
     stop,
+    approveProposal,
+    rejectProposal,
     loadThreads,
     openThread,
     newThread,
@@ -161,6 +166,15 @@ export function CopilotDockUI() {
             <AssistantBubble content={streaming} citations={[]} streaming />
           ) : null}
 
+          {proposals.map((p) => (
+            <ProposalCard
+              key={p.actionId}
+              proposal={p}
+              onApprove={() => approveProposal(p.actionId)}
+              onReject={() => rejectProposal(p.actionId)}
+            />
+          ))}
+
           {activeTool ? (
             <p className="animate-pulse font-mono text-[10px] text-ink-4">{activeTool}…</p>
           ) : status === "sending" ? (
@@ -235,6 +249,64 @@ function activeThread(
   if (!activeId) return null;
   const found = threads.find((t) => t.id === activeId);
   return found ? found.title || "Untitled" : null;
+}
+
+function ProposalCard({
+  proposal,
+  onApprove,
+  onReject,
+}: {
+  proposal: CopilotProposal;
+  onApprove: () => void;
+  onReject: () => void;
+}) {
+  const [acted, setActed] = useState(false);
+
+  if (proposal.status !== "pending") {
+    const approved = proposal.status === "approved";
+    return (
+      <p className="flex items-center gap-1.5 font-mono text-[10px] text-ink-4">
+        <Check className={cn("size-3", approved ? "text-for" : "text-ink-4")} strokeWidth={2.4} />
+        {proposal.message || (approved ? "Applied." : "Dismissed.")}
+      </p>
+    );
+  }
+
+  return (
+    <div className="rounded-card border border-amber-line bg-amber-soft/40 p-3">
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber" strokeWidth={2} />
+        <div className="min-w-0 flex-1">
+          <p className="text-[12px] text-ink">{proposal.summary}</p>
+          <p className="mt-0.5 font-mono text-[10px] text-ink-4">Needs your approval</p>
+        </div>
+      </div>
+      <div className="mt-2.5 flex gap-2">
+        <button
+          type="button"
+          disabled={acted}
+          onClick={() => {
+            setActed(true);
+            onApprove();
+          }}
+          className="flex-1 rounded-chip bg-amber py-1.5 text-[12px] font-semibold text-[#0f0f12] transition-opacity disabled:opacity-50"
+        >
+          Approve
+        </button>
+        <button
+          type="button"
+          disabled={acted}
+          onClick={() => {
+            setActed(true);
+            onReject();
+          }}
+          className="flex-1 rounded-chip border border-line py-1.5 text-[12px] text-ink-2 transition-colors hover:text-ink disabled:opacity-50"
+        >
+          Reject
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function suggestionsFor(surface: CopilotSurface): string[] {
