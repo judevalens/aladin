@@ -371,7 +371,13 @@ func (s *defaultCopilotService) surfaceContext(ctx context.Context, userID strin
 				body = strings.TrimSpace(text)
 			}
 		}
-		header := fmt.Sprintf("Current context — the user is viewing the %s %q.", artifactNoun(art.Type), art.Title)
+		var edit string
+		if art.Type == "app" {
+			edit = fmt.Sprintf(" To change it, EDIT THIS shard — read_shard_file/write_shard_file/edit_shard_file with shardId=%q. Do NOT create a new shard.", surface.ID)
+		} else {
+			edit = fmt.Sprintf(" To change it, EDIT THIS page — get_page_blocks then insert_blocks/update_block/update_page with pageId=%q. Do NOT create a new page.", surface.ID)
+		}
+		header := fmt.Sprintf("Current context — the user is viewing the %s %q (id %s).%s", artifactNoun(art.Type), art.Title, surface.ID, edit)
 		if body == "" {
 			return header
 		}
