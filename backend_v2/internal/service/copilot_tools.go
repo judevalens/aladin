@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"aladin/backend_v2/internal/blocknote"
 	"aladin/backend_v2/internal/llm"
 )
 
@@ -38,13 +39,22 @@ func (s *defaultCopilotService) toolDefs() []llm.ChatToolDef {
 			}),
 		},
 		{
-			Name:        "list_pages",
-			Description: "List the user's pages (their own writing/notes) as {id,title}. Use get_page to read one.",
-			Parameters:  objSchema(map[string]any{}),
+			Name:        "list_artifacts",
+			Description: "List the user's artifacts as {id,title,type}. type is one of page, app (a shard — an agent-built interactive doc), link, file, voice. Use get_artifact to read one.",
+			Parameters: objSchema(map[string]any{
+				"type": strProp("Optional type filter: page | app | link | file | voice."),
+			}),
+		},
+		{
+			Name:        "get_artifact",
+			Description: "Read one artifact by id — works for ANY kind: a page (returns its blocks), a shard/app (returns its content + metadata), a link, a file, or a voice note. Use this whenever an artifact is the current surface.",
+			Parameters: objSchema(map[string]any{
+				"artifactId": strProp("The artifact id."),
+			}, "artifactId"),
 		},
 		{
 			Name:        "get_page",
-			Description: "Read one page's content (BlockNote blocks) by id.",
+			Description: "Read one page's content (BlockNote blocks) by id. For non-page artifacts (shards, links, files) use get_artifact instead.",
 			Parameters: objSchema(map[string]any{
 				"pageId": strProp("The page (artifact) id."),
 			}, "pageId"),
@@ -128,18 +138,47 @@ func (s *defaultCopilotService) runTool(ctx context.Context, userID, name, args 
 		}
 		return jsonString(res), nil, nil
 
-	case "list_pages":
+	case "list_artifacts":
+		var a struct {
+			Type string `json:"type"`
+		}
+		_ = json.Unmarshal([]byte(args), &a)
 		items, err := s.Artifacts.List(ctx, ArtifactListParams{})
 		if err != nil {
 			return "", nil, err
 		}
-		pages := make([]map[string]string, 0)
+		filter := strings.TrimSpace(a.Type)
+		out := make([]map[string]string, 0)
 		for _, it := range items {
-			if it.Type == "page" {
-				pages = append(pages, map[string]string{"id": it.ID, "title": it.Title})
+			if filter != "" && it.Type != filter {
+				continue
+			}
+			out = append(out, map[string]string{"id": it.ID, "title": it.Title, "type": it.Type})
+		}
+		return jsonString(map[string]any{"artifacts": out}), nil, nil
+
+	case "get_artifact":
+		var a struct {
+			ArtifactID string `json:"artifactId"`
+		}
+		_ = json.Unmarshal([]byte(args), &a)
+		art, err := s.Artifacts.Get(ctx, a.ArtifactID)
+		if err != nil {
+			return "", nil, err
+		}
+		// Hand the model readable text, not raw BlockNote JSON: a page's body is its
+		// blocks (extract the inline text); other kinds carry plain text in Content.
+		body := art.Content
+		if len(art.Blocks) > 0 {
+			if text, terr := blocknote.ExtractText(art.Blocks); terr == nil && strings.TrimSpace(text) != "" {
+				body = text
 			}
 		}
-		return jsonString(map[string]any{"pages": pages}), nil, nil
+		out := jsonString(map[string]any{
+			"id": art.ID, "title": art.Title, "type": art.Type,
+			"text": body, "summary": art.Summary, "metadata": art.Metadata,
+		})
+		return out, []Citation{{Kind: citationKindForArtifact(art.Type), ID: art.ID, Title: art.Title}}, nil
 
 	case "get_page":
 		var a struct {
@@ -150,7 +189,10 @@ func (s *defaultCopilotService) runTool(ctx context.Context, userID, name, args 
 		if err != nil {
 			return "", nil, err
 		}
-		out := jsonString(map[string]any{"id": doc.ID, "title": doc.Title, "blocks": doc.Blocks})
+		// Extract readable text from the page's blocks — raw BlockNote JSON is unreadable
+		// to the model and gets truncated before any real content survives.
+		text, _ := blocknote.ExtractText(doc.Blocks)
+		out := jsonString(map[string]any{"id": doc.ID, "title": doc.Title, "text": text})
 		return out, []Citation{{Kind: "page", ID: doc.ID, Title: doc.Title}}, nil
 
 	case "get_watchlist":
@@ -219,4 +261,14 @@ func strProp(desc string) map[string]any {
 
 func intProp(desc string) map[string]any {
 	return map[string]any{"type": "integer", "description": desc}
+}
+
+// citationKindForArtifact maps an artifact type to the citation kind the client routes on.
+// "app" is a shard; every artifact kind opens in the work pane, which the client's nav does
+// for both "page" and "shard", so non-shard artifacts route as "page".
+func citationKindForArtifact(t string) string {
+	if t == "app" {
+		return "shard"
+	}
+	return "page"
 }

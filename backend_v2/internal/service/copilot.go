@@ -115,7 +115,7 @@ const (
 	copilotResourceKind  = "copilot"
 	maxCopilotIterations = 6
 	copilotTurnTimeout   = 120 * time.Second
-	maxToolResultChars   = 8000
+	maxToolResultChars   = 12000
 )
 
 type defaultCopilotService struct {
@@ -313,8 +313,9 @@ type copilotErrorPayload struct {
 func (s *defaultCopilotService) systemPrompt(surface CopilotSurface) string {
 	var b strings.Builder
 	b.WriteString(`You are Aladin's Copilot — a research assistant for a personal algo/swing-trading workspace (US equities).
-Ground every answer in the user's own Aladin data by calling the available tools before answering; do not invent tickers, entities, prices, or pages.
-Prefer specific, concise answers. When you reference an entity, page, or ticker, use the tool that fetches it so the app can cite it.
+Ground every answer in the user's own Aladin data by calling the available tools before answering; do not invent tickers, entities, prices, pages, or shards.
+The workspace holds several artifact kinds: pages (the user's writing), shards (agent-built interactive docs; artifact type "app"), links, files, and voice notes. To read whatever the user currently has open, call get_artifact with its id — it works for ANY kind, including shards. Do not claim you can only see pages; use get_artifact.
+Prefer specific, concise answers. When you reference an entity, artifact, or ticker, use the tool that fetches it so the app can cite it.
 If the tools return nothing relevant, say so plainly rather than guessing.`)
 	if hint := surfaceHint(surface); hint != "" {
 		b.WriteString("\n\n")
@@ -337,9 +338,9 @@ func surfaceHint(s CopilotSurface) string {
 			}
 			return "The user is currently viewing " + label + " (entity id " + s.ID + "). Use get_entity for details."
 		}
-	case "page":
+	case "artifact", "page", "shard":
 		if s.ID != "" {
-			return "The user is currently viewing a page (id " + s.ID + "). Use get_page to read it if relevant."
+			return "The user is currently viewing an artifact (a page, shard, link, or file), id " + s.ID + ". Call get_artifact with that id to read it before answering questions about it."
 		}
 	case "markets":
 		return "The user is on the Markets surface (their watchlist). Consider get_watchlist."
