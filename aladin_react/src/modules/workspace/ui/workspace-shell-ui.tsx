@@ -1,4 +1,4 @@
-import { CandlestickChart, Check, Command, Contrast, Folder, GitGraph, Globe, Home, Lightbulb, LogOut, Network, Plus, Signal, SquareTerminal } from "lucide-react";
+import { CandlestickChart, Check, Command, Contrast, Folder, GitGraph, Globe, Home, Lightbulb, LogOut, Network, Plus, Signal, Sparkles, SquareTerminal } from "lucide-react";
 import { useEffect } from "react";
 import { Outlet } from "react-router-dom";
 import { CommandPalette } from "@/modules/workspace/ui/command-palette";
@@ -6,6 +6,7 @@ import { TickerModal } from "@/modules/markets/ui/ticker-modal";
 import { LinkCaptureDialogUI } from "@/modules/workspace/ui/link-capture-dialog-ui";
 import { FileUploadDialogUI } from "@/modules/workspace/ui/file-upload-dialog-ui";
 import { TerminalDockUI } from "@/modules/terminal/ui/terminal-dock-ui";
+import { CopilotDockUI } from "@/modules/copilot/ui/copilot-dock-ui";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -59,6 +60,8 @@ export function WorkspaceShellUI() {
   const signalsUnread = useAppStore((state) => state.signalsUnread);
   const terminalOpen = useAppStore((state) => state.terminalOpen);
   const toggleTerminal = useAppStore((state) => state.toggleTerminal);
+  const copilotOpen = useAppStore((state) => state.copilotOpen);
+  const toggleCopilot = useAppStore((state) => state.toggleCopilot);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -71,6 +74,11 @@ export function WorkspaceShellUI() {
       if (event.key === "`" && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
         useAppStore.getState().toggleTerminal();
+      }
+      // Ctrl+J / ⌘J toggles the Copilot dock.
+      if (event.key.toLowerCase() === "j" && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        useAppStore.getState().toggleCopilot();
       }
     };
     document.addEventListener("keydown", onKeyDown);
@@ -189,6 +197,26 @@ export function WorkspaceShellUI() {
                 <TooltipContent side="right">Terminal · ⌘`</TooltipContent>
               </Tooltip>
 
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={toggleCopilot}
+                    className={cn(
+                      "grid size-[38px] place-items-center rounded-[9px] transition-colors",
+                      copilotOpen
+                        ? "bg-[rgb(var(--sel))] text-ink"
+                        : "text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink",
+                    )}
+                    aria-label="Toggle copilot"
+                    aria-pressed={copilotOpen}
+                  >
+                    <Sparkles className="size-[18px]" strokeWidth={1.7} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right">Copilot · ⌘J</TooltipContent>
+              </Tooltip>
+
               <DropdownMenu>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -276,6 +304,7 @@ export function WorkspaceShellUI() {
           </div>
           <TerminalDockUI />
         </main>
+        <CopilotDockUI />
       </div>
     </TooltipProvider>
   );
