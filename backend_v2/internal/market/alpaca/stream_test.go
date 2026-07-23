@@ -64,11 +64,17 @@ func TestSessionDiesOnUpstreamError(t *testing.T) {
 	}
 }
 
-// TestSessionDeliversTrades — trade frames reach onTrade with symbol + price.
+// TestSessionDeliversTrades — REAL wire-shape trade frames reach onTrade. The frames
+// below are verbatim from the live IEX feed (captured 2026-07-23): they carry BOTH
+// "S" (symbol, string) and "s" (size, number). Go's case-insensitive JSON fallback
+// used to fold the numeric "s" into the string S field, failing the unmarshal and
+// silently dropping every trade — this test locks the fix. Never simplify these
+// fixtures: the omitted fields WERE the bug.
 func TestSessionDeliversTrades(t *testing.T) {
 	srv := fakeAlpaca(t, []string{
 		`[{"T":"success","msg":"connected"},{"T":"success","msg":"authenticated"}]`,
-		`[{"T":"t","S":"NVDA","p":208.65,"t":"2026-07-23T14:30:00Z"}]`,
+		`[{"T":"t","S":"MSFT","i":7927,"x":"V","p":379.88,"s":40,"c":["@"],"z":"C","t":"2026-07-23T14:55:08.275993595Z"}]`,
+		`[{"T":"t","S":"NVDA","i":15527,"x":"V","p":207.37,"s":5,"c":["@","I"],"z":"C","t":"2026-07-23T14:55:08.79618075Z"}]`,
 		`[{"T":"error","msg":"test over"}]`, // terminates the session cleanly
 	})
 	defer srv.Close()
@@ -79,7 +85,7 @@ func TestSessionDeliversTrades(t *testing.T) {
 	defer cancel()
 	_ = s.session(ctx)
 
-	if len(got) != 1 || got[0].Symbol != "NVDA" || got[0].Price != 208.65 {
-		t.Fatalf("trades = %+v, want one NVDA @ 208.65", got)
+	if len(got) != 2 || got[0].Symbol != "MSFT" || got[0].Price != 379.88 || got[1].Symbol != "NVDA" || got[1].Price != 207.37 {
+		t.Fatalf("trades = %+v, want MSFT @ 379.88 then NVDA @ 207.37", got)
 	}
 }

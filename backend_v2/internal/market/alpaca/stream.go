@@ -48,6 +48,11 @@ type wsMessage struct {
 	P   float64 `json:"p,omitempty"` // trade price
 	Tm  string  `json:"t,omitempty"` // RFC-3339 timestamp
 	Msg string  `json:"msg,omitempty"`
+	// Sz (trade size) is unused, but the field MUST exist: real trade frames carry
+	// both "S" (symbol, string) and "s" (size, number), and without an exact `json:"s"`
+	// tag Go's case-insensitive fallback folds the numeric "s" into the string S field,
+	// failing the unmarshal and silently dropping EVERY trade frame.
+	Sz float64 `json:"s,omitempty"`
 }
 
 type command struct {
