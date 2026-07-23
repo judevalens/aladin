@@ -112,9 +112,16 @@ func (s *Stream) session(ctx context.Context) error {
 		}
 		for _, m := range msgs {
 			switch m.T {
-			case "success", "error", "subscription":
-				// Control frames from Alpaca: auth ok/failed, current subscriptions.
+			case "success", "subscription":
+				// Control frames from Alpaca: auth ok, current subscriptions.
 				slog.Info("alpaca stream: control", "component", "market", "type", m.T, "msg", m.Msg)
+			case "error":
+				// An error frame (auth failure, "connection limit exceeded", …) means this
+				// session is dead even though the TCP connection stays open. Ignoring it
+				// creates a ZOMBIE that itself counts against Alpaca's connection limit —
+				// permanently deadlocking the slot. Tear down and let Run's backoff retry.
+				slog.Warn("alpaca stream: upstream error (reconnecting)", "component", "market", "msg", m.Msg)
+				return fmt.Errorf("alpaca stream: upstream error: %s", m.Msg)
 			case "t":
 				if s.onTrade != nil {
 					ts, _ := time.Parse(time.RFC3339Nano, m.Tm)
