@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	"aladin/backend_v2/internal/config"
 	"aladin/backend_v2/internal/copilotagent"
@@ -68,6 +69,9 @@ type Dependencies interface {
 	Bars() coreservice.BarService
 	// QuoteSnapshots is the live-quote snapshot source (nil without market-data keys).
 	QuoteSnapshots() coreservice.QuoteSnapshotSource
+	// MarketInfo is the read-only market-intelligence surface: news, screeners, and the
+	// (paper/live) account's balance + positions (nil without Alpaca keys).
+	MarketInfo() coreservice.MarketInfoService
 	// MarketData is the demand-driven live-quote hub (one Alpaca WS → outbox fan-out).
 	MarketData() coreservice.MarketDataService
 	// GraphReader reads the Neo4j connection lens. Nil when Neo4j isn't configured.
@@ -109,6 +113,7 @@ type StaticDependencies struct {
 	SearchSvc              coreservice.SearchService
 	BarsSvc                coreservice.BarService
 	QuoteSnapshotsSvc      coreservice.QuoteSnapshotSource
+	MarketInfoSvc          coreservice.MarketInfoService
 	MarketDataSvc          coreservice.MarketDataService
 	CopilotSvc             coreservice.CopilotService
 }
@@ -184,6 +189,9 @@ func (d StaticDependencies) Bars() coreservice.BarService {
 func (d StaticDependencies) QuoteSnapshots() coreservice.QuoteSnapshotSource {
 	return d.QuoteSnapshotsSvc
 }
+func (d StaticDependencies) MarketInfo() coreservice.MarketInfoService {
+	return d.MarketInfoSvc
+}
 func (d StaticDependencies) MarketData() coreservice.MarketDataService {
 	return d.MarketDataSvc
 }
@@ -227,6 +235,7 @@ type wiring struct {
 	search              coreservice.SearchService
 	bars                coreservice.BarService
 	quoteSnapshots      coreservice.QuoteSnapshotSource
+	marketInfo          coreservice.MarketInfoService
 	marketData          coreservice.MarketDataService
 	copilot             coreservice.CopilotService
 }
@@ -277,8 +286,9 @@ func (w wiring) Bars() coreservice.BarService               { return w.bars }
 func (w wiring) QuoteSnapshots() coreservice.QuoteSnapshotSource {
 	return w.quoteSnapshots
 }
-func (w wiring) MarketData() coreservice.MarketDataService  { return w.marketData }
-func (w wiring) Copilot() coreservice.CopilotService        { return w.copilot }
+func (w wiring) MarketInfo() coreservice.MarketInfoService { return w.marketInfo }
+func (w wiring) MarketData() coreservice.MarketDataService { return w.marketData }
+func (w wiring) Copilot() coreservice.CopilotService       { return w.copilot }
 
 func NewDependencies(pool *pgxpool.Pool) Dependencies {
 	return NewDependenciesWithProviderConnections(pool, config.LoadProviderConnections(), config.DataVolumePathOrDefault())
@@ -337,11 +347,13 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 	var barSource coreservice.BarSource
 	var assetLookup coreservice.AssetLookup
 	var snapshotSource coreservice.QuoteSnapshotSource
+	var marketInfo coreservice.MarketInfoService
 	if alpacaCfg.Configured() {
 		restClient := alpaca.NewClient(alpacaCfg.APIKey, alpacaCfg.APISecret, alpacaCfg.TradingBaseURL, alpacaCfg.DataBaseURL)
 		barSource = alpacaBarSource{c: restClient}
 		assetLookup = alpacaAssetLookup{c: restClient}
 		snapshotSource = alpacaSnapshotSource{c: restClient}
+		marketInfo = alpacaMarketInfo{c: restClient, paper: strings.Contains(alpacaCfg.TradingBaseURL, "paper")}
 	}
 
 	// Global search federates the existing search services (instruments + entities +
@@ -436,6 +448,7 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		search:              searchSvc,
 		bars:                barsSvc,
 		quoteSnapshots:      snapshotSource,
+		marketInfo:          marketInfo,
 		marketData:          marketDataSvc,
 		copilot:             copilotSvc,
 	}

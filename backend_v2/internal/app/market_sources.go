@@ -11,6 +11,84 @@ import (
 // in the app (wiring) package so the service layer stays free of a vendor import and alpaca
 // stays free of a service import (no cycle).
 
+// alpacaMarketInfo adapts the Alpaca client to service.MarketInfoService (news + screeners
+// + read-only account/positions). paper is derived from the trading base URL so the copilot
+// can caveat the account numbers.
+type alpacaMarketInfo struct {
+	c     *alpaca.Client
+	paper bool
+}
+
+func (a alpacaMarketInfo) News(ctx context.Context, symbols string, limit int) ([]coreservice.NewsArticle, error) {
+	items, err := a.c.GetNews(ctx, symbols, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]coreservice.NewsArticle, 0, len(items))
+	for _, n := range items {
+		out = append(out, coreservice.NewsArticle{
+			ID: n.ID, Headline: n.Headline, Summary: n.Summary, Source: n.Source,
+			URL: n.URL, Symbols: n.Symbols, CreatedAt: n.CreatedAt,
+		})
+	}
+	return out, nil
+}
+
+func (a alpacaMarketInfo) Movers(ctx context.Context, top int) (coreservice.MoversResult, error) {
+	m, err := a.c.GetMovers(ctx, top)
+	if err != nil {
+		return coreservice.MoversResult{}, err
+	}
+	conv := func(in []alpaca.Mover) []coreservice.Mover {
+		out := make([]coreservice.Mover, 0, len(in))
+		for _, v := range in {
+			out = append(out, coreservice.Mover{Symbol: v.Symbol, Price: v.Price, Change: v.Change, PercentChange: v.PercentChange})
+		}
+		return out
+	}
+	return coreservice.MoversResult{Gainers: conv(m.Gainers), Losers: conv(m.Losers), LastUpdated: m.LastUpdated}, nil
+}
+
+func (a alpacaMarketInfo) MostActives(ctx context.Context, top int) ([]coreservice.ActiveStock, error) {
+	m, err := a.c.GetMostActives(ctx, top)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]coreservice.ActiveStock, 0, len(m.MostActives))
+	for _, v := range m.MostActives {
+		out = append(out, coreservice.ActiveStock{Symbol: v.Symbol, Volume: v.Volume, TradeCount: v.TradeCount})
+	}
+	return out, nil
+}
+
+func (a alpacaMarketInfo) Account(ctx context.Context) (coreservice.AccountSummary, error) {
+	acc, err := a.c.GetAccount(ctx)
+	if err != nil {
+		return coreservice.AccountSummary{}, err
+	}
+	return coreservice.AccountSummary{
+		Status: acc.Status, Currency: acc.Currency, Cash: acc.Cash,
+		PortfolioValue: acc.PortfolioValue, Equity: acc.Equity, BuyingPower: acc.BuyingPower,
+		LongMarketValue: acc.LongMarketValue, Paper: a.paper,
+	}, nil
+}
+
+func (a alpacaMarketInfo) Positions(ctx context.Context) ([]coreservice.PositionView, error) {
+	ps, err := a.c.GetPositions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]coreservice.PositionView, 0, len(ps))
+	for _, p := range ps {
+		out = append(out, coreservice.PositionView{
+			Symbol: p.Symbol, Qty: p.Qty, Side: p.Side, AvgEntryPrice: p.AvgEntryPrice,
+			MarketValue: p.MarketValue, CostBasis: p.CostBasis, UnrealizedPL: p.UnrealizedPL,
+			UnrealizedPLPC: p.UnrealizedPLPC, CurrentPrice: p.CurrentPrice,
+		})
+	}
+	return out, nil
+}
+
 type alpacaBarSource struct{ c *alpaca.Client }
 
 func (a alpacaBarSource) FetchBars(ctx context.Context, symbol, timeframe, start, end string) ([]coreservice.Bar, error) {

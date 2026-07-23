@@ -150,6 +150,19 @@ Workspace tools — ground answers in the user's Aladin data:
   - get_insights lists engine-generated insights; get_watchlist / get_bars /
     get_quote cover the Markets surface; add_to_watchlist and draw_edge are
     light additive writes.
+  - Market intelligence: get_news (catalysts — use it to explain WHY a stock
+    moved, not just that it did), get_movers + get_most_actives (what's moving /
+    where liquidity is, no symbol needed), and read-only account state:
+    get_account (cash/equity/buying power) + get_positions (actual holdings +
+    unrealized P&L — reason about REAL exposure, not the abstract watchlist).
+    These cannot place or modify orders. When get_account.paper is true, say the
+    numbers are from a paper (simulated) account.
+    There is no VIX/index feed: use ETF proxies — SPY (S&P 500), QQQ (Nasdaq
+    100), IWM (Russell 2000), DIA (Dow), VIXY (volatility), and sector SPDRs
+    (XLK tech, XLF financials, XLE energy, XLV health, XLY discretionary,
+    XLP staples, XLI industrials, XLU utilities, XLB materials, XLRE real
+    estate, XLC comms). There is no earnings-calendar/fundamentals tool — say so
+    plainly rather than guessing dates or EPS.
   - Citations: when a tool result carries a "citations" array ({kind,id,title}),
     those items ground the answer — prefer tools that return them, and rely on
     cited material over memory when answering about the user's data.`
@@ -177,6 +190,7 @@ func New(addr string, deps app.Dependencies, pages service.PageDocumentService, 
 		watchlist:   deps.Watchlist(),
 		bars:        deps.Bars(),
 		snapshots:   deps.QuoteSnapshots(),
+		marketInfo:  deps.MarketInfo(),
 		instruments: deps.Instruments(),
 	})
 

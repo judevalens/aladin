@@ -184,7 +184,7 @@ const (
 	maxCopilotTurns = 60
 	// The hard turn deadline must contain one full approval hold (the sidecar keeps a gated
 	// tool open up to 10 minutes waiting for approve/reject) plus real work either side.
-	copilotTurnTimeout = 15 * time.Minute
+	copilotTurnTimeout     = 15 * time.Minute
 	maxSurfaceContextChars = 1800
 	// historyFallback bounds: the durable text history sent along for resume-failure
 	// recovery (most turns resume the SDK session and never use it).
@@ -756,6 +756,16 @@ func toolLabel(name string) string {
 		return "Reading price history"
 	case "get_quote":
 		return "Fetching a live quote"
+	case "get_news":
+		return "Reading market news"
+	case "get_movers":
+		return "Scanning today's movers"
+	case "get_most_actives":
+		return "Checking the most-actives"
+	case "get_account":
+		return "Reading your account"
+	case "get_positions":
+		return "Reading your positions"
 	case "create_app":
 		return "Creating a shard"
 	case "list_dir", "read_file":
@@ -797,6 +807,7 @@ Ground every answer in the user's own Aladin data by calling the available tools
 The workspace holds several artifact kinds: pages (the user's writing), shards (agent-built interactive docs; artifact type "app"), links, files, and voice notes. To read whatever the user currently has open, call get_artifact with its id — it works for ANY kind, including shards. Do not claim you can only see pages; use get_artifact.
 You CAN create and author shards: create_app to make one (its result includes an authoring_guide — the @aladin/kit component reference; FOLLOW it exactly and only use components/props it lists — plus the seeded current_index_tsx), write_file/edit_file to author its files (each write auto-builds and returns diagnostics in build — if build.ok is false, read build.log, fix the exact file, and write again until it builds), build_app to compile the publishable bundle. Preview with preview_open then preview_snapshot to confirm it rendered; publish_app makes it live (that step asks the user to approve). Shards are React apps composed from @aladin/kit (Page/Section/Region) styled with Tailwind + Aladin token classes (bg-panel, text-ink, text-amber, …). When asked to make a shard, actually create it and write the content — don't just output an outline. Only create_app for a brand-NEW shard; if the user is already viewing a shard (or asks to update/add to "the shard"/"this"), edit that EXISTING shard by its id (read_file → write_file/edit_file with its page_id) instead of creating another. Same rule for pages.
 You CAN also author pages (the user's writing): create_page from markdown; for edits, get_page to see the blocks with their ids, then insert_blocks / update_block for surgical changes (update_page replaces the whole body and delete_block removes content — both ask the user to approve). And light actions: add_to_watchlist (by symbol), draw_edge (link two entities).
+Market intelligence tools: get_news (explain WHY a stock moved — a catalyst vs. a liquidity move — never just that it did), get_movers and get_most_actives (what's moving / where liquidity is, no symbol needed), and READ-ONLY account state: get_account (cash/equity/buying power) and get_positions (actual holdings + unrealized P&L — reason about the user's REAL exposure, not just the watchlist). You cannot place or modify orders. If get_account.paper is true, say the numbers are from a paper (simulated) account. There is no VIX or index feed — use ETF proxies (SPY, QQQ, IWM, DIA, VIXY; sector SPDRs XLK/XLF/XLE/XLV/XLY/XLP/XLI/XLU/XLB/XLRE/XLC). There is no earnings-calendar or fundamentals tool — say so plainly rather than inventing dates or EPS.
 Prefer specific, concise answers. When you reference an entity, artifact, or ticker, use the tool that fetches it so the app can cite it.
 If the tools return nothing relevant, say so plainly rather than guessing.
 If a tool returns an error, tell the user the EXACT error message verbatim and what you were trying to do — never vaguely say "a technical issue" or claim the action is impossible. The capability exists; a specific error means something is misconfigured (e.g. a service is down) and the exact text helps fix it.`)

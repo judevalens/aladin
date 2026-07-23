@@ -188,6 +188,163 @@ func (c *Client) GetAsset(ctx context.Context, symbol string) (*Asset, error) {
 	return &a, nil
 }
 
+// NewsItem is one Alpaca (Benzinga-sourced) news article. Content is often empty on the
+// list endpoint; Summary + Headline are the reliable text.
+type NewsItem struct {
+	ID        int64    `json:"id"`
+	Headline  string   `json:"headline"`
+	Summary   string   `json:"summary"`
+	Author    string   `json:"author"`
+	Source    string   `json:"source"`
+	URL       string   `json:"url"`
+	Symbols   []string `json:"symbols"`
+	CreatedAt string   `json:"created_at"`
+	UpdatedAt string   `json:"updated_at"`
+}
+
+// GetNews fetches recent news, optionally filtered to symbols (comma-separated). limit is
+// capped at 50 by Alpaca. Newest first.
+func (c *Client) GetNews(ctx context.Context, symbols string, limit int) ([]NewsItem, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 10
+	}
+	q := url.Values{}
+	q.Set("limit", fmt.Sprintf("%d", limit))
+	q.Set("sort", "desc")
+	if symbols != "" {
+		q.Set("symbols", symbols)
+	}
+	u := fmt.Sprintf("%s/v1beta1/news?%s", c.dataURL, q.Encode())
+	var body struct {
+		News []NewsItem `json:"news"`
+	}
+	if err := c.getJSON(ctx, u, &body); err != nil {
+		return nil, err
+	}
+	return body.News, nil
+}
+
+// Mover is one screener gainer/loser row.
+type Mover struct {
+	Symbol        string  `json:"symbol"`
+	Price         float64 `json:"price"`
+	Change        float64 `json:"change"`
+	PercentChange float64 `json:"percent_change"`
+}
+
+// Movers is the screener's top gainers + losers.
+type Movers struct {
+	Gainers     []Mover `json:"gainers"`
+	Losers      []Mover `json:"losers"`
+	LastUpdated string  `json:"last_updated"`
+}
+
+// GetMovers fetches the top `top` gainers and losers (consolidated tape). top caps at 50.
+func (c *Client) GetMovers(ctx context.Context, top int) (*Movers, error) {
+	if top <= 0 || top > 50 {
+		top = 10
+	}
+	u := fmt.Sprintf("%s/v1beta1/screener/stocks/movers?top=%d", c.dataURL, top)
+	var m Movers
+	if err := c.getJSON(ctx, u, &m); err != nil {
+		return nil, err
+	}
+	return &m, nil
+}
+
+// ActiveStock is one most-actives row.
+type ActiveStock struct {
+	Symbol     string `json:"symbol"`
+	Volume     int64  `json:"volume"`
+	TradeCount int64  `json:"trade_count"`
+}
+
+// MostActives is the screener's highest-volume names.
+type MostActives struct {
+	MostActives []ActiveStock `json:"most_actives"`
+	LastUpdated string        `json:"last_updated"`
+}
+
+// GetMostActives fetches the `top` most-active symbols by volume. top caps at 50.
+func (c *Client) GetMostActives(ctx context.Context, top int) (*MostActives, error) {
+	if top <= 0 || top > 50 {
+		top = 10
+	}
+	u := fmt.Sprintf("%s/v1beta1/screener/stocks/most-actives?by=volume&top=%d", c.dataURL, top)
+	var m MostActives
+	if err := c.getJSON(ctx, u, &m); err != nil {
+		return nil, err
+	}
+	return &m, nil
+}
+
+// Account is the trading account summary (numbers arrive as strings — kept verbatim).
+type Account struct {
+	Status           string `json:"status"`
+	Currency         string `json:"currency"`
+	Cash             string `json:"cash"`
+	PortfolioValue   string `json:"portfolio_value"`
+	Equity           string `json:"equity"`
+	BuyingPower      string `json:"buying_power"`
+	LongMarketValue  string `json:"long_market_value"`
+	PatternDayTrader bool   `json:"pattern_day_trader"`
+}
+
+// GetAccount fetches the (paper or live, per tradingURL) account summary.
+func (c *Client) GetAccount(ctx context.Context) (*Account, error) {
+	u := fmt.Sprintf("%s/v2/account", c.tradingURL)
+	var a Account
+	if err := c.getJSON(ctx, u, &a); err != nil {
+		return nil, err
+	}
+	return &a, nil
+}
+
+// Position is one open position (numeric fields are strings from Alpaca — kept verbatim).
+type Position struct {
+	Symbol         string `json:"symbol"`
+	Qty            string `json:"qty"`
+	Side           string `json:"side"`
+	AvgEntryPrice  string `json:"avg_entry_price"`
+	MarketValue    string `json:"market_value"`
+	CostBasis      string `json:"cost_basis"`
+	UnrealizedPL   string `json:"unrealized_pl"`
+	UnrealizedPLPC string `json:"unrealized_plpc"`
+	CurrentPrice   string `json:"current_price"`
+}
+
+// GetPositions fetches all open positions for the (paper or live) account.
+func (c *Client) GetPositions(ctx context.Context) ([]Position, error) {
+	u := fmt.Sprintf("%s/v2/positions", c.tradingURL)
+	var ps []Position
+	if err := c.getJSON(ctx, u, &ps); err != nil {
+		return nil, err
+	}
+	return ps, nil
+}
+
+// getJSON is the shared GET+decode for the read-only info endpoints (auth, status check,
+// decode). 404 is treated as an empty/absent result by decoding into the caller's zero value.
+func (c *Client) getJSON(ctx context.Context, u string, out any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return fmt.Errorf("alpaca: build request: %w", err)
+	}
+	c.auth(req)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("alpaca: request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("alpaca: %s returned %s", u, resp.Status)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		return fmt.Errorf("alpaca: decode: %w", err)
+	}
+	return nil
+}
+
 // ListAssets fetches the asset universe for an asset class (default us_equity), filtered
 // by status ("active" is the common case). The Assets API returns the full list in one
 // response — no pagination cursor — so this is a single request.

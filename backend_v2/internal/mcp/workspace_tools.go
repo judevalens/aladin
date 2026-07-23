@@ -25,8 +25,9 @@ type citationOut struct {
 	Title string `json:"title,omitempty"`
 }
 
-// workspaceToolServer carries the deps the workspace tools need. snapshots may
-// be nil (no market-data keys) — get_quote degrades with a clear error.
+// workspaceToolServer carries the deps the workspace tools need. snapshots and
+// marketInfo may be nil (no market-data keys) — the dependent tools degrade with
+// a clear "not configured" error.
 type workspaceToolServer struct {
 	search      service.SearchService
 	entities    service.EntityContextService
@@ -35,6 +36,7 @@ type workspaceToolServer struct {
 	watchlist   service.WatchlistService
 	bars        service.BarService
 	snapshots   service.QuoteSnapshotSource
+	marketInfo  service.MarketInfoService
 	instruments service.InstrumentService
 }
 
@@ -79,6 +81,26 @@ func registerWorkspaceTools(server *sdkmcp.Server, t workspaceToolServer) {
 		Name:        "draw_edge",
 		Description: "Draw a typed relationship edge between two entities (e.g. rel \"competes_with\"). Additive.",
 	}, t.drawEdge)
+	sdkmcp.AddTool(server, &sdkmcp.Tool{
+		Name:        "get_news",
+		Description: "Recent market news/headlines (Benzinga via Alpaca), newest first. Optionally filter to a comma-separated symbol list. Use this to explain WHY a stock is moving — a catalyst vs. a liquidity move.",
+	}, t.getNews)
+	sdkmcp.AddTool(server, &sdkmcp.Tool{
+		Name:        "get_movers",
+		Description: "Today's top gainers and losers across the US market (consolidated tape). Answers \"what's moving today\" without naming a symbol first. Note: includes low-priced/low-float names with extreme % moves.",
+	}, t.getMovers)
+	sdkmcp.AddTool(server, &sdkmcp.Tool{
+		Name:        "get_most_actives",
+		Description: "Today's highest-volume US stocks (most-actives screener). Use to gauge where liquidity and attention are concentrated.",
+	}, t.getMostActives)
+	sdkmcp.AddTool(server, &sdkmcp.Tool{
+		Name:        "get_account",
+		Description: "The user's trading account summary: cash, equity, buying power, portfolio value. Read-only. `paper` flags whether this is a paper (simulated) account — caveat the numbers accordingly.",
+	}, t.getAccount)
+	sdkmcp.AddTool(server, &sdkmcp.Tool{
+		Name:        "get_positions",
+		Description: "The user's open positions: symbol, qty, side, avg entry, market value, and unrealized P&L. Read-only — this reasons about ACTUAL exposure, not the abstract watchlist. Cannot place or modify orders.",
+	}, t.getPositions)
 }
 
 // --- inputs / outputs ------------------------------------------------------
@@ -175,6 +197,33 @@ type drawEdgeInput struct {
 }
 type drawEdgeOutput struct {
 	OK bool `json:"ok"`
+}
+
+type getNewsInput struct {
+	Symbols string `json:"symbols,omitempty"` // comma-separated; empty = general market news
+	Limit   int    `json:"limit,omitempty"`
+}
+type getNewsOutput struct {
+	News      []service.NewsArticle `json:"news"`
+	Citations []citationOut         `json:"citations,omitempty"`
+}
+
+type topInput struct {
+	Top int `json:"top,omitempty"`
+}
+type getMoversOutput struct {
+	Movers service.MoversResult `json:"movers"`
+}
+type getMostActivesOutput struct {
+	MostActives []service.ActiveStock `json:"mostActives"`
+}
+
+type getAccountOutput struct {
+	Account service.AccountSummary `json:"account"`
+}
+type getPositionsOutput struct {
+	Positions []service.PositionView `json:"positions"`
+	Citations []citationOut          `json:"citations,omitempty"`
 }
 
 // --- handlers --------------------------------------------------------------
@@ -370,6 +419,76 @@ func (t workspaceToolServer) drawEdge(ctx context.Context, _ *sdkmcp.CallToolReq
 		return nil, drawEdgeOutput{}, err
 	}
 	return nil, drawEdgeOutput{OK: true}, nil
+}
+
+func (t workspaceToolServer) getNews(ctx context.Context, _ *sdkmcp.CallToolRequest, in getNewsInput) (*sdkmcp.CallToolResult, getNewsOutput, error) {
+	if t.marketInfo == nil {
+		return nil, getNewsOutput{}, service.BadRequest("market data is not configured")
+	}
+	items, err := t.marketInfo.News(ctx, strings.ToUpper(strings.TrimSpace(in.Symbols)), in.Limit)
+	if err != nil {
+		return nil, getNewsOutput{}, err
+	}
+	// Cite the distinct symbols the news touches, so the answer can link tickers.
+	seen := map[string]bool{}
+	var cites []citationOut
+	for _, n := range items {
+		for _, sym := range n.Symbols {
+			if sym != "" && !seen[sym] {
+				seen[sym] = true
+				cites = append(cites, citationOut{Kind: "ticker", ID: sym, Title: sym})
+			}
+		}
+	}
+	return nil, getNewsOutput{News: items, Citations: cites}, nil
+}
+
+func (t workspaceToolServer) getMovers(ctx context.Context, _ *sdkmcp.CallToolRequest, in topInput) (*sdkmcp.CallToolResult, getMoversOutput, error) {
+	if t.marketInfo == nil {
+		return nil, getMoversOutput{}, service.BadRequest("market data is not configured")
+	}
+	m, err := t.marketInfo.Movers(ctx, in.Top)
+	if err != nil {
+		return nil, getMoversOutput{}, err
+	}
+	return nil, getMoversOutput{Movers: m}, nil
+}
+
+func (t workspaceToolServer) getMostActives(ctx context.Context, _ *sdkmcp.CallToolRequest, in topInput) (*sdkmcp.CallToolResult, getMostActivesOutput, error) {
+	if t.marketInfo == nil {
+		return nil, getMostActivesOutput{}, service.BadRequest("market data is not configured")
+	}
+	m, err := t.marketInfo.MostActives(ctx, in.Top)
+	if err != nil {
+		return nil, getMostActivesOutput{}, err
+	}
+	return nil, getMostActivesOutput{MostActives: m}, nil
+}
+
+func (t workspaceToolServer) getAccount(ctx context.Context, _ *sdkmcp.CallToolRequest, _ emptyInput) (*sdkmcp.CallToolResult, getAccountOutput, error) {
+	if t.marketInfo == nil {
+		return nil, getAccountOutput{}, service.BadRequest("trading account is not configured")
+	}
+	acc, err := t.marketInfo.Account(ctx)
+	if err != nil {
+		return nil, getAccountOutput{}, err
+	}
+	return nil, getAccountOutput{Account: acc}, nil
+}
+
+func (t workspaceToolServer) getPositions(ctx context.Context, _ *sdkmcp.CallToolRequest, _ emptyInput) (*sdkmcp.CallToolResult, getPositionsOutput, error) {
+	if t.marketInfo == nil {
+		return nil, getPositionsOutput{}, service.BadRequest("trading account is not configured")
+	}
+	ps, err := t.marketInfo.Positions(ctx)
+	if err != nil {
+		return nil, getPositionsOutput{}, err
+	}
+	cites := make([]citationOut, 0, len(ps))
+	for _, p := range ps {
+		cites = append(cites, citationOut{Kind: "ticker", ID: p.Symbol, Title: p.Symbol})
+	}
+	return nil, getPositionsOutput{Positions: ps, Citations: cites}, nil
 }
 
 // citationKindForArtifact maps an artifact type to the citation kind the client
