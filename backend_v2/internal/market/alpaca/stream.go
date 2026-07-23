@@ -100,6 +100,8 @@ func (s *Stream) session(ctx context.Context) error {
 		s.mu.Unlock()
 	}()
 
+	decodeFails := 0
+	trades := 0
 	for ctx.Err() == nil {
 		_, data, err := conn.Read(ctx)
 		if err != nil {
@@ -108,7 +110,15 @@ func (s *Stream) session(ctx context.Context) error {
 		}
 		var msgs []wsMessage
 		if err := json.Unmarshal(data, &msgs); err != nil {
-			continue // ignore non-array control frames
+			// A frame we can't decode is a frame we silently drop — say so (first few
+			// only), because "receiving bytes but publishing nothing" is otherwise
+			// undiagnosable from the outside.
+			if decodeFails < 3 {
+				decodeFails++
+				slog.Warn("alpaca stream: undecodable frame", "component", "market",
+					"err", err, "sample", string(data[:min(len(data), 200)]))
+			}
+			continue
 		}
 		for _, m := range msgs {
 			switch m.T {
@@ -127,6 +137,11 @@ func (s *Stream) session(ctx context.Context) error {
 					ts, _ := time.Parse(time.RFC3339Nano, m.Tm)
 					s.onTrade(Trade{Symbol: m.S, Price: m.P, Time: ts})
 				}
+				// First tick + every 500th: proof of life at Info without tick-spam.
+				if trades%500 == 0 {
+					slog.Info("alpaca stream: trades flowing", "component", "market", "count", trades+1, "sym", m.S)
+				}
+				trades++
 			}
 		}
 	}

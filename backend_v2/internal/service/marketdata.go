@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -180,10 +181,12 @@ func (h *marketDataHub) onTrade(t alpaca.Trade) {
 	if ts.IsZero() {
 		ts = now
 	}
-	_ = h.quotes.Publish(context.Background(), Quote{
+	if err := h.quotes.Publish(context.Background(), Quote{
 		Symbol:       sym,
 		InstrumentID: id,
 		Last:         t.Price,
 		Ts:           ts.UTC().Format(time.RFC3339Nano),
-	})
+	}); err != nil {
+		slog.Warn("market: tick publish failed", "component", "market", "symbol", sym, "err", err)
+	}
 }
