@@ -100,6 +100,11 @@ async function runQuery({ queryFn, body, turn, writeEvent, resume, approvalTimeo
           headers: { Authorization: `Bearer ${body.userBearer}` },
         },
       },
+      // Use ONLY the aladin server above. Without this, COPILOT_AUTH=subscription
+      // inherits the user's local ~/.claude MCP config (personal Drive/etc.
+      // servers), which pollutes the tool surface and — in needs-auth state —
+      // would trip the init guard and kill the turn.
+      strictMcpConfig: true,
       // Every MCP tool call routes through canUseTool (nothing is pre-allowed):
       // non-gated tools pass straight through; gated ones hold for approval.
       canUseTool: makeCanUseTool({

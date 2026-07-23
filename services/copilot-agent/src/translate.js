@@ -22,7 +22,11 @@ const maxToolResultChars = 32_000;
 // array of NDJSON-ready event objects. State: the pending tool_use names (to
 // label results), accumulated assistant text (fallback final message), and the
 // session id.
-export function createTranslator({ resumed = false, approvalByToolUse } = {}) {
+// mcpServerName is the ONE server we configured (see agent.js). The init guard
+// must judge only this server: in COPILOT_AUTH=subscription mode the SDK inherits
+// the user's local ~/.claude MCP config, whose personal servers (Drive, etc.) may
+// sit in needs-auth/failed and are irrelevant to the copilot's tools.
+export function createTranslator({ resumed = false, approvalByToolUse, mcpServerName = "aladin" } = {}) {
   const toolNamesByUseId = new Map();
   let sessionId = "";
   let sawSession = false;
@@ -38,20 +42,22 @@ export function createTranslator({ resumed = false, approvalByToolUse } = {}) {
             sawSession = true;
             sessionId = msg.session_id ?? "";
             const out = [{ type: "session", sessionId, resumed }];
-            // Fail LOUD if a configured MCP server didn't connect: without its
-            // tools the model play-acts tool calls as prose instead of erroring
-            // (it has no way to know the tools are gone). fatal tells the agent
-            // loop to abort the turn after this event is written.
-            for (const server of msg.mcp_servers ?? []) {
-              if (server.status !== "connected") {
-                out.push({
-                  type: "error",
-                  fatal: true,
-                  message:
-                    `The copilot's tool server ("${server.name}" MCP, status: ${server.status}) is unreachable — ` +
-                    `no tools can run. Check that the MCP server is up (make mcp) and reachable from the copilot-agent sidecar, then try again.`,
-                });
-              }
+            // Fail LOUD only if OUR MCP server didn't connect: without its tools
+            // the model play-acts tool calls as prose instead of erroring (it has
+            // no way to know the tools are gone). fatal tells the agent loop to
+            // abort. Other servers the local ~/.claude config brings in (Drive,
+            // etc.) are ignored — their auth state is not our concern.
+            const servers = msg.mcp_servers ?? [];
+            const ours = servers.find((s) => s.name === mcpServerName);
+            if (!ours || ours.status !== "connected") {
+              const detail = ours ? `status: ${ours.status}` : "not registered";
+              out.push({
+                type: "error",
+                fatal: true,
+                message:
+                  `The copilot's tool server ("${mcpServerName}" MCP, ${detail}) is unreachable — ` +
+                  `no tools can run. Check that the MCP server is up (make mcp) and reachable from the copilot-agent sidecar, then try again.`,
+              });
             }
             return out;
           }

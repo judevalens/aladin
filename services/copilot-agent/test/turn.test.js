@@ -22,7 +22,12 @@ function fakeQuery(script) {
   return fn;
 }
 
-const init = { type: "system", subtype: "init", session_id: "sess-new" };
+const init = {
+  type: "system",
+  subtype: "init",
+  session_id: "sess-new",
+  mcp_servers: [{ name: "aladin", status: "connected" }],
+};
 const okResult = {
   type: "result",
   subtype: "success",

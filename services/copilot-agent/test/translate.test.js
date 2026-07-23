@@ -11,12 +11,17 @@ test("strips the mcp server prefix from tool names", () => {
 
 test("system init becomes a session event", () => {
   const tr = createTranslator({ resumed: true });
-  const events = tr.translate({ type: "system", subtype: "init", session_id: "sess-1" });
+  const events = tr.translate({
+    type: "system",
+    subtype: "init",
+    session_id: "sess-1",
+    mcp_servers: [{ name: "aladin", status: "connected" }],
+  });
   assert.deepEqual(events, [{ type: "session", sessionId: "sess-1", resumed: true }]);
   assert.equal(tr.sawSession(), true);
 });
 
-test("system init with a dead MCP server emits a fatal error event", () => {
+test("system init with OUR dead MCP server emits a fatal error event", () => {
   const tr = createTranslator({});
   const events = tr.translate({
     type: "system",
@@ -32,7 +37,7 @@ test("system init with a dead MCP server emits a fatal error event", () => {
   assert.match(events[1].message, /make mcp/);
 });
 
-test("system init with a connected MCP server emits only the session event", () => {
+test("system init with our server connected emits only the session event", () => {
   const tr = createTranslator({});
   const events = tr.translate({
     type: "system",
@@ -41,6 +46,33 @@ test("system init with a connected MCP server emits only the session event", () 
     mcp_servers: [{ name: "aladin", status: "connected" }],
   });
   assert.deepEqual(events.map((e) => e.type), ["session"]);
+});
+
+test("a needs-auth OTHER server (local ~/.claude config) does NOT kill the turn", () => {
+  const tr = createTranslator({});
+  const events = tr.translate({
+    type: "system",
+    subtype: "init",
+    session_id: "sess-1",
+    mcp_servers: [
+      { name: "aladin", status: "connected" },
+      { name: "claude.ai Google Drive", status: "needs-auth" },
+    ],
+  });
+  assert.deepEqual(events.map((e) => e.type), ["session"]);
+});
+
+test("our server absent entirely is fatal (not registered)", () => {
+  const tr = createTranslator({});
+  const events = tr.translate({
+    type: "system",
+    subtype: "init",
+    session_id: "sess-1",
+    mcp_servers: [{ name: "claude.ai Google Drive", status: "needs-auth" }],
+  });
+  assert.equal(events[1]?.type, "error");
+  assert.equal(events[1].fatal, true);
+  assert.match(events[1].message, /not registered/);
 });
 
 test("a thinking block start emits one thinking event; its deltas emit nothing", () => {
