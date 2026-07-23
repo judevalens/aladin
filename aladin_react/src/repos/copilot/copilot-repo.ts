@@ -1,6 +1,7 @@
 import type { ApiClient } from "@/shared/api/client";
 import type {
   CopilotCitation,
+  CopilotMessageMeta,
   CopilotMessageView,
   CopilotThreadView,
 } from "@/app/state/copilot-slice";
@@ -35,6 +36,7 @@ interface CopilotMessageWire {
   role: string;
   content: string;
   citations?: CopilotCitation[] | null;
+  meta?: CopilotMessageMeta | null;
 }
 
 export interface CopilotRepo {
@@ -47,6 +49,14 @@ export interface CopilotRepo {
   rejectAction(actionId: string): Promise<void>;
   listThreads(): Promise<CopilotThreadView[]>;
   getThread(threadId: string): Promise<CopilotThreadDetail>;
+  /** Preflight health: is the sidecar up and its MCP tool server reachable? */
+  getStatus(): Promise<CopilotStatus>;
+}
+
+export interface CopilotStatus {
+  configured: boolean;
+  sidecar: boolean;
+  mcp: boolean;
 }
 
 function toMessageView(m: CopilotMessageWire): CopilotMessageView {
@@ -55,6 +65,7 @@ function toMessageView(m: CopilotMessageWire): CopilotMessageView {
     role: m.role === "assistant" ? "assistant" : "user",
     content: m.content,
     citations: m.citations ?? [],
+    meta: m.meta ?? undefined,
   };
 }
 
@@ -87,6 +98,8 @@ export function createCopilotRepo(client: ApiClient): CopilotRepo {
       client
         .fetch<{ ok: boolean }>(`/api/copilot/action/${encodeURIComponent(actionId)}/reject`, { method: "POST" })
         .then(() => undefined),
+
+    getStatus: () => client.fetch<CopilotStatus>("/api/copilot/status"),
 
     listThreads: () =>
       client

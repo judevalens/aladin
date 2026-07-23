@@ -1,6 +1,6 @@
 import type { AppEventEnvelope } from "@/shared/realtime/app-event";
 import { useAppStore } from "@/app/state/store";
-import type { CopilotCitation } from "@/app/state/copilot-slice";
+import type { CopilotCitation, CopilotMessageMeta } from "@/app/state/copilot-slice";
 
 // Routes "copilot.*" workspace events (token/tool/message/done/error) into the copilot store.
 // Each event carries the sessionId of the turn that produced it; the slice ignores events for a
@@ -31,29 +31,39 @@ export function createCopilotEventHandler() {
         return;
       }
       case "copilot.tool": {
+        const name = typeof payload?.name === "string" ? payload.name : "";
         const label =
-          typeof payload?.label === "string" && payload.label
-            ? payload.label
-            : typeof payload?.name === "string"
-              ? payload.name
-              : "";
-        if (label) store.setCopilotTool(sessionId, label);
+          typeof payload?.label === "string" && payload.label ? payload.label : name;
+        if (label) store.setCopilotTool(sessionId, name || label, label);
         return;
       }
+      case "copilot.tool_done": {
+        const name = typeof payload?.name === "string" ? payload.name : "";
+        if (name) store.finishCopilotTool(sessionId, name, payload?.ok === true);
+        return;
+      }
+      case "copilot.thinking":
+        store.setCopilotThinking(sessionId);
+        return;
       case "copilot.message": {
         const id = typeof payload?.messageId === "string" ? payload.messageId : `srv-${Date.now()}`;
         const content = typeof payload?.content === "string" ? payload.content : "";
         const citations = Array.isArray(payload?.citations)
           ? (payload?.citations as CopilotCitation[])
           : [];
-        store.finishCopilotMessage(sessionId, { id, role: "assistant", content, citations });
+        const meta =
+          payload?.meta && typeof payload.meta === "object"
+            ? (payload.meta as CopilotMessageMeta)
+            : undefined;
+        store.finishCopilotMessage(sessionId, { id, role: "assistant", content, citations, meta });
         return;
       }
       case "copilot.proposed_action": {
         const actionId = typeof payload?.actionId === "string" ? payload.actionId : "";
+        const threadId = typeof payload?.threadId === "string" ? payload.threadId : "";
         const tool = typeof payload?.tool === "string" ? payload.tool : "";
         const summary = typeof payload?.summary === "string" ? payload.summary : tool;
-        if (actionId) store.addCopilotProposal({ actionId, tool, summary });
+        if (actionId) store.addCopilotProposal({ actionId, threadId, sessionId, tool, summary });
         return;
       }
       case "copilot.done":
@@ -61,7 +71,8 @@ export function createCopilotEventHandler() {
         return;
       case "copilot.error": {
         const message = typeof payload?.message === "string" ? payload.message : "The assistant hit an error.";
-        store.setCopilotError(sessionId, message);
+        const code = typeof payload?.code === "string" ? payload.code : undefined;
+        store.setCopilotError(sessionId, message, code);
         return;
       }
     }

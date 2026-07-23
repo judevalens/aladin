@@ -135,6 +135,7 @@ export function createAppComposition() {
   // Copilot streaming rides the existing workspace "*" subscription (the backend publishes an
   // AnyResource key for copilot.* events), so no new subscription is needed — just the handler.
   appEvents.register(createCopilotEventHandler());
+  let wasDisconnected = false;
   const appEventSource = createWebSocketAppEventSource({
     url: eventsWebSocketUrl(config),
     token: () => desktopSession.getToken(),
@@ -145,6 +146,15 @@ export function createAppComposition() {
       { stream: "market", resourceKind: "quote", resourceId: "*" },
     ],
     onEvent: (event) => appEvents.dispatch(event),
+    // The WS resubscribes on reconnect but has no replay cursor — events in the gap are
+    // lost. Bumping the reconnect nonce lets consumers (the copilot dock) reconcile
+    // against the server's durable state instead of waiting on events that never come.
+    onConnectionChange: (state) => {
+      if (state === "open" && wasDisconnected) {
+        useAppStore.getState().noteCopilotWsReconnect();
+      }
+      wasDisconnected = state === "closed";
+    },
   });
 
   const realtime = createRealtimeBoot({

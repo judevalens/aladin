@@ -1,7 +1,7 @@
 import { AlertTriangle, ArrowUp, Check, ChevronDown, Plus, Sparkles, Square, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { CopilotSurface } from "@/repos/copilot/copilot-repo";
-import type { CopilotProposal } from "@/app/state/copilot-slice";
+import type { CopilotProposal, CopilotToolRun } from "@/app/state/copilot-slice";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,10 +10,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useAppStore } from "@/app/state/store";
 import { useCopilot } from "@/modules/copilot/hooks/use-copilot";
 import { useCitationNav } from "@/modules/copilot/hooks/use-citation-nav";
 import { CopilotMarkdown, StreamCaret } from "@/modules/copilot/ui/copilot-markdown";
-import type { CopilotCitation, CopilotMessageView } from "@/app/state/copilot-slice";
+import type {
+  CopilotCitation,
+  CopilotMessageMeta,
+  CopilotMessageView,
+} from "@/app/state/copilot-slice";
 import { cn } from "@/lib/utils";
 
 const DOCK_WIDTH = 384;
@@ -33,7 +38,10 @@ export function CopilotDockUI() {
     streaming,
     status,
     activeTool,
+    toolTrail,
+    thinking,
     error,
+    errorCode,
     surface,
     proposals,
     send,
@@ -43,31 +51,90 @@ export function CopilotDockUI() {
     loadThreads,
     openThread,
     newThread,
+    fetchHealthWarning,
+    queuedText,
   } = useCopilot();
 
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const busy = status === "sending" || status === "streaming";
+  // Proposals are kept across thread switches; render only the active thread's.
+  const activeProposals = proposals.filter((p) => p.threadId === activeThreadId);
+  // The backend holds a gated tool open while any proposal is unactioned — show a
+  // persistent (non-pulsing) line so the paused turn doesn't read as idle.
+  const awaitingApproval = activeProposals.some(
+    (p) => p.status === "pending" || p.status === "approving",
+  );
 
-  // Load the thread list + focus the composer when the dock opens.
+  // Load the thread list + focus the composer when the dock opens; on a cold open
+  // (fresh app run) rehydrate the last active thread so a reload mid-conversation
+  // lands back where the user was. Also preflight the sidecar/MCP health so a dead
+  // tool server warns before the user types (fire-and-forget; send is never blocked).
+  const [healthWarning, setHealthWarning] = useState<string | null>(null);
   useEffect(() => {
-    if (open) {
-      void loadThreads();
-      inputRef.current?.focus();
+    if (!open) return;
+    void loadThreads();
+    inputRef.current?.focus();
+    const store = useAppStore.getState();
+    if (!store.activeThreadId && store.copilotMessages.length === 0) {
+      const persisted = store.persistedCopilotThreadId();
+      if (persisted) void openThread(persisted);
     }
-  }, [open, loadThreads]);
+    void fetchHealthWarning().then(setHealthWarning);
+  }, [open, loadThreads, openThread, fetchHealthWarning]);
 
-  // Keep the transcript pinned to the latest turn / streamed token.
+  // Keep the transcript pinned to the latest turn / streamed token — but only while
+  // the user is actually at the bottom. Scrolling up to read history unpins; the
+  // "↓ latest" chip re-pins.
+  const pinnedRef = useRef(true);
+  const [unpinned, setUnpinned] = useState(false);
   useEffect(() => {
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (el && pinnedRef.current) el.scrollTop = el.scrollHeight;
   }, [messages, streaming, activeTool, open]);
+  const onTranscriptScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+    pinnedRef.current = atBottom;
+    setUnpinned(!atBottom);
+  };
+  const repin = () => {
+    const el = scrollRef.current;
+    pinnedRef.current = true;
+    setUnpinned(false);
+    if (el) el.scrollTop = el.scrollHeight;
+  };
+
+  // Auto-grow the textarea with its content (reset after send), capped by max-h.
+  const autogrow = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  };
+  const resetComposerHeight = () => {
+    const el = inputRef.current;
+    if (el) el.style.height = "auto";
+  };
 
   const submit = () => {
-    if (!input.trim() || busy) return;
-    void send(input);
+    if (!input.trim()) return;
+    const text = input;
+    if (busy) {
+      // Queue-of-one while a turn runs — sends automatically when it finishes.
+      useAppStore.getState().queueCopilotText(text);
+      setInput("");
+      resetComposerHeight();
+      return;
+    }
     setInput("");
+    resetComposerHeight();
+    void send(text).then((failedText) => {
+      // A failed send returns the text — put it back so nothing is lost.
+      if (failedText) setInput((current) => current || failedText);
+    });
   };
 
   const surfaceLabel = describeSurface(surface);
@@ -133,7 +200,11 @@ export function CopilotDockUI() {
         </div>
 
         {/* Transcript */}
-        <div ref={scrollRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-4">
+        <div
+          ref={scrollRef}
+          onScroll={onTranscriptScroll}
+          className="relative min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-4"
+        >
           {messages.length === 0 && !streaming ? (
             <div className="mt-6 flex flex-col items-center gap-3 px-4 text-center">
               <Sparkles className="size-5 text-ink-4" strokeWidth={1.5} />
@@ -166,7 +237,7 @@ export function CopilotDockUI() {
             <AssistantBubble content={streaming} citations={[]} streaming />
           ) : null}
 
-          {proposals.map((p) => (
+          {activeProposals.map((p) => (
             <ProposalCard
               key={p.actionId}
               proposal={p}
@@ -175,66 +246,141 @@ export function CopilotDockUI() {
             />
           ))}
 
-          {activeTool ? (
+          {busy && toolTrail.length > 0 ? <ToolTrail trail={toolTrail} /> : null}
+
+          {awaitingApproval ? (
+            <p className="font-mono text-[10px] text-amber">waiting for your approval…</p>
+          ) : activeTool ? (
             <p className="animate-pulse font-mono text-[10px] text-ink-4">{activeTool}…</p>
+          ) : thinking ? (
+            <p className="animate-pulse font-mono text-[10px] text-ink-4">reasoning…</p>
           ) : status === "sending" ? (
             <p className="animate-pulse font-mono text-[10px] text-ink-4">thinking…</p>
           ) : null}
 
           {error ? (
-            <p className="rounded-card border border-against/40 bg-against/10 px-3 py-2 text-[12px] text-against">
-              {error}
-            </p>
+            <div className="rounded-card border border-against/40 bg-against/10 px-3 py-2">
+              <p className="text-[12px] text-against">{error}</p>
+              {errorCode === "max_turns" ? (
+                <button
+                  type="button"
+                  onClick={() => void send("continue")}
+                  className="mt-1.5 rounded-chip border border-line px-2.5 py-1 text-[11px] text-ink-2 transition-colors hover:border-amber-line hover:text-ink"
+                >
+                  Continue where it left off
+                </button>
+              ) : null}
+            </div>
           ) : null}
         </div>
 
+        {unpinned && busy ? (
+          <div className="pointer-events-none relative">
+            <button
+              type="button"
+              onClick={repin}
+              className="pointer-events-auto absolute bottom-2 left-1/2 -translate-x-1/2 rounded-chip border border-line bg-raise px-2.5 py-1 font-mono text-[10px] text-ink-2 shadow-panel transition-colors hover:border-amber-line hover:text-ink"
+            >
+              ↓ latest
+            </button>
+          </div>
+        ) : null}
+
         {/* Composer */}
         <div className="shrink-0 border-t border-line p-2.5">
-          {surfaceLabel ? (
-            <div className="mb-1.5 flex items-center gap-1 px-1 font-mono text-[10px] text-ink-4">
-              <span className="size-1 rounded-full bg-amber" />
-              {surfaceLabel}
+          {healthWarning ? (
+            <div className="mb-1.5 flex items-start justify-between gap-2 rounded-card border border-amber-line bg-amber-soft/40 px-2.5 py-1.5">
+              <p className="text-[11px] text-ink-2">{healthWarning}</p>
+              <button
+                type="button"
+                onClick={() => setHealthWarning(null)}
+                aria-label="Dismiss warning"
+                className="text-ink-4 hover:text-ink"
+              >
+                <X className="size-3" strokeWidth={2} />
+              </button>
             </div>
           ) : null}
-          <div className="flex items-end gap-2 rounded-card border border-line bg-field px-2.5 py-2 focus-within:border-amber-line">
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  submit();
-                } else if (e.key === "Escape") {
-                  e.preventDefault();
-                  setOpen(false);
-                }
-              }}
-              rows={1}
-              placeholder="Ask the copilot…"
-              className="max-h-32 min-h-[20px] flex-1 resize-none bg-transparent text-[13px] leading-snug text-ink outline-none placeholder:text-ink-4"
-            />
-            {busy ? (
+          {queuedText ? (
+            <div className="mb-1.5 flex items-center justify-between gap-2 rounded-card border border-line bg-raise px-2.5 py-1.5">
+              <p className="truncate font-mono text-[10px] text-ink-3">
+                queued — sends when the copilot finishes: “{queuedText}”
+              </p>
               <button
                 type="button"
-                onClick={stop}
-                aria-label="Stop"
-                title="Stop"
-                className="grid size-7 shrink-0 place-items-center rounded-chip bg-raise text-ink transition-colors hover:text-against"
+                onClick={() => useAppStore.getState().queueCopilotText(null)}
+                aria-label="Remove queued message"
+                className="text-ink-4 hover:text-ink"
               >
-                <Square className="size-3.5 fill-current" strokeWidth={2} />
+                <X className="size-3" strokeWidth={2} />
               </button>
-            ) : (
-              <button
-                type="button"
-                onClick={submit}
-                disabled={!input.trim()}
-                aria-label="Send"
-                className="grid size-7 shrink-0 place-items-center rounded-chip bg-amber text-[#0f0f12] transition-opacity disabled:opacity-40"
-              >
-                <ArrowUp className="size-4" strokeWidth={2} />
-              </button>
-            )}
+            </div>
+          ) : null}
+          <div className="group rounded-card border border-line bg-field transition-colors focus-within:border-amber-line">
+            {surfaceLabel ? (
+              <div className="flex items-center gap-1.5 border-b border-line/60 px-3 pb-1 pt-1.5">
+                <span className="size-1 shrink-0 rounded-full bg-amber" />
+                <span className="truncate font-mono text-[10px] text-ink-4">
+                  asking about {surfaceLabel}
+                </span>
+              </div>
+            ) : null}
+            <div className="flex items-end gap-1.5 px-3 py-2.5">
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  autogrow();
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    submit();
+                  } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    setOpen(false);
+                  }
+                }}
+                rows={1}
+                placeholder={composerPlaceholder(busy, surfaceLabel)}
+                className="max-h-40 min-h-[22px] flex-1 resize-none bg-transparent text-[13px] leading-relaxed text-ink outline-none placeholder:text-ink-4"
+              />
+              <div className="flex shrink-0 items-center gap-1">
+                {busy ? (
+                  <button
+                    type="button"
+                    onClick={stop}
+                    aria-label="Stop the current turn"
+                    title="Stop"
+                    className="grid size-8 place-items-center rounded-chip border border-line bg-raise text-ink-2 transition-colors hover:border-against/50 hover:text-against"
+                  >
+                    <Square className="size-3 fill-current" strokeWidth={2} />
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={submit}
+                  disabled={!input.trim()}
+                  aria-label={busy ? "Queue message" : "Send"}
+                  title={busy ? "Queue — sends when the turn finishes" : "Send"}
+                  className={cn(
+                    "grid size-8 place-items-center rounded-chip transition-all",
+                    busy
+                      ? "border border-line bg-raise text-ink-2 hover:border-amber-line hover:text-amber"
+                      : "bg-amber text-[#0f0f12] disabled:opacity-30",
+                  )}
+                >
+                  <ArrowUp className="size-4" strokeWidth={2.25} />
+                </button>
+              </div>
+            </div>
+            {/* Keyboard hint — only while composing, so it never adds idle noise. */}
+            <div className="hidden items-center justify-end gap-2 px-3 pb-1.5 group-focus-within:flex">
+              <span className="font-mono text-[9px] text-ink-4">
+                {busy ? "⏎ queue" : "⏎ send"} · ⇧⏎ newline · esc close
+              </span>
+            </div>
           </div>
         </div>
       </aside>
@@ -251,6 +397,45 @@ function activeThread(
   return found ? found.title || "Untitled" : null;
 }
 
+/**
+ * Compact per-turn activity: consecutive runs of the same tool collapse to one chip
+ * with a count; a colored dot marks the outcome (running pulses, ok/for, error/against).
+ */
+function ToolTrail({ trail }: { trail: CopilotToolRun[] }) {
+  const groups: { label: string; count: number; status: CopilotToolRun["status"] }[] = [];
+  for (const run of trail) {
+    const last = groups[groups.length - 1];
+    if (last && last.label === run.label) {
+      last.count += 1;
+      // A group's status is its worst/latest interesting state.
+      last.status = run.status === "running" ? "running" : run.status === "error" ? "error" : last.status;
+    } else {
+      groups.push({ label: run.label, count: 1, status: run.status });
+    }
+  }
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {groups.map((g, i) => (
+        <span
+          key={`${g.label}-${i}`}
+          className="flex items-center gap-1.5 rounded-chip border border-line px-2 py-0.5 font-mono text-[10px] text-ink-3"
+        >
+          <span
+            className={cn(
+              "size-1.5 rounded-full",
+              g.status === "running" && "animate-pulse bg-amber",
+              g.status === "ok" && "bg-for",
+              g.status === "error" && "bg-against",
+            )}
+          />
+          {g.label}
+          {g.count > 1 ? ` ×${g.count}` : ""}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function ProposalCard({
   proposal,
   onApprove,
@@ -260,51 +445,59 @@ function ProposalCard({
   onApprove: () => void;
   onReject: () => void;
 }) {
-  const [acted, setActed] = useState(false);
-
-  if (proposal.status !== "pending") {
+  // Settled/expired proposals collapse to a one-line note.
+  if (
+    proposal.status === "approved" ||
+    proposal.status === "rejected" ||
+    proposal.status === "expired"
+  ) {
     const approved = proposal.status === "approved";
     return (
       <p className="flex items-center gap-1.5 font-mono text-[10px] text-ink-4">
         <Check className={cn("size-3", approved ? "text-for" : "text-ink-4")} strokeWidth={2.4} />
-        {proposal.message || (approved ? "Applied." : "Dismissed.")}
+        {proposal.message || (approved ? "Applied." : proposal.status === "expired" ? "That approval expired." : "Dismissed.")}
       </p>
     );
   }
 
+  // pending: actionable. approving/rejecting: the POST is in flight — buttons lock.
+  const inFlight = proposal.status !== "pending";
   return (
     <div className="rounded-card border border-amber-line bg-amber-soft/40 p-3">
       <div className="flex items-start gap-2">
         <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber" strokeWidth={2} />
         <div className="min-w-0 flex-1">
           <p className="text-[12px] text-ink">{proposal.summary}</p>
-          <p className="mt-0.5 font-mono text-[10px] text-ink-4">Needs your approval</p>
+          <p className="mt-0.5 font-mono text-[10px] text-ink-4">
+            {proposal.status === "approving"
+              ? "Approving…"
+              : proposal.status === "rejecting"
+                ? "Dismissing…"
+                : "Needs your approval — the copilot is waiting"}
+          </p>
         </div>
       </div>
       <div className="mt-2.5 flex gap-2">
         <button
           type="button"
-          disabled={acted}
-          onClick={() => {
-            setActed(true);
-            onApprove();
-          }}
+          disabled={inFlight}
+          onClick={onApprove}
           className="flex-1 rounded-chip bg-amber py-1.5 text-[12px] font-semibold text-[#0f0f12] transition-opacity disabled:opacity-50"
         >
           Approve
         </button>
         <button
           type="button"
-          disabled={acted}
-          onClick={() => {
-            setActed(true);
-            onReject();
-          }}
+          disabled={inFlight}
+          onClick={onReject}
           className="flex-1 rounded-chip border border-line py-1.5 text-[12px] text-ink-2 transition-colors hover:text-ink disabled:opacity-50"
         >
           Reject
         </button>
       </div>
+      {proposal.message ? (
+        <p className="mt-1.5 font-mono text-[10px] text-against">{proposal.message}</p>
+      ) : null}
     </div>
   );
 }
@@ -320,12 +513,27 @@ function suggestionsFor(surface: CopilotSurface): string[] {
     case "artifact":
     case "page":
     case "shard":
-      return ["Summarize what I'm looking at", "What are the key claims here?"];
+      return [
+        "Summarize what I'm looking at",
+        "What are the key claims here?",
+        "Turn this into an interactive shard",
+      ];
     case "markets":
       return ["What am I watching?", "Anything notable in my watchlist?"];
     default:
-      return ["What have I been researching?", "Summarize my recent insights"];
+      return [
+        "What have I been researching?",
+        "Summarize my recent insights",
+        "Build a shard about a ticker I follow",
+      ];
   }
+}
+
+/** Placeholder teaches the current mode: normal ask, surface-scoped ask, or queueing. */
+function composerPlaceholder(busy: boolean, surfaceLabel: string | null): string {
+  if (busy) return "Type a follow-up — sends when this turn finishes…";
+  if (surfaceLabel) return `Ask about ${surfaceLabel}…`;
+  return "Ask the copilot…";
 }
 
 function describeSurface(surface: { kind: string; symbol?: string; label?: string }): string | null {
@@ -347,16 +555,52 @@ function MessageBubble({ message }: { message: CopilotMessageView }) {
       </div>
     );
   }
-  return <AssistantBubble content={message.content} citations={message.citations} />;
+  return (
+    <AssistantBubble content={message.content} citations={message.citations} meta={message.meta} />
+  );
+}
+
+/**
+ * turnDigest compresses a turn's activity + cost into one muted footer line, e.g.
+ * "searched ·2 · wrote shard code ·3 · built ✓ — $0.14 · 23 steps". Empty for
+ * turns with no meta (legacy rows, plain Q&A with no tools and no usage).
+ */
+export function turnDigest(meta: CopilotMessageMeta | undefined): string {
+  if (!meta) return "";
+  const parts: string[] = [];
+  if (meta.activity && meta.activity.length > 0) {
+    const groups: { label: string; count: number; failed: boolean }[] = [];
+    for (const item of meta.activity) {
+      const last = groups[groups.length - 1];
+      if (last && last.label === item.name) {
+        last.count += 1;
+        last.failed = last.failed || !item.ok;
+      } else {
+        groups.push({ label: item.name, count: 1, failed: !item.ok });
+      }
+    }
+    parts.push(
+      groups
+        .map((g) => `${g.label}${g.count > 1 ? ` ×${g.count}` : ""}${g.failed ? " ✗" : ""}`)
+        .join(" · "),
+    );
+  }
+  const tail: string[] = [];
+  if (meta.costUsd && meta.costUsd > 0) tail.push(`$${meta.costUsd.toFixed(2)}`);
+  if (meta.numTurns && meta.numTurns > 1) tail.push(`${meta.numTurns} steps`);
+  if (tail.length > 0) parts.push(tail.join(" · "));
+  return parts.join(" — ");
 }
 
 function AssistantBubble({
   content,
   citations,
+  meta,
   streaming,
 }: {
   content: string;
   citations: CopilotCitation[];
+  meta?: CopilotMessageMeta;
   streaming?: boolean;
 }) {
   const navCitation = useCitationNav();
@@ -388,6 +632,9 @@ function AssistantBubble({
             </button>
           ))}
         </div>
+      ) : null}
+      {!streaming && turnDigest(meta) ? (
+        <p className="font-mono text-[10px] text-ink-4">{turnDigest(meta)}</p>
       ) : null}
     </div>
   );
