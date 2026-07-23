@@ -10,6 +10,8 @@
 #   api      -> the HTTP API the desktop app talks to
 #   collab   -> the blocknote sidecar (page editing: converter + Hocuspocus WS)
 #   mcp      -> the MCP page server
+#   copilot  -> the copilot-agent sidecar (Claude Agent SDK; needs api + mcp,
+#               and ANTHROPIC_API_KEY in backend_v2/.env.prod)
 #   worker   -> enrichment pipeline + syncers  (pulls in redis + neo4j)
 # postgres has no profile: it is the shared canonical store, always started.
 #
@@ -81,6 +83,10 @@ services:
     environment:
       API_ADDR: ":8000"
       DATA_VOLUME_PATH: /data
+      # The copilot-agent sidecar (profile `copilot`). Without that profile the
+      # copilot dock errors on send; unset COPILOT_AGENT_URL in .env.prod to
+      # disable the copilot cleanly instead.
+      COPILOT_AGENT_URL: http://copilot-agent:3550
     ports:
       - "8080:8000"          # host 8080 -> API (dev api is host 8000)
     volumes:
@@ -134,6 +140,34 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # --- copilot agent sidecar (Claude Agent SDK) -----------------------------
+  copilot-agent:
+    build: ./services/copilot-agent
+    image: aladin-copilot-agent:prod
+    container_name: aladin-prod-copilot-agent
+    profiles: ["copilot"]
+    env_file: [backend_v2/.env.prod]   # ANTHROPIC_API_KEY, COPILOT_AGENT_SHARED_SECRET, COPILOT_MODEL
+    environment:
+      PORT: 3550
+      ALADIN_MCP_URL: http://mcp:8090/mcp
+      # SDK session transcripts (what `resume` reads) — volume-backed so thread
+      # continuity survives redeploys; losing it degrades to the text-history
+      # fallback, never breaks a thread.
+      CLAUDE_CONFIG_DIR: /sessions
+    ports:
+      - "3550:3550"          # host 3550 (same as dev — only one runs at a time)
+    volumes:
+      - prod_copilot_sessions:/sessions
+    depends_on:
+      mcp:                   # its whole tool surface is the MCP server
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3550/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   # --- collab sidecar (page editing) ----------------------------------------
   blocknote:
     build: ./services/blocknote
@@ -164,3 +198,4 @@ volumes:
   prod_redis_data:
   prod_neo4j_data:
   prod_app_data:
+  prod_copilot_sessions:

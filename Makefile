@@ -1,4 +1,4 @@
-.PHONY: help backend mcp blocknote blocknote-test check-blocknote-versions tokens check-tokens nuke-local-db nuke-clients tauri-client-b db-up db-down test-db-up test-db-down test-go nango-up nango-down nango-logs env-nango ngrok-ensure worker-go api-go ops-status ops-errors ops-streams ops-queues ops-force-stream ops-reset-stuck-cycles ops-backfill-instruments ops-backfill-bars
+.PHONY: help backend mcp blocknote blocknote-test copilot-agent copilot-agent-test check-blocknote-versions tokens check-tokens nuke-local-db nuke-clients tauri-client-b db-up db-down test-db-up test-db-down test-go nango-up nango-down nango-logs env-nango ngrok-ensure worker-go api-go ops-status ops-errors ops-streams ops-queues ops-force-stream ops-reset-stuck-cycles ops-backfill-instruments ops-backfill-bars
 
 # --- Isolated sandbox stack (docker-compose.test.yml) -----------------------
 # A throwaway mirror of the dev infra on DISTINCT ports, namespaced under the
@@ -11,7 +11,10 @@ TEST_DATABASE_URL := postgres://aladin:password@localhost:5444/aladin
 # backend_v2/.env.prod via --env-file. PROD_PROFILES selects which app processes
 # start (override to run lean, e.g. PROD_PROFILES=api,collab for notes-only).
 PROD_COMPOSE := docker compose -p aladin-prod --env-file backend_v2/.env.prod -f docker-compose.prod.yml
-PROD_PROFILES ?= api,worker,mcp,collab
+PROD_PROFILES ?= api,worker,mcp,collab,copilot
+# Env keys the copilot-agent Node sidecar needs from backend_v2/.env (it does
+# not load .env itself, unlike the Go binaries' godotenv).
+COPILOT_AGENT_ENV_KEYS = --key ANTHROPIC_API_KEY --key COPILOT_MODEL --key COPILOT_AGENT_SHARED_SECRET --key ALADIN_MCP_URL --key COPILOT_AUTH
 
 # Doc Surface page file store (users/{userId}/pages/{pageId}/...). The API
 # process SERVES built dist from here; the MCP process WRITES files + BUILDS into
@@ -22,11 +25,14 @@ DATA_VOLUME_PATH ?= $(CURDIR)/backend_v2/data
 help: ## List available make targets
 	@awk 'BEGIN {FS = ":.*## "; printf "Available targets:\n"} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-24s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-backend: ngrok-ensure ## Run the blocknote sidecar (local) + the Go API on :8000 (needs infra up; see `make db-up`)
+backend: ngrok-ensure ## Run the blocknote + copilot-agent sidecars (local) + the Go API on :8000 (needs infra up; see `make db-up`)
 	@(cd services/blocknote && exec node server.js) & \
 	SIDECAR_PID=$$!; \
-	trap 'kill $$SIDECAR_PID 2>/dev/null' EXIT INT TERM; \
+	(eval "$$(python3 scripts/ops/read_env_keys.py --env backend_v2/.env $(COPILOT_AGENT_ENV_KEYS))" && cd services/copilot-agent && exec node server.js) & \
+	AGENT_PID=$$!; \
+	trap 'kill $$SIDECAR_PID $$AGENT_PID 2>/dev/null' EXIT INT TERM; \
 	echo ">> blocknote sidecar pid $$SIDECAR_PID (converter :3500, collab :3501)"; \
+	echo ">> copilot-agent sidecar pid $$AGENT_PID (:3550)"; \
 	eval "$$(python3 scripts/ops/read_env_keys.py --env backend_v2/.env)" && cd backend_v2 && API_ADDR=:8000 DATA_VOLUME_PATH=$(DATA_VOLUME_PATH) go run ./cmd/api
 
 mcp: ## Run the MCP page server on port 8090
@@ -37,6 +43,12 @@ blocknote: ## Run the blocknote Node sidecar locally (converter :3500 + collab :
 
 blocknote-test: ## Run the blocknote Node service unit tests
 	cd services/blocknote && npm test
+
+copilot-agent: ## Run the copilot-agent sidecar locally (:3550); needs the MCP server (make mcp) + ANTHROPIC_API_KEY
+	eval "$$(python3 scripts/ops/read_env_keys.py --env backend_v2/.env $(COPILOT_AGENT_ENV_KEYS))" && cd services/copilot-agent && npm start
+
+copilot-agent-test: ## Run the copilot-agent unit tests
+	cd services/copilot-agent && npm test
 
 check-blocknote-versions: ## Fail if @blocknote/* + yjs versions drift between aladin_react and services/blocknote
 	bash scripts/check-blocknote-versions.sh

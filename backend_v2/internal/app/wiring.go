@@ -4,13 +4,12 @@ import (
 	"os"
 	"path/filepath"
 
-	"aladin/backend_v2/internal/blocknote"
 	"aladin/backend_v2/internal/config"
+	"aladin/backend_v2/internal/copilotagent"
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/docsurface"
 	"aladin/backend_v2/internal/entities"
 	"aladin/backend_v2/internal/graph"
-	"aladin/backend_v2/internal/llm"
 	"aladin/backend_v2/internal/market/alpaca"
 	"aladin/backend_v2/internal/repo"
 	coreservice "aladin/backend_v2/internal/service"
@@ -67,6 +66,8 @@ type Dependencies interface {
 	Search() coreservice.SearchService
 	// Bars is the OHLCV history store behind the ticker chart.
 	Bars() coreservice.BarService
+	// QuoteSnapshots is the live-quote snapshot source (nil without market-data keys).
+	QuoteSnapshots() coreservice.QuoteSnapshotSource
 	// MarketData is the demand-driven live-quote hub (one Alpaca WS → outbox fan-out).
 	MarketData() coreservice.MarketDataService
 	// GraphReader reads the Neo4j connection lens. Nil when Neo4j isn't configured.
@@ -107,6 +108,7 @@ type StaticDependencies struct {
 	WatchlistSvc           coreservice.WatchlistService
 	SearchSvc              coreservice.SearchService
 	BarsSvc                coreservice.BarService
+	QuoteSnapshotsSvc      coreservice.QuoteSnapshotSource
 	MarketDataSvc          coreservice.MarketDataService
 	CopilotSvc             coreservice.CopilotService
 }
@@ -179,6 +181,9 @@ func (d StaticDependencies) Search() coreservice.SearchService {
 func (d StaticDependencies) Bars() coreservice.BarService {
 	return d.BarsSvc
 }
+func (d StaticDependencies) QuoteSnapshots() coreservice.QuoteSnapshotSource {
+	return d.QuoteSnapshotsSvc
+}
 func (d StaticDependencies) MarketData() coreservice.MarketDataService {
 	return d.MarketDataSvc
 }
@@ -221,6 +226,7 @@ type wiring struct {
 	watchlist           coreservice.WatchlistService
 	search              coreservice.SearchService
 	bars                coreservice.BarService
+	quoteSnapshots      coreservice.QuoteSnapshotSource
 	marketData          coreservice.MarketDataService
 	copilot             coreservice.CopilotService
 }
@@ -268,6 +274,9 @@ func (w wiring) Instruments() coreservice.InstrumentService { return w.instrumen
 func (w wiring) Watchlist() coreservice.WatchlistService    { return w.watchlist }
 func (w wiring) Search() coreservice.SearchService          { return w.search }
 func (w wiring) Bars() coreservice.BarService               { return w.bars }
+func (w wiring) QuoteSnapshots() coreservice.QuoteSnapshotSource {
+	return w.quoteSnapshots
+}
 func (w wiring) MarketData() coreservice.MarketDataService  { return w.marketData }
 func (w wiring) Copilot() coreservice.CopilotService        { return w.copilot }
 
@@ -374,35 +383,24 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		db.NewEntityRepository(pool), // merge decisions land in the shared registry
 	)
 
-	// Copilot — the in-app agentic LLM interface. Reuses the same OpenAI key the worker's
-	// extraction judges use; nil agent (no key) ⇒ the endpoint degrades cleanly.
-	copilotCfg := config.LoadCopilot()
-	var chatAgent llm.ChatAgent
-	if copilotCfg.OpenAIAPIKey != "" {
-		chatAgent = llm.NewOpenAIChatAgent(copilotCfg.OpenAIAPIKey, copilotCfg.Model)
+	// Copilot — the in-app agentic LLM interface. The agent loop runs in the copilot-agent
+	// sidecar (Claude Agent SDK), consuming tools from the Go MCP server; this service
+	// orchestrates turns + streams events. nil client (COPILOT_AGENT_URL="") ⇒ the endpoint
+	// degrades cleanly.
+	caCfg := config.LoadCopilotAgent()
+	var agentClient coreservice.CopilotAgent
+	if caCfg.URL != "" {
+		agentClient = copilotagent.New(caCfg.URL, caCfg.SharedSecret)
 	}
-	// Blocknote sidecar client (converter + live-doc bridge) for the copilot's page tools.
-	bnCfg := config.LoadBlocknote()
-	bnClient := blocknote.NewClient(bnCfg.ConverterURL, blocknote.ClientOptions{AdminSecret: bnCfg.AdminSecret})
-
 	copilotSvc := coreservice.NewCopilotService(coreservice.CopilotDeps{
-		Store:       repo.NewCopilotPostgres(pool),
-		Agent:       chatAgent,
-		Realtime:    realtime,
-		Search:      searchSvc,
-		Entities:    entityContextSvc,
-		Insights:    insightsSvc,
-		Artifacts:   artifactsSvc,
-		Pages:       pagesSvc,
-		Watchlist:   watchlistSvc,
-		Bars:        barsSvc,
-		Snapshots:   snapshotSource,
-		DocStore:    docStore,
-		ShardBuild:  shardBuild,
-		Preview:     docPreview,
-		Converter:   bnClient,
-		Bridge:      bnClient,
-		Instruments: instrumentsSvc,
+		Store:     repo.NewCopilotPostgres(pool),
+		Agent:     agentClient,
+		Realtime:  realtime,
+		Model:     caCfg.Model,
+		Snapshots: snapshotSource,
+		Artifacts: artifactsSvc,
+		Entities:  entityContextSvc,
+		Watchlist: watchlistSvc,
 	})
 
 	return wiring{
@@ -437,6 +435,7 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		watchlist:           watchlistSvc,
 		search:              searchSvc,
 		bars:                barsSvc,
+		quoteSnapshots:      snapshotSource,
 		marketData:          marketDataSvc,
 		copilot:             copilotSvc,
 	}

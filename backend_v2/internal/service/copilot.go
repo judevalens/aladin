@@ -10,39 +10,49 @@ import (
 	"time"
 
 	"aladin/backend_v2/internal/blocknote"
-	"aladin/backend_v2/internal/llm"
+	"aladin/backend_v2/internal/copilotagent"
 
 	"github.com/google/uuid"
 )
 
 // CopilotService is Aladin's default agentic LLM interface: a surface-aware, streaming
-// assistant that grounds its answers on the user's own Aladin data via read-only tools.
+// assistant that grounds its answers on the user's own Aladin data.
 //
-// A turn runs asynchronously — SendMessage persists the user turn, spawns the agent loop
-// in a goroutine, and returns a sessionId immediately. The loop streams token/tool/message/
-// done events over the realtime workspace stream (resource kind "copilot"), so the dock
-// renders live; the final answer is persisted so a reconnecting client can replay it.
+// The agent loop itself runs in the copilot-agent sidecar (Claude Agent SDK), which
+// consumes tools from the Go MCP server with the calling user's own bearer. This service
+// stays the orchestrator: SendMessage persists the user turn, spawns a goroutine that
+// streams the sidecar's NDJSON events, and republishes them over the realtime workspace
+// stream (resource kind "copilot") so the dock renders live; the final answer is
+// persisted so a reconnecting client can replay it.
 type CopilotService interface {
 	SendMessage(ctx context.Context, in CopilotSendInput) (CopilotSendResult, error)
 	ListThreads(ctx context.Context, userID string) ([]CopilotThread, error)
 	GetThread(ctx context.Context, userID, threadID string) (CopilotThreadDetail, error)
 	// Cancel stops an in-flight turn (halting the work + cost), scoped to its owner.
 	Cancel(ctx context.Context, userID, sessionID string) error
-	// ApproveAction runs a previously-proposed destructive action; RejectAction discards it.
+	// ApproveAction releases a gated tool call held open in the sidecar; RejectAction
+	// denies it. The result streams back as an action_result event.
 	ApproveAction(ctx context.Context, userID, actionID string) error
 	RejectAction(ctx context.Context, userID, actionID string) error
-	// Configured reports whether an LLM backend is wired (OpenAI key present).
+	// Configured reports whether the copilot-agent sidecar is wired.
 	Configured() bool
+	// Status probes the sidecar's health (incl. MCP tool-server reachability) so the
+	// dock can warn before the user types. Never errors — degraded is a valid status.
+	Status(ctx context.Context) CopilotStatusReport
 }
 
-// destructiveActions are tools whose effects are hard to reverse — they are NOT executed inline;
-// the agent proposes them and the user approves via the dock. Additive/iterative tools run
-// directly. (Extended as page/publish tools land.)
-var destructiveActions = map[string]bool{
-	"delete_shard_file": true,
-	"publish_shard":     true,
-	"update_page":       true, // full-document replace wipes block ids
-	"delete_block":      true,
+// CopilotStatusReport is the dock's preflight view of the copilot's health.
+type CopilotStatusReport struct {
+	Configured bool `json:"configured"`
+	Sidecar    bool `json:"sidecar"`
+	MCP        bool `json:"mcp"`
+}
+
+// gatedToolNames are tools whose effects are hard to reverse — the sidecar's canUseTool
+// holds them open (proposed_action) until the user approves via the dock. Names are the
+// MCP server's tool names.
+func gatedToolNames() []string {
+	return []string{"publish_app", "update_page", "delete_block", "delete_file"}
 }
 
 // CopilotSurface is what the user is looking at when they ask — makes the agent context-aware.
@@ -55,9 +65,12 @@ type CopilotSurface struct {
 
 type CopilotSendInput struct {
 	Principal Principal
-	ThreadID  string // "" ⇒ start a new thread
-	Text      string
-	Surface   CopilotSurface
+	// Bearer is the caller's own credential (session token), forwarded to the sidecar so
+	// its MCP tool calls are scoped exactly like the user's own API calls.
+	Bearer   string
+	ThreadID string // "" ⇒ start a new thread
+	Text     string
+	Surface  CopilotSurface
 }
 
 type CopilotSendResult struct {
@@ -76,14 +89,33 @@ type CopilotThread struct {
 	ID        string `json:"id"`
 	Title     string `json:"title"`
 	UpdatedAt string `json:"updatedAt"`
+	// SDKSessionID is the Claude Agent SDK session resumed on each turn (empty for
+	// fresh/legacy threads). Server-internal — never serialized to the client.
+	SDKSessionID string `json:"-"`
+}
+
+// CopilotActivityItem is one tool invocation in a turn's compact activity digest.
+type CopilotActivityItem struct {
+	Name string `json:"name"`
+	OK   bool   `json:"ok"`
+}
+
+// CopilotMessageMeta is per-assistant-turn metadata: what the turn did and cost.
+type CopilotMessageMeta struct {
+	NumTurns     int                   `json:"numTurns,omitempty"`
+	InputTokens  int                   `json:"inputTokens,omitempty"`
+	OutputTokens int                   `json:"outputTokens,omitempty"`
+	CostUSD      float64               `json:"costUsd,omitempty"`
+	Activity     []CopilotActivityItem `json:"activity,omitempty"`
 }
 
 type CopilotMessage struct {
-	ID        string     `json:"id"`
-	Role      string     `json:"role"` // user | assistant
-	Content   string     `json:"content"`
-	Citations []Citation `json:"citations"`
-	CreatedAt string     `json:"createdAt"`
+	ID        string              `json:"id"`
+	Role      string              `json:"role"` // user | assistant
+	Content   string              `json:"content"`
+	Citations []Citation          `json:"citations"`
+	Meta      *CopilotMessageMeta `json:"meta,omitempty"`
+	CreatedAt string              `json:"createdAt"`
 }
 
 type CopilotThreadDetail struct {
@@ -98,6 +130,7 @@ type StoredCopilotMessage struct {
 	Role      string
 	Content   string
 	Citations []Citation
+	Meta      *CopilotMessageMeta
 }
 
 // CopilotStore persists threads + the visible conversation. Ownership is enforced by
@@ -108,67 +141,86 @@ type CopilotStore interface {
 	ListThreads(ctx context.Context, userID string) ([]CopilotThread, error)
 	// GetThread returns the thread iff it belongs to userID (found=false otherwise).
 	GetThread(ctx context.Context, userID, threadID string) (CopilotThread, bool, error)
+	// SetThreadSDKSession stamps the Claude Agent SDK session id to resume next turn.
+	SetThreadSDKSession(ctx context.Context, threadID, sessionID string) error
 	AppendMessage(ctx context.Context, m StoredCopilotMessage) error
 	ListMessages(ctx context.Context, threadID string) ([]CopilotMessage, error)
 }
 
-// CopilotDeps are the collaborators the agent loop needs: the LLM, the realtime hub for
-// streaming, the store for persistence, and the read services exposed as tools. Agent may
-// be nil (no OpenAI key) ⇒ the service reports Configured()=false and rejects sends cleanly.
+// CopilotAgent is the sidecar client surface the service consumes (satisfied by
+// *copilotagent.Client; an interface so tests can fake the stream).
+type CopilotAgent interface {
+	StartTurn(ctx context.Context, req copilotagent.TurnRequest) (<-chan copilotagent.Event, error)
+	Cancel(ctx context.Context, turnID string) error
+	ResolveApproval(ctx context.Context, turnID, approvalID string, approved bool) error
+	Healthz(ctx context.Context) (copilotagent.Health, error)
+}
+
+// CopilotDeps are the collaborators the orchestrator needs: the sidecar client, the
+// realtime hub for streaming, the store for persistence, and the few read services that
+// build the ambient surface-context block. Agent may be nil (sidecar not configured) ⇒
+// the service reports Configured()=false and rejects sends cleanly.
 type CopilotDeps struct {
-	Store     CopilotStore
-	Agent     llm.ChatAgent
-	Realtime  RealtimeEventService
-	Search    SearchService
-	Entities  EntityContextService
-	Insights  InsightService
+	Store    CopilotStore
+	Agent    CopilotAgent
+	Realtime RealtimeEventService
+	// Model pins the sidecar's model per turn ("" ⇒ the sidecar's own default).
+	Model string
+	// Surface-context preloading (all optional/nil-safe).
+	Snapshots QuoteSnapshotSource
 	Artifacts ArtifactService
-	Pages     PageService
+	Entities  EntityContextService
 	Watchlist WatchlistService
-	Bars      BarService
-	Snapshots QuoteSnapshotSource // optional: live quote seed for get_quote
-	// Shard authoring (doc-surface): all already wired in the API process.
-	DocStore   DocSurfaceStore
-	ShardBuild ShardBuildService
-	Preview    PreviewService // optional: headless preview loop (degrades without Chrome)
-	// Page authoring: the blocknote sidecar (markdown⇄blocks + live-doc bridge). Both are the
-	// same *blocknote.Client; nil ⇒ page tools are not exposed. Instruments resolves symbols.
-	Converter   blocknote.Converter
-	Bridge      blocknote.Bridge
-	Instruments InstrumentService
 }
 
 const (
 	copilotResourceKind = "copilot"
 	// Authoring a shard/page is multi-step (create → write → build → fix → build → preview),
-	// so the loop needs real headroom; a Q&A answers in 1–3. The timeout is the hard backstop.
-	maxCopilotIterations = 24
-	copilotTurnTimeout   = 5 * time.Minute
-	maxToolResultChars   = 12000
+	// so the loop needs real headroom; a Q&A answers in 1–3 and stops on its own. A
+	// comprehensive multi-section shard blew through 24, so this is sized for deep authoring;
+	// the 15-min turn deadline + the SDK's own stopping behavior are the real guardrails.
+	// SDK turns, enforced sidecar-side. Hitting the limit is recoverable: the thread resumes
+	// the SDK session, so "continue" picks up mid-build.
+	maxCopilotTurns = 60
+	// The hard turn deadline must contain one full approval hold (the sidecar keeps a gated
+	// tool open up to 10 minutes waiting for approve/reject) plus real work either side.
+	copilotTurnTimeout = 15 * time.Minute
+	maxSurfaceContextChars = 1800
+	// historyFallback bounds: the durable text history sent along for resume-failure
+	// recovery (most turns resume the SDK session and never use it).
+	historyFallbackTurns = 12
+	historyFallbackChars = 6000
+	// maxActivityItems caps the per-turn tool digest persisted in message meta.
+	maxActivityItems = 40
 )
 
-// runningTurn is a live agent turn's cancel handle, kept so the owner can stop it.
+// runningTurn is a live agent turn's cancel handle, kept so the owner can stop it and
+// so SendMessage can refuse a second concurrent turn on the same thread.
 type runningTurn struct {
-	userID string
-	cancel context.CancelFunc
+	userID   string
+	threadID string
+	cancel   context.CancelFunc
 }
 
-// pendingAction is a proposed destructive tool call awaiting the user's approval.
+// pendingAction is a gated tool call held open in the sidecar, awaiting approve/reject.
 type pendingAction struct {
 	userID   string
 	threadID string
+	turnID   string
 	tool     string
-	args     string
 	created  time.Time
 }
 
-const pendingActionTTL = 30 * time.Minute
+// pendingActionTTL prunes stale pending-approval entries. Slightly above the sidecar's
+// 10-minute approval hold (APPROVAL_TIMEOUT_MS) — after that the hold has already been
+// denied as timed out, so anything older is garbage.
+const pendingActionTTL = 11 * time.Minute
 
 type defaultCopilotService struct {
 	CopilotDeps
 	mu      sync.Mutex
 	running map[string]runningTurn   // sessionID → cancel handle
-	pending map[string]pendingAction // actionID → proposed destructive action
+	pending map[string]pendingAction // actionID (sidecar approvalId) → held action
 }
 
 func NewCopilotService(deps CopilotDeps) CopilotService {
@@ -181,8 +233,19 @@ func NewCopilotService(deps CopilotDeps) CopilotService {
 
 func (s *defaultCopilotService) Configured() bool { return s.Agent != nil }
 
-// Cancel stops the in-flight turn for sessionID if it belongs to userID. Idempotent: cancelling
-// an already-finished (or unknown) session is a no-op.
+func (s *defaultCopilotService) Status(ctx context.Context) CopilotStatusReport {
+	if s.Agent == nil {
+		return CopilotStatusReport{}
+	}
+	h, err := s.Agent.Healthz(ctx)
+	if err != nil {
+		return CopilotStatusReport{Configured: true}
+	}
+	return CopilotStatusReport{Configured: true, Sidecar: h.OK, MCP: h.MCP}
+}
+
+// Cancel stops the in-flight turn for sessionID if it belongs to userID. Idempotent:
+// cancelling an already-finished (or unknown) session is a no-op.
 func (s *defaultCopilotService) Cancel(_ context.Context, userID, sessionID string) error {
 	s.mu.Lock()
 	rt, ok := s.running[sessionID]
@@ -194,54 +257,72 @@ func (s *defaultCopilotService) Cancel(_ context.Context, userID, sessionID stri
 		return ErrNotFound
 	}
 	rt.cancel()
+	// Best-effort: tell the sidecar too, so the SDK query aborts promptly instead of
+	// discovering the dropped stream.
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = s.Agent.Cancel(ctx, sessionID)
+	}()
 	return nil
 }
 
-// registerPending stores a proposed destructive action and returns its id, pruning stale entries.
-func (s *defaultCopilotService) registerPending(userID, threadID, tool, args string) string {
-	actionID := uuid.NewString()
+// registerPending records a held gated action under the sidecar's approvalId, pruning
+// stale entries.
+func (s *defaultCopilotService) registerPending(actionID, userID, threadID, turnID, tool string) {
 	s.mu.Lock()
 	for id, pa := range s.pending {
 		if time.Since(pa.created) > pendingActionTTL {
 			delete(s.pending, id)
 		}
 	}
-	s.pending[actionID] = pendingAction{userID: userID, threadID: threadID, tool: tool, args: args, created: time.Now()}
+	s.pending[actionID] = pendingAction{userID: userID, threadID: threadID, turnID: turnID, tool: tool, created: time.Now()}
 	s.mu.Unlock()
-	return actionID
 }
 
-// ApproveAction executes a proposed destructive action (owner-scoped) and streams the result.
-func (s *defaultCopilotService) ApproveAction(ctx context.Context, userID, actionID string) error {
+func (s *defaultCopilotService) takePending(userID, actionID string) (pendingAction, bool) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	pa, ok := s.pending[actionID]
-	if ok {
-		delete(s.pending, actionID)
-	}
-	s.mu.Unlock()
 	if !ok || pa.userID != userID {
+		return pendingAction{}, false
+	}
+	delete(s.pending, actionID)
+	return pa, true
+}
+
+func (s *defaultCopilotService) dropPending(actionID string) {
+	s.mu.Lock()
+	delete(s.pending, actionID)
+	s.mu.Unlock()
+}
+
+// ApproveAction releases a gated tool call held open in the sidecar (owner-scoped). The
+// tool then runs inside the same turn; its result streams back as an action_result event.
+func (s *defaultCopilotService) ApproveAction(ctx context.Context, userID, actionID string) error {
+	pa, ok := s.takePending(userID, actionID)
+	if !ok {
 		return ErrNotFound
 	}
-	_, _, err := s.runTool(ctx, userID, pa.tool, pa.args)
-	message := "Done."
-	if err != nil {
-		message = err.Error()
+	if err := s.Agent.ResolveApproval(ctx, pa.turnID, actionID, true); err != nil {
+		// The hold is gone (turn ended, approval timed out) — resolve the dock card.
+		s.publish(userID, pa.threadID, "action_result", copilotActionResultPayload{
+			ThreadID: pa.threadID, ActionID: actionID, OK: false,
+			Message: "That approval expired — ask the copilot to try again.",
+		})
+		return nil
 	}
-	s.publish(userID, pa.threadID, "action_result", copilotActionResultPayload{
-		ThreadID: pa.threadID, ActionID: actionID, OK: err == nil, Message: message,
-	})
-	return err
+	return nil
 }
 
-// RejectAction discards a proposed action. Idempotent.
-func (s *defaultCopilotService) RejectAction(_ context.Context, userID, actionID string) error {
-	s.mu.Lock()
-	pa, ok := s.pending[actionID]
-	if ok && pa.userID == userID {
-		delete(s.pending, actionID)
+// RejectAction denies a held gated tool call. Idempotent.
+func (s *defaultCopilotService) RejectAction(ctx context.Context, userID, actionID string) error {
+	pa, ok := s.takePending(userID, actionID)
+	if !ok {
+		return nil
 	}
-	s.mu.Unlock()
-	if ok && pa.userID == userID {
+	if err := s.Agent.ResolveApproval(ctx, pa.turnID, actionID, false); err != nil {
+		// Hold already gone — still resolve the dock card.
 		s.publish(userID, pa.threadID, "action_result", copilotActionResultPayload{
 			ThreadID: pa.threadID, ActionID: actionID, OK: false, Message: "Dismissed.",
 		})
@@ -261,6 +342,9 @@ func (s *defaultCopilotService) SendMessage(ctx context.Context, in CopilotSendI
 	if userID == "" {
 		return CopilotSendResult{}, ErrUnauthenticated
 	}
+	if strings.TrimSpace(in.Bearer) == "" {
+		return CopilotSendResult{}, ErrUnauthenticated
+	}
 
 	threadID := strings.TrimSpace(in.ThreadID)
 	if threadID == "" {
@@ -278,15 +362,38 @@ func (s *defaultCopilotService) SendMessage(ctx context.Context, in CopilotSendI
 		}
 	}
 
+	// One turn per thread. The turn context is created here and registered under the
+	// SAME lock as the conflict check, closing the check-then-spawn race (double-send,
+	// a second window). The guard runs before the user message is persisted so a
+	// rejected send leaves no orphan turn in the transcript.
+	sessionID := uuid.NewString()
+	turnCtx, cancel := context.WithTimeout(WithPrincipal(context.Background(), in.Principal), copilotTurnTimeout)
+	s.mu.Lock()
+	for _, rt := range s.running {
+		if rt.threadID == threadID {
+			s.mu.Unlock()
+			cancel()
+			return CopilotSendResult{}, ErrConflict
+		}
+	}
+	s.running[sessionID] = runningTurn{userID: userID, threadID: threadID, cancel: cancel}
+	s.mu.Unlock()
+	release := func() {
+		s.mu.Lock()
+		delete(s.running, sessionID)
+		s.mu.Unlock()
+		cancel()
+	}
+
 	if err := s.Store.AppendMessage(ctx, StoredCopilotMessage{
 		ID: uuid.NewString(), ThreadID: threadID, Role: "user", Content: text,
 	}); err != nil {
+		release()
 		return CopilotSendResult{}, err
 	}
 	_ = s.Store.TouchThread(ctx, threadID)
 
-	sessionID := uuid.NewString()
-	go s.runAgent(in.Principal, threadID, sessionID, in.Surface)
+	go s.runAgent(turnCtx, release, in.Principal, in.Bearer, threadID, sessionID, in.Surface)
 	return CopilotSendResult{ThreadID: threadID, SessionID: sessionID}, nil
 }
 
@@ -312,120 +419,172 @@ func (s *defaultCopilotService) GetThread(ctx context.Context, userID, threadID 
 	return CopilotThreadDetail{Thread: thread, Messages: messages}, nil
 }
 
-// runAgent is the tool-use loop, run in its own goroutine. It streams over the realtime
-// hub and persists the final assistant turn.
-func (s *defaultCopilotService) runAgent(principal Principal, threadID, sessionID string, surface CopilotSurface) {
-	// The tool ctx carries the principal so principal-scoped tools (pages/artifacts) work,
-	// with a hard timeout so a stuck turn can't leak a goroutine.
-	ctx, cancel := context.WithTimeout(WithPrincipal(context.Background(), principal), copilotTurnTimeout)
-	defer cancel()
+// runAgent drives ONE turn through the sidecar, in its own goroutine: start the turn,
+// translate its NDJSON events onto the realtime hub, persist the final assistant turn
+// and the SDK session id. The ctx (principal + hard timeout) and its registration in
+// s.running are created by SendMessage under the per-thread guard; release deregisters
+// and cancels on exit.
+func (s *defaultCopilotService) runAgent(ctx context.Context, release func(), principal Principal, bearer, threadID, sessionID string, surface CopilotSurface) {
+	defer release()
 	userID := principal.UserID
 
-	// Register the cancel handle so the owner can stop this turn; deregister on exit.
-	s.mu.Lock()
-	s.running[sessionID] = runningTurn{userID: userID, cancel: cancel}
-	s.mu.Unlock()
-	defer func() {
-		s.mu.Lock()
-		delete(s.running, sessionID)
-		s.mu.Unlock()
-	}()
-
+	thread, ok, err := s.Store.GetThread(ctx, userID, threadID)
+	if err != nil || !ok {
+		s.fail(userID, threadID, sessionID, "failed to load conversation")
+		return
+	}
 	history, err := s.Store.ListMessages(ctx, threadID)
 	if err != nil {
 		s.fail(userID, threadID, sessionID, "failed to load conversation")
 		return
 	}
+	// The turn prompt is the user message SendMessage just persisted; everything before it
+	// is the durable history (the sidecar only needs it if the SDK session can't resume).
+	prompt := ""
+	if n := len(history); n > 0 && history[n-1].Role == "user" {
+		prompt = history[n-1].Content
+		history = history[:n-1]
+	}
+	if strings.TrimSpace(prompt) == "" {
+		s.fail(userID, threadID, sessionID, "failed to load conversation")
+		return
+	}
 
-	// Ambient context: preload what the user is looking at into the system prompt so the agent
-	// can answer surface questions instantly, without a tool round-trip.
+	// Ambient context: preload what the user is looking at into the system prompt so the
+	// agent can answer surface questions instantly, without a tool round-trip.
 	sysPrompt := s.systemPrompt(surface)
 	if block := s.surfaceContext(ctx, userID, surface); block != "" {
 		sysPrompt += "\n\n" + block
 	}
-	messages := []llm.ChatMessage{{Role: llm.ChatRoleSystem, Content: sysPrompt}}
-	for _, m := range history {
-		role := llm.ChatRoleUser
-		if m.Role == "assistant" {
-			role = llm.ChatRoleAssistant
-		}
-		messages = append(messages, llm.ChatMessage{Role: role, Content: m.Content})
+
+	events, err := s.Agent.StartTurn(ctx, copilotagent.TurnRequest{
+		TurnID:          sessionID,
+		ThreadID:        threadID,
+		ResumeSessionID: thread.SDKSessionID,
+		UserBearer:      bearer,
+		SystemPrompt:    sysPrompt,
+		Prompt:          prompt,
+		HistoryFallback: historyFallback(history),
+		Model:           s.Model,
+		GatedTools:      gatedToolNames(),
+		MaxTurns:        maxCopilotTurns,
+	})
+	if err != nil {
+		slog.Error("copilot: start turn failed", "component", "copilot", "err", err)
+		s.fail(userID, threadID, sessionID, "the assistant is unavailable right now")
+		return
 	}
 
 	citations := map[string]Citation{}
+	meta := CopilotMessageMeta{}
 	final := ""
-	for iter := 0; iter < maxCopilotIterations; iter++ {
-		assistant, err := s.Agent.Chat(ctx, messages, s.toolDefs(), func(ev llm.ChatEvent) {
-			switch ev.Kind {
-			case llm.ChatEventText:
-				s.publish(userID, threadID, "token", copilotTokenPayload{sessionID, threadID, ev.Text})
-			case llm.ChatEventToolCall:
-				s.publish(userID, threadID, "tool", copilotToolPayload{
-					SessionID: sessionID, ThreadID: threadID,
-					Name: ev.ToolCall.Name, Label: toolLabel(ev.ToolCall.Name),
-				})
+	sawDone := false
+	for ev := range events {
+		switch ev.Type {
+		case "session":
+			if ev.SessionID != "" {
+				_ = s.Store.SetThreadSDKSession(ctx, threadID, ev.SessionID)
 			}
-		})
-		if err != nil {
-			// A cancelled/timed-out turn is a clean stop (the user hit stop), not an error.
-			if ctx.Err() != nil {
-				s.publish(userID, threadID, "done", copilotDonePayload{sessionID, threadID})
-				return
-			}
-			s.fail(userID, threadID, sessionID, "the assistant hit an error")
-			return
-		}
-		messages = append(messages, assistant)
-		if len(assistant.ToolCalls) == 0 {
-			final = assistant.Content
-			break
-		}
-		for _, tc := range assistant.ToolCalls {
-			// Destructive tools are not run inline — propose them for the user to approve.
-			if destructiveActions[tc.Name] {
-				actionID := s.registerPending(userID, threadID, tc.Name, tc.Arguments)
-				s.publish(userID, threadID, "proposed_action", copilotProposedPayload{
-					SessionID: sessionID, ThreadID: threadID, ActionID: actionID,
-					Tool: tc.Name, Summary: proposalSummary(tc.Name, tc.Arguments),
-				})
-				messages = append(messages, llm.ChatMessage{
-					Role:       llm.ChatRoleTool,
-					Content:    `{"status":"proposed","note":"awaiting user approval — do not assume it happened; tell the user you proposed it"}`,
-					ToolCallID: tc.ID,
-				})
-				continue
-			}
-			result, cites, terr := s.runTool(ctx, userID, tc.Name, tc.Arguments)
-			if terr != nil {
-				slog.Error("copilot: tool failed", "component", "copilot", "tool", tc.Name, "args", tc.Arguments, "err", terr)
-				result = fmt.Sprintf(`{"error":%q}`, terr.Error())
-			}
-			for _, c := range cites {
+		case "token":
+			s.publish(userID, threadID, "token", copilotTokenPayload{sessionID, threadID, ev.Delta})
+		case "tool_start":
+			s.publish(userID, threadID, "tool", copilotToolPayload{
+				SessionID: sessionID, ThreadID: threadID,
+				Name: ev.Name, Label: toolLabel(ev.Name),
+			})
+		case "thinking":
+			s.publish(userID, threadID, "thinking", copilotThinkingPayload{sessionID, threadID})
+		case "tool_result":
+			for _, c := range parseCitations(ev.Content) {
 				citations[c.Kind+"|"+c.ID] = c
 			}
-			messages = append(messages, llm.ChatMessage{Role: llm.ChatRoleTool, Content: result, ToolCallID: tc.ID})
+			if len(meta.Activity) < maxActivityItems {
+				meta.Activity = append(meta.Activity, CopilotActivityItem{Name: ev.Name, OK: !ev.IsError})
+			}
+			s.publish(userID, threadID, "tool_done", copilotToolDonePayload{
+				SessionID: sessionID, ThreadID: threadID, Name: ev.Name, OK: !ev.IsError,
+			})
+			if ev.ApprovalID != "" {
+				// The approved gated tool ran — settle the dock's approval card.
+				message := "Done."
+				if ev.IsError {
+					message = firstLineOf(ev.Content, "the action failed")
+				}
+				s.publish(userID, threadID, "action_result", copilotActionResultPayload{
+					ThreadID: threadID, ActionID: ev.ApprovalID, OK: !ev.IsError, Message: message,
+				})
+				s.dropPending(ev.ApprovalID)
+			}
+		case "proposed_action":
+			s.registerPending(ev.ApprovalID, userID, threadID, sessionID, ev.Tool)
+			s.publish(userID, threadID, "proposed_action", copilotProposedPayload{
+				SessionID: sessionID, ThreadID: threadID, ActionID: ev.ApprovalID,
+				Tool: ev.Tool, Summary: proposalSummary(ev.Tool, ev.Input),
+			})
+		case "approval_resolved":
+			// Approved holds settle later via their tool_result; denials settle here.
+			if !ev.Approved {
+				message := "Dismissed."
+				if ev.TimedOut {
+					message = "Approval timed out."
+				}
+				s.publish(userID, threadID, "action_result", copilotActionResultPayload{
+					ThreadID: threadID, ActionID: ev.ApprovalID, OK: false, Message: message,
+				})
+				s.dropPending(ev.ApprovalID)
+			}
+		case "message":
+			final = ev.Text
+		case "error":
+			s.publish(userID, threadID, "error", copilotErrorPayload{
+				SessionID: sessionID, ThreadID: threadID, Message: ev.Message, Code: ev.Code,
+			})
+		case "done":
+			sawDone = true
+			meta.NumTurns = ev.NumTurns
+			meta.InputTokens = ev.Usage.InputTokens
+			meta.OutputTokens = ev.Usage.OutputTokens
+			meta.CostUSD = ev.CostUSD
+			if ev.SessionID != "" {
+				_ = s.Store.SetThreadSDKSession(ctx, threadID, ev.SessionID)
+			}
 		}
 	}
-	if strings.TrimSpace(final) == "" {
-		final = "I couldn't finish that within the step limit — try narrowing the question."
+	slog.Info("copilot: turn finished", "component", "copilot",
+		"thread", threadID, "numTurns", meta.NumTurns, "costUsd", meta.CostUSD,
+		"tools", len(meta.Activity), "clean", sawDone)
+
+	if strings.TrimSpace(final) != "" {
+		cites := make([]Citation, 0, len(citations))
+		for _, c := range citations {
+			cites = append(cites, c)
+		}
+		msgID := uuid.NewString()
+		// Persist with a fresh ctx: the turn ctx may already be cancelled (user hit stop
+		// right as the answer landed) and the final answer must not be lost.
+		persistCtx, persistCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		_ = s.Store.AppendMessage(persistCtx, StoredCopilotMessage{
+			ID: msgID, ThreadID: threadID, Role: "assistant", Content: final, Citations: cites, Meta: &meta,
+		})
+		_ = s.Store.TouchThread(persistCtx, threadID)
+		persistCancel()
+		s.publish(userID, threadID, "message", copilotMessagePayload{
+			SessionID: sessionID, ThreadID: threadID, MessageID: msgID,
+			Content: final, Citations: cites, Meta: &meta,
+		})
 	}
 
-	cites := make([]Citation, 0, len(citations))
-	for _, c := range citations {
-		cites = append(cites, c)
+	// A cancelled/timed-out turn is a clean stop (the user hit stop), not an error; a
+	// stream that broke without its `done` (sidecar died mid-turn) is.
+	if !sawDone && ctx.Err() == nil {
+		s.fail(userID, threadID, sessionID, "the assistant connection was interrupted")
+		return
 	}
-
-	msgID := uuid.NewString()
-	_ = s.Store.AppendMessage(ctx, StoredCopilotMessage{
-		ID: msgID, ThreadID: threadID, Role: "assistant", Content: final, Citations: cites,
-	})
-	_ = s.Store.TouchThread(ctx, threadID)
-	s.publish(userID, threadID, "message", copilotMessagePayload{sessionID, threadID, msgID, final, cites})
 	s.publish(userID, threadID, "done", copilotDonePayload{sessionID, threadID})
 }
 
 func (s *defaultCopilotService) fail(userID, threadID, sessionID, msg string) {
-	s.publish(userID, threadID, "error", copilotErrorPayload{sessionID, threadID, msg})
+	s.publish(userID, threadID, "error", copilotErrorPayload{SessionID: sessionID, ThreadID: threadID, Message: msg})
 	s.publish(userID, threadID, "done", copilotDonePayload{sessionID, threadID})
 }
 
@@ -452,12 +611,23 @@ type copilotToolPayload struct {
 	Name      string `json:"name"`
 	Label     string `json:"label"`
 }
+type copilotToolDonePayload struct {
+	SessionID string `json:"sessionId"`
+	ThreadID  string `json:"threadId"`
+	Name      string `json:"name"`
+	OK        bool   `json:"ok"`
+}
+type copilotThinkingPayload struct {
+	SessionID string `json:"sessionId"`
+	ThreadID  string `json:"threadId"`
+}
 type copilotMessagePayload struct {
-	SessionID string     `json:"sessionId"`
-	ThreadID  string     `json:"threadId"`
-	MessageID string     `json:"messageId"`
-	Content   string     `json:"content"`
-	Citations []Citation `json:"citations"`
+	SessionID string              `json:"sessionId"`
+	ThreadID  string              `json:"threadId"`
+	MessageID string              `json:"messageId"`
+	Content   string              `json:"content"`
+	Citations []Citation          `json:"citations"`
+	Meta      *CopilotMessageMeta `json:"meta,omitempty"`
 }
 type copilotDonePayload struct {
 	SessionID string `json:"sessionId"`
@@ -467,6 +637,8 @@ type copilotErrorPayload struct {
 	SessionID string `json:"sessionId"`
 	ThreadID  string `json:"threadId"`
 	Message   string `json:"message"`
+	// Code lets the dock switch affordances (e.g. max_turns → a Continue button).
+	Code string `json:"code,omitempty"`
 }
 type copilotProposedPayload struct {
 	SessionID string `json:"sessionId"`
@@ -482,19 +654,72 @@ type copilotActionResultPayload struct {
 	Message  string `json:"message"`
 }
 
-// proposalSummary renders a short human description of a proposed destructive action.
-func proposalSummary(tool, args string) string {
+// parseCitations pulls the citations array out of a tool result's JSON content (the MCP
+// workspace tools' convention: a top-level "citations" field). Non-JSON or citation-free
+// results yield nothing.
+func parseCitations(content string) []Citation {
+	var probe struct {
+		Citations []Citation `json:"citations"`
+	}
+	if err := json.Unmarshal([]byte(content), &probe); err != nil {
+		return nil
+	}
+	return probe.Citations
+}
+
+// historyFallback renders the durable text history the sidecar falls back to when the SDK
+// session can't resume: the most recent turns, capped.
+func historyFallback(history []CopilotMessage) string {
+	if len(history) == 0 {
+		return ""
+	}
+	start := 0
+	if len(history) > historyFallbackTurns {
+		start = len(history) - historyFallbackTurns
+	}
+	var b strings.Builder
+	for _, m := range history[start:] {
+		role := "User"
+		if m.Role == "assistant" {
+			role = "Assistant"
+		}
+		fmt.Fprintf(&b, "%s: %s\n", role, m.Content)
+	}
+	out := b.String()
+	if len(out) > historyFallbackChars {
+		out = out[len(out)-historyFallbackChars:]
+	}
+	return strings.TrimSpace(out)
+}
+
+// firstLineOf compacts an error-ish tool result into a one-line message.
+func firstLineOf(s, fallback string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return fallback
+	}
+	if len(s) > 200 {
+		s = s[:200] + "…"
+	}
+	return s
+}
+
+// proposalSummary renders a short human description of a proposed gated action.
+func proposalSummary(tool string, input json.RawMessage) string {
 	switch tool {
-	case "delete_shard_file":
+	case "delete_file":
 		var a struct {
 			Path string `json:"path"`
 		}
-		_ = json.Unmarshal([]byte(args), &a)
+		_ = json.Unmarshal(input, &a)
 		if strings.TrimSpace(a.Path) != "" {
 			return "Delete file " + a.Path + " from the shard"
 		}
 		return "Delete a shard file"
-	case "publish_shard":
+	case "publish_app":
 		return "Publish the shard (make it live)"
 	case "update_page":
 		return "Replace the page's entire content"
@@ -505,6 +730,64 @@ func proposalSummary(tool, args string) string {
 	}
 }
 
+// toolLabel is the human-facing phrase shown while a tool runs (a "Searching…" affordance).
+// Names are the MCP server's tool names.
+func toolLabel(name string) string {
+	switch name {
+	case "search":
+		return "Searching your workspace"
+	case "get_entity":
+		return "Looking up an entity"
+	case "get_insights":
+		return "Reading your insights"
+	case "list_artifacts":
+		return "Listing your artifacts"
+	case "get_artifact":
+		return "Reading an artifact"
+	case "get_page", "list_pages":
+		return "Reading a page"
+	case "get_watchlist":
+		return "Checking your watchlist"
+	case "get_browser_tree", "list_folders":
+		return "Browsing your workspace"
+	case "search_pages":
+		return "Searching your pages"
+	case "get_bars":
+		return "Reading price history"
+	case "get_quote":
+		return "Fetching a live quote"
+	case "create_app":
+		return "Creating a shard"
+	case "list_dir", "read_file":
+		return "Reading shard files"
+	case "write_file", "edit_file":
+		return "Writing shard code"
+	case "install_lib":
+		return "Adding a shard dependency"
+	case "build_app":
+		return "Building the shard"
+	case "delete_file":
+		return "Deleting a shard file"
+	case "publish_app":
+		return "Publishing the shard"
+	case "preview_open", "preview_navigate", "preview_snapshot", "preview_screenshot",
+		"preview_eval", "preview_click", "preview_console", "preview_close", "preview_restart":
+		return "Previewing the shard"
+	case "create_page":
+		return "Creating a page"
+	case "insert_blocks", "update_block", "update_page":
+		return "Editing the page"
+	case "delete_block":
+		return "Removing a block"
+	case "add_to_watchlist":
+		return "Updating your watchlist"
+	case "draw_edge":
+		return "Linking entities"
+	default:
+		return "Working"
+	}
+}
+
 // --- system prompt ------------------------------------------------------------
 
 func (s *defaultCopilotService) systemPrompt(surface CopilotSurface) string {
@@ -512,11 +795,11 @@ func (s *defaultCopilotService) systemPrompt(surface CopilotSurface) string {
 	b.WriteString(`You are Aladin's Copilot — a research assistant for a personal algo/swing-trading workspace (US equities).
 Ground every answer in the user's own Aladin data by calling the available tools before answering; do not invent tickers, entities, prices, pages, or shards.
 The workspace holds several artifact kinds: pages (the user's writing), shards (agent-built interactive docs; artifact type "app"), links, files, and voice notes. To read whatever the user currently has open, call get_artifact with its id — it works for ANY kind, including shards. Do not claim you can only see pages; use get_artifact.
-You CAN create and author shards: create_shard to make one (its result includes an authoring_guide — the @aladin/kit component reference; FOLLOW it exactly and only use components/props it lists), write_shard_file/edit_shard_file to author it (each write auto-builds and returns a build log — if build.ok is false, read build.log, fix the exact file, and write again until it builds), build_shard to recompile. Preview it with preview_open then preview_snapshot to confirm it rendered; publish_shard makes it live (that step asks the user to approve). Shards are React apps composed from @aladin/kit (Page/Section/Region) styled with Tailwind + Aladin token classes (bg-panel, text-ink, text-amber, …). When asked to make a shard, actually create it and write the content — don't just output an outline. Only create_shard for a brand-NEW shard; if the user is already viewing a shard (or asks to update/add to "the shard"/"this"), edit that EXISTING shard by its id (read_shard_file → write_shard_file/edit_shard_file) instead of creating another. Same rule for pages.
-You CAN also author pages (the user's writing): create_page from markdown; for edits, get_page_blocks to find block ids, then insert_blocks / update_block for surgical changes (update_page replaces the whole body and delete_block remove content — both ask the user to approve). And light actions: add_to_watchlist (by symbol), draw_edge (link two entities).
+You CAN create and author shards: create_app to make one (its result includes an authoring_guide — the @aladin/kit component reference; FOLLOW it exactly and only use components/props it lists — plus the seeded current_index_tsx), write_file/edit_file to author its files (each write auto-builds and returns diagnostics in build — if build.ok is false, read build.log, fix the exact file, and write again until it builds), build_app to compile the publishable bundle. Preview with preview_open then preview_snapshot to confirm it rendered; publish_app makes it live (that step asks the user to approve). Shards are React apps composed from @aladin/kit (Page/Section/Region) styled with Tailwind + Aladin token classes (bg-panel, text-ink, text-amber, …). When asked to make a shard, actually create it and write the content — don't just output an outline. Only create_app for a brand-NEW shard; if the user is already viewing a shard (or asks to update/add to "the shard"/"this"), edit that EXISTING shard by its id (read_file → write_file/edit_file with its page_id) instead of creating another. Same rule for pages.
+You CAN also author pages (the user's writing): create_page from markdown; for edits, get_page to see the blocks with their ids, then insert_blocks / update_block for surgical changes (update_page replaces the whole body and delete_block removes content — both ask the user to approve). And light actions: add_to_watchlist (by symbol), draw_edge (link two entities).
 Prefer specific, concise answers. When you reference an entity, artifact, or ticker, use the tool that fetches it so the app can cite it.
 If the tools return nothing relevant, say so plainly rather than guessing.
-If a tool returns an {"error": ...}, tell the user the EXACT error message verbatim and what you were trying to do — never vaguely say "a technical issue" or claim the action is impossible. The capability exists; a specific error means something is misconfigured (e.g. a service is down) and the exact text helps fix it.`)
+If a tool returns an error, tell the user the EXACT error message verbatim and what you were trying to do — never vaguely say "a technical issue" or claim the action is impossible. The capability exists; a specific error means something is misconfigured (e.g. a service is down) and the exact text helps fix it.`)
 	if hint := surfaceHint(surface); hint != "" {
 		b.WriteString("\n\n")
 		b.WriteString(hint)
@@ -549,6 +832,104 @@ func surfaceHint(s CopilotSurface) string {
 	return ""
 }
 
+// surfaceContext builds a compact "current context" block from what the user is looking at,
+// so the agent can answer about the current surface WITHOUT a tool round-trip. Best-effort:
+// any missing field or fetch error yields an empty (skipped) block.
+func (s *defaultCopilotService) surfaceContext(ctx context.Context, userID string, surface CopilotSurface) string {
+	switch strings.TrimSpace(surface.Kind) {
+	case "ticker":
+		sym := strings.ToUpper(strings.TrimSpace(surface.Symbol))
+		if sym == "" || s.Snapshots == nil {
+			return ""
+		}
+		q, ok, err := s.Snapshots.FetchSnapshot(ctx, sym)
+		if err != nil || !ok {
+			return ""
+		}
+		return fmt.Sprintf("Current context — the user is viewing ticker %s. Latest snapshot: last %.2f, previous close %.2f, change %.2f%%.",
+			sym, q.Last, q.PrevClose, q.ChangePct)
+
+	case "artifact", "page", "shard":
+		if strings.TrimSpace(surface.ID) == "" || s.Artifacts == nil {
+			return ""
+		}
+		art, err := s.Artifacts.Get(ctx, surface.ID)
+		if err != nil {
+			return ""
+		}
+		body := strings.TrimSpace(art.Content)
+		if len(art.Blocks) > 0 {
+			if text, terr := blocknote.ExtractText(art.Blocks); terr == nil && strings.TrimSpace(text) != "" {
+				body = strings.TrimSpace(text)
+			}
+		}
+		var edit string
+		if art.Type == "app" {
+			edit = fmt.Sprintf(" To change it, EDIT THIS shard — read_file/write_file/edit_file with page_id=%q. Do NOT create a new shard.", surface.ID)
+		} else {
+			edit = fmt.Sprintf(" To change it, EDIT THIS page — get_page then insert_blocks/update_block/update_page with page id %q. Do NOT create a new page.", surface.ID)
+		}
+		header := fmt.Sprintf("Current context — the user is viewing the %s %q (id %s).%s", artifactNoun(art.Type), art.Title, surface.ID, edit)
+		if body == "" {
+			return header
+		}
+		return capText(header+" Its content:\n"+body, maxSurfaceContextChars)
+
+	case "entity":
+		if strings.TrimSpace(surface.ID) == "" || s.Entities == nil {
+			return ""
+		}
+		ec, err := s.Entities.Get(ctx, userID, surface.ID)
+		if err != nil {
+			return ""
+		}
+		var b strings.Builder
+		fmt.Fprintf(&b, "Current context — the user is viewing the entity %q (%s).", ec.Entity.Name, ec.Entity.Kind)
+		if g := strings.TrimSpace(ec.Entity.Gist); g != "" {
+			fmt.Fprintf(&b, " %s", g)
+		}
+		rels := make([]string, 0, 5)
+		for _, e := range ec.Edges {
+			if len(rels) >= 5 {
+				break
+			}
+			if strings.TrimSpace(e.To) != "" {
+				rels = append(rels, e.To)
+			}
+		}
+		if len(rels) > 0 {
+			fmt.Fprintf(&b, " Related: %s.", strings.Join(rels, ", "))
+		}
+		return capText(b.String(), maxSurfaceContextChars)
+
+	case "markets":
+		if s.Watchlist == nil {
+			return ""
+		}
+		items, err := s.Watchlist.List(ctx, userID)
+		if err != nil || len(items) == 0 {
+			return ""
+		}
+		syms := make([]string, 0, len(items))
+		for _, it := range items {
+			syms = append(syms, it.Symbol)
+		}
+		return capText("Current context — the user is on the Markets surface. Watchlist: "+strings.Join(syms, ", ")+".", maxSurfaceContextChars)
+	}
+	return ""
+}
+
+func artifactNoun(t string) string {
+	switch t {
+	case "app":
+		return "shard"
+	case "page":
+		return "page"
+	default:
+		return "artifact"
+	}
+}
+
 // threadTitle derives a short thread title from the first user message.
 func threadTitle(text string) string {
 	t := strings.TrimSpace(text)
@@ -556,14 +937,6 @@ func threadTitle(text string) string {
 		t = t[:60] + "…"
 	}
 	return t
-}
-
-func jsonString(v any) string {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return fmt.Sprintf(`{"error":%q}`, err.Error())
-	}
-	return capText(string(b), maxToolResultChars)
 }
 
 func capText(s string, max int) string {

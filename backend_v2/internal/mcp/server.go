@@ -139,9 +139,20 @@ Inspecting (do this before publish):
     build failure; fall back to build_app + reading the log.
 
 Notes:
-  - read_file / list_dir to inspect; write_file overwrites whole files.
+  - read_file / list_dir to inspect; write_file overwrites whole files;
+    delete_file removes one (a draft build runs after each write/delete).
   - The runtime is isolated: no network at runtime, no access to Aladin. Keep all
-    state in-app. Entry point is always index.tsx at the page root.`
+    state in-app. Entry point is always index.tsx at the page root.
+
+Workspace tools — ground answers in the user's Aladin data:
+  - search(query) FIRST to find ids: tickers, entities (companies/people),
+    pages, shards. Then get_entity / get_artifact / get_page to read one.
+  - get_insights lists engine-generated insights; get_watchlist / get_bars /
+    get_quote cover the Markets surface; add_to_watchlist and draw_edge are
+    light additive writes.
+  - Citations: when a tool result carries a "citations" array ({kind,id,title}),
+    those items ground the answer — prefer tools that return them, and rely on
+    cited material over memory when answering about the user's data.`
 
 type Server struct {
 	httpServer *http.Server
@@ -158,6 +169,16 @@ func New(addr string, deps app.Dependencies, pages service.PageDocumentService, 
 	})
 	registerTools(server, deps.Artifacts(), pages, converter, bridge, deps.EntityTags(), deps.ArtifactRefs())
 	registerDocSurfaceTools(server, deps.Artifacts(), deps.DocSurfaceStore(), deps.ShardBuild(), deps.Preview())
+	registerWorkspaceTools(server, workspaceToolServer{
+		search:      deps.Search(),
+		entities:    deps.EntityContext(),
+		insights:    deps.Insights(),
+		artifacts:   deps.Artifacts(),
+		watchlist:   deps.Watchlist(),
+		bars:        deps.Bars(),
+		snapshots:   deps.QuoteSnapshots(),
+		instruments: deps.Instruments(),
+	})
 
 	streamable := sdkmcp.NewStreamableHTTPHandler(func(*http.Request) *sdkmcp.Server {
 		return server

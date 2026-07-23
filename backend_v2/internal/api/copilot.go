@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	coreservice "aladin/backend_v2/internal/service"
 )
@@ -14,6 +15,7 @@ func (s *Server) registerCopilotRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/copilot/action/{id}/reject", s.handleCopilotReject)
 	mux.HandleFunc("GET /api/copilot/threads", s.handleCopilotThreads)
 	mux.HandleFunc("GET /api/copilot/threads/{id}", s.handleCopilotThread)
+	mux.HandleFunc("GET /api/copilot/status", s.handleCopilotStatus)
 }
 
 // POST /api/copilot/action/{id}/approve — run a proposed destructive action.
@@ -56,6 +58,7 @@ func (s *Server) handleCopilotMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := s.deps.Copilot().SendMessage(r.Context(), coreservice.CopilotSendInput{
 		Principal: principal,
+		Bearer:    copilotBearer(r),
 		ThreadID:  req.ThreadID,
 		Text:      req.Text,
 		Surface:   req.Surface,
@@ -83,6 +86,11 @@ func (s *Server) handleCopilotCancel(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
+// GET /api/copilot/status — preflight health for the dock (sidecar + MCP tool server).
+func (s *Server) handleCopilotStatus(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.deps.Copilot().Status(r.Context()))
+}
+
 // GET /api/copilot/threads — the signed-in user's copilot threads, newest first.
 func (s *Server) handleCopilotThreads(w http.ResponseWriter, r *http.Request) {
 	threads, err := s.deps.Copilot().ListThreads(r.Context(), principalUserID(r))
@@ -103,6 +111,20 @@ func (s *Server) handleCopilotThread(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, detail)
 }
 
+// copilotBearer extracts the caller's raw credential so the copilot-agent sidecar can
+// call the MCP server AS this user (same scoping as the user's own API calls). The
+// session cookie is the normal path (the dock is a browser fetch); an Authorization
+// bearer covers token-authenticated clients.
+func copilotBearer(r *http.Request) string {
+	if authorization := strings.TrimSpace(r.Header.Get("Authorization")); authorization != "" {
+		return strings.TrimSpace(strings.TrimPrefix(authorization, "Bearer "))
+	}
+	if cookie, err := r.Cookie(coreservice.SessionCookieName); err == nil {
+		return strings.TrimSpace(cookie.Value)
+	}
+	return ""
+}
+
 func (s *Server) writeCopilotError(w http.ResponseWriter, r *http.Request, err error) {
 	if writeAccessError(w, r, err) {
 		return
@@ -113,6 +135,8 @@ func (s *Server) writeCopilotError(w http.ResponseWriter, r *http.Request, err e
 		writeAPIError(w, r, http.StatusBadRequest, categoryBadRequest, err.Error(), err)
 	case errors.Is(err, coreservice.ErrNotFound):
 		writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Thread not found", err)
+	case errors.Is(err, coreservice.ErrConflict):
+		writeAPIError(w, r, http.StatusConflict, categoryBadRequest, "The copilot is still answering in this thread — stop it or wait for it to finish", err)
 	default:
 		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
 	}

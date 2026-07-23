@@ -14,6 +14,10 @@ A desktop research workspace. **Dual-store architecture:**
   (Asynq queue) + Neo4j (graph). Migrations are embedded **goose**, applied on boot.
 - **Collab sidecar** — `services/blocknote/` — Node; Yjs/Hocuspocus realtime page
   editing. Page content lives in Postgres `page_ydoc` + webview IndexedDB.
+- **Copilot agent sidecar** — `services/copilot-agent/` — Node; runs the Claude
+  Agent SDK per copilot turn (needs `ANTHROPIC_API_KEY`), consuming tools from the
+  Go MCP server (:8090) with the caller's bearer and streaming NDJSON back to the
+  Go API, which republishes `copilot.*` events to the dock.
 
 ## Layout
 
@@ -29,6 +33,7 @@ backend_v2/
   cmd/{api,worker,mcp}    entrypoints (api :8000, mcp :8090)
   internal/               api → service → repo layering; db/migrations/*.sql (goose)
 services/blocknote/       collab sidecar (converter :3500, collab :3501)
+services/copilot-agent/   copilot agent sidecar (Claude Agent SDK, :3550)
 design/                   handoff source of truth: PRD.md + DESIGN_SPEC.md +
                           BROWSER_SPEC.md + screens/  (the locked design)
 ```

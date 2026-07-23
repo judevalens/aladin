@@ -60,6 +60,30 @@ const starterAnchorsJSON = `{
 }
 `
 
+// kitAuthoringGuide is the @aladin/kit reference, returned from create_app so
+// an agent writes VALID code (the usual failure is guessing components/props it
+// doesn't know). Distilled from the kit source — keep it accurate.
+const kitAuthoringGuide = `A shard is a REACT app written in TypeScript/TSX. It already has a working, buildable index.tsx (returned as current_index_tsx) — write_file a COMPLETE, valid index.tsx that EXTENDS it: a full module with the React imports at the top, your <App/> component, and the createRoot render at the bottom. Never write a fragment, markdown, or prose into a .tsx file. Import components from "@aladin/kit". Style with Tailwind + Aladin tokens ONLY — never arbitrary hex.
+
+index.tsx MUST be a complete module and end with:
+  import { createRoot } from "react-dom/client";
+  createRoot(document.getElementById("root")!).render(<App />);
+
+@aladin/kit exports (all token-styled, self-contained):
+- Layout: <Page>, <Section> (centered, max-w-3xl), <Panel>, <Card>, <Toolbar>, <Divider/>
+- Regions (wrap each addressable part; add a matching entry in anchors.json): <Region anchor="intro" kind="narrative|metric|chart|collection|control">…</Region>
+- Routing (hash, for multi-view shards): <Route path="/x">…</Route>, <Link to="/x">…</Link>, useRoute()
+- UI: <Button variant="primary|outline|ghost|danger" size="sm|md">, <Badge tone="neutral|amber|for|against">, <Callout tone="info|warn|for|against" title="…">, <Stat label={…} value={…} sub={…}/>, <Tabs tabs={[{id,label,content}]}/>, <Dialog open onClose title>, <Input>, <Textarea>, <Field label hint>
+- Semantic colored text: <For>, <Against>, <Catalyst>, <Echo>
+
+Tokens (Tailwind classes): surfaces bg-bg/bg-panel/bg-card/bg-raise/bg-field; ink text-ink/text-ink-2/text-ink-3/text-ink-4; accent text-amber, border-amber-line; lines border-line; radius rounded-card/rounded-chip/rounded-modal; fonts font-display/font-mono/font-sans.
+
+Charts: run install_lib "recharts" first, import from "recharts", theme via the kit: <XAxis {...chartAxis()}/>, <CartesianGrid {...chartGrid()}/>, <Tooltip {...chartTooltip()}/>, and series colors from chartSeries()[i]. (import { chartAxis, chartGrid, chartTooltip, chartSeries } from "@aladin/kit")
+
+Animations: Tailwind (transition-*, hover:*, animate-pulse) or your own CSS keyframes in a .css file you write_file and import.
+
+Loop: after each write_file/edit_file, READ the returned build log — if it has errors, fix the exact file and write again until build.ok is true. Keep components small and valid; prefer kit primitives over hand-rolled markup.`
+
 // docToolServer carries the deps the Doc Surface tools need. The artifact
 // service scopes every Get/Create/Update to the caller's principal; the store
 // scopes file IO to the same principal. Together they enforce ownership.
@@ -93,6 +117,10 @@ func registerDocSurfaceTools(server *sdkmcp.Server, artifacts service.ArtifactSe
 		Name:        "edit_file",
 		Description: "Edit a file by exact string replacement: old_string must appear EXACTLY once (include surrounding context to disambiguate) unless replace_all=true. Errors if old_string is absent or ambiguous. Like write_file, it triggers a draft build and returns diagnostics in `build`. Prefer this over write_file for surgical changes.",
 	}, t.editFile)
+	sdkmcp.AddTool(server, &sdkmcp.Tool{
+		Name:        "delete_file",
+		Description: "Delete a file from a Doc Surface page directory. Like write_file, a draft build runs afterwards and its diagnostics come back in `build`.",
+	}, t.deleteFile)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "install_lib",
 		Description: "Add an npm dependency to a Doc Surface page. Provide name (optionally name@version); the lib is bundled from esm.sh at build time. import it normally in your code.",
@@ -156,6 +184,11 @@ type createAppInput struct {
 type createAppOutput struct {
 	ID    string `json:"id"`
 	Title string `json:"title"`
+	// AuthoringGuide + CurrentIndexTSX ride back so the agent writes valid kit
+	// code that EXTENDS the seeded module instead of guessing components/props.
+	AuthoringGuide  string        `json:"authoring_guide"`
+	CurrentIndexTSX string        `json:"current_index_tsx"`
+	Citations       []citationOut `json:"citations,omitempty"`
 }
 
 type listDirInput struct {
@@ -204,6 +237,17 @@ type editFileOutput struct {
 	Build        *service.BuildResult `json:"build,omitempty"`
 }
 
+type deleteFileInput struct {
+	PageID string `json:"page_id"`
+	Path   string `json:"path"`
+	Build  *bool  `json:"build,omitempty"`
+}
+type deleteFileOutput struct {
+	OK      bool                 `json:"ok"`
+	Deleted string               `json:"deleted"`
+	Build   *service.BuildResult `json:"build,omitempty"`
+}
+
 type installLibInput struct {
 	PageID string `json:"page_id"`
 	Name   string `json:"name"`
@@ -227,8 +271,9 @@ type publishAppOutput struct {
 	// Verified is true when every manifest route was driven through the live
 	// preview and mounted cleanly before publishing. False means the renderer
 	// was unavailable and the build shipped UNVERIFIED (see Warning).
-	Verified bool   `json:"verified"`
-	Warning  string `json:"warning,omitempty"`
+	Verified  bool          `json:"verified"`
+	Warning   string        `json:"warning,omitempty"`
+	Citations []citationOut `json:"citations,omitempty"`
 }
 
 type previewOpenInput struct {
@@ -313,7 +358,26 @@ func (t docToolServer) createApp(ctx context.Context, _ *sdkmcp.CallToolRequest,
 		_, _ = t.artifacts.Delete(ctx, id)
 		return nil, createAppOutput{}, err
 	}
-	return nil, createAppOutput{ID: id, Title: created.Artifact.Title}, nil
+	return nil, createAppOutput{
+		ID:              id,
+		Title:           created.Artifact.Title,
+		AuthoringGuide:  kitAuthoringGuide,
+		CurrentIndexTSX: starterIndexTSX,
+		Citations:       []citationOut{{Kind: "shard", ID: id, Title: created.Artifact.Title}},
+	}, nil
+}
+
+func (t docToolServer) deleteFile(ctx context.Context, _ *sdkmcp.CallToolRequest, in deleteFileInput) (*sdkmcp.CallToolResult, deleteFileOutput, error) {
+	if err := t.requireApp(ctx, in.PageID); err != nil {
+		return nil, deleteFileOutput{}, err
+	}
+	if strings.TrimSpace(in.Path) == "" {
+		return nil, deleteFileOutput{}, service.BadRequest("path is required")
+	}
+	if err := t.store.DeleteFile(ctx, in.PageID, in.Path); err != nil {
+		return nil, deleteFileOutput{}, err
+	}
+	return nil, deleteFileOutput{OK: true, Deleted: in.Path, Build: t.maybeAutoBuild(ctx, in.PageID, in.Build)}, nil
 }
 
 func (t docToolServer) listDir(ctx context.Context, _ *sdkmcp.CallToolRequest, in listDirInput) (*sdkmcp.CallToolResult, listDirOutput, error) {
@@ -499,6 +563,7 @@ func (t docToolServer) publishApp(ctx context.Context, _ *sdkmcp.CallToolRequest
 		ServedURL: "/content/" + in.PageID + "/",
 		Verified:  verified,
 		Warning:   warning,
+		Citations: []citationOut{{Kind: "shard", ID: in.PageID}},
 	}, nil
 }
 

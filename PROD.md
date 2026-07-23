@@ -29,14 +29,15 @@ URL swap, not a rewrite (see [Moving to a server](#moving-to-a-server)).
 | API | **8080** | 8000 |
 | MCP | **8091** | 8090 |
 | Blocknote converter / collab | **3510 / 3511** | 3500 / 3501 |
+| Copilot agent sidecar | **3550** | 3550 |
 
 The desktop app talks to **API `:8080`** and **collab WS `:3511`**.
 
 ## Configurable processes (profiles)
 
 Each app process is a compose profile. `PROD_PROFILES` (default
-`api,worker,mcp,collab`) selects which start. Postgres always runs; Redis + Neo4j
-are pulled in only by the `worker` profile.
+`api,worker,mcp,collab,copilot`) selects which start. Postgres always runs; Redis +
+Neo4j are pulled in only by the `worker` profile.
 
 ```bash
 make prod-up                              # full engine (default)
@@ -49,6 +50,7 @@ make prod-up PROD_PROFILES=api            # API only
 | `api` | api | the HTTP API the desktop app calls |
 | `collab` | blocknote | page editing (converter + Hocuspocus WS) |
 | `mcp` | mcp | MCP page server / Doc Surface builds |
+| `copilot` | copilot-agent | the copilot's Claude Agent SDK sidecar (needs `api`+`mcp`; ANTHROPIC_API_KEY) |
 | `worker` | worker (+redis +neo4j) | entity/claim/insight enrichment, graph lens, syncers |
 
 ## First-time bring-up

@@ -2,12 +2,13 @@ package service
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"aladin/backend_v2/internal/llm"
+	"aladin/backend_v2/internal/copilotagent"
 )
 
 type fakeSnapshot struct{}
@@ -31,53 +32,94 @@ func TestCopilotSurfaceContext(t *testing.T) {
 	}
 }
 
-// fakeChatAgent replays scripted turns: each turn may stream text via onEvent and returns
-// an assistant message (with tool calls or final content).
-type fakeChatAgent struct {
-	turns []func(onEvent func(llm.ChatEvent)) llm.ChatMessage
-	calls int
+// fakeAgent is a scripted CopilotAgent (the sidecar client surface): StartTurn streams a
+// canned NDJSON event sequence, and it records the turn request + any approve/reject/cancel
+// calls. In block mode it never emits — it holds until the turn ctx is cancelled (for the
+// cancel test).
+type fakeAgent struct {
+	mu        sync.Mutex
+	events    []copilotagent.Event
+	block     bool
+	started   chan struct{}
+	startOnce sync.Once
+	lastReq   copilotagent.TurnRequest
+	resolved  []resolveCall
+	cancelled []string
 }
 
-func (f *fakeChatAgent) Chat(_ context.Context, _ []llm.ChatMessage, _ []llm.ChatToolDef, onEvent func(llm.ChatEvent)) (llm.ChatMessage, error) {
-	if f.calls >= len(f.turns) {
-		return llm.ChatMessage{Role: llm.ChatRoleAssistant, Content: "done"}, nil
+type resolveCall struct {
+	turnID     string
+	approvalID string
+	approved   bool
+}
+
+func (a *fakeAgent) StartTurn(ctx context.Context, req copilotagent.TurnRequest) (<-chan copilotagent.Event, error) {
+	a.mu.Lock()
+	a.lastReq = req
+	a.mu.Unlock()
+	if a.started != nil {
+		a.startOnce.Do(func() { close(a.started) })
 	}
-	turn := f.turns[f.calls]
-	f.calls++
-	return turn(onEvent), nil
+	ch := make(chan copilotagent.Event, len(a.events)+1)
+	go func() {
+		defer close(ch)
+		if a.block {
+			<-ctx.Done()
+			return
+		}
+		for _, ev := range a.events {
+			select {
+			case ch <- ev:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return ch, nil
 }
 
-type fakeSearch struct {
-	mu     sync.Mutex
-	called bool
+func (a *fakeAgent) Cancel(_ context.Context, turnID string) error {
+	a.mu.Lock()
+	a.cancelled = append(a.cancelled, turnID)
+	a.mu.Unlock()
+	return nil
 }
 
-func (f *fakeSearch) Search(_ context.Context, _ string, _ string, _ int) (SearchResponse, error) {
-	f.mu.Lock()
-	f.called = true
-	f.mu.Unlock()
-	return SearchResponse{Sections: []SearchSection{{
-		Type:  "entity",
-		Label: "Entities",
-		Hits:  []SearchHit{{Kind: "entity", ID: "e1", Title: "NVIDIA"}},
-	}}}, nil
+func (a *fakeAgent) Healthz(_ context.Context) (copilotagent.Health, error) {
+	return copilotagent.Health{OK: true, MCP: true}, nil
 }
 
-func (f *fakeSearch) wasCalled() bool {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.called
+func (a *fakeAgent) ResolveApproval(_ context.Context, turnID, approvalID string, approved bool) error {
+	a.mu.Lock()
+	a.resolved = append(a.resolved, resolveCall{turnID, approvalID, approved})
+	a.mu.Unlock()
+	return nil
+}
+
+func (a *fakeAgent) request() copilotagent.TurnRequest {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.lastReq
+}
+
+func (a *fakeAgent) resolveCalls() []resolveCall {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	out := make([]resolveCall, len(a.resolved))
+	copy(out, a.resolved)
+	return out
 }
 
 type fakeCopilotStore struct {
-	mu      sync.Mutex
-	owners  map[string]string
-	msgs    map[string][]CopilotMessage
-	touches int
+	mu          sync.Mutex
+	owners      map[string]string
+	msgs        map[string][]CopilotMessage
+	sdkSessions map[string]string
+	touches     int
 }
 
 func newFakeStore() *fakeCopilotStore {
-	return &fakeCopilotStore{owners: map[string]string{}, msgs: map[string][]CopilotMessage{}}
+	return &fakeCopilotStore{owners: map[string]string{}, msgs: map[string][]CopilotMessage{}, sdkSessions: map[string]string{}}
 }
 
 func (s *fakeCopilotStore) CreateThread(_ context.Context, id, userID, _ string) error {
@@ -101,13 +143,19 @@ func (s *fakeCopilotStore) GetThread(_ context.Context, userID, threadID string)
 	if s.owners[threadID] != userID {
 		return CopilotThread{}, false, nil
 	}
-	return CopilotThread{ID: threadID}, true, nil
+	return CopilotThread{ID: threadID, SDKSessionID: s.sdkSessions[threadID]}, true, nil
+}
+func (s *fakeCopilotStore) SetThreadSDKSession(_ context.Context, threadID, sessionID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sdkSessions[threadID] = sessionID
+	return nil
 }
 func (s *fakeCopilotStore) AppendMessage(_ context.Context, m StoredCopilotMessage) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.msgs[m.ThreadID] = append(s.msgs[m.ThreadID], CopilotMessage{
-		ID: m.ID, Role: m.Role, Content: m.Content, Citations: m.Citations,
+		ID: m.ID, Role: m.Role, Content: m.Content, Citations: m.Citations, Meta: m.Meta,
 	})
 	return nil
 }
@@ -125,39 +173,33 @@ func (s *fakeCopilotStore) messages(threadID string) []CopilotMessage {
 	copy(out, s.msgs[threadID])
 	return out
 }
+func (s *fakeCopilotStore) sdkSession(threadID string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.sdkSessions[threadID]
+}
 
-// TestCopilotToolLoopStreams drives the full agent loop with a fake LLM: turn 1 calls the
-// search tool, turn 2 answers. It asserts the tool ran, the answer + citations were
-// persisted, and token/message/done events streamed over the realtime hub.
-func TestCopilotToolLoopStreams(t *testing.T) {
+// TestCopilotStreamsTurn drives a full turn from a scripted sidecar stream: session id →
+// a tool call (whose result carries a citation) → a streamed token → the final message →
+// done. It asserts the session id was persisted, token/message/done streamed over the hub,
+// and the answer + citation were persisted.
+func TestCopilotStreamsTurn(t *testing.T) {
 	const userID = "11111111-1111-1111-1111-111111111111"
 
-	search := &fakeSearch{}
 	store := newFakeStore()
 	realtime := NewInMemoryRealtimeEventService(NewSubscriptionKeyResolver())
-
-	agent := &fakeChatAgent{turns: []func(func(llm.ChatEvent)) llm.ChatMessage{
-		// Turn 1: request the search tool.
-		func(_ func(llm.ChatEvent)) llm.ChatMessage {
-			return llm.ChatMessage{Role: llm.ChatRoleAssistant, ToolCalls: []llm.ChatToolCall{
-				{ID: "call_1", Name: "search", Arguments: `{"query":"nvda"}`},
-			}}
-		},
-		// Turn 2: stream a token and finish.
-		func(onEvent func(llm.ChatEvent)) llm.ChatMessage {
-			onEvent(llm.ChatEvent{Kind: llm.ChatEventText, Text: "NVDA looks strong."})
-			return llm.ChatMessage{Role: llm.ChatRoleAssistant, Content: "NVDA looks strong."}
-		},
+	agent := &fakeAgent{events: []copilotagent.Event{
+		{Type: "session", SessionID: "sdk-1"},
+		{Type: "tool_start", Name: "search"},
+		{Type: "tool_result", Name: "search", Content: `{"citations":[{"kind":"entity","id":"e1","title":"NVIDIA"}]}`},
+		{Type: "token", Delta: "NVDA looks strong."},
+		{Type: "message", Text: "NVDA looks strong."},
+		{Type: "done", SessionID: "sdk-1", NumTurns: 2, CostUSD: 0.05,
+			Usage: copilotagent.TurnUsage{InputTokens: 10, OutputTokens: 5}},
 	}}
 
-	svc := NewCopilotService(CopilotDeps{
-		Store:    store,
-		Agent:    agent,
-		Realtime: realtime,
-		Search:   search,
-	})
+	svc := NewCopilotService(CopilotDeps{Store: store, Agent: agent, Realtime: realtime})
 
-	// Subscribe to this user's copilot events before sending.
 	keys := []SubscriptionKey{{
 		TenantID: userID, Stream: WorkspaceStream, ResourceKind: copilotResourceKind, ResourceID: AnyResource,
 	}}
@@ -169,6 +211,7 @@ func TestCopilotToolLoopStreams(t *testing.T) {
 
 	res, err := svc.SendMessage(context.Background(), CopilotSendInput{
 		Principal: Principal{UserID: userID},
+		Bearer:    "tok",
 		Text:      "how does NVDA look?",
 		Surface:   CopilotSurface{Kind: "ticker", Symbol: "NVDA"},
 	})
@@ -179,7 +222,6 @@ func TestCopilotToolLoopStreams(t *testing.T) {
 		t.Fatalf("expected thread + session ids, got %+v", res)
 	}
 
-	// Drain events until done (or timeout).
 	var gotToken, gotMessage, gotDone bool
 	var messagePayload copilotMessagePayload
 	deadline := time.After(3 * time.Second)
@@ -204,54 +246,69 @@ loop:
 		}
 	}
 
-	if !search.wasCalled() {
-		t.Error("expected the search tool to run")
-	}
-	if !gotToken {
-		t.Error("expected a copilot.token event")
-	}
-	if !gotMessage {
-		t.Error("expected a copilot.message event")
-	}
-	if !gotDone {
-		t.Error("expected a copilot.done event")
+	if !gotToken || !gotMessage || !gotDone {
+		t.Fatalf("missing events: token=%v message=%v done=%v", gotToken, gotMessage, gotDone)
 	}
 	if messagePayload.Content != "NVDA looks strong." {
-		t.Errorf("message content = %q, want %q", messagePayload.Content, "NVDA looks strong.")
+		t.Errorf("message content = %q", messagePayload.Content)
 	}
 	if len(messagePayload.Citations) != 1 || messagePayload.Citations[0].ID != "e1" {
 		t.Errorf("expected one citation to e1, got %+v", messagePayload.Citations)
 	}
 
+	// The turn request carried the forwarded bearer + the gated-tool list.
+	req := agent.request()
+	if req.UserBearer != "tok" {
+		t.Errorf("turn request bearer = %q, want tok", req.UserBearer)
+	}
+	if req.Prompt != "how does NVDA look?" {
+		t.Errorf("turn request prompt = %q", req.Prompt)
+	}
+	if len(req.GatedTools) == 0 {
+		t.Error("expected gated tools to be passed to the sidecar")
+	}
+
+	// The SDK session id was persisted for the next turn to resume.
+	if store.sdkSession(res.ThreadID) != "sdk-1" {
+		t.Errorf("sdk session = %q, want sdk-1", store.sdkSession(res.ThreadID))
+	}
+
 	// Persisted: user turn + final assistant turn.
 	msgs := store.messages(res.ThreadID)
-	if len(msgs) != 2 {
-		t.Fatalf("expected 2 stored messages, got %d", len(msgs))
-	}
-	if msgs[0].Role != "user" || msgs[1].Role != "assistant" {
-		t.Errorf("unexpected roles: %q, %q", msgs[0].Role, msgs[1].Role)
+	if len(msgs) != 2 || msgs[0].Role != "user" || msgs[1].Role != "assistant" {
+		t.Fatalf("unexpected stored messages: %+v", msgs)
 	}
 	if msgs[1].Content != "NVDA looks strong." {
 		t.Errorf("stored assistant content = %q", msgs[1].Content)
 	}
+	// Turn meta (cost/usage + tool activity) is captured on the persisted message.
+	if msgs[1].Meta == nil || msgs[1].Meta.CostUSD != 0.05 || msgs[1].Meta.NumTurns != 2 {
+		t.Fatalf("assistant meta = %+v, want cost 0.05 / 2 turns", msgs[1].Meta)
+	}
+	if len(msgs[1].Meta.Activity) != 1 || msgs[1].Meta.Activity[0].Name != "search" || !msgs[1].Meta.Activity[0].OK {
+		t.Fatalf("activity digest = %+v, want one ok search", msgs[1].Meta.Activity)
+	}
 }
 
-// blockingAgent signals when its turn starts, then blocks until the context is cancelled.
-type blockingAgent struct{ started chan struct{} }
-
-func (a *blockingAgent) Chat(ctx context.Context, _ []llm.ChatMessage, _ []llm.ChatToolDef, _ func(llm.ChatEvent)) (llm.ChatMessage, error) {
-	close(a.started)
-	<-ctx.Done()
-	return llm.ChatMessage{}, ctx.Err()
+// TestCopilotSendRequiresBearer — the sidecar's MCP calls are scoped by the forwarded
+// bearer, so a send without one is rejected before any turn starts.
+func TestCopilotSendRequiresBearer(t *testing.T) {
+	svc := NewCopilotService(CopilotDeps{
+		Store: newFakeStore(), Agent: &fakeAgent{}, Realtime: NewInMemoryRealtimeEventService(NewSubscriptionKeyResolver()),
+	})
+	_, err := svc.SendMessage(context.Background(), CopilotSendInput{Principal: Principal{UserID: "u1"}, Text: "hi"})
+	if err == nil {
+		t.Fatal("expected an error when no bearer is forwarded")
+	}
 }
 
-// TestCopilotCancelStops — a running turn cancels cleanly (a done event, no error), and a
-// non-owner cannot cancel it.
+// TestCopilotCancelStops — a running turn cancels cleanly (a done event, no error), the
+// sidecar is told to abort, and a non-owner cannot cancel it.
 func TestCopilotCancelStops(t *testing.T) {
 	const userID = "22222222-2222-2222-2222-222222222222"
 	store := newFakeStore()
 	realtime := NewInMemoryRealtimeEventService(NewSubscriptionKeyResolver())
-	agent := &blockingAgent{started: make(chan struct{})}
+	agent := &fakeAgent{block: true, started: make(chan struct{})}
 	svc := NewCopilotService(CopilotDeps{Store: store, Agent: agent, Realtime: realtime})
 
 	keys := []SubscriptionKey{{TenantID: userID, Stream: WorkspaceStream, ResourceKind: copilotResourceKind, ResourceID: AnyResource}}
@@ -261,7 +318,7 @@ func TestCopilotCancelStops(t *testing.T) {
 	}
 	defer unsubscribe()
 
-	res, err := svc.SendMessage(context.Background(), CopilotSendInput{Principal: Principal{UserID: userID}, Text: "hi"})
+	res, err := svc.SendMessage(context.Background(), CopilotSendInput{Principal: Principal{UserID: userID}, Bearer: "tok", Text: "hi"})
 	if err != nil {
 		t.Fatalf("send: %v", err)
 	}
@@ -299,22 +356,18 @@ func TestCopilotCancelStops(t *testing.T) {
 	}
 }
 
-// TestCopilotProposesDestructive — a destructive tool is proposed (not executed); the pending
-// registry holds it; a non-owner cannot approve; reject clears it.
-func TestCopilotProposesDestructive(t *testing.T) {
+// TestCopilotProposesGatedAction — a gated tool proposal registers a pending action and
+// emits proposed_action; a non-owner cannot approve; reject clears the registry and relays
+// the rejection to the sidecar.
+func TestCopilotProposesGatedAction(t *testing.T) {
 	const userID = "33333333-3333-3333-3333-333333333333"
 	store := newFakeStore()
 	realtime := NewInMemoryRealtimeEventService(NewSubscriptionKeyResolver())
-	agent := &fakeChatAgent{turns: []func(func(llm.ChatEvent)) llm.ChatMessage{
-		func(_ func(llm.ChatEvent)) llm.ChatMessage {
-			return llm.ChatMessage{Role: llm.ChatRoleAssistant, ToolCalls: []llm.ChatToolCall{
-				{ID: "c1", Name: "delete_shard_file", Arguments: `{"shardId":"s1","path":"old.tsx"}`},
-			}}
-		},
-		func(onEvent func(llm.ChatEvent)) llm.ChatMessage {
-			onEvent(llm.ChatEvent{Kind: llm.ChatEventText, Text: "I've proposed deleting it."})
-			return llm.ChatMessage{Role: llm.ChatRoleAssistant, Content: "I've proposed deleting it."}
-		},
+	agent := &fakeAgent{events: []copilotagent.Event{
+		{Type: "session", SessionID: "sdk-2"},
+		{Type: "proposed_action", ApprovalID: "a1", Tool: "delete_file", Input: []byte(`{"path":"old.tsx"}`)},
+		{Type: "message", Text: "I proposed deleting it."},
+		{Type: "done", SessionID: "sdk-2"},
 	}}
 	svc := NewCopilotService(CopilotDeps{Store: store, Agent: agent, Realtime: realtime})
 
@@ -325,11 +378,11 @@ func TestCopilotProposesDestructive(t *testing.T) {
 	}
 	defer unsubscribe()
 
-	if _, err := svc.SendMessage(context.Background(), CopilotSendInput{Principal: Principal{UserID: userID}, Text: "delete old.tsx"}); err != nil {
+	if _, err := svc.SendMessage(context.Background(), CopilotSendInput{Principal: Principal{UserID: userID}, Bearer: "tok", Text: "delete old.tsx"}); err != nil {
 		t.Fatalf("send: %v", err)
 	}
 
-	var actionID string
+	var actionID, summary string
 	deadline := time.After(3 * time.Second)
 drain:
 	for {
@@ -337,7 +390,7 @@ drain:
 		case ev := <-events:
 			if ev.Type == copilotResourceKind+".proposed_action" {
 				if p, ok := ev.Payload.(copilotProposedPayload); ok {
-					actionID = p.ActionID
+					actionID, summary = p.ActionID, p.Summary
 				}
 			}
 			if ev.Type == copilotResourceKind+".done" {
@@ -347,8 +400,11 @@ drain:
 			t.Fatal("timed out waiting for done")
 		}
 	}
-	if actionID == "" {
-		t.Fatal("expected a proposed_action event with an actionId")
+	if actionID != "a1" {
+		t.Fatalf("expected proposed_action a1, got %q", actionID)
+	}
+	if !strings.Contains(summary, "old.tsx") {
+		t.Errorf("summary should name the file, got %q", summary)
 	}
 
 	impl := svc.(*defaultCopilotService)
@@ -371,6 +427,111 @@ drain:
 	if n != 0 {
 		t.Fatalf("expected pending cleared after reject, got %d", n)
 	}
+	// The rejection was relayed to the sidecar to release the held tool.
+	calls := agent.resolveCalls()
+	if len(calls) != 1 || calls[0].approvalID != "a1" || calls[0].approved {
+		t.Fatalf("expected one reject relayed to the sidecar, got %+v", calls)
+	}
+}
+
+// TestCopilotInterruptedStreamFails — a stream that ends without its terminal `done`
+// (sidecar died mid-turn) surfaces as an error, not a silent success.
+func TestCopilotInterruptedStreamFails(t *testing.T) {
+	const userID = "44444444-4444-4444-4444-444444444444"
+	store := newFakeStore()
+	realtime := NewInMemoryRealtimeEventService(NewSubscriptionKeyResolver())
+	agent := &fakeAgent{events: []copilotagent.Event{
+		{Type: "session", SessionID: "sdk-3"},
+		{Type: "token", Delta: "partial"},
+		// no done — the stream just ends
+	}}
+	svc := NewCopilotService(CopilotDeps{Store: store, Agent: agent, Realtime: realtime})
+
+	keys := []SubscriptionKey{{TenantID: userID, Stream: WorkspaceStream, ResourceKind: copilotResourceKind, ResourceID: AnyResource}}
+	events, unsubscribe, err := realtime.Subscribe(context.Background(), keys, "")
+	if err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+	defer unsubscribe()
+
+	if _, err := svc.SendMessage(context.Background(), CopilotSendInput{Principal: Principal{UserID: userID}, Bearer: "tok", Text: "hi"}); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+
+	gotError, gotDone := false, false
+	deadline := time.After(3 * time.Second)
+	for !gotDone {
+		select {
+		case ev := <-events:
+			switch ev.Type {
+			case copilotResourceKind + ".error":
+				gotError = true
+			case copilotResourceKind + ".done":
+				gotDone = true
+			}
+		case <-deadline:
+			t.Fatal("timed out waiting for done after an interrupted stream")
+		}
+	}
+	if !gotError {
+		t.Error("an interrupted stream (no terminal done) should emit an error event")
+	}
+}
+
+// TestCopilotRejectsConcurrentTurnOnThread — one turn per thread: a second send while a
+// turn runs on the same thread gets ErrConflict; a different thread is unaffected; after
+// cancel the thread accepts again.
+func TestCopilotRejectsConcurrentTurnOnThread(t *testing.T) {
+	const userID = "55555555-5555-5555-5555-555555555555"
+	store := newFakeStore()
+	realtime := NewInMemoryRealtimeEventService(NewSubscriptionKeyResolver())
+	agent := &fakeAgent{block: true, started: make(chan struct{})}
+	svc := NewCopilotService(CopilotDeps{Store: store, Agent: agent, Realtime: realtime})
+
+	res, err := svc.SendMessage(context.Background(), CopilotSendInput{Principal: Principal{UserID: userID}, Bearer: "tok", Text: "first"})
+	if err != nil {
+		t.Fatalf("first send: %v", err)
+	}
+	select {
+	case <-agent.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("turn never started")
+	}
+
+	// Same thread while running → conflict, and the rejected message is NOT persisted.
+	if _, err := svc.SendMessage(context.Background(), CopilotSendInput{
+		Principal: Principal{UserID: userID}, Bearer: "tok", Text: "second", ThreadID: res.ThreadID,
+	}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("concurrent same-thread send error = %v, want ErrConflict", err)
+	}
+	if got := len(store.messages(res.ThreadID)); got != 1 {
+		t.Fatalf("rejected send persisted a message: %d stored, want 1", got)
+	}
+
+	// A different thread is unaffected.
+	if _, err := svc.SendMessage(context.Background(), CopilotSendInput{
+		Principal: Principal{UserID: userID}, Bearer: "tok", Text: "elsewhere",
+	}); err != nil {
+		t.Fatalf("other-thread send: %v", err)
+	}
+
+	// After cancel, the original thread accepts again (poll: deregistration is async).
+	if err := svc.Cancel(context.Background(), userID, res.SessionID); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		_, err = svc.SendMessage(context.Background(), CopilotSendInput{
+			Principal: Principal{UserID: userID}, Bearer: "tok", Text: "again", ThreadID: res.ThreadID,
+		})
+		if err == nil || !errors.Is(err, ErrConflict) || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatalf("send after cancel: %v", err)
+	}
 }
 
 // TestCopilotNotConfigured — no agent ⇒ Configured()=false and SendMessage rejects cleanly.
@@ -380,7 +541,7 @@ func TestCopilotNotConfigured(t *testing.T) {
 		t.Fatal("expected Configured()=false with no agent")
 	}
 	_, err := svc.SendMessage(context.Background(), CopilotSendInput{
-		Principal: Principal{UserID: "u1"}, Text: "hi",
+		Principal: Principal{UserID: "u1"}, Bearer: "tok", Text: "hi",
 	})
 	if err == nil {
 		t.Fatal("expected an error when copilot is not configured")

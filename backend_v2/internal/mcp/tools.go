@@ -181,11 +181,12 @@ type folderOutput struct {
 }
 
 type createUpdatePageOutput struct {
-	ID        string  `json:"id"`
-	Title     string  `json:"title"`
-	FolderID  *string `json:"folder_id,omitempty"`
-	Revision  int64   `json:"revision"`
-	UpdatedAt string  `json:"updated_at"`
+	ID        string        `json:"id"`
+	Title     string        `json:"title"`
+	FolderID  *string       `json:"folder_id,omitempty"`
+	Revision  int64         `json:"revision"`
+	UpdatedAt string        `json:"updated_at"`
+	Citations []citationOut `json:"citations,omitempty"`
 }
 
 type updateBlockOutput struct {
@@ -229,11 +230,13 @@ type foldersOutput struct {
 }
 
 type pageOutput struct {
-	Page pageDetail `json:"page"`
+	Page      pageDetail    `json:"page"`
+	Citations []citationOut `json:"citations,omitempty"`
 }
 
 type pagesOutput struct {
-	Pages []pageSummary `json:"pages"`
+	Pages     []pageSummary `json:"pages"`
+	Citations []citationOut `json:"citations,omitempty"`
 }
 
 func (t toolServer) getBrowserTree(ctx context.Context, _ *sdkmcp.CallToolRequest, _ emptyInput) (*sdkmcp.CallToolResult, browserTreeOutput, error) {
@@ -302,6 +305,7 @@ func (t toolServer) createPage(ctx context.Context, _ *sdkmcp.CallToolRequest, i
 		FolderID:  created.Artifact.FolderID,
 		Revision:  created.Artifact.Revision,
 		UpdatedAt: created.Artifact.UpdatedAt,
+		Citations: []citationOut{{Kind: "page", ID: created.Artifact.ID, Title: created.Artifact.Title}},
 	}, nil
 }
 
@@ -366,6 +370,7 @@ func (t toolServer) updatePage(ctx context.Context, _ *sdkmcp.CallToolRequest, i
 		FolderID:  rec.FolderID,
 		Revision:  rec.Revision,
 		UpdatedAt: rec.UpdatedAt,
+		Citations: []citationOut{{Kind: "page", ID: rec.ID, Title: rec.Title}},
 	}, nil
 }
 
@@ -390,7 +395,10 @@ func (t toolServer) getPage(ctx context.Context, _ *sdkmcp.CallToolRequest, inpu
 	if err != nil {
 		return nil, pageOutput{}, err
 	}
-	return nil, pageOutput{Page: detail}, nil
+	return nil, pageOutput{
+		Page:      detail,
+		Citations: []citationOut{{Kind: "page", ID: rec.ID, Title: rec.Title}},
+	}, nil
 }
 
 func (t toolServer) updateBlock(ctx context.Context, _ *sdkmcp.CallToolRequest, input updateBlockInput) (*sdkmcp.CallToolResult, updateBlockOutput, error) {
@@ -575,12 +583,14 @@ func (t toolServer) searchPages(ctx context.Context, _ *sdkmcp.CallToolRequest, 
 		return nil, pagesOutput{}, err
 	}
 	pages := make([]pageSummary, 0, len(recs))
+	cites := make([]citationOut, 0, len(recs))
 	for _, rec := range recs {
 		if rec.Type == pageArtifactType {
 			pages = append(pages, toPageSummary(rec))
+			cites = append(cites, citationOut{Kind: citationKindForArtifact(rec.Type), ID: rec.ID, Title: rec.Title})
 		}
 	}
-	return nil, pagesOutput{Pages: pages}, nil
+	return nil, pagesOutput{Pages: pages, Citations: cites}, nil
 }
 
 func requirePage(rec service.ArtifactResponse) error {

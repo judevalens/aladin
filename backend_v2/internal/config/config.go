@@ -133,18 +133,26 @@ func LoadAlpaca() AlpacaConfig {
 	}
 }
 
-// CopilotConfig configures the in-app agentic LLM interface (runs in the API process,
-// reusing the same OpenAI client the worker's extraction judges use). Empty key ⇒ the
-// copilot endpoint degrades cleanly ("copilot not configured"), like the market hub.
-type CopilotConfig struct {
-	OpenAIAPIKey string
+// CopilotAgentConfig points at the copilot-agent sidecar (services/copilot-agent) — the
+// Node process running the Claude Agent SDK per copilot turn. ANTHROPIC_API_KEY is read
+// by the sidecar from its own env; the Go side never touches it. Explicitly setting
+// COPILOT_AGENT_URL="" disables the copilot ("copilot not configured"), like the market
+// hub's degradation. (OPENAI_API_KEY now only powers the worker's extraction judges.)
+type CopilotAgentConfig struct {
+	URL          string
+	SharedSecret string
 	Model        string
 }
 
-func LoadCopilot() CopilotConfig {
-	return CopilotConfig{
-		OpenAIAPIKey: os.Getenv("OPENAI_API_KEY"),
-		Model:        optional("COPILOT_MODEL", "gpt-4o"),
+func LoadCopilotAgent() CopilotAgentConfig {
+	url := "http://localhost:3550"
+	if v, ok := os.LookupEnv("COPILOT_AGENT_URL"); ok {
+		url = v
+	}
+	return CopilotAgentConfig{
+		URL:          url,
+		SharedSecret: optional("COPILOT_AGENT_SHARED_SECRET", "local-dev-agent-secret"),
+		Model:        optional("COPILOT_MODEL", "claude-sonnet-5"),
 	}
 }
 

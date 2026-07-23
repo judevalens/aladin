@@ -46,6 +46,10 @@ func TestCopilotStoreRoundTrip(t *testing.T) {
 	if err := store.AppendMessage(ctx, coreservice.StoredCopilotMessage{
 		ID: uuid.NewString(), ThreadID: threadID, Role: "assistant", Content: "Strong.",
 		Citations: []coreservice.Citation{{Kind: "ticker", ID: "NVDA", Title: "NVDA"}},
+		Meta: &coreservice.CopilotMessageMeta{
+			NumTurns: 3, InputTokens: 100, OutputTokens: 40, CostUSD: 0.12,
+			Activity: []coreservice.CopilotActivityItem{{Name: "search", OK: true}},
+		},
 	}); err != nil {
 		t.Fatalf("append assistant: %v", err)
 	}
@@ -66,10 +70,37 @@ func TestCopilotStoreRoundTrip(t *testing.T) {
 	if len(msgs[0].Citations) != 0 {
 		t.Fatalf("user message should have no citations, got %+v", msgs[0].Citations)
 	}
+	// Turn meta round-trips on the assistant message; absent on the user turn.
+	if msgs[0].Meta != nil {
+		t.Fatalf("user message should have no meta, got %+v", msgs[0].Meta)
+	}
+	if msgs[1].Meta == nil || msgs[1].Meta.CostUSD != 0.12 || len(msgs[1].Meta.Activity) != 1 {
+		t.Fatalf("assistant meta did not round-trip: %+v", msgs[1].Meta)
+	}
 
 	// Ownership is enforced on GetThread.
 	if _, ok, err := store.GetThread(ctx, userID, threadID); err != nil || !ok {
 		t.Fatalf("owner GetThread: ok=%v err=%v", ok, err)
+	}
+
+	// SDK session id round-trips (empty until stamped; re-stamped after each turn).
+	th, _, err := store.GetThread(ctx, userID, threadID)
+	if err != nil || th.SDKSessionID != "" {
+		t.Fatalf("fresh thread sdk session = %q err=%v, want empty", th.SDKSessionID, err)
+	}
+	if err := store.SetThreadSDKSession(ctx, threadID, "sess-abc"); err != nil {
+		t.Fatalf("set sdk session: %v", err)
+	}
+	th, _, err = store.GetThread(ctx, userID, threadID)
+	if err != nil || th.SDKSessionID != "sess-abc" {
+		t.Fatalf("sdk session = %q err=%v, want sess-abc", th.SDKSessionID, err)
+	}
+	if err := store.SetThreadSDKSession(ctx, threadID, ""); err != nil {
+		t.Fatalf("clear sdk session: %v", err)
+	}
+	th, _, err = store.GetThread(ctx, userID, threadID)
+	if err != nil || th.SDKSessionID != "" {
+		t.Fatalf("cleared sdk session = %q err=%v, want empty", th.SDKSessionID, err)
 	}
 	if _, ok, err := store.GetThread(ctx, otherUser, threadID); err != nil || ok {
 		t.Fatalf("non-owner GetThread should be not-found: ok=%v err=%v", ok, err)
