@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"aladin/backend_v2/internal/market/alpaca"
@@ -42,11 +43,23 @@ type marketDataHub struct {
 	snapshots QuoteSnapshotSource // optional: seed a real last-known quote on subscribe
 	stream    upstreamStream      // nil when Alpaca isn't configured
 
+	// tickObserver is an optional non-blocking tap on EVERY raw tick (before the throttle) —
+	// the alert engine's hook. atomic.Value so onTrade reads it lock-free on the WS goroutine
+	// while Set runs once at startup.
+	tickObserver atomic.Value // func(symbol string, price float64, at time.Time)
+
 	mu          sync.Mutex
 	refcount    map[string]int       // symbol → active subscriptions
 	idBySymbol  map[string]string    // symbol → instrument_id (cached at subscribe)
 	lastPublish map[string]time.Time // symbol → last publish (throttle)
 }
+
+// TickObserver receives every raw tick (before the 1/sec quote throttle). It MUST NOT block —
+// it runs on the single WS read goroutine.
+type TickObserver func(symbol string, price float64, at time.Time)
+
+// SetTickObserver installs the tap (the alert engine). Call once at startup.
+func (h *marketDataHub) SetTickObserver(fn TickObserver) { h.tickObserver.Store(fn) }
 
 // NewMarketDataService builds the hub and its upstream Alpaca stream. When !configured the
 // stream is nil: Subscribe/Unsubscribe still refcount, but nothing streams (degrades cleanly).
@@ -163,9 +176,15 @@ func (h *marketDataHub) Unsubscribe(ctx context.Context, symbols []string) error
 	return nil
 }
 
-// onTrade is the upstream tick callback: throttle, then publish a quote to the outbox.
+// onTrade is the upstream tick callback: tap the observer (every tick), then throttle + publish
+// a quote to the outbox.
 func (h *marketDataHub) onTrade(t alpaca.Trade) {
 	sym := strings.ToUpper(t.Symbol)
+	// Alert engine tap — BEFORE the throttle (it needs every tick for slope + crossings) and
+	// non-blocking (this is the WS read goroutine; a stall backs up the socket).
+	if obs, ok := h.tickObserver.Load().(TickObserver); ok && obs != nil {
+		obs(sym, t.Price, t.Time)
+	}
 	h.mu.Lock()
 	id, known := h.idBySymbol[sym]
 	last := h.lastPublish[sym]

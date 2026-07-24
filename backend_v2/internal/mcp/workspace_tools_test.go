@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"aladin/backend_v2/internal/service"
@@ -130,6 +131,31 @@ func (f *fakeMarketInfo) Account(context.Context) (service.AccountSummary, error
 func (f *fakeMarketInfo) Positions(context.Context) ([]service.PositionView, error) {
 	return f.positions, f.err
 }
+
+type fakeAlertService struct {
+	created   *service.Alert
+	warning   string
+	createErr error
+	list      []service.Alert
+	deleted   string
+}
+
+func (f *fakeAlertService) Create(_ context.Context, userID, symbol, direction string, threshold float64) (service.CreateAlertResult, error) {
+	if f.createErr != nil {
+		return service.CreateAlertResult{}, f.createErr
+	}
+	a := service.Alert{ID: "al1", UserID: userID, Symbol: strings.ToUpper(symbol), Direction: direction, Threshold: threshold, Armed: true, Status: "active"}
+	f.created = &a
+	return service.CreateAlertResult{Alert: a, Warning: f.warning}, nil
+}
+func (f *fakeAlertService) List(context.Context, string) ([]service.Alert, error) {
+	return f.list, nil
+}
+func (f *fakeAlertService) Delete(_ context.Context, _, id string) error {
+	f.deleted = id
+	return nil
+}
+func (f *fakeAlertService) Pause(context.Context, string, string) error { return nil }
 
 // --- tests -----------------------------------------------------------------
 
@@ -354,6 +380,40 @@ func TestMarketInfoToolsDegradeWithoutConfig(t *testing.T) {
 	}
 	if _, _, err := tools.getAccount(contextWithScopes(), nil, emptyInput{}); !errors.As(err, &br) {
 		t.Fatalf("getAccount without config = %v, want bad request", err)
+	}
+}
+
+func TestCreateAlertScopesToPrincipalAndCites(t *testing.T) {
+	t.Parallel()
+
+	as := &fakeAlertService{warning: "already above"}
+	tools := workspaceToolServer{alerts: as}
+
+	_, out, err := tools.createAlert(contextWithScopes(), nil, createAlertInput{Symbol: "nvda", Direction: "above", Threshold: 215})
+	if err != nil {
+		t.Fatalf("createAlert error: %v", err)
+	}
+	if as.created == nil || as.created.UserID != "user-1" || as.created.Symbol != "NVDA" {
+		t.Fatalf("created alert = %#v, want NVDA for user-1", as.created)
+	}
+	if out.Warning != "already above" {
+		t.Fatalf("warning not propagated: %q", out.Warning)
+	}
+	if len(out.Citations) != 1 || out.Citations[0].ID != "NVDA" {
+		t.Fatalf("citations = %#v, want NVDA ticker", out.Citations)
+	}
+}
+
+func TestAlertToolsDegradeWithoutConfig(t *testing.T) {
+	t.Parallel()
+
+	tools := workspaceToolServer{} // alerts nil
+	var br service.BadRequest
+	if _, _, err := tools.createAlert(contextWithScopes(), nil, createAlertInput{Symbol: "x", Direction: "above", Threshold: 1}); !errors.As(err, &br) {
+		t.Fatalf("createAlert without config = %v, want bad request", err)
+	}
+	if _, _, err := tools.listAlerts(contextWithScopes(), nil, emptyInput{}); !errors.As(err, &br) {
+		t.Fatalf("listAlerts without config = %v, want bad request", err)
 	}
 }
 

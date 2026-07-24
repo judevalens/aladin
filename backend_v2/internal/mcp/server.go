@@ -148,7 +148,9 @@ Workspace tools — ground answers in the user's Aladin data:
   - search(query) FIRST to find ids: tickers, entities (companies/people),
     pages, shards. Then get_entity / get_artifact / get_page to read one.
   - get_insights lists engine-generated insights; get_watchlist / get_bars /
-    get_quote cover the Markets surface; add_to_watchlist and draw_edge are
+    get_quote cover the Markets surface; create_alert (recurring, self-re-arming
+    price alert; surfaces as a notification) / list_alerts / delete_alert;
+    add_to_watchlist and draw_edge are
     light additive writes.
   - Market intelligence: get_news (catalysts — use it to explain WHY a stock
     moved, not just that it did), get_movers + get_most_actives (what's moving /
@@ -191,6 +193,7 @@ func New(addr string, deps app.Dependencies, pages service.PageDocumentService, 
 		bars:        deps.Bars(),
 		snapshots:   deps.QuoteSnapshots(),
 		marketInfo:  deps.MarketInfo(),
+		alerts:      deps.Alerts(),
 		instruments: deps.Instruments(),
 	})
 

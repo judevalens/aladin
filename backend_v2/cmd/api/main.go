@@ -63,6 +63,11 @@ func main() {
 	// for the drainer to fan out. No-op without Alpaca keys.
 	deps.MarketData().Start(ctx)
 
+	// Alert engine: evaluate price alerts on live ticks (via the hub's tick observer, wired in
+	// wiring) + a reconcile loop that drives demand and snapshot-backstops. Started ONLY here —
+	// it's a singleton tick consumer that must run in exactly one process.
+	deps.AlertEngine().Start(ctx)
+
 	go func() {
 		<-ctx.Done()
 		if err := server.Shutdown(context.Background()); err != nil {

@@ -72,6 +72,12 @@ type Dependencies interface {
 	// MarketInfo is the read-only market-intelligence surface: news, screeners, and the
 	// (paper/live) account's balance + positions (nil without Alpaca keys).
 	MarketInfo() coreservice.MarketInfoService
+	// Alerts backs price alerts (the alert engine that evaluates them runs only in the api process).
+	Alerts() coreservice.AlertService
+	// Notifications is the reusable durable per-user inbox primitive.
+	Notifications() coreservice.NotificationService
+	// AlertEngine evaluates alerts on live ticks — Start()ed only in cmd/api (nil in Static).
+	AlertEngine() *coreservice.AlertEngine
 	// MarketData is the demand-driven live-quote hub (one Alpaca WS → outbox fan-out).
 	MarketData() coreservice.MarketDataService
 	// GraphReader reads the Neo4j connection lens. Nil when Neo4j isn't configured.
@@ -114,6 +120,9 @@ type StaticDependencies struct {
 	BarsSvc                coreservice.BarService
 	QuoteSnapshotsSvc      coreservice.QuoteSnapshotSource
 	MarketInfoSvc          coreservice.MarketInfoService
+	AlertsSvc              coreservice.AlertService
+	NotificationsSvc       coreservice.NotificationService
+	AlertEngineSvc         *coreservice.AlertEngine
 	MarketDataSvc          coreservice.MarketDataService
 	CopilotSvc             coreservice.CopilotService
 }
@@ -192,6 +201,11 @@ func (d StaticDependencies) QuoteSnapshots() coreservice.QuoteSnapshotSource {
 func (d StaticDependencies) MarketInfo() coreservice.MarketInfoService {
 	return d.MarketInfoSvc
 }
+func (d StaticDependencies) Alerts() coreservice.AlertService { return d.AlertsSvc }
+func (d StaticDependencies) Notifications() coreservice.NotificationService {
+	return d.NotificationsSvc
+}
+func (d StaticDependencies) AlertEngine() *coreservice.AlertEngine { return d.AlertEngineSvc }
 func (d StaticDependencies) MarketData() coreservice.MarketDataService {
 	return d.MarketDataSvc
 }
@@ -236,6 +250,9 @@ type wiring struct {
 	bars                coreservice.BarService
 	quoteSnapshots      coreservice.QuoteSnapshotSource
 	marketInfo          coreservice.MarketInfoService
+	alerts              coreservice.AlertService
+	notifications       coreservice.NotificationService
+	alertEngine         *coreservice.AlertEngine
 	marketData          coreservice.MarketDataService
 	copilot             coreservice.CopilotService
 }
@@ -286,9 +303,12 @@ func (w wiring) Bars() coreservice.BarService               { return w.bars }
 func (w wiring) QuoteSnapshots() coreservice.QuoteSnapshotSource {
 	return w.quoteSnapshots
 }
-func (w wiring) MarketInfo() coreservice.MarketInfoService { return w.marketInfo }
-func (w wiring) MarketData() coreservice.MarketDataService { return w.marketData }
-func (w wiring) Copilot() coreservice.CopilotService       { return w.copilot }
+func (w wiring) MarketInfo() coreservice.MarketInfoService      { return w.marketInfo }
+func (w wiring) Alerts() coreservice.AlertService               { return w.alerts }
+func (w wiring) Notifications() coreservice.NotificationService { return w.notifications }
+func (w wiring) AlertEngine() *coreservice.AlertEngine          { return w.alertEngine }
+func (w wiring) MarketData() coreservice.MarketDataService      { return w.marketData }
+func (w wiring) Copilot() coreservice.CopilotService            { return w.copilot }
 
 func NewDependencies(pool *pgxpool.Pool) Dependencies {
 	return NewDependenciesWithProviderConnections(pool, config.LoadProviderConnections(), config.DataVolumePathOrDefault())
@@ -390,6 +410,23 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 	artifactsSvc := coreservice.NewArtifactService(artifactRepo, artifactFiles)
 	pagesSvc := coreservice.NewPageService(artifactRepo)
 	watchlistSvc := coreservice.NewWatchlistService(repo.NewWatchlistPostgres(pool))
+	// Notifications (reusable durable inbox) + price alerts. The alert ENGINE that evaluates
+	// alerts on live ticks is started only in cmd/api (it needs the market hub); these services
+	// are the CRUD surface, available in both api and mcp processes. alertsSvc snapshot-seeds
+	// armed state via snapshotSource (nil-safe: alerts still create, just always-armed).
+	notificationsSvc := coreservice.NewNotificationService(repo.NewNotificationsPostgres(pool))
+	alertRepo := repo.NewAlertsPostgres(pool)
+	alertsSvc := coreservice.NewAlertService(alertRepo, instrumentsSvc, snapshotSource)
+	// The alert engine: a singleton tick consumer. Built here (deps for both api + mcp) but
+	// Start()ed only in cmd/api (it needs the running market stream). The market hub is its
+	// demand source (Subscribe/Unsubscribe) AND its tick source (SetTickObserver). SetTickObserver
+	// is harmless without Start (mcp never runs the stream, so no ticks flow).
+	alertEngine := coreservice.NewAlertEngine(alertRepo, marketDataSvc, snapshotSource)
+	if obs, ok := marketDataSvc.(interface {
+		SetTickObserver(coreservice.TickObserver)
+	}); ok {
+		obs.SetTickObserver(alertEngine.OnTick)
+	}
 	entityContextSvc := coreservice.NewEntityContextService(
 		repo.NewEntityContextPostgres(pool),
 		db.NewEntityRepository(pool), // merge decisions land in the shared registry
@@ -449,6 +486,9 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		bars:                barsSvc,
 		quoteSnapshots:      snapshotSource,
 		marketInfo:          marketInfo,
+		alerts:              alertsSvc,
+		notifications:       notificationsSvc,
+		alertEngine:         alertEngine,
 		marketData:          marketDataSvc,
 		copilot:             copilotSvc,
 	}

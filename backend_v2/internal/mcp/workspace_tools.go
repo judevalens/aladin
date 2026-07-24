@@ -37,6 +37,7 @@ type workspaceToolServer struct {
 	bars        service.BarService
 	snapshots   service.QuoteSnapshotSource
 	marketInfo  service.MarketInfoService
+	alerts      service.AlertService
 	instruments service.InstrumentService
 }
 
@@ -101,6 +102,18 @@ func registerWorkspaceTools(server *sdkmcp.Server, t workspaceToolServer) {
 		Name:        "get_positions",
 		Description: "The user's open positions: symbol, qty, side, avg entry, market value, and unrealized P&L. Read-only — this reasons about ACTUAL exposure, not the abstract watchlist. Cannot place or modify orders.",
 	}, t.getPositions)
+	sdkmcp.AddTool(server, &sdkmcp.Tool{
+		Name:        "create_alert",
+		Description: "Create a recurring price alert on a symbol. direction is \"above\" or \"below\", threshold is the price. It fires when the price crosses the level with confirming momentum, then self-re-arms after a genuine pullback (so it won't spam on jitter). The result surfaces as a notification. This asks the user to approve before it's created.",
+	}, t.createAlert)
+	sdkmcp.AddTool(server, &sdkmcp.Tool{
+		Name:        "list_alerts",
+		Description: "List the user's price alerts (symbol, direction, threshold, armed/status, last fired).",
+	}, t.listAlerts)
+	sdkmcp.AddTool(server, &sdkmcp.Tool{
+		Name:        "delete_alert",
+		Description: "Delete a price alert by id.",
+	}, t.deleteAlert)
 }
 
 // --- inputs / outputs ------------------------------------------------------
@@ -489,6 +502,74 @@ func (t workspaceToolServer) getPositions(ctx context.Context, _ *sdkmcp.CallToo
 		cites = append(cites, citationOut{Kind: "ticker", ID: p.Symbol, Title: p.Symbol})
 	}
 	return nil, getPositionsOutput{Positions: ps, Citations: cites}, nil
+}
+
+type createAlertInput struct {
+	Symbol    string  `json:"symbol"`
+	Direction string  `json:"direction"` // above | below
+	Threshold float64 `json:"threshold"`
+}
+type createAlertOutput struct {
+	Alert     service.Alert `json:"alert"`
+	Warning   string        `json:"warning,omitempty"`
+	Citations []citationOut `json:"citations,omitempty"`
+}
+type listAlertsOutput struct {
+	Alerts []service.Alert `json:"alerts"`
+}
+type deleteAlertInput struct {
+	ID string `json:"id"`
+}
+type deleteAlertOutput struct {
+	OK bool `json:"ok"`
+}
+
+func (t workspaceToolServer) createAlert(ctx context.Context, _ *sdkmcp.CallToolRequest, in createAlertInput) (*sdkmcp.CallToolResult, createAlertOutput, error) {
+	if t.alerts == nil {
+		return nil, createAlertOutput{}, service.BadRequest("alerts are not configured")
+	}
+	principal, err := service.RequirePrincipal(ctx)
+	if err != nil {
+		return nil, createAlertOutput{}, err
+	}
+	res, err := t.alerts.Create(ctx, principal.UserID, in.Symbol, in.Direction, in.Threshold)
+	if err != nil {
+		return nil, createAlertOutput{}, err
+	}
+	return nil, createAlertOutput{
+		Alert:     res.Alert,
+		Warning:   res.Warning,
+		Citations: []citationOut{{Kind: "ticker", ID: res.Alert.Symbol, Title: res.Alert.Symbol}},
+	}, nil
+}
+
+func (t workspaceToolServer) listAlerts(ctx context.Context, _ *sdkmcp.CallToolRequest, _ emptyInput) (*sdkmcp.CallToolResult, listAlertsOutput, error) {
+	if t.alerts == nil {
+		return nil, listAlertsOutput{}, service.BadRequest("alerts are not configured")
+	}
+	principal, err := service.RequirePrincipal(ctx)
+	if err != nil {
+		return nil, listAlertsOutput{}, err
+	}
+	items, err := t.alerts.List(ctx, principal.UserID)
+	if err != nil {
+		return nil, listAlertsOutput{}, err
+	}
+	return nil, listAlertsOutput{Alerts: items}, nil
+}
+
+func (t workspaceToolServer) deleteAlert(ctx context.Context, _ *sdkmcp.CallToolRequest, in deleteAlertInput) (*sdkmcp.CallToolResult, deleteAlertOutput, error) {
+	if t.alerts == nil {
+		return nil, deleteAlertOutput{}, service.BadRequest("alerts are not configured")
+	}
+	principal, err := service.RequirePrincipal(ctx)
+	if err != nil {
+		return nil, deleteAlertOutput{}, err
+	}
+	if err := t.alerts.Delete(ctx, principal.UserID, in.ID); err != nil {
+		return nil, deleteAlertOutput{}, err
+	}
+	return nil, deleteAlertOutput{OK: true}, nil
 }
 
 // citationKindForArtifact maps an artifact type to the citation kind the client

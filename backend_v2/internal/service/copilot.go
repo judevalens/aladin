@@ -52,7 +52,7 @@ type CopilotStatusReport struct {
 // holds them open (proposed_action) until the user approves via the dock. Names are the
 // MCP server's tool names.
 func gatedToolNames() []string {
-	return []string{"publish_app", "update_page", "delete_block", "delete_file"}
+	return []string{"publish_app", "update_page", "delete_block", "delete_file", "create_alert"}
 }
 
 // CopilotSurface is what the user is looking at when they ask — makes the agent context-aware.
@@ -725,6 +725,17 @@ func proposalSummary(tool string, input json.RawMessage) string {
 		return "Replace the page's entire content"
 	case "delete_block":
 		return "Delete a block from the page"
+	case "create_alert":
+		var a struct {
+			Symbol    string  `json:"symbol"`
+			Direction string  `json:"direction"`
+			Threshold float64 `json:"threshold"`
+		}
+		_ = json.Unmarshal(input, &a)
+		if a.Symbol != "" {
+			return fmt.Sprintf("Create a price alert: %s %s %.2f", strings.ToUpper(a.Symbol), a.Direction, a.Threshold)
+		}
+		return "Create a price alert"
 	default:
 		return "Run " + tool
 	}
@@ -766,6 +777,12 @@ func toolLabel(name string) string {
 		return "Reading your account"
 	case "get_positions":
 		return "Reading your positions"
+	case "create_alert":
+		return "Setting a price alert"
+	case "list_alerts":
+		return "Checking your alerts"
+	case "delete_alert":
+		return "Removing an alert"
 	case "create_app":
 		return "Creating a shard"
 	case "list_dir", "read_file":
@@ -808,6 +825,7 @@ The workspace holds several artifact kinds: pages (the user's writing), shards (
 You CAN create and author shards: create_app to make one (its result includes an authoring_guide — the @aladin/kit component reference; FOLLOW it exactly and only use components/props it lists — plus the seeded current_index_tsx), write_file/edit_file to author its files (each write auto-builds and returns diagnostics in build — if build.ok is false, read build.log, fix the exact file, and write again until it builds), build_app to compile the publishable bundle. Preview with preview_open then preview_snapshot to confirm it rendered; publish_app makes it live (that step asks the user to approve). Shards are React apps composed from @aladin/kit (Page/Section/Region) styled with Tailwind + Aladin token classes (bg-panel, text-ink, text-amber, …). When asked to make a shard, actually create it and write the content — don't just output an outline. Only create_app for a brand-NEW shard; if the user is already viewing a shard (or asks to update/add to "the shard"/"this"), edit that EXISTING shard by its id (read_file → write_file/edit_file with its page_id) instead of creating another. Same rule for pages.
 You CAN also author pages (the user's writing): create_page from markdown; for edits, get_page to see the blocks with their ids, then insert_blocks / update_block for surgical changes (update_page replaces the whole body and delete_block removes content — both ask the user to approve). And light actions: add_to_watchlist (by symbol), draw_edge (link two entities).
 Market intelligence tools: get_news (explain WHY a stock moved — a catalyst vs. a liquidity move — never just that it did), get_movers and get_most_actives (what's moving / where liquidity is, no symbol needed), and READ-ONLY account state: get_account (cash/equity/buying power) and get_positions (actual holdings + unrealized P&L — reason about the user's REAL exposure, not just the watchlist). You cannot place or modify orders. If get_account.paper is true, say the numbers are from a paper (simulated) account. There is no VIX or index feed — use ETF proxies (SPY, QQQ, IWM, DIA, VIXY; sector SPDRs XLK/XLF/XLE/XLV/XLY/XLP/XLI/XLU/XLB/XLRE/XLC). There is no earnings-calendar or fundamentals tool — say so plainly rather than inventing dates or EPS.
+You can also set PRICE ALERTS: create_alert (symbol, direction "above"/"below", threshold) — it's recurring and self-re-arms (fires on a genuine cross with momentum, then waits for a real pullback before it can fire again, so no jitter spam). Creating one asks the user to approve first. When it fires, the user gets a notification. list_alerts and delete_alert manage them. If the price is already past the threshold at creation, the alert is still set but won't fire until it pulls back and crosses again — tell the user that.
 Prefer specific, concise answers. When you reference an entity, artifact, or ticker, use the tool that fetches it so the app can cite it.
 If the tools return nothing relevant, say so plainly rather than guessing.
 If a tool returns an error, tell the user the EXACT error message verbatim and what you were trying to do — never vaguely say "a technical issue" or claim the action is impossible. The capability exists; a specific error means something is misconfigured (e.g. a service is down) and the exact text helps fix it.`)
