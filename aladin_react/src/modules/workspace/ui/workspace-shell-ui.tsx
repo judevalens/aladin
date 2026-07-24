@@ -7,6 +7,7 @@ import { LinkCaptureDialogUI } from "@/modules/workspace/ui/link-capture-dialog-
 import { FileUploadDialogUI } from "@/modules/workspace/ui/file-upload-dialog-ui";
 import { TerminalDockUI } from "@/modules/terminal/ui/terminal-dock-ui";
 import { CopilotDockUI } from "@/modules/copilot/ui/copilot-dock-ui";
+import { NotificationBell, NotificationToast } from "@/modules/notifications/ui/notification-bell-ui";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -217,6 +218,8 @@ export function WorkspaceShellUI() {
                 <TooltipContent side="right">Copilot · ⌘J</TooltipContent>
               </Tooltip>
 
+              <NotificationBell />
+
               <DropdownMenu>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -305,6 +308,7 @@ export function WorkspaceShellUI() {
           <TerminalDockUI />
         </main>
         <CopilotDockUI />
+        <NotificationToast />
       </div>
     </TooltipProvider>
   );

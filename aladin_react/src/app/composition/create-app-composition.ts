@@ -33,8 +33,10 @@ import { createWebSocketAppEventSource } from "@/shared/realtime/websocket-app-e
 import { createShardBuildEventHandler } from "@/shared/realtime/shard-build-event-handler";
 import { createQuoteEventHandler } from "@/shared/realtime/quote-event-handler";
 import { createCopilotEventHandler } from "@/shared/realtime/copilot-event-handler";
+import { createNotificationEventHandler } from "@/shared/realtime/notification-event-handler";
 import { createMarketRepo } from "@/repos/market/market-repo";
 import { createCopilotRepo } from "@/repos/copilot/copilot-repo";
+import { createNotificationsRepo } from "@/repos/notifications/notifications-repo";
 import { useAppStore } from "@/app/state/store";
 import type { ApiRuntimeConfig } from "@/shared/api/client";
 
@@ -84,6 +86,7 @@ export function createAppComposition() {
     search: createSearchRepo(apiClient),
     market: createMarketRepo(apiClient),
     copilot: createCopilotRepo(apiClient),
+    notifications: createNotificationsRepo(apiClient),
     localSignals: createLocalSignalsRepo(dataEvents),
     bookSignals: createBookSignalsRepo(apiClient),
   };
@@ -135,6 +138,7 @@ export function createAppComposition() {
   // Copilot streaming rides the existing workspace "*" subscription (the backend publishes an
   // AnyResource key for copilot.* events), so no new subscription is needed — just the handler.
   appEvents.register(createCopilotEventHandler());
+  appEvents.register(createNotificationEventHandler());
   let wasDisconnected = false;
   const appEventSource = createWebSocketAppEventSource({
     url: eventsWebSocketUrl(config),
