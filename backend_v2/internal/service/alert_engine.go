@@ -63,9 +63,8 @@ type engineAlert struct {
 }
 
 type symState struct {
-	lastPrice float64
-	slope     float64
-	seeded    bool
+	window    *PriceWindow // rolling window → real velocity (Δprice/Δtime)
+	lastPrice float64      // price before the current tick, for the crossing edge
 }
 
 const (
@@ -129,15 +128,17 @@ func (e *AlertEngine) onTickEval(ctx context.Context, ev tickEvent) {
 	}
 	st := e.symState[ev.symbol]
 	if st == nil {
-		st = &symState{lastPrice: ev.price, seeded: true}
+		st = &symState{window: NewPriceWindow(VelWindow), lastPrice: ev.price}
+		st.window.Push(ev.at, ev.price)
 		e.symState[ev.symbol] = st
-		return // first tick just seeds — no crossing baseline yet
+		return // first tick just seeds the baseline — no crossing yet
 	}
 	prev := st.lastPrice
-	st.slope = UpdateSlope(st.slope, prev, ev.price)
+	st.window.Push(ev.at, ev.price)
+	vel := st.window.Velocity()
 	st.lastPrice = ev.price
 	for _, a := range alerts {
-		fire, newArmed := EvalAlert(a.direction, prev, ev.price, st.slope, a.threshold, a.band, a.eps, a.armed)
+		fire, newArmed := EvalAlert(a.direction, prev, ev.price, vel, a.threshold, a.band, a.eps, a.armed)
 		if fire {
 			e.fire(ctx, a, ev.price, ev.at)
 			a.armed = false
@@ -167,17 +168,20 @@ func (e *AlertEngine) applyReconcile(ctx context.Context, cmd reconcileCmd) {
 		ea := &engineAlert{
 			id: a.ID, userID: a.UserID, instrumentID: a.InstrumentID, symbol: sym,
 			direction: a.Direction, threshold: a.Threshold,
-			band: AlertBand(a.Threshold), eps: AlertEps(a.Threshold), armed: a.Armed,
+			band: AlertBand(a.Threshold), eps: AlertVelEps(a.Threshold), armed: a.Armed,
 		}
 		next[sym] = append(next[sym], ea)
 	}
 	e.index = next
 
-	// Seed slope state for any newly-referenced symbol from its snapshot price.
+	// Seed baseline state for any newly-referenced symbol from its snapshot price. The window
+	// starts with this one sample (velocity 0) and fills in as real ticks arrive.
 	for sym, price := range cmd.seedPrices {
 		up := strings.ToUpper(sym)
 		if _, ok := e.symState[up]; !ok {
-			e.symState[up] = &symState{lastPrice: price, seeded: true}
+			st := &symState{window: NewPriceWindow(VelWindow), lastPrice: price}
+			st.window.Push(e.now(), price)
+			e.symState[up] = st
 		}
 	}
 	// Drop state for symbols no longer referenced.

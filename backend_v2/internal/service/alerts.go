@@ -32,55 +32,110 @@ const (
 	AlertBelow = "below"
 )
 
-// --- slope + hysteresis tuning (shared by the service seed + the engine eval) ---------------
+// --- velocity + hysteresis tuning (shared by the service seed + the engine eval) -------------
 // These are the ONE source of truth for the algorithm's constants so eval and tests never drift.
 const (
-	// emaAlpha smooths the tick-to-tick delta into a signed velocity proxy. Higher = more
-	// responsive, lower = more noise-damping. 0.3 dampens isolated prints while tracking a
-	// sustained move within 2–3 ticks.
-	emaAlpha = 0.3
+	// VelWindow is the rolling window over which velocity is measured. Long enough to smooth
+	// tick noise + be robust to tick DENSITY (a burst of prints doesn't inflate it), short
+	// enough to react intraday. Velocity = Δprice/Δtime across the window (real price/sec).
+	VelWindow = 30 * time.Second
 	// bandPct / bandFloor: hysteresis band H = max(bandPct*threshold, bandFloor). % -relative so
 	// a $5 and a $500 stock behave alike; the floor prevents a degenerate zero band.
 	bandPct   = 0.001 // 0.1%
 	bandFloor = 0.01
-	// epsPct / epsFloor: slope floor ε = max(epsPct*threshold, epsFloor). A real move clears it;
-	// a single dampened print stays under it.
-	epsPct   = 0.0002 // 0.02%
-	epsFloor = 0.005
+	// velEpsPct / velEpsFloor: velocity floor ε = max(velEpsPct*threshold, velEpsFloor), in
+	// price PER SECOND. A move of ≈velEpsPct of price per second (0.002%/s ≈ 0.06%/30s) clears
+	// it; sub-threshold drift stays under it. Unit-clean and tick-density-independent.
+	velEpsPct   = 0.00002 // fraction of price per second
+	velEpsFloor = 0.001   // $/s floor
 )
 
 // AlertBand returns the hysteresis band H for a threshold.
 func AlertBand(threshold float64) float64 { return math.Max(bandPct*math.Abs(threshold), bandFloor) }
 
-// AlertEps returns the slope floor ε for a threshold.
-func AlertEps(threshold float64) float64 { return math.Max(epsPct*math.Abs(threshold), epsFloor) }
+// AlertVelEps returns the velocity floor ε (price/sec) for a threshold.
+func AlertVelEps(threshold float64) float64 {
+	return math.Max(velEpsPct*math.Abs(threshold), velEpsFloor)
+}
 
 // EvalAlert is the pure fire/re-arm decision — no clock, no DB, no I/O. THE correctness core.
-// prevPrice is the price before this tick; slope is the EMA velocity proxy. Returns whether the
-// alert fires now and its new armed state.
-func EvalAlert(direction string, prevPrice, price, slope, threshold, band, eps float64, armed bool) (fire, newArmed bool) {
+// prevPrice is the price before this tick; velocity is Δprice/Δtime (price/sec) over the rolling
+// window. eps is the velocity floor. Returns whether the alert fires now and its new armed state.
+func EvalAlert(direction string, prevPrice, price, velocity, threshold, band, eps float64, armed bool) (fire, newArmed bool) {
 	switch direction {
 	case AlertAbove:
-		if armed && prevPrice < threshold && price >= threshold && slope >= eps {
+		if armed && prevPrice < threshold && price >= threshold && velocity >= eps {
 			return true, false // genuine up-cross + confirming upward velocity
 		}
-		if !armed && price <= threshold-band && slope <= -eps {
+		if !armed && price <= threshold-band && velocity <= -eps {
 			return false, true // pulled back a full band below with downward velocity → re-arm
 		}
 	case AlertBelow:
-		if armed && prevPrice > threshold && price <= threshold && slope <= -eps {
+		if armed && prevPrice > threshold && price <= threshold && velocity <= -eps {
 			return true, false
 		}
-		if !armed && price >= threshold+band && slope >= eps {
+		if !armed && price >= threshold+band && velocity >= eps {
 			return false, true
 		}
 	}
 	return false, armed
 }
 
-// UpdateSlope folds one tick delta into the EMA velocity proxy.
-func UpdateSlope(prevSlope, prevPrice, price float64) float64 {
-	return emaAlpha*(price-prevPrice) + (1-emaAlpha)*prevSlope
+// priceSample is one (time, price) point in a symbol's rolling velocity window.
+type priceSample struct {
+	t     time.Time
+	price float64
+}
+
+// PriceWindow is a bounded rolling window of recent ticks, from which velocity (Δprice/Δtime)
+// is derived. It is eval-goroutine-owned in the engine (no locks). Bounded by both time
+// (VelWindow) and sample count (to cap memory under bursty symbols).
+type PriceWindow struct {
+	samples []priceSample
+	dur     time.Duration
+}
+
+const maxWindowSamples = 1024
+
+// NewPriceWindow builds an empty window of the given duration.
+func NewPriceWindow(dur time.Duration) *PriceWindow { return &PriceWindow{dur: dur} }
+
+// Push adds a tick and evicts anything older than the window (and caps the sample count).
+func (w *PriceWindow) Push(t time.Time, price float64) {
+	w.samples = append(w.samples, priceSample{t: t, price: price})
+	cutoff := t.Add(-w.dur)
+	i := 0
+	for i < len(w.samples) && w.samples[i].t.Before(cutoff) {
+		i++
+	}
+	if i > 0 {
+		w.samples = append(w.samples[:0], w.samples[i:]...)
+	}
+	if over := len(w.samples) - maxWindowSamples; over > 0 {
+		w.samples = append(w.samples[:0], w.samples[over:]...)
+	}
+}
+
+// Velocity is the net price change per second across the window (0 with <2 samples or ~0 Δt).
+// Robust to tick density: it measures movement over TIME, not per tick.
+func (w *PriceWindow) Velocity() float64 {
+	if len(w.samples) < 2 {
+		return 0
+	}
+	oldest, newest := w.samples[0], w.samples[len(w.samples)-1]
+	dt := newest.t.Sub(oldest.t).Seconds()
+	if dt <= 0.0009 { // guard: sub-ms window (all ticks same instant) → undefined velocity
+		return 0
+	}
+	return (newest.price - oldest.price) / dt
+}
+
+// Last returns the most recent price and whether the window has any sample.
+func (w *PriceWindow) Last() (float64, bool) {
+	if len(w.samples) == 0 {
+		return 0, false
+	}
+	return w.samples[len(w.samples)-1].price, true
 }
 
 // InitialArmed decides a new/reloaded alert's armed state from a seed price: armed only when the
