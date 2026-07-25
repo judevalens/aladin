@@ -40,9 +40,9 @@ impl Db {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).ok();
         }
-        let conn = Connection::open(path)?;
+        let mut conn = Connection::open(path)?;
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
-        schema::migrate(&conn)?;
+        schema::migrate(&mut conn)?;
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
         })

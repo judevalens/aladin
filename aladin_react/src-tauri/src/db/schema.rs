@@ -4,52 +4,98 @@ use super::DbResult;
 
 const CURRENT_VERSION: i32 = 14;
 
-pub fn migrate(conn: &Connection) -> DbResult<()> {
+/// Migrate the local cache schema. ATOMIC: every pending block AND the `user_version` stamp run in
+/// ONE transaction, so a mid-migration failure rolls back cleanly — the version is never advanced
+/// past what actually applied, and a re-run starts from the same version instead of failing forever
+/// on a half-applied schema (which bricks the cache). PRAGMA user_version is transactional in SQLite.
+///
+/// `journal_mode`/`foreign_keys` are set by the caller on the bare connection BEFORE this (WAL can't
+/// be changed inside a transaction).
+pub fn migrate(conn: &mut Connection) -> DbResult<()> {
     let version: i32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if version >= CURRENT_VERSION {
+        return Ok(());
+    }
+
+    let tx = conn.transaction()?;
     if version < 1 {
-        conn.execute_batch(MIGRATION_V1)?;
+        tx.execute_batch(MIGRATION_V1)?;
     }
     if version < 2 {
-        conn.execute_batch(MIGRATION_V2)?;
+        tx.execute_batch(MIGRATION_V2)?;
     }
     if version < 3 {
-        conn.execute_batch(MIGRATION_V3)?;
+        tx.execute_batch(MIGRATION_V3)?;
     }
     if version < 4 {
-        conn.execute_batch(MIGRATION_V4)?;
+        tx.execute_batch(MIGRATION_V4)?;
     }
     if version < 5 {
-        conn.execute_batch(MIGRATION_V5)?;
+        tx.execute_batch(MIGRATION_V5)?;
     }
     if version < 6 {
-        conn.execute_batch(MIGRATION_V6)?;
+        tx.execute_batch(MIGRATION_V6)?;
     }
     if version < 7 {
-        conn.execute_batch(MIGRATION_V7)?;
+        tx.execute_batch(MIGRATION_V7)?;
     }
     if version < 8 {
-        conn.execute_batch(MIGRATION_V8)?;
+        tx.execute_batch(MIGRATION_V8)?;
     }
     if version < 9 {
-        conn.execute_batch(MIGRATION_V9)?;
+        tx.execute_batch(MIGRATION_V9)?;
     }
     if version < 10 {
-        conn.execute_batch(MIGRATION_V10)?;
+        tx.execute_batch(MIGRATION_V10)?;
     }
     if version < 11 {
-        conn.execute_batch(MIGRATION_V11)?;
+        tx.execute_batch(MIGRATION_V11)?;
     }
     if version < 12 {
-        conn.execute_batch(MIGRATION_V12)?;
+        tx.execute_batch(MIGRATION_V12)?;
     }
     if version < 13 {
-        conn.execute_batch(MIGRATION_V13)?;
+        tx.execute_batch(MIGRATION_V13)?;
     }
     if version < 14 {
-        conn.execute_batch(MIGRATION_V14)?;
+        tx.execute_batch(MIGRATION_V14)?;
     }
-    conn.execute_batch(&format!("PRAGMA user_version = {CURRENT_VERSION};"))?;
+    tx.execute_batch(&format!("PRAGMA user_version = {CURRENT_VERSION};"))?;
+    tx.commit()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    // The atomic migrate applies the whole chain (fresh DB → CURRENT_VERSION with the latest
+    // table present) and is a safe no-op on re-run.
+    #[test]
+    fn migrate_applies_full_chain_and_is_idempotent() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrate(&mut conn).unwrap();
+
+        let v: i32 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(v, CURRENT_VERSION, "version stamped to CURRENT_VERSION");
+
+        // A table created by the newest migration (V14) exists — proves the chain ran, not just
+        // the version stamp.
+        let n: i32 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='watchlists'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 1, "latest migration's table present");
+
+        // Re-run: early-returns, no error, no double-apply.
+        migrate(&mut conn).unwrap();
+    }
 }
 
 // Data-layer: watchlists as a synced entity ("watchlist" kind). Aggregate model — ONE row per
