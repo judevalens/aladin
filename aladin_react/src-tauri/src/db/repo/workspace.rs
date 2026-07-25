@@ -362,6 +362,28 @@ impl WorkspaceRepo {
     /// and bumps the node seq), then applies the same result optimistically as a FULL
     /// payload so the artifact stream updates reactively with no reload. The
     /// authoritative server frame (same seq) is a dedup no-op.
+    /// H1c — artifacts carrying a typed property, read straight from the server (a query over the
+    /// whole workspace, not just the locally-cached subset, so it can't be answered from the cache).
+    /// An empty `value` matches any value for the key.
+    pub fn query_artifacts_by_property(
+        &self,
+        key: &str,
+        value: &str,
+    ) -> DbResult<serde_json::Value> {
+        let config = self.config()?;
+        self.api
+            .query_artifacts_by_property(&config, key, value)
+            .map_err(DbError::Api)
+    }
+
+    /// H1c — the property keys/values in use, so a filter UI offers real choices.
+    pub fn artifact_property_facets(&self) -> DbResult<serde_json::Value> {
+        let config = self.config()?;
+        self.api
+            .artifact_property_facets(&config)
+            .map_err(DbError::Api)
+    }
+
     pub fn update_artifact_properties(
         &self,
         db: &Db,

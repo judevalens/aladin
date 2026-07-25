@@ -110,6 +110,16 @@ pub trait WorkspaceWriteApi: Send + Sync {
     ) -> ApiResult<WrittenArtifact>;
     /// DELETE /api/browser/nodes/{id} — soft-delete a node + its subtree.
     fn delete_node(&self, config: &SyncConfig, id: &str) -> ApiResult<DeleteNodeResult>;
+    /// GET /api/artifacts/query — artifacts carrying a typed property (H1c). An empty `value`
+    /// matches any value for the key. Returns the raw server JSON array (the caller shapes it).
+    fn query_artifacts_by_property(
+        &self,
+        config: &SyncConfig,
+        key: &str,
+        value: &str,
+    ) -> ApiResult<serde_json::Value>;
+    /// GET /api/artifacts/property-facets — the property keys/values in use (for a filter UI).
+    fn artifact_property_facets(&self, config: &SyncConfig) -> ApiResult<serde_json::Value>;
 }
 
 #[derive(Default)]
@@ -193,6 +203,41 @@ impl WorkspaceWriteApi for HttpWorkspaceWriteApi {
             .patch(format!("{}/api/artifacts/{}", Self::base(config), id))
             .bearer_auth(Self::token(config))
             .json(&json!({ "metadata": metadata }))
+            .send()
+            .map_err(ApiError::from_reqwest)?
+            .error_for_status()
+            .map_err(ApiError::from_reqwest)?
+            .json()
+            .map_err(ApiError::from_reqwest)
+    }
+
+    fn query_artifacts_by_property(
+        &self,
+        config: &SyncConfig,
+        key: &str,
+        value: &str,
+    ) -> ApiResult<serde_json::Value> {
+        let client = reqwest::blocking::Client::new();
+        let mut req = client
+            .get(format!("{}/api/artifacts/query", Self::base(config)))
+            .bearer_auth(Self::token(config))
+            .query(&[("key", key)]);
+        if !value.is_empty() {
+            req = req.query(&[("value", value)]);
+        }
+        req.send()
+            .map_err(ApiError::from_reqwest)?
+            .error_for_status()
+            .map_err(ApiError::from_reqwest)?
+            .json()
+            .map_err(ApiError::from_reqwest)
+    }
+
+    fn artifact_property_facets(&self, config: &SyncConfig) -> ApiResult<serde_json::Value> {
+        let client = reqwest::blocking::Client::new();
+        client
+            .get(format!("{}/api/artifacts/property-facets", Self::base(config)))
+            .bearer_auth(Self::token(config))
             .send()
             .map_err(ApiError::from_reqwest)?
             .error_for_status()

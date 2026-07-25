@@ -26,6 +26,7 @@ import { MillerColumns, type MillerState } from "@/modules/workspace/ui/miller-c
 import { folderAncestors } from "@/modules/workspace/domain";
 import { useBrowserPane } from "@/modules/workspace/hooks/use-workspace-state";
 import { useAppStore } from "@/app/state/store";
+import { PropertyFilterDialogUI } from "@/modules/artifacts/ui/property-filter-dialog-ui";
 import { cn } from "@/shared/lib/utils";
 
 const MAX_INLINE = 2; // depths 0,1 expand inline; depth >= 2 drills into the Miller popup
@@ -39,6 +40,7 @@ const ARTIFACT_ICONS: Record<ArtifactKind, LucideIcon> = {
 };
 
 export function BrowserPaneUI() {
+  const [propertyFilterOpen, setPropertyFilterOpen] = useState(false);
   const {
     loading,
     errorMessage,
@@ -116,9 +118,10 @@ export function BrowserPaneUI() {
           </button>
           <button
             type="button"
+            onClick={() => setPropertyFilterOpen(true)}
             className="grid h-6 w-6 place-items-center rounded-md text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
-            aria-label="View options"
-            title="View options"
+            aria-label="Filter by property"
+            title="Filter by property"
           >
             <SlidersHorizontal className="h-4 w-4" strokeWidth={1.75} />
           </button>
@@ -172,6 +175,11 @@ export function BrowserPaneUI() {
           onClose={() => setMiller(null)}
         />
       ) : null}
+      {/* Mounted only while open: the hook reaches for app composition + fetches facets, so
+          keeping it unmounted avoids that work (and lets the pane render without providers). */}
+      {propertyFilterOpen && (
+        <PropertyFilterDialogUI open onOpenChange={setPropertyFilterOpen} />
+      )}
     </section>
   );
 }

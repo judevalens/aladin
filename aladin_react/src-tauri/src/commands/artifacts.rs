@@ -82,3 +82,20 @@ pub fn db_update_artifact_properties(
 ) -> DbResult<()> {
     repo.update_artifact_properties(&db, &id, properties)
 }
+
+/// H1c — query artifacts by a typed property. Server-side read (the whole workspace, not just the
+/// cached subset); the TS store re-runs it on node DataEvents so a saved filter stays live.
+#[tauri::command]
+pub fn db_query_artifacts_by_property(
+    repo: State<'_, WorkspaceRepo>,
+    key: String,
+    value: Option<String>,
+) -> DbResult<serde_json::Value> {
+    repo.query_artifacts_by_property(&key, value.as_deref().unwrap_or(""))
+}
+
+/// H1c — the property keys/values in use (filter-UI choices).
+#[tauri::command]
+pub fn db_artifact_property_facets(repo: State<'_, WorkspaceRepo>) -> DbResult<serde_json::Value> {
+    repo.artifact_property_facets()
+}

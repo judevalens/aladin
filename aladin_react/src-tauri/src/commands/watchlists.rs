@@ -9,5 +9,5 @@ use crate::db::{Db, DbResult};
 
 #[tauri::command]
 pub fn db_list_watchlists(db: State<'_, Db>) -> DbResult<Vec<WatchlistRow>> {
-    db.with_conn(|conn| watchlists::list_watchlists(conn))
+    db.with_conn(watchlists::list_watchlists)
 }
