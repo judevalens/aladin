@@ -17,6 +17,12 @@ import (
 	"time"
 )
 
+// streamIdleTimeout bounds the gap between NDJSON events from the sidecar. Generous so a slow tool
+// call / model step never false-trips a healthy turn; well under the 15-min turn ceiling so a true
+// mid-turn hang surfaces as "interrupted" quickly instead of freezing the UI. Reset on each event.
+// A var (not const) only so tests can shrink it.
+var streamIdleTimeout = 120 * time.Second
+
 // TurnRequest is the body of POST /turn.
 type TurnRequest struct {
 	TurnID          string   `json:"turnId"`
@@ -96,8 +102,12 @@ func (c *Client) StartTurn(ctx context.Context, req TurnRequest) (<-chan Event, 
 	if err != nil {
 		return nil, fmt.Errorf("copilot-agent marshal turn: %w", err)
 	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/turn", bytes.NewReader(payload))
+	// Child context so the idle watchdog can abort a STALLED stream without cancelling the caller's
+	// turn context — a broken stream then surfaces as "interrupted", not a clean user-stop.
+	streamCtx, cancelStream := context.WithCancel(ctx)
+	httpReq, err := http.NewRequestWithContext(streamCtx, http.MethodPost, c.baseURL+"/turn", bytes.NewReader(payload))
 	if err != nil {
+		cancelStream()
 		return nil, fmt.Errorf("copilot-agent turn request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
@@ -105,23 +115,33 @@ func (c *Client) StartTurn(ctx context.Context, req TurnRequest) (<-chan Event, 
 
 	resp, err := c.stream.Do(httpReq)
 	if err != nil {
+		cancelStream()
 		return nil, fmt.Errorf("copilot-agent turn: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
 		_ = resp.Body.Close()
+		cancelStream()
 		return nil, fmt.Errorf("copilot-agent turn: status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	events := make(chan Event, 16)
 	go func() {
 		defer close(events)
+		defer cancelStream()
 		defer func() { _ = resp.Body.Close() }()
+		// Idle watchdog: the stream client has no overall timeout (a turn can legitimately run
+		// minutes), but if the sidecar sends NO line for streamIdleTimeout it has hung mid-turn —
+		// cancel so the turn fails fast (→ "interrupted") instead of freezing until the 15-min turn
+		// ctx. Reset on every line, so a normal (chatty) turn never trips it.
+		idle := time.AfterFunc(streamIdleTimeout, cancelStream)
+		defer idle.Stop()
 		scanner := bufio.NewScanner(resp.Body)
 		// Tool results are capped at 32KB sidecar-side but inputs/prompts ride
 		// along too — allow generous lines.
 		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 		for scanner.Scan() {
+			idle.Reset(streamIdleTimeout)
 			line := bytes.TrimSpace(scanner.Bytes())
 			if len(line) == 0 {
 				continue
