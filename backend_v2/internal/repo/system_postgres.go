@@ -2,9 +2,16 @@ package repo
 
 import (
 	"context"
+	"encoding/json"
+	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// workerHeartbeatStaleAfter — a heartbeat older than this means the worker is down or wedged.
+// The worker beats every 30s, so 2 min tolerates a few missed beats.
+const workerHeartbeatStaleAfter = 2 * time.Minute
 
 type PostgresSystemRepository struct{ pool *pgxpool.Pool }
 
@@ -35,19 +42,40 @@ func (r *PostgresSystemRepository) WorkerStatus(ctx context.Context) (map[string
 	`).Scan(&activeCycles); err != nil {
 		return nil, err
 	}
+
+	// Real Asynq queue counts + liveness from the worker heartbeat (the api is Redis-free, so the
+	// worker writes these). A stale/absent heartbeat means the worker is down or wedged.
+	queue := map[string]any{
+		"pendingCycles":   activeCycles,
+		"pendingPipeline": pendingPipeline,
+	}
+	workerUp := false
+	var lastHeartbeat any
+	var hbAt time.Time
+	var statsRaw []byte
+	switch err := r.pool.QueryRow(ctx, `SELECT updated_at, stats FROM worker_heartbeat WHERE id = 1`).Scan(&hbAt, &statsRaw); {
+	case err == nil:
+		workerUp = time.Since(hbAt) < workerHeartbeatStaleAfter
+		lastHeartbeat = hbAt.UTC().Format(time.RFC3339)
+		var asynqStats map[string]any
+		if json.Unmarshal(statsRaw, &asynqStats) == nil {
+			for k, v := range asynqStats {
+				queue[k] = v // active/pending/retry/archived/failed/processed/…
+			}
+		}
+	case err == pgx.ErrNoRows:
+		// heartbeat table present but never written — worker hasn't started
+	default:
+		return nil, err
+	}
+
 	return map[string]any{
+		"workerUp":      workerUp,
+		"lastHeartbeat": lastHeartbeat,
 		"pipeline": map[string]any{
-			"enriched":  enrichedRecords,
-			"embedded":  0,
-			"promoted":  0,
-			"errors":    0,
-			"last_tick": nil,
+			"enriched": enrichedRecords,
 		},
-		"queue": map[string]any{
-			"pending":         activeCycles,
-			"pendingPipeline": pendingPipeline,
-			"deadJobs":        0,
-		},
+		"queue": queue,
 	}, nil
 }
 

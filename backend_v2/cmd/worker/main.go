@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"os"
@@ -263,6 +264,31 @@ func main() {
 		}
 	})
 
+	// Worker heartbeat — the worker owns Redis/Asynq, so it writes real queue counts + a liveness
+	// timestamp to Postgres for the (Redis-free) api's WorkerStatus to read (replacing fabricated
+	// zeros; a stale beat = worker down/wedged).
+	inspector := asynq.NewInspector(redisOpt)
+	defer inspector.Close()
+	safego.Loop(ctx, "worker.heartbeat", func(ctx context.Context) {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		beat := func() {
+			payload, _ := json.Marshal(collectQueueStats(inspector))
+			if _, err := pool.Exec(ctx, `UPDATE worker_heartbeat SET updated_at = now(), stats = $1::jsonb WHERE id = 1`, payload); err != nil {
+				slog.Warn("worker heartbeat write failed", "component", "worker", "err", err)
+			}
+		}
+		beat() // beat immediately on start
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				beat()
+			}
+		}
+	})
+
 	orch := pipeline.NewOrchestrator(handler)
 	orch.Add(workers.NewGlobalFirstPassWorker(enricher, openaiLimiter))
 	orch.Add(workers.NewTenantMatchWorker(recordRepo, providerStreamRepo, sourceSubscriptionRepo, tenantItemMatchRepo))
@@ -333,4 +359,31 @@ func main() {
 	slog.Info("aladin worker running — ctrl+c to stop", "component", "worker", "concurrency", cfg.Concurrency)
 	<-ctx.Done()
 	slog.Info("shutting down", "component", "worker")
+}
+
+// collectQueueStats aggregates Asynq queue counts across all queues for the worker heartbeat.
+func collectQueueStats(insp *asynq.Inspector) map[string]any {
+	queues, err := insp.Queues()
+	if err != nil {
+		return map[string]any{"error": err.Error()}
+	}
+	var pending, active, scheduled, retry, archived, completed, processed, failed int
+	for _, q := range queues {
+		info, err := insp.GetQueueInfo(q)
+		if err != nil {
+			continue
+		}
+		pending += info.Pending
+		active += info.Active
+		scheduled += info.Scheduled
+		retry += info.Retry
+		archived += info.Archived
+		completed += info.Completed
+		processed += info.Processed
+		failed += info.Failed
+	}
+	return map[string]any{
+		"queues": len(queues), "pending": pending, "active": active, "scheduled": scheduled,
+		"retry": retry, "archived": archived, "completed": completed, "processed": processed, "failed": failed,
+	}
 }
