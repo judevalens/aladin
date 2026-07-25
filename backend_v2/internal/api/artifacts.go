@@ -17,6 +17,9 @@ func (s *Server) registerArtifactRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/artifacts/", s.handleArtifactsList)
 	mux.HandleFunc("POST /api/artifacts/", s.handleArtifactsCreate)
 	mux.HandleFunc("POST /api/artifacts/upload", s.handleArtifactsUpload)
+	// Literal segments beat the {id} wildcard in Go's mux, so these don't shadow the get-by-id.
+	mux.HandleFunc("GET /api/artifacts/query", s.handleArtifactsQueryByProperty)
+	mux.HandleFunc("GET /api/artifacts/property-facets", s.handleArtifactPropertyFacets)
 	mux.HandleFunc("GET /api/artifacts/{id}", s.handleArtifactsGet)
 	mux.HandleFunc("PATCH /api/artifacts/{id}", s.handleArtifactsUpdate)
 	mux.HandleFunc("DELETE /api/artifacts/{id}", s.handleArtifactsDelete)
@@ -384,4 +387,46 @@ func stringFormPtr(r *http.Request, key string) *string {
 		return nil
 	}
 	return &value
+}
+
+// handleArtifactsQueryByProperty is the H1c read: the caller's artifacts filtered by a typed
+// property. `value` is optional — omit it to match every artifact carrying the key.
+//
+//	GET /api/artifacts/query?key=Status&value=Live[&limit=100]
+func (s *Server) handleArtifactsQueryByProperty(w http.ResponseWriter, r *http.Request) {
+	params := artifactservice.PropertyQuery{
+		Key:   r.URL.Query().Get("key"),
+		Value: r.URL.Query().Get("value"),
+		Limit: intQuery(r, "limit", 0),
+	}
+	out, err := s.deps.Artifacts().QueryByProperty(r.Context(), params)
+	if err != nil {
+		if writeAccessError(w, r, err) {
+			return
+		}
+		var requestErr artifactservice.BadRequest
+		if errors.As(err, &requestErr) {
+			writeAPIError(w, r, http.StatusBadRequest, categoryBadRequest, err.Error(), err)
+			return
+		}
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// handleArtifactPropertyFacets lists the property keys/values in use, so a filter UI can offer
+// real choices rather than free text.
+//
+//	GET /api/artifacts/property-facets
+func (s *Server) handleArtifactPropertyFacets(w http.ResponseWriter, r *http.Request) {
+	out, err := s.deps.Artifacts().PropertyFacets(r.Context())
+	if err != nil {
+		if writeAccessError(w, r, err) {
+			return
+		}
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
 }

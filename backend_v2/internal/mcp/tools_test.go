@@ -484,6 +484,14 @@ type fakeArtifactService struct {
 	err           error
 }
 
+func (f *fakeArtifactService) QueryByProperty(context.Context, service.PropertyQuery) ([]service.ArtifactResponse, error) {
+	return nil, nil
+}
+
+func (f *fakeArtifactService) PropertyFacets(context.Context) ([]service.PropertyFacet, error) {
+	return nil, nil
+}
+
 func (f *fakeArtifactService) List(ctx context.Context, _ service.ArtifactListParams) ([]service.ArtifactResponse, error) {
 	if err := service.RequireScope(ctx, service.ScopeArtifactsRead); err != nil {
 		return nil, err

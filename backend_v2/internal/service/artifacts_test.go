@@ -251,11 +251,24 @@ type fakeArtifactRepository struct {
 	folders          []FolderNode
 	browserNodes     []BrowserTreeFlatNode
 	searchResults    []ArtifactResponse
+	propertyQuery    *PropertyQuery
+	propertyResults  []ArtifactResponse
+	propertyFacets   []PropertyFacet
 	searchParams     *PageSearchParams
 }
 
 func (f *fakeArtifactRepository) ListArtifacts(context.Context, ArtifactListParams) ([]ArtifactResponse, error) {
 	return nil, nil
+}
+
+func (f *fakeArtifactRepository) QueryArtifactsByProperty(_ context.Context, params PropertyQuery) ([]ArtifactResponse, error) {
+	copyParams := params
+	f.propertyQuery = &copyParams
+	return f.propertyResults, nil
+}
+
+func (f *fakeArtifactRepository) PropertyFacets(_ context.Context) ([]PropertyFacet, error) {
+	return f.propertyFacets, nil
 }
 
 func (f *fakeArtifactRepository) SearchPageArtifacts(_ context.Context, params PageSearchParams) ([]ArtifactResponse, error) {

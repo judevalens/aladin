@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	artifactservice "aladin/backend_v2/internal/service"
@@ -1021,4 +1022,107 @@ func scanArtifactResponse(row scanner) (artifactservice.ArtifactResponse, error)
 	rec.CreatedAt = createdAt.Format(time.RFC3339)
 	rec.UpdatedAt = updatedAt.Format(time.RFC3339)
 	return rec, nil
+}
+
+// QueryArtifactsByProperty returns the caller's artifacts carrying a typed property (H1c).
+//
+// Properties are a JSON ARRAY at metadata->'properties' of {key,type,value,values?,options?}, so
+// the match is jsonb CONTAINMENT — an array contains a probe array when every probe element is
+// contained in some stored element, which matches on key(+value) regardless of position or the
+// other fields. Containment is exactly what the jsonb_path_ops GIN index (00035) serves.
+//
+// An empty Value matches any value for the key ("has a Status"). That case can't use containment
+// (there is no value to probe), so it falls back to an existence scan over the array.
+func (r *PostgresArtifactRepository) QueryArtifactsByProperty(ctx context.Context, params artifactservice.PropertyQuery) ([]artifactservice.ArtifactResponse, error) {
+	userID, err := r.userID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	query := `
+		SELECT a.id, n.parent_id, a.type, a.title,
+		       a.content,
+		       p.blocks,
+		       a.summary, a.source_url, a.metadata, a.created_at, a.updated_at,
+		       COALESCE(p.revision, 0) AS revision
+		  FROM artifacts a
+		  JOIN tree_nodes n ON n.artifact_id = a.id AND n.user_id = a.user_id AND n.kind = 'artifact'
+		  LEFT JOIN page_documents p ON p.artifact_id = a.id
+		 WHERE a.user_id = $1::uuid
+		   AND n.is_deleted = false
+	`
+	args := []any{userID}
+	if params.Value == "" {
+		// key-only: any artifact whose properties array holds an element with this key.
+		query += ` AND EXISTS (
+		       SELECT 1 FROM jsonb_array_elements(
+		           CASE WHEN jsonb_typeof(a.metadata->'properties') = 'array'
+		                THEN a.metadata->'properties' ELSE '[]'::jsonb END) e
+		        WHERE e->>'key' = $2)`
+		args = append(args, params.Key)
+	} else {
+		probe, err := json.Marshal(map[string]any{
+			"properties": []map[string]string{{"key": params.Key, "value": params.Value}},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("artifact property probe: %w", err)
+		}
+		query += ` AND a.metadata @> $2::jsonb`
+		args = append(args, string(probe))
+	}
+	query += ` ORDER BY a.updated_at DESC LIMIT $` + strconv.Itoa(len(args)+1)
+	args = append(args, params.Limit)
+
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("artifact property query: %w", err)
+	}
+	defer rows.Close()
+	out := make([]artifactservice.ArtifactResponse, 0)
+	for rows.Next() {
+		rec, err := scanArtifactResponse(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rec)
+	}
+	return out, rows.Err()
+}
+
+// PropertyFacets lists the caller's property keys and the distinct values seen for each, so a
+// filter UI can offer real choices. Scans the properties arrays (the GIN index serves containment,
+// not this aggregation) — bounded by the user's own artifacts.
+func (r *PostgresArtifactRepository) PropertyFacets(ctx context.Context) ([]artifactservice.PropertyFacet, error) {
+	userID, err := r.userID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT e->>'key'  AS key,
+		       COALESCE(MIN(e->>'type'), '') AS type,
+		       ARRAY_AGG(DISTINCT e->>'value') FILTER (WHERE COALESCE(e->>'value', '') <> '') AS values
+		  FROM artifacts a
+		  JOIN tree_nodes n ON n.artifact_id = a.id AND n.user_id = a.user_id AND n.kind = 'artifact'
+		  CROSS JOIN LATERAL jsonb_array_elements(
+		      CASE WHEN jsonb_typeof(a.metadata->'properties') = 'array'
+		           THEN a.metadata->'properties' ELSE '[]'::jsonb END) e
+		 WHERE a.user_id = $1::uuid AND n.is_deleted = false AND COALESCE(e->>'key', '') <> ''
+		 GROUP BY e->>'key'
+		 ORDER BY key
+	`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("artifact property facets: %w", err)
+	}
+	defer rows.Close()
+	out := make([]artifactservice.PropertyFacet, 0)
+	for rows.Next() {
+		var f artifactservice.PropertyFacet
+		if err := rows.Scan(&f.Key, &f.Type, &f.Values); err != nil {
+			return nil, fmt.Errorf("artifact property facets scan: %w", err)
+		}
+		if f.Values == nil {
+			f.Values = []string{}
+		}
+		out = append(out, f)
+	}
+	return out, rows.Err()
 }

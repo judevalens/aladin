@@ -153,6 +153,22 @@ type PageSearchParams struct {
 	Limit int
 }
 
+// PropertyQuery filters artifacts by a typed property (H1c). Key is required; an empty Value
+// matches every artifact carrying the key, which is what a "has a Status" filter wants.
+type PropertyQuery struct {
+	Key   string
+	Value string
+	Limit int
+}
+
+// PropertyFacet is one property key in use plus the distinct values seen for it — the input a
+// filter UI needs to offer real choices instead of free text.
+type PropertyFacet struct {
+	Key    string   `json:"key"`
+	Type   string   `json:"type,omitempty"`
+	Values []string `json:"values"`
+}
+
 type ArtifactUploadInput struct {
 	Type        string
 	Filename    string

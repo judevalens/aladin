@@ -15,6 +15,11 @@ var emptyBlocks = json.RawMessage(`[]`)
 type ArtifactService interface {
 	List(context.Context, ArtifactListParams) ([]ArtifactResponse, error)
 	SearchPages(context.Context, PageSearchParams) ([]ArtifactResponse, error)
+	// QueryByProperty is the H1c "frontmatter" read: the caller's artifacts filtered by a typed
+	// property. Empty Value = every artifact carrying the key.
+	QueryByProperty(context.Context, PropertyQuery) ([]ArtifactResponse, error)
+	// PropertyFacets lists the property keys/values actually in use (for a filter UI).
+	PropertyFacets(context.Context) ([]PropertyFacet, error)
 	BrowserTree(context.Context) ([]BrowserTreeNode, error)
 	CreateBrowserNode(context.Context, BrowserNodeCreateInput) (BrowserNodeCreateResponse, error)
 	DeleteBrowserNode(context.Context, string) (NodeDeleteResult, error)
@@ -35,6 +40,12 @@ type ArtifactService interface {
 type ArtifactRepository interface {
 	ListArtifacts(context.Context, ArtifactListParams) ([]ArtifactResponse, error)
 	SearchPageArtifacts(context.Context, PageSearchParams) ([]ArtifactResponse, error)
+	// QueryArtifactsByProperty returns the caller's artifacts carrying a typed property
+	// (metadata->'properties'). An empty Value matches any value for the key.
+	QueryArtifactsByProperty(context.Context, PropertyQuery) ([]ArtifactResponse, error)
+	// PropertyFacets lists the distinct property keys (and their values) in use, so a filter UI
+	// can offer real choices instead of free text.
+	PropertyFacets(context.Context) ([]PropertyFacet, error)
 	GetArtifact(context.Context, string) (ArtifactResponse, error)
 	// LightNode returns a node's current light representation + seq (incl
 	// tombstones) — the model a write returns so the client applies the result
@@ -119,6 +130,31 @@ func (s *DefaultArtifactService) SearchPages(ctx context.Context, params PageSea
 		params.Limit = 50
 	}
 	return s.repo.SearchPageArtifacts(ctx, params)
+}
+
+func (s *DefaultArtifactService) QueryByProperty(ctx context.Context, params PropertyQuery) ([]ArtifactResponse, error) {
+	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
+		return nil, err
+	}
+	params.Key = strings.TrimSpace(params.Key)
+	params.Value = strings.TrimSpace(params.Value)
+	if params.Key == "" {
+		return nil, BadRequest("key is required")
+	}
+	if params.Limit <= 0 {
+		params.Limit = 100
+	}
+	if params.Limit > 500 {
+		params.Limit = 500
+	}
+	return s.repo.QueryArtifactsByProperty(ctx, params)
+}
+
+func (s *DefaultArtifactService) PropertyFacets(ctx context.Context) ([]PropertyFacet, error) {
+	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
+		return nil, err
+	}
+	return s.repo.PropertyFacets(ctx)
 }
 
 func (s *DefaultArtifactService) BrowserTree(ctx context.Context) ([]BrowserTreeNode, error) {
