@@ -48,6 +48,7 @@ func NewWithDependencies(addr string, deps app.Dependencies) *Server {
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.HandleFunc("GET /readyz", s.handleReadyz)
+	mux.HandleFunc("GET /api/health/deps", s.handleDepsHealth)
 	mux.HandleFunc("GET /api/quote", s.handleQuote)
 	s.registerAuthRoutes(mux)
 
@@ -231,7 +232,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 
 func isPublicRoute(r *http.Request) bool {
 	path := r.URL.Path
-	if path == "/api/health" || path == "/healthz" || path == "/readyz" || path == "/api/quote" {
+	if path == "/api/health" || path == "/healthz" || path == "/readyz" || path == "/api/health/deps" || path == "/api/quote" {
 		return true
 	}
 	if path == "/api/auth/register" || path == "/api/auth/login" || path == "/api/auth/logout" {
@@ -377,6 +378,31 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "service": "api"})
+}
+
+// handleDepsHealth reports each dependency's health for observability — NON-gating: it always
+// returns 200 and `ok` reflects only the HARD dependency (Postgres), so a copilot-sidecar blip is
+// visible here without failing /readyz and pulling the api out of an LB (that's /readyz's job).
+func (s *Server) handleDepsHealth(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	deps := map[string]any{}
+
+	pgOK := s.deps.System().Ready(ctx) == nil
+	if pgOK {
+		deps["postgres"] = map[string]any{"ok": true}
+	} else {
+		deps["postgres"] = map[string]any{"ok": false}
+	}
+
+	// Copilot-agent sidecar (soft): Status never errors — degraded/unconfigured is a valid state.
+	copilot := s.deps.Copilot()
+	if !copilot.Configured() {
+		deps["copilotAgent"] = map[string]any{"configured": false}
+	} else {
+		deps["copilotAgent"] = copilot.Status(ctx) // {configured, sidecar, mcp}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"ok": pgOK, "service": "api", "dependencies": deps})
 }
 
 func (s *Server) handleQuote(w http.ResponseWriter, r *http.Request) {
