@@ -26,7 +26,9 @@ pub fn run() {
         .setup(|app| {
             let data_dir = app.path().app_data_dir().expect("app data dir unavailable");
             let db_path = data_dir.join("aladin.sqlite");
-            let db = Db::open(db_path).expect("failed to open local sqlite");
+            // Self-healing: recreate the (rebuildable) cache if the file is corrupt rather than
+            // panicking and refusing to launch. Only a second failure (real disk error) is fatal.
+            let db = Db::open_or_recover(db_path).expect("failed to open local sqlite");
             let events = DataEventHub::default();
             let sync = SyncHandle::default();
             // Data-layer R1-C — the workspace is a server-authoritative read
