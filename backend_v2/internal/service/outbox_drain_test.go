@@ -15,6 +15,10 @@ func (f *fakeDrainReader) DrainSince(_ context.Context, _ uint64) ([]DrainedEven
 	return f.events, f.horizon, nil
 }
 
+func (f *fakeDrainReader) Horizon(_ context.Context) (uint64, error) {
+	return f.horizon, nil
+}
+
 // drainOnce publishes each event's frame to ITS user's subscribers (TenantID =
 // event.UserID), tagged `*.frame`, and returns the horizon as the new cursor.
 func TestOutboxDrain_PublishesFramePerUser(t *testing.T) {

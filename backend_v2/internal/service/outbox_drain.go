@@ -28,11 +28,13 @@ type DrainedEvent struct {
 	AppEvent *OutboxAppEvent
 }
 
-// OutboxDrainReader is the drain's read port (implemented by the repo). Returns
-// events with afterCursor <= xid < horizon across ALL users, in xid order, plus
-// the horizon (the new cursor). Same gap-free half-open window as PullSince.
+// OutboxDrainReader is the drain's read port (implemented by the repo). DrainSince returns events
+// with afterCursor <= xid < horizon across ALL users, in xid order, plus the next cursor (the
+// horizon, or — if the read hit its batch limit — just past the last row, so the caller paginates).
+// Horizon is the current log horizon, used to seed the boot cursor.
 type OutboxDrainReader interface {
-	DrainSince(ctx context.Context, afterCursor uint64) (events []DrainedEvent, horizon uint64, err error)
+	DrainSince(ctx context.Context, afterCursor uint64) (events []DrainedEvent, nextCursor uint64, err error)
+	Horizon(ctx context.Context) (uint64, error)
 }
 
 // OutboxDrainer polls the outbox and publishes each new frame to its user's
@@ -58,13 +60,13 @@ func (d *OutboxDrainer) Start(ctx context.Context) {
 }
 
 func (d *OutboxDrainer) run(ctx context.Context) {
-	// Initialize the cursor to the current horizon: skip everything already
-	// committed before boot (clients heal that via pull-on-connect), so the drain
-	// only publishes frames that commit from now on. A restart re-publishing a few
-	// in-flight frames would be harmless anyway (the client seq guard dedups).
-	cursor := uint64(0)
-	if _, horizon, err := d.reader.DrainSince(ctx, 0); err == nil {
-		cursor = horizon
+	// Seed the cursor at the current horizon: skip everything committed before boot (clients heal
+	// that via pull-on-connect), so the drain only publishes frames that commit from now on. Retry
+	// until the horizon read succeeds — a transient DB error at boot must NOT leave the cursor at 0,
+	// which would replay the entire outbox to every client on the next tick.
+	cursor, ok := d.initCursor(ctx)
+	if !ok {
+		return // ctx cancelled during init
 	}
 
 	ticker := time.NewTicker(d.interval)
@@ -84,51 +86,72 @@ func (d *OutboxDrainer) run(ctx context.Context) {
 	}
 }
 
-// drainOnce publishes every frame in [cursor, horizon) and returns the horizon
-// as the new cursor. Publishing is per-user (TenantID = the event's UserID).
+// initCursor reads the current horizon, retrying on error until it succeeds or ctx is cancelled.
+// Returns ok=false only if ctx was cancelled before a horizon could be read.
+func (d *OutboxDrainer) initCursor(ctx context.Context) (uint64, bool) {
+	for {
+		if h, err := d.reader.Horizon(ctx); err == nil {
+			return h, true
+		} else {
+			slog.Warn("outbox drain: init horizon failed, retrying", "err", err)
+		}
+		select {
+		case <-ctx.Done():
+			return 0, false
+		case <-time.After(time.Second):
+		}
+	}
+}
+
+// drainOnce publishes the events in [cursor, nextCursor) in order and advances the cursor.
+// Publishing is per-user (TenantID = the event's UserID). On the FIRST publish failure it stops
+// and returns that event's xid as the new cursor, so the window [failed, …) is retried next tick
+// rather than being burned off the live channel — at-least-once delivery (the client seq guard
+// dedups any redelivery). Every event before the failure committed and is not re-published.
 func (d *OutboxDrainer) drainOnce(ctx context.Context, cursor uint64) (uint64, error) {
-	events, horizon, err := d.reader.DrainSince(ctx, cursor)
+	events, next, err := d.reader.DrainSince(ctx, cursor)
 	if err != nil {
 		return cursor, err
 	}
 	for _, e := range events {
-		// Server-trusted tenant: events fan out only to this user's subscribers.
-		// ResolvePublishKeys honors a caller-set TenantID, so no request principal
-		// is needed in this background context.
-		if e.AppEvent != nil {
-			// App-event lane: publish under its own eventType (e.g.
-			// "artifact.build-status") — NOT the data-sync "*.frame" stream — so
-			// the UI reacts but the offline data engine ignores it.
-			// A broadcast-stream app-event (e.g. "market") fans out to all subscribers:
-			// its stream is honored and the tenant is left unbound (the row's UserID is a
-			// sentinel and irrelevant to broadcast routing).
-			stream := e.AppEvent.Stream
-			tenantID := e.UserID
-			if isBroadcastStream(stream) {
-				tenantID = ""
-			} else {
-				stream = WorkspaceStream
-			}
-			if err := d.realtime.Publish(ctx, PublishTarget{
-				Stream:       stream,
-				ResourceKind: e.AppEvent.ResourceKind,
-				ResourceID:   e.AppEvent.ResourceID,
-				Operation:    e.AppEvent.Operation,
-				TenantID:     tenantID,
-			}, e.AppEvent.Payload); err != nil {
-				slog.Warn("outbox drain publish app-event", "xid", e.Xid, "user", e.UserID, "err", err)
-			}
-			continue
-		}
-		if err := d.realtime.Publish(ctx, PublishTarget{
-			Stream:       WorkspaceStream,
-			ResourceKind: AnyResource,
-			ResourceID:   AnyResource,
-			Operation:    FrameOperation, // composes eventType WorkspaceFrameKind ("*.frame")
-			TenantID:     e.UserID,
-		}, e.Frame); err != nil {
-			slog.Warn("outbox drain publish", "xid", e.Xid, "user", e.UserID, "err", err)
+		if err := d.publishOne(ctx, e); err != nil {
+			slog.Warn("outbox drain publish; will retry window", "xid", e.Xid, "user", e.UserID, "err", err)
+			return e.Xid, nil
 		}
 	}
-	return horizon, nil
+	return next, nil
+}
+
+// publishOne fans one drained event out to its user's realtime subscribers. Server-trusted tenant
+// (TenantID = the event's UserID); ResolvePublishKeys honors it, so no request principal is needed
+// in this background context.
+func (d *OutboxDrainer) publishOne(ctx context.Context, e DrainedEvent) error {
+	if e.AppEvent != nil {
+		// App-event lane: publish under its own eventType (e.g. "artifact.build-status") — NOT the
+		// data-sync "*.frame" stream — so the UI reacts but the offline data engine ignores it. A
+		// broadcast-stream app-event (e.g. "market") fans out to all subscribers: its stream is
+		// honored and the tenant is left unbound (the row's UserID is a sentinel, irrelevant to
+		// broadcast routing).
+		stream := e.AppEvent.Stream
+		tenantID := e.UserID
+		if isBroadcastStream(stream) {
+			tenantID = ""
+		} else {
+			stream = WorkspaceStream
+		}
+		return d.realtime.Publish(ctx, PublishTarget{
+			Stream:       stream,
+			ResourceKind: e.AppEvent.ResourceKind,
+			ResourceID:   e.AppEvent.ResourceID,
+			Operation:    e.AppEvent.Operation,
+			TenantID:     tenantID,
+		}, e.AppEvent.Payload)
+	}
+	return d.realtime.Publish(ctx, PublishTarget{
+		Stream:       WorkspaceStream,
+		ResourceKind: AnyResource,
+		ResourceID:   AnyResource,
+		Operation:    FrameOperation, // composes eventType WorkspaceFrameKind ("*.frame")
+		TenantID:     e.UserID,
+	}, e.Frame)
 }

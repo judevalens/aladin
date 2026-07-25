@@ -5,12 +5,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 
 	"aladin/backend_v2/internal/service"
 
 	"github.com/jackc/pgx/v5"
 )
+
+// outboxBatchLimit bounds a single drain/pull read so no one call can load the
+// entire (unbounded) outbox into memory. When a read fills the batch, the caller
+// resumes just past the last row it read; otherwise it consumed the window up to
+// the horizon. A safety backstop — normal delta/drain reads are far smaller.
+const outboxBatchLimit = 2000
 
 // outbox.go — the generic durable log: append (producer side) + the
 // service.OutboxReader reads (consumer side). Entity DATA never lives here; the
@@ -109,35 +116,59 @@ func (r *SyncRepo) PullSince(ctx context.Context, userID string, cursor uint64) 
 		return nil, 0, err
 	}
 	rows, err := r.pool.Query(ctx, `
-		SELECT payload
+		SELECT xid::text, payload
 		  FROM outbox_events
 		 WHERE user_id = $1::uuid
 		   AND type = 'data_event'
 		   AND xid >= $2::xid8
 		   AND xid <  $3::xid8
 		 ORDER BY xid
-	`, userID, strconv.FormatUint(cursor, 10), strconv.FormatUint(horizon, 10))
+		 LIMIT $4
+	`, userID, strconv.FormatUint(cursor, 10), strconv.FormatUint(horizon, 10), outboxBatchLimit)
 	if err != nil {
 		return nil, 0, fmt.Errorf("sync: pull since: %w", err)
 	}
 	defer rows.Close()
 
 	frames := make([]service.Frame, 0)
+	fetched := 0
+	var maxXid uint64
 	for rows.Next() {
+		fetched++
+		var xidStr string
 		var payload []byte
-		if err := rows.Scan(&payload); err != nil {
+		if err := rows.Scan(&xidStr, &payload); err != nil {
 			return nil, 0, fmt.Errorf("sync: pull scan: %w", err)
+		}
+		xid, err := strconv.ParseUint(xidStr, 10, 64)
+		if err != nil {
+			return nil, 0, fmt.Errorf("sync: pull parse xid %q: %w", xidStr, err)
+		}
+		if xid > maxXid {
+			maxXid = xid
 		}
 		var f service.Frame
 		if err := json.Unmarshal(payload, &f); err != nil {
-			return nil, 0, fmt.Errorf("sync: decode frame: %w", err)
+			// A single undecodable frame must not wedge the user's pull forever; skip it (the
+			// row is still advanced past). The client's seq guard heals the entity on a later frame.
+			slog.Warn("sync: pull skipping undecodable frame", "user", userID, "xid", xid, "err", err)
+			continue
 		}
 		frames = append(frames, f)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("sync: pull rows: %w", err)
 	}
-	return frames, horizon, nil
+	return frames, nextCursor(fetched, maxXid, horizon), nil
+}
+
+// nextCursor resumes just past the last row read when a read filled the batch (more may remain
+// before the horizon), else advances to the horizon (the whole window was consumed).
+func nextCursor(fetched int, maxXid, horizon uint64) uint64 {
+	if fetched == outboxBatchLimit {
+		return maxXid + 1
+	}
+	return horizon
 }
 
 // MinXid returns the oldest retained event's xid for userID (ok=false if the
@@ -181,14 +212,18 @@ func (r *SyncRepo) DrainSince(ctx context.Context, afterCursor uint64) ([]servic
 		 WHERE xid >= $1::xid8
 		   AND xid <  $2::xid8
 		 ORDER BY xid
-	`, strconv.FormatUint(afterCursor, 10), strconv.FormatUint(horizon, 10))
+		 LIMIT $3
+	`, strconv.FormatUint(afterCursor, 10), strconv.FormatUint(horizon, 10), outboxBatchLimit)
 	if err != nil {
 		return nil, 0, fmt.Errorf("sync: drain since: %w", err)
 	}
 	defer rows.Close()
 
 	out := make([]service.DrainedEvent, 0)
+	fetched := 0
+	var maxXid uint64
 	for rows.Next() {
+		fetched++
 		var xidStr, userID, typ string
 		var payload []byte
 		if err := rows.Scan(&xidStr, &userID, &typ, &payload); err != nil {
@@ -198,16 +233,23 @@ func (r *SyncRepo) DrainSince(ctx context.Context, afterCursor uint64) ([]servic
 		if err != nil {
 			return nil, 0, fmt.Errorf("sync: drain parse xid %q: %w", xidStr, err)
 		}
+		if xid > maxXid {
+			maxXid = xid
+		}
 		ev := service.DrainedEvent{Xid: xid, UserID: userID}
 		if typ == "app_event" {
 			var ae service.OutboxAppEvent
 			if err := json.Unmarshal(payload, &ae); err != nil {
-				return nil, 0, fmt.Errorf("sync: drain decode app event: %w", err)
+				// One poison row must not wedge the drain for EVERY user; skip it. The row is
+				// still counted so the cursor advances past it (skip = dead-letter).
+				slog.Warn("sync: drain skipping undecodable app_event", "xid", xid, "user", userID, "err", err)
+				continue
 			}
 			ev.AppEvent = &ae
 		} else {
 			if err := json.Unmarshal(payload, &ev.Frame); err != nil {
-				return nil, 0, fmt.Errorf("sync: drain decode frame: %w", err)
+				slog.Warn("sync: drain skipping undecodable frame", "xid", xid, "user", userID, "err", err)
+				continue
 			}
 		}
 		out = append(out, ev)
@@ -215,5 +257,5 @@ func (r *SyncRepo) DrainSince(ctx context.Context, afterCursor uint64) ([]servic
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("sync: drain rows: %w", err)
 	}
-	return out, horizon, nil
+	return out, nextCursor(fetched, maxXid, horizon), nil
 }
