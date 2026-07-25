@@ -34,6 +34,8 @@ services:
       - "5455:5432"          # host 5455 -> backups / psql (dev is 5433, sandbox 5444)
     volumes:
       - prod_postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped   # the canonical store MUST come back after a host reboot
+    # mem_limit: 2g           # tune to host RAM; protects the DB from an OOM-happy neighbour
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U aladin -d aladin"]
       interval: 5s
@@ -48,6 +50,8 @@ services:
     command: redis-server --appendonly yes
     volumes:
       - prod_redis_data:/data
+    restart: unless-stopped
+    # mem_limit: 512m
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -66,6 +70,8 @@ services:
       - "7689:7687"          # bolt     (dev 7687, sandbox 7688)
     volumes:
       - prod_neo4j_data:/data
+    restart: unless-stopped
+    # mem_limit: 2g           # neo4j is a JVM — most likely to balloon; cap it to protect postgres
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:7474 >/dev/null 2>&1 || exit 1"]
       interval: 10s

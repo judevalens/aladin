@@ -262,8 +262,8 @@ def errors_report(ctx: dict[str, Any], window: str, limit: int, heading: str = "
         print_error(f"Invalid window: {window}")
         return 1
     loki_url = ctx["loki_url"]
-    error_query = 'sum by (filename) (count_over_time({job="aladin-worker"} |= "\\"level\\":\\"ERROR\\"" [' + window + "]))"
-    warn_query = 'sum by (filename) (count_over_time({job="aladin-worker"} |= "\\"level\\":\\"WARN\\"" [' + window + "]))"
+    error_query = 'sum by (service) (count_over_time({job="aladin"} |= "\\"level\\":\\"ERROR\\"" [' + window + "]))"
+    warn_query = 'sum by (service) (count_over_time({job="aladin"} |= "\\"level\\":\\"WARN\\"" [' + window + "]))"
     error_counts = loki_instant(loki_url, error_query)
     warn_counts = loki_instant(loki_url, warn_query)
     if error_counts is None or warn_counts is None:
@@ -274,7 +274,7 @@ def errors_report(ctx: dict[str, Any], window: str, limit: int, heading: str = "
 
     latest = loki_range(
         loki_url,
-        '{job="aladin-worker"} |= "\\"level\\":\\"ERROR\\""',
+        '{job="aladin"} |= "\\"level\\":\\"ERROR\\""',
         window=window,
         limit=limit,
         direction="backward",
