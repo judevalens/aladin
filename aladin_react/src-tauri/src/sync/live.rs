@@ -56,12 +56,14 @@ impl EventSubscriber for WorkspaceLiveSubscriber {
         // Apply the frame atomically; NO cursor advance (live is best-effort). The
         // events to dispatch come straight from the repos (via the handlers).
         let emit = db.with_tx(|tx| engine::apply_frame(tx, &registry, frame))?;
-        eprintln!(
-            "[ws] live-applied frame id={}: {} entities -> {} data event(s) emitted to UI",
-            event.envelope.event_id,
-            frame.entities.len(),
-            emit.len()
-        );
+        if crate::realtime::ws_debug_enabled() {
+            eprintln!(
+                "[ws] live-applied frame id={}: {} entities -> {} data event(s) emitted to UI",
+                event.envelope.event_id,
+                frame.entities.len(),
+                emit.len()
+            );
+        }
         for event in emit {
             events.emit(event);
         }

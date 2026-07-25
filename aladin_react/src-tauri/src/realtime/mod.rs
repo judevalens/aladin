@@ -10,6 +10,15 @@ use std::{
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+/// Per-frame [ws] tracing is silent unless ALADIN_WS_DEBUG is set — those lines spam stderr and
+/// print workspace entity ids in normal operation. Connection/error logs stay unconditional. Read
+/// once.
+pub(crate) fn ws_debug_enabled() -> bool {
+    use std::sync::OnceLock;
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ALADIN_WS_DEBUG").is_ok())
+}
 use tungstenite::{
     client::IntoClientRequest,
     connect,
@@ -178,10 +187,12 @@ impl BackendEventProcessor {
         event: BackendEventWire,
     ) -> DbResult<()> {
         if !insert_received_event(db, &event)? {
-            eprintln!(
-                "[ws] event id={} kind={} already received — skipping (dedup)",
-                event.event_id, event.kind
-            );
+            if ws_debug_enabled() {
+                eprintln!(
+                    "[ws] event id={} kind={} already received — skipping (dedup)",
+                    event.event_id, event.kind
+                );
+            }
             return Ok(());
         }
 
@@ -191,10 +202,12 @@ impl BackendEventProcessor {
             .ok()
             .and_then(|decoders| decoders.get(&event.kind).copied());
         let Some(decoder) = decoder else {
-            eprintln!(
-                "[ws] no decoder registered for kind={} — ignoring event id={}",
-                event.kind, event.event_id
-            );
+            if ws_debug_enabled() {
+                eprintln!(
+                    "[ws] no decoder registered for kind={} — ignoring event id={}",
+                    event.kind, event.event_id
+                );
+            }
             update_event_status(db, &event.event_id, BackendEventStatus::Ignored, None)?;
             return Ok(());
         };
@@ -216,20 +229,22 @@ impl BackendEventProcessor {
             }
         };
 
-        match &payload {
-            BackendEventPayload::Frame(frame) => eprintln!(
-                "[ws] decoded frame id={} with {} ent_(ies): {:?}",
-                event.event_id,
-                frame.entities.len(),
-                frame
-                    .entities
-                    .iter()
-                    .map(|e| format!(
-                        "{}:{} op={} seq={}",
-                        e.entity_kind, e.entity_id, e.op, e.seq
-                    ))
-                    .collect::<Vec<_>>()
-            ),
+        if ws_debug_enabled() {
+            match &payload {
+                BackendEventPayload::Frame(frame) => eprintln!(
+                    "[ws] decoded frame id={} with {} ent_(ies): {:?}",
+                    event.event_id,
+                    frame.entities.len(),
+                    frame
+                        .entities
+                        .iter()
+                        .map(|e| format!(
+                            "{}:{} op={} seq={}",
+                            e.entity_kind, e.entity_id, e.op, e.seq
+                        ))
+                        .collect::<Vec<_>>()
+                ),
+            }
         }
 
         let validated = ValidatedBackendEvent {
@@ -362,10 +377,12 @@ fn connect_once(
             "event" => {
                 if let Some(event) = parsed.event {
                     let event_id = event.event_id.clone();
-                    eprintln!(
-                        "[ws] received event kind={} id={} sub_key={:?}",
-                        event.kind, event.event_id, event.subscription_key
-                    );
+                    if ws_debug_enabled() {
+                        eprintln!(
+                            "[ws] received event kind={} id={} sub_key={:?}",
+                            event.kind, event.event_id, event.subscription_key
+                        );
+                    }
                     // Data-layer redesign, Phase C — the live change row is carried
                     // in the event payload and applied DIRECTLY here (via the
                     // WorkspaceLiveSubscriber → seq-guarded apply). No pull is

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/url"
 	"sort"
 	"strings"
@@ -255,6 +256,7 @@ type InMemoryRealtimeEventService struct {
 	subscribers  map[string]realtimeSubscriber
 	recentEvents []recentRealtimeEvent
 	recentLimit  int
+	dropped      int64 // frames dropped to a full subscriber buffer (cumulative, guarded by mu)
 }
 
 type realtimeSubscriber struct {
@@ -308,6 +310,15 @@ func (s *InMemoryRealtimeEventService) Publish(ctx context.Context, target Publi
 		select {
 		case sub.ch <- event:
 		default:
+			// The subscriber's buffer is full (a slow/stalled client). Dropping keeps the drain
+			// non-blocking; data_event drops self-heal on the client's next pull, but the drop was
+			// previously invisible — surface it (rate-limited) so a persistently-behind client is
+			// diagnosable. A steadily climbing count signals a stuck subscriber.
+			s.dropped++
+			if s.dropped == 1 || s.dropped%100 == 0 {
+				slog.Warn("realtime: dropped frame to full subscriber buffer",
+					"component", "realtime", "subscriber", subscriberID, "event_type", eventType, "dropped_total", s.dropped)
+			}
 		}
 	}
 	s.mu.Unlock()
