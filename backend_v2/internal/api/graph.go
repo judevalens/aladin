@@ -1,8 +1,14 @@
 package api
 
 import (
+	"context"
 	"net/http"
+	"time"
 )
+
+// graphReadTimeout bounds a graph-neighbours read so a slow/down Neo4j can't tie up the handler
+// for the driver's 60s default connection-acquisition timeout.
+const graphReadTimeout = 5 * time.Second
 
 // registerGraphRoutes mounts the read path for the Neo4j connection lens. The write/projection
 // path lives in the worker; this only serves an entity's neighbourhood for the (gated) graph UI.
@@ -23,7 +29,9 @@ func (s *Server) handleGraphEntityNeighbors(w http.ResponseWriter, r *http.Reque
 		writeAPIError(w, r, http.StatusBadRequest, categoryBadRequest, "entity id required", nil)
 		return
 	}
-	nb, err := reader.Neighbors(r.Context(), id, min(intQuery(r, "limit", 25), 100))
+	ctx, cancel := context.WithTimeout(r.Context(), graphReadTimeout)
+	defer cancel()
+	nb, err := reader.Neighbors(ctx, id, min(intQuery(r, "limit", 25), 100))
 	if err != nil {
 		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
 		return

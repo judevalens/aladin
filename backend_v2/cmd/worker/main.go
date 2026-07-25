@@ -313,7 +313,7 @@ func main() {
 		Queues:         queues,
 		RetryDelayFunc: pipeline.RetryDelay,
 		IsFailure:      pipeline.IsFailure,
-		ErrorHandler:   isync.NewAsynqErrorHandler(providerStreamRepo, cycleRepo),
+		ErrorHandler:   isync.NewAsynqErrorHandler(recordRepo, providerStreamRepo, cycleRepo),
 	})
 
 	syncOrchestrator.RegisterHandlers(mux)

@@ -303,9 +303,20 @@ func (e *AlertEngine) updateDemand(ctx context.Context, want map[string]bool) {
 		}
 	}
 	if len(add) > 0 {
-		_ = e.demand.Subscribe(ctx, add)
+		if err := e.demand.Subscribe(ctx, add); err != nil {
+			// Roll back the demand marks so the NEXT reconcile retries these symbols. Otherwise a
+			// failed subscribe leaves them recorded as satisfied forever, and the alert silently
+			// fires only via the 20s snapshot backstop — never on live-tick crossings.
+			slog.Warn("alert engine: demand subscribe failed; rolling back to retry next reconcile",
+				"component", "alerts", "symbols", add, "err", err)
+			for _, sym := range add {
+				delete(e.engineDemand, sym)
+			}
+		}
 	}
 	if len(drop) > 0 {
-		_ = e.demand.Unsubscribe(ctx, drop)
+		if err := e.demand.Unsubscribe(ctx, drop); err != nil {
+			slog.Warn("alert engine: demand unsubscribe failed", "component", "alerts", "symbols", drop, "err", err)
+		}
 	}
 }

@@ -487,7 +487,7 @@ func TestAsynqErrorHandlerMarksFinalSyncFailure(t *testing.T) {
 		CorrelationID:    "corr-1",
 	})
 
-	handleAsynqTaskError(context.Background(), task, errors.New("provider failed"), 3, 3, true, repo, cycles)
+	handleAsynqTaskError(context.Background(), task, "", errors.New("provider failed"), 3, 3, true, nil, repo, cycles)
 
 	if len(repo.markFailedIDs) != 1 || repo.markFailedIDs[0] != "stream-1" {
 		t.Fatalf("MarkSyncFailed = %v, want [stream-1]", repo.markFailedIDs)
@@ -514,7 +514,7 @@ func TestAsynqErrorHandlerIgnoresNonFinalSyncFailure(t *testing.T) {
 		CycleID:          "cycle-1",
 	})
 
-	handleAsynqTaskError(context.Background(), task, errors.New("provider failed"), 1, 3, true, repo, cycles)
+	handleAsynqTaskError(context.Background(), task, "", errors.New("provider failed"), 1, 3, true, nil, repo, cycles)
 
 	if len(repo.markFailedIDs) != 0 {
 		t.Fatalf("MarkSyncFailed called before final retry: %v", repo.markFailedIDs)
