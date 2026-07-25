@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/joho/godotenv"
 
@@ -70,7 +71,12 @@ func main() {
 
 	go func() {
 		<-ctx.Done()
-		if err := server.Shutdown(context.Background()); err != nil {
+		// Bounded drain: give in-flight requests up to 15s to finish, then force-close. Without a
+		// deadline (the old context.Background()) a single hung handler blocks shutdown forever, so
+		// the process only dies on SIGKILL. Background loops already stop on ctx cancel (safego).
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
 			slog.Error("api: shutdown failed", "component", "api", "err", err)
 		}
 	}()
