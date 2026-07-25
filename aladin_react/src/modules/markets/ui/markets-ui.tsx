@@ -138,7 +138,7 @@ export function MarketsUI() {
           <span className="size-1.5 rounded-full bg-for" />
           <span className="font-mono text-[11px] uppercase tracking-[0.5px] text-ink-3">Mkt Open</span>
         </div>
-        <div className="flex min-w-0 flex-1 items-center overflow-x-auto py-2.5">
+        <div className="scrollbar-hidden flex min-w-0 flex-1 items-center overflow-x-auto overflow-y-hidden py-2.5">
           {INDICES.map((idx) => (
             <IndexPill key={idx.label} {...idx} />
           ))}
