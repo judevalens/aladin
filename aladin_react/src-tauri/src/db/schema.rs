@@ -2,7 +2,7 @@ use rusqlite::Connection;
 
 use super::DbResult;
 
-const CURRENT_VERSION: i32 = 13;
+const CURRENT_VERSION: i32 = 14;
 
 pub fn migrate(conn: &Connection) -> DbResult<()> {
     let version: i32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
@@ -45,9 +45,29 @@ pub fn migrate(conn: &Connection) -> DbResult<()> {
     if version < 13 {
         conn.execute_batch(MIGRATION_V13)?;
     }
+    if version < 14 {
+        conn.execute_batch(MIGRATION_V14)?;
+    }
     conn.execute_batch(&format!("PRAGMA user_version = {CURRENT_VERSION};"))?;
     Ok(())
 }
+
+// Data-layer: watchlists as a synced entity ("watchlist" kind). Aggregate model — ONE row per
+// list, its members carried in items_json ([{instrumentId,symbol,name,position}]); an add/remove
+// re-emits the whole list. seq + is_deleted mirror the nodes/signals guard. A pure read cache fed
+// by frames; the server is the only writer.
+const MIGRATION_V14: &str = "
+CREATE TABLE IF NOT EXISTS watchlists (
+    id         TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    kind       TEXT NOT NULL DEFAULT 'manual',
+    position   INTEGER NOT NULL DEFAULT 0,
+    items_json TEXT,
+    seq        INTEGER NOT NULL DEFAULT 0,
+    is_deleted INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL DEFAULT 0
+);
+";
 
 // Data-layer: claims as a synced entity ("signal" kind). A separate read cache
 // from `nodes` (claims aren't tree nodes) fed by the same frame engine. seq +

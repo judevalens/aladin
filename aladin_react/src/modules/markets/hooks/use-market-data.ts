@@ -40,7 +40,8 @@ export interface UseMarketData {
  */
 export function useMarketData(): UseMarketData {
   const { repos } = useAppComposition();
-  const { items, add, remove, loading } = useWatchlist();
+  const activeWatchlistId = useAppStore((s) => s.activeWatchlistId);
+  const { items, add, remove, loading } = useWatchlist(activeWatchlistId);
 
   const symbols = useMemo(() => {
     const seen = new Set<string>();

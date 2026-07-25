@@ -17,6 +17,8 @@ import { createCopilotSlice } from "@/app/state/copilot-slice";
 import type { CopilotSlice } from "@/app/state/copilot-slice";
 import { createNotificationsSlice } from "@/app/state/notifications-slice";
 import type { NotificationsSlice } from "@/app/state/notifications-slice";
+import { createWatchlistsSlice } from "@/app/state/watchlists-slice";
+import type { WatchlistsSlice } from "@/app/state/watchlists-slice";
 
 export type AppStoreState = SessionSlice &
   WorkspaceSlice &
@@ -26,7 +28,8 @@ export type AppStoreState = SessionSlice &
   TerminalSlice &
   MarketSlice &
   CopilotSlice &
-  NotificationsSlice;
+  NotificationsSlice &
+  WatchlistsSlice;
 
 export const useAppStore = create<AppStoreState>()((...args) => ({
   ...createSessionSlice(...args),
@@ -38,4 +41,5 @@ export const useAppStore = create<AppStoreState>()((...args) => ({
   ...createMarketSlice(...args),
   ...createCopilotSlice(...args),
   ...createNotificationsSlice(...args),
+  ...createWatchlistsSlice(...args),
 }));

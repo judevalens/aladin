@@ -4,26 +4,31 @@ import { Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { type Quote, fmtPct, fmtPrice, fmtSigned, fmtVol } from "@/modules/markets/market-data";
 import { Sparkline } from "@/modules/markets/ui/charts";
+import { AddToListMenu } from "@/modules/markets/ui/add-to-list-menu";
 
 const TABS = ["Watchlist", "Gainers", "Losers", "Most Active"] as const;
 type Tab = (typeof TABS)[number];
 
 /**
- * The quote table under the market map. Tabs re-sort the same quote set; the star toggles
- * watchlist membership; a row selects the symbol into the detail panel.
+ * The quote table under the market map. Tabs re-sort the same quote set; the star opens the
+ * add-to-list menu (membership across all lists); a row selects the symbol into the detail panel.
+ * `watched` = the active list (drives the Watchlist tab); `inAnyList` = membership in any list
+ * (drives the star fill).
  */
 export function QuoteTable({
   quotes,
   watched,
+  inAnyList,
+  watchlistName = "Watchlist",
   selected,
   onSelect,
-  onToggleWatch,
 }: {
   quotes: Quote[];
   watched: Set<string>;
+  inAnyList: Set<string>;
+  watchlistName?: string;
   selected: string;
   onSelect: (symbol: string) => void;
-  onToggleWatch: (symbol: string) => void;
 }) {
   const [tab, setTab] = useState<Tab>("Gainers");
 
@@ -54,7 +59,7 @@ export function QuoteTable({
               t === tab ? "bg-raise font-semibold text-ink" : "text-ink-3 hover:text-ink",
             )}
           >
-            {t}
+            {t === "Watchlist" ? watchlistName : t}
           </button>
         ))}
         <span className="ml-auto font-mono text-[11px] text-ink-4">{rows.length} symbols</span>
@@ -77,7 +82,7 @@ export function QuoteTable({
           rows.map((q) => {
             const up = q.change >= 0;
             const isSel = q.symbol === selected;
-            const isWatched = watched.has(q.symbol);
+            const isWatched = inAnyList.has(q.symbol);
             return (
               <button
                 key={q.symbol}
@@ -108,18 +113,17 @@ export function QuoteTable({
                   <Sparkline series={q.spark} up={up} />
                 </span>
                 <span className="text-right font-mono text-[12px] text-ink-3">{fmtVol(q.volume)}</span>
-                <span
-                  role="button"
-                  tabIndex={-1}
-                  aria-label={isWatched ? `Unwatch ${q.symbol}` : `Watch ${q.symbol}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onToggleWatch(q.symbol);
-                  }}
-                  className="grid size-6 place-items-center rounded text-ink-4 hover:text-amber"
-                >
-                  <Star className={cn("size-4", isWatched && "fill-amber text-amber")} strokeWidth={1.75} />
-                </span>
+                <AddToListMenu symbol={q.symbol}>
+                  <span
+                    role="button"
+                    tabIndex={-1}
+                    aria-label={`Add ${q.symbol} to a list`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="grid size-6 place-items-center rounded text-ink-4 hover:text-amber"
+                  >
+                    <Star className={cn("size-4", isWatched && "fill-amber text-amber")} strokeWidth={1.75} />
+                  </span>
+                </AddToListMenu>
               </button>
             );
           })

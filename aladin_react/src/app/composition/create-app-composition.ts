@@ -12,6 +12,7 @@ import { createInstrumentsRepo } from "@/repos/instruments/instruments-repo";
 import { createWatchlistRepo } from "@/repos/watchlist/watchlist-repo";
 import { createSearchRepo } from "@/repos/search/search-repo";
 import { createLocalSignalsRepo } from "@/repos/signals/local-signals-repo";
+import { createLocalWatchlistsRepo } from "@/repos/watchlist/local-watchlist-repo";
 import { createBookSignalsRepo } from "@/repos/signals/book-signals-repo";
 import { createIntegrationRepo } from "@/repos/integrations/integration-repo";
 import { createPageAttributionRepo } from "@/repos/pages/page-attribution-repo";
@@ -83,6 +84,7 @@ export function createAppComposition() {
     insights: createInsightsRepo(apiClient),
     instruments: createInstrumentsRepo(apiClient),
     watchlist: createWatchlistRepo(apiClient),
+    localWatchlists: createLocalWatchlistsRepo(dataEvents),
     search: createSearchRepo(apiClient),
     market: createMarketRepo(apiClient),
     copilot: createCopilotRepo(apiClient),

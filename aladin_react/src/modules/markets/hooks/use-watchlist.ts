@@ -1,63 +1,46 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useMemo, useSyncExternalStore } from "react";
 
 import { useAppComposition } from "@/app/composition/app-composition";
-import type { WatchlistItem } from "@/shared/api/models";
+import type { LocalWatchlistItem } from "@/repos/watchlist/local-watchlist-types";
 
 export interface UseWatchlist {
-  items: WatchlistItem[];
+  items: LocalWatchlistItem[];
   loading: boolean;
-  error: string | null;
   add: (instrumentId: string) => Promise<void>;
   remove: (instrumentId: string) => Promise<void>;
 }
 
-// Loads the user's watchlist and exposes add/remove. Both mutations optimistically patch
-// the list, then reload from the server so the canonical order/state wins.
-export function useWatchlist(): UseWatchlist {
+/**
+ * The items of the ACTIVE watchlist, read reactively from the LOCAL frame-fed cache (a watchlist is
+ * one synced entity carrying its members, so its items are already in the store — no separate
+ * fetch). add/remove proxy to Go over REST; the list's frame re-lands with the new membership, so
+ * the UI updates without an optimistic patch or refetch. Waits for a non-null listId.
+ */
+export function useWatchlist(listId: string | null): UseWatchlist {
   const { repos } = useAppComposition();
-  const [items, setItems] = useState<WatchlistItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [nonce, setNonce] = useState(0);
+  const store = useMemo(() => repos.localWatchlists.observe(), [repos.localWatchlists]);
+  const local = useSyncExternalStore(store.subscribe, store.snapshot);
 
-  const reload = useCallback(() => setNonce((n) => n + 1), []);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    repos.watchlist
-      .list()
-      .then((result) => {
-        if (!cancelled) setItems(result);
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load watchlist");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [repos, nonce]);
+  const items = useMemo<LocalWatchlistItem[]>(() => {
+    if (!listId || !local) return [];
+    return local.find((l) => l.id === listId)?.items ?? [];
+  }, [local, listId]);
 
   const add = useCallback(
     async (instrumentId: string) => {
-      await repos.watchlist.add(instrumentId);
-      reload();
+      if (!listId) return;
+      await repos.watchlist.addItem(listId, instrumentId);
     },
-    [repos, reload],
+    [repos, listId],
   );
 
   const remove = useCallback(
     async (instrumentId: string) => {
-      setItems((prev) => prev.filter((i) => i.instrumentId !== instrumentId));
-      await repos.watchlist.remove(instrumentId);
-      reload();
+      if (!listId) return;
+      await repos.watchlist.removeItem(listId, instrumentId);
     },
-    [repos, reload],
+    [repos, listId],
   );
 
-  return { items, loading, error, add, remove };
+  return { items, loading: local === undefined, add, remove };
 }

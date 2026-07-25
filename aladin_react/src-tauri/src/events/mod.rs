@@ -5,6 +5,7 @@ use tauri::ipc::Channel;
 
 use crate::db::repo::nodes::NodeRow;
 use crate::db::repo::signals::SignalRow;
+use crate::db::repo::watchlists::WatchlistRow;
 
 /// Data-layer redesign — workspace data events. The pull/live engines apply frame
 /// changes into the local cache and emit these; the UI reads the cache and patches
@@ -17,6 +18,8 @@ pub enum DataEvent {
     NodeDeleted(EntityDeletedEvent),
     SignalUpserted(SignalRow),
     SignalDeleted(EntityDeletedEvent),
+    WatchlistUpserted(WatchlistRow),
+    WatchlistDeleted(EntityDeletedEvent),
 }
 
 #[derive(Debug, Clone, Serialize)]

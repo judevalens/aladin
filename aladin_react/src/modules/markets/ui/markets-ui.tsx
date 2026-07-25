@@ -1,33 +1,38 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bell, Check, ChevronDown, Pause, Search, Sun } from "lucide-react";
+import { Bell, Check, ChevronDown, ListChecks, Pause, Search, Sun } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { type Quote, INDICES, fmtPct } from "@/modules/markets/market-data";
 import { useMarketData } from "@/modules/markets/hooks/use-market-data";
+import { useWatchlists } from "@/modules/markets/hooks/use-watchlists";
 import { useQuoteSubscription } from "@/modules/markets/hooks/use-quote-subscription";
 import { MarketMap } from "@/modules/markets/ui/market-map";
 import { QuoteTable } from "@/modules/markets/ui/quote-table";
 import { TickerDetail } from "@/modules/markets/ui/ticker-detail";
+import { WatchlistManagerDialog } from "@/modules/markets/ui/watchlist-manager-dialog";
 import { useAppStore } from "@/app/state/store";
 
-// The map's selectable datasets. `pick` derives the subset the treemap renders.
-const MAP_DATASETS = [
-  { key: "watchlist", label: "My Watchlist" },
+// The market lenses the treemap can render (besides a specific watchlist).
+const MARKET_LENSES = [
   { key: "all", label: "All Symbols" },
   { key: "gainers", label: "Gainers" },
   { key: "losers", label: "Losers" },
   { key: "active", label: "Most Active" },
 ] as const;
-type MapDatasetKey = (typeof MAP_DATASETS)[number]["key"];
+type LensKey = (typeof MARKET_LENSES)[number]["key"];
+// A map view is either the active watchlist or a market lens.
+type MapView = "watchlist" | LensKey;
 
-function pickDataset(quotes: Quote[], watched: Set<string>, key: MapDatasetKey): Quote[] {
-  switch (key) {
+function pickDataset(quotes: Quote[], watched: Set<string>, view: MapView): Quote[] {
+  switch (view) {
     case "watchlist":
       return quotes.filter((q) => watched.has(q.symbol));
     case "gainers":
@@ -55,18 +60,27 @@ function IndexPill({ label, value, changePct }: { label: string; value: number; 
 }
 
 /**
- * The Markets surface — a market map + quote table on the left, a live ticker detail on the
- * right. Prices are placeholder (deterministic) until the Alpaca feed lands; the watchlist
- * is real and persisted.
+ * The Markets surface — a market map + quote table on the left, a live ticker detail on the right.
+ * Watchlists are curated in the manager modal and via the per-row "add to list" star menu; the map
+ * dropdown picks which list/lens the treemap shows.
  */
 export function MarketsUI() {
-  const { quotes, watched, toggleWatch } = useMarketData();
+  const { quotes, watched } = useMarketData();
+  const { lists, activeId, setActive } = useWatchlists();
   const openTicker = useAppStore((s) => s.openTicker);
   const [selected, setSelected] = useState<string>("");
-  const [mapDataset, setMapDataset] = useState<MapDatasetKey>("all");
+  const [mapView, setMapView] = useState<MapView>("all");
+  const [managerOpen, setManagerOpen] = useState(false);
 
-  const mapQuotes = useMemo(() => pickDataset(quotes, watched, mapDataset), [quotes, watched, mapDataset]);
-  const datasetLabel = MAP_DATASETS.find((d) => d.key === mapDataset)?.label ?? "All Symbols";
+  const activeName = lists.find((l) => l.id === activeId)?.name ?? "Watchlist";
+  // Every symbol that lives in ANY list — drives the star fill (membership is per-list via the menu).
+  const inAnyList = useMemo(
+    () => new Set(lists.flatMap((l) => l.items.map((i) => i.symbol))),
+    [lists],
+  );
+  const mapQuotes = useMemo(() => pickDataset(quotes, watched, mapView), [quotes, watched, mapView]);
+  const datasetLabel =
+    mapView === "watchlist" ? activeName : MARKET_LENSES.find((d) => d.key === mapView)?.label ?? "All Symbols";
 
   // Register live-quote demand for every symbol on the surface.
   useQuoteSubscription(useMemo(() => quotes.map((q) => q.symbol), [quotes]));
@@ -90,6 +104,15 @@ export function MarketsUI() {
       <header className="flex shrink-0 items-center gap-3 border-b border-line px-5 py-3">
         <h1 className="font-display text-lg font-semibold text-ink">Markets</h1>
         <span className="text-[13px] text-ink-4">US Equities &amp; ETFs</span>
+        <span className="mx-1 h-4 w-px bg-line" />
+        <button
+          type="button"
+          onClick={() => setManagerOpen(true)}
+          className="flex items-center gap-1.5 rounded-card border border-line bg-field px-2.5 py-1.5 text-[13px] text-ink-2 transition-colors hover:border-line-2"
+        >
+          <ListChecks className="size-3.5 text-ink-4" strokeWidth={1.75} />
+          Watchlists
+        </button>
         <div className="ml-auto flex items-center gap-2">
           <button
             type="button"
@@ -145,11 +168,34 @@ export function MarketsUI() {
                     <ChevronDown className="size-3 text-ink-4" strokeWidth={2} />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-44">
-                  {MAP_DATASETS.map((d) => (
-                    <DropdownMenuItem key={d.key} onClick={() => setMapDataset(d.key)} className="justify-between">
+                <DropdownMenuContent align="start" className="w-48">
+                  {lists.length > 0 && (
+                    <>
+                      <DropdownMenuLabel>Watchlists</DropdownMenuLabel>
+                      {lists.map((l) => (
+                        <DropdownMenuItem
+                          key={l.id}
+                          onClick={() => {
+                            setActive(l.id);
+                            setMapView("watchlist");
+                          }}
+                          className="justify-between"
+                        >
+                          <span className="truncate">{l.name}</span>
+                          {mapView === "watchlist" && l.id === activeId ? (
+                            <Check className="size-3.5 text-amber" strokeWidth={2} />
+                          ) : (
+                            <span className="font-mono text-[11px] text-ink-4">{l.itemCount}</span>
+                          )}
+                        </DropdownMenuItem>
+                      ))}
+                      <DropdownMenuSeparator />
+                    </>
+                  )}
+                  {MARKET_LENSES.map((d) => (
+                    <DropdownMenuItem key={d.key} onClick={() => setMapView(d.key)} className="justify-between">
                       {d.label}
-                      {d.key === mapDataset && <Check className="size-3.5 text-amber" strokeWidth={2} />}
+                      {d.key === mapView && <Check className="size-3.5 text-amber" strokeWidth={2} />}
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuContent>
@@ -171,24 +217,22 @@ export function MarketsUI() {
           <QuoteTable
             quotes={quotes}
             watched={watched}
+            inAnyList={inAnyList}
+            watchlistName={activeName}
             selected={selectedQuote?.symbol ?? ""}
             onSelect={setSelected}
-            onToggleWatch={toggleWatch}
           />
         </div>
 
         {/* right detail */}
         <div className="w-[400px] shrink-0 border-l border-line">
           {selectedQuote && (
-            <TickerDetail
-              quote={selectedQuote}
-              watched={watched.has(selectedQuote.symbol)}
-              onToggleWatch={() => toggleWatch(selectedQuote.symbol)}
-              onTrade={() => openTicker(selectedQuote.symbol)}
-            />
+            <TickerDetail quote={selectedQuote} onTrade={() => openTicker(selectedQuote.symbol)} />
           )}
         </div>
       </div>
+
+      <WatchlistManagerDialog open={managerOpen} onOpenChange={setManagerOpen} />
     </div>
   );
 }

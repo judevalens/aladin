@@ -48,19 +48,49 @@ func (f *fakeEntityContextService) AcceptMerge(context.Context, string) error { 
 func (f *fakeEntityContextService) RejectMerge(context.Context, string) error { return nil }
 
 type fakeWatchlistService struct {
-	items   []service.WatchlistItem
-	addUser string
-	addID   string
-	err     error
+	items       []service.WatchlistItem
+	lists       []service.Watchlist
+	addUser     string
+	addListID   string
+	addID       string
+	resolved    string // the name passed to ResolveOrCreateByName
+	createdWith string
+	err         error
 }
 
-func (f *fakeWatchlistService) List(_ context.Context, _ string) ([]service.WatchlistItem, error) {
+func (f *fakeWatchlistService) ListWatchlists(context.Context, string) ([]service.Watchlist, error) {
+	return f.lists, f.err
+}
+func (f *fakeWatchlistService) CreateWatchlist(_ context.Context, _, name string) (service.Watchlist, error) {
+	f.createdWith = name
+	return service.Watchlist{ID: "new-list", Name: name, Kind: "manual"}, f.err
+}
+func (f *fakeWatchlistService) RenameWatchlist(context.Context, string, string, string) error {
+	return nil
+}
+func (f *fakeWatchlistService) DeleteWatchlist(context.Context, string, string) error { return nil }
+func (f *fakeWatchlistService) ListItems(context.Context, string, string) ([]service.WatchlistItem, error) {
 	return f.items, f.err
 }
-func (f *fakeWatchlistService) Add(_ context.Context, userID, instrumentID string) error {
-	f.addUser, f.addID = userID, instrumentID
+func (f *fakeWatchlistService) AddItem(_ context.Context, userID, listID, instrumentID string) error {
+	f.addUser, f.addListID, f.addID = userID, listID, instrumentID
 	return f.err
 }
+func (f *fakeWatchlistService) RemoveItem(context.Context, string, string, string) error { return nil }
+func (f *fakeWatchlistService) ResolveOrCreateByName(_ context.Context, _, name string) (string, error) {
+	f.resolved = name
+	if name == "" {
+		return "default-list", f.err
+	}
+	return "resolved-" + name, f.err
+}
+func (f *fakeWatchlistService) ResolveInstruments(context.Context, string, string) ([]service.WatchlistItem, error) {
+	return f.items, f.err
+}
+func (f *fakeWatchlistService) List(context.Context, string) ([]service.WatchlistItem, error) {
+	return f.items, f.err
+}
+func (f *fakeWatchlistService) Add(context.Context, string, string) error    { return f.err }
 func (f *fakeWatchlistService) Remove(context.Context, string, string) error { return nil }
 
 type fakeBarService struct {
@@ -292,6 +322,7 @@ func TestAddToWatchlistResolvesSymbol(t *testing.T) {
 	watchlist := &fakeWatchlistService{}
 	tools := workspaceToolServer{instruments: instruments, watchlist: watchlist}
 
+	// No list name → the default list.
 	_, out, err := tools.addToWatchlist(contextWithScopes(), nil, addToWatchlistInput{Symbol: "nvda"})
 	if err != nil {
 		t.Fatalf("addToWatchlist error: %v", err)
@@ -299,8 +330,40 @@ func TestAddToWatchlistResolvesSymbol(t *testing.T) {
 	if !out.OK || out.Symbol != "NVDA" {
 		t.Fatalf("output = %#v, want ok NVDA", out)
 	}
-	if watchlist.addUser != "user-1" || watchlist.addID != "inst-1" {
-		t.Fatalf("watchlist add = (%q,%q), want (user-1, inst-1)", watchlist.addUser, watchlist.addID)
+	if watchlist.addUser != "user-1" || watchlist.addID != "inst-1" || watchlist.addListID != "default-list" {
+		t.Fatalf("watchlist add = (%q,%q,%q), want (user-1, inst-1, default-list)", watchlist.addUser, watchlist.addID, watchlist.addListID)
+	}
+}
+
+func TestAddToWatchlistNamedListResolvesOrCreates(t *testing.T) {
+	t.Parallel()
+
+	instruments := &fakeInstrumentService{resolveID: "inst-1", resolveOK: true}
+	watchlist := &fakeWatchlistService{}
+	tools := workspaceToolServer{instruments: instruments, watchlist: watchlist}
+
+	_, out, err := tools.addToWatchlist(contextWithScopes(), nil, addToWatchlistInput{Symbol: "nvda", List: "Semis"})
+	if err != nil {
+		t.Fatalf("addToWatchlist error: %v", err)
+	}
+	if watchlist.resolved != "Semis" {
+		t.Fatalf("ResolveOrCreateByName got %q, want Semis", watchlist.resolved)
+	}
+	if watchlist.addListID != "resolved-Semis" || out.List != "Semis" {
+		t.Fatalf("added to list %q (out.List %q), want resolved-Semis / Semis", watchlist.addListID, out.List)
+	}
+}
+
+func TestCreateWatchlistTool(t *testing.T) {
+	t.Parallel()
+	watchlist := &fakeWatchlistService{}
+	tools := workspaceToolServer{watchlist: watchlist}
+	_, out, err := tools.createWatchlist(contextWithScopes(), nil, createWatchlistInput{Name: "Shorts"})
+	if err != nil {
+		t.Fatalf("createWatchlist error: %v", err)
+	}
+	if watchlist.createdWith != "Shorts" || out.Name != "Shorts" {
+		t.Fatalf("created %q (out %q), want Shorts", watchlist.createdWith, out.Name)
 	}
 }
 

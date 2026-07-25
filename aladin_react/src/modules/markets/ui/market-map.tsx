@@ -60,7 +60,10 @@ export function MarketMap({
   }, [quotes]);
 
   return (
-    <div className="relative w-full" style={{ aspectRatio: `${VW} / ${VH}` }}>
+    // aspect-ratio drives height from width, but CAP it so a wide screen can't grow the map tall
+    // enough to push the quote table out of the (overflow-hidden) column. Below the cap the ratio
+    // holds (undistorted); above it the map fills width at a bounded height (finviz-style).
+    <div className="relative w-full" style={{ aspectRatio: `${VW} / ${VH}`, maxHeight: "min(44vh, 440px)" }}>
       {/* sector labels, anchored to each sector rectangle */}
       {sectors.map((s) => (
         <span

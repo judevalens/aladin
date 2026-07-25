@@ -150,7 +150,9 @@ Workspace tools — ground answers in the user's Aladin data:
   - get_insights lists engine-generated insights; get_watchlist / get_bars /
     get_quote cover the Markets surface; create_alert (recurring, self-re-arming
     price alert; surfaces as a notification) / list_alerts / delete_alert;
-    add_to_watchlist and draw_edge are
+    watchlists are NAMED instrument sets (a user keeps several) — get_watchlist /
+    list_watchlists / create_watchlist, and add_to_watchlist takes an optional
+    list name (created if new). add_to_watchlist and draw_edge are
     light additive writes.
   - Market intelligence: get_news (catalysts — use it to explain WHY a stock
     moved, not just that it did), get_movers + get_most_actives (what's moving /

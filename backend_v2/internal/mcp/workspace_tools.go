@@ -64,8 +64,16 @@ func registerWorkspaceTools(server *sdkmcp.Server, t workspaceToolServer) {
 	}, t.getArtifact)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "get_watchlist",
-		Description: "List the tickers the user is currently tracking on the Markets surface.",
+		Description: "List the tickers in a watchlist. Optionally pass a list name; omit for the user's default list.",
 	}, t.getWatchlist)
+	sdkmcp.AddTool(server, &sdkmcp.Tool{
+		Name:        "list_watchlists",
+		Description: "List the user's watchlists (named instrument sets) with their item counts.",
+	}, t.listWatchlists)
+	sdkmcp.AddTool(server, &sdkmcp.Tool{
+		Name:        "create_watchlist",
+		Description: "Create a new named watchlist. Returns its id.",
+	}, t.createWatchlist)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "get_bars",
 		Description: "OHLCV price history for a ticker symbol. timeframe is e.g. 1Day or 5Min; returns oldest→newest.",
@@ -76,7 +84,7 @@ func registerWorkspaceTools(server *sdkmcp.Server, t workspaceToolServer) {
 	}, t.getQuote)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "add_to_watchlist",
-		Description: "Add a ticker to the user's Markets watchlist by symbol.",
+		Description: "Add a ticker to a watchlist by symbol. Optionally pass a list name (created if it doesn't exist); omit for the user's default list.",
 	}, t.addToWatchlist)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "draw_edge",
@@ -169,8 +177,22 @@ type getArtifactOutput struct {
 	Citations []citationOut  `json:"citations,omitempty"`
 }
 
+type getWatchlistInput struct {
+	List string `json:"list,omitempty"` // optional list name; empty = default
+}
 type getWatchlistOutput struct {
 	Items []service.WatchlistItem `json:"items"`
+}
+
+type listWatchlistsOutput struct {
+	Watchlists []service.Watchlist `json:"watchlists"`
+}
+type createWatchlistInput struct {
+	Name string `json:"name"`
+}
+type createWatchlistOutput struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 type getBarsInput struct {
@@ -194,10 +216,12 @@ type getQuoteOutput struct {
 
 type addToWatchlistInput struct {
 	Symbol string `json:"symbol"`
+	List   string `json:"list,omitempty"` // optional list name (created if new); empty = default
 }
 type addToWatchlistOutput struct {
 	OK        bool          `json:"ok"`
 	Symbol    string        `json:"symbol"`
+	List      string        `json:"list,omitempty"`
 	Note      string        `json:"note,omitempty"`
 	Citations []citationOut `json:"citations,omitempty"`
 }
@@ -335,16 +359,46 @@ func (t workspaceToolServer) getArtifact(ctx context.Context, _ *sdkmcp.CallTool
 	}, nil
 }
 
-func (t workspaceToolServer) getWatchlist(ctx context.Context, _ *sdkmcp.CallToolRequest, _ emptyInput) (*sdkmcp.CallToolResult, getWatchlistOutput, error) {
+func (t workspaceToolServer) getWatchlist(ctx context.Context, _ *sdkmcp.CallToolRequest, in getWatchlistInput) (*sdkmcp.CallToolResult, getWatchlistOutput, error) {
 	principal, err := service.RequirePrincipal(ctx)
 	if err != nil {
 		return nil, getWatchlistOutput{}, err
 	}
-	items, err := t.watchlist.List(ctx, principal.UserID)
+	listID := "" // default list
+	if strings.TrimSpace(in.List) != "" {
+		if listID, err = t.watchlist.ResolveOrCreateByName(ctx, principal.UserID, in.List); err != nil {
+			return nil, getWatchlistOutput{}, err
+		}
+	}
+	items, err := t.watchlist.ListItems(ctx, principal.UserID, listID)
 	if err != nil {
 		return nil, getWatchlistOutput{}, err
 	}
 	return nil, getWatchlistOutput{Items: items}, nil
+}
+
+func (t workspaceToolServer) listWatchlists(ctx context.Context, _ *sdkmcp.CallToolRequest, _ emptyInput) (*sdkmcp.CallToolResult, listWatchlistsOutput, error) {
+	principal, err := service.RequirePrincipal(ctx)
+	if err != nil {
+		return nil, listWatchlistsOutput{}, err
+	}
+	lists, err := t.watchlist.ListWatchlists(ctx, principal.UserID)
+	if err != nil {
+		return nil, listWatchlistsOutput{}, err
+	}
+	return nil, listWatchlistsOutput{Watchlists: lists}, nil
+}
+
+func (t workspaceToolServer) createWatchlist(ctx context.Context, _ *sdkmcp.CallToolRequest, in createWatchlistInput) (*sdkmcp.CallToolResult, createWatchlistOutput, error) {
+	principal, err := service.RequirePrincipal(ctx)
+	if err != nil {
+		return nil, createWatchlistOutput{}, err
+	}
+	w, err := t.watchlist.CreateWatchlist(ctx, principal.UserID, in.Name)
+	if err != nil {
+		return nil, createWatchlistOutput{}, err
+	}
+	return nil, createWatchlistOutput{ID: w.ID, Name: w.Name}, nil
 }
 
 func (t workspaceToolServer) getBars(ctx context.Context, _ *sdkmcp.CallToolRequest, in getBarsInput) (*sdkmcp.CallToolResult, getBarsOutput, error) {
@@ -404,12 +458,18 @@ func (t workspaceToolServer) addToWatchlist(ctx context.Context, _ *sdkmcp.CallT
 	if !ok {
 		return nil, addToWatchlistOutput{OK: false, Symbol: sym, Note: "unknown symbol " + sym}, nil
 	}
-	if err := t.watchlist.Add(ctx, principal.UserID, id); err != nil {
+	// Resolve the target list by name (creating it if new); empty → the user's default list.
+	listID, err := t.watchlist.ResolveOrCreateByName(ctx, principal.UserID, in.List)
+	if err != nil {
+		return nil, addToWatchlistOutput{}, err
+	}
+	if err := t.watchlist.AddItem(ctx, principal.UserID, listID, id); err != nil {
 		return nil, addToWatchlistOutput{}, err
 	}
 	return nil, addToWatchlistOutput{
 		OK:        true,
 		Symbol:    sym,
+		List:      strings.TrimSpace(in.List),
 		Citations: []citationOut{{Kind: "ticker", ID: sym, Title: sym}},
 	}, nil
 }

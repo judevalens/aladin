@@ -4,7 +4,7 @@ use std::sync::Arc;
 use rusqlite::Connection;
 
 use crate::api::sync::{Frame, FrameEntity};
-use crate::db::repo::{nodes, signals};
+use crate::db::repo::{nodes, signals, watchlists};
 use crate::db::DbResult;
 use crate::events::DataEvent;
 
@@ -56,6 +56,21 @@ impl EntityHandler for SignalHandler {
     }
 }
 
+/// The watchlist handler: watchlist entities ("watchlist" kind) live in `watchlists`.
+struct WatchlistHandler;
+
+impl EntityHandler for WatchlistHandler {
+    fn apply(&self, conn: &Connection, entity: &FrameEntity) -> DbResult<Option<DataEvent>> {
+        watchlists::apply(
+            conn,
+            &entity.entity_id,
+            entity.seq as i64,
+            &entity.op,
+            entity.data.as_ref(),
+        )
+    }
+}
+
 /// Routes frame entities to handlers by entity kind.
 pub struct Registry {
     handlers: HashMap<String, Arc<dyn EntityHandler>>,
@@ -70,6 +85,7 @@ impl Registry {
         handlers.insert("folder".to_string(), tree.clone());
         handlers.insert("artifact".to_string(), tree);
         handlers.insert("signal".to_string(), Arc::new(SignalHandler));
+        handlers.insert("watchlist".to_string(), Arc::new(WatchlistHandler));
         Self { handlers }
     }
 

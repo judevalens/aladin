@@ -15,7 +15,9 @@ import {
   seriesFor,
 } from "@/modules/markets/market-data";
 import { AreaChart } from "@/modules/markets/ui/charts";
+import { AddToListMenu } from "@/modules/markets/ui/add-to-list-menu";
 import { useBars } from "@/modules/markets/hooks/use-bars";
+import { useWatchlists } from "@/modules/markets/hooks/use-watchlists";
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
@@ -43,16 +45,14 @@ function RangeBar({ low, high, value }: { low: number; high: number; value: numb
  */
 export function TickerDetail({
   quote,
-  watched,
-  onToggleWatch,
   onTrade,
 }: {
   quote: Quote;
-  watched: boolean;
-  onToggleWatch: () => void;
   onTrade: () => void;
 }) {
   const [tf, setTf] = useState<Timeframe>("1D");
+  const { lists } = useWatchlists();
+  const watched = lists.some((l) => l.items.some((i) => i.symbol === quote.symbol));
   const up = quote.change >= 0;
   // Real bars when we have them; otherwise the deterministic placeholder so the chart never blanks.
   const { series: barSeries } = useBars(quote.symbol, tf);
@@ -160,19 +160,20 @@ export function TickerDetail({
 
       {/* actions */}
       <div className="sticky bottom-0 mt-auto flex gap-2 border-t border-line bg-panel px-6 py-3">
-        <button
-          type="button"
-          onClick={onToggleWatch}
-          className={cn(
-            "flex flex-1 items-center justify-center gap-2 rounded-card border py-2.5 text-[13px] font-semibold transition-colors",
-            watched
-              ? "border-amber-line bg-amber-soft text-amber"
-              : "border-line text-ink-2 hover:border-amber-line hover:text-ink",
-          )}
-        >
-          <Star className={cn("size-4", watched && "fill-amber")} strokeWidth={1.75} />
-          {watched ? "Watching" : "Watch"}
-        </button>
+        <AddToListMenu symbol={quote.symbol} align="start">
+          <button
+            type="button"
+            className={cn(
+              "flex flex-1 items-center justify-center gap-2 rounded-card border py-2.5 text-[13px] font-semibold transition-colors",
+              watched
+                ? "border-amber-line bg-amber-soft text-amber"
+                : "border-line text-ink-2 hover:border-amber-line hover:text-ink",
+            )}
+          >
+            <Star className={cn("size-4", watched && "fill-amber")} strokeWidth={1.75} />
+            {watched ? "In a list" : "Add to list"}
+          </button>
+        </AddToListMenu>
         <button
           type="button"
           onClick={onTrade}

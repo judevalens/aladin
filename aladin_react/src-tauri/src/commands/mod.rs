@@ -5,3 +5,4 @@ pub mod pages;
 pub mod signals;
 pub mod sync;
 pub mod terminal;
+pub mod watchlists;

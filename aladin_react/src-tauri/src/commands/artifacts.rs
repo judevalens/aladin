@@ -12,7 +12,10 @@ use crate::db::{Db, DbResult};
 // result under the seq guard. Page bodies stay in Yjs/Hocuspocus (separate).
 
 #[tauri::command]
-pub fn db_list_artifacts(repo: State<'_, WorkspaceRepo>, db: State<'_, Db>) -> DbResult<Vec<ArtifactRow>> {
+pub fn db_list_artifacts(
+    repo: State<'_, WorkspaceRepo>,
+    db: State<'_, Db>,
+) -> DbResult<Vec<ArtifactRow>> {
     repo.list_artifacts(&db)
 }
 

@@ -8,7 +8,7 @@ import { TickerDetail } from "@/modules/markets/ui/ticker-detail";
 
 // The inner content mounts only while open, so the watchlist fetch doesn't run otherwise.
 function TickerModalBody({ symbol, onClose }: { symbol: string; onClose: () => void }) {
-  const { watched, toggleWatch, getQuote } = useMarketData();
+  const { getQuote } = useMarketData();
   useQuoteSubscription([symbol]);
   const quote = getQuote(symbol);
   return (
@@ -22,12 +22,7 @@ function TickerModalBody({ symbol, onClose }: { symbol: string; onClose: () => v
         </DialogPrimitive.Close>
       </div>
       <div className="min-h-0 flex-1">
-        <TickerDetail
-          quote={quote}
-          watched={watched.has(symbol)}
-          onToggleWatch={() => toggleWatch(symbol)}
-          onTrade={onClose}
-        />
+        <TickerDetail quote={quote} onTrade={onClose} />
       </div>
     </div>
   );
