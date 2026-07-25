@@ -53,9 +53,19 @@ func TestProjectPage_SyncsRefs(t *testing.T) {
 	`, pageID, targetID, userID); err != nil {
 		t.Fatalf("seed artifacts: %v", err)
 	}
+	// Every artifact is also a tree node (node id == artifact id); ReplaceRefs emits a node frame
+	// for the page after syncing, which reads the light projection from tree_nodes.
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO tree_nodes (id, user_id, kind, artifact_id, position, created_at, updated_at)
+		VALUES ($1, $2::uuid, 'artifact', $1, 0, now(), now())
+	`, pageID, userID); err != nil {
+		t.Fatalf("seed tree node: %v", err)
+	}
 	t.Cleanup(func() {
 		bg := context.Background()
+		_, _ = pool.Exec(bg, `DELETE FROM outbox_events WHERE user_id = $1::uuid`, userID)
 		_, _ = pool.Exec(bg, `DELETE FROM artifact_refs WHERE artifact_id = $1`, pageID)
+		_, _ = pool.Exec(bg, `DELETE FROM tree_nodes WHERE id = $1`, pageID)
 		_, _ = pool.Exec(bg, `DELETE FROM artifacts WHERE id IN ($1,$2)`, pageID, targetID)
 		_, _ = pool.Exec(bg, `DELETE FROM users WHERE id = $1::uuid`, userID)
 	})
@@ -72,7 +82,10 @@ func TestProjectPage_SyncsRefs(t *testing.T) {
 	refSvc := service.NewArtifactRefService(repo.NewArtifactRefPostgres(pool))
 	tools := toolServer{bridge: bridge, artifactRefs: refSvc}
 
-	tools.projectPage(ctx, pageID)
+	// projectPage → SyncRefs → ReplaceRefs needs the owning principal (user scope + LockUser), just
+	// as the real MCP call has one; inject it (the read-path ListForArtifact needs none).
+	authed := service.WithPrincipal(ctx, service.Principal{UserID: userID})
+	tools.projectPage(authed, pageID)
 
 	got, err := refSvc.ListForArtifact(ctx, pageID)
 	if err != nil {
@@ -86,7 +99,7 @@ func TestProjectPage_SyncsRefs(t *testing.T) {
 	}
 
 	// Idempotent: projecting the same doc again reconciles to the same single row.
-	tools.projectPage(ctx, pageID)
+	tools.projectPage(authed, pageID)
 	got, _ = refSvc.ListForArtifact(ctx, pageID)
 	if len(got) != 1 {
 		t.Fatalf("re-projection should stay at 1 ref, got %+v", got)

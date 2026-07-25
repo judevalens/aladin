@@ -89,7 +89,10 @@ test-go: ## Run Go tests against the SANDBOX db (TEST_DATABASE_URL -> :5444); bo
 	$(TEST_COMPOSE) up -d postgres
 	@echo ">> waiting for sandbox postgres on :5444..."
 	@until docker exec aladin-test-postgres pg_isready -U aladin -d aladin >/dev/null 2>&1; do sleep 1; done
-	cd backend_v2 && env -u DATABASE_URL TEST_DATABASE_URL=$(TEST_DATABASE_URL) go test ./...
+	# -p 1: the sandbox is ONE shared Postgres, and several outbox tests capture a global
+	# horizon (pg_snapshot_xmin) or a shared-user snapshot, which flakes when packages run
+	# concurrently. Serialize package test binaries so those integration tests are deterministic.
+	cd backend_v2 && env -u DATABASE_URL TEST_DATABASE_URL=$(TEST_DATABASE_URL) go test -p 1 ./...
 
 nango-up: ## Start local Nango self-hosted services
 	eval "$$(python3 scripts/ops/read_env_keys.py --env backend_v2/.env)" && docker compose -f docker-compose.nango.yml up -d
