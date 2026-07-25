@@ -346,7 +346,7 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 	syncSvc := coreservice.NewSyncService(syncRepo, repo.NewTreeSyncSource(pool), repo.NewSignalSyncSource(pool), repo.NewWatchlistSyncSource(pool))
 	realtimeKeys := coreservice.NewSubscriptionKeyResolver()
 	realtime := coreservice.NewInMemoryRealtimeEventService(realtimeKeys)
-	outboxDrainer := coreservice.NewOutboxDrainer(syncRepo, realtime, 0)
+	outboxDrainer := coreservice.NewOutboxDrainer(syncRepo, realtime, coreservice.DefaultDrainInterval)
 	nangoClient := coreservice.NewHTTPNangoClient(providerConfig.NangoBaseURL, providerConfig.NangoSecretKey)
 	nangoBackend := coreservice.NewNangoProviderConnectionBackend(
 		nangoClient,

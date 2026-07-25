@@ -45,9 +45,16 @@ type OutboxDrainer struct {
 	interval time.Duration
 }
 
+// DefaultDrainInterval is the poll cadence of the live-delivery drain — this IS the realtime
+// latency budget (a frame/quote waits at most this long before hitting the WS). Kept tight because
+// live quotes are perceptibly laggy otherwise; cheap because the retention prune keeps the outbox
+// small (each poll scans an xid range the current index doesn't fully serve). If the poll itself
+// ever matters, replace it with LISTEN/NOTIFY (instant wake, no idle polling) + a slow safety poll.
+const DefaultDrainInterval = 50 * time.Millisecond
+
 func NewOutboxDrainer(reader OutboxDrainReader, realtime RealtimeEventService, interval time.Duration) *OutboxDrainer {
 	if interval <= 0 {
-		interval = 250 * time.Millisecond
+		interval = DefaultDrainInterval
 	}
 	return &OutboxDrainer{reader: reader, realtime: realtime, interval: interval}
 }

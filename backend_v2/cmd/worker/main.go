@@ -235,6 +235,34 @@ func main() {
 		}
 	})
 
+	// Outbox retention — prune drained/replayed events past the retention window so the durable log
+	// (dominated by ephemeral live market-quote app_events) can't grow unbounded, which also keeps
+	// the tight 50ms drain's xid-range scan cheap. Clients offline longer than the window fall back
+	// to a cold-start snapshot; the drain reads forward + re-seeds at the horizon on restart.
+	outboxSync := repo.NewSyncPostgres(pool)
+	outboxRetention := 5 * time.Minute
+	if v := os.Getenv("OUTBOX_RETENTION"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			outboxRetention = d
+		}
+	}
+	safego.Loop(ctx, "worker.outbox-prune", func(ctx context.Context) {
+		ticker := time.NewTicker(2 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if n, err := outboxSync.PruneOutbox(ctx, outboxRetention, 5000); err != nil {
+					slog.Error("outbox prune failed", "component", "worker", "err", err)
+				} else if n > 0 {
+					slog.Info("outbox pruned", "component", "worker", "deleted", n, "older_than", outboxRetention.String())
+				}
+			}
+		}
+	})
+
 	orch := pipeline.NewOrchestrator(handler)
 	orch.Add(workers.NewGlobalFirstPassWorker(enricher, openaiLimiter))
 	orch.Add(workers.NewTenantMatchWorker(recordRepo, providerStreamRepo, sourceSubscriptionRepo, tenantItemMatchRepo))

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"time"
 
 	"aladin/backend_v2/internal/service"
 
@@ -169,6 +170,41 @@ func nextCursor(fetched int, maxXid, horizon uint64) uint64 {
 		return maxXid + 1
 	}
 	return horizon
+}
+
+// PruneOutbox deletes outbox rows older than olderThan, in batches so a large backlog (the log is
+// dominated by ephemeral market-quote app_events) can't lock the table against writers in one giant
+// DELETE. Safe: a client whose durable cursor falls below the retained window is routed to a
+// cold-start snapshot (see MinXid + the seq-guarded, tombstone-carrying SyncSources), and the drain
+// only reads FORWARD and re-seeds at the horizon on restart — so nothing still-needed is removed.
+// This also keeps the tight drain poll cheap (its xid-range scan grows with table size). Returns
+// the number of rows deleted.
+func (r *SyncRepo) PruneOutbox(ctx context.Context, olderThan time.Duration, batchSize int) (int64, error) {
+	if batchSize <= 0 {
+		batchSize = 5000
+	}
+	var total int64
+	for {
+		tag, err := r.pool.Exec(ctx, `
+			DELETE FROM outbox_events
+			 WHERE ctid IN (
+			   SELECT ctid FROM outbox_events
+			    WHERE created_at < now() - make_interval(secs => $1)
+			    LIMIT $2
+			 )
+		`, olderThan.Seconds(), batchSize)
+		if err != nil {
+			return total, fmt.Errorf("sync: prune outbox: %w", err)
+		}
+		n := tag.RowsAffected()
+		total += n
+		if n < int64(batchSize) {
+			return total, nil // drained the backlog of old rows
+		}
+		if ctx.Err() != nil {
+			return total, ctx.Err()
+		}
+	}
 }
 
 // MinXid returns the oldest retained event's xid for userID (ok=false if the
