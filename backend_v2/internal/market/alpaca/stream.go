@@ -9,7 +9,25 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"aladin/backend_v2/internal/safego"
 )
+
+const (
+	// heartbeatInterval / heartbeatTimeout drive the staleness watchdog. Alpaca's trade feed is
+	// SPARSE (no ticks off-hours or on illiquid symbols), so "no data" is normal — only an
+	// unanswered PING proves a half-open socket. A missed pong closes the conn so the blocked
+	// Read returns and Run reconnects.
+	heartbeatInterval = 15 * time.Second
+	heartbeatTimeout  = 10 * time.Second
+)
+
+// StreamStatus is a point-in-time health snapshot of the market WS (for a health surface / logs).
+type StreamStatus struct {
+	Connected           bool      `json:"connected"`
+	LastMessageAt       time.Time `json:"lastMessageAt"`
+	ConsecutiveFailures int       `json:"consecutiveFailures"`
+}
 
 // Trade is one upstream trade tick (Alpaca "T":"t" message), decoded to what the hub needs.
 type Trade struct {
@@ -30,6 +48,68 @@ type Stream struct {
 	mu      sync.Mutex
 	symbols map[string]bool // desired upstream subscriptions
 	conn    *websocket.Conn // current connection (nil when down)
+
+	// health (guarded by mu)
+	lastMsgAt        time.Time // last frame received — liveness of the feed
+	consecutiveFails int       // sessions ended in error since the last healthy read
+}
+
+// Status returns a health snapshot of the feed.
+func (s *Stream) Status() StreamStatus {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return StreamStatus{
+		Connected:           s.conn != nil,
+		LastMessageAt:       s.lastMsgAt,
+		ConsecutiveFailures: s.consecutiveFails,
+	}
+}
+
+// markAlive records that a frame arrived: the feed is healthy, so reset the failure counter.
+func (s *Stream) markAlive() {
+	s.mu.Lock()
+	s.lastMsgAt = time.Now()
+	s.consecutiveFails = 0
+	s.mu.Unlock()
+}
+
+// recordFailure counts a failed/ended session and surfaces a SUSTAINED outage (a single blip is
+// normal) so Loki/alerting can catch a feed that's stuck reconnecting — e.g. bad creds or the IEX
+// single-slot 406, which otherwise leave the last-seeded price looking live forever.
+func (s *Stream) recordFailure() {
+	s.mu.Lock()
+	s.consecutiveFails++
+	n := s.consecutiveFails
+	s.mu.Unlock()
+	if n == 3 || (n > 0 && n%10 == 0) {
+		slog.Warn("alpaca stream: market feed unhealthy (repeated reconnect failures)",
+			"component", "market", "consecutive_failures", n)
+	}
+}
+
+// heartbeat pings the server on an interval; a missed pong (the socket is half-open — Read is
+// blocked with no error and no data) closes the conn so the blocked Read returns → Run reconnects.
+func (s *Stream) heartbeat(ctx context.Context, conn *websocket.Conn) {
+	ticker := time.NewTicker(heartbeatInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			pingCtx, cancel := context.WithTimeout(ctx, heartbeatTimeout)
+			err := conn.Ping(pingCtx)
+			cancel()
+			if err != nil {
+				if ctx.Err() != nil {
+					return // session already ending; not a real heartbeat failure
+				}
+				slog.Warn("alpaca stream: heartbeat failed; forcing reconnect", "component", "market", "err", err)
+				_ = conn.Close(websocket.StatusGoingAway, "heartbeat timeout")
+				return
+			}
+		}
+	}
 }
 
 func NewStream(streamBaseURL, feed, apiKey, apiSecret string, onTrade func(Trade)) *Stream {
@@ -67,6 +147,7 @@ func (s *Stream) Run(ctx context.Context) {
 	backoff := time.Second
 	for ctx.Err() == nil {
 		if err := s.session(ctx); err != nil && ctx.Err() == nil {
+			s.recordFailure()
 			time.Sleep(backoff)
 			if backoff < 30*time.Second {
 				backoff *= 2
@@ -105,6 +186,12 @@ func (s *Stream) session(ctx context.Context) error {
 		s.mu.Unlock()
 	}()
 
+	// Staleness watchdog for the life of this session: pings the socket and force-closes it on a
+	// missed pong, so a half-open connection can't freeze quotes silently.
+	hbCtx, stopHeartbeat := context.WithCancel(ctx)
+	defer stopHeartbeat()
+	safego.Go("market.heartbeat", func() { s.heartbeat(hbCtx, conn) })
+
 	decodeFails := 0
 	trades := 0
 	for ctx.Err() == nil {
@@ -113,6 +200,7 @@ func (s *Stream) session(ctx context.Context) error {
 			slog.Warn("alpaca stream: read error (reconnecting)", "component", "market", "err", err)
 			return err
 		}
+		s.markAlive()
 		var msgs []wsMessage
 		if err := json.Unmarshal(data, &msgs); err != nil {
 			// A frame we can't decode is a frame we silently drop — say so (first few

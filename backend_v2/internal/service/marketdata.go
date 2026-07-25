@@ -53,7 +53,15 @@ type marketDataHub struct {
 	refcount    map[string]int       // symbol → active subscriptions
 	idBySymbol  map[string]string    // symbol → instrument_id (cached at subscribe)
 	lastPublish map[string]time.Time // symbol → last publish (throttle)
+
+	// seedSem bounds concurrent snapshot-seed REST calls so a large subscribe (a big
+	// watchlist/screener) can't fan out 100+ simultaneous Alpaca calls and trip a 429.
+	seedSem chan struct{}
 }
+
+// seedSnapshotTimeout bounds a single snapshot-seed REST call (the Alpaca client's own 30s is the
+// hard ceiling; this fails a stalled seed sooner and lets the goroutine exit).
+const seedSnapshotTimeout = 15 * time.Second
 
 // TickObserver receives every raw tick (before the 1/sec quote throttle). It MUST NOT block —
 // it runs on the single WS read goroutine.
@@ -82,6 +90,7 @@ func newHub(quotes QuoteService, resolver InstrumentResolver) *marketDataHub {
 		refcount:    map[string]int{},
 		idBySymbol:  map[string]string{},
 		lastPublish: map[string]time.Time{},
+		seedSem:     make(chan struct{}, 8),
 	}
 }
 
@@ -146,7 +155,12 @@ func (h *marketDataHub) seedSnapshot(symbol string) {
 	if id == "" {
 		return
 	}
-	ctx := context.Background()
+	// Bound concurrent Alpaca REST seeds (avoid a 429 burst on a large subscribe).
+	h.seedSem <- struct{}{}
+	defer func() { <-h.seedSem }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), seedSnapshotTimeout)
+	defer cancel()
 	q, ok, err := h.snapshots.FetchSnapshot(ctx, symbol)
 	if err != nil || !ok {
 		return

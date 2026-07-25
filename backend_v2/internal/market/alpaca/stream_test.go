@@ -89,3 +89,28 @@ func TestSessionDeliversTrades(t *testing.T) {
 		t.Fatalf("trades = %+v, want MSFT @ 379.88 then NVDA @ 207.37", got)
 	}
 }
+
+// TestStream_HealthAccounting covers the failure/liveness bookkeeping the staleness watchdog and
+// health surface rely on: failures accumulate, a live frame resets them and stamps last-seen.
+func TestStream_HealthAccounting(t *testing.T) {
+	s := NewStream("ws://unused", "iex", "k", "sec", func(Trade) {})
+	if st := s.Status(); st.Connected || st.ConsecutiveFailures != 0 || !st.LastMessageAt.IsZero() {
+		t.Fatalf("fresh status = %+v, want disconnected/zero", st)
+	}
+
+	s.recordFailure()
+	s.recordFailure()
+	s.recordFailure()
+	if got := s.Status().ConsecutiveFailures; got != 3 {
+		t.Fatalf("after 3 failures = %d, want 3", got)
+	}
+
+	s.markAlive()
+	st := s.Status()
+	if st.ConsecutiveFailures != 0 {
+		t.Fatalf("markAlive must reset failures, got %d", st.ConsecutiveFailures)
+	}
+	if st.LastMessageAt.IsZero() {
+		t.Fatalf("markAlive must stamp LastMessageAt")
+	}
+}
