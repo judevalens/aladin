@@ -558,14 +558,28 @@ type JudgeableMerge struct {
 	Method     string
 }
 
-// ListPlaceholders returns unresolved placeholder entities (oldest first) that have not
-// already been merged away.
+// ListPlaceholders returns unresolved placeholder entities (oldest first) that have not already
+// been merged away AND are not already awaiting a merge decision.
+//
+// The pending-proposal exclusion is what keeps this batch from starving. A placeholder whose
+// proposal can't be decided (similarity in the 0.45–0.90 band needs the LLM judge; with no judge
+// configured — or one that errors — decidePair returns "" and the row stays 'proposed' forever)
+// is otherwise a PERMANENT zombie: the sweeper re-proposes it (a no-op), never promotes it (the
+// pending check blocks that), and because this list is oldest-first it occupies the batch on every
+// run. Past `limit` such rows, no newer placeholder is ever reached and entity resolution silently
+// stops. Excluding them is also free: the sweep's finalize phase skips pending placeholders anyway,
+// so they contribute nothing. They re-enter naturally once their proposal is decided.
 func (r *pgEntityRepo) ListPlaceholders(ctx context.Context, limit int) ([]PlaceholderEntity, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id::text, kind, canonical_name, normalized_key, created_at
-		  FROM entities
-		 WHERE trust_tier = 'placeholder' AND canonical_root_id IS NULL AND scope = 'shared'
-		 ORDER BY created_at ASC
+		SELECT e.id::text, e.kind, e.canonical_name, e.normalized_key, e.created_at
+		  FROM entities e
+		 WHERE e.trust_tier = 'placeholder' AND e.canonical_root_id IS NULL AND e.scope = 'shared'
+		   AND NOT EXISTS (
+		       SELECT 1 FROM entity_merges m
+		        WHERE m.status = 'proposed'
+		          AND (m.from_entity_id = e.id OR m.into_entity_id = e.id)
+		   )
+		 ORDER BY e.created_at ASC
 		 LIMIT $1
 	`, limit)
 	if err != nil {
@@ -655,6 +669,7 @@ func (r *pgEntityRepo) ListJudgeableMerges(ctx context.Context, limit int) ([]Ju
 //   - "rejected": different things — negative evidence, the pair is never re-proposed.
 //   - "unsure": stays proposed for manual review; the evidence marks it judged so the
 //     sweep never re-spends an LLM call on it (one judgment per pair, ever).
+//
 // The evidence map is merged into the row's evidence jsonb.
 func (r *pgEntityRepo) DecideMerge(ctx context.Context, mergeID, outcome, decidedBy string, evidence map[string]any) error {
 	ev, err := json.Marshal(evidence)

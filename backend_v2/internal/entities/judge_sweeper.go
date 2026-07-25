@@ -159,6 +159,14 @@ func (s *JudgeSweeper) Sweep(ctx context.Context, limit int) (int, error) {
 		}
 		acted++
 	}
+
+	// Starvation signal: a FULL batch that accomplished NOTHING means the queue head is stuck
+	// (e.g. proposals sitting in the judge band with no working adjudicator), so newer entities are
+	// never reached. Silent before — the caller only logs when acted > 0.
+	if acted == 0 && (len(placeholders) >= limit || len(merges) >= limit) {
+		slog.Warn("judge sweep: full batch, nothing actionable — queue may be starved",
+			"component", "entities", "placeholders", len(placeholders), "merges", len(merges), "limit", limit)
+	}
 	return acted, nil
 }
 
