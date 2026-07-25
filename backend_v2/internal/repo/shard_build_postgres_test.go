@@ -20,13 +20,24 @@ func TestShardBuild_SetStatusEmitsAppEventIsolatedFromPull(t *testing.T) {
 	pool := mustTestPool(ctxTO, t)
 	defer pool.Close()
 	cleanupSyncTables(ctxTO, t, pool)
-	if _, err := pool.Exec(ctxTO, `DELETE FROM shard_build_state`); err != nil {
-		t.Fatalf("cleanup shard_build_state: %v", err)
-	}
 	seedUser(ctxTO, t, pool, testAdminUserID)
 
 	repo := NewShardBuildPostgres(pool)
-	const pageID = "artifact-build-1"
+	// Namespaced per test process: shard_build_state is keyed by page id, and this test used to
+	// `DELETE FROM shard_build_state` globally — which wipes rows other packages' parallel runs
+	// depend on. A unique id makes the global delete unnecessary.
+	pageID := tid("artifact-build")
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM shard_build_state WHERE page_id = $1`, pageID)
+	})
+
+	// Cursor BEFORE the writes, so the drain assertion below reads a bounded window containing
+	// only this test's events (DrainSince is global across users and batch-limited).
+	sync := NewSyncPostgres(pool)
+	beforeCursor, err := sync.Horizon(ctxTO)
+	if err != nil {
+		t.Fatalf("horizon: %v", err)
+	}
 
 	// building → ok transition.
 	if err := repo.SetStatus(ctx, coreservice.ShardBuildState{
@@ -62,8 +73,6 @@ func TestShardBuild_SetStatusEmitsAppEventIsolatedFromPull(t *testing.T) {
 		t.Errorf("missing GetStatus = %q, want empty status", none.Status)
 	}
 
-	sync := NewSyncPostgres(pool)
-
 	// ISOLATION: the durable pull must NOT surface app_event rows — otherwise the
 	// client's offline data engine would try to apply build-status as an entity.
 	frames, _, err := sync.PullSince(ctxTO, testAdminUserID, 0)
@@ -74,22 +83,25 @@ func TestShardBuild_SetStatusEmitsAppEventIsolatedFromPull(t *testing.T) {
 		t.Errorf("PullSince surfaced %d frames; app_events must be invisible to the data stream", len(frames))
 	}
 
-	// The drain DOES surface them, as AppEvents carrying the build-status target.
-	events, _, err := sync.DrainSince(ctxTO, 0)
+	// The drain DOES surface them, as AppEvents carrying the build-status target. Count only THIS
+	// test's events: the drain is global across users, so other packages' app_events (notifications,
+	// market quotes) legitimately share the window — asserting on the global total was the reason
+	// this test flaked.
+	events, _, err := sync.DrainSince(ctxTO, beforeCursor)
 	if err != nil {
 		t.Fatalf("DrainSince: %v", err)
 	}
 	var appEvents int
 	for _, e := range events {
-		if e.AppEvent == nil {
+		if e.AppEvent == nil || e.AppEvent.ResourceID != pageID {
 			continue
 		}
 		appEvents++
-		if e.AppEvent.ResourceKind != "artifact" || e.AppEvent.Operation != "build-status" || e.AppEvent.ResourceID != pageID {
+		if e.AppEvent.ResourceKind != "artifact" || e.AppEvent.Operation != "build-status" {
 			t.Errorf("app event target = %+v, want artifact/build-status/%s", e.AppEvent, pageID)
 		}
 	}
 	if appEvents != 2 { // building + ok
-		t.Errorf("drain surfaced %d app events, want 2 (building + ok)", appEvents)
+		t.Errorf("drain surfaced %d app events for %s, want 2 (building + ok)", appEvents, pageID)
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"aladin/backend_v2/internal/dbtest"
 	coreservice "aladin/backend_v2/internal/service"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -18,7 +19,20 @@ import (
 // (append + xid-horizon pull), the cold-start snapshot (incl. tombstones), and
 // the producer write path (frame emit + soft delete + tombstone-hiding reads).
 
-const testAdminUserID = "00000000-0000-0000-0000-000000000001"
+// testAdminUserID is UNIQUE PER TEST PROCESS. `go test ./...` runs packages as parallel processes
+// against the ONE shared sandbox DB, so a hardcoded id (this was 00000000-…-000000000001, the same
+// literal used by internal/api and internal/mcp) meant three packages read/wrote/deleted each
+// other's rows mid-assertion — the source of the outbox flakes. A per-process id isolates them, and
+// also ignores rows left by earlier runs.
+var testAdminUserID = uuid.NewString()
+
+// tid namespaces a tree_node/artifact id to this test process. tree_nodes.id and artifacts.id are
+// GLOBAL primary keys (not scoped by user_id), so a fixed literal like "folder-a" collides with the
+// same literal in another package's parallel run — and with rows left by earlier runs, now that
+// cleanup is (correctly) user-scoped rather than a global wipe.
+func tid(name string) string { return name + "-" + testRunSuffix }
+
+var testRunSuffix = uuid.NewString()[:8]
 
 func strptr(s string) *string { return &s }
 
@@ -56,12 +70,21 @@ func seedUser(ctx context.Context, t *testing.T, pool *pgxpool.Pool, userID stri
 	}
 }
 
-// cleanupSyncTables clears the sync-relevant tables for a deterministic start
-// (the dev DB is shared). outbox_events + the canonical tables.
+// cleanupSyncTables gives THIS test's user a deterministic start. Scoped to testAdminUserID on
+// purpose: an unscoped `DELETE FROM outbox_events` wipes rows other packages' tests are asserting
+// on (they share the sandbox DB and run as parallel processes), which is exactly what made the
+// outbox/drain tests flaky. Never widen this back to a global delete.
 func cleanupSyncTables(ctx context.Context, t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
-	if _, err := pool.Exec(ctx, `DELETE FROM outbox_events; DELETE FROM tree_nodes; DELETE FROM artifacts`); err != nil {
-		t.Fatalf("cleanup: %v", err)
+	// Separate Execs: a parameterised statement can't carry multiple commands.
+	for _, q := range []string{
+		`DELETE FROM outbox_events WHERE user_id = $1::uuid`,
+		`DELETE FROM tree_nodes WHERE user_id = $1::uuid`,
+		`DELETE FROM artifacts WHERE user_id = $1::uuid`,
+	} {
+		if _, err := pool.Exec(ctx, q, testAdminUserID); err != nil {
+			t.Fatalf("cleanup: %v", err)
+		}
 	}
 }
 
@@ -90,8 +113,9 @@ func TestOutbox_ProducerEmitsFrameOnCreate(t *testing.T) {
 
 	ar := NewArtifactsPostgres(pool)
 	title := "Folder A"
+	folderA := tid("folder-a")
 	if err := ar.CreateTreeNode(ctx, coreservice.TreeNodeRecord{
-		ID: "folder-a", Kind: "folder", Title: &title, Position: 1,
+		ID: folderA, Kind: "folder", Title: &title, Position: 1,
 	}); err != nil {
 		t.Fatalf("create tree node: %v", err)
 	}
@@ -115,8 +139,8 @@ func TestOutbox_ProducerEmitsFrameOnCreate(t *testing.T) {
 	if n != 1 {
 		t.Fatalf("entity count = %d, want 1", n)
 	}
-	if got.EntityID != "folder-a" || got.Op != coreservice.OpUpsert {
-		t.Fatalf("entity = %+v, want upsert folder-a", got)
+	if got.EntityID != folderA || got.Op != coreservice.OpUpsert {
+		t.Fatalf("entity = %+v, want upsert %s", got, folderA)
 	}
 	if got.Seq == 0 {
 		t.Fatalf("seq = 0, want >= 1 (bumped on write)")
@@ -139,7 +163,7 @@ func TestOutbox_PullSinceFromCursorIsIncremental(t *testing.T) {
 	sr := NewSyncPostgres(pool)
 
 	t1 := "F1"
-	if err := ar.CreateTreeNode(ctx, coreservice.TreeNodeRecord{ID: "f1", Kind: "folder", Title: &t1, Position: 1}); err != nil {
+	if err := ar.CreateTreeNode(ctx, coreservice.TreeNodeRecord{ID: tid("f1"), Kind: "folder", Title: &t1, Position: 1}); err != nil {
 		t.Fatalf("create f1: %v", err)
 	}
 	_, cursor, err := sr.PullSince(ctx, testAdminUserID, 0)
@@ -161,7 +185,7 @@ func TestOutbox_PullSinceFromCursorIsIncremental(t *testing.T) {
 
 	// A second write shows up only in the next incremental pull.
 	t2 := "F2"
-	if err := ar.CreateTreeNode(ctx, coreservice.TreeNodeRecord{ID: "f2", Kind: "folder", Title: &t2, Position: 2}); err != nil {
+	if err := ar.CreateTreeNode(ctx, coreservice.TreeNodeRecord{ID: tid("f2"), Kind: "folder", Title: &t2, Position: 2}); err != nil {
 		t.Fatalf("create f2: %v", err)
 	}
 	frames, _, err = sr.PullSince(ctx, testAdminUserID, cursor2)
@@ -188,13 +212,14 @@ func TestTreeSyncSource_SnapshotIncludesTombstones(t *testing.T) {
 
 	ar := NewArtifactsPostgres(pool)
 	keepTitle, dropTitle := "keep", "drop"
-	if err := ar.CreateTreeNode(ctx, coreservice.TreeNodeRecord{ID: "keep", Kind: "folder", Title: &keepTitle, Position: 1}); err != nil {
+	keepID, dropID := tid("keep"), tid("drop")
+	if err := ar.CreateTreeNode(ctx, coreservice.TreeNodeRecord{ID: keepID, Kind: "folder", Title: &keepTitle, Position: 1}); err != nil {
 		t.Fatalf("create keep: %v", err)
 	}
-	if err := ar.CreateTreeNode(ctx, coreservice.TreeNodeRecord{ID: "drop", Kind: "folder", Title: &dropTitle, Position: 2}); err != nil {
+	if err := ar.CreateTreeNode(ctx, coreservice.TreeNodeRecord{ID: dropID, Kind: "folder", Title: &dropTitle, Position: 2}); err != nil {
 		t.Fatalf("create drop: %v", err)
 	}
-	if err := ar.DeleteBrowserNode(ctx, "drop"); err != nil {
+	if err := ar.DeleteBrowserNode(ctx, dropID); err != nil {
 		t.Fatalf("delete drop: %v", err)
 	}
 
@@ -204,8 +229,8 @@ func TestTreeSyncSource_SnapshotIncludesTombstones(t *testing.T) {
 		t.Fatalf("list folders: %v", err)
 	}
 	for _, f := range folders {
-		if f.ID == "drop" {
-			t.Fatalf("ListAllFolders returned tombstoned folder 'drop'")
+		if f.ID == dropID {
+			t.Fatalf("ListAllFolders returned tombstoned folder %q", dropID)
 		}
 	}
 
@@ -219,16 +244,16 @@ func TestTreeSyncSource_SnapshotIncludesTombstones(t *testing.T) {
 	for _, e := range ents {
 		byID[e.EntityID] = e
 	}
-	if e, ok := byID["keep"]; !ok || e.Op != coreservice.OpUpsert {
+	if e, ok := byID[keepID]; !ok || e.Op != coreservice.OpUpsert {
 		t.Fatalf("keep = %+v (ok=%v), want upsert", e, ok)
 	}
-	if e, ok := byID["drop"]; !ok || e.Op != coreservice.OpDelete {
+	if e, ok := byID[dropID]; !ok || e.Op != coreservice.OpDelete {
 		t.Fatalf("drop = %+v (ok=%v), want delete tombstone", e, ok)
 	}
-	if byID["drop"].Seq <= byID["keep"].Seq {
+	if byID[dropID].Seq <= byID[keepID].Seq {
 		// drop was created then deleted → its seq must be strictly higher than
 		// keep's single create, proving the delete bumped the version.
-		t.Fatalf("drop seq %d should exceed keep seq %d (delete bumps seq)", byID["drop"].Seq, byID["keep"].Seq)
+		t.Fatalf("drop seq %d should exceed keep seq %d (delete bumps seq)", byID[dropID].Seq, byID[keepID].Seq)
 	}
 }
 

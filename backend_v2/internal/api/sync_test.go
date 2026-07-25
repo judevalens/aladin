@@ -15,10 +15,14 @@ import (
 	"aladin/backend_v2/internal/repo"
 	coreservice "aladin/backend_v2/internal/service"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const syncTestAdminUserID = "00000000-0000-0000-0000-000000000001"
+// Unique per test process — see the note in internal/repo/sync_postgres_test.go. This was the same
+// hardcoded id as internal/repo + internal/mcp, so those packages (run in parallel against the one
+// shared sandbox DB) clobbered each other's sync rows.
+var syncTestAdminUserID = uuid.NewString()
 
 // The pull endpoint requires an authenticated principal (checked before any
 // service call, so a nil Sync() is never reached here).
@@ -56,8 +60,17 @@ func TestHandleSyncPull_ReturnsFramesAndAdvancesCursor(t *testing.T) {
 
 	pool := mustSyncTestPool(ctx, t)
 	defer pool.Close()
-	if _, err := pool.Exec(ctx, `DELETE FROM outbox_events; DELETE FROM tree_nodes; DELETE FROM artifacts`); err != nil {
-		t.Fatalf("cleanup: %v", err)
+	// Scoped to this test's user — an unscoped delete wipes rows other packages are asserting on
+	// (shared sandbox DB, parallel package processes). Separate Execs: a parameterised statement
+	// can't carry multiple commands.
+	for _, q := range []string{
+		`DELETE FROM outbox_events WHERE user_id = $1::uuid`,
+		`DELETE FROM tree_nodes WHERE user_id = $1::uuid`,
+		`DELETE FROM artifacts WHERE user_id = $1::uuid`,
+	} {
+		if _, err := pool.Exec(ctx, q, syncTestAdminUserID); err != nil {
+			t.Fatalf("cleanup: %v", err)
+		}
 	}
 	if _, err := pool.Exec(ctx, `
 		INSERT INTO users (id, email, created_at, updated_at)
@@ -71,10 +84,12 @@ func TestHandleSyncPull_ReturnsFramesAndAdvancesCursor(t *testing.T) {
 		Scopes: []string{string(coreservice.ScopeArtifactsRead), string(coreservice.ScopeArtifactsWrite)},
 	})
 
-	// Producer: create a folder (emits one outbox frame).
+	// Producer: create a folder (emits one outbox frame). The id is namespaced to this test process
+	// because tree_nodes.id is a GLOBAL primary key — a fixed "folder-a" collides with the same
+	// literal in internal/repo's parallel run and with rows left by earlier runs.
 	title := "Folder A"
 	if err := repo.NewArtifactsPostgres(pool).CreateTreeNode(principalCtx, coreservice.TreeNodeRecord{
-		ID: "folder-a", Kind: "folder", Title: &title, Position: 1,
+		ID: "folder-a-" + uuid.NewString()[:8], Kind: "folder", Title: &title, Position: 1,
 	}); err != nil {
 		t.Fatalf("create tree node: %v", err)
 	}
