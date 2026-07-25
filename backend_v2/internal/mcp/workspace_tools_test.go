@@ -105,6 +105,12 @@ func (f *fakeBarService) Get(_ context.Context, symbol, timeframe string, limit 
 	f.symbol, f.timeframe, f.limit = symbol, timeframe, limit
 	return f.bars, f.err
 }
+func (f *fakeBarService) GetAdjusted(ctx context.Context, symbol, timeframe string, limit int, _ service.AdjustMode) ([]service.Bar, error) {
+	return f.Get(ctx, symbol, timeframe, limit)
+}
+func (f *fakeBarService) SyncCorporateActions(context.Context, service.CorporateActionSource, string, string, string) (int, error) {
+	return 0, nil
+}
 func (f *fakeBarService) SyncBars(context.Context, service.BarSource, string, string, string, string) (int, error) {
 	return 0, nil
 }

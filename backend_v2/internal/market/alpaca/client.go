@@ -378,3 +378,103 @@ func (c *Client) ListAssets(ctx context.Context, assetClass, status string) ([]A
 	}
 	return assets, nil
 }
+
+// CorporateAction is one split or cash dividend from Alpaca's corporate-actions feed, flattened
+// from its per-type response arrays into a single shape.
+type CorporateAction struct {
+	Symbol string
+	Type   string    // "split" | "cash_dividend"
+	ExDate time.Time // first session trading without the entitlement
+	Ratio  float64   // splits: NEW shares per OLD share
+	Cash   float64   // dividends: cash per share
+}
+
+// caDate parses Alpaca's YYYY-MM-DD date fields as UTC midnight.
+func caDate(s string) (time.Time, bool) {
+	if s == "" {
+		return time.Time{}, false
+	}
+	t, err := time.Parse("2006-01-02", s)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return t, true
+}
+
+// GetCorporateActions returns splits and cash dividends for a symbol in [start, end] (YYYY-MM-DD;
+// both optional). Feeds the corporate-actions log that adjust-on-read replays over raw bars.
+//
+// Alpaca groups actions by type, and expresses a split as new_rate/old_rate — a 4-for-1 forward
+// split is 4/1, a 1-for-10 reverse is 1/10 — which is exactly the ratio the adjustment wants.
+// Entries missing an ex-date or a usable rate are skipped rather than stored unusable.
+func (c *Client) GetCorporateActions(ctx context.Context, symbol, start, end string) ([]CorporateAction, error) {
+	base := fmt.Sprintf("%s/v1/corporate-actions", c.dataURL)
+	out := make([]CorporateAction, 0, 32)
+	pageToken := ""
+	for {
+		q := url.Values{}
+		q.Set("symbols", symbol)
+		q.Set("types", "forward_split,reverse_split,cash_dividend")
+		q.Set("limit", "1000")
+		if start != "" {
+			q.Set("start", start)
+		}
+		if end != "" {
+			q.Set("end", end)
+		}
+		if pageToken != "" {
+			q.Set("page_token", pageToken)
+		}
+
+		var body struct {
+			CorporateActions struct {
+				ForwardSplits []struct {
+					Symbol  string  `json:"symbol"`
+					ExDate  string  `json:"ex_date"`
+					NewRate float64 `json:"new_rate"`
+					OldRate float64 `json:"old_rate"`
+				} `json:"forward_splits"`
+				ReverseSplits []struct {
+					Symbol  string  `json:"symbol"`
+					ExDate  string  `json:"ex_date"`
+					NewRate float64 `json:"new_rate"`
+					OldRate float64 `json:"old_rate"`
+				} `json:"reverse_splits"`
+				CashDividends []struct {
+					Symbol string  `json:"symbol"`
+					ExDate string  `json:"ex_date"`
+					Rate   float64 `json:"rate"`
+				} `json:"cash_dividends"`
+			} `json:"corporate_actions"`
+			NextPageToken string `json:"next_page_token"`
+		}
+		if err := c.getJSON(ctx, base+"?"+q.Encode(), &body); err != nil {
+			return nil, err
+		}
+
+		splits := append(body.CorporateActions.ForwardSplits, body.CorporateActions.ReverseSplits...)
+		for _, s := range splits {
+			ex, ok := caDate(s.ExDate)
+			if !ok || s.NewRate <= 0 || s.OldRate <= 0 {
+				continue
+			}
+			out = append(out, CorporateAction{
+				Symbol: s.Symbol, Type: "split", ExDate: ex, Ratio: s.NewRate / s.OldRate,
+			})
+		}
+		for _, d := range body.CorporateActions.CashDividends {
+			ex, ok := caDate(d.ExDate)
+			if !ok || d.Rate <= 0 {
+				continue
+			}
+			out = append(out, CorporateAction{
+				Symbol: d.Symbol, Type: "cash_dividend", ExDate: ex, Cash: d.Rate,
+			})
+		}
+
+		if body.NextPageToken == "" {
+			return out, nil
+		}
+		pageToken = body.NextPageToken
+	}
+}

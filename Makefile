@@ -1,4 +1,4 @@
-.PHONY: help backend mcp blocknote blocknote-test copilot-agent copilot-agent-test check-blocknote-versions tokens check-tokens nuke-local-db nuke-clients tauri-client-b db-up db-down test-db-up test-db-down test-go nango-up nango-down nango-logs env-nango ngrok-ensure worker-go api-go ops-status ops-errors ops-streams ops-queues ops-force-stream ops-reset-stuck-cycles ops-backfill-instruments ops-backfill-bars
+.PHONY: help backend mcp blocknote blocknote-test copilot-agent copilot-agent-test check-blocknote-versions tokens check-tokens nuke-local-db nuke-clients tauri-client-b db-up db-down test-db-up test-db-down test-go nango-up nango-down nango-logs env-nango ngrok-ensure worker-go api-go ops-status ops-errors ops-streams ops-queues ops-force-stream ops-reset-stuck-cycles ops-backfill-instruments ops-backfill-bars ops-backfill-corporate-actions
 
 # --- Isolated sandbox stack (docker-compose.test.yml) -----------------------
 # A throwaway mirror of the dev infra on DISTINCT ports, namespaced under the
@@ -126,6 +126,9 @@ ops-backfill-instruments: ## Pull the Alpaca Assets universe into the instrument
 
 ops-backfill-bars: ## Pull historical daily bars from Alpaca into the bars store. Needs ALPACA_API_KEY/SECRET.
 	eval "$$(python3 scripts/ops/read_env_keys.py --env backend_v2/.env)" && cd backend_v2 && go run ./cmd/backfill-bars
+
+ops-backfill-corporate-actions: ## Pull splits/dividends from Alpaca into corporate_actions (adjust-on-read). Needs ALPACA_API_KEY/SECRET.
+	eval "$$(python3 scripts/ops/read_env_keys.py --env backend_v2/.env)" && cd backend_v2 && go run ./cmd/backfill-corporate-actions
 
 ops-backfill-signals: ## Re-emit durable signal frames for all existing claims to their subscribers (Signals sync backfill).
 	eval "$$(python3 scripts/ops/read_env_keys.py --env backend_v2/.env)" && cd backend_v2 && go run ./cmd/backfill-signals

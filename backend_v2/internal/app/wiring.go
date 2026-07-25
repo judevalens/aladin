@@ -382,7 +382,10 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 	if assetLookup != nil {
 		instrumentsSvc = instrumentsSvc.WithAssetLookup(assetLookup)
 	}
-	barsSvc := coreservice.NewBarService(repo.NewBarPostgres(pool))
+	// Adjust-on-read (TRADING_PRD §5): raw bars + the corporate-actions log. Without the log the
+	// service serves raw bars, where a split reads as a crash.
+	barsSvc := coreservice.NewBarService(repo.NewBarPostgres(pool)).
+		WithCorporateActions(repo.NewCorporateActionPostgres(pool))
 	if barSource != nil {
 		barsSvc = barsSvc.WithSource(barSource)
 	}

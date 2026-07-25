@@ -8,7 +8,8 @@ import (
 	"time"
 )
 
-// Bar is one OHLCV bar as served to the chart. Raw/unadjusted; adjust-on-read comes later.
+// Bar is one OHLCV bar. STORED raw/unadjusted (TRADING_PRD §5); the corporate-actions log is
+// replayed over it at read time — see bar_adjust.go.
 type Bar struct {
 	Time   time.Time `json:"t"`
 	Open   float64   `json:"o"`
@@ -40,11 +41,30 @@ type BarSource interface {
 	FetchBars(ctx context.Context, symbol, timeframe, start, end string) ([]Bar, error)
 }
 
+// CorporateActionRepository is the persistence port for the corporate-actions log.
+type CorporateActionRepository interface {
+	// ListActions returns a symbol's full action history, oldest ex-date first.
+	ListActions(ctx context.Context, symbol string) ([]CorporateAction, error)
+	// UpsertActions writes actions idempotently; returns rows written.
+	UpsertActions(ctx context.Context, symbol string, actions []CorporateAction) (int, error)
+}
+
+// CorporateActionSource is a reference-data provider of corporate actions (Alpaca).
+type CorporateActionSource interface {
+	FetchCorporateActions(ctx context.Context, symbol, start, end string) ([]CorporateAction, error)
+}
+
 // BarService backs the ticker chart (read) and the bar backfill (sync).
 type BarService interface {
+	// Get returns bars SPLIT-ADJUSTED by default — raw storage would otherwise render a 4-for-1
+	// split as a -75% crash. Use GetAdjusted for total-return (backtests) or raw.
 	Get(ctx context.Context, symbol, timeframe string, limit int) ([]Bar, error)
+	// GetAdjusted is Get with an explicit adjustment mode.
+	GetAdjusted(ctx context.Context, symbol, timeframe string, limit int, mode AdjustMode) ([]Bar, error)
 	// SyncBars pulls history for a symbol from a source and upserts it; returns rows written.
 	SyncBars(ctx context.Context, src BarSource, symbol, timeframe, start, end string) (int, error)
+	// SyncCorporateActions pulls a symbol's splits/dividends and upserts them; returns rows written.
+	SyncCorporateActions(ctx context.Context, src CorporateActionSource, symbol, start, end string) (int, error)
 }
 
 const (
@@ -57,8 +77,9 @@ const (
 )
 
 type defaultBarService struct {
-	repo   BarRepository
-	source BarSource // optional vendor fallback; nil ⇒ local-only
+	repo    BarRepository
+	source  BarSource                 // optional vendor fallback; nil ⇒ local-only
+	actions CorporateActionRepository // optional; nil ⇒ bars are served raw
 
 	mu        sync.Mutex
 	lastFetch map[string]time.Time // symbol|tf → last vendor fetch (throttle)
@@ -66,6 +87,13 @@ type defaultBarService struct {
 
 func NewBarService(repo BarRepository) *defaultBarService {
 	return &defaultBarService{repo: repo, lastFetch: map[string]time.Time{}}
+}
+
+// WithCorporateActions enables adjust-on-read. Without it the service serves raw bars (the
+// pre-T1 behaviour), so wiring it is what makes split-crossing history correct.
+func (s *defaultBarService) WithCorporateActions(actions CorporateActionRepository) *defaultBarService {
+	s.actions = actions
+	return s
 }
 
 // WithSource enables read-through: on a local miss or stale series, Get fetches the gap from
@@ -76,6 +104,10 @@ func (s *defaultBarService) WithSource(source BarSource) *defaultBarService {
 }
 
 func (s *defaultBarService) Get(ctx context.Context, symbol, timeframe string, limit int) ([]Bar, error) {
+	return s.GetAdjusted(ctx, symbol, timeframe, limit, AdjustSplits)
+}
+
+func (s *defaultBarService) GetAdjusted(ctx context.Context, symbol, timeframe string, limit int, mode AdjustMode) ([]Bar, error) {
 	symbol = strings.ToUpper(strings.TrimSpace(symbol))
 	if symbol == "" {
 		return []Bar{}, nil
@@ -104,7 +136,20 @@ func (s *defaultBarService) Get(ctx context.Context, symbol, timeframe string, l
 			}
 		}
 	}
-	return bars, nil
+
+	// Adjust-on-read: replay the corporate-actions log over the raw series. Best-effort — if the
+	// log can't be read we serve raw bars rather than failing the chart, but we say so, because
+	// silently-unadjusted history is exactly the failure this design exists to prevent.
+	if mode == AdjustNone || s.actions == nil || len(bars) == 0 {
+		return bars, nil
+	}
+	actions, err := s.actions.ListActions(ctx, symbol)
+	if err != nil {
+		slog.Warn("bars: corporate actions unavailable; serving RAW bars",
+			"component", "market", "symbol", symbol, "err", err)
+		return bars, nil
+	}
+	return AdjustBars(bars, actions, mode), nil
 }
 
 // shouldFetch decides if a vendor read-through is warranted: cold (no bars) or stale newest,
@@ -172,4 +217,19 @@ func (s *defaultBarService) SyncBars(ctx context.Context, src BarSource, symbol,
 		rows = append(rows, BarUpsert{Symbol: symbol, Timeframe: timeframe, Bar: b})
 	}
 	return s.repo.UpsertBars(ctx, rows)
+}
+
+func (s *defaultBarService) SyncCorporateActions(ctx context.Context, src CorporateActionSource, symbol, start, end string) (int, error) {
+	symbol = strings.ToUpper(strings.TrimSpace(symbol))
+	if symbol == "" || s.actions == nil {
+		return 0, nil
+	}
+	actions, err := src.FetchCorporateActions(ctx, symbol, start, end)
+	if err != nil {
+		return 0, err
+	}
+	if len(actions) == 0 {
+		return 0, nil
+	}
+	return s.actions.UpsertActions(ctx, symbol, actions)
 }

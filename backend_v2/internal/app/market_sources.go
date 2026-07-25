@@ -150,3 +150,25 @@ func (a alpacaAssetLookup) FetchInstrument(ctx context.Context, symbol string) (
 		IsActive:   as.Status == "active",
 	}, true, nil
 }
+
+type alpacaCorporateActionSource struct{ c *alpaca.Client }
+
+// FetchCorporateActions adapts Alpaca's splits/dividends to the service's action log.
+func (a alpacaCorporateActionSource) FetchCorporateActions(ctx context.Context, symbol, start, end string) ([]coreservice.CorporateAction, error) {
+	acts, err := a.c.GetCorporateActions(ctx, symbol, start, end)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]coreservice.CorporateAction, 0, len(acts))
+	for _, x := range acts {
+		out = append(out, coreservice.CorporateAction{
+			Type: x.Type, ExDate: x.ExDate, SplitRatio: x.Ratio, CashAmount: x.Cash,
+		})
+	}
+	return out, nil
+}
+
+// NewAlpacaCorporateActionSource exposes the corporate-actions feed to the backfill command.
+func NewAlpacaCorporateActionSource(c *alpaca.Client) coreservice.CorporateActionSource {
+	return alpacaCorporateActionSource{c: c}
+}
