@@ -25,6 +25,7 @@ import (
 	"aladin/backend_v2/internal/pipeline/workers"
 	"aladin/backend_v2/internal/ratelimit"
 	"aladin/backend_v2/internal/repo"
+	"aladin/backend_v2/internal/safego"
 	"aladin/backend_v2/internal/search"
 	isync "aladin/backend_v2/internal/sync"
 	"aladin/backend_v2/internal/sync/syncers"
@@ -129,7 +130,7 @@ func main() {
 	// capture whose enrichment enqueue was lost to a crash). Idempotent: deterministic task
 	// ids make re-enqueuing a still-queued task a no-op.
 	reaper := pipeline.NewReaper(recordRepo, pipelineEnqueuer)
-	go func() {
+	safego.Loop(ctx, "worker.reaper", func(ctx context.Context) {
 		ticker := time.NewTicker(2 * time.Minute)
 		defer ticker.Stop()
 		for {
@@ -144,7 +145,7 @@ func main() {
 				}
 			}
 		}
-	}()
+	})
 
 	// You-stream ingestion (Y1) — fold authored pages into the engine once they've been idle
 	// ~10 min. Reuses the embedder-enabled claimService so authored claims get embedded
@@ -155,7 +156,7 @@ func main() {
 		claims.NewAuthoredExtractor(claimService, entityRepo),
 		asynqClient,
 	).WithEmitter(repo.NewNodeEmitter(pool))
-	go func() {
+	safego.Loop(ctx, "worker.pageingest", func(ctx context.Context) {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
 		for {
@@ -170,7 +171,7 @@ func main() {
 				}
 			}
 		}
-	}()
+	})
 
 	// Graph projection (optional) — project the entity/claim layer into Neo4j (the connection
 	// lens). Built only when NEO4J_URI is set; otherwise the stage is never enqueued and the
@@ -217,7 +218,7 @@ func main() {
 	if webSearcher != nil {
 		judgeSweeper = judgeSweeper.WithSearcher(webSearcher)
 	}
-	go func() {
+	safego.Loop(ctx, "worker.judge", func(ctx context.Context) {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
 		for {
@@ -232,7 +233,7 @@ func main() {
 				}
 			}
 		}
-	}()
+	})
 
 	orch := pipeline.NewOrchestrator(handler)
 	orch.Add(workers.NewGlobalFirstPassWorker(enricher, openaiLimiter))

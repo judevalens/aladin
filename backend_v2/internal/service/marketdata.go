@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"aladin/backend_v2/internal/market/alpaca"
+	"aladin/backend_v2/internal/safego"
 )
 
 // MarketDataService is the demand-driven quote hub. Clients subscribe to symbols; the hub
@@ -96,7 +97,8 @@ type MarketDataConfig struct {
 
 func (h *marketDataHub) Start(ctx context.Context) {
 	if h.stream != nil {
-		go h.stream.Run(ctx)
+		// Supervised: a panic in the WS read/reconnect loop must not silently kill live quotes.
+		safego.Loop(ctx, "market.stream", h.stream.Run)
 	}
 }
 
@@ -130,7 +132,8 @@ func (h *marketDataHub) Subscribe(ctx context.Context, symbols []string) error {
 	// before the first WS tick. Async — never blocks the subscribe call.
 	if h.snapshots != nil {
 		for _, sym := range fresh {
-			go h.seedSnapshot(sym)
+			sym := sym
+			safego.Go("market.seed", func() { h.seedSnapshot(sym) })
 		}
 	}
 	return nil

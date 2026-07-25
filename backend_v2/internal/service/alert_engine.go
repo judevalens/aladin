@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"aladin/backend_v2/internal/safego"
 )
 
 // AlertEngine evaluates price alerts on live ticks. It is a SINGLETON (one Alpaca WS) and runs
@@ -101,9 +103,11 @@ func (e *AlertEngine) OnTick(symbol string, price float64, at time.Time) {
 }
 
 // Start launches the eval goroutine + the reconcile ticker; both stop on ctx cancel.
+// Supervised: a panic in either loop is recovered and the loop restarted (a nil-deref in
+// eval must not silently stop all alerts from ever firing again).
 func (e *AlertEngine) Start(ctx context.Context) {
-	go e.evalLoop(ctx)
-	go e.reconcileLoop(ctx)
+	safego.Loop(ctx, "alert.eval", e.evalLoop)
+	safego.Loop(ctx, "alert.reconcile", e.reconcileLoop)
 }
 
 // evalLoop is the SOLE owner of index + symState. It drains ticks (update slope + evaluate)

@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 	"time"
+
+	"aladin/backend_v2/internal/safego"
 )
 
 // Data-layer R1 — the CDC outbox drain (live delivery).
@@ -48,9 +50,11 @@ func NewOutboxDrainer(reader OutboxDrainReader, realtime RealtimeEventService, i
 	return &OutboxDrainer{reader: reader, realtime: realtime, interval: interval}
 }
 
-// Start launches the drain loop in a goroutine; it stops when ctx is cancelled.
+// Start launches the drain loop in a goroutine; it stops when ctx is cancelled. Supervised: a
+// panic in the drain is recovered and the loop restarted (a wedged drain halts realtime for all
+// users, so it must not die silently).
 func (d *OutboxDrainer) Start(ctx context.Context) {
-	go d.run(ctx)
+	safego.Loop(ctx, "outbox.drain", d.run)
 }
 
 func (d *OutboxDrainer) run(ctx context.Context) {

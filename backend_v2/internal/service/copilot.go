@@ -11,6 +11,7 @@ import (
 
 	"aladin/backend_v2/internal/blocknote"
 	"aladin/backend_v2/internal/copilotagent"
+	"aladin/backend_v2/internal/safego"
 
 	"github.com/google/uuid"
 )
@@ -393,7 +394,11 @@ func (s *defaultCopilotService) SendMessage(ctx context.Context, in CopilotSendI
 	}
 	_ = s.Store.TouchThread(ctx, threadID)
 
-	go s.runAgent(turnCtx, release, in.Principal, in.Bearer, threadID, sessionID, in.Surface)
+	// Fire-and-forget turn, panic-contained: a malformed NDJSON event from the sidecar must not
+	// crash the api process. runAgent defers release(), so the hold-open slot is freed even on panic.
+	safego.Go("copilot.turn", func() {
+		s.runAgent(turnCtx, release, in.Principal, in.Bearer, threadID, sessionID, in.Surface)
+	})
 	return CopilotSendResult{ThreadID: threadID, SessionID: sessionID}, nil
 }
 

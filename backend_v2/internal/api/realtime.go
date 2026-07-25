@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"aladin/backend_v2/internal/safego"
 	coreservice "aladin/backend_v2/internal/service"
 
 	"github.com/coder/websocket"
@@ -59,7 +60,8 @@ func (s *Server) handleRealtimeWebSocket(w http.ResponseWriter, r *http.Request)
 
 	clientMessages := make(chan realtimeClientMessage)
 	clientErrors := make(chan error, 1)
-	go readRealtimeClientMessages(ctx, conn, clientMessages, clientErrors)
+	// Panic-contained: a malformed frame from a WS client must not crash the api process.
+	safego.Go("api.realtime.read", func() { readRealtimeClientMessages(ctx, conn, clientMessages, clientErrors) })
 
 	if err := writeRealtimeJSON(ctx, conn, realtimeServerMessage{Type: "subscribed"}); err != nil {
 		return
