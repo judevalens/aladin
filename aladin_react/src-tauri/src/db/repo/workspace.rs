@@ -362,6 +362,45 @@ impl WorkspaceRepo {
     /// and bumps the node seq), then applies the same result optimistically as a FULL
     /// payload so the artifact stream updates reactively with no reload. The
     /// authoritative server frame (same seq) is a dedup no-op.
+    /// H2 — an artifact's tagged entities, proxied through Rust. Read-through (not cached): entity
+    /// links aren't part of the light node row.
+    pub fn list_artifact_entities(&self, artifact_id: &str) -> DbResult<serde_json::Value> {
+        let config = self.config()?;
+        self.api
+            .list_artifact_entities(&config, artifact_id)
+            .map_err(DbError::Api)
+    }
+
+    /// H2 — tag an entity onto an artifact. The SERVER emits a node frame for the artifact, so the
+    /// graph pane (and any other window) refreshes off the resulting DataEvent; nothing to apply
+    /// locally here.
+    pub fn attach_artifact_entity(&self, artifact_id: &str, entity_id: &str) -> DbResult<()> {
+        let config = self.config()?;
+        self.api
+            .attach_artifact_entity(&config, artifact_id, entity_id)
+            .map_err(DbError::Api)
+    }
+
+    /// H2 — untag an entity (server emits the node frame).
+    pub fn detach_artifact_entity(&self, artifact_id: &str, entity_id: &str) -> DbResult<()> {
+        let config = self.config()?;
+        self.api
+            .detach_artifact_entity(&config, artifact_id, entity_id)
+            .map_err(DbError::Api)
+    }
+
+    /// H2 — replace an artifact's @entity mention set (server emits the node frame).
+    pub fn sync_artifact_mentions(
+        &self,
+        artifact_id: &str,
+        mentions: serde_json::Value,
+    ) -> DbResult<()> {
+        let config = self.config()?;
+        self.api
+            .sync_artifact_mentions(&config, artifact_id, mentions)
+            .map_err(DbError::Api)
+    }
+
     /// H1c — artifacts carrying a typed property, read straight from the server (a query over the
     /// whole workspace, not just the locally-cached subset, so it can't be answered from the cache).
     /// An empty `value` matches any value for the key.

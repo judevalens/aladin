@@ -99,3 +99,43 @@ pub fn db_query_artifacts_by_property(
 pub fn db_artifact_property_facets(repo: State<'_, WorkspaceRepo>) -> DbResult<serde_json::Value> {
     repo.artifact_property_facets()
 }
+
+/// H2 — an artifact's tagged entities (Rust-proxied; keeps the webview off cross-origin REST).
+#[tauri::command]
+pub fn db_list_artifact_entities(
+    repo: State<'_, WorkspaceRepo>,
+    artifact_id: String,
+) -> DbResult<serde_json::Value> {
+    repo.list_artifact_entities(&artifact_id)
+}
+
+/// H2 — tag an entity onto an artifact. The server emits a node frame; the pane refreshes off it.
+#[tauri::command]
+pub fn db_attach_artifact_entity(
+    repo: State<'_, WorkspaceRepo>,
+    artifact_id: String,
+    entity_id: String,
+) -> DbResult<()> {
+    repo.attach_artifact_entity(&artifact_id, &entity_id)
+}
+
+/// H2 — untag an entity from an artifact.
+#[tauri::command]
+pub fn db_detach_artifact_entity(
+    repo: State<'_, WorkspaceRepo>,
+    artifact_id: String,
+    entity_id: String,
+) -> DbResult<()> {
+    repo.detach_artifact_entity(&artifact_id, &entity_id)
+}
+
+/// H2 — replace an artifact's @entity mention set. PUT: routing it through Rust keeps it off the
+/// webview's cross-origin path, where this exact route once failed CORS preflight.
+#[tauri::command]
+pub fn db_sync_artifact_mentions(
+    repo: State<'_, WorkspaceRepo>,
+    artifact_id: String,
+    mentions: serde_json::Value,
+) -> DbResult<()> {
+    repo.sync_artifact_mentions(&artifact_id, mentions)
+}

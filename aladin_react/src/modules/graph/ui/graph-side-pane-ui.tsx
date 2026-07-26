@@ -78,6 +78,12 @@ function EntityList({
   const [picking, setPicking] = useState(false);
   const [pendingId, setPendingId] = useState<string | null>(null);
 
+  // NOTE on onChanged(): it is a LOCAL LATENCY SHORTCUT, not the sync mechanism. Correctness comes
+  // from the syncer — the server emits a node frame for the artifact on attach/detach, and
+  // useGraphPane refetches off that DataEvent, which is what makes OTHER windows (and async writes)
+  // converge. We also refresh immediately here so the acting user isn't waiting on the pane's 500ms
+  // debounce (that debounce exists to coalesce the editor's per-keystroke mention re-sync, which a
+  // discrete click doesn't need). Do not treat this call as the update path.
   async function attach(entityId: string) {
     setPicking(false);
     setPendingId(entityId);

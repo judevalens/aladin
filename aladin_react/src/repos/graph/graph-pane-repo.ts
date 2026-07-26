@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import type { ApiClient } from "@/shared/api/client";
 import type {
   ArtifactRef,
@@ -53,26 +54,22 @@ export function createGraphPaneRepo(client: ApiClient): GraphPaneRepo {
         body: JSON.stringify({ name, kind }),
       }),
 
+    // H2 — artifact<->entity links go through RUST, not the webview's REST client. The desktop
+    // webview is cross-origin to the API, and syncMentions is a PUT: that exact route once failed
+    // CORS preflight. Proxying through Rust removes the webview from the equation entirely.
+    // These writes need no local apply — the SERVER emits a node frame for the artifact, so the
+    // graph pane refreshes off the resulting DataEvent (reactive-via-syncer, no invalidation).
     listEntities: (artifactId) =>
-      client.fetch<AttachedEntity[]>(`/api/artifacts/${encodeURIComponent(artifactId)}/entities`),
+      invoke<AttachedEntity[]>("db_list_artifact_entities", { artifactId }).then((r) => r ?? []),
 
     attachEntity: (artifactId, entityId) =>
-      client.fetch<void>(`/api/artifacts/${encodeURIComponent(artifactId)}/entities`, {
-        method: "POST",
-        body: JSON.stringify({ entityId }),
-      }),
+      invoke<void>("db_attach_artifact_entity", { artifactId, entityId }),
 
     detachEntity: (artifactId, entityId) =>
-      client.fetch<void>(
-        `/api/artifacts/${encodeURIComponent(artifactId)}/entities/${encodeURIComponent(entityId)}`,
-        { method: "DELETE" },
-      ),
+      invoke<void>("db_detach_artifact_entity", { artifactId, entityId }),
 
     syncMentions: (artifactId, mentions) =>
-      client.fetch<void>(`/api/artifacts/${encodeURIComponent(artifactId)}/entity-mentions`, {
-        method: "PUT",
-        body: JSON.stringify({ mentions }),
-      }),
+      invoke<void>("db_sync_artifact_mentions", { artifactId, mentions }),
 
     searchRefs: (query) =>
       client.fetch<RefHit[]>(`/api/refs/search?q=${encodeURIComponent(query)}`),
