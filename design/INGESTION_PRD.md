@@ -335,13 +335,22 @@ is *slower* than the 345ms native-CPU figure, being CPU under virtualisation.
 | `aladin-prod-worker` container on this Mac | cpu in a VM | >112s |
 | Linux host with a real GPU | cuda | untested |
 
-So containerising the ingestion worker **forfeits the 4.4× entirely**. Either run it
-natively, or accept ~2 minutes a book — which for a background job nothing waits on is a
-defensible trade, just one to make on purpose.
+So containerising the ingestion worker **forfeits the 4.4× entirely**.
 
-This also sharpens §13: the Python lives wherever the WORKER lives. Native worker →
-subprocess is trivially right. Containerised worker → torch goes in the image (the cost
-§13 flags) *and* the GPU is gone anyway.
+**DECIDED (2026-08-01): the ingestion worker runs NATIVELY on macOS, in dev and in
+whatever passes for prod here.** Aladin is a single-author personal workspace on one
+machine; there is no fleet to schedule and no reason to give up a 4.4× to satisfy a
+deployment shape nobody needs. That resolves three things at once:
+
+- **§13 stands, unambiguously.** The Python is a subprocess of a native worker. No image
+  question, so the "torch bloats an alpine image shared by api/mcp" cost simply doesn't
+  arise.
+- **MPS is the target, not a bonus.** ~34s for a 280-page book.
+- **Run the model on every page** (§14's first open, now closed). At 34s a book, sampling
+  pages to learn typographic conventions is complexity bought for nothing.
+
+If Aladin ever runs on a Linux host, containerising is the normal thing to do there and
+the GPU works fine — the constraint is macOS-specific, not architectural.
 
 **Why the corpus forced this.** That thesis is an **OCR'd scan** — producer
 `Adobe Acrobat 8.13 Paper Capture Plug-in`, every page a 3392×4416 PNG with an invisible
@@ -371,9 +380,6 @@ dedup by IoU.
 
 ## 14. Open
 
-- **Sample or every page?** Documents are typographically consistent, so a VLM reading ~8
-  pages could learn the conventions and a cheap rule apply them to the rest. Worth
-  measuring against running the layout model on everything before choosing.
 - **Are inferred boundaries auto-applied or reviewable?** `tools/pdftoc` deliberately makes
   a drafted outline editable before it touches the PDF, and that instinct was right.
   Silent structure you can't correct is the failure mode.
