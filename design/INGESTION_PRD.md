@@ -400,10 +400,12 @@ lines, badges, running heads), 14 on arXiv, 8 on the thesis.
 
 **Two things NOT clean, to handle when building:**
 
-- **Title share varies 5%–28% across the corpus.** The sampled headings are all genuine, so
-  it may be that some papers simply have many short subsections — but a 3–5× spread is more
-  often systematic than a property of the documents. Understand it before treating title
-  density as a segmentation signal.
+- **Title share varies 5%–28% across the corpus.** Boxes were rendered onto the pages and
+  eyeballed (`tools/doclayout/annotate.py`) — the arXiv and SSRN reds looked like genuine
+  headings, so the spread is most likely subsection density rather than the model catching
+  bold run-in text. That is a visual spot-check on two pages, **not** a measured
+  precision/recall, so don't treat title density as a load-bearing segmentation signal
+  without counting properly first.
 - **False positives are real but cheap to filter.** The ACM paper labelled
   `Latest updates: https://dl.acm.org/doi/…` a title; the journal produced the fragment
   `BookRe`. A URL rule and a minimum-length rule remove both without touching anything
