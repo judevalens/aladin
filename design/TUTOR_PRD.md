@@ -130,6 +130,19 @@ Concretely, a good lesson is **not** a styled document. It should reliably conta
 
 ### The ingest engine (L0) — the hard, net-new half
 
+> **Update 2026-08-01: L0 is no longer net-new.** `design/INGESTION_PRD.md` builds it —
+> v1 (text, outline, status, retrieval) is shipped on `feat/ingestion-engine`, and the
+> layout-segmentation half is designed and benchmarked. It reached the same decisions this
+> section did (subprocess not sidecar, swappable interface, outbox status, scan-robust).
+>
+> Two changes to what follows, both making it cheaper:
+> - **Step 3's cost lever becomes region-level.** Segmentation labels `figure` /
+>   `isolate_formula` / `table`, so vision runs on *crops*, not whole pages.
+> - **Step 1 is often unnecessary.** For OCR'd scans the page image is already embedded and
+>   the text layer already exists; only the visual regions need a model at all.
+>
+> Read INGESTION_PRD §10 and §13b–e before building against this section.
+
 The requirement (user, D-A): *"a proper ingest engine that can handle images, equations,
 code — transpose them to text."* A plain PDF text-layer extractor will not do that. The
 backbone is **multimodal transcription**:

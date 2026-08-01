@@ -436,6 +436,34 @@ The corollary is §14's remaining open: at 85% you *will* meet the 15%, so the s
 to be **inspectable and correctable**. `tools/pdftoc` already encodes that instinct — draft,
 let a human fix it, then apply.
 
+## 13e. Two consumers, one segmentation pass
+
+`TUTOR_PRD.md` §L0 ("the hard, net-new half") independently specified: rasterize each page,
+`exec.Command` with **"no persistent sidecar"**, a swappable `Rasterizer` interface,
+page-bounded and timed out, status on the transactional outbox, robust to scans. Those are
+the same calls this doc reached from measurement. Neither was written looking at the other,
+which is worth something.
+
+**They are one engine.** Segmentation is the shared substrate:
+
+| surface | needs |
+|---|---|
+| **Research** | boundaries → chunk tree → retrieval |
+| **Tutor** | `figure` / `isolate_formula` / `table` **crops** → VLM transcription → lesson |
+
+Tutor's VLM transcription (equations→LaTeX, figures→captioned descriptions) is a layer
+**on top**, not a second pipeline.
+
+**What segmentation changes in Tutor's plan** — its step 3 makes vision a *page-level* cost
+lever ("fall back to vision for pages that are figure/formula-heavy"). Regions are a
+strictly better lever: crop the visual regions and send only those. Deep Hedging yields 31
+`isolate_formula` + 19 `formula_caption` — exactly the crops its equations→LaTeX step wants,
+and a focused crop transcribes better than a full page of mixed content.
+
+Two of its steps also get cheaper: step 2 asks a VLM to preserve headings/sections, which
+segmentation does deterministically; and for scans there is nothing to rasterize (§13b —
+the page image is embedded) and nothing to re-OCR.
+
 ## 14. Open
 
 - **Are inferred boundaries auto-applied or reviewable?** `tools/pdftoc` deliberately makes
