@@ -9,43 +9,24 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// PostgresGraphProjectionRepository reads the entity + claim layer into the shape the Neo4j
-// projector consumes. FullGraph backs `make ops-backfill-graph`; RecordGraph backs the
-// incremental projection after resolve_claims.
+// PostgresGraphProjectionRepository reads the entity layer into the shape the Neo4j projector
+// consumes. FullGraph backs `make ops-backfill-graph`; RecordGraph backs the incremental
+// projection after resolve_entities.
+//
+// The claim layer was removed, so the graph is entity-only: nodes, MERGED_INTO, and RELATED_TO
+// co-occurrence. ABOUT/SUPPORTS/CONTRADICTS/DIVERGES_FROM were all claim-anchored and went with it.
 type PostgresGraphProjectionRepository struct{ pool *pgxpool.Pool }
 
 func NewGraphProjectionPostgres(pool *pgxpool.Pool) *PostgresGraphProjectionRepository {
 	return &PostgresGraphProjectionRepository{pool: pool}
 }
 
-// FullGraph reads the whole entity/claim layer — nodes, ABOUT, claim edges, merges, and
-// entity co-occurrence (RELATED_TO). Used for backfill.
+// FullGraph reads the whole entity layer — nodes, merges, and entity co-occurrence
+// (RELATED_TO). Used for backfill.
 func (r *PostgresGraphProjectionRepository) FullGraph(ctx context.Context) (graph.GraphData, error) {
 	var d graph.GraphData
 
 	if err := r.scanEntities(ctx, &d, `SELECT id::text, canonical_name, COALESCE(kind, '') FROM entities`); err != nil {
-		return d, err
-	}
-	if err := r.scanClaims(ctx, &d, `
-		SELECT c.id::text, c.canonical_text, c.polarity,
-		       COALESCE(m.assert, 0), COALESCE(m.deny, 0)
-		  FROM claims c
-		  LEFT JOIN (
-		      SELECT claim_id,
-		             count(*) FILTER (WHERE stance = 'assert') AS assert,
-		             count(*) FILTER (WHERE stance = 'deny')   AS deny
-		        FROM claim_mentions GROUP BY claim_id
-		  ) m ON m.claim_id = c.id
-	`); err != nil {
-		return d, err
-	}
-	if err := r.scanAbout(ctx, &d, `SELECT claim_id::text, entity_id::text FROM claim_subjects`); err != nil {
-		return d, err
-	}
-	if err := r.scanClaimEdges(ctx, &d, `
-		SELECT from_claim_id::text, to_claim_id::text, type, COALESCE(confidence, 0)
-		  FROM claim_edges WHERE status <> 'rejected'
-	`); err != nil {
 		return d, err
 	}
 	if err := r.scanMerges(ctx, &d, `
@@ -66,9 +47,8 @@ func (r *PostgresGraphProjectionRepository) FullGraph(ctx context.Context) (grap
 	return d, nil
 }
 
-// RecordGraph reads just the slice a single record contributes — the entities it mentions,
-// the claims it asserts/denies, their ABOUT edges, and claim edges among those claims.
-// (RELATED_TO + DIVERGES_FROM are global/derived — left to FullGraph.)
+// RecordGraph reads just the slice a single record contributes — the entities it mentions.
+// (RELATED_TO is global/derived — left to FullGraph.)
 func (r *PostgresGraphProjectionRepository) RecordGraph(ctx context.Context, recordID string) (graph.GraphData, error) {
 	var d graph.GraphData
 
@@ -77,38 +57,6 @@ func (r *PostgresGraphProjectionRepository) RecordGraph(ctx context.Context, rec
 		  FROM entity_mentions em JOIN entities e ON e.id = em.entity_id
 		 WHERE em.record_id = $1
 		 GROUP BY e.id, e.canonical_name, e.kind
-	`, recordID); err != nil {
-		return d, err
-	}
-	if err := r.scanClaims(ctx, &d, `
-		SELECT c.id::text, c.canonical_text, c.polarity,
-		       COALESCE(m.assert, 0), COALESCE(m.deny, 0)
-		  FROM claims c
-		  JOIN claim_mentions cm ON cm.claim_id = c.id AND cm.source_kind = 'record' AND cm.source_id = $1
-		  LEFT JOIN (
-		      SELECT claim_id,
-		             count(*) FILTER (WHERE stance = 'assert') AS assert,
-		             count(*) FILTER (WHERE stance = 'deny')   AS deny
-		        FROM claim_mentions GROUP BY claim_id
-		  ) m ON m.claim_id = c.id
-		 GROUP BY c.id, c.canonical_text, c.polarity, m.assert, m.deny
-	`, recordID); err != nil {
-		return d, err
-	}
-	if err := r.scanAbout(ctx, &d, `
-		SELECT cs.claim_id::text, cs.entity_id::text
-		  FROM claim_subjects cs
-		 WHERE cs.claim_id IN (
-		     SELECT claim_id FROM claim_mentions WHERE source_kind = 'record' AND source_id = $1
-		 )
-	`, recordID); err != nil {
-		return d, err
-	}
-	if err := r.scanClaimEdges(ctx, &d, `
-		SELECT from_claim_id::text, to_claim_id::text, type, COALESCE(confidence, 0)
-		  FROM claim_edges
-		 WHERE status <> 'rejected'
-		   AND from_claim_id IN (SELECT claim_id FROM claim_mentions WHERE source_kind='record' AND source_id=$1)
 	`, recordID); err != nil {
 		return d, err
 	}
@@ -127,51 +75,6 @@ func (r *PostgresGraphProjectionRepository) scanEntities(ctx context.Context, d 
 			return err
 		}
 		d.Entities = append(d.Entities, e)
-	}
-	return rows.Err()
-}
-func (r *PostgresGraphProjectionRepository) scanClaims(ctx context.Context, d *graph.GraphData, q string, args ...any) error {
-	rows, err := r.pool.Query(ctx, q, args...)
-	if err != nil {
-		return fmt.Errorf("graph projection claims: %w", err)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var c graph.ClaimNode
-		if err := rows.Scan(&c.ID, &c.Text, &c.Polarity, &c.AssertSources, &c.DenySources); err != nil {
-			return err
-		}
-		d.Claims = append(d.Claims, c)
-	}
-	return rows.Err()
-}
-func (r *PostgresGraphProjectionRepository) scanAbout(ctx context.Context, d *graph.GraphData, q string, args ...any) error {
-	rows, err := r.pool.Query(ctx, q, args...)
-	if err != nil {
-		return fmt.Errorf("graph projection about: %w", err)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var a graph.AboutEdge
-		if err := rows.Scan(&a.ClaimID, &a.EntityID); err != nil {
-			return err
-		}
-		d.About = append(d.About, a)
-	}
-	return rows.Err()
-}
-func (r *PostgresGraphProjectionRepository) scanClaimEdges(ctx context.Context, d *graph.GraphData, q string, args ...any) error {
-	rows, err := r.pool.Query(ctx, q, args...)
-	if err != nil {
-		return fmt.Errorf("graph projection claim_edges: %w", err)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var e graph.ClaimEdge
-		if err := rows.Scan(&e.From, &e.To, &e.Type, &e.Confidence); err != nil {
-			return err
-		}
-		d.ClaimEdges = append(d.ClaimEdges, e)
 	}
 	return rows.Err()
 }

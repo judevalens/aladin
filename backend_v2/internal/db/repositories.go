@@ -118,31 +118,3 @@ type DiscourseRepository interface {
 	MarkAnalyzed(ctx context.Context, entityID string, degree int) (int, error)
 	StoreDiscourse(ctx context.Context, d *DiscourseInsight) error
 }
-
-// ClaimRepository is the claim registry (C0): contestable propositions grounded in
-// entities, with the evidence (claim_mentions) of which sources assert/deny them.
-type ClaimRepository interface {
-	FindClaimByText(ctx context.Context, scope, ownerUserID, canonicalText string) (string, bool, error)
-	CreateClaim(ctx context.Context, p CreateClaimParams) (string, error)
-	AddClaimSubject(ctx context.Context, claimID, entityID string) error
-	AddClaimMention(ctx context.Context, p ClaimMentionParams) error
-
-	// C1: polarity-aware resolution.
-	SetClaimEmbedding(ctx context.Context, claimID string, vec []float32) error
-	FindClaimCandidates(ctx context.Context, scope, ownerUserID string, subjectEntityIDs []string, vec []float32, minCosine float64, limit int) ([]ScoredClaim, error)
-	AddClaimEdge(ctx context.Context, p ClaimEdgeParams) (bool, error)
-
-	// C4: the contradiction surface for a thesis claim.
-	ContradictionSurface(ctx context.Context, thesisClaimID string, minCosine float64) (ClaimStanceCounts, error)
-
-	// SourceClaims lists the canonical claims a source (record | artifact) mentions — used
-	// by the Y3 Connect path to surface connections on a page's just-extracted claims.
-	SourceClaims(ctx context.Context, sourceKind, sourceID string) ([]SourceClaim, error)
-}
-
-// SourceClaim is a claim a given source mentions (the page's own claims, for Connect).
-type SourceClaim struct {
-	ID       string
-	Text     string
-	Polarity string
-}

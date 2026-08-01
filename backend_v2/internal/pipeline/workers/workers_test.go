@@ -94,7 +94,7 @@ func (r *embedFakeRepo) SaveComplete(_ context.Context, _ *db.CompletedRecord) e
 func (r *embedFakeRepo) ListStuck(_ context.Context, _, _ int) ([]*db.Record, error) {
 	return nil, nil
 }
-func (r *embedFakeRepo) MarkFailed(_ context.Context, _, _ string) error      { return nil }
+func (r *embedFakeRepo) MarkFailed(_ context.Context, _, _ string) error         { return nil }
 func (r *embedFakeRepo) ResetForRetry(_ context.Context, _ string) (bool, error) { return false, nil }
 
 func TestEmbedWorkerWritesEmbeddingAndCompletes(t *testing.T) {
@@ -109,7 +109,7 @@ func TestEmbedWorkerWritesEmbeddingAndCompletes(t *testing.T) {
 	}}
 	w := NewEmbedWorker(repo, &fakeEmbedder{vector: []float32{1, 2, 3}}, ratelimit.New(1000))
 
-	raw, _ := json.Marshal(pipeline.ResolveClaimsPayload{RecordID: "record-4", SourceRevision: 1})
+	raw, _ := json.Marshal(pipeline.ResolveEntitiesPayload{RecordID: "record-4", SourceRevision: 1})
 	result := w.Run(context.Background(), raw)
 	if result.Err != nil {
 		t.Fatalf("Run returned error: %v", result.Err)

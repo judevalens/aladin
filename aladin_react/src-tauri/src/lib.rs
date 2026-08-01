@@ -12,7 +12,7 @@ use tauri::Manager;
 use crate::api::workspace_write::HttpWorkspaceWriteApi;
 use crate::commands::{
     artifacts as artifact_cmd, browser as browser_cmd, nodes as node_cmd, pages as page_cmd,
-    signals as signal_cmd, sync as sync_cmd, terminal as terminal_cmd, watchlists as watchlist_cmd,
+    sync as sync_cmd, terminal as terminal_cmd, watchlists as watchlist_cmd,
 };
 use crate::db::repo::workspace::WorkspaceRepo;
 use crate::db::Db;
@@ -88,7 +88,6 @@ pub fn run() {
             browser_cmd::db_delete_browser_node,
             node_cmd::db_list_nodes,
             node_cmd::db_get_node,
-            signal_cmd::db_list_signals,
             watchlist_cmd::db_list_watchlists,
             page_cmd::db_get_page_metadata,
             page_cmd::db_upsert_page_metadata,

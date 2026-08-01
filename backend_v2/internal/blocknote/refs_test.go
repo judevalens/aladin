@@ -10,7 +10,7 @@ func TestExtractInlineRefs(t *testing.T) {
 		{"id":"b1","type":"paragraph","content":[
 			{"type":"text","text":"per "},
 			{"type":"entityMention","props":{"entityId":"e-1","label":"OpenAI","kind":"org"}},
-			{"type":"artifactRef","props":{"kind":"claim","targetId":"c-9","label":"AGI by 2030"}}
+			{"type":"artifactRef","props":{"kind":"shard","targetId":"art_9","label":"Dashboard"}}
 		],"children":[
 			{"id":"b2","type":"paragraph","content":[
 				{"type":"artifactRef","props":{"kind":"page","targetId":"art_7","label":"Roadmap"}}
@@ -19,6 +19,7 @@ func TestExtractInlineRefs(t *testing.T) {
 		{"id":"b3","type":"paragraph","content":[
 			{"type":"entityMention","props":{"entityId":"e-1","label":"OpenAI"}},
 			{"type":"artifactRef","props":{"kind":"bogus","targetId":"x","label":"nope"}},
+			{"type":"artifactRef","props":{"kind":"claim","targetId":"c-9","label":"retired kind"}},
 			{"type":"artifactRef","props":{"kind":"shard","targetId":"","label":"empty"}}
 		]},
 		{"id":"b4","type":"table","content":{"type":"tableContent","rows":[]}}
@@ -37,22 +38,26 @@ func TestExtractInlineRefs(t *testing.T) {
 		t.Fatalf("mention[0] = %+v", mentions[0])
 	}
 
-	// claim (b1), page (b2, nested child) — bogus-kind and empty-target dropped.
+	// shard (b1), page (b2, nested child) — bogus-kind and empty-target dropped. A retired
+	// kind (the removed claim layer) is dropped by the same whitelist as "bogus".
 	if len(refs) != 2 {
-		t.Fatalf("refs = %+v (want 2: claim + nested page)", refs)
+		t.Fatalf("refs = %+v (want 2: shard + nested page)", refs)
 	}
 	byKind := map[string]ArtifactReference{}
 	for _, r := range refs {
 		byKind[r.Kind] = r
 	}
-	if byKind["claim"].TargetID != "c-9" || byKind["claim"].BlockID != "b1" {
-		t.Fatalf("claim ref = %+v", byKind["claim"])
+	if byKind["shard"].TargetID != "art_9" || byKind["shard"].BlockID != "b1" {
+		t.Fatalf("shard ref = %+v", byKind["shard"])
 	}
 	if byKind["page"].TargetID != "art_7" || byKind["page"].BlockID != "b2" {
 		t.Fatalf("page ref (nested child) = %+v", byKind["page"])
 	}
 	if _, bad := byKind["bogus"]; bad {
 		t.Fatalf("bogus kind should be dropped: %+v", refs)
+	}
+	if _, retired := byKind["claim"]; retired {
+		t.Fatalf("the retired claim kind should be dropped: %+v", refs)
 	}
 }
 

@@ -1,6 +1,13 @@
 import type { StateCreator } from "zustand";
 import type { VoiceCaptureDraft } from "@/shared/api/models";
-import { initialWorkspaceShellState, type RenameDraft, type WorkspaceShellState } from "@/modules/workspace/domain";
+import {
+  initialWorkspaceShellState,
+  tabKey,
+  type RenameDraft,
+  type ResearchView,
+  type WorkspaceShellState,
+  type WorkTab,
+} from "@/modules/workspace/domain";
 
 export interface WorkspaceSlice {
   workspace: WorkspaceShellState;
@@ -11,8 +18,10 @@ export interface WorkspaceSlice {
   openTicker: (symbol: string) => void;
   closeTicker: () => void;
   openArtifact: (artifactId: string) => void;
-  activateArtifact: (artifactId: string) => void;
-  closeArtifact: (artifactId: string) => void;
+  /** Opens (or re-activates) a research view tab — §11's contextId arm of the union. */
+  openResearchTab: (contextId: string, view: ResearchView) => void;
+  activateTab: (key: string) => void;
+  closeTab: (key: string) => void;
   toggleInspector: (artifactId: string) => void;
   toggleFolder: (folderId: string) => void;
   expandFolders: (folderIds: string[]) => void;
@@ -26,6 +35,26 @@ export interface WorkspaceSlice {
   closeVoiceDraft: () => void;
 }
 
+/**
+ * Appends a tab if it isn't open yet and activates it. §12: order is STABLE — a tab
+ * already open keeps its position rather than jumping to the end, because MRU re-sorting
+ * moves every other target in the row.
+ */
+function openTab(tab: WorkTab, set: (fn: (state: any) => any) => void) {
+  const key = tabKey(tab);
+  set((state: any) => {
+    const exists = state.workspace.openTabs.some((t: WorkTab) => tabKey(t) === key);
+    return {
+      workspace: {
+        ...state.workspace,
+        activeTabKey: key,
+        focusedFolderId: null,
+        openTabs: exists ? state.workspace.openTabs : [...state.workspace.openTabs, tab],
+      },
+    };
+  });
+}
+
 export const createWorkspaceSlice: StateCreator<WorkspaceSlice, [], [], WorkspaceSlice> = (set) => ({
   workspace: initialWorkspaceShellState,
   commandPaletteOpen: false,
@@ -33,38 +62,28 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice, [], [], Workspac
   openTickerSymbol: null,
   openTicker: (symbol) => set({ openTickerSymbol: symbol }),
   closeTicker: () => set({ openTickerSymbol: null }),
-  openArtifact: (artifactId) =>
-    set((state) => {
-      const openArtifactIds = state.workspace.openArtifactIds.includes(artifactId)
-        ? state.workspace.openArtifactIds
-        : [...state.workspace.openArtifactIds, artifactId];
-      return {
-        workspace: {
-          ...state.workspace,
-          activeArtifactId: artifactId,
-          focusedFolderId: null,
-          openArtifactIds,
-        },
-      };
-    }),
-  activateArtifact: (artifactId) =>
+  openArtifact: (artifactId) => openTab({ kind: "artifact", artifactId }, set),
+  openResearchTab: (contextId, view) => openTab({ kind: "research", contextId, view }, set),
+  activateTab: (key) =>
     set((state) => ({
       workspace: {
         ...state.workspace,
-        activeArtifactId: artifactId,
+        activeTabKey: key,
       },
     })),
-  closeArtifact: (artifactId) =>
+  closeTab: (key) =>
     set((state) => {
-      const openArtifactIds = state.workspace.openArtifactIds.filter((id) => id !== artifactId);
+      const openTabs = state.workspace.openTabs.filter((tab) => tabKey(tab) !== key);
       return {
         workspace: {
           ...state.workspace,
-          openArtifactIds,
-          activeArtifactId:
-            state.workspace.activeArtifactId === artifactId
-              ? openArtifactIds.at(-1) ?? null
-              : state.workspace.activeArtifactId,
+          openTabs,
+          activeTabKey:
+            state.workspace.activeTabKey === key
+              ? openTabs.length
+                ? tabKey(openTabs[openTabs.length - 1])
+                : null
+              : state.workspace.activeTabKey,
         },
       };
     }),

@@ -165,17 +165,26 @@ func (r *PostgresArtifactRepository) LightNode(ctx context.Context, id string) (
 		title        *string
 		aType        *string
 		sourceURL    *string
-		summary      *string // lightEntitySelect columns 8–9; unused here but must be scanned
+		summary      *string // projected but unused here; must still be scanned
 		metadata     []byte
+		runState     *string // research extension columns; unused here but must be scanned
+		execMode     *string
+		sourceKind   *string
 		seq          int64
 		isDeleted    bool
 	)
-	// lightEntitySelect projects 11 columns (…, source_url, summary, metadata, seq, is_deleted);
-	// scan them all — omitting summary/metadata is a "got 11 and 9" scan mismatch.
+	// lightEntitySelect projects 14 columns (…, source_url, summary, metadata,
+	// run_state, exec_mode, source_kind, seq, is_deleted); scan them ALL. Dropping any
+	// is a pgx "number of field descriptions must equal number of destinations" panic at
+	// runtime, not a compile error — TestLightNodeScansAllColumns is the guard.
 	err = r.pool.QueryRow(ctx, lightEntitySelect+` AND n.id = $2`, userID, id).
-		Scan(&nodeID, &kind, &parentID, &position, &title, &aType, &sourceURL, &summary, &metadata, &seq, &isDeleted)
+		Scan(&nodeID, &kind, &parentID, &position, &title, &aType, &sourceURL, &summary, &metadata,
+			&runState, &execMode, &sourceKind, &seq, &isDeleted)
 	_ = summary
 	_ = metadata
+	_ = runState
+	_ = execMode
+	_ = sourceKind
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return artifactservice.BrowserNodeResponse{}, artifactservice.ErrNotFound
@@ -923,6 +932,33 @@ func (r *PostgresArtifactRepository) GetFolder(ctx context.Context, id string) (
 		  FROM tree_nodes
 		 WHERE id = $1 AND user_id = $2::uuid
 		   AND kind = 'folder'
+		   AND is_deleted = false
+	`, id, userID).Scan(&node.ID, &node.ParentID, &node.Title)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return artifactservice.FolderNode{}, artifactservice.ErrNotFound
+	}
+	if err != nil {
+		return artifactservice.FolderNode{}, err
+	}
+	return node, nil
+}
+
+// GetContainer resolves a node that can CONTAIN other nodes — a plain folder or a
+// research folder (RESEARCH_SURFACE_PRD §21: research artifacts live in the research
+// folder via the existing capture surface). Use this for parent/destination validation;
+// use GetFolder only where plain-folder semantics are actually required (the folder
+// read/rename API), so a research node can't be renamed through the folder endpoints.
+func (r *PostgresArtifactRepository) GetContainer(ctx context.Context, id string) (artifactservice.FolderNode, error) {
+	userID, err := r.userID(ctx)
+	if err != nil {
+		return artifactservice.FolderNode{}, err
+	}
+	var node artifactservice.FolderNode
+	err = r.pool.QueryRow(ctx, `
+		SELECT id, parent_id, title
+		  FROM tree_nodes
+		 WHERE id = $1 AND user_id = $2::uuid
+		   AND kind IN ('folder', 'research')
 		   AND is_deleted = false
 	`, id, userID).Scan(&node.ID, &node.ParentID, &node.Title)
 	if errors.Is(err, pgx.ErrNoRows) {

@@ -6,27 +6,26 @@ import (
 	"strings"
 )
 
-// Reference target kinds for the `#` picker. Claims are the engine-reasoned thesis layer;
+// Reference target kinds for the `#` picker.
 // pages and shards are navigational artifact links (artifacts.type 'page' / 'app').
 const (
-	RefKindClaim = "claim"
 	RefKindPage  = "page"
 	RefKindShard = "shard"
 )
 
-// RefHit is one typeahead match for the `#` reference picker (a claim, page, or shard).
+// RefHit is one typeahead match for the `#` reference picker (a page or shard).
 // The picker sections results by Kind.
 type RefHit struct {
-	Kind   string `json:"kind"`             // claim | page | shard
-	ID     string `json:"id"`               // claim uuid or artifact id
-	Label  string `json:"label"`            // claim canonical_text or artifact title
+	Kind   string `json:"kind"`             // page | shard
+	ID     string `json:"id"`               // artifact id
+	Label  string `json:"label"`            // artifact title
 	Detail string `json:"detail,omitempty"` // claim polarity, or "" for artifacts
 }
 
 // ArtifactRef is one projected `#` reference occurrence in a page: the target referenced,
 // the block it sits in, and the literal label shown in the chip.
 type ArtifactRef struct {
-	Kind     string `json:"kind"` // claim | page | shard
+	Kind     string `json:"kind"` // page | shard
 	TargetID string `json:"targetId"`
 	BlockID  string `json:"blockId"`
 	Surface  string `json:"surface"`
@@ -42,11 +41,11 @@ type AttachedRef struct {
 
 var ErrInvalidArtifactRef = errors.New("invalid artifact ref request")
 
-// ArtifactRefService backs the `#` cross-reference picker: unified search across claims +
+// ArtifactRefService backs the `#` cross-reference picker: search across
 // artifacts, and the reconcile of a page's projected refs.
 type ArtifactRefService interface {
-	// Search returns up to perKind matches for each target kind (claims, pages, shards),
-	// concatenated. ownerUserID scopes tenant claims + the user's artifacts.
+	// Search returns up to perKind matches for each target kind (pages, shards),
+	// concatenated. ownerUserID scopes the user's artifacts.
 	Search(ctx context.Context, ownerUserID, query string, perKind int) ([]RefHit, error)
 	// SyncRefs reconciles the projected `#` refs for a page: the given set replaces all
 	// existing origin='reference' rows for that artifact.
@@ -56,7 +55,6 @@ type ArtifactRefService interface {
 }
 
 type ArtifactRefRepository interface {
-	SearchClaims(ctx context.Context, ownerUserID, query string, limit int) ([]RefHit, error)
 	SearchArtifacts(ctx context.Context, ownerUserID, query string, limit int) ([]RefHit, error)
 	ReplaceRefs(ctx context.Context, artifactID string, refs []ArtifactRef) error
 	ListForArtifact(ctx context.Context, artifactID string) ([]AttachedRef, error)
@@ -64,7 +62,7 @@ type ArtifactRefRepository interface {
 
 const artifactRefSearchMaxPerKind = 8
 
-var validRefKinds = map[string]bool{RefKindClaim: true, RefKindPage: true, RefKindShard: true}
+var validRefKinds = map[string]bool{RefKindPage: true, RefKindShard: true}
 
 type DefaultArtifactRefService struct {
 	repo ArtifactRefRepository
@@ -82,10 +80,7 @@ func (s *DefaultArtifactRefService) Search(ctx context.Context, ownerUserID, que
 	if perKind <= 0 || perKind > artifactRefSearchMaxPerKind {
 		perKind = artifactRefSearchMaxPerKind
 	}
-	// Claims are deliberately NOT searched for now (claim layer deprioritized with the
-	// trading pivot, 2026-07-16) — the picker offers pages + shards only. Existing claim
-	// refs in documents still render and project (SyncRefs/ListForArtifact accept them).
-	// To revive: re-add the repo.SearchClaims call here, claims-first.
+	// The claim layer was removed, so the picker offers pages + shards only.
 	return s.repo.SearchArtifacts(ctx, ownerUserID, query, perKind)
 }
 

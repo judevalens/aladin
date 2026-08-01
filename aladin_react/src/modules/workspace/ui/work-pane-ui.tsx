@@ -1,4 +1,4 @@
-import { LineChart, Search, SlidersHorizontal, Star } from "lucide-react";
+import { FlaskConical, LineChart, Search, SlidersHorizontal, Star } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { PlaceholderPane } from "@/components/ui/aladin";
@@ -6,18 +6,21 @@ import { FileArtifactUI, LinkArtifactUI, VoiceArtifactUI } from "@/modules/artif
 import { PageEditorUI } from "@/modules/pages/ui/page-editor-ui";
 import { DocSurfaceKeepAlive } from "@/modules/doc-surface/ui/doc-surface-ui";
 import { GraphSidePaneUI } from "@/modules/graph/ui/graph-side-pane-ui";
+import { ResearchPaneUI } from "@/modules/research/ui/research-pane-ui";
 import { useWorkPane, type WorkPaneCrumb } from "@/modules/workspace/hooks/use-workspace-state";
 import { cn } from "@/shared/lib/utils";
 
 export function WorkPaneUI() {
   const {
+    tabs,
     openArtifacts,
+    activeTab,
     activeArtifact,
     breadcrumbFolders,
     artifactTitle,
     inspectorOpen,
-    onActivateArtifact,
-    onCloseArtifact,
+    onActivateTab,
+    onCloseTab,
     onToggleInspector,
     onJumpToFolder,
   } = useWorkPane();
@@ -27,26 +30,38 @@ export function WorkPaneUI() {
     <section className="flex min-w-0 flex-1 flex-col overflow-hidden bg-bg">
       <div className="h-10 border-b border-line bg-panel">
         <div className="scrollbar-hidden flex h-full min-w-0 overflow-x-auto overflow-y-hidden">
-          {openArtifacts.map((artifact) => {
-            const active = artifact.id === activeArtifact?.id;
+          {tabs.map((entry, index) => {
+            const active = entry.key === activeTab?.key;
+            const current = entry.tab;
+            const isResearch = current.kind === "research";
+            // §12: ownership reads from a heavier divider at each group's end — no
+            // per-group color, since Aladin has one accent.
+            const nextTab = tabs[index + 1]?.tab;
+            const endsGroup =
+              current.kind === "research" &&
+              (!nextTab || nextTab.kind !== "research" || nextTab.contextId !== current.contextId);
             return (
               <button
-                key={artifact.id}
+                key={entry.key}
                 className={cn(
                   "group relative flex h-full items-center gap-2 border-r px-4 text-[12.5px] transition-colors",
                   active
                     ? "border-line bg-bg font-medium text-ink"
                     : "border-line bg-panel text-ink-3 hover:bg-raise hover:text-ink",
+                  endsGroup && "border-r-2 border-r-line-2",
                 )}
-                onClick={() => onActivateArtifact(artifact.id)}
+                onClick={() => onActivateTab(entry.key)}
                 type="button"
               >
-                <span className="max-w-[200px] truncate">{artifact.title}</span>
+                {isResearch ? (
+                  <FlaskConical className="h-3.5 w-3.5 shrink-0 text-amber" strokeWidth={1.75} />
+                ) : null}
+                <span className="max-w-[200px] truncate">{entry.label}</span>
                 <span
                   className="ml-1 flex h-4 w-4 items-center justify-center rounded text-ink-4 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
                   onClick={(event) => {
                     event.stopPropagation();
-                    onCloseArtifact(artifact.id);
+                    onCloseTab(entry.key);
                   }}
                 >
                   ×
@@ -56,7 +71,7 @@ export function WorkPaneUI() {
           })}
         </div>
       </div>
-      {activeArtifact ? (
+      {activeArtifact && activeTab?.tab.kind === "artifact" ? (
         <WorkPaneStatusBar
           folders={breadcrumbFolders}
           artifactTitle={artifactTitle}
@@ -69,7 +84,9 @@ export function WorkPaneUI() {
       ) : null}
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <div className="min-w-0 flex-1 bg-bg">
-        {!activeArtifact ? (
+        {activeTab?.tab.kind === "research" ? (
+          <ResearchPaneUI contextId={activeTab.tab.contextId} view={activeTab.tab.view} />
+        ) : !activeArtifact ? (
           <PlaceholderPane
             title="Open a page"
             body="Choose a note, link, voice note, or file from the browser to continue."

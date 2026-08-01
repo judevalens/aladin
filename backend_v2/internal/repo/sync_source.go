@@ -31,27 +31,49 @@ type rowQuerier interface {
 // lightNodeData is the JSON `data` payload of an upsert frame entity — the light
 // fields a tree/list view needs. Folder rows omit type/sourceUrl.
 type lightNodeData struct {
-	ID        string          `json:"id"`
-	Kind      string          `json:"kind"`
-	ParentID  *string         `json:"parentId"`
-	Position  int64           `json:"position"`
-	Title     *string         `json:"title"`
-	Type      *string         `json:"type,omitempty"`
-	SourceURL *string         `json:"sourceUrl,omitempty"`
-	Summary   *string         `json:"summary,omitempty"`
-	Metadata  json.RawMessage `json:"metadata,omitempty"`
+	ID        string             `json:"id"`
+	Kind      string             `json:"kind"`
+	ParentID  *string            `json:"parentId"`
+	Position  int64              `json:"position"`
+	Title     *string            `json:"title"`
+	Type      *string            `json:"type,omitempty"`
+	SourceURL *string            `json:"sourceUrl,omitempty"`
+	Summary   *string            `json:"summary,omitempty"`
+	Metadata  json.RawMessage    `json:"metadata,omitempty"`
+	Research  *lightResearchData `json:"research,omitempty"`
 }
 
-// lightEntitySelect projects a tree_nodes row (joined to its artifact, if any)
-// to the light columns. $1 = user_id. Callers append a row filter (` AND n.id =
-// $2`) or an ordering. It deliberately does NOT filter is_deleted — tombstones
-// must flow to the snapshot; tombstone-hiding belongs to the read queries.
+// lightResearchData is the research folder's extension row, projected to the LIGHT
+// fields only — what a tree row or tab chip renders (§12's run dot, §8's batch mark).
+// Set on research nodes, absent on every other kind, so folder/artifact payloads are
+// byte-identical to before.
+//
+// Deliberately NOT carried: hypothesis, manifest, universe, code_hash. Those are the
+// heavy bodies this file's doctrine says are fetched on demand, never relayed — the
+// Overview reads them when you open it, and keeping them off the frame is what stops a
+// manifest edit from re-broadcasting to every tree row.
+type lightResearchData struct {
+	RunState   string `json:"runState"`
+	ExecMode   string `json:"execMode"`
+	SourceKind string `json:"sourceKind"`
+}
+
+// lightEntitySelect projects a tree_nodes row (joined to its artifact, or to its
+// research extension) to the light columns. $1 = user_id. Callers append a row filter
+// (` AND n.id = $2`) or an ordering. It deliberately does NOT filter is_deleted —
+// tombstones must flow to the snapshot; tombstone-hiding belongs to the read queries.
+//
+// Research nodes carry the folder shape (their own title, no artifact), so the title
+// CASE treats them like folders.
 const lightEntitySelect = `
 	SELECT n.id, n.kind, n.parent_id, n.position,
-	       CASE WHEN n.kind = 'folder' THEN n.title ELSE a.title END AS title,
-	       a.type, a.source_url, a.summary, a.metadata, n.seq, n.is_deleted
+	       CASE WHEN n.kind IN ('folder', 'research') THEN n.title ELSE a.title END AS title,
+	       a.type, a.source_url, a.summary, a.metadata,
+	       rs.run_state, rs.exec_mode, rs.source_kind,
+	       n.seq, n.is_deleted
 	  FROM tree_nodes n
 	  LEFT JOIN artifacts a ON a.id = n.artifact_id AND a.user_id = n.user_id
+	  LEFT JOIN research_strategies rs ON rs.node_id = n.id AND rs.user_id = n.user_id
 	 WHERE n.user_id = $1::uuid`
 
 // scanLightEntity maps one projected row to a FrameEntity. A tombstoned row
@@ -59,18 +81,22 @@ const lightEntitySelect = `
 // its light data.
 func scanLightEntity(row scanner) (service.FrameEntity, error) {
 	var (
-		id, kind  string
-		parentID  *string
-		position  int64
-		title     *string
-		aType     *string
-		sourceURL *string
-		summary   *string
-		metadata  []byte
-		seq       int64
-		isDeleted bool
+		id, kind   string
+		parentID   *string
+		position   int64
+		title      *string
+		aType      *string
+		sourceURL  *string
+		summary    *string
+		metadata   []byte
+		runState   *string
+		execMode   *string
+		sourceKind *string
+		seq        int64
+		isDeleted  bool
 	)
-	if err := row.Scan(&id, &kind, &parentID, &position, &title, &aType, &sourceURL, &summary, &metadata, &seq, &isDeleted); err != nil {
+	if err := row.Scan(&id, &kind, &parentID, &position, &title, &aType, &sourceURL, &summary, &metadata,
+		&runState, &execMode, &sourceKind, &seq, &isDeleted); err != nil {
 		return service.FrameEntity{}, err
 	}
 	ent := service.FrameEntity{EntityKind: kind, EntityID: id, Seq: uint64(seq)}
@@ -79,16 +105,33 @@ func scanLightEntity(row scanner) (service.FrameEntity, error) {
 		return ent, nil
 	}
 	ent.Op = service.OpUpsert
+	// The extension row is 1:1 and created with the node, so a research node always has
+	// one. Guard anyway: a research node whose extension is somehow missing should still
+	// sync as a tree row rather than fail the whole frame.
+	var research *lightResearchData
+	if kind == "research" && runState != nil {
+		research = &lightResearchData{RunState: *runState, ExecMode: derefOr(execMode, "event"), SourceKind: derefOr(sourceKind, "authored")}
+	}
 	data, err := json.Marshal(lightNodeData{
 		ID: id, Kind: kind, ParentID: parentID, Position: position,
 		Title: title, Type: aType, SourceURL: sourceURL,
 		Summary: summary, Metadata: json.RawMessage(metadata),
+		Research: research,
 	})
 	if err != nil {
 		return service.FrameEntity{}, err
 	}
 	ent.Data = data
 	return ent, nil
+}
+
+// derefOr reads a nullable projected column, falling back to the column's schema
+// default when the row is absent (the sparse-extension guard above).
+func derefOr(s *string, fallback string) string {
+	if s == nil {
+		return fallback
+	}
+	return *s
 }
 
 // lightEntityByID reads one node's current light projection (used by producers

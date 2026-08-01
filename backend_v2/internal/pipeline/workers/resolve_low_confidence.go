@@ -23,9 +23,9 @@ type EntityResolver interface {
 // record.enrichment.low_confidence_entities surface it web-searches for context, then runs
 // the resolver with that context as a hint — so a niche/ambiguous name either resolves to an
 // existing canonical entity (a confident or proposed match) or is created with real grounding,
-// instead of sitting inert. Sequenced in the entity→claims chain (after resolve_entities, before
-// resolve_claims) so claims ground on the COMPLETE entity set — a record can't advance to claims
-// until its low-confidence entities are resolved too.
+// instead of sitting inert. Sequenced in the entity chain (after resolve_entities) so the record
+// advances on a COMPLETE entity set — it can't move on until its low-confidence entities are
+// resolved too.
 type ResolveLowConfidenceWorker struct {
 	records  db.RecordRepository
 	resolver EntityResolver

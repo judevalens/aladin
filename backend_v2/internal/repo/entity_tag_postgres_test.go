@@ -103,7 +103,7 @@ func TestEntityTag_SearchAttachDetach(t *testing.T) {
 		t.Fatalf("grounding refs = %+v", refs)
 	}
 
-	// It surfaces in the graph pane as a tag-origin entity (no claims needed).
+	// It surfaces in the graph pane as a tag-origin entity.
 	pane, err := NewGraphPanePostgres(pool).ForArtifact(ctx, artID)
 	if err != nil {
 		t.Fatalf("ForArtifact: %v", err)

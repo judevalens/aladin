@@ -14,7 +14,7 @@ func (s *Server) registerArtifactRefRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/artifacts/{id}/refs", s.handleArtifactRefsSync)
 }
 
-// GET /api/refs/search?q=…&limit=… — unified typeahead for the `#` picker: claims + pages +
+// GET /api/refs/search?q=…&limit=… — typeahead for the `#` picker: pages +
 // shards, sectioned by kind on the client. limit is per-kind.
 func (s *Server) handleRefSearch(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")

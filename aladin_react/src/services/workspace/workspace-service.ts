@@ -31,8 +31,16 @@ export class WorkspaceService {
     return this.workspaceRepo.createFolder(input);
   }
 
+  async createResearch(input: { parentId?: string | null; title: string; hypothesis?: string }) {
+    return this.workspaceRepo.createResearch(input);
+  }
+
   async renameFolder(folderId: string, title: string) {
     return this.workspaceRepo.renameFolder(folderId, title);
+  }
+
+  async renameResearch(nodeId: string, title: string) {
+    return this.workspaceRepo.renameResearch(nodeId, title);
   }
 
   refreshTree() {

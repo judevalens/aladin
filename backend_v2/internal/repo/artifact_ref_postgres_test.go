@@ -10,9 +10,9 @@ import (
 	"github.com/google/uuid"
 )
 
-// TestArtifactRef_SearchAndReconcile covers the Y2 `#` cross-reference path: unified search
-// across claims + artifacts (pages/shards), then the reconcile of a page's projected refs
-// (set replaces prior, labels resolved on list).
+// TestArtifactRef_SearchAndReconcile covers the Y2 `#` cross-reference path: search across
+// artifacts (pages/shards), then the reconcile of a page's projected refs (set replaces
+// prior, labels resolved on list).
 func TestArtifactRef_SearchAndReconcile(t *testing.T) {
 	ctx := context.Background()
 	ctxTO, cancel := context.WithTimeout(ctx, 20*time.Second)
@@ -22,10 +22,9 @@ func TestArtifactRef_SearchAndReconcile(t *testing.T) {
 
 	tag := uuid.NewString()[:8]
 	userID := uuid.NewString()
-	pageID := "ref-page-" + uuid.NewString()   // the page holding the refs
+	pageID := "ref-page-" + uuid.NewString()    // the page holding the refs
 	targetPage := "ref-tgt-" + uuid.NewString() // a page it references
 	targetShard := "ref-shd-" + uuid.NewString()
-	var claimID string
 	ctx = adminContext(userID) // ReplaceRefs now emits a node frame → need a principal
 
 	if _, err := pool.Exec(ctx, `INSERT INTO users (id, email, created_at) VALUES ($1::uuid, $2, now())`,
@@ -47,34 +46,16 @@ func TestArtifactRef_SearchAndReconcile(t *testing.T) {
 	`, pageID, userID); err != nil {
 		t.Fatalf("seed node: %v", err)
 	}
-	// A tenant thesis claim to reference.
-	if err := pool.QueryRow(ctx, `
-		INSERT INTO claims (scope, owner_user_id, canonical_text, polarity, trust_tier)
-		VALUES ('tenant', $1::uuid, 'Reftarget thesis '||$2||' will win', 'assert', 'verified')
-		RETURNING id::text
-	`, userID, tag).Scan(&claimID); err != nil {
-		t.Fatalf("seed claim: %v", err)
-	}
-
 	t.Cleanup(func() {
 		bg := context.Background()
 		_, _ = pool.Exec(bg, `DELETE FROM artifact_refs WHERE artifact_id = $1`, pageID)
 		_, _ = pool.Exec(bg, `DELETE FROM artifacts WHERE id IN ($1,$2,$3)`, pageID, targetPage, targetShard)
-		_, _ = pool.Exec(bg, `DELETE FROM claims WHERE id = $1::uuid`, claimID)
 		_, _ = pool.Exec(bg, `DELETE FROM users WHERE id = $1::uuid`, userID)
 	})
 
 	refRepo := NewArtifactRefPostgres(pool)
 
-	// Unified search: the claim surfaces as kind='claim' (with polarity), the page/shard as
-	// kind 'page'/'shard'.
-	claimHits, err := refRepo.SearchClaims(ctx, userID, "Reftarget thesis "+tag, 8)
-	if err != nil {
-		t.Fatalf("search claims: %v", err)
-	}
-	if len(claimHits) != 1 || claimHits[0].ID != claimID || claimHits[0].Kind != coreservice.RefKindClaim || claimHits[0].Detail != "assert" {
-		t.Fatalf("claim hits = %+v", claimHits)
-	}
+	// Search surfaces the page/shard as kind 'page'/'shard'.
 	artHits, err := refRepo.SearchArtifacts(ctx, userID, "Reftarget", 8)
 	if err != nil {
 		t.Fatalf("search artifacts: %v", err)
@@ -96,10 +77,10 @@ func TestArtifactRef_SearchAndReconcile(t *testing.T) {
 		t.Fatalf("expected no cross-tenant artifact hits, got %+v", otherHits)
 	}
 
-	// First projection: reference the claim + the target page.
+	// First projection: reference the target page + shard.
 	if err := refRepo.ReplaceRefs(ctx, pageID, []coreservice.ArtifactRef{
-		{Kind: coreservice.RefKindClaim, TargetID: claimID, BlockID: "b1", Surface: "thesis"},
 		{Kind: coreservice.RefKindPage, TargetID: targetPage, BlockID: "b2", Surface: "note"},
+		{Kind: coreservice.RefKindShard, TargetID: targetShard, BlockID: "b1", Surface: "shard"},
 	}); err != nil {
 		t.Fatalf("replace refs: %v", err)
 	}
@@ -115,11 +96,11 @@ func TestArtifactRef_SearchAndReconcile(t *testing.T) {
 		byKind[r.Kind] = r
 	}
 	// Labels resolve from the live target, not the stored surface.
-	if got := byKind[coreservice.RefKindClaim].Label; got != "Reftarget thesis "+tag+" will win" {
-		t.Fatalf("claim ref label = %q", got)
-	}
 	if got := byKind[coreservice.RefKindPage].Label; got != "Reftarget note "+tag {
 		t.Fatalf("page ref label = %q", got)
+	}
+	if got := byKind[coreservice.RefKindShard].Label; got != "Reftarget shard "+tag {
+		t.Fatalf("shard ref label = %q", got)
 	}
 
 	// Re-sync with only the shard ref: prior refs drop, the shard is added.

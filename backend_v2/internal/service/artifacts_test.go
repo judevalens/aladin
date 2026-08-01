@@ -418,6 +418,10 @@ func (f *fakeArtifactRepository) UpdateFolderTitle(context.Context, string, stri
 func (f *fakeArtifactRepository) GetFolder(context.Context, string) (FolderNode, error) {
 	return FolderNode{}, ErrNotFound
 }
+
+func (f *fakeArtifactRepository) GetContainer(context.Context, string) (FolderNode, error) {
+	return FolderNode{}, ErrNotFound
+}
 func (f *fakeArtifactRepository) FolderBreadcrumbs(context.Context, string) ([]BreadcrumbItem, error) {
 	return nil, nil
 }

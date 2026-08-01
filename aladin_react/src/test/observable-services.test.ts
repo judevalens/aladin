@@ -58,7 +58,9 @@ describe("observable services", () => {
       getBrowserTree: vi.fn(),
       getLocalNodeTree: vi.fn(),
       createFolder: vi.fn(),
+    createResearch: vi.fn(),
       renameFolder: vi.fn(),
+    renameResearch: vi.fn(),
       createArtifact: vi.fn(),
     };
     const artifactRepo: ArtifactRepo = {

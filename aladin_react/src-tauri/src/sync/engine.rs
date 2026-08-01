@@ -4,7 +4,7 @@ use std::sync::Arc;
 use rusqlite::Connection;
 
 use crate::api::sync::{Frame, FrameEntity};
-use crate::db::repo::{nodes, signals, watchlists};
+use crate::db::repo::{nodes, watchlists};
 use crate::db::DbResult;
 use crate::events::DataEvent;
 
@@ -25,7 +25,7 @@ pub trait EntityHandler: Send + Sync {
     fn apply(&self, conn: &Connection, entity: &FrameEntity) -> DbResult<Option<DataEvent>>;
 }
 
-/// The tree handler: folder + artifact entities both live in `nodes`.
+/// The tree handler: folder, artifact, and research entities all live in `nodes`.
 struct TreeHandler;
 
 impl EntityHandler for TreeHandler {
@@ -33,21 +33,6 @@ impl EntityHandler for TreeHandler {
         nodes::apply(
             conn,
             &entity.entity_kind,
-            &entity.entity_id,
-            entity.seq as i64,
-            &entity.op,
-            entity.data.as_ref(),
-        )
-    }
-}
-
-/// The signal handler: claim entities ("signal" kind) live in `signals`.
-struct SignalHandler;
-
-impl EntityHandler for SignalHandler {
-    fn apply(&self, conn: &Connection, entity: &FrameEntity) -> DbResult<Option<DataEvent>> {
-        signals::apply(
-            conn,
             &entity.entity_id,
             entity.seq as i64,
             &entity.op,
@@ -77,14 +62,19 @@ pub struct Registry {
 }
 
 impl Registry {
-    /// The registry: the tree kind (folder + artifact → `nodes`) and the signal
-    /// kind (claims → `signals`).
+    /// The registry: the tree kinds (folder + artifact + research → `nodes`) and
+    /// the watchlist kind (→ `watchlists`).
+    ///
+    /// A research folder (RESEARCH_SURFACE_PRD §5) is a THIRD tree kind, not a new
+    /// synced entity: its frames carry the same light node shape plus a `research`
+    /// sub-object, so it routes to the same handler and the same local table. That is
+    /// what §11's "one tree implementation" buys.
     pub fn tree() -> Self {
         let tree: Arc<dyn EntityHandler> = Arc::new(TreeHandler);
         let mut handlers: HashMap<String, Arc<dyn EntityHandler>> = HashMap::new();
         handlers.insert("folder".to_string(), tree.clone());
-        handlers.insert("artifact".to_string(), tree);
-        handlers.insert("signal".to_string(), Arc::new(SignalHandler));
+        handlers.insert("artifact".to_string(), tree.clone());
+        handlers.insert("research".to_string(), tree);
         handlers.insert("watchlist".to_string(), Arc::new(WatchlistHandler));
         Self { handlers }
     }

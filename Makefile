@@ -118,7 +118,7 @@ api-go: ## Run the Go backend API
 ops-backfill-entities: ## Resolve entities for all enriched records into the entity layer
 	eval "$$(python3 scripts/ops/read_env_keys.py --env backend_v2/.env)" && cd backend_v2 && go run ./cmd/backfill-entities
 
-ops-backfill-graph: ## Project the entity + claim layer into Neo4j (the connection lens). Needs NEO4J_URI.
+ops-backfill-graph: ## Project the entity layer into Neo4j (the connection lens). Needs NEO4J_URI.
 	eval "$$(python3 scripts/ops/read_env_keys.py --env backend_v2/.env)" && cd backend_v2 && go run ./cmd/backfill-graph
 
 ops-backfill-instruments: ## Pull the Alpaca Assets universe into the instruments registry (T1). Needs ALPACA_API_KEY/SECRET.
@@ -130,8 +130,6 @@ ops-backfill-bars: ## Pull historical daily bars from Alpaca into the bars store
 ops-backfill-corporate-actions: ## Pull splits/dividends from Alpaca into corporate_actions (adjust-on-read). Needs ALPACA_API_KEY/SECRET.
 	eval "$$(python3 scripts/ops/read_env_keys.py --env backend_v2/.env)" && cd backend_v2 && go run ./cmd/backfill-corporate-actions
 
-ops-backfill-signals: ## Re-emit durable signal frames for all existing claims to their subscribers (Signals sync backfill).
-	eval "$$(python3 scripts/ops/read_env_keys.py --env backend_v2/.env)" && cd backend_v2 && go run ./cmd/backfill-signals
 
 
 ops-status: ## Show local ops dashboard

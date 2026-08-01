@@ -16,8 +16,8 @@ func (s *Server) registerGraphRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/graph/entity/{id}/neighbors", s.handleGraphEntityNeighbors)
 }
 
-// handleGraphEntityNeighbors returns an entity's local graph: related entities, claims about it,
-// and the divergences among those claims. 503 when Neo4j isn't configured (GraphReader is nil).
+// handleGraphEntityNeighbors returns an entity's local graph: the entities it co-occurs
+// with. 503 when Neo4j isn't configured (GraphReader is nil).
 func (s *Server) handleGraphEntityNeighbors(w http.ResponseWriter, r *http.Request) {
 	reader := s.deps.GraphReader()
 	if reader == nil {

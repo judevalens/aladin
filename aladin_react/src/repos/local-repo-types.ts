@@ -45,6 +45,13 @@ export interface NodeRow {
   sourceUrl: string | null;
   summary: string | null;
   metadataJson: string | null;
+  /**
+   * Research folders only — the strategy extension's light fields as JSON, exactly as
+   * the sync frame carried them (RESEARCH_SURFACE_PRD §5). NULL on every other kind.
+   * Heavy strategy facts (hypothesis, manifest, universe, code hash) are fetched on
+   * demand and deliberately never ride the tree frame.
+   */
+  researchJson: string | null;
   updatedAt: number;
 }
 

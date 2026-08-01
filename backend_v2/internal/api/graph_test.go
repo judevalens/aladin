@@ -47,7 +47,6 @@ func TestGraphNeighbors_ReturnsNeighborhood(t *testing.T) {
 	reader := &fakeGraphReader{nb: &graph.Neighborhood{
 		Entity:  graph.NeighborEntity{ID: "ent-1", Name: "Acme", Kind: "org"},
 		Related: []graph.NeighborEntity{{ID: "ent-2", Name: "Globex", Kind: "org", Weight: 3}},
-		Claims:  []graph.NeighborClaim{{ID: "c1", Text: "Acme ships robots", Polarity: "positive"}},
 	}}
 	server := NewWithDependencies(":0", app.StaticDependencies{GraphReaderSvc: reader})
 
@@ -64,7 +63,7 @@ func TestGraphNeighbors_ReturnsNeighborhood(t *testing.T) {
 	if reader.gotLim != 5 {
 		t.Fatalf("limit = %d, want 5", reader.gotLim)
 	}
-	if body := rec.Body.String(); !strings.Contains(body, "Globex") || !strings.Contains(body, "Acme ships robots") {
+	if body := rec.Body.String(); !strings.Contains(body, "Globex") || !strings.Contains(body, "Acme") {
 		t.Fatalf("body missing neighbourhood payload: %s", body)
 	}
 }

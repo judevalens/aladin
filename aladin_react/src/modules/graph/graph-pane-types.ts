@@ -1,34 +1,11 @@
 // "On the graph" pane payload — mirrors GET /api/graph-pane (backend service.GraphPane).
 
-export interface GraphThesis {
-  id: string;
-  text: string;
-  polarity: string;
-  trustTier: string;
-  updatedAt: string;
-}
-
-export interface GraphClaim {
-  id: string;
-  text: string;
-  grounded: boolean;
-  sources: number;
-}
-
-export interface GraphCite {
-  id: string;
-  title: string;
-  sourceUrl: string;
-  provider: string;
-  createdAt: string;
-}
-
 export interface GraphEntity {
   id: string;
   name: string;
   kind: string;
   mentions: number;
-  origin: string; // tag | mention | claim
+  origin: string; // tag | mention
 }
 
 /** A typeahead hit from GET /api/entities/search. */
@@ -61,14 +38,14 @@ export interface MentionRef {
 }
 
 /** Reference target kind for the `#` picker. */
-export type RefKind = "claim" | "page" | "shard";
+export type RefKind = "page" | "shard";
 
-/** A typeahead hit from GET /api/refs/search (claim | page | shard). */
+/** A typeahead hit from GET /api/refs/search (page | shard). */
 export interface RefHit {
   kind: RefKind;
   id: string;
   label: string;
-  detail?: string; // claim polarity; empty for artifacts
+  detail?: string;
 }
 
 /** One projected `#` reference occurrence in a page (PUT …/refs). */
@@ -88,9 +65,6 @@ export interface GraphLinkedArtifact {
 }
 
 export interface GraphPane {
-  thesis: GraphThesis | null;
-  claims: GraphClaim[];
-  cites: GraphCite[];
   entities: GraphEntity[];
   linkedArtifacts: GraphLinkedArtifact[];
 }

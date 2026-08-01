@@ -9,9 +9,10 @@ import (
 )
 
 // TestLightNodeScansAllColumns guards the read-back inside ArtifactService.Create. lightEntitySelect
-// projects 11 columns (…, summary, metadata, seq, is_deleted); LightNode must scan all 11 — omitting
-// summary/metadata triggers pgx's "number of field descriptions must equal number of destinations,
-// got 11 and 9", which failed every copilot/MCP create.
+// projects 14 columns (…, summary, metadata, run_state, exec_mode, source_kind, seq, is_deleted);
+// LightNode must scan them all — omitting any triggers pgx's "number of field descriptions must
+// equal number of destinations", which failed every copilot/MCP create. Widening
+// lightEntitySelect without widening LightNode's scan is the exact regression this catches.
 func TestLightNodeScansAllColumns(t *testing.T) {
 	ctx := context.Background()
 	ctxTO, cancel := context.WithTimeout(ctx, 20*time.Second)

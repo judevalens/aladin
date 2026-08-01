@@ -66,6 +66,7 @@ func NewWithDependencies(addr string, deps app.Dependencies) *Server {
 	s.registerShardRoutes(mux)
 	s.registerRelationshipRoutes(mux)
 	s.registerGraphPaneRoutes(mux)
+	s.registerResearchRoutes(mux)
 	s.registerEntityTagRoutes(mux)
 	s.registerInstrumentRoutes(mux)
 	s.registerSearchRoutes(mux)
@@ -96,8 +97,6 @@ func NewWithDependencies(addr string, deps app.Dependencies) *Server {
 	mux.HandleFunc("POST /api/feed/{id}/save", s.handleFeedSave)
 	mux.HandleFunc("POST /api/feed/{id}/dismiss", s.handleFeedDismiss)
 	mux.HandleFunc("POST /api/feed/{id}/unsave", s.handleFeedUnsave)
-
-	mux.HandleFunc("GET /api/signals", s.handleSignalsList)
 
 	mux.HandleFunc("GET /api/insights/", s.handleInsightsList)
 	mux.HandleFunc("GET /api/insights/stats", s.handleInsightsStats)

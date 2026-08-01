@@ -14,7 +14,7 @@ import (
 )
 
 // EmbedWorker computes a record's vector embedding and marks the record complete — the
-// terminal stage of the record→knowledge chain (runs after entities + claims). It loads
+// terminal stage of the record→knowledge chain (runs after entity resolution). It loads
 // the record, embeds label+summary+content, writes records.embedding, and sets status to
 // 'complete'. Lean style: minimal payload in, writes its layer directly.
 type EmbedWorker struct {
@@ -31,7 +31,7 @@ func (w *EmbedWorker) TaskType() string { return pipeline.TaskEmbed }
 func (w *EmbedWorker) Concurrency() int { return 3 }
 
 func (w *EmbedWorker) Run(ctx context.Context, raw []byte) pipeline.Result {
-	var p pipeline.ResolveClaimsPayload
+	var p pipeline.ResolveEntitiesPayload
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return pipeline.Result{
 			TaskType: pipeline.TaskEmbed,

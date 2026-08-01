@@ -276,7 +276,19 @@ export interface ArtifactPreview {
   updatedLabel?: string | null;
 }
 
-export type BrowserNodeKind = "folder" | "artifact";
+/**
+ * Tree node kinds. `research` is a research folder (RESEARCH_SURFACE_PRD §5) — a
+ * CONTAINER like `folder`, with its own strategy extension. Use isContainerKind()
+ * rather than comparing to "folder" so research participates in expand/drill/move.
+ */
+export type BrowserNodeKind = "folder" | "artifact" | "research";
+
+/** A research folder's light strategy fields, carried on its sync frame (§5). */
+export interface ResearchNodeMeta {
+  runState: string;
+  execMode: string;
+  sourceKind: string;
+}
 
 export interface BrowserTreeNode {
   id: string;
@@ -285,6 +297,8 @@ export interface BrowserTreeNode {
   title: string;
   artifactId?: string | null;
   artifactPreview?: ArtifactPreview | null;
+  /** Set on kind === "research" only. */
+  research?: ResearchNodeMeta | null;
   children: BrowserTreeNode[];
 }
 

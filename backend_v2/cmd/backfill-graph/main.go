@@ -52,15 +52,14 @@ func main() {
 
 	data, err := repo.NewGraphProjectionPostgres(pool).FullGraph(ctx)
 	if err != nil {
-		slog.Error("backfill-graph: read entity/claim layer failed", "err", err)
+		slog.Error("backfill-graph: read entity layer failed", "err", err)
 		os.Exit(1)
 	}
 	if err := projector.Project(ctx, data); err != nil {
 		slog.Error("backfill-graph: project failed", "err", err)
 		os.Exit(1)
 	}
-	slog.Info("backfill-graph: projected entity/claim layer into Neo4j",
-		"entities", len(data.Entities), "claims", len(data.Claims),
-		"about", len(data.About), "claim_edges", len(data.ClaimEdges),
+	slog.Info("backfill-graph: projected entity layer into Neo4j",
+		"entities", len(data.Entities),
 		"merges", len(data.Merges), "related", len(data.Related))
 }

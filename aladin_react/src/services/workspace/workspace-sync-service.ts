@@ -10,6 +10,7 @@ import { KeyedStream } from "@/shared/flow/keyed-stream";
 import { LazyResultStream } from "@/shared/flow/lazy-result-stream";
 import { type Result } from "@/shared/flow/result";
 import type { BrowserNodeRow } from "@/repos/local-repo-types";
+import { isContainerKind } from "@/modules/workspace/domain";
 
 export class WorkspaceSyncService {
   private currentTree: BrowserTreeNode[] | null = null;
@@ -157,7 +158,9 @@ function patchTreeNode(
     const isArtifactTarget =
       node.kind === "artifact" &&
       (current.id === node.id || current.artifactId === (node.artifactId ?? node.id));
-    const isFolderTarget = node.kind === "folder" && current.kind === "folder" && current.id === node.id;
+    // Containers (folder AND research) patch by node id; §5 gives research the same anatomy.
+    const isFolderTarget =
+      isContainerKind(node.kind) && isContainerKind(current.kind) && current.id === node.id;
 
     if (isFolderTarget) {
       return {
@@ -191,7 +194,8 @@ function appendIntoChildren(
 ): BrowserTreeNode[] | null {
   let changed = false;
   const next = tree.map((current) => {
-    if (current.kind === "folder" && current.id === parentId) {
+    // A new child can land in any container — including a research folder (§21).
+    if (isContainerKind(current.kind) && current.id === parentId) {
       changed = true;
       return {
         ...current,

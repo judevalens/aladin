@@ -179,6 +179,7 @@ impl WorkspaceRepo {
                 source_url: existing.as_ref().and_then(|n| n.source_url.clone()),
                 summary: existing.as_ref().and_then(|n| n.summary.clone()),
                 metadata_json: existing.as_ref().and_then(|n| n.metadata_json.clone()),
+                research_json: existing.as_ref().and_then(|n| n.research_json.clone()),
                 updated_at: row.updated_at,
             };
             nodes::upsert_local(tx, &node)?;
@@ -209,6 +210,7 @@ impl WorkspaceRepo {
                     .clone()
                     .or_else(|| existing.as_ref().and_then(|n| n.summary.clone())),
                 metadata_json: row.metadata_json.clone(),
+                research_json: None,
                 updated_at: row.updated_at,
             };
             nodes::upsert_local(tx, &node)?;
@@ -298,6 +300,7 @@ impl WorkspaceRepo {
                 source_url: None,
                 summary: None,
                 metadata_json: None,
+                research_json: None,
                 updated_at: input.updated_at,
             });
         Ok(browser_node_from_node(node))
@@ -568,6 +571,8 @@ fn synth_artifact_row(input: &ArtifactMutationInput) -> ArtifactRow {
         source_url: input.source_url.clone(),
         summary: input.summary.clone(),
         metadata_json: None,
+        // A synthesized ARTIFACT row is never a research node.
+        research_json: None,
         updated_at: input.updated_at,
     };
     artifact_row_from_node(&node)

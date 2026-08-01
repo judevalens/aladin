@@ -2,7 +2,7 @@ use rusqlite::Connection;
 
 use super::DbResult;
 
-const CURRENT_VERSION: i32 = 14;
+const CURRENT_VERSION: i32 = 16;
 
 /// Migrate the local cache schema. ATOMIC: every pending block AND the `user_version` stamp run in
 /// ONE transaction, so a mid-migration failure rolls back cleanly — the version is never advanced
@@ -60,6 +60,12 @@ pub fn migrate(conn: &mut Connection) -> DbResult<()> {
     if version < 14 {
         tx.execute_batch(MIGRATION_V14)?;
     }
+    if version < 15 {
+        tx.execute_batch(MIGRATION_V15)?;
+    }
+    if version < 16 {
+        tx.execute_batch(MIGRATION_V16)?;
+    }
     tx.execute_batch(&format!("PRAGMA user_version = {CURRENT_VERSION};"))?;
     tx.commit()?;
     Ok(())
@@ -98,9 +104,24 @@ mod tests {
     }
 }
 
+// Research bench (RESEARCH_SURFACE_PRD §5): a research folder is a third tree kind on
+// the SAME nodes table, so it needs no table of its own — only somewhere to keep the
+// extension's light fields (run state, exec mode, source kind) that ride its frame.
+// Stored as the raw JSON object the frame carried; the read layer hands it to the UI.
+const MIGRATION_V16: &str = "
+ALTER TABLE nodes ADD COLUMN research_json TEXT;
+";
+
+// Claim layer removed — the "signal" kind is gone from the sync spine, so its local read
+// cache goes with it. V13 is kept as history (never edit an applied migration); a fresh
+// cache creates the table and immediately drops it here, which is harmless.
+const MIGRATION_V15: &str = "
+DROP TABLE IF EXISTS signals;
+";
+
 // Data-layer: watchlists as a synced entity ("watchlist" kind). Aggregate model — ONE row per
 // list, its members carried in items_json ([{instrumentId,symbol,name,position}]); an add/remove
-// re-emits the whole list. seq + is_deleted mirror the nodes/signals guard. A pure read cache fed
+// re-emits the whole list. seq + is_deleted mirror the nodes guard. A pure read cache fed
 // by frames; the server is the only writer.
 const MIGRATION_V14: &str = "
 CREATE TABLE IF NOT EXISTS watchlists (
@@ -115,9 +136,8 @@ CREATE TABLE IF NOT EXISTS watchlists (
 );
 ";
 
-// Data-layer: claims as a synced entity ("signal" kind). A separate read cache
-// from `nodes` (claims aren't tree nodes) fed by the same frame engine. seq +
-// is_deleted mirror the nodes guard; subjects_json holds the [{id,name}] array.
+// Data-layer: claims as a synced entity ("signal" kind). HISTORICAL — the claim layer was
+// removed and V15 drops this table. Kept so the migration chain still replays in order.
 const MIGRATION_V13: &str = "
 CREATE TABLE IF NOT EXISTS signals (
     id            TEXT PRIMARY KEY,
@@ -342,7 +362,7 @@ DROP TABLE IF EXISTS existence_intent;
 const MIGRATION_V10: &str = "
 CREATE TABLE IF NOT EXISTS nodes (
     id            TEXT PRIMARY KEY,
-    kind          TEXT NOT NULL,            -- 'folder' | 'artifact'
+    kind          TEXT NOT NULL,            -- 'folder' | 'artifact' | 'research'
     parent_id     TEXT,                     -- NULL = root
     position      INTEGER NOT NULL DEFAULT 0,
     title         TEXT,

@@ -9,13 +9,13 @@ import {
   findFolderNode,
   nextArtifactTitle,
   nextFolderTitle,
+  nextResearchTitle,
 } from "@/modules/workspace/domain";
 
 export function resolveWorkspaceDestination(pathname: string) {
   if (pathname.startsWith("/markets") || pathname.startsWith("/ticker/")) return "markets";
   if (pathname.startsWith("/folders")) return "folders";
   if (pathname.startsWith("/sources")) return "sources";
-  if (pathname.startsWith("/signals")) return "signals";
   if (pathname.startsWith("/insights")) return "insights";
   // Both the index and the entity detail page (/entity/:id — note: NOT a prefix of
   // "/entities") belong to the Entities destination.
@@ -28,6 +28,13 @@ export function createFolderCommand(tree: BrowserTreeNode[], folderId: string | 
   return {
     parentId: folderId,
     title: nextFolderTitle(tree, folderId),
+  };
+}
+
+export function createResearchCommand(tree: BrowserTreeNode[], folderId: string | null) {
+  return {
+    parentId: folderId,
+    title: nextResearchTitle(tree, folderId),
   };
 }
 

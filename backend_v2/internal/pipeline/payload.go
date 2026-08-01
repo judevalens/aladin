@@ -39,15 +39,6 @@ type ResolveEntitiesPayload struct {
 	SourceRevision int64  `json:"source_revision"`
 }
 
-// ResolveClaimsPayload drives the claim-extraction stage (chained after entity
-// resolution so claims can ground on the record's resolved entities). Same shape as
-// ResolveEntitiesPayload, so the entity stage's payload forwards directly.
-type ResolveClaimsPayload struct {
-	RecordID       string `json:"record_id"`
-	CorrelationID  string `json:"correlation_id"`
-	SourceRevision int64  `json:"source_revision"`
-}
-
 type InsightTrigger struct {
 	KgID            string   `json:"kg_id"`
 	RecordID        string   `json:"record_id"`

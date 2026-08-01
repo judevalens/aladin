@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { initialSessionState } from "@/app/state/session-slice";
 import { useAppStore } from "@/app/state/store";
-import { initialWorkspaceShellState } from "@/modules/workspace/domain";
+import { initialWorkspaceShellState, tabKey } from "@/modules/workspace/domain";
 
 describe("workspace store", () => {
   beforeEach(() => {
@@ -16,24 +16,55 @@ describe("workspace store", () => {
     useAppStore.getState().openArtifact("a1");
 
     const workspace = useAppStore.getState().workspace;
-    expect(workspace.activeArtifactId).toBe("a1");
-    expect(workspace.openArtifactIds).toEqual(["a1"]);
+    expect(workspace.activeTabKey).toBe("a1");
+    expect(workspace.openTabs).toEqual([{ kind: "artifact", artifactId: "a1" }]);
   });
 
-  it("closes the active artifact and promotes the most recent remaining tab", () => {
+  it("closes the active tab and promotes the most recent remaining tab", () => {
     useAppStore.setState({
       workspace: {
         ...initialWorkspaceShellState,
-        activeArtifactId: "a2",
-        openArtifactIds: ["a1", "a2", "a3"],
+        activeTabKey: "a2",
+        openTabs: [
+          { kind: "artifact", artifactId: "a1" },
+          { kind: "artifact", artifactId: "a2" },
+          { kind: "artifact", artifactId: "a3" },
+        ],
       },
     });
 
-    useAppStore.getState().closeArtifact("a2");
+    useAppStore.getState().closeTab("a2");
 
     const workspace = useAppStore.getState().workspace;
-    expect(workspace.openArtifactIds).toEqual(["a1", "a3"]);
-    expect(workspace.activeArtifactId).toBe("a3");
+    expect(workspace.openTabs.map(tabKey)).toEqual(["a1", "a3"]);
+    expect(workspace.activeTabKey).toBe("a3");
+  });
+
+  // §11: research views are tabs on the SAME row, keyed by contextId + view — they are
+  // not artifacts and must not collide with artifact ids.
+  it("opens research views as distinct tabs on one research folder", () => {
+    useAppStore.getState().openResearchTab("research-1", "overview");
+    useAppStore.getState().openResearchTab("research-1", "runs");
+    useAppStore.getState().openResearchTab("research-1", "overview"); // re-activate, no dupe
+
+    const workspace = useAppStore.getState().workspace;
+    expect(workspace.openTabs.map(tabKey)).toEqual([
+      "research:research-1:overview",
+      "research:research-1:runs",
+    ]);
+    // §12: order is stable — re-activating does NOT move the tab to the end.
+    expect(workspace.activeTabKey).toBe("research:research-1:overview");
+  });
+
+  it("closes one research view without touching its siblings", () => {
+    useAppStore.getState().openResearchTab("research-1", "overview");
+    useAppStore.getState().openResearchTab("research-1", "runs");
+
+    useAppStore.getState().closeTab("research:research-1:runs");
+
+    expect(useAppStore.getState().workspace.openTabs.map(tabKey)).toEqual([
+      "research:research-1:overview",
+    ]);
   });
 
   it("toggles inline folder expansion", () => {

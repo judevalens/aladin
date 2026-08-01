@@ -12,7 +12,7 @@ type EntityMention struct {
 	Surface  string
 }
 
-// ArtifactReference is one `#` reference (claim | page | shard) extracted from a page's
+// ArtifactReference is one `#` reference (page | shard) extracted from a page's
 // blocks.
 type ArtifactReference struct {
 	Kind     string
@@ -80,7 +80,7 @@ func ExtractInlineRefs(doc json.RawMessage) ([]EntityMention, []ArtifactReferenc
 					})
 				case "artifactRef":
 					k := ic.Props.Kind
-					if ic.Props.TargetID == "" || (k != "claim" && k != "page" && k != "shard") {
+					if ic.Props.TargetID == "" || (k != "page" && k != "shard") {
 						continue
 					}
 					key := k + "\x00" + ic.Props.TargetID + "\x00" + b.ID

@@ -3,6 +3,7 @@ import type { BrowserTreeNode } from "@/shared/api/models";
 import {
   ancestorFolderIds,
   buildBrowserRows,
+  flattenFolderOptions,
   nextArtifactTitle,
   nextFolderTitle,
 } from "@/modules/workspace/domain";
@@ -75,5 +76,112 @@ describe("browser tree helpers", () => {
   it("increments generated titles inside a folder scope", () => {
     expect(nextFolderTitle(tree, "folder-root")).toBe("New Folder");
     expect(nextArtifactTitle(tree, "folder-root", "note")).toBe("New Note");
+  });
+});
+
+// RESEARCH_SURFACE_PRD §5: a research folder has the anatomy of a folder — it is a
+// CONTAINER. Before the research kind existed, every traversal compared `kind ===
+// "folder"`, so a research node rendered as a leaf and held nothing. These pin the
+// container behaviour so that regression can't come back quietly.
+describe("research folders are containers", () => {
+  const researchTree: BrowserTreeNode[] = [
+    {
+      id: "folder-root",
+      kind: "folder",
+      title: "Ideas",
+      children: [
+        {
+          id: "research-pead",
+          kind: "research",
+          title: "PEAD semis",
+          research: { runState: "idle", execMode: "event", sourceKind: "authored" },
+          children: [
+            {
+              id: "artifact-paper",
+              kind: "artifact",
+              title: "The paper",
+              artifactId: "artifact-paper",
+              artifactPreview: {
+                id: "artifact-paper",
+                title: "The paper",
+                kind: "note",
+                updatedLabel: "today",
+              },
+              children: [],
+            },
+          ],
+        },
+      ],
+    },
+  ];
+
+  it("renders a research node as an expandable row, not a leaf", () => {
+    const collapsed = buildBrowserRows(researchTree, ["folder-root"]);
+    const row = collapsed.find((r) => r.id === "research-pead");
+    expect(row).toBeDefined();
+    expect(row?.kind).toBe("research");
+    // folderId is the handle expand / drill / create-here all key off.
+    expect(row?.folderId).toBe("research-pead");
+    expect(row?.childCount).toBe(1);
+    // Collapsed: the child must not be in the rows.
+    expect(collapsed.some((r) => r.id === "artifact-paper")).toBe(false);
+  });
+
+  it("expands to reveal its children", () => {
+    const expanded = buildBrowserRows(researchTree, ["folder-root", "research-pead"]);
+    const child = expanded.find((r) => r.id === "artifact-paper");
+    expect(child).toBeDefined();
+    expect(child?.depth).toBe(2);
+    expect(child?.ancestorFolderIds).toContain("research-pead");
+  });
+
+  // §11: the structural slots are typed children in the normal tree — expanding a
+  // research folder gives you the notebook sidebar for free.
+  it("expands to reveal its structural slots, above the captured material", () => {
+    const expanded = buildBrowserRows(researchTree, ["folder-root", "research-pead"]);
+    // A container's own row lists itself in ancestorFolderIds, so drop it.
+    const inside = expanded.filter(
+      (r) => r.id !== "research-pead" && r.ancestorFolderIds.includes("research-pead"),
+    );
+
+    expect(inside.map((r) => r.title)).toEqual([
+      "Overview",
+      "Manifest",
+      "Runs",
+      "Code",
+      "The paper",
+    ]);
+    // Slots are derived rows carrying the view they open, not database rows.
+    const overview = inside[0];
+    expect(overview.kind).toBe("research-view");
+    expect(overview.researchView).toBe("overview");
+    expect(overview.contextId).toBe("research-pead");
+    expect(overview.depth).toBe(2);
+  });
+
+  it("shows no slots while collapsed", () => {
+    const collapsed = buildBrowserRows(researchTree, ["folder-root"]);
+    expect(collapsed.some((r) => r.kind === "research-view")).toBe(false);
+  });
+
+  it("gives plain folders no slots", () => {
+    const rows = buildBrowserRows(
+      [{ id: "f1", kind: "folder", title: "Plain", children: [] }],
+      ["f1"],
+    );
+    expect(rows.some((r) => r.kind === "research-view")).toBe(false);
+  });
+
+  it("carries the light run state so the row can show it without a fetch", () => {
+    const rows = buildBrowserRows(researchTree, ["folder-root"]);
+    expect(rows.find((r) => r.id === "research-pead")?.research?.runState).toBe("idle");
+  });
+
+  it("is a valid move destination, since research artifacts live inside it", () => {
+    expect(flattenFolderOptions(researchTree).map((o) => o.id)).toContain("research-pead");
+  });
+
+  it("resolves as an ancestor when scoping to a descendant", () => {
+    expect(ancestorFolderIds(researchTree, "research-pead")).toEqual(["folder-root", "research-pead"]);
   });
 });

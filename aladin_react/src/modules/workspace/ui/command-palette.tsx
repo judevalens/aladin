@@ -1,18 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  Building2,
-  CandlestickChart,
-  FilePlus2,
-  FileText,
-  FolderPlus,
-  Globe,
-  Layers,
-  Link2,
-  Mic,
-  Upload,
-  User,
-} from "lucide-react";
+import { Building2, CandlestickChart, FilePlus2, FileText, FlaskConical, FolderPlus, Globe, Layers, Link2, Mic, Upload, User } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
   CommandDialog,
@@ -28,6 +16,7 @@ import type { SearchHit, SearchSection } from "@/shared/api/models";
 
 export interface CommandPaletteActions {
   onCreateFolder: () => void;
+  onCreateResearch: () => void;
   onCreateNote: () => void;
   onCreateLink: () => void;
   onCreateVoice: () => void;
@@ -141,6 +130,10 @@ export function CommandPalette({
             <CommandItem value="new folder" onSelect={() => run(actions.onCreateFolder)}>
               <FolderPlus className="h-[15px] w-[15px] text-ink-3" strokeWidth={1.75} />
               New folder
+            </CommandItem>
+            <CommandItem value="new research" onSelect={() => run(actions.onCreateResearch)}>
+              <FlaskConical className="h-[15px] w-[15px] text-ink-3" strokeWidth={1.75} />
+              New research
             </CommandItem>
             <CommandItem value="new link" onSelect={() => run(actions.onCreateLink)}>
               <Link2 className="h-[15px] w-[15px] text-ink-3" strokeWidth={1.75} />

@@ -2,7 +2,7 @@ import { cn } from "@/lib/utils";
 
 /**
  * Chip-style tab strip — the filter/sort control used across Aladin's index surfaces.
- * Lifted from signals-ui's local `Tabs` (insights-ui inlines the same classes) so the
+ * Lifted from insights-ui's local `Tabs` (which inlines the same classes) so the
  * Entities index doesn't become a third copy. Those two can migrate onto it later.
  */
 export function ChipTabs<T extends string>({

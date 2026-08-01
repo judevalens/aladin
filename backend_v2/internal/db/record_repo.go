@@ -141,7 +141,7 @@ func (r *pgRecordRepo) SaveEnrichment(ctx context.Context, e *RecordEnrichment) 
 }
 
 // SaveEmbedding writes a record's vector embedding and marks it `complete` — the terminal
-// status of the record→knowledge chain (after enrichment, entities, and claims). The
+// status of the record→knowledge chain (after enrichment and entity resolution). The
 // source_revision guard drops the write if a newer revision has superseded the record.
 func (r *pgRecordRepo) SaveEmbedding(ctx context.Context, recordID string, sourceRevision int64, vec []float32) (bool, error) {
 	if len(vec) == 0 {

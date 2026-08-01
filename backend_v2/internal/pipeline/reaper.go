@@ -76,7 +76,7 @@ func nextStageFor(rec *db.Record) (string, []byte, error) {
 		})
 		return TaskGlobalFirstPass, payload, err
 	case "enriched":
-		// Re-drive the entity→claims→embed chain. The entity stage is idempotent, so this
+		// Re-drive the entity→embed chain. The entity stage is idempotent, so this
 		// re-runs cleanly.
 		payload, err := json.Marshal(ResolveEntitiesPayload{
 			RecordID:       rec.ID,

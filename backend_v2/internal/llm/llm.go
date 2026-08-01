@@ -64,56 +64,6 @@ type EntityAdjudicator interface {
 	JudgeSameEntity(ctx context.Context, input EntityAdjudicationInput) (*EntityVerdict, error)
 }
 
-// ClaimEntity is a resolved entity offered as grounding context for claim extraction.
-type ClaimEntity struct {
-	ID   string
-	Name string
-}
-
-// ClaimExtractionInput asks the model to lift CONTESTABLE, entity-grounded claims out of
-// a record's raw enrichment (C0). Plain facts are rejected; only propositions something
-// could support or contradict become claims.
-type ClaimExtractionInput struct {
-	Summary   string
-	KeyClaims []string
-	Entities  []ClaimEntity
-}
-
-// ExtractedClaim is one candidate claim. Polarity is assert|deny|neutral; SubjectNames
-// are names of the provided entities the claim is about (matched back to ids by the caller).
-type ExtractedClaim struct {
-	Text         string   `json:"text"`
-	Polarity     string   `json:"polarity"`
-	Contestable  bool     `json:"contestable"`
-	SubjectNames []string `json:"subjects"`
-}
-
-type ClaimExtractor interface {
-	ExtractClaims(ctx context.Context, input ClaimExtractionInput) ([]ExtractedClaim, error)
-}
-
-// ClaimAdjudicationInput asks how a new claim relates to a candidate claim (C1) — the
-// polarity-aware twist that powers the contradiction surface.
-type ClaimAdjudicationInput struct {
-	A         string // the new claim
-	B         string // the candidate claim
-	Subjects  []string
-}
-
-// ClaimRelation: "same" (paraphrase, same stance) | "negation" (same proposition,
-// opposite stance) | "related" (distinct but linked) | "unrelated". When "related",
-// EdgeType is supports|contradicts|qualifies.
-type ClaimRelation struct {
-	Relation   string  `json:"relation"`
-	EdgeType   string  `json:"edge_type"`
-	Confidence float64 `json:"confidence"`
-	Reason     string  `json:"reason"`
-}
-
-type ClaimAdjudicator interface {
-	JudgeClaims(ctx context.Context, input ClaimAdjudicationInput) (*ClaimRelation, error)
-}
-
 // DiscourseMember is one document in a bridge's connected set (input to the discourse pass).
 type DiscourseMember struct {
 	ID      string // record/artifact id — the grounding handle

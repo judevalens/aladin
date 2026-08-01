@@ -128,29 +128,6 @@ func (f *fakeInsightEnqueuer) EnqueueInsightGeneration(
 	return f.err
 }
 
-func TestFullPipelineHandlerRoutesClaimsToEmbed(t *testing.T) {
-	t.Parallel()
-
-	enq := &fakeEnqueuer{}
-	h := NewFullPipelineHandler(enq, &fakeRecordRepo{})
-
-	err := h.OnDone(context.Background(), Result{
-		Type:     ResultResolveClaimsDone,
-		TaskType: TaskResolveClaims,
-		RecordID: "record-1",
-		Payload:  []byte(`{"record_id":"record-1"}`),
-	})
-	if err != nil {
-		t.Fatalf("OnDone returned error: %v", err)
-	}
-	if len(enq.stageCalls) != 1 {
-		t.Fatalf("EnqueueStage calls = %d, want 1", len(enq.stageCalls))
-	}
-	if got := enq.stageCalls[0]; got.taskType != TaskEmbed || got.recordID != "record-1" {
-		t.Fatalf("EnqueueStage call = %+v, want task=%q record=%q", got, TaskEmbed, "record-1")
-	}
-}
-
 func TestFullPipelineHandlerEmbedDoneIsTerminal(t *testing.T) {
 	t.Parallel()
 
@@ -227,7 +204,7 @@ func TestFullPipelineHandlerTransientErrorBubbles(t *testing.T) {
 
 	want := ErrTransient{Cause: errors.New("temporary")}
 	err := h.OnDone(context.Background(), Result{
-		TaskType: TaskResolveClaims,
+		TaskType: TaskResolveEntities,
 		RecordID: "record-4",
 		Err:      want,
 	})
@@ -290,7 +267,7 @@ func TestFullPipelineHandlerPersistsGlobalRecordEnrichment(t *testing.T) {
 func TestFullPipelineHandlerEnrichmentDoesNotFanOutLowConfidence(t *testing.T) {
 	t.Parallel()
 
-	// Low-confidence search is sequenced inside the entity→claims chain, NOT fanned out off
+	// Low-confidence search is sequenced inside the entity chain, NOT fanned out off
 	// enrichment — so even with it enabled, enrichment only fans out tenant_match + resolve_entities.
 	enq := &fakeEnqueuer{}
 	h := NewFullPipelineHandler(enq, &fakeRecordRepo{}).WithLowConfidenceSearch(true)
@@ -314,7 +291,7 @@ func TestFullPipelineHandlerEnrichmentDoesNotFanOutLowConfidence(t *testing.T) {
 	}
 }
 
-func TestFullPipelineHandlerEntitiesRouteToClaimsByDefault(t *testing.T) {
+func TestFullPipelineHandlerEntitiesRouteToEmbedByDefault(t *testing.T) {
 	t.Parallel()
 
 	enq := &fakeEnqueuer{}
@@ -329,8 +306,8 @@ func TestFullPipelineHandlerEntitiesRouteToClaimsByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OnDone: %v", err)
 	}
-	if len(enq.stageCalls) != 1 || enq.stageCalls[0].taskType != TaskResolveClaims {
-		t.Fatalf("without low-conf, entities must route straight to claims; got %v", enq.stageCalls)
+	if len(enq.stageCalls) != 1 || enq.stageCalls[0].taskType != TaskEmbed {
+		t.Fatalf("without low-conf, entities must route straight to embed; got %v", enq.stageCalls)
 	}
 }
 
@@ -349,13 +326,13 @@ func TestFullPipelineHandlerEntitiesRouteToLowConfidenceWhenEnabled(t *testing.T
 	if err != nil {
 		t.Fatalf("OnDone: %v", err)
 	}
-	// Claims must NOT be enqueued yet — the record waits on low-confidence resolution first.
+	// Embed must NOT be enqueued yet — the record waits on low-confidence resolution first.
 	if len(enq.stageCalls) != 1 || enq.stageCalls[0].taskType != TaskResolveLowConfidence {
 		t.Fatalf("with low-conf enabled, entities must route to low-confidence search first; got %v", enq.stageCalls)
 	}
 }
 
-func TestFullPipelineHandlerLowConfidenceRoutesToClaims(t *testing.T) {
+func TestFullPipelineHandlerLowConfidenceRoutesToEmbed(t *testing.T) {
 	t.Parallel()
 
 	enq := &fakeEnqueuer{}
@@ -370,8 +347,8 @@ func TestFullPipelineHandlerLowConfidenceRoutesToClaims(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OnDone: %v", err)
 	}
-	if len(enq.stageCalls) != 1 || enq.stageCalls[0].taskType != TaskResolveClaims {
-		t.Fatalf("low-confidence done must advance the record to claims; got %v", enq.stageCalls)
+	if len(enq.stageCalls) != 1 || enq.stageCalls[0].taskType != TaskEmbed {
+		t.Fatalf("low-confidence done must advance the record to embed; got %v", enq.stageCalls)
 	}
 }
 

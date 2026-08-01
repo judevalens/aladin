@@ -81,7 +81,7 @@ func (r *PostgresSystemRepository) WorkerStatus(ctx context.Context) (map[string
 
 // PipelineStats is a read-only ingestion health snapshot. It only SELECTs — it never
 // touches the write/retry path — so it surfaces stuck records (the silent-failure problem)
-// safely. Terminal statuses are 'complete' (enriched + entities + claims + embedded) and
+// safely. Terminal statuses are 'complete' (enriched + entities + embedded) and
 // 'failed'; everything else is in-flight. "Stuck" = in-flight with no stage progress for
 // 15+ minutes.
 func (r *PostgresSystemRepository) PipelineStats(ctx context.Context) (map[string]any, error) {

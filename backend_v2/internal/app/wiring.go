@@ -29,8 +29,6 @@ type Dependencies interface {
 	Files() coreservice.FileService
 	Feed() coreservice.FeedService
 	Insights() coreservice.InsightService
-	// Signals is the claim-primary curated feed (the Signals surface).
-	Signals() coreservice.SignalService
 	ProviderConnections() coreservice.ProviderConnectionService
 	Realtime() coreservice.RealtimeEventService
 	RealtimeKeyResolver() coreservice.SubscriptionKeyResolver
@@ -48,11 +46,14 @@ type Dependencies interface {
 	ShardBuild() coreservice.ShardBuildService
 	// Relationships is the additive cross-world edge layer (artifacts ↔ records ↔ insights).
 	Relationships() coreservice.RelationshipService
-	// GraphPane assembles the "On the graph" side pane for a thesis (entity + claim layers).
+	// Research is the research bench's write/read side (RESEARCH_SURFACE_PRD §5).
+	Research() coreservice.ResearchService
+
+	// GraphPane assembles the "On the graph" side pane for an entity.
 	GraphPane() coreservice.GraphPaneService
 	// EntityTags backs the tag / @entity picker: entity search + artifact↔entity links.
 	EntityTags() coreservice.EntityTagService
-	// ArtifactRefs backs the `#` cross-reference picker: claim/page/shard search + links.
+	// ArtifactRefs backs the `#` cross-reference picker: page/shard search + links.
 	ArtifactRefs() coreservice.ArtifactRefService
 	// EntityContext backs the Entity Context surface: one entity's identity, its typed
 	// edges, the verbatim material accreted under it, and its pending merge decisions.
@@ -97,7 +98,6 @@ type StaticDependencies struct {
 	FilesSvc               coreservice.FileService
 	FeedSvc                coreservice.FeedService
 	InsightsSvc            coreservice.InsightService
-	SignalsSvc             coreservice.SignalService
 	ProviderConnectionsSvc coreservice.ProviderConnectionService
 	RealtimeSvc            coreservice.RealtimeEventService
 	RealtimeKeys           coreservice.SubscriptionKeyResolver
@@ -109,6 +109,7 @@ type StaticDependencies struct {
 	ShardBuildSvc          coreservice.ShardBuildService
 	RelationshipsSvc       coreservice.RelationshipService
 	GraphPaneSvc           coreservice.GraphPaneService
+	ResearchSvc            coreservice.ResearchService
 	EntityTagsSvc          coreservice.EntityTagService
 	ArtifactRefsSvc        coreservice.ArtifactRefService
 	EntityContextSvc       coreservice.EntityContextService
@@ -139,7 +140,6 @@ func (d StaticDependencies) PageDocuments() coreservice.PageDocumentService {
 func (d StaticDependencies) Files() coreservice.FileService       { return d.FilesSvc }
 func (d StaticDependencies) Feed() coreservice.FeedService        { return d.FeedSvc }
 func (d StaticDependencies) Insights() coreservice.InsightService { return d.InsightsSvc }
-func (d StaticDependencies) Signals() coreservice.SignalService   { return d.SignalsSvc }
 func (d StaticDependencies) ProviderConnections() coreservice.ProviderConnectionService {
 	return d.ProviderConnectionsSvc
 }
@@ -168,6 +168,8 @@ func (d StaticDependencies) ShardBuild() coreservice.ShardBuildService {
 func (d StaticDependencies) Relationships() coreservice.RelationshipService {
 	return d.RelationshipsSvc
 }
+func (d StaticDependencies) Research() coreservice.ResearchService { return d.ResearchSvc }
+
 func (d StaticDependencies) GraphPane() coreservice.GraphPaneService {
 	return d.GraphPaneSvc
 }
@@ -227,7 +229,6 @@ type wiring struct {
 	files               coreservice.FileService
 	feed                coreservice.FeedService
 	insights            coreservice.InsightService
-	signals             coreservice.SignalService
 	providerConnections coreservice.ProviderConnectionService
 	realtime            coreservice.RealtimeEventService
 	rtKeys              coreservice.SubscriptionKeyResolver
@@ -239,6 +240,7 @@ type wiring struct {
 	shardBuild          coreservice.ShardBuildService
 	relationships       coreservice.RelationshipService
 	graphPane           coreservice.GraphPaneService
+	research            coreservice.ResearchService
 	entityTags          coreservice.EntityTagService
 	artifactRefs        coreservice.ArtifactRefService
 	entityContext       coreservice.EntityContextService
@@ -269,7 +271,6 @@ func (w wiring) PageDocuments() coreservice.PageDocumentService {
 func (w wiring) Files() coreservice.FileService       { return w.files }
 func (w wiring) Feed() coreservice.FeedService        { return w.feed }
 func (w wiring) Insights() coreservice.InsightService { return w.insights }
-func (w wiring) Signals() coreservice.SignalService   { return w.signals }
 func (w wiring) ProviderConnections() coreservice.ProviderConnectionService {
 	return w.providerConnections
 }
@@ -287,6 +288,7 @@ func (w wiring) Preview() coreservice.PreviewService            { return w.previ
 func (w wiring) ShardBuild() coreservice.ShardBuildService      { return w.shardBuild }
 func (w wiring) Relationships() coreservice.RelationshipService { return w.relationships }
 func (w wiring) GraphPane() coreservice.GraphPaneService        { return w.graphPane }
+func (w wiring) Research() coreservice.ResearchService          { return w.research }
 func (w wiring) EntityTags() coreservice.EntityTagService       { return w.entityTags }
 func (w wiring) ArtifactRefs() coreservice.ArtifactRefService   { return w.artifactRefs }
 func (w wiring) EntityContext() coreservice.EntityContextService {
@@ -326,7 +328,6 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 	shardBuild := coreservice.NewShardBuildService(docRuntime, repo.NewShardBuildPostgres(pool))
 	feedRepo := repo.NewFeedPostgres(pool)
 	insightRepo := repo.NewInsightPostgres(pool)
-	signalRepo := repo.NewSignalPostgres(pool)
 	relationshipRepo := repo.NewRelationshipPostgres(pool)
 	graphPaneRepo := repo.NewGraphPanePostgres(pool)
 	entityTagRepo := repo.NewEntityTagPostgres(pool)
@@ -343,7 +344,7 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 	}
 	providerConnectionRepo := repo.NewProviderConnectionPostgres(pool)
 	syncRepo := repo.NewSyncPostgres(pool)
-	syncSvc := coreservice.NewSyncService(syncRepo, repo.NewTreeSyncSource(pool), repo.NewSignalSyncSource(pool), repo.NewWatchlistSyncSource(pool))
+	syncSvc := coreservice.NewSyncService(syncRepo, repo.NewTreeSyncSource(pool), repo.NewWatchlistSyncSource(pool))
 	realtimeKeys := coreservice.NewSubscriptionKeyResolver()
 	realtime := coreservice.NewInMemoryRealtimeEventService(realtimeKeys)
 	outboxDrainer := coreservice.NewOutboxDrainer(syncRepo, realtime, coreservice.DefaultDrainInterval)
@@ -466,7 +467,6 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		files:               coreservice.NewFileService(artifactRepo, artifactFiles),
 		feed:                coreservice.NewFeedService(feedRepo),
 		insights:            insightsSvc,
-		signals:             coreservice.NewSignalService(signalRepo),
 		providerConnections: providerConnections,
 		realtime:            realtime,
 		rtKeys:              realtimeKeys,
@@ -478,6 +478,7 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		shardBuild:          shardBuild,
 		relationships:       coreservice.NewRelationshipService(relationshipRepo),
 		graphPane:           coreservice.NewGraphPaneService(graphPaneRepo),
+		research:            coreservice.NewResearchService(repo.NewResearchPostgres(pool)),
 		entityTags:          entityTagsSvc,
 		artifactRefs:        artifactRefsSvc,
 		entityContext:       entityContextSvc,

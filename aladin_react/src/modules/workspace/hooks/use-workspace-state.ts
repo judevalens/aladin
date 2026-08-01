@@ -4,12 +4,25 @@ import { combineLatest, map, of, startWith, type Observable } from "rxjs";
 import { useAppComposition } from "@/app/composition/app-composition";
 import { useAppStore } from "@/app/state/store";
 import { useShellSession } from "@/modules/auth/hooks/use-auth-state";
-import type { BrowserTreeRow, FolderOption, RenameDraft } from "@/modules/workspace/domain";
-import { flattenFolderOptions } from "@/modules/workspace/domain";
+import type {
+  BrowserTreeRow,
+  FolderOption,
+  RenameDraft,
+  ResearchView,
+  WorkTab,
+} from "@/modules/workspace/domain";
+import {
+  activeArtifactIdOf,
+  flattenFolderOptions,
+  isContainerKind,
+  tabKey,
+  RESEARCH_VIEW_LABEL,
+} from "@/modules/workspace/domain";
 import {
   buildWorkspaceRows,
   createArtifactCommand,
   createFolderCommand,
+  createResearchCommand,
   createVoiceDraft,
   folderAncestorIds,
   folderTitle,
@@ -29,7 +42,6 @@ export type WorkspaceDestination =
   | "markets"
   | "folders"
   | "sources"
-  | "signals"
   | "insights"
   | "entities"
   | "graph";
@@ -42,6 +54,7 @@ export interface WorkspaceShellState {
   onNavigate: (path: string) => void;
   onLogout: () => Promise<void>;
   onCreateFolder: () => Promise<void>;
+  onCreateResearch: () => Promise<void>;
   onCreateNote: () => Promise<void>;
   onCreateLink: () => void;
   onCreateVoice: () => void;
@@ -63,11 +76,14 @@ export interface BrowserPaneState {
   expandedFolderIds: string[];
   browserScrollTop: number;
   onToggleFolder: (folderId: string) => void;
+  onOpenResearchView: (contextId: string, view: ResearchView) => void;
   onBrowserScroll: (scrollTop: number) => void;
   onOpenArtifact: (artifactId: string) => void;
   onStartRenameFolder: (folderId: string, title: string) => void;
+  onStartRenameResearch: (nodeId: string, title: string) => void;
   onStartRenameArtifact: (artifactId: string, title: string) => void;
   onCreateFolderHere: (folderId: string) => void;
+  onCreateResearchHere: (folderId: string) => void;
   onCreateNoteHere: (folderId: string) => void;
 }
 
@@ -76,14 +92,29 @@ export interface WorkPaneCrumb {
   title: string;
 }
 
+/**
+ * One rendered tab: its stable key, the label to show, and the union member it came
+ * from. Artifact tabs resolve their title from the artifact cache; research tabs from
+ * the tree plus the view name (§11).
+ */
+export interface WorkPaneTab {
+  key: string;
+  label: string;
+  tab: WorkTab;
+  /** Set on artifact tabs once the artifact has loaded. */
+  artifact?: Artifact;
+}
+
 export interface WorkPaneState {
+  tabs: WorkPaneTab[];
   openArtifacts: Artifact[];
+  activeTab: WorkPaneTab | null;
   activeArtifact: Artifact | null;
   breadcrumbFolders: WorkPaneCrumb[];
   artifactTitle: string | null;
   inspectorOpen: boolean;
-  onActivateArtifact: (artifactId: string) => void;
-  onCloseArtifact: (artifactId: string) => void;
+  onActivateTab: (key: string) => void;
+  onCloseTab: (key: string) => void;
   onToggleInspector: () => void;
   onJumpToFolder: (folderId: string) => void;
 }
@@ -147,6 +178,16 @@ export function useWorkspaceShell(): WorkspaceShellState {
           createFolderCommand(tree, null),
         );
         useAppStore.getState().setFocusedFolder(folder.id);
+      } finally {
+        setCreateFolderPending(false);
+      }
+    },
+    // The research create is server-owned (two rows + the frame in one tx), so there is
+    // nothing to apply locally — the tree updates when the frame lands.
+    onCreateResearch: async () => {
+      try {
+        setCreateFolderPending(true);
+        await services.workspace.createResearch(createResearchCommand(tree, null));
       } finally {
         setCreateFolderPending(false);
       }
@@ -225,11 +266,17 @@ export function useBrowserPane(): BrowserPaneState {
       treeLoadable.status === "error" ? treeLoadable.error.message : null,
     tree,
     rows,
-    activeArtifactId: workspace.activeArtifactId,
+    activeArtifactId: activeArtifactIdOf(workspace),
     expandedFolderIds: workspace.expandedFolderIds,
     browserScrollTop: workspace.browserScrollTop,
     onToggleFolder: (folderId: string) => {
       toggleFolder(folderId);
+    },
+    // §11: the structural slots are typed children in the tree, so opening one is just
+    // "open that view's tab". Selecting the research folder itself only expands it —
+    // making the click ALSO open a tab meant collapsing re-opened it.
+    onOpenResearchView: (contextId: string, view: ResearchView) => {
+      useAppStore.getState().openResearchTab(contextId, view);
     },
     onBrowserScroll: (scrollTop: number) => {
       setBrowserScrollTop(scrollTop);
@@ -244,6 +291,13 @@ export function useBrowserPane(): BrowserPaneState {
         originalTitle: title,
         draftTitle: title,
       }),
+    onStartRenameResearch: (nodeId: string, title: string) =>
+      startRename({
+        kind: "research",
+        rowId: nodeId,
+        originalTitle: title,
+        draftTitle: title,
+      }),
     onStartRenameArtifact: (artifactId: string, title: string) =>
       startRename({
         kind: "artifact",
@@ -251,6 +305,9 @@ export function useBrowserPane(): BrowserPaneState {
         originalTitle: title,
         draftTitle: title,
       }),
+    onCreateResearchHere: (folderId: string) => {
+      void services.workspace.createResearch(createResearchCommand(tree, folderId));
+    },
     onCreateFolderHere: (folderId: string) => {
       expandFolders([folderId]);
       void services.workspace.createFolder(createFolderCommand(tree, folderId));
@@ -268,11 +325,21 @@ export function useBrowserPane(): BrowserPaneState {
 
 export function useWorkPane(): WorkPaneState {
   const { services } = useAppComposition();
-  const openArtifactIds = useAppStore((state) => state.workspace.openArtifactIds);
-  const activeArtifactId = useAppStore((state) => state.workspace.activeArtifactId);
+  const openTabs = useAppStore((state) => state.workspace.openTabs);
+  const activeTabKey = useAppStore((state) => state.workspace.activeTabKey);
   const inspectorOverrides = useAppStore((state) => state.workspace.inspectorOverrides);
-  const activateArtifact = useAppStore((state) => state.activateArtifact);
-  const closeArtifact = useAppStore((state) => state.closeArtifact);
+  const activateTab = useAppStore((state) => state.activateTab);
+  const closeTab = useAppStore((state) => state.closeTab);
+
+  // Only artifact tabs need the artifact cache; research views read their own data.
+  const openArtifactIds = useMemo(
+    () => openTabs.flatMap((tab) => (tab.kind === "artifact" ? [tab.artifactId] : [])),
+    [openTabs],
+  );
+  const activeArtifactId = useMemo(
+    () => activeArtifactIdOf({ openTabs, activeTabKey }),
+    [openTabs, activeTabKey],
+  );
   const toggleInspector = useAppStore((state) => state.toggleInspector);
   const expandFolders = useAppStore((state) => state.expandFolders);
 
@@ -313,14 +380,56 @@ export function useWorkPane(): WorkPaneState {
 
   const inspectorOpen = activeArtifact ? Boolean(inspectorOverrides[activeArtifact.id]) : false;
 
+  // §12: tabs belonging to one research folder must be CONTIGUOUS. Membership is
+  // derived from the tab's contextId — never managed — so grouping is an ordering
+  // invariant rather than a mode with its own UI.
+  const tabs = useMemo<WorkPaneTab[]>(() => {
+    const rendered = openTabs.map((tab) => {
+      if (tab.kind === "artifact") {
+        const artifact = artifactCache[tab.artifactId];
+        return {
+          key: tabKey(tab),
+          label: artifact?.title ?? "Untitled",
+          tab,
+          artifact,
+        };
+      }
+      const title = findFolderTitle(tree, tab.contextId) ?? "Research";
+      return {
+        key: tabKey(tab),
+        label: `${title} · ${RESEARCH_VIEW_LABEL[tab.view]}`,
+        tab,
+      };
+    });
+
+    // Stable grouping: research tabs cluster by contextId in first-seen order; loose
+    // artifact tabs sit at the far right, past every group (§12).
+    const groupOrder: string[] = [];
+    rendered.forEach(({ tab }) => {
+      if (tab.kind === "research" && !groupOrder.includes(tab.contextId)) {
+        groupOrder.push(tab.contextId);
+      }
+    });
+    const rank = (t: WorkPaneTab) =>
+      t.tab.kind === "research" ? groupOrder.indexOf(t.tab.contextId) : groupOrder.length;
+    return rendered
+      .map((t, index) => ({ t, index }))
+      .sort((a, b) => rank(a.t) - rank(b.t) || a.index - b.index)
+      .map(({ t }) => t);
+  }, [openTabs, artifactCache, tree]);
+
+  const activeTab = tabs.find((t) => t.key === activeTabKey) ?? null;
+
   return {
+    tabs,
     openArtifacts,
+    activeTab,
     activeArtifact,
     breadcrumbFolders,
     artifactTitle: activeArtifact?.title ?? null,
     inspectorOpen,
-    onActivateArtifact: activateArtifact,
-    onCloseArtifact: closeArtifact,
+    onActivateTab: activateTab,
+    onCloseTab: closeTab,
     onToggleInspector: () => {
       if (activeArtifact) toggleInspector(activeArtifact.id);
     },
@@ -352,7 +461,7 @@ function buildArtifactCacheStream(
 
 function findFolderTitle(tree: BrowserTreeNode[], folderId: string): string | null {
   for (const node of tree) {
-    if (node.kind === "folder") {
+    if (isContainerKind(node.kind)) {
       if (node.id === folderId) return node.title;
       const nested = findFolderTitle(node.children, folderId);
       if (nested !== null) return nested;
@@ -379,6 +488,8 @@ export function useRenameDialog(): RenameDialogState {
         setPending(true);
         if (rename.kind === "folder") {
           await services.workspace.renameFolder(rename.rowId, rename.draftTitle.trim());
+        } else if (rename.kind === "research") {
+          await services.workspace.renameResearch(rename.rowId, rename.draftTitle.trim());
         } else {
           await services.workspace.renameArtifact(rename.rowId, rename.draftTitle.trim());
         }

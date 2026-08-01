@@ -10,7 +10,7 @@ import (
 )
 
 // EntityRef is a minimal entity reference (id + display name), e.g. the entities a
-// record mentions — used to ground claims (claim_subjects).
+// record mentions — the evidence that a record is about an entity.
 type EntityRef struct {
 	ID   string
 	Name string

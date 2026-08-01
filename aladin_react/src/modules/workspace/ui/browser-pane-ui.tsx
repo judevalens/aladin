@@ -1,17 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  ChevronRight,
-  Columns3,
-  FileText,
-  Folder,
-  Layout,
-  Link2,
-  Mic,
-  Paperclip,
-  Plus,
-  Search,
-  SlidersHorizontal,
-} from "lucide-react";
+import { ChevronRight, Code2, Columns3, FileJson, FileText, FlaskConical, Folder, History, Layout, LayoutDashboard, Link2, Mic, Paperclip, Plus, ScanSearch, Search, SlidersHorizontal } from "lucide-react";
 import type { ArtifactKind } from "@/shared/api/models";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -23,7 +11,18 @@ import {
 } from "@/components/ui/context-menu";
 import { AladinPanel } from "@/components/ui/aladin";
 import { MillerColumns, type MillerState } from "@/modules/workspace/ui/miller-columns";
-import { folderAncestors } from "@/modules/workspace/domain";
+import { folderAncestors, isContainerKind } from "@/modules/workspace/domain";
+import type { ResearchView } from "@/modules/workspace/domain";
+
+// Structural-slot icons (§5). Muted: the slots are chrome, the captured material is the
+// content, and only the research folder itself carries the accent.
+const RESEARCH_SLOT_ICONS: Record<ResearchView, LucideIcon> = {
+  overview: LayoutDashboard,
+  manifest: FileJson,
+  runs: History,
+  code: Code2,
+  inspect: ScanSearch,
+};
 import { useBrowserPane } from "@/modules/workspace/hooks/use-workspace-state";
 import { useAppStore } from "@/app/state/store";
 import { PropertyFilterDialogUI } from "@/modules/artifacts/ui/property-filter-dialog-ui";
@@ -50,11 +49,14 @@ export function BrowserPaneUI() {
     expandedFolderIds,
     browserScrollTop,
     onToggleFolder,
+    onOpenResearchView,
     onBrowserScroll,
     onOpenArtifact,
     onStartRenameFolder,
+    onStartRenameResearch,
     onStartRenameArtifact,
     onCreateFolderHere,
+    onCreateResearchHere,
     onCreateNoteHere,
   } = useBrowserPane();
   const openCommandPalette = useAppStore((state) => state.setCommandPaletteOpen);
@@ -154,10 +156,13 @@ export function BrowserPaneUI() {
             activeArtifactId={activeArtifactId}
             expandedFolderIds={expandedFolderIds}
             onToggleFolder={onToggleFolder}
+            onOpenResearch={onOpenResearchView}
             onOpenArtifact={onOpenArtifact}
             onStartRenameFolder={onStartRenameFolder}
+            onStartRenameResearch={onStartRenameResearch}
             onStartRenameArtifact={onStartRenameArtifact}
             onCreateFolderHere={onCreateFolderHere}
+            onCreateResearchHere={onCreateResearchHere}
             onCreateNoteHere={onCreateNoteHere}
             onOpenMiller={openMiller}
           />
@@ -189,10 +194,13 @@ function BrowserPaneRow({
   activeArtifactId,
   expandedFolderIds,
   onToggleFolder,
+  onOpenResearch,
   onOpenArtifact,
   onStartRenameFolder,
+  onStartRenameResearch,
   onStartRenameArtifact,
   onCreateFolderHere,
+  onCreateResearchHere,
   onCreateNoteHere,
   onOpenMiller,
 }: {
@@ -200,28 +208,53 @@ function BrowserPaneRow({
   activeArtifactId: string | null;
   expandedFolderIds: string[];
   onToggleFolder: (folderId: string) => void;
+  onOpenResearch: (contextId: string, view: ResearchView) => void;
   onOpenArtifact: (artifactId: string) => void;
   onStartRenameFolder: (folderId: string, title: string) => void;
+  onStartRenameResearch: (nodeId: string, title: string) => void;
   onStartRenameArtifact: (artifactId: string, title: string) => void;
   onCreateFolderHere: (folderId: string) => void;
+  onCreateResearchHere: (folderId: string) => void;
   onCreateNoteHere: (folderId: string) => void;
   onOpenMiller: (folderId: string | null, anchor: DOMRect, seedLeaf?: string) => void;
 }) {
   const rowRef = useRef<HTMLButtonElement | null>(null);
   const isActive = row.artifactId === activeArtifactId;
-  const isExpandableFolder = row.kind === "folder" && row.depth < MAX_INLINE;
-  const isDrillFolder = row.kind === "folder" && row.depth >= MAX_INLINE;
+  // A research folder has the anatomy of a folder (§5) — it expands, it drills, it
+  // holds children. Everything below keys off isContainerKind, never `=== "folder"`.
+  const isContainer = isContainerKind(row.kind);
+  const isResearch = row.kind === "research";
+  const isSlot = row.kind === "research-view";
+  const isExpandableFolder = isContainer && row.depth < MAX_INLINE;
+  const isDrillFolder = isContainer && row.depth >= MAX_INLINE;
   const isExpanded = isExpandableFolder && row.folderId ? expandedFolderIds.includes(row.folderId) : false;
-  const TypeIcon = row.kind === "folder" ? Folder : row.artifactKind ? ARTIFACT_ICONS[row.artifactKind] : FileText;
+  const TypeIcon = isSlot
+    ? RESEARCH_SLOT_ICONS[row.researchView ?? "overview"]
+    : isResearch
+      ? FlaskConical
+      : row.kind === "folder"
+        ? Folder
+        : row.artifactKind
+          ? ARTIFACT_ICONS[row.artifactKind]
+          : FileText;
+  // §5: a research folder has STATE — that's the clearest tell it isn't a plain folder.
+  // Anything but idle earns the amber dot; idle stays quiet so the tree doesn't nag.
+  const showRunDot = isResearch && !!row.research && row.research.runState !== "idle";
 
   const rect = () => rowRef.current?.getBoundingClientRect() ?? new DOMRect();
 
   const handleClick = () => {
+    // A structural slot (§5) opens its view. It has no children of its own, so it never
+    // expands — it behaves like a leaf that happens to be guaranteed to exist.
+    if (isSlot && row.contextId && row.researchView) {
+      onOpenResearch(row.contextId, row.researchView);
+      return;
+    }
     if (row.kind === "artifact" && row.artifactId) {
       onOpenArtifact(row.artifactId);
       return;
     }
-    if (row.kind === "folder" && row.folderId) {
+    if (isContainer && row.folderId) {
       if (isDrillFolder) {
         onOpenMiller(row.folderId, rect());
       } else {
@@ -242,7 +275,7 @@ function BrowserPaneRow({
             "relative flex h-7 w-full items-center gap-[7px] rounded-md pr-2.5 text-left transition-colors",
             isActive
               ? "bg-[rgb(var(--sel))] text-ink"
-              : cn("hover:bg-[rgb(var(--hover))]", row.kind === "folder" ? "text-ink" : "text-ink-2"),
+              : cn("hover:bg-[rgb(var(--hover))]", isContainer ? "text-ink" : "text-ink-2"),
           )}
         >
           {isActive ? <span className="absolute left-0 top-[5px] bottom-[5px] w-0.5 rounded bg-amber" /> : null}
@@ -266,19 +299,30 @@ function BrowserPaneRow({
           )}
           {/* Type icon (16px) */}
           <TypeIcon
-            className={cn("h-4 w-4 shrink-0", row.kind === "folder" ? "text-ink-2" : "text-ink-3")}
+            className={cn(
+              "h-4 w-4 shrink-0",
+              isResearch ? "text-amber" : isContainer ? "text-ink-2" : "text-ink-3",
+              isSlot && "text-ink-4",
+            )}
             strokeWidth={1.75}
           />
           <span
             className={cn(
               "min-w-0 flex-1 truncate text-[13px]",
-              isActive ? "font-semibold" : row.kind === "folder" ? "font-medium" : "font-normal",
+              isActive ? "font-semibold" : isContainer ? "font-medium" : "font-normal",
             )}
           >
             {row.title}
           </span>
-          {row.kind === "folder" ? (
+          {isContainer ? (
             <span className="flex shrink-0 items-center gap-1 font-mono text-[10.5px] text-ink-4">
+              {showRunDot ? (
+                <span
+                  className="size-1.5 rounded-full bg-amber"
+                  title={row.research?.runState}
+                  aria-label={`run state: ${row.research?.runState}`}
+                />
+              ) : null}
               {row.childCount ?? 0}
               {isDrillFolder ? <ChevronRight className="h-3.5 w-3.5" strokeWidth={2} /> : null}
             </span>
@@ -286,7 +330,7 @@ function BrowserPaneRow({
         </button>
       </ContextMenuTrigger>
       <ContextMenuContent className="w-56">
-        {row.kind === "folder" && row.folderId ? (
+        {isSlot ? null : isContainer && row.folderId ? (
           <>
             <ContextMenuItem onSelect={() => onOpenMiller(row.folderId!, rect())}>
               <Columns3 className="h-[15px] w-[15px] text-amber" strokeWidth={1.75} />
@@ -299,9 +343,25 @@ function BrowserPaneRow({
               </ContextMenuItem>
             ) : null}
             <ContextMenuItem onSelect={() => onCreateFolderHere(row.folderId!)}>New folder here</ContextMenuItem>
+            {/* §5: research nests in plain folders only — never inside another research. */}
+            {row.kind === "folder" ? (
+              <ContextMenuItem onSelect={() => onCreateResearchHere(row.folderId!)}>
+                New research here
+              </ContextMenuItem>
+            ) : null}
             <ContextMenuItem onSelect={() => onCreateNoteHere(row.folderId!)}>New note here</ContextMenuItem>
+            {/* Rename dispatches by kind: the folder API is deliberately folder-only, so a
+                research folder renames through its own endpoint. */}
             <ContextMenuSeparator />
-            <ContextMenuItem onSelect={() => onStartRenameFolder(row.folderId!, row.title)}>Rename</ContextMenuItem>
+            <ContextMenuItem
+              onSelect={() =>
+                isResearch
+                  ? onStartRenameResearch(row.folderId!, row.title)
+                  : onStartRenameFolder(row.folderId!, row.title)
+              }
+            >
+              Rename
+            </ContextMenuItem>
           </>
         ) : null}
         {row.kind === "artifact" && row.artifactId ? (

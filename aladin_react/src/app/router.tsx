@@ -10,7 +10,6 @@ import {
   WorkspaceShellUI,
 } from "@/modules/workspace/ui/workspace-shell-ui";
 import { SourcesRoute } from "@/modules/sources/sources-route";
-import { SignalsUI } from "@/modules/signals/ui/signals-ui";
 import { InsightsUI } from "@/modules/insights/ui/insights-ui";
 import { SandboxSpike } from "@/modules/doc-surface/spike/sandbox-spike";
 import { EditorPreview } from "@/modules/pages/editor/editor-preview";
@@ -97,7 +96,6 @@ export const router = createBrowserRouter([
           { path: "/markets", element: <MarketsUI /> },
           { path: "/folders", element: <WorkspaceRoute /> },
           { path: "/sources", element: <SourcesRoute /> },
-          { path: "/signals", element: <SignalsUI /> },
           { path: "/insights", element: <InsightsUI /> },
           { path: "/entities", element: <EntitiesIndexUI /> },
           // The Entity Context surface. Router history is the back-trail, so an edge

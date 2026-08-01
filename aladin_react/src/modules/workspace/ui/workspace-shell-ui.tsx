@@ -1,4 +1,4 @@
-import { CandlestickChart, Check, Command, Contrast, Folder, GitGraph, Globe, Home, Lightbulb, LogOut, Network, Plus, Signal, Sparkles, SquareTerminal } from "lucide-react";
+import { CandlestickChart, Check, Command, Contrast, Folder, GitGraph, Globe, Home, Lightbulb, LogOut, Network, Plus, Sparkles, SquareTerminal } from "lucide-react";
 import { useEffect } from "react";
 import { Outlet } from "react-router-dom";
 import { CommandPalette } from "@/modules/workspace/ui/command-palette";
@@ -27,7 +27,6 @@ const navItems = [
   { key: "home", label: "Home", icon: Home, path: "/home" },
   { key: "markets", label: "Markets", icon: CandlestickChart, path: "/markets" },
   { key: "folders", label: "Folders", icon: Folder, path: "/folders" },
-  { key: "signals", label: "Signals", icon: Signal, path: "/signals" },
   { key: "insights", label: "Insights", icon: Lightbulb, path: "/insights" },
   { key: "entities", label: "Entities", icon: Globe, path: "/entities" },
   { key: "sources", label: "Sources", icon: Network, path: "/sources" },
@@ -42,6 +41,7 @@ export function WorkspaceShellUI() {
     onNavigate,
     onLogout,
     onCreateFolder,
+    onCreateResearch,
     onCreateNote,
     onCreateLink,
     onCreateVoice,
@@ -58,7 +58,6 @@ export function WorkspaceShellUI() {
   const setTheme = useAppStore((state) => state.setTheme);
   const commandOpen = useAppStore((state) => state.commandPaletteOpen);
   const setCommandOpen = useAppStore((state) => state.setCommandPaletteOpen);
-  const signalsUnread = useAppStore((state) => state.signalsUnread);
   const terminalOpen = useAppStore((state) => state.terminalOpen);
   const toggleTerminal = useAppStore((state) => state.toggleTerminal);
   const copilotOpen = useAppStore((state) => state.copilotOpen);
@@ -91,7 +90,7 @@ export function WorkspaceShellUI() {
       <CommandPalette
         open={commandOpen}
         onOpenChange={setCommandOpen}
-        actions={{ onCreateFolder, onCreateNote, onCreateLink, onCreateVoice, onCreateFile }}
+        actions={{ onCreateFolder, onCreateResearch, onCreateNote, onCreateLink, onCreateVoice, onCreateFile }}
       />
       <TickerModal />
       <LinkCaptureDialogUI
@@ -139,6 +138,7 @@ export function WorkspaceShellUI() {
                 <DropdownMenuLabel>Create</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={onCreateFolder}>New folder</DropdownMenuItem>
+                <DropdownMenuItem onClick={onCreateResearch}>New research</DropdownMenuItem>
                 <DropdownMenuItem onClick={onCreateNote}>New note</DropdownMenuItem>
                 <DropdownMenuItem onClick={onCreateLink}>New link</DropdownMenuItem>
                 <DropdownMenuItem onClick={onCreateVoice}>New voice note</DropdownMenuItem>
@@ -166,9 +166,6 @@ export function WorkspaceShellUI() {
                         aria-current={active ? "page" : undefined}
                       >
                         <Icon className="size-[18px]" strokeWidth={1.7} />
-                        {item.key === "signals" && signalsUnread ? (
-                          <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-amber" />
-                        ) : null}
                       </button>
                     </TooltipTrigger>
                     <TooltipContent side="right">{item.label}</TooltipContent>

@@ -9,17 +9,17 @@ import (
 	"aladin/backend_v2/internal/pipeline"
 )
 
-// GraphSource reads a record's slice of the entity/claim graph from the system of record.
+// GraphSource reads a record's slice of the entity graph from the system of record.
 type GraphSource interface {
 	RecordGraph(ctx context.Context, recordID string) (graph.GraphData, error)
 }
 
-// GraphProjector writes an entity/claim slice into Neo4j (idempotent MERGE).
+// GraphProjector writes an entity slice into Neo4j (idempotent MERGE).
 type GraphProjector interface {
 	Project(ctx context.Context, d graph.GraphData) error
 }
 
-// GraphProjectWorker projects a completed record's entities + claims + edges into Neo4j —
+// GraphProjectWorker projects a completed record's entities into Neo4j —
 // the connection lens. Terminal. Only registered when Neo4j is configured, so it never
 // runs (and the stage is never enqueued) without a projector.
 type GraphProjectWorker struct {
@@ -35,7 +35,7 @@ func (w *GraphProjectWorker) TaskType() string { return pipeline.TaskGraphProjec
 func (w *GraphProjectWorker) Concurrency() int { return 3 }
 
 func (w *GraphProjectWorker) Run(ctx context.Context, raw []byte) pipeline.Result {
-	var p pipeline.ResolveClaimsPayload
+	var p pipeline.ResolveEntitiesPayload
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return pipeline.Result{
 			TaskType: pipeline.TaskGraphProject,

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, FileText, Link2, Plus, Quote, X, Zap } from "lucide-react";
+import { FileText, Plus, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useAppComposition } from "@/app/composition/app-composition";
@@ -10,12 +10,9 @@ import { EntityPeek } from "@/modules/entities/ui/entity-peek-ui";
 import { PropertiesSection } from "@/modules/artifacts/ui/properties-editor-ui";
 import type { Artifact } from "@/shared/api/models";
 import type {
-  GraphCite,
-  GraphClaim,
   GraphEntity,
   GraphLinkedArtifact,
   GraphPane,
-  GraphThesis,
 } from "@/modules/graph/graph-pane-types";
 
 // kindHue maps an entity kind onto the Aladin semantic ink ramp so the chips
@@ -39,27 +36,6 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
     <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-ink-4">
       {children}
     </h3>
-  );
-}
-
-function ThesisCard({ thesis }: { thesis: GraphThesis }) {
-  return (
-    <section>
-      <SectionLabel>Thesis</SectionLabel>
-      <div className="rounded-card border border-amber-line bg-card p-3">
-        <p className="font-display text-[14px] leading-snug text-ink">{thesis.text}</p>
-        <div className="mt-2.5 flex flex-wrap items-center gap-2">
-          <span className="rounded-chip bg-amber-soft px-2 py-0.5 font-mono text-[11px] text-amber">
-            {thesis.polarity || "assert"}
-          </span>
-          {thesis.trustTier ? (
-            <span className="rounded-chip border border-line px-2 py-0.5 font-mono text-[11px] text-ink-3">
-              {thesis.trustTier}
-            </span>
-          ) : null}
-        </div>
-      </div>
-    </section>
   );
 }
 
@@ -177,80 +153,6 @@ function EntityList({
   );
 }
 
-function ClaimRow({ claim }: { claim: GraphClaim }) {
-  return (
-    <li className="flex items-start gap-3 rounded-card border border-line bg-card px-3 py-2.5">
-      <span className="mt-0.5 shrink-0">
-        {claim.grounded ? (
-          <Check className="size-4 text-for" aria-label="grounded" />
-        ) : (
-          <Zap className="size-4 text-ink-4" aria-label="ungrounded" />
-        )}
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="text-[13px] leading-snug text-ink-2">{claim.text}</p>
-        <p className="mt-1 font-mono text-[11px] text-ink-4">
-          {claim.sources} {claim.sources === 1 ? "source" : "sources"}
-        </p>
-      </div>
-    </li>
-  );
-}
-
-function ClaimList({ claims }: { claims: GraphClaim[] }) {
-  return (
-    <section>
-      <SectionLabel>Related claims · {claims.length}</SectionLabel>
-      {claims.length === 0 ? (
-        <p className="text-[13px] text-ink-4">No claims connected to this page yet.</p>
-      ) : (
-        <ul className="flex flex-col gap-2">
-          {claims.map((c) => (
-            <ClaimRow key={c.id} claim={c} />
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-function CiteRow({ cite }: { cite: GraphCite }) {
-  return (
-    <li className="flex items-start gap-3 rounded-card border border-line bg-card px-3 py-2.5">
-      <Quote className="mt-0.5 size-4 shrink-0 text-ink-4" />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-[13px] text-ink-2">{cite.title || cite.id}</p>
-        <div className="mt-1 flex items-center gap-2 font-mono text-[11px] text-ink-4">
-          {cite.provider ? <span>{cite.provider}</span> : null}
-          {cite.sourceUrl ? (
-            <span className="flex min-w-0 items-center gap-1">
-              <Link2 className="size-3 shrink-0" />
-              <span className="truncate">{cite.sourceUrl}</span>
-            </span>
-          ) : null}
-        </div>
-      </div>
-    </li>
-  );
-}
-
-function CiteList({ cites }: { cites: GraphCite[] }) {
-  return (
-    <section>
-      <SectionLabel>Cites · {cites.length}</SectionLabel>
-      {cites.length === 0 ? (
-        <p className="text-[13px] text-ink-4">No cited sources yet.</p>
-      ) : (
-        <ul className="flex flex-col gap-2">
-          {cites.map((c) => (
-            <CiteRow key={c.id} cite={c} />
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
 function linkedRelationLabel(relation: GraphLinkedArtifact["relation"]): string {
   switch (relation) {
     case "referenced_by":
@@ -311,7 +213,6 @@ function PaneBody({
 }) {
   return (
     <div className="flex flex-col gap-5">
-      {pane.thesis ? <ThesisCard thesis={pane.thesis} /> : null}
       <EntityList
         artifactId={artifactId}
         entities={pane.entities}
@@ -319,8 +220,6 @@ function PaneBody({
         onOpenEntity={onOpenEntity}
       />
       <LinkedArtifactList items={pane.linkedArtifacts} />
-      <ClaimList claims={pane.claims} />
-      <CiteList cites={pane.cites} />
     </div>
   );
 }

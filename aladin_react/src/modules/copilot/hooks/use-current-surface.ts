@@ -1,6 +1,7 @@
 import { useLocation } from "react-router-dom";
 import { useAppStore } from "@/app/state/store";
 import type { CopilotSurface } from "@/repos/copilot/copilot-repo";
+import { activeArtifactIdOf } from "@/modules/workspace/domain";
 
 /**
  * Derives what the user is currently looking at, so every copilot turn is context-aware.
@@ -10,7 +11,7 @@ import type { CopilotSurface } from "@/repos/copilot/copilot-repo";
 export function useCurrentSurface(): CopilotSurface {
   const location = useLocation();
   const openTickerSymbol = useAppStore((s) => s.openTickerSymbol);
-  const activeArtifactId = useAppStore((s) => s.workspace.activeArtifactId);
+  const activeArtifactId = useAppStore((s) => activeArtifactIdOf(s.workspace));
 
   // The global ticker modal is a focused overlay — if it's open, that's the subject.
   if (openTickerSymbol) {
@@ -33,7 +34,7 @@ export function useCurrentSurface(): CopilotSurface {
     return { kind: "artifact", id: activeArtifactId };
   }
 
-  // Fall back to the bare route name (insights, signals, entities, sources, graph, …).
+  // Fall back to the bare route name (insights, entities, sources, graph, …).
   const seg = path.split("/").filter(Boolean)[0];
   return { kind: seg || "home" };
 }

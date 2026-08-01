@@ -41,7 +41,6 @@ export interface PageEditorDriverProps {
 }
 
 const refGroupLabel: Record<string, string> = {
-  claim: "Claims",
   page: "Pages",
   shard: "Shards",
 };
@@ -240,13 +239,13 @@ export function BlockNotePageEditorDriver({
     return items;
   }
 
-  // `#` picker: unified search across claims + pages + shards, sectioned by kind.
+  // `#` picker: unified search across pages + shards, sectioned by kind.
   async function refItems(query: string): Promise<DefaultReactSuggestionItem[]> {
     if (!searchRefs) return [];
     const hits = await searchRefs(query);
     const items: DefaultReactSuggestionItem[] = hits.map((hit) => ({
       title: hit.label,
-      subtext: hit.kind === "claim" ? hit.detail || "claim" : hit.kind,
+      subtext: hit.kind,
       group: refGroupLabel[hit.kind] ?? hit.kind,
       onItemClick: () => {
         editor.insertInlineContent([
@@ -256,7 +255,7 @@ export function BlockNotePageEditorDriver({
               kind: hit.kind,
               targetId: hit.id,
               label: hit.label,
-              polarity: hit.kind === "claim" ? hit.detail ?? "" : "",
+              polarity: "",
             },
           },
           " ",

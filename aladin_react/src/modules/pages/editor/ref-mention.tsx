@@ -2,18 +2,20 @@ import { createReactInlineContentSpec } from "@blocknote/react";
 
 import type { ArtifactRef, RefKind } from "@/modules/graph/graph-pane-types";
 
-// Per-kind chip styling for a `#` reference. Claims are the engine-reasoned thesis layer
-// (accent-tinted); pages/shards are navigational artifact links.
-const refChipClass: Record<RefKind, string> = {
-  claim: "bg-raise text-catalyst",
+// Per-kind chip styling for a `#` reference — navigational artifact links. Keyed loosely
+// so a legacy chip stored with a retired kind (e.g. the removed claim layer) still renders
+// rather than coming out unstyled.
+const refChipClass: Record<string, string> = {
   page: "bg-raise text-ink-2",
   shard: "bg-raise text-echo",
 };
+const refChipFallback = "bg-raise text-ink-3";
 
-// artifactRef is an inline `#` reference to a claim, page, or shard. It carries the target
-// kind + id so the page's refs can be projected into artifact_refs; label is for display,
-// polarity annotates a claim chip. Pages/shards navigate on click (via delegated handler in
-// the driver, keyed off the data-* attributes); claim chips are display-only for now.
+// artifactRef is an inline `#` reference to a page or shard. It carries the target kind +
+// id so the page's refs can be projected into artifact_refs; label is for display. Chips
+// navigate on click (via a delegated handler in the driver, keyed off the data-* attributes).
+// `polarity` is retained in the prop schema only so documents written against the old claim
+// layer still parse.
 export const artifactRefSpec = createReactInlineContentSpec(
   {
     type: "artifactRef",
@@ -28,7 +30,7 @@ export const artifactRefSpec = createReactInlineContentSpec(
   {
     render: ({ inlineContent }) => {
       const { kind, targetId, label } = inlineContent.props;
-      const cls = refChipClass[(kind as RefKind)] ?? "bg-raise text-ink-2";
+      const cls = refChipClass[kind] ?? refChipFallback;
       const clickable = kind === "page" || kind === "shard";
       return (
         <span

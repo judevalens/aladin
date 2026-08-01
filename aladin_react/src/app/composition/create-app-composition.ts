@@ -7,14 +7,13 @@ import { createArtifactRepo } from "@/repos/artifacts/artifact-repo";
 import { createSourcesRepo } from "@/repos/sources/sources-repo";
 import { createGraphPaneRepo } from "@/repos/graph/graph-pane-repo";
 import { createPipelineRepo } from "@/repos/pipeline/pipeline-repo";
+import { createResearchRepo } from "@/repos/research/research-repo";
 import { createInsightsRepo } from "@/repos/insights/insights-repo";
 import { createInstrumentsRepo } from "@/repos/instruments/instruments-repo";
 import { createWatchlistRepo } from "@/repos/watchlist/watchlist-repo";
 import { createSearchRepo } from "@/repos/search/search-repo";
-import { createLocalSignalsRepo } from "@/repos/signals/local-signals-repo";
 import { createLocalWatchlistsRepo } from "@/repos/watchlist/local-watchlist-repo";
 import { createPropertyQueryRepo } from "@/repos/artifacts/property-query-repo";
-import { createBookSignalsRepo } from "@/repos/signals/book-signals-repo";
 import { createIntegrationRepo } from "@/repos/integrations/integration-repo";
 import { createPageAttributionRepo } from "@/repos/pages/page-attribution-repo";
 import { createApiClient } from "@/shared/api/client";
@@ -83,6 +82,7 @@ export function createAppComposition() {
     graphPane: createGraphPaneRepo(apiClient),
     pipeline: createPipelineRepo(apiClient),
     insights: createInsightsRepo(apiClient),
+    research: createResearchRepo(apiClient),
     instruments: createInstrumentsRepo(apiClient),
     watchlist: createWatchlistRepo(apiClient),
     localWatchlists: createLocalWatchlistsRepo(dataEvents),
@@ -90,9 +90,7 @@ export function createAppComposition() {
     market: createMarketRepo(apiClient),
     copilot: createCopilotRepo(apiClient),
     notifications: createNotificationsRepo(apiClient),
-    localSignals: createLocalSignalsRepo(dataEvents),
     propertyQuery: createPropertyQueryRepo(dataEvents),
-    bookSignals: createBookSignalsRepo(apiClient),
   };
 
   const authSession = new AuthSessionService(repos.auth, desktopSession);
@@ -121,12 +119,6 @@ export function createAppComposition() {
     }
     if (event.type === "nodeDeleted") {
       workspaceSync.handleNodeChanged();
-      return;
-    }
-    // A new/updated claim pushed in: light the Signals rail unread dot. If the Signals view is
-    // open, useSignals clears it on the live refresh; otherwise it persists until the user looks.
-    if (event.type === "signalUpserted") {
-      useAppStore.getState().bumpSignals();
       return;
     }
   });

@@ -75,6 +75,11 @@ type ArtifactRepository interface {
 	UpdateArtifactNodeParent(context.Context, string, *string) error
 	UpdateFolderTitle(context.Context, string, string) error
 	GetFolder(context.Context, string) (FolderNode, error)
+	// GetContainer resolves a node that may CONTAIN others: a plain folder OR a
+	// research folder (RESEARCH_SURFACE_PRD §21). Parent/destination validation uses
+	// this; GetFolder stays folder-only so the folder rename/read API can't touch a
+	// research node.
+	GetContainer(context.Context, string) (FolderNode, error)
 	FolderBreadcrumbs(context.Context, string) ([]BreadcrumbItem, error)
 }
 
@@ -107,7 +112,7 @@ func (s *DefaultArtifactService) List(ctx context.Context, params ArtifactListPa
 	if params.FolderID != nil {
 		params.FolderID = TrimStringPtr(params.FolderID)
 		if params.FolderID != nil {
-			if _, err := s.repo.GetFolder(ctx, *params.FolderID); err != nil {
+			if _, err := s.repo.GetContainer(ctx, *params.FolderID); err != nil {
 				return nil, err
 			}
 		}
@@ -225,7 +230,7 @@ func (s *DefaultArtifactService) Create(ctx context.Context, payload ArtifactPay
 	}
 	payload.FolderID = TrimStringPtr(payload.FolderID)
 	if payload.FolderID != nil {
-		if _, err := s.repo.GetFolder(ctx, *payload.FolderID); err != nil {
+		if _, err := s.repo.GetContainer(ctx, *payload.FolderID); err != nil {
 			return ArtifactCreateResponse{}, err
 		}
 	}
@@ -407,7 +412,7 @@ func (s *DefaultArtifactService) Update(ctx context.Context, id string, patch Ar
 	patch.SourceURL = TrimStringPtr(patch.SourceURL)
 	patch.FolderID = TrimStringPtr(patch.FolderID)
 	if patch.FolderID != nil {
-		if _, err := s.repo.GetFolder(ctx, *patch.FolderID); err != nil {
+		if _, err := s.repo.GetContainer(ctx, *patch.FolderID); err != nil {
 			return ArtifactResponse{}, err
 		}
 	}
@@ -501,7 +506,7 @@ func (s *DefaultArtifactService) Upload(ctx context.Context, input ArtifactUploa
 	}
 	input.FolderID = TrimStringPtr(input.FolderID)
 	if input.FolderID != nil {
-		if _, err := s.repo.GetFolder(ctx, *input.FolderID); err != nil {
+		if _, err := s.repo.GetContainer(ctx, *input.FolderID); err != nil {
 			return ArtifactResponse{}, err
 		}
 	}
@@ -583,7 +588,7 @@ func (s *DefaultArtifactService) ListFolders(ctx context.Context, parentID *stri
 	}
 	parentID = TrimStringPtr(parentID)
 	if parentID != nil {
-		if _, err := s.repo.GetFolder(ctx, *parentID); err != nil {
+		if _, err := s.repo.GetContainer(ctx, *parentID); err != nil {
 			return nil, err
 		}
 	}
@@ -654,7 +659,7 @@ func (s *DefaultArtifactService) createFolderNode(ctx context.Context, id string
 	}
 	parentID = TrimStringPtr(parentID)
 	if parentID != nil {
-		if _, err := s.repo.GetFolder(ctx, *parentID); err != nil {
+		if _, err := s.repo.GetContainer(ctx, *parentID); err != nil {
 			return BrowserNodeResponse{}, err
 		}
 	}

@@ -35,6 +35,7 @@ function nodeRow(partial: Partial<NodeRow> & Pick<NodeRow, "id" | "kind">): Node
     sourceUrl: null,
     summary: null,
     metadataJson: null,
+    researchJson: null,
     updatedAt: 0,
     ...partial,
   };

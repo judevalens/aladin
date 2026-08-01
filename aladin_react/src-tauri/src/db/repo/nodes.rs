@@ -33,13 +33,18 @@ pub struct NodeRow {
     pub source_url: Option<String>,
     pub summary: Option<String>,
     pub metadata_json: Option<String>,
+    /// Research folders only (RESEARCH_SURFACE_PRD §5): the extension row's LIGHT
+    /// fields as the frame carried them — run state, exec mode, source kind. NULL on
+    /// every other kind. The heavy strategy facts (hypothesis, manifest, universe,
+    /// code hash) are fetched on demand, never synced onto the tree.
+    pub research_json: Option<String>,
     pub updated_at: i64,
 }
 
 /// The light fields a frame's `data` carries for an upsert (doc §3) — what a
 /// tree/list view needs. Heavy bodies (note content, page blocks) are NOT on the
 /// wire; they are fetched on demand (deferred). `kind` is the entity kind
-/// ("folder" | "artifact"); `type` maps to the artifact_type column.
+/// ("folder" | "artifact" | "research"); `type` maps to the artifact_type column.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LightNodeData {
@@ -58,6 +63,9 @@ struct LightNodeData {
     summary: Option<String>,
     #[serde(default)]
     metadata: Option<serde_json::Value>,
+    // Present only on research nodes — the strategy extension's light fields.
+    #[serde(default)]
+    research: Option<serde_json::Value>,
 }
 
 /// Last applied seq for an entity, INCLUDING tombstoned rows (0 if never seen).
@@ -97,9 +105,10 @@ pub fn apply_upsert(
         ))
     })?;
     let metadata_json = light.metadata.as_ref().map(|v| v.to_string());
+    let research_json = light.research.as_ref().map(|v| v.to_string());
     conn.execute(
-        "INSERT INTO nodes (id, kind, parent_id, position, title, artifact_type, source_url, summary, metadata_json, seq, is_deleted, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 0, ?10)
+        "INSERT INTO nodes (id, kind, parent_id, position, title, artifact_type, source_url, summary, metadata_json, research_json, seq, is_deleted, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 0, ?11)
          ON CONFLICT(id) DO UPDATE SET
             kind = excluded.kind,
             parent_id = excluded.parent_id,
@@ -109,6 +118,7 @@ pub fn apply_upsert(
             source_url = excluded.source_url,
             summary = excluded.summary,
             metadata_json = excluded.metadata_json,
+            research_json = excluded.research_json,
             seq = excluded.seq,
             is_deleted = 0,
             updated_at = excluded.updated_at",
@@ -122,6 +132,7 @@ pub fn apply_upsert(
             light.source_url,
             light.summary,
             metadata_json,
+            research_json,
             seq,
         ],
     )?;
@@ -199,7 +210,7 @@ pub fn set_cursor(conn: &Connection, cursor: u64) -> DbResult<()> {
 /// tree is materialized from this by the read layer.
 pub fn list_nodes(conn: &Connection) -> DbResult<Vec<NodeRow>> {
     let mut stmt = conn.prepare(
-        "SELECT id, kind, parent_id, position, title, artifact_type, content, source_url, summary, metadata_json, updated_at
+        "SELECT id, kind, parent_id, position, title, artifact_type, content, source_url, summary, metadata_json, research_json, updated_at
          FROM nodes WHERE is_deleted = 0 ORDER BY position ASC, rowid ASC",
     )?;
     let rows = stmt.query_map([], map_node_row)?;
@@ -210,7 +221,7 @@ pub fn list_nodes(conn: &Connection) -> DbResult<Vec<NodeRow>> {
 /// One LIVE node by id (tombstoned rows read as absent).
 pub fn get_node(conn: &Connection, id: &str) -> DbResult<Option<NodeRow>> {
     let mut stmt = conn.prepare(
-        "SELECT id, kind, parent_id, position, title, artifact_type, content, source_url, summary, metadata_json, updated_at
+        "SELECT id, kind, parent_id, position, title, artifact_type, content, source_url, summary, metadata_json, research_json, updated_at
          FROM nodes WHERE id = ?1 AND is_deleted = 0",
     )?;
     let mut rows = stmt.query_map(params![id], map_node_row)?;
@@ -240,8 +251,8 @@ pub fn next_position(conn: &Connection, parent_id: Option<&str>) -> DbResult<i64
 /// Preserves the row's seq/is_deleted (does not touch the sync columns).
 pub fn upsert_local(conn: &Connection, row: &NodeRow) -> DbResult<()> {
     conn.execute(
-        "INSERT INTO nodes (id, kind, parent_id, position, title, artifact_type, content, source_url, summary, metadata_json, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+        "INSERT INTO nodes (id, kind, parent_id, position, title, artifact_type, content, source_url, summary, metadata_json, research_json, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
          ON CONFLICT(id) DO UPDATE SET
             kind = excluded.kind,
             parent_id = excluded.parent_id,
@@ -252,6 +263,7 @@ pub fn upsert_local(conn: &Connection, row: &NodeRow) -> DbResult<()> {
             source_url = excluded.source_url,
             summary = excluded.summary,
             metadata_json = excluded.metadata_json,
+            research_json = excluded.research_json,
             updated_at = excluded.updated_at",
         params![
             row.id,
@@ -264,6 +276,7 @@ pub fn upsert_local(conn: &Connection, row: &NodeRow) -> DbResult<()> {
             row.source_url,
             row.summary,
             row.metadata_json,
+            row.research_json,
             row.updated_at,
         ],
     )?;
@@ -306,7 +319,8 @@ fn map_node_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<NodeRow> {
         source_url: row.get(7)?,
         summary: row.get(8)?,
         metadata_json: row.get(9)?,
-        updated_at: row.get(10)?,
+        research_json: row.get(10)?,
+        updated_at: row.get(11)?,
     })
 }
 

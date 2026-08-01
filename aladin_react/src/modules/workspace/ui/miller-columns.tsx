@@ -1,21 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import {
-  ArrowRight,
-  ChevronRight,
-  Columns3,
-  FileText,
-  Folder,
-  Home,
-  Layout,
-  Link2,
-  Mic,
-  Paperclip,
-  X,
-} from "lucide-react";
+import { ArrowRight, ChevronRight, Columns3, FileText, FlaskConical, Folder, Home, Layout, Link2, Mic, Paperclip, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ArtifactKind, BrowserTreeNode } from "@/shared/api/models";
-import { findFolderChildren } from "@/modules/workspace/domain";
+import { findFolderChildren, isContainerKind } from "@/modules/workspace/domain";
 import { folderTitle } from "@/services/workspace/workspace-helpers";
 import { cn } from "@/lib/utils";
 
@@ -173,7 +161,7 @@ export function MillerColumns({
                       key={node.id}
                       node={node}
                       selected={
-                        node.kind === "folder"
+                        isContainerKind(node.kind)
                           ? selectedId === node.id
                           : leaf?.id === node.id
                       }
@@ -232,12 +220,16 @@ function MillerRow({
   onSelectLeaf: () => void;
   onOpenLeaf: () => void;
 }) {
-  const isFolder = node.kind === "folder";
-  const Icon = isFolder
-    ? Folder
-    : node.artifactPreview
-      ? TYPE_META[node.artifactPreview.kind].icon
-      : FileText;
+  // Drill-down treats a research folder as a column like any other container (§5).
+  const isFolder = isContainerKind(node.kind);
+  const isResearch = node.kind === "research";
+  const Icon = isResearch
+    ? FlaskConical
+    : isFolder
+      ? Folder
+      : node.artifactPreview
+        ? TYPE_META[node.artifactPreview.kind].icon
+        : FileText;
   const name = isFolder ? node.title : node.artifactPreview?.title ?? "Untitled";
 
   return (
