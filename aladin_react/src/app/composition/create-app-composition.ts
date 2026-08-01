@@ -8,6 +8,7 @@ import { createSourcesRepo } from "@/repos/sources/sources-repo";
 import { createGraphPaneRepo } from "@/repos/graph/graph-pane-repo";
 import { createPipelineRepo } from "@/repos/pipeline/pipeline-repo";
 import { createResearchRepo } from "@/repos/research/research-repo";
+import { createDocumentRepo } from "@/repos/documents/document-repo";
 import { createInsightsRepo } from "@/repos/insights/insights-repo";
 import { createInstrumentsRepo } from "@/repos/instruments/instruments-repo";
 import { createWatchlistRepo } from "@/repos/watchlist/watchlist-repo";
@@ -83,6 +84,7 @@ export function createAppComposition() {
     pipeline: createPipelineRepo(apiClient),
     insights: createInsightsRepo(apiClient),
     research: createResearchRepo(apiClient),
+    documents: createDocumentRepo(apiClient),
     instruments: createInstrumentsRepo(apiClient),
     watchlist: createWatchlistRepo(apiClient),
     localWatchlists: createLocalWatchlistsRepo(dataEvents),

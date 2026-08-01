@@ -13,6 +13,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/app/state/store";
 import { useResearchOverview, type ResearchMaterial } from "@/modules/research/hooks/use-research-overview";
+import { useDocument } from "@/modules/documents/hooks/use-document";
 import type { ResearchView } from "@/modules/workspace/domain";
 
 /**
@@ -151,6 +152,7 @@ function Material({ items, onOpen }: { items: ResearchMaterial[]; onOpen: (id: s
                   <span className="min-w-0 flex-1 truncate text-[13.5px] text-ink-2">
                     {item.title || "Untitled"}
                   </span>
+                  <IngestionMark item={item} />
                   <span className="shrink-0 font-mono text-[10.5px] uppercase tracking-wide text-ink-4">
                     {item.kind}
                   </span>
@@ -206,6 +208,33 @@ function StrategyCode({
         </button>
       )}
     </section>
+  );
+}
+
+/**
+ * Whether a piece of captured material is actually READABLE (design/INGESTION_PRD.md).
+ *
+ * The Material list was honest about what's in the folder and silent about whether any
+ * of it could be used. A dropped PDF that turned out to be a scan looks identical to one
+ * we read cover to cover — until this says otherwise.
+ *
+ * Quiet when the answer is "yes, fine": only a state that needs your attention earns ink.
+ */
+function IngestionMark({ item }: { item: ResearchMaterial }) {
+  const { document } = useDocument(item.isContainer ? "" : item.id, false);
+  if (!document || document.status === "ready") return null;
+
+  const working = document.status === "pending" || document.status === "ingesting";
+  return (
+    <span
+      title={document.error || document.status}
+      className={cn(
+        "shrink-0 font-mono text-[10px] uppercase tracking-wide",
+        working ? "text-ink-4" : document.status === "unsupported" ? "text-amber" : "text-against",
+      )}
+    >
+      {working ? "reading…" : document.status === "unsupported" ? "needs ocr" : "unreadable"}
+    </span>
   );
 }
 

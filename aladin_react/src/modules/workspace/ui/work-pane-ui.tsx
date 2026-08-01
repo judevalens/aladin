@@ -7,6 +7,7 @@ import { PageEditorUI } from "@/modules/pages/ui/page-editor-ui";
 import { DocSurfaceKeepAlive } from "@/modules/doc-surface/ui/doc-surface-ui";
 import { GraphSidePaneUI } from "@/modules/graph/ui/graph-side-pane-ui";
 import { ResearchPaneUI } from "@/modules/research/ui/research-pane-ui";
+import { FileArtifactPaneUI } from "@/modules/documents/ui/document-viewer-ui";
 import { useWorkPane, type WorkPaneCrumb } from "@/modules/workspace/hooks/use-workspace-state";
 import { cn } from "@/shared/lib/utils";
 
@@ -111,6 +112,19 @@ export function WorkPaneUI() {
               <VoiceArtifactUI artifact={activeArtifact} />
             </div>
           </ScrollArea>
+        ) : activeArtifact.kind === "file" ? (
+          // An ingested PDF opens as a document (INGESTION_PRD §6); every other file
+          // keeps the download card.
+          <FileArtifactPaneUI
+            artifactId={activeArtifact.id}
+            fallback={
+              <ScrollArea className="h-full">
+                <div className="mx-auto w-full max-w-workspace-max">
+                  <FileArtifactUI artifact={activeArtifact} />
+                </div>
+              </ScrollArea>
+            }
+          />
         ) : (
           <ScrollArea className="h-full">
             <div className="mx-auto w-full max-w-workspace-max">

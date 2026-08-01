@@ -14,10 +14,12 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 
+	"aladin/backend_v2/internal/app"
 	"aladin/backend_v2/internal/config"
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/entities"
 	"aladin/backend_v2/internal/graph"
+	"aladin/backend_v2/internal/ingestion"
 	"aladin/backend_v2/internal/insights"
 	"aladin/backend_v2/internal/llm"
 	"aladin/backend_v2/internal/pipeline"
@@ -119,6 +121,28 @@ func main() {
 	// Discourse sweep — PARKED per the trading pivot (TRADING_PRD.md D4). The
 	// internal/discourse code and the /api/insights read path stay; only the ambient
 	// LLM-burning ticker is off. Revive by re-wiring discourse.NewService + a ticker here.
+	// Document ingestion (design/INGESTION_PRD.md) — turn uploaded PDFs into text and
+	// structure. State-driven rather than queue-driven: the sweeper asks for artifacts
+	// that have no document row yet, so the upload path needs no changes and a lost
+	// message can't strand a file. 15s is the worst-case wait before a drop starts.
+	docSweeper := ingestion.NewSweeper(repo.NewDocumentPostgres(pool, app.NewArtifactFileStore()), slog.Default())
+	safego.Loop(ctx, "worker.ingestion", func(ctx context.Context) {
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if n, err := docSweeper.Sweep(ctx); err != nil {
+					slog.Error("ingestion: sweep failed", "component", "ingestion", "err", err)
+				} else if n > 0 {
+					slog.Info("ingestion: swept", "component", "ingestion", "documents", n)
+				}
+			}
+		}
+	})
+
 	// Reaper (ambient) — re-drives records stranded in a non-terminal status (e.g. a
 	// capture whose enrichment enqueue was lost to a crash). Idempotent: deterministic task
 	// ids make re-enqueuing a still-queued task a no-op.

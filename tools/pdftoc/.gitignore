@@ -1,0 +1,4 @@
+.venv/
+*.toc
+sample-book*.pdf
+__pycache__/

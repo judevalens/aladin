@@ -49,6 +49,9 @@ type Dependencies interface {
 	// Research is the research bench's write/read side (RESEARCH_SURFACE_PRD §5).
 	Research() coreservice.ResearchService
 
+	// Documents reads ingested file content (INGESTION_PRD).
+	Documents() coreservice.DocumentService
+
 	// GraphPane assembles the "On the graph" side pane for an entity.
 	GraphPane() coreservice.GraphPaneService
 	// EntityTags backs the tag / @entity picker: entity search + artifact↔entity links.
@@ -110,6 +113,7 @@ type StaticDependencies struct {
 	RelationshipsSvc       coreservice.RelationshipService
 	GraphPaneSvc           coreservice.GraphPaneService
 	ResearchSvc            coreservice.ResearchService
+	DocumentsSvc           coreservice.DocumentService
 	EntityTagsSvc          coreservice.EntityTagService
 	ArtifactRefsSvc        coreservice.ArtifactRefService
 	EntityContextSvc       coreservice.EntityContextService
@@ -169,6 +173,8 @@ func (d StaticDependencies) Relationships() coreservice.RelationshipService {
 	return d.RelationshipsSvc
 }
 func (d StaticDependencies) Research() coreservice.ResearchService { return d.ResearchSvc }
+
+func (d StaticDependencies) Documents() coreservice.DocumentService { return d.DocumentsSvc }
 
 func (d StaticDependencies) GraphPane() coreservice.GraphPaneService {
 	return d.GraphPaneSvc
@@ -241,6 +247,7 @@ type wiring struct {
 	relationships       coreservice.RelationshipService
 	graphPane           coreservice.GraphPaneService
 	research            coreservice.ResearchService
+	documents           coreservice.DocumentService
 	entityTags          coreservice.EntityTagService
 	artifactRefs        coreservice.ArtifactRefService
 	entityContext       coreservice.EntityContextService
@@ -289,6 +296,7 @@ func (w wiring) ShardBuild() coreservice.ShardBuildService      { return w.shard
 func (w wiring) Relationships() coreservice.RelationshipService { return w.relationships }
 func (w wiring) GraphPane() coreservice.GraphPaneService        { return w.graphPane }
 func (w wiring) Research() coreservice.ResearchService          { return w.research }
+func (w wiring) Documents() coreservice.DocumentService         { return w.documents }
 func (w wiring) EntityTags() coreservice.EntityTagService       { return w.entityTags }
 func (w wiring) ArtifactRefs() coreservice.ArtifactRefService   { return w.artifactRefs }
 func (w wiring) EntityContext() coreservice.EntityContextService {
@@ -321,7 +329,7 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 	sourceRepo := repo.NewSourcePostgres(pool)
 	recordRepo := repo.NewRecordPostgres(pool)
 	artifactRepo := repo.NewArtifactsPostgres(pool)
-	artifactFiles := repo.NewFilesystemArtifactStore(uploadDir(), audioDir())
+	artifactFiles := NewArtifactFileStore()
 	docStore := docsurface.NewStore(dataVolumePath)
 	docRuntime := docsurface.NewBuilder(docStore, filepath.Join(dataVolumePath, "cache", "esm"))
 	docPreview := docsurface.NewPreviewSessions(docStore, docRuntime, docsurface.PreviewOptions{})
@@ -479,6 +487,7 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		relationships:       coreservice.NewRelationshipService(relationshipRepo),
 		graphPane:           coreservice.NewGraphPaneService(graphPaneRepo),
 		research:            coreservice.NewResearchService(repo.NewResearchPostgres(pool)),
+		documents:           coreservice.NewDocumentService(repo.NewDocumentPostgres(pool, artifactFiles)),
 		entityTags:          entityTagsSvc,
 		artifactRefs:        artifactRefsSvc,
 		entityContext:       entityContextSvc,
@@ -531,6 +540,17 @@ func comingSoonProvider(provider, label, category, description string) coreservi
 		Capabilities: []string{"Planned"},
 		ComingSoon:   true,
 	}
+}
+
+// NewArtifactFileStore builds the artifact resource store. Exported because the WORKER
+// needs the identical directories to read what the API wrote — ingestion opens files the
+// upload path saved, and two processes computing these paths separately is a drift bug
+// waiting to happen.
+//
+// Note the paths are CWD-relative (pre-existing): api and worker must run from the same
+// working directory. Sharing the constructor at least guarantees they agree on the shape.
+func NewArtifactFileStore() *repo.FilesystemArtifactStore {
+	return repo.NewFilesystemArtifactStore(uploadDir(), audioDir())
 }
 
 func uploadDir() string {
