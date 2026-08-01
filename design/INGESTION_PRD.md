@@ -245,18 +245,53 @@ the whole difference, and it is not a matter of degree.
 **The agent's path becomes:** map → concept → anchored chunks → read. Bounded at every
 step, and citable at the end.
 
-## 13. Where it runs  **LOCKED**
+## 13. Where it runs  **LOCKED** — a script Go invokes, not a sidecar
 
-**A Python sidecar, `services/docling`**, beside `blocknote` and `copilot-agent`.
+**Go shells out to a Python script per document.** Not a persistent service.
 
-- Rasterizing needs MuPDF/pdfium/poppler — pure Go cannot, so it is cgo in the backend or
-  a sidecar, and the repo already has the sidecar shape twice.
-- Every document-AI library lives in Python, and `tools/pdftoc` already proves the
-  pdfplumber path works here.
-- It keeps cgo out of the Go binary.
+Rasterizing needs MuPDF/pdfium and the document-AI libraries are all Python, so *some*
+Python is unavoidable. The question was only whether it runs as a long-lived HTTP service
+or as a subprocess, and for this workload it's a subprocess:
 
-Go keeps ownership of persistence, status, and the sync frames. The sidecar is a function:
-bytes in, structure out.
+- Ingestion is a **batch job in a worker**, not a request path. Nothing is waiting on it,
+  so process startup is not on anyone's critical path.
+- A sidecar is another thing to start, monitor, and forget to start. The `cmd/worker`
+  incident on 2026-08-01 — a whole feature silently doing nothing because a process
+  wasn't running — is the argument against adding more of them.
+- A subprocess has function-call semantics: it runs, it returns, it dies. No port, no
+  health check, no lifecycle.
+
+**One invocation per DOCUMENT, never per page.** This is the detail that makes it work:
+importing torch and loading a layout model costs seconds, which is fatal amortised over a
+page and irrelevant amortised over a book. It also matches the sweeper, which already
+claims and processes a document as a unit.
+
+**The contract**, kept deliberately dumb:
+
+```
+in:   pdf path (argv)
+out:  JSON on stdout   — pages, regions, structure
+      diagnostics on stderr
+      non-zero exit = failure
+```
+
+A crash becomes `status='failed'` with stderr as the error, which is exactly the status
+model §4 already defines — a Python traceback surfaces the same way a malformed PDF does.
+`exec.CommandContext` carries the timeout, because a hung subprocess must not wedge the
+worker.
+
+**The cost, stated honestly.** `backend_v2/Dockerfile` is currently three static
+`CGO_ENABLED=0` binaries on plain alpine, and it is shared by api/worker/mcp. Putting
+Python and a layout model inside it makes all three images fat for one service's benefit.
+Locally this costs nothing; in prod it's a real regression.
+
+**The escape hatch is the seam.** Go calls an interface — `Segment(ctx, path) (Layout,
+error)` — with a subprocess implementation behind it. If the image size ever actually
+hurts, an HTTP implementation of that same interface is one file, and nothing above it
+changes. Choose the simple thing now; keep the swap cheap.
+
+Go keeps persistence, status, and the sync frames either way. The Python is a function:
+bytes in, structure out, no state.
 
 ## 14. Open
 
