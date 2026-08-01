@@ -322,9 +322,26 @@ Render DPI, holding `imgsz=1024`: **144dpi is the floor that keeps accuracy.** 9
 8ms but drops 13 regions/page to 10 — a 23% loss. 200dpi costs 42% more for no extra
 regions. Render at 144 and let the model resize.
 
-**Pick the device at runtime**, don't hardcode: `mps` on the author's Mac, `cpu` in the
-Linux container (~112s for the same book — acceptable, since nothing waits on it). The
-numbers above are Apple-Silicon numbers and do not transfer.
+**Pick the device at runtime**, don't hardcode — `mps` where it exists, `cpu` otherwise.
+
+**These numbers were measured NATIVELY on macOS, not in a container, and that is not an
+incidental detail: Docker on macOS has no Metal passthrough.** Containers run in a Linux
+VM, so MPS is unreachable from any container on this machine — and a containerised CPU run
+is *slower* than the 345ms native-CPU figure, being CPU under virtualisation.
+
+| how the worker runs | device | 280-page book |
+|---|---|---|
+| `make worker-go` — native, the dev loop | **mps** | **~34s** |
+| `aladin-prod-worker` container on this Mac | cpu in a VM | >112s |
+| Linux host with a real GPU | cuda | untested |
+
+So containerising the ingestion worker **forfeits the 4.4× entirely**. Either run it
+natively, or accept ~2 minutes a book — which for a background job nothing waits on is a
+defensible trade, just one to make on purpose.
+
+This also sharpens §13: the Python lives wherever the WORKER lives. Native worker →
+subprocess is trivially right. Containerised worker → torch goes in the image (the cost
+§13 flags) *and* the GPU is gone anyway.
 
 **Why the corpus forced this.** That thesis is an **OCR'd scan** — producer
 `Adobe Acrobat 8.13 Paper Capture Plug-in`, every page a 3392×4416 PNG with an invisible
