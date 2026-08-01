@@ -125,7 +125,15 @@ func main() {
 	// structure. State-driven rather than queue-driven: the sweeper asks for artifacts
 	// that have no document row yet, so the upload path needs no changes and a lost
 	// message can't strand a file. 15s is the worst-case wait before a drop starts.
-	docSweeper := ingestion.NewSweeper(repo.NewDocumentPostgres(pool, app.NewArtifactFileStore()), slog.Default())
+	docSegmenter := ingestion.NewPythonSegmenter()
+	if err := docSegmenter.Available(); err != nil {
+		// Not fatal: the sweeper still runs and every document lands 'failed' with this
+		// message, which is visible in the UI. A worker that refuses to boot over an
+		// optional tool would take the syncers down with it.
+		slog.Warn("ingestion: layout tool unavailable", "component", "ingestion", "err", err)
+	}
+	docSweeper := ingestion.NewSweeper(
+		repo.NewDocumentPostgres(pool, app.NewArtifactFileStore()), docSegmenter, slog.Default())
 	safego.Loop(ctx, "worker.ingestion", func(ctx context.Context) {
 		ticker := time.NewTicker(15 * time.Second)
 		defer ticker.Stop()

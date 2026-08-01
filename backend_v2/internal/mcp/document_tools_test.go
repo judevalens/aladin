@@ -28,6 +28,10 @@ func (f fakeDocumentService) Pages(_ context.Context, _ string, from, to int) ([
 	return out, nil
 }
 
+func (f fakeDocumentService) Regions(_ context.Context, _, _ string) ([]service.DocumentRegion, error) {
+	return nil, nil
+}
+
 func (f fakeDocumentService) Search(_ context.Context, _, query string, _ int) ([]service.DocumentHit, error) {
 	out := []service.DocumentHit{}
 	for _, page := range f.doc.Pages {

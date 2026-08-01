@@ -14,6 +14,27 @@ import (
 	"github.com/google/uuid"
 )
 
+// realSegmenter points at the repo's tool. Tests run from internal/repo/, so the paths
+// are explicit rather than relying on the worker's relative default.
+//
+// This deliberately exercises the REAL script: the whole point of the test is that
+// storageKey -> path -> Python -> rows -> frame lines up, and a fake segmenter would
+// verify none of it. It skips where the venv isn't installed rather than failing, so a
+// machine without the tool still runs the rest of the suite.
+func realSegmenter(t *testing.T) *ingestion.PythonSegmenter {
+	t.Helper()
+	root := filepath.Join("..", "..", "..", "tools", "doclayout")
+	seg := &ingestion.PythonSegmenter{
+		Python:  filepath.Join(root, ".venv", "bin", "python"),
+		Script:  filepath.Join(root, "segment.py"),
+		Timeout: 5 * time.Minute,
+	}
+	if err := seg.Available(); err != nil {
+		t.Skipf("layout tool not installed: %v", err)
+	}
+	return seg
+}
+
 // TestIngestion_SweepEndToEnd drives the whole backend loop the way the worker does:
 // an uploaded PDF is claimed, extracted, persisted with its outline, and emits the
 // artifact's node frame so open surfaces refresh through the syncer.
@@ -71,7 +92,7 @@ func TestIngestion_SweepEndToEnd(t *testing.T) {
 	})
 
 	docRepo := NewDocumentPostgres(pool, files)
-	sweeper := ingestion.NewSweeper(docRepo, slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	sweeper := ingestion.NewSweeper(docRepo, realSegmenter(t), slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
 
 	if _, err := sweeper.Sweep(ctx); err != nil {
 		t.Fatalf("sweep: %v", err)
@@ -96,6 +117,40 @@ func TestIngestion_SweepEndToEnd(t *testing.T) {
 	}
 	if len(doc.Pages) != 10 || !strings.Contains(doc.Pages[4].Text, "Beginnings") {
 		t.Fatalf("page text missing or misaligned")
+	}
+
+	// Layout regions persisted — the substrate both surfaces sit on (§13e). Their bboxes
+	// are in PDF points and must land inside the page, because an out-of-page box anchors
+	// to nothing and §13d spends no error budget on anchors.
+	regions, err := docRepo.GetRegions(ctx, artifactID, "")
+	if err != nil {
+		t.Fatalf("get regions: %v", err)
+	}
+	if len(regions) == 0 {
+		t.Fatal("no layout regions persisted — the segmentation pass produced nothing")
+	}
+	for _, region := range regions {
+		if region.Page < 1 || region.Page > doc.PageCount {
+			t.Fatalf("region on page %d, outside 1..%d", region.Page, doc.PageCount)
+		}
+		if len(region.Bbox) != 4 {
+			t.Fatalf("region %+v has no usable box", region)
+		}
+		if region.Bbox[2] <= region.Bbox[0] || region.Bbox[3] <= region.Bbox[1] {
+			t.Fatalf("region %+v has an inverted box", region)
+		}
+		if region.Class == "" {
+			t.Fatalf("region %+v has no class", region)
+		}
+	}
+	// The fixture has headings, so at least one must have been recognised as such —
+	// otherwise the model ran but found nothing useful.
+	titles, err := docRepo.GetRegions(ctx, artifactID, "title")
+	if err != nil {
+		t.Fatalf("get title regions: %v", err)
+	}
+	if len(titles) == 0 {
+		t.Fatalf("no title regions among %d — class filtering or the model is broken", len(regions))
 	}
 
 	// Status-only reads must not drag the text along — that's the whole reason the API
@@ -184,7 +239,7 @@ func TestIngestion_UnreadableFileStillLandsTerminal(t *testing.T) {
 	})
 
 	docRepo := NewDocumentPostgres(pool, files)
-	sweeper := ingestion.NewSweeper(docRepo, slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	sweeper := ingestion.NewSweeper(docRepo, realSegmenter(t), slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
 	if _, err := sweeper.Sweep(ctx); err != nil {
 		t.Fatalf("sweep: %v", err)
 	}

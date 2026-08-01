@@ -137,6 +137,36 @@ func (r *PostgresDocumentRepository) SearchDocument(ctx context.Context, artifac
 	return out, rows.Err()
 }
 
+// GetRegions returns the layout regions for a document in reading order, optionally
+// filtered to one class — Tutor asks for figures, the chunk builder asks for titles.
+func (r *PostgresDocumentRepository) GetRegions(ctx context.Context, artifactID, class string) ([]artifactservice.DocumentRegion, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT page, ordinal, class, confidence, x0, y0, x1, y1, text
+		  FROM artifact_regions
+		 WHERE artifact_id = $1 AND ($2 = '' OR class = $2)
+		 ORDER BY page ASC, ordinal ASC
+	`, artifactID, class)
+	if err != nil {
+		return nil, fmt.Errorf("regions %s: %w", artifactID, err)
+	}
+	defer rows.Close()
+
+	out := []artifactservice.DocumentRegion{}
+	for rows.Next() {
+		var (
+			region         artifactservice.DocumentRegion
+			x0, y0, x1, y1 float64
+		)
+		if err := rows.Scan(&region.Page, &region.Ordinal, &region.Class, &region.Confidence,
+			&x0, &y0, &x1, &y1, &region.Text); err != nil {
+			return nil, err
+		}
+		region.Bbox = []float64{x0, y0, x1, y1}
+		out = append(out, region)
+	}
+	return out, rows.Err()
+}
+
 // ClaimPending finds file artifacts that look ingestible and have no document row yet,
 // and claims them by inserting one with status 'ingesting'.
 //
@@ -257,6 +287,24 @@ func (r *PostgresDocumentRepository) SaveResult(ctx context.Context, artifactID,
 			VALUES ($1, $2, $3, $4, $5)
 		`, artifactID, section.Title, section.Level, section.Page, position); err != nil {
 			return fmt.Errorf("save section %d: %w", position, err)
+		}
+	}
+
+	// Regions replace wholesale for the same reason as the outline: a re-extract with a
+	// different model must not leave boxes from the old one behind.
+	if _, err := tx.Exec(ctx, `DELETE FROM artifact_regions WHERE artifact_id = $1`, artifactID); err != nil {
+		return err
+	}
+	for _, region := range result.Regions {
+		if len(region.Bbox) != 4 {
+			continue // a malformed box would anchor to nothing; drop it rather than store it
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO artifact_regions (artifact_id, page, ordinal, class, confidence, x0, y0, x1, y1, text)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		`, artifactID, region.Page, region.Ordinal, region.Class, region.Confidence,
+			region.Bbox[0], region.Bbox[1], region.Bbox[2], region.Bbox[3], region.Text); err != nil {
+			return fmt.Errorf("save region p%d#%d: %w", region.Page, region.Ordinal, err)
 		}
 	}
 

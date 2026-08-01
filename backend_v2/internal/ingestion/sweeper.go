@@ -30,13 +30,14 @@ type Store interface {
 
 // Sweeper claims un-ingested documents and extracts them.
 type Sweeper struct {
-	store Store
-	log   *slog.Logger
-	batch int
+	store     Store
+	segmenter Segmenter
+	log       *slog.Logger
+	batch     int
 }
 
-func NewSweeper(store Store, log *slog.Logger) *Sweeper {
-	return &Sweeper{store: store, log: log, batch: 5}
+func NewSweeper(store Store, segmenter Segmenter, log *slog.Logger) *Sweeper {
+	return &Sweeper{store: store, segmenter: segmenter, log: log, batch: 5}
 }
 
 // WithBatch bounds how many documents one sweep will extract. Extraction is CPU-bound
@@ -66,7 +67,7 @@ func (s *Sweeper) Sweep(ctx context.Context) (int, error) {
 		if ctx.Err() != nil {
 			return done, ctx.Err()
 		}
-		result := s.extract(item)
+		result := s.extract(ctx, item)
 		if err := s.store.SaveResult(ctx, item.ArtifactID, item.UserID, result); err != nil {
 			s.log.Error("ingestion: save failed",
 				"component", "ingestion", "artifact_id", item.ArtifactID, "err", err)
@@ -74,15 +75,21 @@ func (s *Sweeper) Sweep(ctx context.Context) (int, error) {
 		}
 		s.log.Info("ingestion: document processed",
 			"component", "ingestion", "artifact_id", item.ArtifactID,
-			"status", result.Status, "pages", result.PageCount, "sections", len(result.Sections))
+			"status", result.Status, "pages", result.PageCount,
+			"sections", len(result.Sections), "regions", len(result.Regions))
 		done++
 	}
 	return done, nil
 }
 
 // extract dispatches on format. Today there is one; the point of the seam is that a
-// second is a new branch here plus a new Extract function, not a new pipeline.
-func (s *Sweeper) extract(item coreservice.PendingDocument) coreservice.DocumentResult {
+// second is a new branch here plus a new extractor, not a new pipeline.
+//
+// Text, outline AND regions come from ONE pass (INGESTION_PRD §13). Splitting them across
+// two extractors would mean resolving a region's box against text from a different
+// coordinate model, turning an exact page anchor into an inference — and §13d spends the
+// entire error budget on boundaries, none on anchors.
+func (s *Sweeper) extract(ctx context.Context, item coreservice.PendingDocument) coreservice.DocumentResult {
 	if !isPDF(item) {
 		return coreservice.DocumentResult{
 			Status: string(StatusUnsupported),
@@ -90,7 +97,14 @@ func (s *Sweeper) extract(item coreservice.PendingDocument) coreservice.Document
 		}
 	}
 
-	doc := ExtractPDF(item.Path)
+	layout, err := s.segmenter.Segment(ctx, item.Path)
+	if err != nil {
+		// A missing venv, a crashed script, a timeout, unreadable output — each already
+		// carries a message a human can act on, so surface it verbatim rather than
+		// flattening it to "ingestion failed".
+		return coreservice.DocumentResult{Status: string(StatusFailed), Error: err.Error()}
+	}
+	doc := layout.ToDocument()
 
 	sections := make([]coreservice.DocumentSection, 0, len(doc.Sections))
 	for _, section := range doc.Sections {
@@ -100,12 +114,27 @@ func (s *Sweeper) extract(item coreservice.PendingDocument) coreservice.Document
 	for _, page := range doc.Pages {
 		pages = append(pages, coreservice.DocumentPage(page))
 	}
+	regions := make([]coreservice.DocumentRegion, 0)
+	for _, page := range layout.Pages {
+		for ordinal, region := range page.Regions {
+			regions = append(regions, coreservice.DocumentRegion{
+				Page:       page.Page,
+				Ordinal:    ordinal,
+				Class:      region.Class,
+				Confidence: region.Confidence,
+				Bbox:       region.Bbox,
+				Text:       region.Text,
+			})
+		}
+	}
+
 	return coreservice.DocumentResult{
 		Status:    string(doc.Status),
 		Error:     doc.Error,
 		PageCount: doc.PageCount,
 		Pages:     pages,
 		Sections:  sections,
+		Regions:   regions,
 		Extractor: doc.Extractor,
 	}
 }

@@ -18,6 +18,17 @@ type DocumentSection struct {
 	Page  int    `json:"page"`
 }
 
+// DocumentRegion is one labelled area of a page, in PDF points. The shared substrate:
+// the chunk builder reads headings out of these, Tutor crops the visual ones (§13e).
+type DocumentRegion struct {
+	Page       int       `json:"page"`
+	Ordinal    int       `json:"ordinal"`
+	Class      string    `json:"class"`
+	Confidence float64   `json:"confidence"`
+	Bbox       []float64 `json:"bbox"` // x0, y0, x1, y1
+	Text       string    `json:"text,omitempty"`
+}
+
 // DocumentPage is one page's extracted text.
 type DocumentPage struct {
 	Page int    `json:"page"`
@@ -55,6 +66,7 @@ type DocumentResult struct {
 	PageCount int
 	Pages     []DocumentPage
 	Sections  []DocumentSection
+	Regions   []DocumentRegion
 	Extractor string
 }
 
@@ -76,12 +88,16 @@ type DocumentService interface {
 	// question should reach for: paging assumes you already know where to look, which
 	// for a document with no outline means reading it end to end.
 	Search(ctx context.Context, artifactID, query string, limit int) ([]DocumentHit, error)
+	// Regions returns the layout regions for a document, optionally filtered to a class
+	// (e.g. Tutor asking only for figures). Empty class = all.
+	Regions(ctx context.Context, artifactID, class string) ([]DocumentRegion, error)
 }
 
 type DocumentRepository interface {
 	GetDocument(ctx context.Context, artifactID string, withPages bool) (Document, error)
 	GetPages(ctx context.Context, artifactID string, from, to int) ([]DocumentPage, error)
 	SearchDocument(ctx context.Context, artifactID, query string, limit int) ([]DocumentHit, error)
+	GetRegions(ctx context.Context, artifactID, class string) ([]DocumentRegion, error)
 	// ClaimPending atomically finds ingestible artifacts with no document row yet and
 	// marks them 'ingesting', so two workers can't take the same file.
 	ClaimPending(ctx context.Context, limit int) ([]PendingDocument, error)
@@ -115,6 +131,16 @@ func (s *documentService) Pages(ctx context.Context, artifactID string, from, to
 		return nil, ErrNotFound
 	}
 	return s.repo.GetPages(ctx, artifactID, from, to)
+}
+
+func (s *documentService) Regions(ctx context.Context, artifactID, class string) ([]DocumentRegion, error) {
+	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(artifactID) == "" {
+		return nil, ErrNotFound
+	}
+	return s.repo.GetRegions(ctx, artifactID, strings.TrimSpace(class))
 }
 
 func (s *documentService) Search(ctx context.Context, artifactID, query string, limit int) ([]DocumentHit, error) {

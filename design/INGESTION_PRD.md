@@ -411,6 +411,29 @@ lines, badges, running heads), 14 on arXiv, 8 on the thesis.
   `BookRe`. A URL rule and a minimum-length rule remove both without touching anything
   genuine.
 
+## 13c-bis. Regression baseline — `tools/doclayout/corpus_check.py`
+
+Recorded 2026-08-01 after P1, over the **first 12 pages** of each document:
+
+| document | regions | title | abandon | ms/page |
+|---|---|---|---|---|
+| thesis (OCR'd scan) | 86 | 22% | 19% | 460 |
+| arXiv | 102 | 28% | 12% | 482 |
+| SSRN | 107 | 28% | 0% | 509 |
+| ACM | 147 | 9% | 27% | 564 |
+| Deep Hedging | 177 | 2% | 17% | 565 |
+
+**Compare against these, not against §13c.** That table strided across whole documents;
+this samples the first 12 pages, so the windows differ. The thesis reads 22% here versus
+9% there for exactly that reason — a thesis's opening pages are title, abstract and
+contents, which are heading-dense by nature. Same document, same model, different slice.
+
+This exists so a model swap or a filter change shows up as a class-mix that moved, rather
+than as chunks quietly getting worse weeks later.
+
+*(ms/page here includes ~2s of model load amortised over only 12 pages; §13b's 78ms is the
+steady-state figure.)*
+
 ## 13d. What accuracy is actually needed  **LOCKED**
 
 **~85% on layout is the target. Chasing higher is wasted money.**
