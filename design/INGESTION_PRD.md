@@ -1,8 +1,9 @@
 # PRD — Ingestion
 
 > **Audience:** whoever builds and extends the ingestion engine.
-> **Date:** 2026-07-31. Revision 1.
-> **Status:** v1 building on `feat/ingestion-engine`.
+> **Date:** 2026-08-01. Revision 2 — adds Part II: structure and semantics (§9–§13).
+> Revision 1 (2026-07-31) defined extraction and the status model; those still stand.
+> **Status:** v1 shipped on `feat/ingestion-engine`. Part II is designed, not built.
 >
 > Companions: `RESEARCH_SURFACE_PRD.md` (§21 research artifacts, §3 #9 context artifact) ·
 > `TRADING_PRD.md` (§2 the research log is the product) · `PIPELINE.md` (the *other*
@@ -45,14 +46,26 @@ The failure mode was not the code. It was that the pipeline tried to *understand
 documents before anything could *read* them. Entity resolution on a corpus you cannot
 open is sophistication in the wrong place.
 
-So the hard rule for v1:
+The rule that came out of that, and the amendment rev 2 makes to it:
 
-> Ingestion extracts. It does not interpret.
+> **v1:** Ingestion extracts. It does not interpret.
+>
+> **rev 2:** Interpretation is allowed when it is **derived, disposable, anchored to the
+> source, and never the thing you query instead of the text.**
 
-Text and structure are facts about the file. Entities, topics, claims, and summaries are
-opinions about its meaning, and every one of them is a separate, later, explicitly-chosen
-step. If someone wants enrichment, it reads the ingested text — it does not get bolted
-into the extractor.
+The v1 rule was a good overcorrection and too strict to survive contact with a 400-page
+book: without *some* map, a reader can only page through. What actually went wrong before
+was not interpretation — it was interpretation that became a **truth store**: a global
+graph you queried *instead of* the sources, that could drift from them, and that nothing
+could re-derive cheaply.
+
+So Part II adds a concept graph, and every clause of the amended rule is load-bearing:
+
+- **derived** — recomputable from the text at any time
+- **disposable** — throw it away and nothing else breaks
+- **anchored** — every concept points at the chunks it came from, so any claim is one hop
+  from its evidence
+- **never authoritative** — the text stays the source of truth; the graph is an index
 
 **Also not** the external syncers. `internal/pipeline` pulls Bluesky/HN/Reddit into
 `records` — machine-paced, feed-shaped, other people's content. This is user-paced,
@@ -148,3 +161,115 @@ tells you not just what's there but whether it's readable.
 - **Re-ingestion.** Currently once per artifact. Re-running on a better extractor needs a
   version marker on `artifact_documents`.
 - **Size ceiling.** No limit today. A 2,000-page scan will hurt; add one when it does.
+
+
+---
+
+# PART II — Structure and semantics
+
+> Designed, not built. Part I made a document *readable*; this makes it *navigable* —
+> the difference between having the text and being able to find your way around it.
+
+## 9. The problem  **LOCKED**
+
+**Semantic boundaries in a document that doesn't annotate them.**
+
+Some PDFs carry an outline; §5 reads it. Most don't, and then there is nothing to chunk
+on. Fixed-size chunking cuts mid-argument, and a reader — human or agent — with no map
+can only go page by page.
+
+Two things were measured on 2026-08-01 rather than assumed:
+
+1. **The text layer has no typography.** `ledongthuc/pdf` declares `Text.FontSize` and
+   never assigns it — verified against a real upload *and* against a fixture with 26pt
+   headings over 11pt body. Both report `0.0`. So the strongest inferred boundary signal
+   is unavailable in the current Go stack. Not a document problem; a library ceiling.
+2. **Scans are a dead end.** They land in `unsupported` and stop there.
+
+Those are the same problem wearing two hats: **layout is a visual property, and we are
+only looking at text.**
+
+## 10. The pipeline  **LOCKED**
+
+Cheapest signal first; the LLM runs last, on the smallest possible input. That ordering
+is what makes this affordable on a book rather than a pamphlet.
+
+| # | stage | answers | cost |
+|---|---|---|---|
+| 1 | **Layout segmentation** | *where things are* — title / heading / paragraph / table / figure boxes, per page | small local model, ~100ms/page, no per-token cost |
+| 2 | **Structure assembly** | *the tree* — headings + reading order → chapter → section → block | deterministic |
+| 3 | **Embeddings** | *retrieval, and the boundaries layout couldn't see* | one embed per leaf chunk |
+| 4 | **LLM** | *names and concepts* | bounded windows only, never the whole document |
+
+**Why segmentation and not better text extraction.** It recovers the typography we can't
+get from the text layer, and it works identically on a scan — the same boxes that say
+"heading" tell OCR what to read. One path for born-digital and scanned, instead of a
+pipeline and a dead end.
+
+**Why embeddings do double duty.** The vectors needed for semantic retrieval are the same
+vectors that reveal topic shifts: embed adjacent windows, and a boundary is where
+similarity drops. One cost, two uses — and it is the only signal here that finds a
+boundary a document merely *implies*. Segmentation finds the ones it *shows*.
+
+**Why the LLM is last and small.** It is an excellent labeller and a poor scanner. By the
+time it runs, stages 1–3 have cut the document into regions that fit, so it names regions
+and lifts concepts instead of trying to read a book.
+
+## 11. Chunks are a TREE, not a partition  **LOCKED**
+
+Recursion splits at the strongest boundary available; if the pieces are still too large it
+recurses with the next signal down. **Keep the internal nodes.** A chapter is a chunk
+*and* contains chunks.
+
+That buys multi-resolution retrieval: match coarse for *"what is this about"*, fine for
+*"what exactly does it claim"*. Flattening to leaves throws away the structure that was
+expensive to recover.
+
+## 12. The concept graph  **LOCKED**
+
+Small, high-level, and deliberately incomplete — the embeddings carry the detail. A graph
+trying to be exhaustive is just a worse index.
+
+```
+artifact_chunks    (artifact_id, parent_id, ordinal, page_from, page_to, text, embedding)
+artifact_concepts  (artifact_id, name, kind, gist)
+concept_edges      (from_concept, to_concept, relation)
+concept_chunks     (concept → chunk)        ← the anchors; without these it is a summary
+```
+
+**Concept dedup is WITHIN one document.** Merging "risk premium" and "compensation for
+risk" inside one author's vocabulary is bounded and cheap. Merging them *across the
+corpus* is the global entity resolution that sank the last knowledge graph. That line is
+the whole difference, and it is not a matter of degree.
+
+**The agent's path becomes:** map → concept → anchored chunks → read. Bounded at every
+step, and citable at the end.
+
+## 13. Where it runs  **LOCKED**
+
+**A Python sidecar, `services/docling`**, beside `blocknote` and `copilot-agent`.
+
+- Rasterizing needs MuPDF/pdfium/poppler — pure Go cannot, so it is cgo in the backend or
+  a sidecar, and the repo already has the sidecar shape twice.
+- Every document-AI library lives in Python, and `tools/pdftoc` already proves the
+  pdfplumber path works here.
+- It keeps cgo out of the Go binary.
+
+Go keeps ownership of persistence, status, and the sync frames. The sidecar is a function:
+bytes in, structure out.
+
+## 14. Open
+
+- **Sample or every page?** Documents are typographically consistent, so a VLM reading ~8
+  pages could learn the conventions and a cheap rule apply them to the rest. Worth
+  measuring against running the layout model on everything before choosing.
+- **Are inferred boundaries auto-applied or reviewable?** `tools/pdftoc` deliberately makes
+  a drafted outline editable before it touches the PDF, and that instinct was right.
+  Silent structure you can't correct is the failure mode.
+- **When does the concept pass run** — on ingest, or on demand? It is N LLM calls per
+  document, so this is a cost decision, not a technical one.
+- **Multi-column and tables.** Segmentation gives boxes; reading order across columns is a
+  separate problem and tables are not prose.
+- **Re-ingestion.** A better layout model invalidates chunk boundaries, which invalidates
+  embeddings and anchors. `extractor` on `artifact_documents` is the version marker; the
+  cascade needs one too.
