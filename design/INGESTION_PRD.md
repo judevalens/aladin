@@ -303,9 +303,28 @@ already in `uploads/`:
 | | |
 |---|---|
 | model load | **2.1s**, once per document |
-| inference | **~350ms/page** on CPU at 144dpi |
-| a 280-page book | **~1.6 min**, once, in a background worker |
+| inference | **~78ms/page** on the M4 Pro GPU (MPS); ~345ms on CPU |
+| render (PyMuPDF, 144dpi) | ~41ms/page |
+| **a 280-page book** | **~34s** end to end, once, in a background worker |
 | classes | `title · plain text · abandon · figure · figure_caption · table · table_caption · table_footnote · isolate_formula · formula_caption` |
+
+**Tuning, measured on the real document (M4 Pro, 14 cores, 48GB):**
+
+| variant | ms/page | note |
+|---|---|---|
+| cpu, single | 345 | the naive first run |
+| **mps, single** | **78** | **4.4× — the whole win is one device flag** |
+| mps, batch 4 / 8 | 113 / 98 | batching is SLOWER on MPS; don't |
+| cpu, batch 8 | 433 | worse still |
+| mps + `half=True` | 75 | ~4%, same regions — marginal |
+
+Render DPI, holding `imgsz=1024`: **144dpi is the floor that keeps accuracy.** 96dpi saves
+8ms but drops 13 regions/page to 10 — a 23% loss. 200dpi costs 42% more for no extra
+regions. Render at 144 and let the model resize.
+
+**Pick the device at runtime**, don't hardcode: `mps` on the author's Mac, `cpu` in the
+Linux container (~112s for the same book — acceptable, since nothing waits on it). The
+numbers above are Apple-Silicon numbers and do not transfer.
 
 **Why the corpus forced this.** That thesis is an **OCR'd scan** — producer
 `Adobe Acrobat 8.13 Paper Capture Plug-in`, every page a 3392×4416 PNG with an invisible
