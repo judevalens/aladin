@@ -197,6 +197,7 @@ func New(addr string, deps app.Dependencies, pages service.PageDocumentService, 
 		marketInfo:  deps.MarketInfo(),
 		alerts:      deps.Alerts(),
 		instruments: deps.Instruments(),
+		documents:   deps.Documents(),
 	})
 
 	streamable := sdkmcp.NewStreamableHTTPHandler(func(*http.Request) *sdkmcp.Server {

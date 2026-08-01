@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useDocument } from "@/modules/documents/hooks/use-document";
 import type { DocumentStatus, IngestedDocument } from "@/repos/documents/document-repo";
+import type { Artifact } from "@/shared/api/models";
 
 /**
  * The document viewer (design/INGESTION_PRD.md §6): outline sidebar, text pane,
@@ -159,18 +160,61 @@ function Notice({
  * never pulls the text, which is why `withText` exists.
  */
 export function FileArtifactPaneUI({
-  artifactId,
+  artifact,
   fallback,
 }: {
-  artifactId: string;
+  artifact: Artifact;
   fallback: React.ReactNode;
 }) {
-  const { document, loading } = useDocument(artifactId, false);
+  const { document, loading } = useDocument(artifact.id, false);
 
-  // While we don't know yet, show the file card rather than a flash of empty chrome —
-  // it's the correct view for most files and the honest one for an unread PDF.
-  if (loading && !document) return <>{fallback}</>;
-  if (!document) return <>{fallback}</>;
+  if (document && document.status === "ready") {
+    return <DocumentViewerUI artifactId={artifact.id} />;
+  }
 
-  return <DocumentViewerUI artifactId={artifactId} />;
+  // A PDF with NO document row at all is the state that used to lie: it rendered
+  // identically to a file nothing will ever read. Extraction happens in a background
+  // worker, so "nothing here yet" and "nothing is coming" look the same from the client
+  // — say which, because the fix (start the worker) is otherwise invisible.
+  const unread = !loading && !document && looksLikePDF(artifact);
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      {unread ? (
+        <p className="border-b border-line bg-panel px-6 py-2 text-[12.5px] text-ink-4">
+          Not read yet — no text or outline has been extracted. Extraction runs in the
+          background worker; if this doesn&apos;t change, the worker isn&apos;t running.
+        </p>
+      ) : null}
+      {document && document.status !== "ready" ? (
+        <div className="border-b border-line bg-panel">
+          <StatusLine document={document} />
+        </div>
+      ) : null}
+      <div className="min-h-0 flex-1">{fallback}</div>
+    </div>
+  );
+}
+
+/** Compact form of the status notice, for sitting above the file card. */
+function StatusLine({ document }: { document: IngestedDocument }) {
+  const working = document.status === "pending" || document.status === "ingesting";
+  return (
+    <p
+      className={cn(
+        "px-6 py-2 text-[12.5px]",
+        document.status === "failed" ? "text-against" : working ? "text-ink-4" : "text-amber",
+      )}
+    >
+      {working
+        ? "Reading this document…"
+        : document.error || `Ingestion status: ${document.status}`}
+    </p>
+  );
+}
+
+// Uploads keep their original filename as the title, and the stored resource keeps the
+// extension, so either is a good enough signal for a status hint.
+function looksLikePDF(artifact: Artifact): boolean {
+  return /\.pdf(\?|$)/i.test(artifact.resourceUrl ?? "") || /\.pdf$/i.test(artifact.title);
 }

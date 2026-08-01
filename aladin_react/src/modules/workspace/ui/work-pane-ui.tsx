@@ -116,7 +116,7 @@ export function WorkPaneUI() {
           // An ingested PDF opens as a document (INGESTION_PRD §6); every other file
           // keeps the download card.
           <FileArtifactPaneUI
-            artifactId={activeArtifact.id}
+            artifact={activeArtifact}
             fallback={
               <ScrollArea className="h-full">
                 <div className="mx-auto w-full max-w-workspace-max">

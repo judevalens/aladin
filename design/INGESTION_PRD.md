@@ -128,9 +128,15 @@ tells you not just what's there but whether it's readable.
 
 - **v1 (this branch)** — the engine, the two tables, PDF text + bookmark outline, status,
   the viewer.
+- **v1.1 (done)** — agents can read the corpus. `get_artifact` on an ingested file
+  returns the outline plus the first pages of text, and `read_document(artifact_id,
+  from_page, to_page)` reads a range. Text comes back with `[pN]` markers so a model can
+  cite a page rather than gesture at the document, and both reads are size-bounded — an
+  unbounded read is how one book eats a context window. An unreadable document reports
+  *why* instead of looking empty, which is the difference between "I can't read this,
+  it needs OCR" and a confident answer about nothing.
 - **v2** — outline *generation* for PDFs without bookmarks (port `tools/pdftoc`, keeping
-  the editable draft step); full-text search across ingested documents; `get_artifact`
-  returning text so agents can actually read the corpus.
+  the editable draft step); full-text search across ingested documents.
 - **later, and only if wanted** — enrichment over ingested text. Separate step, separate
   decision, reading the output of this one.
 

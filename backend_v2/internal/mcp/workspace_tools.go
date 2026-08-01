@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"aladin/backend_v2/internal/blocknote"
@@ -39,6 +40,7 @@ type workspaceToolServer struct {
 	marketInfo  service.MarketInfoService
 	alerts      service.AlertService
 	instruments service.InstrumentService
+	documents   service.DocumentService
 }
 
 func registerWorkspaceTools(server *sdkmcp.Server, t workspaceToolServer) {
@@ -60,8 +62,14 @@ func registerWorkspaceTools(server *sdkmcp.Server, t workspaceToolServer) {
 	}, t.listArtifacts)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "get_artifact",
-		Description: "Read one artifact by id — works for ANY kind: a page (returns its text), a shard/app (returns its content + metadata), a link, a file, or a voice note. For block-level page edits use get_page instead.",
+		Description: "Read one artifact by id — works for ANY kind: a page (returns its text), a shard/app (returns its content + metadata), a link, a file, or a voice note. For an ingested PDF this returns its outline and the first pages of text; use read_document for a specific page range. For block-level page edits use get_page instead.",
 	}, t.getArtifact)
+	sdkmcp.AddTool(server, &sdkmcp.Tool{
+		Name: "read_document",
+		Description: "Read a page range from an ingested document (a PDF Aladin has extracted). " +
+			"get_artifact returns the outline plus the first few pages; use this to read a specific " +
+			"part — pass from_page/to_page from the outline. Text comes back with [pN] markers so you can cite pages.",
+	}, t.readDocument)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "get_watchlist",
 		Description: "List the tickers in a watchlist. Optionally pass a list name; omit for the user's default list.",
@@ -175,6 +183,39 @@ type getArtifactOutput struct {
 	Summary   *string        `json:"summary,omitempty"`
 	Metadata  map[string]any `json:"metadata,omitempty"`
 	Citations []citationOut  `json:"citations,omitempty"`
+
+	// Set for an ingested document (a PDF we've read). The outline comes back in full
+	// because it's small and it's how an agent decides WHAT to read; the text is
+	// truncated, with `more` telling the model to call read_document for the rest.
+	PageCount int              `json:"page_count,omitempty"`
+	Outline   []documentTOCOut `json:"outline,omitempty"`
+	More      string           `json:"more,omitempty"`
+	// Non-empty when the file exists but couldn't be read (e.g. a scan needing OCR),
+	// so the model says so instead of assuming the document is empty.
+	Unreadable string `json:"unreadable,omitempty"`
+}
+
+type documentTOCOut struct {
+	Title string `json:"title"`
+	Level int    `json:"level"`
+	Page  int    `json:"page"`
+}
+
+type readDocumentInput struct {
+	ArtifactID string `json:"artifact_id"`
+	FromPage   int    `json:"from_page,omitempty"`
+	ToPage     int    `json:"to_page,omitempty"`
+}
+
+type readDocumentOutput struct {
+	ID        string        `json:"id"`
+	Title     string        `json:"title"`
+	FromPage  int           `json:"from_page"`
+	ToPage    int           `json:"to_page"`
+	PageCount int           `json:"page_count"`
+	Text      string        `json:"text"`
+	More      string        `json:"more,omitempty"`
+	Citations []citationOut `json:"citations,omitempty"`
 }
 
 type getWatchlistInput struct {
@@ -352,12 +393,119 @@ func (t workspaceToolServer) getArtifact(ctx context.Context, _ *sdkmcp.CallTool
 			body = text
 		}
 	}
-	return nil, getArtifactOutput{
+	out := getArtifactOutput{
 		ID: art.ID, Title: art.Title, Type: art.Type,
 		Text: body, Summary: art.Summary, Metadata: art.Metadata,
 		Citations: []citationOut{{Kind: citationKindForArtifact(art.Type), ID: art.ID, Title: art.Title}},
-	}, nil
+	}
+
+	// An ingested file (a PDF we've read) carries its own text. Without this an agent
+	// gets a filename and concludes the document is empty — RESEARCH_SURFACE_PRD §3 #9
+	// wants the captured material to be something agents can actually run over.
+	if art.Type == "file" && t.documents != nil {
+		if doc, derr := t.documents.Get(ctx, art.ID, true); derr == nil {
+			out.PageCount = doc.PageCount
+			for _, section := range doc.Sections {
+				out.Outline = append(out.Outline, documentTOCOut(section))
+			}
+			switch doc.Status {
+			case "ready":
+				text, truncated := joinPages(doc.Pages, 0, 0, artifactTextBudget)
+				out.Text = text
+				if truncated {
+					out.More = fmt.Sprintf(
+						"Truncated: this is the start of a %d-page document. Use read_document(artifact_id=%q, from_page, to_page) to read a specific range — the outline above says where things are.",
+						doc.PageCount, art.ID)
+				}
+			case "pending", "ingesting":
+				out.Unreadable = "This document is still being read; try again shortly."
+			default:
+				// A scan needing OCR, or a broken file. Say so — an agent that assumes
+				// "no text" means "nothing to say" will confidently answer about nothing.
+				out.Unreadable = doc.Error
+				if out.Unreadable == "" {
+					out.Unreadable = "This file could not be read (status: " + doc.Status + ")."
+				}
+			}
+		}
+	}
+	return nil, out, nil
 }
+
+// artifactTextBudget bounds how much document text rides back on get_artifact. A book
+// would otherwise swallow the whole context window on a lookup the agent may not even
+// have wanted. The outline plus read_document is the way to go deeper deliberately.
+const artifactTextBudget = 6000
+
+// joinPages renders a page range as text with page markers, up to a character budget.
+// The markers matter: they're what lets a model cite "p. 42" instead of gesturing at the
+// document as a whole.
+func joinPages(pages []service.DocumentPage, from, to, budget int) (string, bool) {
+	var builder strings.Builder
+	truncated := false
+	for _, page := range pages {
+		if from > 0 && page.Page < from {
+			continue
+		}
+		if to > 0 && page.Page > to {
+			continue
+		}
+		if strings.TrimSpace(page.Text) == "" {
+			continue
+		}
+		chunk := fmt.Sprintf("[p%d]\n%s\n\n", page.Page, page.Text)
+		if budget > 0 && builder.Len()+len(chunk) > budget {
+			truncated = true
+			break
+		}
+		builder.WriteString(chunk)
+	}
+	return strings.TrimSpace(builder.String()), truncated
+}
+
+func (t workspaceToolServer) readDocument(ctx context.Context, _ *sdkmcp.CallToolRequest, in readDocumentInput) (*sdkmcp.CallToolResult, readDocumentOutput, error) {
+	if strings.TrimSpace(in.ArtifactID) == "" {
+		return nil, readDocumentOutput{}, service.BadRequest("artifact_id is required")
+	}
+	if t.documents == nil {
+		return nil, readDocumentOutput{}, service.BadRequest("document reading is not configured")
+	}
+	art, err := t.artifacts.Get(ctx, in.ArtifactID)
+	if err != nil {
+		return nil, readDocumentOutput{}, err
+	}
+	doc, err := t.documents.Get(ctx, in.ArtifactID, true)
+	if err != nil {
+		return nil, readDocumentOutput{}, err
+	}
+	if doc.Status != "ready" {
+		return nil, readDocumentOutput{}, service.BadRequest("this document has no readable text: " + doc.Error)
+	}
+
+	from, to := in.FromPage, in.ToPage
+	if from <= 0 {
+		from = 1
+	}
+	if to <= 0 || to > doc.PageCount {
+		to = doc.PageCount
+	}
+	text, truncated := joinPages(doc.Pages, from, to, readDocumentBudget)
+
+	out := readDocumentOutput{
+		ID: art.ID, Title: art.Title, FromPage: from, ToPage: to,
+		PageCount: doc.PageCount, Text: text,
+		Citations: []citationOut{{Kind: citationKindForArtifact(art.Type), ID: art.ID, Title: art.Title}},
+	}
+	if truncated {
+		out.More = "Truncated at the size limit — request a narrower page range to read the rest."
+	}
+	return nil, out, nil
+}
+
+// readDocumentBudget is larger than the get_artifact preview because the caller asked
+// for this text on purpose, but still bounded — an unbounded read is how you lose a
+// context window to one file.
+const readDocumentBudget = 24000
 
 func (t workspaceToolServer) getWatchlist(ctx context.Context, _ *sdkmcp.CallToolRequest, in getWatchlistInput) (*sdkmcp.CallToolResult, getWatchlistOutput, error) {
 	principal, err := service.RequirePrincipal(ctx)
