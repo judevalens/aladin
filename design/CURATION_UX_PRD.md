@@ -145,7 +145,7 @@ an entity with zero human-verified fields (all-AI) vs a heavily-curated one.
 - **Design system:** Aladin **dark-minimal IDE** aesthetic; tokens in
   `aladin_react/src/index.css` (surfaces `bg-rail/panel/card/…`, ink ramp, `bg-amber`,
   `border-line`, semantic `text-for` / `text-against`). Follow `design/DESIGN_SPEC.md`.
-- **Match the existing surfaces:** the built **Signals** and **Insights** surfaces
-  (`aladin_react/src/modules/signals`, `…/insights`) — curation should feel like the same product,
-  same card grammar.
+- **Match the existing surfaces:** the built **Insights** surface
+  (`aladin_react/src/modules/insights`) — curation should feel like the same product,
+  same card grammar. (The Signals surface was removed with the claim layer.)
 - **Reference renders:** `design/screens/`.

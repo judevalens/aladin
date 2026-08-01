@@ -108,8 +108,9 @@ Stated explicitly, because each of these is a plausible-sounding way to lose a y
 
 **There is zero trading code in the repo.** No ticker, no bars, no broker, no
 portfolio. (`GET /api/quote` at `internal/api/server.go:375` returns a random
-*inspirational* quote. `internal/service/signals.go` says "marked to market" as a
-metaphor.) The trading side is a from-scratch build.
+*inspirational* quote. The old `internal/service/signals.go` used "marked to market"
+as a metaphor; it was removed with the claim layer, freeing "signal" for its trading
+meaning.) The trading side is a from-scratch build.
 
 **What survives and is worth a lot:**
 
@@ -213,7 +214,7 @@ subtlety that produces survivorship bias, and it is very expensive to retrofit.
 | **D2** | **Data vendor** — Alpaca / Tiingo / Polygon? | Alpaca is the default: free data, paper broker, and live broker behind one auth — one integration covers L0 and L4. **Verify free-tier history depth and feed coverage before committing**; if thin, split (Tiingo/Polygon for data, Alpaca for execution). |
 | **D3** | **Bar storage** — plain Postgres or TimescaleDB? | **Plain Postgres.** US equities daily bars are ~6k symbols × 252/yr × 20yr ≈ 30M rows; Postgres handles that with a sane PK. Revisit only if intraday resolution lands. |
 | **D4** | **The KG code** (`discourse`, `insights`, `graph`) | **Keep running as-is** (user call). Note the cost: the discourse sweep is a goroutine ticker at `cmd/worker/main.go:131` firing every 5 min and burning LLM tokens for a deprioritized product. Cheap to park later — kill the ticker, keep the code. |
-| **D5** | **Execution safety model** — kill switch, per-strategy risk limits, reconciliation. | Unresolved, and required *before* T5. Alpaca is the source of truth for positions; we reconcile against it, never trust local state. |
+| **D5** | **Execution safety model** — kill switch, per-strategy risk limits, reconciliation. | Unresolved, and required *before* T5. Alpaca is the source of truth for positions; we reconcile against it, never trust local state. **Reconciliation surfaces on the Portfolio surface — see `PORTFOLIO_PRD.md` §3.** |
 | **D6** | **Universe definition** — how is "what to scan" expressed and resolved as-of a date? | Unresolved. Falls out of L0; must be as-of to preserve §0's survivorship guarantee. |
 
 ---
@@ -233,7 +234,9 @@ kept as-is rather than renumbered, since T1–T5 are referenced elsewhere.)*
 - **T2 — Strategy protocol + backtest (L1/L2).** Manifest, process contract, first
   runtime, `strategies` (incl. `hypothesis`) / `strategy_versions` (code hash —
   reproducibility is the point) / `backtest_runs` / `backtest_trades`. **D1 resolves
-  here.**
+  here.** ⚠️ **Constraint from `PORTFOLIO_PRD.md` §3: a strategy's target weights are
+  weights of its OWN SLEEVE, not of the whole book.** Settle this in the protocol — after
+  the fact it changes the process contract, every stored manifest, and every recorded run.
 - **T3 — Live scan → watchlist.** Same process, trailing window, latest bar.
   `scan_runs` / `signals`. Scheduled post-close; daily bars need no intraday infra.
 - **T4 — Journal.** `trades` links signal → strategy → outcome, plus a note for what
