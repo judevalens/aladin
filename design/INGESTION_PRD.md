@@ -378,6 +378,37 @@ covers extraction, rasterizing, and text-to-region mapping.
 non-max-suppression, and low-confidence regions (<0.3) are mostly junk. Raise the floor and
 dedup by IoU.
 
+## 13c. Corpus check — does it hold beyond one document?  **measured 2026-08-01**
+
+Five documents, four born-digital and one OCR'd scan:
+
+| document | pages | kind | ms/page | `title` share | found |
+|---|---|---|---|---|---|
+| MIT quant thesis | 280 | **OCR'd scan** | 79 | 9% | `3.2.4 Trend-Based Regression`, `5.4 Summary of Empirical Analysis` |
+| arXiv preprint | — | born-digital | 74 | 28% | `1 Introduction`, `2 Defining AI Runtime Infrastructure` |
+| SSRN paper | 16 | born-digital | 74 | 28% | `2. HYPOTHESES`, `3.1. Momentum Strategies` |
+| ACM article | 38 | born-digital | 70 | 5% | `1.2 Terminology`, `3 DEDUCTIVE KNOWLEDGE` |
+| journal article | 4 | born-digital | 115 | 8% | `Actors: A Model of Concurrent Computation`, `References` |
+
+**The result that matters: one pipeline covers both formats.** The 280-page scan gave up
+real numbered section headings — the thing font-size thresholding got 25% wrong on — at
+the same cost per page as a born-digital paper. Timing is 70–115 ms/page throughout, with
+no format-dependent blowup.
+
+`abandon` scales with publisher furniture, as intended: 40 regions on the ACM paper (DOI
+lines, badges, running heads), 14 on arXiv, 8 on the thesis.
+
+**Two things NOT clean, to handle when building:**
+
+- **Title share varies 5%–28% across the corpus.** The sampled headings are all genuine, so
+  it may be that some papers simply have many short subsections — but a 3–5× spread is more
+  often systematic than a property of the documents. Understand it before treating title
+  density as a segmentation signal.
+- **False positives are real but cheap to filter.** The ACM paper labelled
+  `Latest updates: https://dl.acm.org/doi/…` a title; the journal produced the fragment
+  `BookRe`. A URL rule and a minimum-length rule remove both without touching anything
+  genuine.
+
 ## 14. Open
 
 - **Are inferred boundaries auto-applied or reviewable?** `tools/pdftoc` deliberately makes
