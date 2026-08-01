@@ -293,6 +293,46 @@ changes. Choose the simple thing now; keep the swap cheap.
 Go keeps persistence, status, and the sync frames either way. The Python is a function:
 bytes in, structure out, no state.
 
+## 13b. The layout model — measured, not guessed  **LOCKED**
+
+Chosen: **DocLayout-YOLO** (`juliozhao/DocLayout-YOLO-DocStructBench`), run on CPU.
+
+Measured 2026-08-01 against the real corpus — a 280-page MIT quant-finance thesis
+already in `uploads/`:
+
+| | |
+|---|---|
+| model load | **2.1s**, once per document |
+| inference | **~350ms/page** on CPU at 144dpi |
+| a 280-page book | **~1.6 min**, once, in a background worker |
+| classes | `title · plain text · abandon · figure · figure_caption · table · table_caption · table_footnote · isolate_formula · formula_caption` |
+
+**Why the corpus forced this.** That thesis is an **OCR'd scan** — producer
+`Adobe Acrobat 8.13 Paper Capture Plug-in`, every page a 3392×4416 PNG with an invisible
+text layer. Its font metrics are OCR's *guesses*: sizes smear continuously across
+11.5–12.4pt, and thresholding on size flagged **451 of 1796 lines (25%) as headings**.
+Typography-based detection is not mis-tuned on this corpus, it is inapplicable.
+
+The visual model handles precisely what defeated it. The MIT library stamp OCR'd as
+`MASSACHUSETTS NS E OF TECHNOLOGY JUN 252008 LIBRARIES` and `AII4H` — the exact noise that
+produced false headings — comes back classed **`abandon`**. Having a class for *"this is
+page furniture, ignore it"* is worth as much as the heading detection.
+
+**Two things that make it cheaper than expected:**
+
+- **No rasterizing for scans.** The page image is already embedded in the file.
+- **No OCR pass.** The words already exist in the text layer; they simply have no
+  structure. Once a region is labelled, its text is pulled by bounding box
+  (`page.get_textbox(rect)`). The model *only* segments.
+
+**PyMuPDF is the extractor**, replacing `ledongthuc/pdf` in the Python path: it exposes
+span-level `size`/`flags`/`bbox`, renders pages, and reads embedded images. One dependency
+covers extraction, rasterizing, and text-to-region mapping.
+
+**Known noise, to handle when building:** overlapping/duplicate boxes need
+non-max-suppression, and low-confidence regions (<0.3) are mostly junk. Raise the floor and
+dedup by IoU.
+
 ## 14. Open
 
 - **Sample or every page?** Documents are typographically consistent, so a VLM reading ~8
