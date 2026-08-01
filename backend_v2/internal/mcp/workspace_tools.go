@@ -440,6 +440,17 @@ func (t workspaceToolServer) getArtifact(ctx context.Context, _ *sdkmcp.CallTool
 		if doc, derr := t.documents.Get(ctx, art.ID, false); derr == nil {
 			out.PageCount = doc.PageCount
 			out.Outline, out.OutlineNote = capOutline(doc.Sections)
+			// Most PDFs ship no bookmarks. Segmentation recovers a structure anyway
+			// (INGESTION_PRD §11), so fall back to it rather than reporting no outline
+			// for a document that plainly has sections.
+			if len(out.Outline) == 0 {
+				if tree, terr := t.documents.Outline(ctx, art.ID); terr == nil {
+					out.Outline, out.OutlineNote = capOutline(flattenChunkTitles(tree, 0))
+					if len(out.Outline) > 0 && out.OutlineNote == "" {
+						out.OutlineNote = "Outline recovered by layout analysis — this PDF carries no bookmarks of its own."
+					}
+				}
+			}
 			switch doc.Status {
 			case "ready":
 				out.Text = ""
@@ -461,6 +472,24 @@ func (t workspaceToolServer) getArtifact(ctx context.Context, _ *sdkmcp.CallTool
 		}
 	}
 	return nil, out, nil
+}
+
+// flattenChunkTitles walks the recovered tree into the same levelled sequence an
+// embedded outline would produce, so both sources render identically to the model.
+func flattenChunkTitles(chunks []service.DocumentChunk, depth int) []service.DocumentSection {
+	out := []service.DocumentSection{}
+	for _, chunk := range chunks {
+		if chunk.Kind == "section" && strings.TrimSpace(chunk.Title) != "" {
+			out = append(out, service.DocumentSection{Title: chunk.Title, Level: depth, Page: chunk.PageFrom})
+		}
+		// Blocks are leaves with no heading; descend past them for nested sections.
+		next := depth
+		if chunk.Kind == "section" {
+			next = depth + 1
+		}
+		out = append(out, flattenChunkTitles(chunk.Children, next)...)
+	}
+	return out
 }
 
 // maxOutlineEntries bounds the outline too. A 400-page book can carry hundreds of

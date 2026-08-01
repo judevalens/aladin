@@ -167,6 +167,72 @@ func (r *PostgresDocumentRepository) GetRegions(ctx context.Context, artifactID,
 	return out, rows.Err()
 }
 
+// GetChunkTree reads the chunk tree, reassembling the hierarchy from parent_id.
+//
+// One query, assembled in memory: the tree is small (sections, not pages) and a recursive
+// CTE would buy nothing but complexity at this size.
+func (r *PostgresDocumentRepository) GetChunkTree(ctx context.Context, artifactID string, withText bool) ([]artifactservice.DocumentChunk, error) {
+	textCol := "''"
+	if withText {
+		textCol = "text"
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, parent_id, ordinal, depth, kind, title, page_from, page_to, `+textCol+`
+		  FROM artifact_chunks
+		 WHERE artifact_id = $1
+		 ORDER BY parent_id NULLS FIRST, ordinal ASC
+	`, artifactID)
+	if err != nil {
+		return nil, fmt.Errorf("chunks %s: %w", artifactID, err)
+	}
+	defer rows.Close()
+
+	byID := map[int64]*artifactservice.DocumentChunk{}
+	var order []int64
+	for rows.Next() {
+		var chunk artifactservice.DocumentChunk
+		if err := rows.Scan(&chunk.ID, &chunk.ParentID, &chunk.Ordinal, &chunk.Depth,
+			&chunk.Kind, &chunk.Title, &chunk.PageFrom, &chunk.PageTo, &chunk.Text); err != nil {
+			return nil, err
+		}
+		byID[chunk.ID] = &chunk
+		order = append(order, chunk.ID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	roots := []artifactservice.DocumentChunk{}
+	for _, id := range order {
+		chunk := byID[id]
+		if chunk.ParentID == nil {
+			continue
+		}
+		if parent, ok := byID[*chunk.ParentID]; ok {
+			parent.Children = append(parent.Children, *chunk)
+		}
+	}
+	// Children were copied by value above, so rebuild top-down to pick up nested edits.
+	var build func(id int64) artifactservice.DocumentChunk
+	build = func(id int64) artifactservice.DocumentChunk {
+		node := *byID[id]
+		node.Children = nil
+		for _, childID := range order {
+			child := byID[childID]
+			if child.ParentID != nil && *child.ParentID == id {
+				node.Children = append(node.Children, build(childID))
+			}
+		}
+		return node
+	}
+	for _, id := range order {
+		if byID[id].ParentID == nil {
+			roots = append(roots, build(id))
+		}
+	}
+	return roots, nil
+}
+
 // ClaimPending finds file artifacts that look ingestible and have no document row yet,
 // and claims them by inserting one with status 'ingesting'.
 //
@@ -306,6 +372,34 @@ func (r *PostgresDocumentRepository) SaveResult(ctx context.Context, artifactID,
 			region.Bbox[0], region.Bbox[1], region.Bbox[2], region.Bbox[3], region.Text); err != nil {
 			return fmt.Errorf("save region p%d#%d: %w", region.Page, region.Ordinal, err)
 		}
+	}
+
+	// Chunks replace wholesale, and parents are written before children so the
+	// self-referencing key resolves as we go (ingestion.FlattenChunks walks depth-first).
+	if _, err := tx.Exec(ctx, `DELETE FROM artifact_chunks WHERE artifact_id = $1`, artifactID); err != nil {
+		return err
+	}
+	ids := make([]int64, 0, len(result.Chunks))
+	for _, chunk := range result.Chunks {
+		var parent *int64
+		if chunk.ParentID != nil {
+			index := int(*chunk.ParentID)
+			if index < 0 || index >= len(ids) {
+				return fmt.Errorf("chunk %d references parent %d, which has not been written", chunk.Ordinal, index)
+			}
+			parent = &ids[index]
+		}
+		var id int64
+		if err := tx.QueryRow(ctx, `
+			INSERT INTO artifact_chunks
+			    (artifact_id, parent_id, ordinal, depth, kind, title, page_from, page_to, text)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+			RETURNING id
+		`, artifactID, parent, chunk.Ordinal, chunk.Depth, chunk.Kind, chunk.Title,
+			chunk.PageFrom, chunk.PageTo, chunk.Text).Scan(&id); err != nil {
+			return fmt.Errorf("save chunk %q: %w", chunk.Title, err)
+		}
+		ids = append(ids, id)
 	}
 
 	// The tree row shows ingestion status, so the artifact's node frame has to go out

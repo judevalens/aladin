@@ -76,7 +76,8 @@ func (s *Sweeper) Sweep(ctx context.Context) (int, error) {
 		s.log.Info("ingestion: document processed",
 			"component", "ingestion", "artifact_id", item.ArtifactID,
 			"status", result.Status, "pages", result.PageCount,
-			"sections", len(result.Sections), "regions", len(result.Regions))
+			"sections", len(result.Sections), "regions", len(result.Regions),
+			"chunks", len(result.Chunks))
 		done++
 	}
 	return done, nil
@@ -128,6 +129,23 @@ func (s *Sweeper) extract(ctx context.Context, item coreservice.PendingDocument)
 		}
 	}
 
+	// Regions become a navigable tree (§11). Flattened depth-first, with ParentID
+	// carrying the parent's INDEX in this slice — the repo swaps each index for the row
+	// id it just inserted, which works precisely because parents come first.
+	chunks := make([]coreservice.DocumentChunk, 0)
+	FlattenChunks(BuildChunks(regions), func(chunk Chunk, parentIndex int) int {
+		entry := coreservice.DocumentChunk{
+			Ordinal: chunk.Ordinal, Depth: chunk.Depth, Kind: string(chunk.Kind),
+			Title: chunk.Title, PageFrom: chunk.PageFrom, PageTo: chunk.PageTo, Text: chunk.Text,
+		}
+		if parentIndex >= 0 {
+			index := int64(parentIndex)
+			entry.ParentID = &index
+		}
+		chunks = append(chunks, entry)
+		return len(chunks) - 1
+	})
+
 	return coreservice.DocumentResult{
 		Status:    string(doc.Status),
 		Error:     doc.Error,
@@ -135,6 +153,7 @@ func (s *Sweeper) extract(ctx context.Context, item coreservice.PendingDocument)
 		Pages:     pages,
 		Sections:  sections,
 		Regions:   regions,
+		Chunks:    chunks,
 		Extractor: doc.Extractor,
 	}
 }

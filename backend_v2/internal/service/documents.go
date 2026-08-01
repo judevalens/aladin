@@ -29,6 +29,21 @@ type DocumentRegion struct {
 	Text       string    `json:"text,omitempty"`
 }
 
+// DocumentChunk is one node of the chunk tree (§11) — a section with children, or a
+// leaf block. Page spans are observed from the regions that formed it.
+type DocumentChunk struct {
+	ID       int64           `json:"id"`
+	ParentID *int64          `json:"parentId,omitempty"`
+	Ordinal  int             `json:"ordinal"`
+	Depth    int             `json:"depth"`
+	Kind     string          `json:"kind"` // section | block
+	Title    string          `json:"title,omitempty"`
+	PageFrom int             `json:"pageFrom"`
+	PageTo   int             `json:"pageTo"`
+	Text     string          `json:"text,omitempty"`
+	Children []DocumentChunk `json:"children,omitempty"`
+}
+
 // DocumentPage is one page's extracted text.
 type DocumentPage struct {
 	Page int    `json:"page"`
@@ -67,6 +82,7 @@ type DocumentResult struct {
 	Pages     []DocumentPage
 	Sections  []DocumentSection
 	Regions   []DocumentRegion
+	Chunks    []DocumentChunk
 	Extractor string
 }
 
@@ -91,6 +107,9 @@ type DocumentService interface {
 	// Regions returns the layout regions for a document, optionally filtered to a class
 	// (e.g. Tutor asking only for figures). Empty class = all.
 	Regions(ctx context.Context, artifactID, class string) ([]DocumentRegion, error)
+	// Outline returns the chunk TREE — sections nested, text omitted. This is what a
+	// reader navigates by when the document shipped no bookmarks of its own.
+	Outline(ctx context.Context, artifactID string) ([]DocumentChunk, error)
 }
 
 type DocumentRepository interface {
@@ -98,6 +117,7 @@ type DocumentRepository interface {
 	GetPages(ctx context.Context, artifactID string, from, to int) ([]DocumentPage, error)
 	SearchDocument(ctx context.Context, artifactID, query string, limit int) ([]DocumentHit, error)
 	GetRegions(ctx context.Context, artifactID, class string) ([]DocumentRegion, error)
+	GetChunkTree(ctx context.Context, artifactID string, withText bool) ([]DocumentChunk, error)
 	// ClaimPending atomically finds ingestible artifacts with no document row yet and
 	// marks them 'ingesting', so two workers can't take the same file.
 	ClaimPending(ctx context.Context, limit int) ([]PendingDocument, error)
@@ -141,6 +161,18 @@ func (s *documentService) Regions(ctx context.Context, artifactID, class string)
 		return nil, ErrNotFound
 	}
 	return s.repo.GetRegions(ctx, artifactID, strings.TrimSpace(class))
+}
+
+func (s *documentService) Outline(ctx context.Context, artifactID string) ([]DocumentChunk, error) {
+	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(artifactID) == "" {
+		return nil, ErrNotFound
+	}
+	// Text omitted: an outline is for navigating, and carrying every chunk's body would
+	// make "show me the structure" as expensive as reading the document.
+	return s.repo.GetChunkTree(ctx, artifactID, false)
 }
 
 func (s *documentService) Search(ctx context.Context, artifactID, query string, limit int) ([]DocumentHit, error) {

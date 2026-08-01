@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"aladin/backend_v2/internal/ingestion"
+	artifactservice "aladin/backend_v2/internal/service"
 
 	"github.com/google/uuid"
 )
@@ -256,5 +257,113 @@ func TestIngestion_UnreadableFileStillLandsTerminal(t *testing.T) {
 	}
 	if doc.Error == "" {
 		t.Fatal("a failure with no reason is undebuggable")
+	}
+}
+
+// The chunk tree (INGESTION_PRD §11) is what makes a document navigable when it shipped
+// no bookmarks of its own. This asserts it survives the round trip through Postgres —
+// including the self-referencing key, which only resolves because parents are written
+// before their children.
+func TestIngestion_ChunkTreeRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	ctxTO, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	pool := mustTestPool(ctxTO, t)
+	defer pool.Close()
+
+	tag := uuid.NewString()[:8]
+	userID := uuid.NewString()
+	artifactID := "artifact-" + uuid.NewString()
+	ctx = adminContext(userID)
+
+	uploads := t.TempDir()
+	files := NewFilesystemArtifactStore(uploads, t.TempDir())
+	source, err := os.ReadFile(filepath.Join("..", "ingestion", "testdata", "outlined.pdf"))
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(uploads, artifactID+".pdf"), source, 0o644); err != nil {
+		t.Fatalf("stage upload: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO users (id, email, created_at) VALUES ($1::uuid, $2, now())`,
+		userID, "chk-"+tag+"@test.local"); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO artifacts (id, user_id, type, title, content, metadata)
+		VALUES ($1, $2::uuid, 'file', 'Chunked', '', jsonb_build_object(
+		    'storageKey', $3::text, 'mimeType', 'application/pdf', 'originalFilename', 'book.pdf'))
+	`, artifactID, userID, "file/"+artifactID+".pdf"); err != nil {
+		t.Fatalf("seed artifact: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO tree_nodes (id, user_id, kind, artifact_id, position, created_at, updated_at)
+		VALUES ($1, $2::uuid, 'artifact', $1, 0, now(), now())
+	`, artifactID, userID); err != nil {
+		t.Fatalf("seed node: %v", err)
+	}
+	t.Cleanup(func() {
+		bg := context.Background()
+		_, _ = pool.Exec(bg, `DELETE FROM tree_nodes WHERE user_id = $1::uuid`, userID)
+		_, _ = pool.Exec(bg, `DELETE FROM artifacts WHERE user_id = $1::uuid`, userID)
+		_, _ = pool.Exec(bg, `DELETE FROM users WHERE id = $1::uuid`, userID)
+	})
+
+	docRepo := NewDocumentPostgres(pool, files)
+	sweeper := ingestion.NewSweeper(docRepo, realSegmenter(t),
+		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	if _, err := sweeper.Sweep(ctx); err != nil {
+		t.Fatalf("sweep: %v", err)
+	}
+
+	tree, err := docRepo.GetChunkTree(ctx, artifactID, true)
+	if err != nil {
+		t.Fatalf("get chunk tree: %v", err)
+	}
+	if len(tree) == 0 {
+		t.Fatal("no chunks produced — regions were persisted but nothing consumed them")
+	}
+
+	// Anchors again: every chunk must sit inside the document, and a child inside its
+	// parent. A span that escapes is a citation pointing somewhere false.
+	var pageCount int
+	if err := pool.QueryRow(ctx, `SELECT page_count FROM artifact_documents WHERE artifact_id = $1`,
+		artifactID).Scan(&pageCount); err != nil {
+		t.Fatalf("page count: %v", err)
+	}
+	var walk func(chunk artifactservice.DocumentChunk, parent *artifactservice.DocumentChunk)
+	seen := 0
+	walk = func(chunk artifactservice.DocumentChunk, parent *artifactservice.DocumentChunk) {
+		seen++
+		if chunk.PageFrom < 1 || chunk.PageTo > pageCount {
+			t.Fatalf("chunk %q spans %d–%d, outside 1..%d", chunk.Title, chunk.PageFrom, chunk.PageTo, pageCount)
+		}
+		if parent != nil && (chunk.PageFrom < parent.PageFrom || chunk.PageTo > parent.PageTo) {
+			t.Fatalf("child %q (%d–%d) escapes parent %q (%d–%d)",
+				chunk.Title, chunk.PageFrom, chunk.PageTo, parent.Title, parent.PageFrom, parent.PageTo)
+		}
+		if chunk.Kind != "section" && chunk.Kind != "block" {
+			t.Fatalf("chunk %q has kind %q", chunk.Title, chunk.Kind)
+		}
+		for _, child := range chunk.Children {
+			walk(child, &chunk)
+		}
+	}
+	for _, chunk := range tree {
+		walk(chunk, nil)
+	}
+	if seen < 2 {
+		t.Fatalf("only %d chunk(s) — the fixture has headings and body", seen)
+	}
+
+	// The outline read omits text: navigating shouldn't cost what reading costs.
+	light, err := docRepo.GetChunkTree(ctx, artifactID, false)
+	if err != nil {
+		t.Fatalf("get outline: %v", err)
+	}
+	for _, chunk := range light {
+		if chunk.Text != "" {
+			t.Fatalf("outline carried body text for %q", chunk.Title)
+		}
 	}
 }

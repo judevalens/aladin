@@ -32,6 +32,10 @@ func (f fakeDocumentService) Regions(_ context.Context, _, _ string) ([]service.
 	return nil, nil
 }
 
+func (f fakeDocumentService) Outline(_ context.Context, _ string) ([]service.DocumentChunk, error) {
+	return nil, nil
+}
+
 func (f fakeDocumentService) Search(_ context.Context, _, query string, _ int) ([]service.DocumentHit, error) {
 	out := []service.DocumentHit{}
 	for _, page := range f.doc.Pages {

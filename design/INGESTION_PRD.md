@@ -148,8 +148,12 @@ tells you not just what's there but whether it's readable.
   unbounded read is how one book eats a context window. An unreadable document reports
   *why* instead of looking empty, which is the difference between "I can't read this,
   it needs OCR" and a confident answer about nothing.
-- **v2** — outline *generation* for PDFs without bookmarks (port `tools/pdftoc`, keeping
-  the editable draft step); full-text search across ingested documents.
+- **v2 (P1–P3 done, 2026-08-01)** — layout segmentation and the chunk tree are built.
+  A PDF with no bookmarks now gets an outline anyway: regions → sections nested by their
+  own heading numbers → `GET /api/artifacts/{id}/outline`, and `get_artifact` falls back
+  to it when the file carries none. Remaining: embeddings (P4) and the concept graph (P5).
+- **v2 rest** — semantic search over chunk embeddings; embedding drift for boundaries
+  segmentation missed.
 - **later, and only if wanted** — enrichment over ingested text. Separate step, separate
   decision, reading the output of this one.
 

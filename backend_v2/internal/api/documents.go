@@ -9,6 +9,7 @@ import (
 
 func (s *Server) registerDocumentRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/artifacts/{id}/document", s.handleArtifactDocument)
+	mux.HandleFunc("GET /api/artifacts/{id}/outline", s.handleArtifactOutline)
 }
 
 // handleArtifactDocument serves an artifact's ingested document
@@ -37,4 +38,26 @@ func (s *Server) handleArtifactDocument(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, doc)
+}
+
+// handleArtifactOutline serves the chunk tree — the structure recovered by segmentation,
+// which for most PDFs is an outline the file never carried (INGESTION_PRD §11).
+//
+// Text is omitted: this is for navigating. Reading is read_document / the viewer.
+//
+//	GET /api/artifacts/{id}/outline
+func (s *Server) handleArtifactOutline(w http.ResponseWriter, r *http.Request) {
+	tree, err := s.deps.Documents().Outline(r.Context(), r.PathValue("id"))
+	if err != nil {
+		if writeAccessError(w, r, err) {
+			return
+		}
+		if errors.Is(err, artifactservice.ErrNotFound) {
+			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "No ingested document for this artifact", err)
+			return
+		}
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"chunks": tree})
 }
