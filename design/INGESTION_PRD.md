@@ -411,6 +411,31 @@ lines, badges, running heads), 14 on arXiv, 8 on the thesis.
   `BookRe`. A URL rule and a minimum-length rule remove both without touching anything
   genuine.
 
+## 13d. What accuracy is actually needed  **LOCKED**
+
+**~85% on layout is the target. Chasing higher is wasted money.**
+
+The consumer is a language model, not a parser, and that changes what an error costs. A
+missed heading still gets read. A figure box that swallows two charts still yields usable
+concepts. Layout errors **degrade gracefully** here in a way they never would in a
+deterministic pipeline, so the marginal value of 95% over 85% is small and the marginal
+cost is large.
+
+**But the errors are not equally cheap, and the budget belongs on one side:**
+
+| error | cost | why |
+|---|---|---|
+| **boundary** — a chunk spans two topics | cheap | concepts get muddier; retrieval still lands, the LLM still reads it |
+| **anchor** — a region maps to the wrong page | **expensive** | a citation points at something false, and a confident wrong citation is worse than none |
+
+Boxes may be approximate. **The page they resolve to may not.** Anchoring is a bounding-box
+lookup into text that already exists (§13b), so it is deterministic — keep it that way, and
+never infer a page number.
+
+The corollary is §14's remaining open: at 85% you *will* meet the 15%, so the structure has
+to be **inspectable and correctable**. `tools/pdftoc` already encodes that instinct — draft,
+let a human fix it, then apply.
+
 ## 14. Open
 
 - **Are inferred boundaries auto-applied or reviewable?** `tools/pdftoc` deliberately makes
