@@ -18,6 +18,26 @@ func (f fakeDocumentService) Get(_ context.Context, _ string, _ bool) (service.D
 	return f.doc, nil
 }
 
+func (f fakeDocumentService) Pages(_ context.Context, _ string, from, to int) ([]service.DocumentPage, error) {
+	out := []service.DocumentPage{}
+	for _, page := range f.doc.Pages {
+		if (from == 0 || page.Page >= from) && (to == 0 || page.Page <= to) {
+			out = append(out, page)
+		}
+	}
+	return out, nil
+}
+
+func (f fakeDocumentService) Search(_ context.Context, _, query string, _ int) ([]service.DocumentHit, error) {
+	out := []service.DocumentHit{}
+	for _, page := range f.doc.Pages {
+		if strings.Contains(strings.ToLower(page.Text), strings.ToLower(query)) {
+			out = append(out, service.DocumentHit{Page: page.Page, Snippet: page.Text, Score: 1})
+		}
+	}
+	return out, nil
+}
+
 // Only Get is exercised here; embedding the interface leaves every other method nil so
 // an accidental call fails loudly rather than silently returning a zero value.
 type fakeArtifactGetter struct {
@@ -45,10 +65,8 @@ func readyDoc() service.Document {
 	}
 }
 
-func TestJoinPages_MarksPagesAndRespectsRange(t *testing.T) {
-	doc := readyDoc()
-
-	all, truncated := joinPages(doc.Pages, 0, 0, 0)
+func TestJoinPages_MarksPages(t *testing.T) {
+	all, truncated := joinPages(readyDoc().Pages, 0)
 	if truncated {
 		t.Fatal("an unbounded join should not truncate")
 	}
@@ -58,19 +76,10 @@ func TestJoinPages_MarksPagesAndRespectsRange(t *testing.T) {
 			t.Fatalf("joined text missing %q:\n%s", want, all)
 		}
 	}
-
-	ranged, _ := joinPages(doc.Pages, 2, 2, 0)
-	if !strings.Contains(ranged, "sixty days") {
-		t.Fatalf("range 2-2 lost its page: %q", ranged)
-	}
-	if strings.Contains(ranged, "semiconductors") || strings.Contains(ranged, "transaction costs") {
-		t.Fatalf("range 2-2 leaked neighbouring pages: %q", ranged)
-	}
 }
 
 func TestJoinPages_BudgetTruncates(t *testing.T) {
-	doc := readyDoc()
-	text, truncated := joinPages(doc.Pages, 0, 0, 60)
+	text, truncated := joinPages(readyDoc().Pages, 60)
 	if !truncated {
 		t.Fatal("a tiny budget must report truncation, or the model will think it read everything")
 	}
@@ -79,7 +88,7 @@ func TestJoinPages_BudgetTruncates(t *testing.T) {
 	}
 }
 
-func TestGetArtifact_ReturnsDocumentTextAndOutline(t *testing.T) {
+func TestGetArtifact_ReturnsOutlineButNeverText(t *testing.T) {
 	tools := workspaceToolServer{
 		artifacts: fakeArtifactGetter{art: service.ArtifactResponse{ID: "a1", Title: "PEAD paper", Type: "file"}},
 		documents: fakeDocumentService{doc: readyDoc()},
@@ -89,8 +98,13 @@ func TestGetArtifact_ReturnsDocumentTextAndOutline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("getArtifact: %v", err)
 	}
-	if !strings.Contains(out.Text, "semiconductors") {
-		t.Fatalf("the document's text must come back, got %q", out.Text)
+	// The whole point of the correction: looking an artifact UP must not cost you the
+	// document. Text is only ever returned by a deliberate read.
+	if out.Text != "" {
+		t.Fatalf("get_artifact must not return document text, got %q", out.Text)
+	}
+	if !strings.Contains(out.More, "search_document") {
+		t.Fatalf("get_artifact must point at search_document, got %q", out.More)
 	}
 	if out.PageCount != 3 {
 		t.Fatalf("page count = %d, want 3", out.PageCount)
@@ -172,5 +186,102 @@ func TestReadDocument_RefusesAnUnreadableDocument(t *testing.T) {
 	}
 	if _, _, err := tools.readDocument(context.Background(), nil, readDocumentInput{ArtifactID: "a2"}); err == nil {
 		t.Fatal("reading an unreadable document must error, not return empty text")
+	}
+}
+
+// The outline is bounded too. A 400-page book can carry hundreds of bookmarks, and an
+// outline that fills the context is the same mistake as text that does — just quieter.
+func TestCapOutline_KeepsTheTopAndSaysWhenItTrims(t *testing.T) {
+	small := []service.DocumentSection{{Title: "One", Page: 1}, {Title: "Two", Page: 9}}
+	got, note := capOutline(small)
+	if len(got) != 2 || note != "" {
+		t.Fatalf("a small outline must pass through untouched: %d entries, note %q", len(got), note)
+	}
+
+	// 20 chapters, each with 20 subsections: 420 entries, far past the cap.
+	var big []service.DocumentSection
+	for chapter := 1; chapter <= 20; chapter++ {
+		big = append(big, service.DocumentSection{Title: "Chapter", Level: 0, Page: chapter * 10})
+		for sub := 0; sub < 20; sub++ {
+			big = append(big, service.DocumentSection{Title: "Section", Level: 1, Page: chapter*10 + sub})
+		}
+	}
+	got, note = capOutline(big)
+	if len(got) > maxOutlineEntries {
+		t.Fatalf("outline not capped: %d entries", len(got))
+	}
+	if note == "" {
+		t.Fatal("a truncated outline must say so — a partial contents page presented as complete misleads")
+	}
+	// It should keep chapters, not an arbitrary prefix of subsections.
+	for _, entry := range got {
+		if entry.Level != 0 {
+			t.Fatalf("capping should prefer top-level entries, got level %d", entry.Level)
+		}
+	}
+}
+
+func TestSearchDocument_ReturnsSnippetsNotTheDocument(t *testing.T) {
+	tools := workspaceToolServer{
+		artifacts: fakeArtifactGetter{art: service.ArtifactResponse{ID: "a1", Title: "PEAD paper", Type: "file"}},
+		documents: fakeDocumentService{doc: readyDoc()},
+	}
+
+	_, out, err := tools.searchDocument(context.Background(), nil, searchDocumentInput{ArtifactID: "a1", Query: "decile"})
+	if err != nil {
+		t.Fatalf("searchDocument: %v", err)
+	}
+	if len(out.Hits) != 1 || out.Hits[0].Page != 2 {
+		t.Fatalf("hits = %+v, want one on page 2", out.Hits)
+	}
+	// A hit must carry its page, or it can't be cited or expanded.
+	if out.Hits[0].Snippet == "" {
+		t.Fatal("a hit without a snippet is useless")
+	}
+	if !strings.Contains(out.Note, "read_document") {
+		t.Fatalf("search should point at the follow-up read, got %q", out.Note)
+	}
+}
+
+func TestSearchDocument_EmptyResultSaysWhy(t *testing.T) {
+	tools := workspaceToolServer{
+		artifacts: fakeArtifactGetter{art: service.ArtifactResponse{ID: "a1", Title: "PEAD paper", Type: "file"}},
+		documents: fakeDocumentService{doc: readyDoc()},
+	}
+	_, out, err := tools.searchDocument(context.Background(), nil, searchDocumentInput{ArtifactID: "a1", Query: "cryptocurrency"})
+	if err != nil {
+		t.Fatalf("searchDocument: %v", err)
+	}
+	if len(out.Hits) != 0 {
+		t.Fatalf("unexpected hits: %+v", out.Hits)
+	}
+	// "No results" from keyword search means something different from "not in the
+	// document", and an agent that can't tell will give up too early.
+	if !strings.Contains(out.Note, "semantic") {
+		t.Fatalf("an empty result must explain the search's limits, got %q", out.Note)
+	}
+}
+
+// A range read must never be a way to pull a whole book through in one call.
+func TestReadDocument_CapsTheSpan(t *testing.T) {
+	doc := readyDoc()
+	doc.PageCount = 500
+	for page := 4; page <= 500; page++ {
+		doc.Pages = append(doc.Pages, service.DocumentPage{Page: page, Text: "filler"})
+	}
+	tools := workspaceToolServer{
+		artifacts: fakeArtifactGetter{art: service.ArtifactResponse{ID: "a1", Title: "Book", Type: "file"}},
+		documents: fakeDocumentService{doc: doc},
+	}
+
+	_, out, err := tools.readDocument(context.Background(), nil, readDocumentInput{ArtifactID: "a1"})
+	if err != nil {
+		t.Fatalf("readDocument: %v", err)
+	}
+	if out.ToPage-out.FromPage+1 > maxReadPages {
+		t.Fatalf("read spanned %d pages, cap is %d", out.ToPage-out.FromPage+1, maxReadPages)
+	}
+	if out.More == "" {
+		t.Fatal("a capped read must say where to continue from")
 	}
 }

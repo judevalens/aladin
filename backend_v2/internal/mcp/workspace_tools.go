@@ -62,13 +62,20 @@ func registerWorkspaceTools(server *sdkmcp.Server, t workspaceToolServer) {
 	}, t.listArtifacts)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "get_artifact",
-		Description: "Read one artifact by id — works for ANY kind: a page (returns its text), a shard/app (returns its content + metadata), a link, a file, or a voice note. For an ingested PDF this returns its outline and the first pages of text; use read_document for a specific page range. For block-level page edits use get_page instead.",
+		Description: "Read one artifact by id — works for ANY kind: a page (returns its text), a shard/app (returns its content + metadata), a link, a file, or a voice note. For an ingested PDF this returns its OUTLINE and page count but NOT its text — use search_document to find passages, then read_document to read around them. For block-level page edits use get_page instead.",
 	}, t.getArtifact)
+	sdkmcp.AddTool(server, &sdkmcp.Tool{
+		Name: "search_document",
+		Description: "Find passages inside ONE ingested document by keyword. Returns short snippets with page " +
+			"numbers, not the document. This is the right first move for any question about a PDF — " +
+			"get_artifact deliberately does not return the text, and reading page by page through a long " +
+			"document wastes context. Follow a hit with read_document to read around it.",
+	}, t.searchDocument)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name: "read_document",
 		Description: "Read a page range from an ingested document (a PDF Aladin has extracted). " +
-			"get_artifact returns the outline plus the first few pages; use this to read a specific " +
-			"part — pass from_page/to_page from the outline. Text comes back with [pN] markers so you can cite pages.",
+			"Use it to read AROUND a hit from search_document, or a range from the outline. Capped at 25 pages " +
+			"per call — it is not a way to read a whole book. Text comes back with [pN] markers so you can cite pages.",
 	}, t.readDocument)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "get_watchlist",
@@ -187,9 +194,10 @@ type getArtifactOutput struct {
 	// Set for an ingested document (a PDF we've read). The outline comes back in full
 	// because it's small and it's how an agent decides WHAT to read; the text is
 	// truncated, with `more` telling the model to call read_document for the rest.
-	PageCount int              `json:"page_count,omitempty"`
-	Outline   []documentTOCOut `json:"outline,omitempty"`
-	More      string           `json:"more,omitempty"`
+	PageCount   int              `json:"page_count,omitempty"`
+	Outline     []documentTOCOut `json:"outline,omitempty"`
+	OutlineNote string           `json:"outline_note,omitempty"`
+	More        string           `json:"more,omitempty"`
 	// Non-empty when the file exists but couldn't be read (e.g. a scan needing OCR),
 	// so the model says so instead of assuming the document is empty.
 	Unreadable string `json:"unreadable,omitempty"`
@@ -199,6 +207,26 @@ type documentTOCOut struct {
 	Title string `json:"title"`
 	Level int    `json:"level"`
 	Page  int    `json:"page"`
+}
+
+type searchDocumentInput struct {
+	ArtifactID string `json:"artifact_id"`
+	Query      string `json:"query"`
+	Limit      int    `json:"limit,omitempty"`
+}
+
+type documentHitOut struct {
+	Page    int    `json:"page"`
+	Snippet string `json:"snippet"`
+}
+
+type searchDocumentOutput struct {
+	ID        string           `json:"id"`
+	Title     string           `json:"title"`
+	Query     string           `json:"query"`
+	Hits      []documentHitOut `json:"hits"`
+	Note      string           `json:"note,omitempty"`
+	Citations []citationOut    `json:"citations,omitempty"`
 }
 
 type readDocumentInput struct {
@@ -399,24 +427,27 @@ func (t workspaceToolServer) getArtifact(ctx context.Context, _ *sdkmcp.CallTool
 		Citations: []citationOut{{Kind: citationKindForArtifact(art.Type), ID: art.ID, Title: art.Title}},
 	}
 
-	// An ingested file (a PDF we've read) carries its own text. Without this an agent
-	// gets a filename and concludes the document is empty — RESEARCH_SURFACE_PRD §3 #9
-	// wants the captured material to be something agents can actually run over.
+	// An ingested file (a PDF we've read) reports that it IS readable and how to read it
+	// — it does not hand back the text.
+	//
+	// Returning a slice of the document here was a mistake: get_artifact is called to
+	// find out WHAT something is, often across several artifacts at once, and every
+	// caller was paying for a wall of text it never asked for. Worse, the slice was the
+	// first pages — the title page and front matter, i.e. the least useful part of any
+	// document. Reading is now always a deliberate act: search_document to find the
+	// relevant passage, read_document to expand around it.
 	if art.Type == "file" && t.documents != nil {
-		if doc, derr := t.documents.Get(ctx, art.ID, true); derr == nil {
+		if doc, derr := t.documents.Get(ctx, art.ID, false); derr == nil {
 			out.PageCount = doc.PageCount
-			for _, section := range doc.Sections {
-				out.Outline = append(out.Outline, documentTOCOut(section))
-			}
+			out.Outline, out.OutlineNote = capOutline(doc.Sections)
 			switch doc.Status {
 			case "ready":
-				text, truncated := joinPages(doc.Pages, 0, 0, artifactTextBudget)
-				out.Text = text
-				if truncated {
-					out.More = fmt.Sprintf(
-						"Truncated: this is the start of a %d-page document. Use read_document(artifact_id=%q, from_page, to_page) to read a specific range — the outline above says where things are.",
-						doc.PageCount, art.ID)
-				}
+				out.Text = ""
+				out.More = fmt.Sprintf(
+					"This is a readable %d-page document. Its text is NOT included here. "+
+						"Use search_document(artifact_id=%q, query=...) to find relevant passages, "+
+						"then read_document(artifact_id=%q, from_page, to_page) to read around a hit.",
+					doc.PageCount, art.ID, art.ID)
 			case "pending", "ingesting":
 				out.Unreadable = "This document is still being read; try again shortly."
 			default:
@@ -432,24 +463,58 @@ func (t workspaceToolServer) getArtifact(ctx context.Context, _ *sdkmcp.CallTool
 	return nil, out, nil
 }
 
-// artifactTextBudget bounds how much document text rides back on get_artifact. A book
-// would otherwise swallow the whole context window on a lookup the agent may not even
-// have wanted. The outline plus read_document is the way to go deeper deliberately.
-const artifactTextBudget = 6000
+// maxOutlineEntries bounds the outline too. A 400-page book can carry hundreds of
+// bookmarks, and an outline that fills the context is the same mistake as text that
+// does — just quieter.
+const maxOutlineEntries = 60
 
-// joinPages renders a page range as text with page markers, up to a character budget.
-// The markers matter: they're what lets a model cite "p. 42" instead of gesturing at the
-// document as a whole.
-func joinPages(pages []service.DocumentPage, from, to, budget int) (string, bool) {
+// capOutline keeps the top of the tree, which is the part you navigate by, and says so
+// when it drops the rest rather than silently presenting a partial contents page as
+// complete.
+func capOutline(sections []service.DocumentSection) ([]documentTOCOut, string) {
+	if len(sections) <= maxOutlineEntries {
+		out := make([]documentTOCOut, 0, len(sections))
+		for _, section := range sections {
+			out = append(out, documentTOCOut(section))
+		}
+		return out, ""
+	}
+	// Prefer shallower entries — chapters over sub-sub-sections.
+	for depth := 0; depth < 4; depth++ {
+		kept := make([]documentTOCOut, 0, maxOutlineEntries)
+		for _, section := range sections {
+			if section.Level <= depth {
+				kept = append(kept, documentTOCOut(section))
+			}
+		}
+		if len(kept) > 0 && len(kept) <= maxOutlineEntries {
+			return kept, fmt.Sprintf(
+				"Outline truncated to %d top-level entries (of %d total) to keep it readable.",
+				len(kept), len(sections))
+		}
+	}
+	trimmed := make([]documentTOCOut, 0, maxOutlineEntries)
+	for _, section := range sections[:maxOutlineEntries] {
+		trimmed = append(trimmed, documentTOCOut(section))
+	}
+	return trimmed, fmt.Sprintf("Outline truncated to the first %d of %d entries.", maxOutlineEntries, len(sections))
+}
+
+// readDocumentBudget bounds a targeted read. Generous, because the caller asked for this
+// text on purpose and named a range — but still bounded, since an unbounded read is how
+// one document eats a context window.
+const readDocumentBudget = 20000
+
+// maxReadPages stops "read the whole book" being expressible as one call. A reader that
+// wants more asks again with the next range, which at least keeps the cost visible.
+const maxReadPages = 25
+
+// joinPages renders pages as text with [pN] markers, up to a character budget. The
+// markers are what let a model cite "p. 42" instead of gesturing at the document.
+func joinPages(pages []service.DocumentPage, budget int) (string, bool) {
 	var builder strings.Builder
 	truncated := false
 	for _, page := range pages {
-		if from > 0 && page.Page < from {
-			continue
-		}
-		if to > 0 && page.Page > to {
-			continue
-		}
 		if strings.TrimSpace(page.Text) == "" {
 			continue
 		}
@@ -474,7 +539,7 @@ func (t workspaceToolServer) readDocument(ctx context.Context, _ *sdkmcp.CallToo
 	if err != nil {
 		return nil, readDocumentOutput{}, err
 	}
-	doc, err := t.documents.Get(ctx, in.ArtifactID, true)
+	doc, err := t.documents.Get(ctx, in.ArtifactID, false)
 	if err != nil {
 		return nil, readDocumentOutput{}, err
 	}
@@ -489,23 +554,64 @@ func (t workspaceToolServer) readDocument(ctx context.Context, _ *sdkmcp.CallToo
 	if to <= 0 || to > doc.PageCount {
 		to = doc.PageCount
 	}
-	text, truncated := joinPages(doc.Pages, from, to, readDocumentBudget)
+	// "Read the whole book" must not be expressible as one call. Capping the span keeps
+	// the cost of going deeper visible instead of accidental.
+	capped := false
+	if to-from+1 > maxReadPages {
+		to = from + maxReadPages - 1
+		capped = true
+	}
+
+	// Only this range leaves the database — the rest of the document is never loaded.
+	pages, err := t.documents.Pages(ctx, in.ArtifactID, from, to)
+	if err != nil {
+		return nil, readDocumentOutput{}, err
+	}
+	text, truncated := joinPages(pages, readDocumentBudget)
 
 	out := readDocumentOutput{
 		ID: art.ID, Title: art.Title, FromPage: from, ToPage: to,
 		PageCount: doc.PageCount, Text: text,
 		Citations: []citationOut{{Kind: citationKindForArtifact(art.Type), ID: art.ID, Title: art.Title}},
 	}
-	if truncated {
+	switch {
+	case truncated:
 		out.More = "Truncated at the size limit — request a narrower page range to read the rest."
+	case capped:
+		out.More = fmt.Sprintf("Capped at %d pages; continue from page %d.", maxReadPages, to+1)
 	}
 	return nil, out, nil
 }
 
-// readDocumentBudget is larger than the get_artifact preview because the caller asked
-// for this text on purpose, but still bounded — an unbounded read is how you lose a
-// context window to one file.
-const readDocumentBudget = 24000
+func (t workspaceToolServer) searchDocument(ctx context.Context, _ *sdkmcp.CallToolRequest, in searchDocumentInput) (*sdkmcp.CallToolResult, searchDocumentOutput, error) {
+	if strings.TrimSpace(in.ArtifactID) == "" {
+		return nil, searchDocumentOutput{}, service.BadRequest("artifact_id is required")
+	}
+	if t.documents == nil {
+		return nil, searchDocumentOutput{}, service.BadRequest("document search is not configured")
+	}
+	art, err := t.artifacts.Get(ctx, in.ArtifactID)
+	if err != nil {
+		return nil, searchDocumentOutput{}, err
+	}
+	hits, err := t.documents.Search(ctx, in.ArtifactID, in.Query, in.Limit)
+	if err != nil {
+		return nil, searchDocumentOutput{}, err
+	}
+	out := searchDocumentOutput{
+		ID: art.ID, Title: art.Title, Query: in.Query,
+		Citations: []citationOut{{Kind: citationKindForArtifact(art.Type), ID: art.ID, Title: art.Title}},
+	}
+	for _, hit := range hits {
+		out.Hits = append(out.Hits, documentHitOut{Page: hit.Page, Snippet: hit.Snippet})
+	}
+	if len(out.Hits) == 0 {
+		out.Note = "No matches. Try different wording — this is keyword search over the document's text, not semantic."
+	} else {
+		out.Note = "Snippets only. Use read_document with a page from a hit to read around it."
+	}
+	return nil, out, nil
+}
 
 func (t workspaceToolServer) getWatchlist(ctx context.Context, _ *sdkmcp.CallToolRequest, in getWatchlistInput) (*sdkmcp.CallToolResult, getWatchlistOutput, error) {
 	principal, err := service.RequirePrincipal(ctx)

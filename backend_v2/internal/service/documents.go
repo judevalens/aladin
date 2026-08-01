@@ -58,14 +58,30 @@ type DocumentResult struct {
 	Extractor string
 }
 
+// DocumentHit is one search result inside a document: a snippet, and the page it came
+// from so it can be cited and expanded.
+type DocumentHit struct {
+	Page    int     `json:"page"`
+	Snippet string  `json:"snippet"`
+	Score   float64 `json:"score"`
+}
+
 type DocumentService interface {
 	// Get returns an artifact's ingested document. WithPages controls whether the text
 	// comes along — a tree row wants status, a viewer wants the words.
 	Get(ctx context.Context, artifactID string, withPages bool) (Document, error)
+	// Pages returns a page RANGE without loading the rest of the document.
+	Pages(ctx context.Context, artifactID string, from, to int) ([]DocumentPage, error)
+	// Search finds passages inside one document. This is the primitive a reader with a
+	// question should reach for: paging assumes you already know where to look, which
+	// for a document with no outline means reading it end to end.
+	Search(ctx context.Context, artifactID, query string, limit int) ([]DocumentHit, error)
 }
 
 type DocumentRepository interface {
 	GetDocument(ctx context.Context, artifactID string, withPages bool) (Document, error)
+	GetPages(ctx context.Context, artifactID string, from, to int) ([]DocumentPage, error)
+	SearchDocument(ctx context.Context, artifactID, query string, limit int) ([]DocumentHit, error)
 	// ClaimPending atomically finds ingestible artifacts with no document row yet and
 	// marks them 'ingesting', so two workers can't take the same file.
 	ClaimPending(ctx context.Context, limit int) ([]PendingDocument, error)
@@ -89,4 +105,30 @@ func (s *documentService) Get(ctx context.Context, artifactID string, withPages 
 		return Document{}, ErrNotFound
 	}
 	return s.repo.GetDocument(ctx, artifactID, withPages)
+}
+
+func (s *documentService) Pages(ctx context.Context, artifactID string, from, to int) ([]DocumentPage, error) {
+	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(artifactID) == "" {
+		return nil, ErrNotFound
+	}
+	return s.repo.GetPages(ctx, artifactID, from, to)
+}
+
+func (s *documentService) Search(ctx context.Context, artifactID, query string, limit int) ([]DocumentHit, error) {
+	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(artifactID) == "" {
+		return nil, ErrNotFound
+	}
+	if strings.TrimSpace(query) == "" {
+		return nil, BadRequest("query is required")
+	}
+	if limit <= 0 || limit > 25 {
+		limit = 8
+	}
+	return s.repo.SearchDocument(ctx, artifactID, query, limit)
 }
