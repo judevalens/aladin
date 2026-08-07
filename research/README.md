@@ -25,9 +25,7 @@ class name with a `Kt` suffix.
 | `ToMultikKt` | DuckDB → multik, plus BLAS matmul vs a hand loop |
 | `DfToArrayKt` | column → `DoubleArray`, and why boxing costs memory not speed |
 | `ExploreKt` | DataFrame over DuckDB — schema, describe, groupBy, pivot → multik |
-| `CoverageProbeKt` | the coverage ledger across every partial/hole/known-empty case |
-| `FetchProbeKt` | read-through fetching: only the gaps ever hit the vendor |
-| `RaceProbeKt` | concurrent `ensureBars` double-fetches, and the lock that fixes it |
+| `FetchProbeKt` | as-of identity, batching, read-through, intraday, concurrency, known-empty |
 
 ## The golden file
 
@@ -101,10 +99,16 @@ not-fetched. Only a record of what was *requested* distinguishes them.
 Ranges merge on write, which makes the common question a single `EXISTS`:
 
 ```kotlin
-conn.isCovered(slice, range)        // do I have all of this?
-conn.missingRanges(slice, range)    // what still has to be fetched
-conn.ensureBars(fetcher, "NVDA", "ohlcv-1d", range)   // read-through: fetch only gaps
+val (universe, missing) = conn.resolveUniverse(symbols, asOf)   // symbol -> instrument_id
+conn.isCovered(slice, range)                    // do I have all of this?
+conn.missingRanges(slice, range)                // what still has to be fetched
+conn.ensureBars(fetcher, universe, "ohlcv-1d", range)   // read-through, batched
 ```
+
+Everything is keyed on **`instrument_id`, never `symbol`** — tickers get recycled, so a
+symbol is a time-scoped attribute and resolution is always *as-of a date*. A symbol that
+did not exist on that date resolves to nothing, which is a real answer: pre-IPO and
+post-delisting are exactly the cases survivorship bias hides.
 
 `rows = 0` is a real answer — a delisted symbol is recorded as checked-and-empty so it
 is never re-requested. Coverage never extends to today, since the current session's
@@ -117,16 +121,11 @@ real request — no `DATABENTO_API_KEY` configured. Two things to confirm agains
 data: the dataset code for consolidated US equities, and that OHLCV prices arrive as
 int64 scaled by 1e-9 (`PRICE_SCALE`).
 
-**Known gaps in the store design**, in the order they'd bite:
+**A real trading calendar.** `lastSettledSession()` skips weekends but not holidays or
+half days — a calendar approximation of a market-calendar concept.
 
-- `ohlcv.ts` is `DATE`, so it cannot hold 1-min or 5-min bars. Needs `TIMESTAMP`.
-- No `UNIQUE (source, symbol, schema, ts)`. Coverage is currently the only thing
-  preventing duplicate rows, and duplicates produce plausible wrong numbers rather
-  than errors.
-- `BarFetcher.fetch` takes one symbol. Databento accepts multi-symbol requests and
-  bills by bytes, so a universe backfill should be a few calls, not thousands.
-- Concurrent `ensureBars` on the same slice double-fetches (see `RaceProbeKt`).
-  A single fetcher behind a lock is enough — DuckDB is single-writer, one JVM.
-- Keyed on `symbol`, not `instrument_id`. Tickers get recycled; this is the expensive
-  one to retrofit.
-- Nothing records raw vs adjusted prices.
+**Unifying the two bar tables.** `bars` is the close-only strategy fixture; `ohlcv` is
+the real store. `loadBars` should read from `ohlcv` once real data lands.
+
+**Vendor revisions.** Coverage says "held" forever, with no way to expire a range and
+force a refetch after a vendor corrects history.
