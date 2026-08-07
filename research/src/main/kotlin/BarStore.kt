@@ -6,12 +6,17 @@
  * load and hands back primitive arrays. Nothing downstream touches a ResultSet.
  */
 
+import org.jetbrains.kotlinx.dataframe.AnyCol
 import org.jetbrains.kotlinx.dataframe.AnyFrame
+import org.jetbrains.kotlinx.dataframe.ColumnSelector
+import org.jetbrains.kotlinx.dataframe.ColumnsSelector
+import org.jetbrains.kotlinx.dataframe.api.select
 import org.jetbrains.kotlinx.dataframe.DataFrame
 import org.jetbrains.kotlinx.dataframe.io.db.PostgreSql
 import org.jetbrains.kotlinx.dataframe.io.readResultSet
 import org.jetbrains.kotlinx.multik.api.mk
 import org.jetbrains.kotlinx.multik.api.ndarray
+import org.jetbrains.kotlinx.multik.ndarray.data.D1Array
 import org.jetbrains.kotlinx.multik.ndarray.data.D2Array
 import java.sql.Connection
 import java.sql.DriverManager
@@ -69,3 +74,41 @@ fun loadBars(table: String = "bars", db: String = RESEARCH_DB): BarMatrix =
         }
         BarMatrix(dates, symbols, values.toDoubleArray())
     }
+
+// ---------------------------------------------------------------------------
+// DataFrame -> multik.
+//
+// No artifact ships this; the canonical implementation lives in the dataframe
+// repo's `examples/projects/multik` as compatibilityLayer.kt. The selector API
+// below follows it, but the fill is different on purpose: theirs goes through
+// `toList()`, boxing every value into a java.lang.Double (~32 bytes each against
+// 8, plus an object per value for the GC). At bar-store scale that is the
+// difference between ~4 GB and ~16 GB, so these write straight into a flat
+// primitive array instead.
+// ---------------------------------------------------------------------------
+
+private fun List<AnyCol>.fillD2(rows: Int): D2Array<Double> {
+    require(isNotEmpty()) { "no columns selected" }
+    val flat = DoubleArray(rows * size)
+    forEachIndexed { c, col ->
+        for (r in 0 until rows) {
+            flat[r * size + c] = (col[r] as? Number)?.toDouble()
+                ?: error("column '${col.name()}' holds a non-numeric value at row $r")
+        }
+    }
+    return mk.ndarray(flat, rows, size)
+}
+
+/** Selected columns as a (rows x cols) matrix: `df.convertToMultik { colsOf<Double>() }`. */
+fun <T> DataFrame<T>.convertToMultik(selector: ColumnsSelector<T, Number?>): D2Array<Double> =
+    select(selector).columns().fillD2(rowsCount())
+
+/** Every numeric column, in frame order — non-numeric columns (ts, symbol) are skipped. */
+fun AnyFrame.convertToMultik(): D2Array<Double> =
+    columns().filter { it.values().firstOrNull { v -> v != null } is Number }.fillD2(rowsCount())
+
+/** One column as a 1-D array: `df.convertToMultikD1 { close }`. */
+fun <T> DataFrame<T>.convertToMultikD1(selector: ColumnSelector<T, Number?>): D1Array<Double> {
+    val col = select(selector).columns().single()
+    return mk.ndarray(DoubleArray(rowsCount()) { (col[it] as Number).toDouble() })
+}
