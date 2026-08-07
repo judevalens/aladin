@@ -6,9 +6,6 @@
  * inside it is a whole-array add.
  */
 
-import org.jetbrains.kotlinx.dataframe.DataFrame
-import org.jetbrains.kotlinx.dataframe.api.*
-import org.jetbrains.kotlinx.dataframe.io.readArrowFeather
 import org.jetbrains.kotlinx.multik.api.*
 import org.jetbrains.kotlinx.multik.ndarray.data.*
 import org.jetbrains.kotlinx.multik.ndarray.operations.*
@@ -42,28 +39,20 @@ fun signalsVectorised(close: D2Array<Double>, fast: Int, slow: Int): D2Array<Dou
 }
 
 fun main() {
-    val df = DataFrame.readArrowFeather(File("data/bars.arrow").canonicalFile)
-    val rows = df.rowsCount()
-    val symbols = df.columnNames().filter { it != "timestamp" }
-    val flat = DoubleArray(rows * symbols.size)
-    symbols.forEachIndexed { s, name ->
-        val c = df[name]
-        for (t in 0 until rows) flat[t * symbols.size + s] = c[t] as Double
-    }
-    val close = mk.ndarray(flat, rows, symbols.size)
-    val dates = df["timestamp"].values().map { it.toString().substring(0, 10) }
-
-    val w = signalsVectorised(close, fast = 20, slow = 100)
+    val bars = loadBars()
+    val w = signalsVectorised(bars.nd(), fast = 20, slow = 100)
     val first = 99
 
-    println("weights, last 5 bars  (${symbols.joinToString("  ")})")
+    println("weights, last 5 bars  (${bars.symbols.joinToString("  ")})")
     for (r in w.shape[0] - 5 until w.shape[0])
-        println("${dates[first + r]}   " + (0 until symbols.size).joinToString("  ") { "%.6f".format(w[r, it]) })
+        println("${bars.dates[first + r]}   " +
+                bars.symbols.indices.joinToString("  ") { "%.6f".format(w[r, it]) })
 
     File("data/weights_multik.csv").printWriter().use { out ->
-        out.println("timestamp,${symbols.joinToString(",")}")
+        out.println("timestamp,${bars.symbols.joinToString(",")}")
         for (r in 0 until w.shape[0])
-            out.println("${dates[first + r]}," + (0 until symbols.size).joinToString(",") { "%.17g".format(w[r, it]) })
+            out.println("${bars.dates[first + r]}," +
+                    bars.symbols.indices.joinToString(",") { "%.17g".format(w[r, it]) })
     }
 }
 

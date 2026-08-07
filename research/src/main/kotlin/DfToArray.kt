@@ -1,6 +1,5 @@
 import org.jetbrains.kotlinx.dataframe.DataFrame
 import org.jetbrains.kotlinx.dataframe.api.*
-import org.jetbrains.kotlinx.dataframe.io.readArrowFeather
 import java.io.File
 
 private fun sumBoxed(xs: List<Double>): Double { var s = 0.0; for (x in xs) s += x; return s }
@@ -18,22 +17,18 @@ private inline fun bench(label: String, reps: Int = 7, f: () -> Double) {
 
 fun main() {
     // --- the conversion, on the real file -------------------------------
-    val df = DataFrame.readArrowFeather(File("data/bars.arrow").canonicalFile)
+    val df = openDb().use { it.frame("SELECT close FROM bars ORDER BY ts, symbol LIMIT 2000") }
     val n = df.rowsCount()
 
-    val col = df["AMD"]                                     // DataColumn<*> — boxed Doubles inside
+    val col = df["close"]                                     // DataColumn<*> — boxed Doubles inside
     val amd = DoubleArray(n) { col[it] as Double }           // one unboxing copy, at load
 
-    println("column 'AMD' -> DoubleArray(${amd.size})   first=${amd[0]}  last=${amd[n - 1]}")
+    println("column 'close' -> DoubleArray(${amd.size})   first=${amd[0]}  last=${amd[n - 1]}")
 
-    // whole frame -> one column-major matrix, the shape the strategy loop wants
-    val symbols = df.columnNames().filter { it != "timestamp" }
-    val close = DoubleArray(n * symbols.size)
-    symbols.forEachIndexed { s, name ->
-        val c = df[name]
-        for (t in 0 until n) close[t + s * n] = c[t] as Double
-    }
-    println("frame -> close[${close.size}] column-major over ${symbols}\n")
+    // for the engine, skip the DataFrame entirely — BarStore hands back both layouts
+    val bars = loadBars()
+    println("BarStore -> ${bars.rows} bars x ${bars.cols} symbols, " +
+            "rowMajor[${bars.rowMajor.size}] and colMajor[${bars.colMajor().size}]\n")
 
     // --- why you do it once ---------------------------------------------
     val big = 10_000_000

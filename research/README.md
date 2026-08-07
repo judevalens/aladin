@@ -22,7 +22,8 @@ class name with a `Kt` suffix.
 | `ScaleMaKt` | how each scales with lookback — the case for cumsum |
 | `WhySlowKt` | why naive multik is 10× slower (views, not allocation) |
 | `TransposeBugKt` | minimal repro: `dot(transpose, vector)` silently returns zeros |
-| `ToMultikKt` | DataFrame → multik, plus BLAS matmul vs a hand loop |
+| `ToMultikKt` | DuckDB → multik, plus BLAS matmul vs a hand loop |
+| `DfToArrayKt` | column → `DoubleArray`, and why boxing costs memory not speed |
 
 ## The golden file
 
@@ -60,8 +61,27 @@ Cumsum is O(n) regardless of window; the loop is O(n·w). Crossover is around 60
 Caveat: cumsum subtracts large near-equal numbers, so re-run `VerifyKt` when you move
 to a much longer series — precision there is empirical, not structural.
 
+## Storage
+
+Bars live in **DuckDB** (`data/research.duckdb`) — embedded, columnar, single file, no
+server. Same operational model as SQLite, opposite storage model: columnar and
+vectorised rather than row-oriented, so range scans and aggregates are the fast path.
+
+The store is **long** — `(ts, symbol, close)` — because that's the shape real bars
+arrive in. `BarStore.loadBars()` pivots once at load and hands back a `BarMatrix` with
+both layouts: `rowMajor` for multik, `colMajor()` for the per-bar loop.
+
+No Arrow, no Parquet, no Hadoop, no JNI. Measured: 3.3M rows/sec ingest via DuckDB's
+Appender, sub-millisecond range queries, and JDBC extraction at ~274M values/sec —
+within 15% of an Arrow export stream, so the plain `ResultSet` is not a bottleneck.
+
+One gotcha: `DataFrame.readSqlQuery` **rejects** `jdbc:duckdb:` URLs — Kotlin
+DataFrame's supported-database list is hardcoded. Use `Connection.frame()` in
+`BarStore.kt`, which goes through `readResultSet(rs, PostgreSql)`; DuckDB's types are
+Postgres-shaped so the mapping holds.
+
 ## Missing
 
-**Data acquisition.** `data/bars.arrow` is a frozen 647×3 sample; `bench_bars.arrow`
-is synthetic. There is no fetch path any more — that's the storage layer being built
-next (Parquet store + coverage cache, so historical data is never paid for twice).
+**Data acquisition.** `data/research.duckdb` holds a frozen 647-bar × 3-symbol sample
+plus a synthetic benchmark table. There is no fetch path yet — that's next: a Databento
+client plus a coverage ledger, so a historical range is never paid for twice.

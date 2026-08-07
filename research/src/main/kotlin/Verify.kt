@@ -6,33 +6,10 @@
  * definition deliberately changes, never to make a failing check pass.
  */
 
-import org.jetbrains.kotlinx.dataframe.DataFrame
-import org.jetbrains.kotlinx.dataframe.api.*
-import org.jetbrains.kotlinx.dataframe.io.readArrowFeather
-import org.jetbrains.kotlinx.multik.api.*
 import org.jetbrains.kotlinx.multik.ndarray.data.*
 import java.io.File
 import kotlin.math.abs
 import kotlin.system.exitProcess
-
-private class BarMatrix(val dates: List<String>, val symbols: List<String>, val values: DoubleArray) {
-    val rows get() = dates.size
-    fun colMajor() = DoubleArray(rows * symbols.size) { i ->
-        values[(i % rows) * symbols.size + i / rows]
-    }
-}
-
-private fun loadBars(path: String): BarMatrix {
-    val df = DataFrame.readArrowFeather(File(path).canonicalFile)
-    val rows = df.rowsCount()
-    val syms = df.columnNames().filter { it != "timestamp" }
-    val flat = DoubleArray(rows * syms.size)
-    syms.forEachIndexed { s, name ->
-        val c = df[name]
-        for (t in 0 until rows) flat[t * syms.size + s] = c[t] as Double
-    }
-    return BarMatrix(df["timestamp"].values().map { it.toString().substring(0, 10) }, syms, flat)
-}
 
 private fun loadReference(path: String): Pair<List<String>, Map<String, DoubleArray>> {
     val lines = File(path).readLines().filter { it.isNotBlank() }
@@ -46,16 +23,16 @@ private fun loadReference(path: String): Pair<List<String>, Map<String, DoubleAr
 }
 
 fun main() {
-    val bars = loadBars("data/bars.arrow")
+    val bars = loadBars()
     val (refSyms, ref) = loadReference("data/weights_reference.csv")
     check(refSyms == bars.symbols) { "symbol order differs: $refSyms vs ${bars.symbols}" }
 
-    val nd = mk.ndarray(bars.values, bars.rows, bars.symbols.size)
+    val nd = bars.nd()
     val strat = MACross()
 
     // every implementation, keyed to the bar index its first output row corresponds to
     val impls: List<Triple<String, Array<DoubleArray>, Int>> = listOf(
-        runStrategy(strat, bars.colMajor(), bars.rows, bars.symbols.size)
+        runStrategy(strat, bars.colMajor(), bars.rows, bars.cols)
             .let { (w, first) -> Triple("raw per-bar loop", w, first) },
         signalsVectorised(nd, 20, 100)
             .let { Triple("multik shifted-sum", it.toRows(), 99) },

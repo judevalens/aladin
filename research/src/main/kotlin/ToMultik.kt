@@ -1,29 +1,19 @@
 /** DataFrame -> multik, then let the library do the linear algebra. */
 
-import org.jetbrains.kotlinx.dataframe.DataFrame
-import org.jetbrains.kotlinx.dataframe.api.*
-import org.jetbrains.kotlinx.dataframe.io.readArrowFeather
 import org.jetbrains.kotlinx.multik.api.*
 import org.jetbrains.kotlinx.multik.api.linalg.dot
 import org.jetbrains.kotlinx.multik.api.linalg.solve
 import org.jetbrains.kotlinx.multik.ndarray.data.*
 import org.jetbrains.kotlinx.multik.ndarray.operations.*
-import java.io.File
 import kotlin.random.Random
 
 fun main() {
     // ---- DataFrame -> multik ------------------------------------------------
-    val df = DataFrame.readArrowFeather(File("data/bars.arrow").canonicalFile)
-    val rows = df.rowsCount()
-    val symbols = df.columnNames().filter { it != "timestamp" }
+    val bars = loadBars()
+    val rows = bars.rows
+    val symbols = bars.symbols
 
-    // multik is ROW-major, so build (time x symbol) in that order.
-    val flat = DoubleArray(rows * symbols.size)
-    symbols.forEachIndexed { s, name ->
-        val c = df[name]
-        for (t in 0 until rows) flat[t * symbols.size + s] = c[t] as Double
-    }
-    val close = mk.ndarray(flat, rows, symbols.size)
+    val close = bars.nd()
 
     println("close: ${close.shape.toList()}  $symbols")
     println("last 3 bars:\n${close[(rows - 3) until rows]}")
