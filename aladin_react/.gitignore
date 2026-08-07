@@ -4,3 +4,6 @@ playwright-report
 test-results
 coverage
 *.tsbuildinfo
+
+# Visual harness fixture — stage any PDF here to run /harness.html; never committed.
+public/__harness.pdf
