@@ -24,6 +24,10 @@ class name with a `Kt` suffix.
 | `TransposeBugKt` | minimal repro: `dot(transpose, vector)` silently returns zeros |
 | `ToMultikKt` | DuckDB → multik, plus BLAS matmul vs a hand loop |
 | `DfToArrayKt` | column → `DoubleArray`, and why boxing costs memory not speed |
+| `ExploreKt` | DataFrame over DuckDB — schema, describe, groupBy, pivot → multik |
+| `CoverageProbeKt` | the coverage ledger across every partial/hole/known-empty case |
+| `FetchProbeKt` | read-through fetching: only the gaps ever hit the vendor |
+| `RaceProbeKt` | concurrent `ensureBars` double-fetches, and the lock that fixes it |
 
 ## The golden file
 
@@ -75,13 +79,54 @@ No Arrow, no Parquet, no Hadoop, no JNI. Measured: 3.3M rows/sec ingest via Duck
 Appender, sub-millisecond range queries, and JDBC extraction at ~274M values/sec —
 within 15% of an Arrow export stream, so the plain `ResultSet` is not a bottleneck.
 
-One gotcha: `DataFrame.readSqlQuery` **rejects** `jdbc:duckdb:` URLs — Kotlin
-DataFrame's supported-database list is hardcoded. Use `Connection.frame()` in
-`BarStore.kt`, which goes through `readResultSet(rs, PostgreSql)`; DuckDB's types are
-Postgres-shaped so the mapping holds.
+`DataFrame.readSqlQuery(conn, sql)` fails on a `jdbc:duckdb:` URL — auto-detection
+only knows the six databases it ships DbTypes for. But `DbType` is an open extension
+point, so `BarStore.kt` registers DuckDB properly as `object DuckDb : DbType("duckdb")`
+and `Connection.frame(sql)` passes it explicitly. Everything works: `describe()`,
+`groupBy`/`aggregate`, schema inference.
+
+Three layers, each doing what it's good at:
+
+- **DuckDB** — storage and heavy aggregation (never materialises the rows)
+- **DataFrame** — display, exploration, ad-hoc analysis · `conn.frame(sql)`
+- **multik / `DoubleArray`** — the engine's hot path · `df.convertToMultik { }`
+
+## Coverage and fetching
+
+`Coverage.kt` tracks which `(source, symbol, schema, date range)` slices are held, so
+a historical range is paid for once. It **cannot** be derived from the bars table — a
+missing row is ambiguous between weekend, holiday, halt, pre-IPO, post-delisting, and
+not-fetched. Only a record of what was *requested* distinguishes them.
+
+Ranges merge on write, which makes the common question a single `EXISTS`:
+
+```kotlin
+conn.isCovered(slice, range)        // do I have all of this?
+conn.missingRanges(slice, range)    // what still has to be fetched
+conn.ensureBars(fetcher, "NVDA", "ohlcv-1d", range)   // read-through: fetch only gaps
+```
+
+`rows = 0` is a real answer — a delisted symbol is recorded as checked-and-empty so it
+is never re-requested. Coverage never extends to today, since the current session's
+bar is partial until the close.
 
 ## Missing
 
-**Data acquisition.** `data/research.duckdb` holds a frozen 647-bar × 3-symbol sample
-plus a synthetic benchmark table. There is no fetch path yet — that's next: a Databento
-client plus a coverage ledger, so a historical range is never paid for twice.
+**A verified Databento client.** `DatabentoFetcher` is written but has never made a
+real request — no `DATABENTO_API_KEY` configured. Two things to confirm against live
+data: the dataset code for consolidated US equities, and that OHLCV prices arrive as
+int64 scaled by 1e-9 (`PRICE_SCALE`).
+
+**Known gaps in the store design**, in the order they'd bite:
+
+- `ohlcv.ts` is `DATE`, so it cannot hold 1-min or 5-min bars. Needs `TIMESTAMP`.
+- No `UNIQUE (source, symbol, schema, ts)`. Coverage is currently the only thing
+  preventing duplicate rows, and duplicates produce plausible wrong numbers rather
+  than errors.
+- `BarFetcher.fetch` takes one symbol. Databento accepts multi-symbol requests and
+  bills by bytes, so a universe backfill should be a few calls, not thousands.
+- Concurrent `ensureBars` on the same slice double-fetches (see `RaceProbeKt`).
+  A single fetcher behind a lock is enough — DuckDB is single-writer, one JVM.
+- Keyed on `symbol`, not `instrument_id`. Tickers get recycled; this is the expensive
+  one to retrofit.
+- Nothing records raw vs adjusted prices.

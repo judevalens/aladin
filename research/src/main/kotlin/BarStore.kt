@@ -12,8 +12,13 @@ import org.jetbrains.kotlinx.dataframe.ColumnSelector
 import org.jetbrains.kotlinx.dataframe.ColumnsSelector
 import org.jetbrains.kotlinx.dataframe.api.select
 import org.jetbrains.kotlinx.dataframe.DataFrame
-import org.jetbrains.kotlinx.dataframe.io.db.PostgreSql
-import org.jetbrains.kotlinx.dataframe.io.readResultSet
+import org.jetbrains.kotlinx.dataframe.io.TableColumnMetadata
+import org.jetbrains.kotlinx.dataframe.io.TableMetadata
+import org.jetbrains.kotlinx.dataframe.io.db.DbType
+import org.jetbrains.kotlinx.dataframe.io.readSqlQuery
+import org.jetbrains.kotlinx.dataframe.schema.ColumnSchema
+import java.sql.ResultSet
+import kotlin.reflect.KType
 import org.jetbrains.kotlinx.multik.api.mk
 import org.jetbrains.kotlinx.multik.api.ndarray
 import org.jetbrains.kotlinx.multik.ndarray.data.D1Array
@@ -27,12 +32,24 @@ fun openDb(path: String = RESEARCH_DB): Connection =
     DriverManager.getConnection("jdbc:duckdb:$path")
 
 /**
- * Kotlin DataFrame rejects `jdbc:duckdb:` URLs — its supported-database list is
- * hardcoded. Going through the ResultSet with an explicit DbType works, because
- * DuckDB's types are Postgres-shaped.
+ * Kotlin DataFrame ships DbTypes for H2/MariaDB/MySQL/MSSQL/SQLite/PostgreSQL only, so
+ * auto-detection from a `jdbc:duckdb:` URL fails. `DbType` is an open extension point
+ * though — this registers DuckDB properly rather than pretending to be Postgres.
  */
-fun Connection.frame(sql: String): AnyFrame =
-    createStatement().use { st -> st.executeQuery(sql).use { DataFrame.readResultSet(it, PostgreSql) } }
+object DuckDb : DbType("duckdb") {
+    override val driverClassName = "org.duckdb.DuckDBDriver"
+    override fun convertSqlTypeToColumnSchemaValue(tableColumnMetadata: TableColumnMetadata): ColumnSchema? = null
+    override fun convertSqlTypeToKType(tableColumnMetadata: TableColumnMetadata): KType? = null
+    override fun isSystemTable(tableMetadata: TableMetadata): Boolean =
+        tableMetadata.schemaName?.lowercase() in setOf("information_schema", "pg_catalog")
+    override fun buildTableMetadata(tables: ResultSet): TableMetadata = TableMetadata(
+        tables.getString("TABLE_NAME"), tables.getString("TABLE_SCHEM"), tables.getString("TABLE_CAT"),
+    )
+}
+
+/** Run a query and get a DataFrame back. */
+fun Connection.frame(sql: String, limit: Int = Int.MIN_VALUE): AnyFrame =
+    DataFrame.readSqlQuery(this, sql, limit, dbType = DuckDb)
 
 class BarMatrix(
     val dates: List<String>,
