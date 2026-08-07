@@ -15,7 +15,7 @@ import org.jetbrains.kotlinx.dataframe.DataFrame
 import org.jetbrains.kotlinx.dataframe.io.TableColumnMetadata
 import org.jetbrains.kotlinx.dataframe.io.TableMetadata
 import org.jetbrains.kotlinx.dataframe.io.db.DbType
-import org.jetbrains.kotlinx.dataframe.io.readSqlQuery
+import org.jetbrains.kotlinx.dataframe.io.readResultSet
 import org.jetbrains.kotlinx.dataframe.schema.ColumnSchema
 import java.sql.ResultSet
 import kotlin.reflect.KType
@@ -47,9 +47,15 @@ object DuckDb : DbType("duckdb") {
     )
 }
 
-/** Run a query and get a DataFrame back. */
-fun Connection.frame(sql: String, limit: Int = Int.MIN_VALUE): AnyFrame =
-    DataFrame.readSqlQuery(this, sql, limit, dbType = DuckDb)
+/**
+ * Run a query and get a DataFrame back.
+ *
+ * Goes through `readResultSet` rather than `readSqlQuery` because the latter validates
+ * that the query starts with SELECT — which rejects CTEs, and the rectangular-grid
+ * query needs `WITH`.
+ */
+fun Connection.frame(sql: String): AnyFrame =
+    createStatement().use { st -> st.executeQuery(sql).use { DataFrame.readResultSet(it, DuckDb) } }
 
 class BarMatrix(
     val dates: List<String>,
