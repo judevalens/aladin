@@ -1,11 +1,13 @@
+package aladin.vendor
+
 import java.time.LocalDate
 import java.time.LocalDateTime
 import kotlin.test.*
 
 /**
- * Decoding tests, against payloads captured verbatim from the live API. These are the
- * responses the integration actually receives — every past bug here was a decoding
- * bug, and none were reachable while parsing lived inside a method that made an HTTP call.
+ * Decoding, against payloads captured verbatim from the live API — these are the exact
+ * responses the integration receives. Every past bug here was a decoding bug, and none
+ * were reachable while parsing lived inside a method that also made an HTTP call.
  */
 class OhlcvCsvTest {
 
@@ -33,16 +35,17 @@ class OhlcvCsvTest {
 
     @Test
     fun `rows are keyed by symbol, because row order is not stable`() {
-        val reversed = real.lines().let { listOf(it[0], it[2], it[1]) }.joinToString("\n")
-        val a = OhlcvCsv.parse(real, ids).associate { it.instrumentId to it.close }
-        val b = OhlcvCsv.parse(reversed, ids).associate { it.instrumentId to it.close }
-        assertEquals(a, b, "reordering rows must not change which instrument gets which price")
+        val reordered = real.lines().let { listOf(it[0], it[2], it[1]) }.joinToString("\n")
+        assertEquals(
+            OhlcvCsv.parse(real, ids).associate { it.instrumentId to it.close },
+            OhlcvCsv.parse(reordered, ids).associate { it.instrumentId to it.close },
+            "reordering rows must not change which instrument gets which price",
+        )
     }
 
     @Test
     fun `a symbol outside the request is dropped, not mis-attributed`() {
-        val rows = OhlcvCsv.parse(real, mapOf("AAPL" to 1L))
-        assertEquals(listOf(1L), rows.map { it.instrumentId })
+        assertEquals(listOf(1L), OhlcvCsv.parse(real, mapOf("AAPL" to 1L)).map { it.instrumentId })
     }
 
     /** Regression: without map_symbols there is no symbol column and rows are unattributable. */
@@ -52,8 +55,10 @@ class OhlcvCsvTest {
             ts_event,rtype,publisher_id,instrument_id,open,high,low,close,volume
             2024-08-01T00:00:00.000000000Z,35,90,38,224.37,224.48,217.02,218.36,62500996
         """.trimIndent()
-        val e = assertFailsWith<IllegalArgumentException> { OhlcvCsv.parse(noSymbol, ids) }
-        assertContains(e.message!!, "map_symbols")
+        assertContains(
+            assertFailsWith<IllegalArgumentException> { OhlcvCsv.parse(noSymbol, ids) }.message!!,
+            "map_symbols",
+        )
     }
 
     @Test
@@ -62,11 +67,13 @@ class OhlcvCsvTest {
     }
 
     @Test
-    fun `a short response is refused rather than stored as if complete`() {
-        OhlcvCsv.assertComplete(real, expected = 2)          // matches
-        OhlcvCsv.assertComplete(real, expected = -1)         // unknown, allowed
-        val e = assertFailsWith<IllegalStateException> { OhlcvCsv.assertComplete(real, expected = 100) }
-        assertContains(e.message!!, "truncated")
+    fun `a short response is refused rather than stored as complete`() {
+        OhlcvCsv.assertComplete(real, expected = 2)
+        OhlcvCsv.assertComplete(real, expected = -1)      // count unavailable
+        assertContains(
+            assertFailsWith<IllegalStateException> { OhlcvCsv.assertComplete(real, expected = 100) }.message!!,
+            "truncated",
+        )
     }
 }
 
@@ -74,11 +81,9 @@ class SymbologyJsonTest {
     private val from = LocalDate.parse("2024-07-01")
     private val to = LocalDate.parse("2026-08-01")
 
-    /** Real response for a live symbol spanning the whole dataset. */
     private val live = """{"result":{"AAPL":[{"d0":"2024-07-01","d1":"2026-08-01","s":"38"}]},
         "symbols":["AAPL"],"partial":[],"not_found":[],"message":"OK","status":0}"""
 
-    /** Real response for a ticker that never traded. */
     private val missing = """{"result":{"NOTAREALTICKER":[]},"symbols":["NOTAREALTICKER"],
         "partial":[],"not_found":["NOTAREALTICKER"],"message":"Not found","status":2}"""
 
@@ -91,14 +96,13 @@ class SymbologyJsonTest {
 
     /**
      * The response clips intervals to the query window, so a boundary at the edge says
-     * nothing. Treating it as a listing or delisting date invents history the vendor
-     * never asserted.
+     * nothing. Treating it as a listing or delisting date invents history.
      */
     @Test
     fun `a boundary at the edge of the window is not a listing or delisting date`() {
         val i = SymbologyJson.parse(live, "AAPL", from, to).single()
-        assertEquals(DATASET_FLOOR, i.validFrom, "start at the window edge means 'at or before'")
-        assertNull(i.validTo, "end at the window edge means 'still current', not delisted")
+        assertEquals(DATASET_FLOOR, i.validFrom, "a start at the edge means 'at or before'")
+        assertNull(i.validTo, "an end at the edge means 'still current', not delisted")
     }
 
     @Test

@@ -9,8 +9,35 @@ rebuilt by fetching.
 ## Run
 
 ```bash
-SMOKE_SYMBOLS=AAPL,MSFT,NVDA ./gradlew -q run -Dmc=FetchKt
+SYMBOLS=AAPL,MSFT,NVDA FROM=2024-08-01 TO=2024-09-30 ./gradlew -q run
+./gradlew test
 ```
+
+## Layout
+
+```
+aladin/
+  Domain.kt          DateRange, Schema, InstrumentType, Instrument, BarRow, Slice
+  Env.kt             config from environment or .env
+  Main.kt            entry point
+  store/
+    Db.kt            DuckDB access, the DbType, identifier guards
+    BarMatrix.kt     the matrix, and DataFrame -> multik
+    Instruments.kt   as-of identity, read-through registry
+    Coverage.kt      the ledger — a range is paid for once
+    Ohlcv.kt         the bars table and ensureBars
+    BarGrid.kt       the dense grid, loadMatrix / loadFrame, hole policies
+    BarStore.kt      the Bars interface and BarStore
+  vendor/
+    Fetcher.kt       BarFetcher, PricedFetcher, SymbologySource, LockedFetcher
+    Http.kt          timeouts, retry, Retry-After
+    Budget.kt        the cost gate
+    Databento.kt     streaming, batch and symbology clients
+    DatabentoDecode.kt   pure payload decoding
+```
+
+The split that matters: `vendor` knows nothing about the store, `store` depends only on
+vendor *interfaces*, and decoding is pure so it can be tested without a key.
 
 Credentials come from the environment or `research/.env`:
 
@@ -23,15 +50,16 @@ DATABENTO_AUTO_APPROVE_UNDER=0.10     # optional; spend this much without asking
 ## Using it
 
 ```kotlin
-openDb().use { conn ->
-    val fetcher = BudgetedFetcher(DatabentoBatchFetcher(), autoApproveUnder = 0.10)
-    val universe = conn.resolveUniverse(symbols, asOf).first
-
-    conn.ensureBars(fetcher, universe, Schema.OHLCV_1D, range)   // fetches only gaps
-    val bars = conn.loadMatrix(symbols, range, source = fetcher.source)  // -> BarMatrix
-    val df   = conn.loadFrame(symbols, range, source = fetcher.source)   // -> DataFrame
+BarStore.databento().use { store ->
+    val bars = store.bars(listOf("AAPL", "MSFT"), range)   // BarMatrix
+    val df   = store.frame(listOf("AAPL", "MSFT"), range)  // DataFrame, for looking
+    println(store.held())
 }
 ```
+
+One call. Held ranges come off disk; anything missing is resolved, priced, approved and
+fetched on the way. `BarStore.readOnly()` never spends or reaches the network, and the
+primary constructor takes any `BarFetcher` — which is how tests run without a key.
 
 `BarMatrix` is a flat `DoubleArray` plus shape: `rowMajor` for multik, `colMajor()`
 for a per-bar loop, `holes` counting bars the store had no row for.
@@ -71,6 +99,20 @@ below the threshold, asks on the console above it, and refuses past the hard cei
 or if the request cannot be priced at all. It **fails closed**: no console means refuse,
 so an unattended run can neither spend by assuming consent nor hang for a reply nobody
 will type. Set `DATABENTO_INTERACTIVE=1` where stdin works but `System.console()` is null.
+
+## Hardening
+
+- **HTTP**: connect and request timeouts, up to 5 retries on 429 and 5xx honouring
+  `Retry-After`, and no retry on 4xx — a bad request fails identically every time, so
+  retrying only burns quota and delays the error.
+- **SQL**: identifiers cannot be bound, so the price field is checked against the real
+  column set before interpolation. Instrument ids are `Long`, so they carry no risk.
+- **Inputs**: symbols trimmed and de-duplicated, empty requests rejected, backwards
+  ranges rejected at construction, a budget whose ceiling sits below its auto-approve
+  threshold rejected rather than silently refusing everything.
+- **Concurrency**: one lock covers the whole read-through cycle. Locking only the fetch
+  is not enough — DuckDB's MVCC rejects the second of two concurrent coverage writes,
+  by which point the fetch has been paid for.
 
 ## Databento notes
 

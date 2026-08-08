@@ -27,5 +27,5 @@ tasks.test { useJUnitPlatform() }
 tasks.named<JavaExec>("run") { standardInput = System.`in` }
 
 application {
-    mainClass.set(System.getProperty("mc") ?: "FetchKt")
+    mainClass.set(System.getProperty("mc") ?: "aladin.MainKt")
 }

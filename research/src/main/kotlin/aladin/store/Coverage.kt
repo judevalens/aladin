@@ -1,71 +1,77 @@
-/**
- * The coverage ledger: which (instrument, schema, date range) slices we already hold.
- *
- * This cannot be derived from the bars table. A missing row is ambiguous — weekend,
- * holiday, trading halt, pre-IPO, post-delisting, or genuinely not fetched. Only a
- * record of what was *requested* distinguishes them.
- *
- * Ranges are stored merged and inclusive on both ends, so the common question —
- * "do I have all of this?" — is a single EXISTS. Gap-finding for partial coverage is
- * interval arithmetic in Kotlin, because a slice's ledger is a handful of rows and the
- * logic is far clearer in code than in recursive SQL.
- */
+package aladin.store
 
+import aladin.DateRange
+import aladin.Slice
 import java.sql.Connection
 import java.sql.Date
+import java.sql.Timestamp
 import java.time.LocalDate
 
-data class DateRange(val from: LocalDate, val to: LocalDate) {
-    init { require(!from.isAfter(to)) { "empty range: $from..$to" } }
-    val days get() = java.time.temporal.ChronoUnit.DAYS.between(from, to) + 1
-    override fun toString() = "$from..$to"
-}
-
-/** Keyed on instrument_id, never symbol — see Instruments.kt. */
-data class Slice(val source: String, val instrumentId: Long, val schema: Schema)
-
+/**
+ * The coverage ledger: which (instrument, schema, date range) slices are already held.
+ *
+ * This **cannot** be derived from the bars table. A missing row is ambiguous — weekend,
+ * holiday, trading halt, pre-IPO, post-delisting, or genuinely not fetched. Only a
+ * record of what was *requested* tells them apart, and that distinction is the whole
+ * reason a range is paid for once.
+ *
+ * Ranges are stored merged and inclusive at both ends, so the common question — "do I
+ * have all of this?" — is a single EXISTS rather than a recursive CTE. Gap-finding for
+ * partial coverage is interval arithmetic in Kotlin, because a slice's ledger is a
+ * handful of rows and the logic is far clearer in code.
+ */
 fun Connection.createCoverageTable() = createStatement().use {
-    it.execute("""
+    it.execute(
+        """
         CREATE TABLE IF NOT EXISTS coverage (
-          source        VARCHAR NOT NULL,      -- 'databento' | 'alpaca'
+          source        VARCHAR NOT NULL,      -- data SCOPE, e.g. 'databento:EQUS.SUMMARY'
           instrument_id BIGINT  NOT NULL,
-          schema        VARCHAR NOT NULL,      -- 'ohlcv-1d' | 'ohlcv-1m'
+          schema        VARCHAR NOT NULL,
           start_date    DATE    NOT NULL,      -- inclusive
           end_date      DATE    NOT NULL,      -- inclusive
           rows          BIGINT  NOT NULL,      -- 0 is meaningful: checked, legitimately empty
           fetched_at    TIMESTAMP NOT NULL DEFAULT now(),
           PRIMARY KEY (source, instrument_id, schema, start_date)
-        )""")
+        )
+        """
+    )
 }
 
-/** Every stored range for this slice that touches [want], clipped to it, ordered. */
+/** Every stored range touching [want], clipped to it, in order. */
 private fun Connection.clippedRanges(s: Slice, want: DateRange): List<DateRange> =
-    prepareStatement("""
+    prepareStatement(
+        """
         SELECT greatest(start_date, ?) AS s, least(end_date, ?) AS e
         FROM coverage
         WHERE source = ? AND instrument_id = ? AND schema = ?
           AND end_date >= ? AND start_date <= ?
         ORDER BY s
-    """).use { ps ->
+        """
+    ).use { ps ->
         ps.setDate(1, Date.valueOf(want.from)); ps.setDate(2, Date.valueOf(want.to))
         ps.setString(3, s.source); ps.setLong(4, s.instrumentId); ps.setString(5, s.schema.wire)
         ps.setDate(6, Date.valueOf(want.from)); ps.setDate(7, Date.valueOf(want.to))
         ps.executeQuery().use { rs ->
-            buildList { while (rs.next()) add(DateRange(rs.getDate(1).toLocalDate(), rs.getDate(2).toLocalDate())) }
+            buildList {
+                while (rs.next()) add(DateRange(rs.getDate(1).toLocalDate(), rs.getDate(2).toLocalDate()))
+            }
         }
     }
 
 /**
- * Is [want] entirely held? Because ranges are merged on write, one stored row must
- * span it — no interval reasoning needed.
+ * Is [want] entirely held? Because ranges are merged on write, one stored row must span
+ * it — no interval reasoning needed at read time.
  */
 fun Connection.isCovered(s: Slice, want: DateRange): Boolean =
-    prepareStatement("""
+    prepareStatement(
+        """
         SELECT EXISTS (
           SELECT 1 FROM coverage
           WHERE source = ? AND instrument_id = ? AND schema = ?
             AND start_date <= ? AND end_date >= ?
-        )""").use { ps ->
+        )
+        """
+    ).use { ps ->
         ps.setString(1, s.source); ps.setLong(2, s.instrumentId); ps.setString(3, s.schema.wire)
         ps.setDate(4, Date.valueOf(want.from)); ps.setDate(5, Date.valueOf(want.to))
         ps.executeQuery().use { it.next(); it.getBoolean(1) }
@@ -87,50 +93,57 @@ fun Connection.missingRanges(s: Slice, want: DateRange): List<DateRange> {
 }
 
 /**
- * Record a fetched range, merging into anything it overlaps or abuts. Merging on write
- * is what keeps [isCovered] a single EXISTS instead of a recursive CTE.
+ * Record a fetched range, merging into anything it overlaps or abuts.
  *
- * The row count is **recounted from the store** rather than summed across the merged
- * ranges — summing double-counts any overlap, and a count that lies is worse than none.
+ * Merging on write is what keeps [isCovered] a single EXISTS. The row count is
+ * **recounted from the store** rather than summed across merged ranges — summing
+ * double-counts any overlap, and a count that lies is worse than no count.
  *
  * A range that yielded nothing is still recorded. "Asked, nothing there" is a real
  * answer, and storing it stops a delisted or pre-IPO instrument being re-requested on
- * every universe scan.
+ * every scan.
  */
 fun Connection.recordCoverage(s: Slice, got: DateRange) {
-    val touching = prepareStatement("""
+    val touching = prepareStatement(
+        """
         SELECT min(start_date), max(end_date) FROM coverage
         WHERE source = ? AND instrument_id = ? AND schema = ?
           AND end_date >= ? AND start_date <= ?
-    """).use { ps ->
+        """
+    ).use { ps ->
         ps.setString(1, s.source); ps.setLong(2, s.instrumentId); ps.setString(3, s.schema.wire)
-        ps.setDate(4, Date.valueOf(got.from.minusDays(1)))   // -1/+1 so abutting ranges merge
+        // -1 / +1 so an abutting range merges rather than sitting adjacent
+        ps.setDate(4, Date.valueOf(got.from.minusDays(1)))
         ps.setDate(5, Date.valueOf(got.to.plusDays(1)))
         ps.executeQuery().use { rs ->
             rs.next()
             rs.getDate(1)?.toLocalDate() to rs.getDate(2)?.toLocalDate()
         }
     }
-    val from = minOf(got.from, touching.first ?: got.from)
-    val to = maxOf(got.to, touching.second ?: got.to)
+    val from: LocalDate = minOf(got.from, touching.first ?: got.from)
+    val to: LocalDate = maxOf(got.to, touching.second ?: got.to)
 
-    val actual = prepareStatement("""
+    val actual = prepareStatement(
+        """
         SELECT count(*) FROM ohlcv
-        WHERE source = ? AND instrument_id = ? AND schema = ?
-          AND ts >= ? AND ts < ?
-    """).use { ps ->
+        WHERE source = ? AND instrument_id = ? AND schema = ? AND ts >= ? AND ts < ?
+        """
+    ).use { ps ->
         ps.setString(1, s.source); ps.setLong(2, s.instrumentId); ps.setString(3, s.schema.wire)
-        ps.setTimestamp(4, java.sql.Timestamp.valueOf(from.atStartOfDay()))
-        ps.setTimestamp(5, java.sql.Timestamp.valueOf(to.plusDays(1).atStartOfDay()))
+        ps.setTimestamp(4, Timestamp.valueOf(from.atStartOfDay()))
+        ps.setTimestamp(5, Timestamp.valueOf(to.plusDays(1).atStartOfDay()))
         ps.executeQuery().use { it.next(); it.getLong(1) }
     }
 
-    prepareStatement("""
+    prepareStatement(
+        """
         DELETE FROM coverage
         WHERE source = ? AND instrument_id = ? AND schema = ? AND end_date >= ? AND start_date <= ?
-    """).use { ps ->
+        """
+    ).use { ps ->
         ps.setString(1, s.source); ps.setLong(2, s.instrumentId); ps.setString(3, s.schema.wire)
-        ps.setDate(4, Date.valueOf(got.from.minusDays(1))); ps.setDate(5, Date.valueOf(got.to.plusDays(1)))
+        ps.setDate(4, Date.valueOf(got.from.minusDays(1)))
+        ps.setDate(5, Date.valueOf(got.to.plusDays(1)))
         ps.executeUpdate()
     }
     prepareStatement(
