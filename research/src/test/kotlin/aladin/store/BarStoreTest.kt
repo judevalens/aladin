@@ -6,6 +6,9 @@ import aladin.Instrument
 import aladin.Schema
 import aladin.vendor.BarFetcher
 import aladin.vendor.SymbologySource
+import java.io.File
+import java.nio.file.Files
+import java.sql.SQLException
 import java.time.LocalDate
 import kotlin.test.*
 
@@ -342,5 +345,52 @@ class IdentityBreakTest {
             store.bars(listOf("SPLIT"), r("2024-01-01", "2024-01-31"))
             assertTrue(store.identityBreaks().isEmpty(), "a 4-for-1 on consecutive days is a split")
         }
+    }
+}
+
+/**
+ * Read-only mode is the whole of the multi-process story: DuckDB allows **one writer or
+ * many readers, never both**. These pin the three ways that shows up.
+ */
+class ReadOnlyStoreTest {
+
+    private fun tempStore(): String =
+        File(Files.createTempDirectory("bars").toFile(), "store.duckdb").path
+
+    @Test
+    fun `many readers share one file, and none of them can write`() {
+        val path = tempStore()
+        BarStore(openDb(path), FakeVendor()).use { writer ->
+            writer.register(Instrument(1, "AAA", d("1900-01-01"), null))
+            assertEquals(3, writer.bars(listOf("AAA"), r("2024-03-04", "2024-03-06")).rows)
+        }   // the exclusive lock is released with the writer
+
+        BarStore.readOnly(path).use { a ->
+            BarStore.readOnly(path).use { b ->
+                for (reader in listOf(a, b)) {
+                    assertEquals(3, reader.bars(listOf("AAA"), r("2024-03-04", "2024-03-06")).rows)
+                }
+                assertFailsWith<SQLException> { b.register(Instrument(2, "BBB", d("1900-01-01"), null)) }
+            }
+        }
+    }
+
+    @Test
+    fun `read-only names the real problem when there is no store in the file`() {
+        val path = tempStore()
+        openDb(path).use { it.createStatement().execute("CREATE TABLE unrelated (x INT)") }
+
+        // Without the check this surfaces as the driver's "unsuccessful or closed pending
+        // query result", which describes the symptom and hides the cause.
+        val e = assertFailsWith<IllegalStateException> { BarStore.readOnly(path) }
+        assertTrue("ohlcv" in e.message.orEmpty(), e.message.orEmpty())
+        assertTrue("writable" in e.message.orEmpty(), e.message.orEmpty())
+    }
+
+    @Test
+    fun `read-only never conjures the store it cannot find`() {
+        val path = tempStore()
+        assertFailsWith<SQLException> { BarStore.readOnly(path) }
+        assertFalse(File(path).exists(), "read-only must attach, never create")
     }
 }

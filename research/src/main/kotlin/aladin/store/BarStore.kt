@@ -64,10 +64,22 @@ class BarStore(
 ) : Bars, Closeable {
 
     init {
-        conn.createInstrumentsTable()
-        conn.createOhlcvTable()
-        conn.createCoverageTable()
-        conn.createSymbologyTable()
+        // Creating the schema is the writer's job: a read-only handle rejects every DDL
+        // statement, `IF NOT EXISTS` included. Check the tables are there rather than
+        // letting the first query fail, because the driver's complaint about a missing
+        // table is several layers removed from the cause.
+        if (conn.isReadOnlyStore()) {
+            val missing = STORE_TABLES - conn.tableNames()
+            check(missing.isEmpty()) {
+                "opened read-only but the store has no $missing — open it writable once " +
+                    "to create the schema, or point at a store that already has data"
+            }
+        } else {
+            conn.createInstrumentsTable()
+            conn.createOhlcvTable()
+            conn.createCoverageTable()
+            conn.createSymbologyTable()
+        }
     }
 
     override fun bars(
@@ -133,9 +145,18 @@ class BarStore(
     }
 
     companion object {
-        /** Read-only over what is already on disk. Never fetches, never spends. */
+        /**
+         * Read-only over what is already on disk. Never fetches, never spends.
+         *
+         * Read-only in both senses: no fetcher, so it cannot reach a vendor, and DuckDB's
+         * shared lock, so **several of these can share one file** — which is how a sweep
+         * fans out across processes, or runs beside an open DataGrip session. The catch
+         * is that no writer may hold the file at the same time, so fetch first and fan
+         * out after. That ordering is worth wanting anyway: buying bars from inside the
+         * hot loop is not a thing you want N workers racing to do.
+         */
         fun readOnly(path: String = RESEARCH_DB): BarStore =
-            BarStore(openDb(path), fetcher = null)
+            BarStore(openDb(path, readOnly = true), fetcher = null)
 
         /**
          * Backed by Databento, with the budget gate and vendor symbology wired in.
@@ -175,8 +196,14 @@ class BarStore(
  * More than one is ambiguous rather than a default: reading consolidated bars when you
  * meant single-venue produces plausible wrong numbers.
  */
+/** What a store is made of. Absent under a read-only handle means nobody wrote it yet. */
+private val STORE_TABLES = setOf("instruments", "ohlcv", "coverage", "symbology_checked")
+
 private fun Connection.soleSource(): String {
-    createOhlcvTable()
+    // Evaluated as a default argument, so this runs *before* the init block above and has
+    // to stand on its own in either mode.
+    if (!isReadOnlyStore()) createOhlcvTable()
+    if ("ohlcv" !in tableNames()) return "databento:${Env["DATABENTO_DATASET"] ?: "EQUS.SUMMARY"}"
     return createStatement().use { st ->
         st.executeQuery("SELECT DISTINCT source FROM ohlcv").use { rs ->
             val all = buildList { while (rs.next()) add(rs.getString(1)) }

@@ -139,6 +139,36 @@ fix it, and is owed alongside a real trading calendar for `lastSettledSession()`
 **Column labels follow `instrument_id` order**, matching the grid query. Ordering them
 alphabetically instead puts every symbol's prices under a different symbol's name.
 
+## Running more than one at a time
+
+DuckDB's rule is **one writer, or many readers — never both.** Verified, not assumed:
+two read-only processes open the same file happily; a reader attempting to attach while
+a writer holds it fails with `Conflicting lock is held ... (PID nnnnn)`.
+
+That leaves three shapes, and only the last is blocked:
+
+| shape | works |
+|---|---|
+| N strategies, one JVM, threads or coroutines | yes — no file lock is involved at all |
+| N processes, all `BarStore.readOnly()` | yes |
+| N processes, one or more writing | no |
+
+**One JVM is the intended shape.** A parameter sweep is N coroutines over one DuckDB
+instance, which is concurrent internally — and the `ensureLock` in `Ohlcv.kt` means a
+hundred workers wanting the same missing range produce *one* Databento request rather
+than a hundred.
+
+`BarStore.readOnly()` exists for when you genuinely want separate processes, and is
+read-only in both senses: no fetcher, so it cannot spend, and DuckDB's shared lock, so it
+can share the file. Fetch first, fan out after — the lock forces that ordering, and it is
+the one you want regardless, since buying bars from inside the hot loop is not something
+you want N workers racing to do.
+
+Two edges, both pinned by tests: a read-only handle rejects every DDL statement
+(`IF NOT EXISTS` included), so the schema has to exist already — the store says so
+plainly rather than letting the driver report "an unsuccessful or closed pending query
+result" — and read-only attaches, never creates.
+
 ## Money rails
 
 Coverage is the rail that saves most, because a held range is never fetched, priced or

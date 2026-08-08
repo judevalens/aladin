@@ -10,13 +10,47 @@ import org.jetbrains.kotlinx.dataframe.schema.ColumnSchema
 import java.sql.Connection
 import java.sql.DriverManager
 import java.sql.ResultSet
+import java.util.Properties
 import kotlin.reflect.KType
 
 const val RESEARCH_DB = "data/research.duckdb"
 
-/** The store on disk. Derived — delete it and it rebuilds by fetching. */
-fun openDb(path: String = RESEARCH_DB): Connection =
-    DriverManager.getConnection("jdbc:duckdb:$path")
+/**
+ * The store on disk. Derived — delete it and it rebuilds by fetching.
+ *
+ * [readOnly] takes DuckDB's shared lock instead of the exclusive one, which is what lets
+ * several processes open the same file at once — a sweep alongside a DataGrip session,
+ * say. The rule is **one writer or many readers, never both**: a reader cannot attach
+ * while a writer holds the file, and vice versa.
+ *
+ * Two consequences worth knowing before reaching for it. Every DDL statement throws
+ * under a read-only handle, `IF NOT EXISTS` included, so the schema must already exist.
+ * And a file that is not there cannot be opened read-only, since there is nothing to
+ * attach to — read-only never creates.
+ */
+fun openDb(path: String = RESEARCH_DB, readOnly: Boolean = false): Connection =
+    DriverManager.getConnection(
+        "jdbc:duckdb:$path",
+        Properties().apply { if (readOnly) setProperty("duckdb.read_only", "true") },
+    )
+
+/**
+ * DuckDB's own view of the handle.
+ *
+ * Asked rather than tracked, so it is right even for a connection this code did not
+ * open — and because the alternative is discovering it from the driver, which reports a
+ * rejected write as "an unsuccessful or closed pending query result": true, and useless.
+ */
+internal fun Connection.isReadOnlyStore(): Boolean =
+    queryOne("SELECT current_setting(\'access_mode\')") { it.getString(1) }
+        .equals("READ_ONLY", ignoreCase = true)
+
+/** Tables present in the main schema. */
+internal fun Connection.tableNames(): Set<String> =
+    createStatement().use { st ->
+        st.executeQuery("SELECT table_name FROM information_schema.tables WHERE table_schema = \'main\'")
+            .use { rs -> buildSet { while (rs.next()) add(rs.getString(1)) } }
+    }
 
 /**
  * A throwaway store, torn down with its last connection (~43ms to stand up).

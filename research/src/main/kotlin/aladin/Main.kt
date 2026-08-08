@@ -19,8 +19,12 @@ fun main() {
             listOf("AMZN"),
             DateRange(LocalDate.parse("2024-01-01"), LocalDate.parse("2026-07-30"))
         )
-        println(
-            df.columns()
-        )
+
+        println(df[10..15])
+
+        df.columns().forEach {
+            println(it.name())
+        }
+
     }
 }
