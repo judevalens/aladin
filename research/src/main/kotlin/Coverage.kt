@@ -22,7 +22,7 @@ data class DateRange(val from: LocalDate, val to: LocalDate) {
 }
 
 /** Keyed on instrument_id, never symbol — see Instruments.kt. */
-data class Slice(val source: String, val instrumentId: Long, val schema: String)
+data class Slice(val source: String, val instrumentId: Long, val schema: Schema)
 
 fun Connection.createCoverageTable() = createStatement().use {
     it.execute("""
@@ -48,7 +48,7 @@ private fun Connection.clippedRanges(s: Slice, want: DateRange): List<DateRange>
         ORDER BY s
     """).use { ps ->
         ps.setDate(1, Date.valueOf(want.from)); ps.setDate(2, Date.valueOf(want.to))
-        ps.setString(3, s.source); ps.setLong(4, s.instrumentId); ps.setString(5, s.schema)
+        ps.setString(3, s.source); ps.setLong(4, s.instrumentId); ps.setString(5, s.schema.wire)
         ps.setDate(6, Date.valueOf(want.from)); ps.setDate(7, Date.valueOf(want.to))
         ps.executeQuery().use { rs ->
             buildList { while (rs.next()) add(DateRange(rs.getDate(1).toLocalDate(), rs.getDate(2).toLocalDate())) }
@@ -66,7 +66,7 @@ fun Connection.isCovered(s: Slice, want: DateRange): Boolean =
           WHERE source = ? AND instrument_id = ? AND schema = ?
             AND start_date <= ? AND end_date >= ?
         )""").use { ps ->
-        ps.setString(1, s.source); ps.setLong(2, s.instrumentId); ps.setString(3, s.schema)
+        ps.setString(1, s.source); ps.setLong(2, s.instrumentId); ps.setString(3, s.schema.wire)
         ps.setDate(4, Date.valueOf(want.from)); ps.setDate(5, Date.valueOf(want.to))
         ps.executeQuery().use { it.next(); it.getBoolean(1) }
     }
@@ -103,7 +103,7 @@ fun Connection.recordCoverage(s: Slice, got: DateRange) {
         WHERE source = ? AND instrument_id = ? AND schema = ?
           AND end_date >= ? AND start_date <= ?
     """).use { ps ->
-        ps.setString(1, s.source); ps.setLong(2, s.instrumentId); ps.setString(3, s.schema)
+        ps.setString(1, s.source); ps.setLong(2, s.instrumentId); ps.setString(3, s.schema.wire)
         ps.setDate(4, Date.valueOf(got.from.minusDays(1)))   // -1/+1 so abutting ranges merge
         ps.setDate(5, Date.valueOf(got.to.plusDays(1)))
         ps.executeQuery().use { rs ->
@@ -119,7 +119,7 @@ fun Connection.recordCoverage(s: Slice, got: DateRange) {
         WHERE source = ? AND instrument_id = ? AND schema = ?
           AND ts >= ? AND ts < ?
     """).use { ps ->
-        ps.setString(1, s.source); ps.setLong(2, s.instrumentId); ps.setString(3, s.schema)
+        ps.setString(1, s.source); ps.setLong(2, s.instrumentId); ps.setString(3, s.schema.wire)
         ps.setTimestamp(4, java.sql.Timestamp.valueOf(from.atStartOfDay()))
         ps.setTimestamp(5, java.sql.Timestamp.valueOf(to.plusDays(1).atStartOfDay()))
         ps.executeQuery().use { it.next(); it.getLong(1) }
@@ -129,14 +129,14 @@ fun Connection.recordCoverage(s: Slice, got: DateRange) {
         DELETE FROM coverage
         WHERE source = ? AND instrument_id = ? AND schema = ? AND end_date >= ? AND start_date <= ?
     """).use { ps ->
-        ps.setString(1, s.source); ps.setLong(2, s.instrumentId); ps.setString(3, s.schema)
+        ps.setString(1, s.source); ps.setLong(2, s.instrumentId); ps.setString(3, s.schema.wire)
         ps.setDate(4, Date.valueOf(got.from.minusDays(1))); ps.setDate(5, Date.valueOf(got.to.plusDays(1)))
         ps.executeUpdate()
     }
     prepareStatement(
         "INSERT INTO coverage (source, instrument_id, schema, start_date, end_date, rows) VALUES (?,?,?,?,?,?)"
     ).use { ps ->
-        ps.setString(1, s.source); ps.setLong(2, s.instrumentId); ps.setString(3, s.schema)
+        ps.setString(1, s.source); ps.setLong(2, s.instrumentId); ps.setString(3, s.schema.wire)
         ps.setDate(4, Date.valueOf(from)); ps.setDate(5, Date.valueOf(to)); ps.setLong(6, actual)
         ps.executeUpdate()
     }

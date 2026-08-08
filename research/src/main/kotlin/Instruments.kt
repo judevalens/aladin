@@ -17,7 +17,13 @@ import java.sql.Connection
 import java.sql.Date
 import java.time.LocalDate
 
-data class Instrument(val id: Long, val symbol: String, val validFrom: LocalDate, val validTo: LocalDate?)
+data class Instrument(
+    val id: Long,
+    val symbol: String,
+    val validFrom: LocalDate,
+    val validTo: LocalDate?,
+    val type: InstrumentType = InstrumentType.EQUITY,
+)
 
 fun Connection.createInstrumentsTable() = createStatement().use {
     it.execute("""
@@ -26,17 +32,19 @@ fun Connection.createInstrumentsTable() = createStatement().use {
           symbol        VARCHAR NOT NULL,
           valid_from    DATE    NOT NULL,
           valid_to      DATE,                    -- NULL = still current
+          type          VARCHAR NOT NULL,
           PRIMARY KEY (instrument_id, valid_from)
         )""")
 }
 
 fun Connection.registerInstrument(i: Instrument) =
     prepareStatement("""
-        INSERT INTO instruments (instrument_id, symbol, valid_from, valid_to) VALUES (?,?,?,?)
+        INSERT INTO instruments (instrument_id, symbol, valid_from, valid_to, type) VALUES (?,?,?,?,?)
         ON CONFLICT DO NOTHING""").use { ps ->
         ps.setLong(1, i.id); ps.setString(2, i.symbol)
         ps.setDate(3, Date.valueOf(i.validFrom))
         ps.setDate(4, i.validTo?.let { Date.valueOf(it) })
+        ps.setString(5, i.type.name)
         ps.executeUpdate()
     }
 
@@ -73,5 +81,64 @@ fun Connection.resolveUniverse(symbols: List<String>, asOf: LocalDate): Pair<Map
     val hits = mutableMapOf<String, Long>()
     val misses = mutableListOf<String>()
     for (s in symbols) resolveInstrument(s, asOf)?.let { hits[s] = it } ?: misses.add(s)
+    return hits to misses
+}
+
+// ---------------------------------------------------------------------------
+// Read-through identity.
+//
+// Nothing is bulk-loaded. A symbol enters the registry the first time something
+// asks for it, exactly like bars enter the store on a coverage miss.
+//
+// A resolve miss is ambiguous — either we have never asked the vendor about this
+// symbol, or we have and it genuinely did not exist on that date (pre-IPO,
+// post-delisting). Those must not cost the same. So asking is recorded once per
+// SYMBOL: after one call the vendor has told us every validity range it knows, and
+// an as-of miss inside that knowledge is a real answer, not a cache miss.
+// ---------------------------------------------------------------------------
+
+/** Resolves a ticker's full validity history. UNVERIFIED against a live vendor. */
+interface SymbologySource {
+    val source: String
+    /** Every interval this ticker denoted an instrument. Empty = the vendor knows nothing. */
+    fun history(symbol: String): List<Instrument>
+}
+
+fun Connection.createSymbologyTable() = createStatement().use {
+    it.execute("""
+        CREATE TABLE IF NOT EXISTS symbology_checked (
+          source     VARCHAR NOT NULL,
+          symbol     VARCHAR NOT NULL,
+          checked_at TIMESTAMP NOT NULL DEFAULT now(),
+          PRIMARY KEY (source, symbol)
+        )""")
+}
+
+private fun Connection.alreadyAsked(source: String, symbol: String): Boolean =
+    prepareStatement("SELECT EXISTS (SELECT 1 FROM symbology_checked WHERE source = ? AND symbol = ?)")
+        .use { ps -> ps.setString(1, source); ps.setString(2, symbol)
+            ps.executeQuery().use { it.next(); it.getBoolean(1) } }
+
+/**
+ * Resolve as-of, asking the vendor at most once per symbol ever.
+ * Null still means "did not exist then" — now a fact rather than an unasked question.
+ */
+fun Connection.resolveOrFetch(symbol: String, asOf: LocalDate, symbology: SymbologySource?): Long? {
+    resolveInstrument(symbol, asOf)?.let { return it }
+    if (symbology == null || alreadyAsked(symbology.source, symbol)) return null
+
+    symbology.history(symbol).forEach { registerInstrument(it) }
+    prepareStatement("INSERT INTO symbology_checked (source, symbol) VALUES (?,?) ON CONFLICT DO NOTHING")
+        .use { ps -> ps.setString(1, symbology.source); ps.setString(2, symbol); ps.executeUpdate() }
+    return resolveInstrument(symbol, asOf)
+}
+
+/** As [resolveUniverse], but fills the registry on demand. */
+fun Connection.resolveUniverse(
+    symbols: List<String>, asOf: LocalDate, symbology: SymbologySource?,
+): Pair<Map<String, Long>, List<String>> {
+    val hits = mutableMapOf<String, Long>()
+    val misses = mutableListOf<String>()
+    for (s in symbols) resolveOrFetch(s, asOf, symbology)?.let { hits[s] = it } ?: misses.add(s)
     return hits to misses
 }

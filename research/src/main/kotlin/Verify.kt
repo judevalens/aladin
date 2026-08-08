@@ -45,10 +45,12 @@ fun main() {
         var compared = 0
         var worst = 0.0
         for (r in weights.indices) {
-            val expected = ref[bars.dates[first + r]] ?: continue
+            val expected = ref[bars.dates[first + r].take(10)] ?: continue
             compared++
             for (j in weights[r].indices) worst = maxOf(worst, abs(weights[r][j] - expected[j]))
         }
+        // a comparison that compared nothing is not a pass
+        check(compared > 0) { "$name: 0 bars matched the reference — date labels are misaligned" }
         val ok = worst == 0.0
         if (!ok) failures++
         println("  ${name.padEnd(22)}${compared.toString().padStart(4)} bars   max diff ${"%.2e".format(worst)}   " +

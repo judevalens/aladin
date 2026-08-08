@@ -24,12 +24,23 @@ import org.jetbrains.kotlinx.multik.api.ndarray
 import org.jetbrains.kotlinx.multik.ndarray.data.D1Array
 import org.jetbrains.kotlinx.multik.ndarray.data.D2Array
 import java.sql.Connection
+import java.time.LocalDate
 import java.sql.DriverManager
 
 const val RESEARCH_DB = "data/research.duckdb"
 
 fun openDb(path: String = RESEARCH_DB): Connection =
     DriverManager.getConnection("jdbc:duckdb:$path")
+
+/**
+ * A throwaway in-memory store, torn down with the connection (~43ms to stand up).
+ * Probes and tests that DROP or mutate tables must use this — the shared fixture is
+ * what VerifyKt checks against, and two probes have already corrupted it.
+ */
+fun openScratch(name: String = "scratch"): Connection =
+    // NAMED in-memory: plain `jdbc:duckdb:` gives each connection its own database,
+    // so helpers that open separately would each see an empty one.
+    DriverManager.getConnection("jdbc:duckdb::memory:$name")
 
 /**
  * Kotlin DataFrame ships DbTypes for H2/MariaDB/MySQL/MSSQL/SQLite/PostgreSQL only, so
@@ -62,6 +73,8 @@ class BarMatrix(
     val symbols: List<String>,
     /** row-major (time × symbol) — what multik wants */
     val rowMajor: DoubleArray,
+    /** bars the store had no row for — halts, pre-listing, delisting. Visible on purpose. */
+    val holes: Int = 0,
 ) {
     val rows get() = dates.size
     val cols get() = symbols.size
@@ -72,32 +85,66 @@ class BarMatrix(
     fun nd(): D2Array<Double> = mk.ndarray(rowMajor, rows, cols)
 }
 
-fun loadBars(table: String = "bars", db: String = RESEARCH_DB): BarMatrix =
-    openDb(db).use { conn ->
-        val symbols = mutableListOf<String>()
-        conn.createStatement().use { st ->
-            st.executeQuery("SELECT DISTINCT symbol FROM $table ORDER BY symbol").use { rs ->
-                while (rs.next()) symbols += rs.getString(1)
-            }
+/**
+ * One-time: lift the close-only `bars` fixture into `ohlcv`, registering an instrument
+ * per symbol, so the fixture flows through the same path as fetched data.
+ */
+fun Connection.seedFixture(table: String = "bars", source: String = "fixture") {
+    createInstrumentsTable(); createOhlcvTable(); createCoverageTable()
+    val already = createStatement().use { st ->
+        st.executeQuery("SELECT count(*) FROM ohlcv WHERE source = '$source'").use { it.next(); it.getLong(1) }
+    }
+    if (already > 0) return
+
+    val symbols = createStatement().use { st ->
+        st.executeQuery("SELECT DISTINCT symbol FROM $table ORDER BY symbol").use { rs ->
+            buildList { while (rs.next()) add(rs.getString(1)) }
         }
-        val dates = mutableListOf<String>()
-        val values = mutableListOf<Double>()
-        conn.createStatement().use { st ->
-            st.executeQuery("SELECT ts, symbol, close FROM $table ORDER BY ts, symbol").use { rs ->
-                var lastTs = ""
+    }
+    symbols.forEachIndexed { i, sym ->
+        registerInstrument(Instrument((i + 1).toLong(), sym, LocalDate.of(1990, 1, 1), null))
+    }
+    val ids = symbols.withIndex().associate { (i, s) -> s to (i + 1).toLong() }
+    prepareStatement("INSERT INTO ohlcv VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING").use { ps ->
+        createStatement().use { st ->
+            st.executeQuery("SELECT ts, symbol, close FROM $table").use { rs ->
                 while (rs.next()) {
-                    val ts = rs.getTimestamp(1).toLocalDateTime().toLocalDate().toString()
-                    if (ts != lastTs) { dates += ts; lastTs = ts }
-                    values += rs.getDouble(3)
+                    ps.setString(1, source); ps.setLong(2, ids.getValue(rs.getString(2)))
+                    ps.setString(3, Schema.OHLCV_1D.wire); ps.setTimestamp(4, rs.getTimestamp(1))
+                    ps.setObject(5, null); ps.setObject(6, null); ps.setObject(7, null)
+                    ps.setDouble(8, rs.getDouble(3)); ps.setObject(9, null); ps.setBoolean(10, false)
+                    ps.addBatch()
                 }
             }
         }
-        check(values.size == dates.size * symbols.size) {
-            "ragged store: ${values.size} values for ${dates.size} bars x ${symbols.size} symbols"
-        }
-        BarMatrix(dates, symbols, values.toDoubleArray())
+        ps.executeBatch()
     }
+    val (lo, hi) = createStatement().use { st ->
+        st.executeQuery("SELECT min(ts), max(ts) FROM $table").use {
+            it.next(); it.getTimestamp(1).toLocalDateTime().toLocalDate() to
+                       it.getTimestamp(2).toLocalDateTime().toLocalDate()
+        }
+    }
+    ids.values.forEach { recordCoverage(Slice(source, it, Schema.OHLCV_1D), DateRange(lo, hi)) }
+}
 
+/** Convenience for the strategy entry points: the whole fixture universe, through loadMatrix. */
+fun loadBars(table: String = "bars", db: String = RESEARCH_DB): BarMatrix =
+    openDb(db).use { conn ->
+        conn.seedFixture(table, source = table)
+        val symbols = conn.createStatement().use { st ->
+            st.executeQuery("SELECT DISTINCT symbol FROM $table ORDER BY symbol").use { rs ->
+                buildList { while (rs.next()) add(rs.getString(1)) }
+            }
+        }
+        val (lo, hi) = conn.createStatement().use { st ->
+            st.executeQuery("SELECT min(ts), max(ts) FROM $table").use {
+                it.next(); it.getTimestamp(1).toLocalDateTime().toLocalDate() to
+                           it.getTimestamp(2).toLocalDateTime().toLocalDate()
+            }
+        }
+        conn.loadMatrix(symbols, DateRange(lo, hi), asOf = lo, source = table)
+    }
 // ---------------------------------------------------------------------------
 // DataFrame -> multik.
 //

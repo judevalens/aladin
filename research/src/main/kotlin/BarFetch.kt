@@ -35,19 +35,30 @@ interface BarFetcher {
      * Batched on purpose: vendors accept many symbols per request and bill by bytes,
      * so a universe backfill should be a handful of calls, not thousands.
      */
-    fun fetch(instruments: Map<String, Long>, schema: String, range: DateRange): List<BarRow>
+    fun fetch(instruments: Map<String, Long>, schema: Schema, range: DateRange): List<BarRow>
 }
 
 /**
- * Serialises every fetch. Enough here because DuckDB is single-writer and the engine
- * is one JVM — no distributed coordination needed. Costs nothing once fetches are
- * batched, since a backfill is then a few large calls rather than many small ones.
+ * Serialises fetching only. **Not sufficient on its own** — the coverage write happens
+ * after the fetch returns, so two threads can still collide on it. [ensureBars] holds
+ * the real lock; this exists for callers driving a fetcher directly.
  */
 class LockedFetcher(private val delegate: BarFetcher) : BarFetcher by delegate {
     private val lock = Any()
-    override fun fetch(instruments: Map<String, Long>, schema: String, range: DateRange) =
+    override fun fetch(instruments: Map<String, Long>, schema: Schema, range: DateRange) =
         synchronized(lock) { delegate.fetch(instruments, schema, range) }
 }
+
+/**
+ * Guards the whole read-through cycle — gap computation, fetch, bar insert, coverage
+ * write. Locking only the fetch is not enough: DuckDB's MVCC rejects the second of two
+ * concurrent DELETE+INSERTs on the same coverage row ("Conflict on tuple deletion"),
+ * and the fetch has already been paid for by then.
+ *
+ * A single global lock is right here — DuckDB is single-writer and the engine is one
+ * JVM, so per-slice granularity would buy nothing.
+ */
+private val ensureLock = Any()
 
 fun Connection.createOhlcvTable() = createStatement().use {
     it.execute("""
@@ -87,17 +98,17 @@ fun lastSettledSession(today: LocalDate = LocalDate.now()): LocalDate {
 fun Connection.ensureBars(
     fetcher: BarFetcher,
     instruments: Map<String, Long>,
-    schema: String,
+    schema: Schema,
     range: DateRange,
-): Long {
+): Long = synchronized(ensureLock) {
     val settled = lastSettledSession()
-    if (range.from.isAfter(settled)) return 0
+    if (range.from.isAfter(settled)) return@synchronized 0
     val want = DateRange(range.from, minOf(range.to, settled))
 
     val bySymbol = instruments.entries.flatMap { (sym, id) ->
         missingRanges(Slice(fetcher.source, id, schema), want).map { gap -> gap to (sym to id) }
     }
-    if (bySymbol.isEmpty()) return 0
+    if (bySymbol.isEmpty()) return@synchronized 0
 
     var fetched = 0L
     for ((gap, group) in bySymbol.groupBy({ it.first }, { it.second })) {
@@ -114,7 +125,7 @@ fun Connection.ensureBars(
                 "INSERT INTO ohlcv VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING"
             ).use { ps ->
                 for (b in rows) {
-                    ps.setString(1, fetcher.source); ps.setLong(2, b.instrumentId); ps.setString(3, schema)
+                    ps.setString(1, fetcher.source); ps.setLong(2, b.instrumentId); ps.setString(3, schema.wire)
                     ps.setTimestamp(4, Timestamp.valueOf(b.ts))
                     ps.setObject(5, b.open); ps.setObject(6, b.high)
                     ps.setObject(7, b.low); ps.setObject(8, b.close); ps.setObject(9, b.volume)
@@ -132,7 +143,7 @@ fun Connection.ensureBars(
         }
         fetched += rows.size
     }
-    return fetched
+    return@synchronized fetched
 }
 
 // ---------------------------------------------------------------------------
@@ -145,7 +156,7 @@ fun Connection.ensureBars(
 private const val PRICE_SCALE = 1e-9
 
 class DatabentoFetcher(
-    private val apiKey: String = System.getenv("DATABENTO_API_KEY") ?: error("set DATABENTO_API_KEY"),
+    private val apiKey: String = Env.require("DATABENTO_API_KEY"),
     private val dataset: String = "EQUS.SUMMARY",
     private val http: HttpClient = HttpClient.newHttpClient(),
 ) : BarFetcher {
@@ -153,11 +164,11 @@ class DatabentoFetcher(
     override val adjusted = false          // Databento serves raw venue data
 
     /** Price a request before making it — usage billing makes this worth doing. */
-    fun estimateCostUsd(symbols: Collection<String>, schema: String, range: DateRange): Double =
-        get("metadata.get_cost", symbols, schema, range).trim().toDoubleOrNull() ?: 0.0
+    fun estimateCostUsd(symbols: Collection<String>, schema: Schema, range: DateRange): Double =
+        get("metadata.get_cost", symbols, schema.wire, range).trim().toDoubleOrNull() ?: 0.0
 
-    override fun fetch(instruments: Map<String, Long>, schema: String, range: DateRange): List<BarRow> {
-        val csv = get("timeseries.get_range", instruments.keys, schema, range, "&encoding=csv")
+    override fun fetch(instruments: Map<String, Long>, schema: Schema, range: DateRange): List<BarRow> {
+        val csv = get("timeseries.get_range", instruments.keys, schema.wire, range, "&encoding=csv")
         val lines = csv.lineSequence().filter { it.isNotBlank() }.toList()
         if (lines.size <= 1) return emptyList()
         val head = lines.first().split(",").withIndex().associate { (i, n) -> n.trim() to i }
@@ -167,7 +178,10 @@ class DatabentoFetcher(
             val sym = head["symbol"]?.let { p[it] } ?: instruments.keys.single()
             val id = instruments[sym] ?: return@mapNotNull null
             BarRow(
-                ts = LocalDateTime.parse(p[head["ts_event"]!!].substring(0, 19).replace(' ', 'T')),
+                // ts_event is nanoseconds since epoch, as an integer — not an ISO string
+                ts = LocalDateTime.ofInstant(
+                    java.time.Instant.ofEpochSecond(p[head["ts_event"]!!].toLong() / 1_000_000_000L),
+                    java.time.ZoneOffset.UTC),
                 instrumentId = id,
                 open = px(p, "open"), high = px(p, "high"), low = px(p, "low"), close = px(p, "close"),
                 volume = head["volume"]?.let { p[it].toLongOrNull() },
@@ -179,6 +193,7 @@ class DatabentoFetcher(
                     range: DateRange, extra: String = ""): String {
         val url = "https://hist.databento.com/v0/$endpoint" +
                 "?dataset=$dataset&symbols=${symbols.joinToString(",")}&schema=$schema" +
+                "&stype_in=raw_symbol&map_symbols=true" +   // adds the symbol column; without it batched rows cannot be attributed          // ticker strings, not vendor instrument ids
                 "&start=${range.from}&end=${range.to.plusDays(1)}$extra"   // end is exclusive
         val auth = Base64.getEncoder().encodeToString("$apiKey:".toByteArray())
         val res = http.send(
