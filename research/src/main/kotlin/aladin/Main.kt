@@ -15,11 +15,12 @@ import java.time.LocalDate
 fun main() {
 
     BarStore.databento().use { store ->
+        val df = store.frame(
+            listOf("AMZN"),
+            DateRange(LocalDate.parse("2024-01-01"), LocalDate.parse("2026-07-30"))
+        )
         println(
-            store.frame(
-                listOf("AMZN"),
-                DateRange(LocalDate.parse("2024-01-01"), LocalDate.parse("2026-07-30"))
-            )
+            df.columns()
         )
     }
 }

@@ -162,6 +162,20 @@ will type. Set `DATABENTO_INTERACTIVE=1` where stdin works but `System.console()
   is not enough — DuckDB's MVCC rejects the second of two concurrent coverage writes,
   by which point the fetch has been paid for.
 
+## Reading the libraries
+
+```bash
+./gradlew documentation
+```
+
+Pulls the sources and javadoc jars for every dependency — transitives included — into
+the Gradle cache and collects them under `build/documentation/`. IntelliJ attaches them
+on the next Gradle sync (`idea.module.isDownloadSources`); anything that cannot read the
+cache can unzip them from `build/documentation/sources/`.
+
+Worth having for multik in particular: it ships sources but no javadoc, and its
+view/aliasing behaviour is the kind that returns a wrong number rather than an error.
+
 ## Databento notes
 
 Verified against the live API and the official Python client, which is the authoritative
