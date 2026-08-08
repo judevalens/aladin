@@ -17,7 +17,7 @@ fun main() {
     BarStore.databento().use { store ->
         println(
             store.frame(
-                listOf("SPCX"),
+                listOf("AMZN"),
                 DateRange(LocalDate.parse("2024-01-01"), LocalDate.parse("2026-07-30"))
             )
         )

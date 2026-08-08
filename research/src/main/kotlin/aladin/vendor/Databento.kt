@@ -66,8 +66,21 @@ class DatabentoFetcher(
     override fun estimateCostUsd(symbols: Collection<String>, schema: Schema, range: DateRange): Double =
         http.post("metadata.get_cost", params(symbols, schema, range)).trim().toDoubleOrNull() ?: 0.0
 
-    override fun recordCount(symbols: Collection<String>, schema: Schema, range: DateRange): Long =
-        http.post("metadata.get_record_count", params(symbols, schema, range)).trim().toLongOrNull() ?: -1
+    /**
+     * Memoised on the last query, because a fetch asks twice with identical arguments:
+     * once through the budget gate to describe the request, once inside [fetch] to guard
+     * against truncation. Each is a round trip, and they are always back to back.
+     */
+    private var lastCount: Pair<String, Long>? = null
+
+    override fun recordCount(symbols: Collection<String>, schema: Schema, range: DateRange): Long {
+        val key = "${symbols.sorted()}|${schema.wire}|$range"
+        lastCount?.let { (k, v) -> if (k == key) return v }
+        val n = http.post("metadata.get_record_count", params(symbols, schema, range))
+            .trim().toLongOrNull() ?: -1
+        lastCount = key to n
+        return n
+    }
 
     override fun fetch(instruments: Map<String, Long>, schema: Schema, range: DateRange): List<BarRow> =
         instruments.keys.chunked(MAX_SYMBOLS_PER_REQUEST).flatMap { chunk ->

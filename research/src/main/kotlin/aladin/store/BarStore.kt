@@ -140,14 +140,17 @@ class BarStore(
         /**
          * Backed by Databento, with the budget gate and vendor symbology wired in.
          *
-         * [batch] chooses the transport: batch suits bulk, streaming suits read-through
-         * gaps where the answer is wanted now.
+         * [batch] chooses the transport. Streaming by default: batch's cost is fixed
+         * overhead — submit, queue, process, poll, download — which never amortises on a
+         * small request. Measured on 123 rows: 27.8s streaming against 165.4s batch.
+         * Turn it on for genuinely large pulls, where that overhead is a rounding error
+         * and file delivery is what you want.
          */
         fun databento(
             path: String = RESEARCH_DB,
             autoApproveUnder: Double = Env.double("DATABENTO_AUTO_APPROVE_UNDER", 0.10),
             hardCeiling: Double = Env.double("DATABENTO_HARD_CEILING", 5.00),
-            batch: Boolean = true,
+            batch: Boolean = false,
         ): BarStore {
             // one HTTP client for all three, so there is one pool to close rather than three
             val http = VendorHttp.databento()

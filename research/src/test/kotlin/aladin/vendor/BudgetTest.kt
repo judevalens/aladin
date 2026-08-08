@@ -87,3 +87,33 @@ class BudgetTest {
         }
     }
 }
+
+class RecordCountMemoTest {
+    /**
+     * A fetch asks for the record count twice with identical arguments — once through
+     * the budget gate to describe the request, once inside fetch to guard truncation.
+     * Each is a round trip, and they are always back to back.
+     */
+    @Test
+    fun `an identical count query is not asked twice`() {
+        var calls = 0
+        val counting = object : PricedFetcher {
+            override val source = "test"
+            private var last: Pair<String, Long>? = null
+            override fun estimateCostUsd(s: Collection<String>, sc: Schema, r: DateRange) = 0.0
+            override fun recordCount(s: Collection<String>, sc: Schema, r: DateRange): Long {
+                val key = "${s.sorted()}|${sc.wire}|$r"
+                last?.let { (k, v) -> if (k == key) return v }
+                calls++
+                return 7L.also { last = key to it }
+            }
+            override fun fetch(i: Map<String, Long>, s: Schema, r: DateRange): List<BarRow> {
+                recordCount(i.keys, s, r)          // the truncation guard
+                return emptyList()
+            }
+        }
+        BudgetedFetcher(counting, approver = { _, _ -> true })
+            .fetch(mapOf("X" to 1L), Schema.OHLCV_1D, r("2024-03-01", "2024-03-31"))
+        assertEquals(1, calls, "the same count must be asked for once, not once per caller")
+    }
+}

@@ -169,9 +169,15 @@ contract — the published reference would not load.
 - `stype_in=raw_symbol` or tickers are read as vendor instrument ids;
   `map_symbols=true` or there is no `symbol` column and batched rows can't be attributed.
 - `end` is **exclusive**. Row order is **not** stable, so rows are keyed by symbol.
-- Batch (`batch.submit_job` → poll `list_jobs` → `list_files` → download) suits bulk;
-  streaming suits read-through gaps. Both implement `BarFetcher`, so the store is
-  indifferent.
+- **Streaming is the default; batch is opt-in.** Batch's cost is fixed overhead —
+  submit, queue, process, poll, download — which never amortises on a small request.
+  Measured on 123 rows: **27.8s streaming against 165.4s batch**. Pass `batch = true`
+  for genuinely large pulls, where that overhead is a rounding error and file delivery
+  is what you want. Both implement `BarFetcher`, so the store is indifferent.
+- The record count is memoised per query: a fetch asks for it twice with identical
+  arguments — once through the budget gate, once for the truncation guard — and each is
+  a round trip. Removing the duplicate took a 3-symbol, 2-month fetch from ~28s to
+  ~10s.
 - `metadata.get_dataset_range` gives each dataset's bounds — `EQUS.SUMMARY`
   2024-07-01+, `XPSX.ITCH` 2018-05-01+. Fetchers expose it as `availability` so the
   store clamps rather than discovering the limit through a 422.
