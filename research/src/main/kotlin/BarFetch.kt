@@ -25,7 +25,17 @@ data class BarRow(
 )
 
 interface BarFetcher {
-    /** Vendor name recorded in the ledger, so coverage is per-source. */
+    /**
+     * Identifies the DATA SCOPE, not the vendor — e.g. "databento:EQUS.SUMMARY", not
+     * "databento". Datasets from one vendor answer different questions: EQUS.SUMMARY
+     * is the consolidated tape (AAPL 2024-08-01: 62.5M shares) while XNAS.ITCH is
+     * Nasdaq only (21.3M). Both are correct; neither substitutes for the other.
+     *
+     * Keying on the vendor would collide them on the ohlcv primary key, and
+     * ON CONFLICT DO NOTHING would silently keep whichever landed first. It also
+     * makes coverage per-scope, so holding EQUS.SUMMARY never satisfies a request
+     * for XNAS.ITCH.
+     */
     val source: String
 
     /** True when the vendor returns split/dividend-adjusted prices. */
@@ -160,7 +170,7 @@ class DatabentoFetcher(
     private val dataset: String = "EQUS.SUMMARY",
     private val http: HttpClient = HttpClient.newHttpClient(),
 ) : BarFetcher {
-    override val source = "databento"
+    override val source = "databento:$dataset"
     override val adjusted = false          // Databento serves raw venue data
 
     /** Price a request before making it — usage billing makes this worth doing. */
