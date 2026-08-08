@@ -23,7 +23,8 @@ private class FakeVendor : BarFetcher {
             .takeWhile { !it.isAfter(range.to) }
             .flatMap { day ->
                 instruments.values.asSequence().map { id ->
-                    BarRow(day.atStartOfDay(), id, null, null, null, id * 1000.0 + day.dayOfMonth, 1L)
+                    val close = id * 1000.0 + day.dayOfMonth
+                    BarRow(day.atStartOfDay(), id, close - 1, close + 1, close - 2, close, id * 10L)
                 }
             }
             .toList()
@@ -148,6 +149,33 @@ class BarStoreTest {
         BarStore(openScratch("s9"), fetcher = null, source = "test:fake").use { store ->
             assertFailsWith<IllegalArgumentException> { store.bars(emptyList(), range) }
             assertFailsWith<IllegalArgumentException> { store.bars(listOf("  ", ""), range) }
+        }
+    }
+
+    @Test
+    fun `the frame carries every column, plus the ticker as-of the bar`() {
+        val syms = FakeSymbology(mapOf("A" to live(10, "A"), "B" to live(20, "B")))
+        store("s11", syms) { store, _ ->
+            val df = store.frame(listOf("A", "B"), range)
+            assertEquals(
+                listOf("ts", "symbol", "instrument_id", "open", "high", "low", "close", "volume", "adjusted"),
+                df.columnNames(),
+            )
+            assertEquals(20, df.rowsCount(), "10 bars x 2 instruments, dense")
+            // the fake writes close = id*1000 + day, high = close + 1
+            val first = df["close"][0] as Double
+            assertEquals(first + 1, df["high"][0] as Double, "columns must line up within a row")
+            assertTrue(df["symbol"].values().all { it == "A" || it == "B" })
+        }
+    }
+
+    @Test
+    fun `a matrix still asks for a single field`() {
+        val syms = FakeSymbology(mapOf("A" to live(10, "A")))
+        store("s12", syms) { store, _ ->
+            val close = store.bars(listOf("A"), range, field = "close")
+            val high = store.bars(listOf("A"), range, field = "high")
+            assertEquals(close[0, 0] + 1, high[0, 0], "the field argument selects the column")
         }
     }
 

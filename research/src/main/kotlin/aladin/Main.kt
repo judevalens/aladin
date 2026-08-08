@@ -37,6 +37,9 @@ fun main() {
             )
         }
 
+        println("\nframe — the whole bar:")
+        println(store.frame(symbols, DateRange(range.from, range.from.plusDays(2))))
+
         println("\nheld:")
         println(store.held())
     }

@@ -33,13 +33,12 @@ interface Bars {
         holes: Holes = Holes.NAN,
     ): BarMatrix
 
-    /** The same query as a DataFrame — for looking, not for the engine's hot path. */
+    /** The whole bar as a DataFrame — every column, for looking rather than looping. */
     fun frame(
         symbols: List<String>,
         range: DateRange,
         asOf: LocalDate = range.from,
         schema: Schema = Schema.OHLCV_1D,
-        field: String = "close",
     ): AnyFrame
 }
 
@@ -86,9 +85,8 @@ class BarStore(
         range: DateRange,
         asOf: LocalDate,
         schema: Schema,
-        field: String,
     ): AnyFrame = conn.loadFrame(
-        normalizeSymbols(symbols), range, asOf, field, schema, source, fetcher, symbology,
+        normalizeSymbols(symbols), range, asOf, schema, source, fetcher, symbology,
     )
 
     /** What this store holds, per instrument — for deciding what to ask for. */

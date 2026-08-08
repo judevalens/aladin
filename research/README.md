@@ -51,11 +51,24 @@ DATABENTO_AUTO_APPROVE_UNDER=0.10     # optional; spend this much without asking
 
 ```kotlin
 BarStore.databento().use { store ->
-    val bars = store.bars(listOf("AAPL", "MSFT"), range)   // BarMatrix
-    val df   = store.frame(listOf("AAPL", "MSFT"), range)  // DataFrame, for looking
+    val bars = store.bars(listOf("AAPL", "MSFT"), range)   // BarMatrix, one field
+    val df   = store.frame(listOf("AAPL", "MSFT"), range)  // DataFrame, the whole bar
     println(store.held())
 }
 ```
+
+`bars()` takes a `field` (default `close`) because a `BarMatrix` *is* a 2-D numeric
+matrix — one number per (date, instrument). `frame()` takes none and returns everything:
+
+```
+                      ts symbol instrument_id    open   high      low  close    volume adjusted
+ 0 2024-08-01 00:00:00.0   AAPL            38 224.370 224.48 217.0200 218.36  62500996    false
+ 1 2024-08-01 00:00:00.0   MSFT         10888 420.785 427.46 413.0901 417.11  30296400    false
+```
+
+The symbol is joined **as-of the bar's own date**, so a recycled ticker reads as whatever
+it was called then rather than now. And it hangs off the grid's instrument rather than the
+bar's, so a hole still shows its symbol with null prices instead of vanishing.
 
 One call. Held ranges come off disk; anything missing is resolved, priced, approved and
 fetched on the way. `BarStore.readOnly()` never spends or reaches the network, and the

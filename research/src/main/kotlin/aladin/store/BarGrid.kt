@@ -55,13 +55,57 @@ private fun denseGridSql(field: String, ids: Collection<Long>): String {
     """
 }
 
+/**
+ * The same dense grid, but every OHLCV column plus the ticker as-of the bar.
+ *
+ * The matrix takes one field because it is a numeric matrix; a frame is for looking, so
+ * it carries the whole bar. The symbol comes from the instruments table joined **as-of
+ * the bar's own date**, so a recycled ticker reads as whatever it was called then rather
+ * than whatever it is called now.
+ *
+ * The instruments join hangs off the grid's instrument, not the bar's, so a hole still
+ * shows its symbol with NULL prices rather than dropping out of the frame.
+ */
+private fun denseGridAllSql(ids: Collection<Long>): String {
+    val idList = ids.joinToString(",")
+    return """
+        WITH cal AS (
+            SELECT DISTINCT ts FROM ohlcv
+            WHERE source = ? AND schema = ? AND ts >= ? AND ts < ?
+              AND instrument_id IN ($idList)
+        ), inst AS (SELECT unnest([$idList]) AS instrument_id)
+        SELECT c.ts,
+               sym.symbol,
+               i.instrument_id,
+               o.open, o.high, o.low, o.close, o.volume,
+               o.adjusted
+        FROM cal c
+        CROSS JOIN inst i
+        LEFT JOIN ohlcv o
+               ON o.ts = c.ts AND o.instrument_id = i.instrument_id
+              AND o.source = ? AND o.schema = ?
+        LEFT JOIN instruments sym
+               ON sym.instrument_id = i.instrument_id
+              AND c.ts::DATE >= sym.valid_from
+              AND (sym.valid_to IS NULL OR c.ts::DATE <= sym.valid_to)
+        ORDER BY c.ts, i.instrument_id
+    """
+}
+
 private fun Connection.gridStatement(
     source: String,
     schema: Schema,
     field: String,
     ids: List<Long>,
     range: DateRange,
-): PreparedStatement = prepareStatement(denseGridSql(field, ids)).apply {
+): PreparedStatement = bindGrid(denseGridSql(field, ids), source, schema, range)
+
+private fun Connection.bindGrid(
+    sql: String,
+    source: String,
+    schema: Schema,
+    range: DateRange,
+): PreparedStatement = prepareStatement(sql).apply {
     setString(1, source); setString(2, schema.wire)
     setTimestamp(3, Timestamp.valueOf(range.from.atStartOfDay()))
     setTimestamp(4, Timestamp.valueOf(range.to.plusDays(1).atStartOfDay()))
@@ -133,19 +177,21 @@ fun Connection.loadMatrix(
     }
 }
 
-/** The same query as a DataFrame — boxed and printable, holes as null. For looking, not looping. */
+/**
+ * The whole bar as a DataFrame — every OHLCV column, the ticker as-of, and the
+ * adjusted flag. Boxed and printable, holes as null. For looking, not for looping.
+ */
 fun Connection.loadFrame(
     symbols: List<String>,
     range: DateRange,
     asOf: LocalDate = range.from,
-    field: String = "close",
     schema: Schema = Schema.OHLCV_1D,
     source: String,
     fetcher: BarFetcher? = null,
     symbology: SymbologySource? = null,
 ): AnyFrame {
     val (_, ids) = prepareUniverse(symbols, asOf, range, schema, fetcher, symbology)
-    return gridStatement(source, schema, field, ids, range).use { ps ->
+    return bindGrid(denseGridAllSql(ids), source, schema, range).use { ps ->
         ps.executeQuery().use { DataFrame.readResultSet(it, DuckDb) }
     }
 }
