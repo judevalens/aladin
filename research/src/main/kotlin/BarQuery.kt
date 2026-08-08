@@ -61,8 +61,13 @@ private fun Connection.prepareUniverse(
     val (hits, misses) = resolveUniverse(symbols.sorted(), asOf)
     require(hits.isNotEmpty()) { "no symbols resolve as-of $asOf (unresolved: $misses)" }
     fetcher?.let { ensureBars(it, hits, schema, range) }
-    val ordered = hits.keys.sorted()
-    return ordered to ordered.map { hits.getValue(it) }
+
+    // The grid query emits columns ordered by instrument_id, so the labels must be
+    // ordered the same way. Sorting labels alphabetically instead silently puts every
+    // symbol's prices under a different symbol's name whenever id order and alphabetical
+    // order disagree — which is most of the time.
+    val ordered = hits.entries.sortedBy { it.value }
+    return ordered.map { it.key } to ordered.map { it.value }
 }
 
 /**

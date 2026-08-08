@@ -55,11 +55,17 @@ fun Connection.registerInstrument(i: Instrument) =
  */
 fun Connection.resolveInstrument(symbol: String, asOf: LocalDate): Long? =
     prepareStatement("""
-        SELECT instrument_id FROM instruments
-        WHERE symbol = ? AND valid_from <= ? AND (valid_to IS NULL OR valid_to >= ?)
-        ORDER BY valid_from DESC LIMIT 1""").use { ps ->
+        SELECT DISTINCT instrument_id FROM instruments
+        WHERE symbol = ? AND valid_from <= ? AND (valid_to IS NULL OR valid_to >= ?)""").use { ps ->
         ps.setString(1, symbol); ps.setDate(2, Date.valueOf(asOf)); ps.setDate(3, Date.valueOf(asOf))
-        ps.executeQuery().use { if (it.next()) it.getLong(1) else null }
+        ps.executeQuery().use { rs ->
+            val ids = buildList { while (rs.next()) add(rs.getLong(1)) }
+            // Two instruments claiming the same ticker on the same date is an identity
+            // failure, not something to tie-break. Picking one silently attaches bars to
+            // the wrong instrument, and nothing downstream can detect it.
+            check(ids.size <= 1) { "`$symbol` resolves to ${ids.size} instruments as-of $asOf: $ids" }
+            ids.firstOrNull()
+        }
     }
 
 /** The ticker this instrument carried on [asOf] — the reverse lookup, for display. */

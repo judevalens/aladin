@@ -10,3 +10,4 @@ data/weights_multik_cumsum.csv
 
 # never commit credentials
 .env
+data/batch/

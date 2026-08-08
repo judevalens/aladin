@@ -14,7 +14,9 @@ import java.sql.Timestamp
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.net.URLEncoder
 import java.util.Base64
+import kotlin.text.Charsets.UTF_8
 
 data class BarRow(
     /** TIMESTAMP, not DATE — the same table holds 1-min and 5-min bars. */
@@ -157,60 +159,122 @@ fun Connection.ensureBars(
 }
 
 // ---------------------------------------------------------------------------
-// Databento. UNVERIFIED — no API key configured, so this has never made a real
-// request. Two things to confirm against live data before trusting it:
-//   1. the dataset code for consolidated US equities
-//   2. OHLCV prices arrive as int64 scaled by 1e-9, hence PRICE_SCALE below
+// Databento.
+//
+// Verified against real responses (the published reference would not load):
+//   - `pretty_px=true` returns decimal prices and `pretty_ts=true` ISO-8601
+//     timestamps. Without them prices are int64 scaled by 1e-9 and timestamps are
+//     nanoseconds-since-epoch, both of which have to be decoded by hand — a wrong
+//     scale would silently corrupt every price, so let the server format.
+//   - `stype_in=raw_symbol` or tickers are read as vendor instrument ids.
+//   - `map_symbols=true` or there is no `symbol` column and batched rows cannot be
+//     attributed back.
+//   - `end` is EXCLUSIVE; start == end is a 422.
+//   - Row order is NOT stable across requests, so rows are keyed by symbol.
+//
+// From the official Python client (the authoritative contract — the published
+// reference would not load):
+//   - the endpoint is POST with FORM-ENCODED parameters, not GET. At 2,000 symbols
+//     a query string would exceed URL length limits.
+//   - **max 2,000 symbols per request** — chunked below.
+//   - there is no pagination; `limit` is opt-in and otherwise the full result
+//     streams. The record-count assertion below is therefore cheap insurance rather
+//     than a necessity, but silent truncation is the one failure that looks exactly
+//     like missing data, so it stays.
+//   - DBN+zstd are the real defaults; CSV is a convenience encoding. Switching to
+//     DBN would need a decoder and is worth it only once volume justifies it.
+//
+// Dataset choice is not cosmetic. EQUS.SUMMARY is the consolidated tape (AAPL
+// 2024-08-01 = 62,500,996 shares, matching Alpaca to the share); XNAS.ITCH reports
+// 21,277,576 for the same bar — correct for Nasdaq, wrong for a backtest. It carries
+// ohlcv-1d / definition / statistics only, from 2024-07-01.
 // ---------------------------------------------------------------------------
-
-private const val PRICE_SCALE = 1e-9
 
 class DatabentoFetcher(
     private val apiKey: String = Env.require("DATABENTO_API_KEY"),
-    private val dataset: String = "EQUS.SUMMARY",
+    private val dataset: String = Env["DATABENTO_DATASET"] ?: "EQUS.SUMMARY",
     private val http: HttpClient = HttpClient.newHttpClient(),
-) : BarFetcher {
+) : PricedFetcher {
     override val source = "databento:$dataset"
     override val adjusted = false          // Databento serves raw venue data
 
     /** Price a request before making it — usage billing makes this worth doing. */
-    fun estimateCostUsd(symbols: Collection<String>, schema: Schema, range: DateRange): Double =
-        get("metadata.get_cost", symbols, schema.wire, range).trim().toDoubleOrNull() ?: 0.0
+    override fun estimateCostUsd(symbols: Collection<String>, schema: Schema, range: DateRange): Double =
+        get("metadata.get_cost", symbols, schema, range).trim().toDoubleOrNull() ?: 0.0
 
-    override fun fetch(instruments: Map<String, Long>, schema: Schema, range: DateRange): List<BarRow> {
-        val csv = get("timeseries.get_range", instruments.keys, schema.wire, range, "&encoding=csv")
+    /** The server's own record count — the guard against silent truncation. */
+    override fun recordCount(symbols: Collection<String>, schema: Schema, range: DateRange): Long =
+        get("metadata.get_record_count", symbols, schema, range).trim().toLongOrNull() ?: -1
+
+    override fun fetch(instruments: Map<String, Long>, schema: Schema, range: DateRange): List<BarRow> =
+        instruments.keys.chunked(MAX_SYMBOLS_PER_REQUEST)
+            .flatMap { chunk -> fetchChunk(instruments, chunk, schema, range) }
+
+    private fun fetchChunk(
+        instruments: Map<String, Long>, symbols: List<String>, schema: Schema, range: DateRange,
+    ): List<BarRow> {
+        val expected = runCatching { recordCount(symbols, schema, range) }.getOrDefault(-1L)
+        val csv = post("timeseries.get_range", symbols, schema, range, mapOf(
+            "encoding" to "csv", "map_symbols" to "true",
+            "pretty_px" to "true", "pretty_ts" to "true",
+        ))
+
         val lines = csv.lineSequence().filter { it.isNotBlank() }.toList()
-        if (lines.size <= 1) return emptyList()
-        val head = lines.first().split(",").withIndex().associate { (i, n) -> n.trim() to i }
-        fun px(p: List<String>, c: String) = head[c]?.let { p[it].toDoubleOrNull()?.times(PRICE_SCALE) }
+        if (lines.size <= 1) {
+            check(expected <= 0L) { "server reports $expected records but the response was empty" }
+            return emptyList()
+        }
+        check(expected < 0L || lines.size - 1L == expected) {
+            "truncated: parsed ${lines.size - 1} rows, server reports $expected. " +
+                    "Pagination is undocumented, so a partial result will not be stored."
+        }
+
+        val h = lines.first().split(",").withIndex().associate { (i, n) -> n.trim() to i }
+        for (c in listOf("ts_event", "symbol", "close")) require(c in h) { "no `$c` column: ${lines.first()}" }
+
         return lines.drop(1).mapNotNull { line ->
             val p = line.split(",")
-            val sym = head["symbol"]?.let { p[it] } ?: instruments.keys.single()
-            val id = instruments[sym] ?: return@mapNotNull null
+            val id = instruments[p[h.getValue("symbol")]] ?: return@mapNotNull null
+            fun px(c: String) = h[c]?.let { p[it].toDoubleOrNull() }
             BarRow(
-                // ts_event is nanoseconds since epoch, as an integer — not an ISO string
-                ts = LocalDateTime.ofInstant(
-                    java.time.Instant.ofEpochSecond(p[head["ts_event"]!!].toLong() / 1_000_000_000L),
-                    java.time.ZoneOffset.UTC),
+                ts = java.time.OffsetDateTime.parse(p[h.getValue("ts_event")]).toLocalDateTime(),
                 instrumentId = id,
-                open = px(p, "open"), high = px(p, "high"), low = px(p, "low"), close = px(p, "close"),
-                volume = head["volume"]?.let { p[it].toLongOrNull() },
+                open = px("open"), high = px("high"), low = px("low"), close = px("close"),
+                volume = h["volume"]?.let { p[it].toLongOrNull() },
             )
         }
     }
 
-    private fun get(endpoint: String, symbols: Collection<String>, schema: String,
-                    range: DateRange, extra: String = ""): String {
-        val url = "https://hist.databento.com/v0/$endpoint" +
-                "?dataset=$dataset&symbols=${symbols.joinToString(",")}&schema=$schema" +
-                "&stype_in=raw_symbol&map_symbols=true" +   // adds the symbol column; without it batched rows cannot be attributed          // ticker strings, not vendor instrument ids
-                "&start=${range.from}&end=${range.to.plusDays(1)}$extra"   // end is exclusive
+    private fun get(endpoint: String, symbols: Collection<String>, schema: Schema, range: DateRange) =
+        post(endpoint, symbols, schema, range, emptyMap())
+
+    private fun post(endpoint: String, symbols: Collection<String>, schema: Schema,
+                     range: DateRange, extra: Map<String, String>): String {
+        val form = (mapOf(
+            "dataset" to dataset,
+            "symbols" to symbols.joinToString(","),
+            "schema" to schema.wire,
+            "stype_in" to "raw_symbol",
+            "start" to range.from.toString(),
+            "end" to range.to.plusDays(1).toString(),      // end is exclusive
+        ) + extra).entries.joinToString("&") { (k, v) ->
+            "${URLEncoder.encode(k, UTF_8)}=${URLEncoder.encode(v, UTF_8)}"
+        }
         val auth = Base64.getEncoder().encodeToString("$apiKey:".toByteArray())
         val res = http.send(
-            HttpRequest.newBuilder(URI.create(url)).header("Authorization", "Basic $auth").GET().build(),
+            HttpRequest.newBuilder(URI.create("https://hist.databento.com/v0/$endpoint"))
+                .header("Authorization", "Basic $auth")
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .POST(HttpRequest.BodyPublishers.ofString(form))
+                .build(),
             HttpResponse.BodyHandlers.ofString(),
         )
         check(res.statusCode() == 200) { "databento $endpoint -> ${res.statusCode()}: ${res.body().take(300)}" }
         return res.body()
+    }
+
+    private companion object {
+        /** Documented ceiling in the official client. */
+        const val MAX_SYMBOLS_PER_REQUEST = 2_000
     }
 }

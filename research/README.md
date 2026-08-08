@@ -89,6 +89,40 @@ Three layers, each doing what it's good at:
 - **DataFrame** — display, exploration, ad-hoc analysis · `conn.frame(sql)`
 - **multik / `DoubleArray`** — the engine's hot path · `df.convertToMultik { }`
 
+## Tests
+
+```bash
+./gradlew test
+```
+
+17 tests over an in-memory DuckDB (~43ms per fresh store, so none are shared). Two are
+regressions for bugs that produced **no visible symptom**:
+
+- `loadMatrix` labelled columns alphabetically while the grid query ordered them by
+  `instrument_id` — every column carried another symbol's prices.
+- `resolveInstrument` tie-broke when two instruments claimed one ticker, silently
+  attaching bars to the wrong instrument. It now fails loudly.
+
+## Money rails
+
+Two layers, and the cheap one saves the most:
+
+**Coverage** — a held range is never re-fetched, never priced, never prompted for.
+Tested for exact ranges, extensions, holes, empty results, and per-schema/per-source
+isolation.
+
+**`BudgetedFetcher`** — wraps any fetcher so nothing is bought unpriced:
+
+```kotlin
+BudgetedFetcher(DatabentoBatchFetcher(), autoApproveUnder = 0.10, hardCeiling = 5.00)
+```
+
+Calls `metadata.get_cost` first; under the threshold it proceeds, above it asks on the
+console, past the hard ceiling it refuses outright. **Fails closed** — no console means
+refuse, so an unattended run can neither spend by assuming consent nor hang waiting for
+a reply nobody will type. Set `DATABENTO_INTERACTIVE=1` when stdin is available but
+`System.console()` is not.
+
 ## Coverage and fetching
 
 `Coverage.kt` tracks which `(source, symbol, schema, date range)` slices are held, so
