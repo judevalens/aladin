@@ -209,6 +209,52 @@ class BarStoreTest {
         }
     }
 
+    /**
+     * A hole is a date the grid has where this instrument has no bar. A date no requested
+     * instrument traded never enters the grid at all — so closures and holidays are
+     * structurally absent rather than filled with invented prices.
+     *
+     * The calendar therefore comes from the universe, not the market: for liquid names
+     * those coincide, for thin ones they do not, and `lookback` counts rows rather than
+     * sessions.
+     */
+    @Test
+    fun `a hole is filled, a date nobody traded is not a row at all`() {
+        val partial = object : BarFetcher {
+            override val source = "test:partial"
+            override fun fetch(i: Map<String, Long>, s: Schema, range: DateRange): List<BarRow> {
+                val a = i.getValue("A"); val b = i.getValue("B")
+                return buildList {
+                    for (day in listOf(4, 5, 6, 8).map { LocalDate.of(2024, 3, it) }) {
+                        add(BarRow(day.atStartOfDay(), a, null, null, null, 100.0 + day.dayOfMonth, 1L))
+                        // B is halted on the 6th; nobody trades on the 7th
+                        if (day.dayOfMonth != 6) {
+                            add(BarRow(day.atStartOfDay(), b, null, null, null, 200.0 + day.dayOfMonth, 1L))
+                        }
+                    }
+                }
+            }
+        }
+        BarStore(openScratch("holes"), partial, source = partial.source).use { store ->
+            store.register(Instrument(1, "A", d("1900-01-01"), null))
+            store.register(Instrument(2, "B", d("1900-01-01"), null))
+            val range = r("2024-03-04", "2024-03-08")
+
+            val nan = store.bars(listOf("A", "B"), range)
+            assertEquals(4, nan.rows, "5 calendar days, but nobody traded on the 7th")
+            assertFalse(nan.dates.any { it.startsWith("2024-03-07") }, "a closed day is not a row")
+            assertEquals(1, nan.holes, "only B's halt on the 6th counts as a hole")
+            assertTrue(nan[2, nan.columnOf("B")].isNaN())
+
+            val filled = store.bars(listOf("A", "B"), range, holes = Holes.FORWARD_FILL)
+            assertEquals(4, filled.rows, "filling holes must not invent rows")
+            assertEquals(205.0, filled[2, filled.columnOf("B")], "carried from the 5th")
+
+            val dropped = store.bars(listOf("A", "B"), range, holes = Holes.DROP_DATE)
+            assertEquals(3, dropped.rows, "the incomplete date goes, for every instrument")
+        }
+    }
+
     @Test
     fun `an unknown price field is rejected rather than interpolated into SQL`() {
         store("s10", FakeSymbology(mapOf("A" to live(10, "A")))) { store, _ ->

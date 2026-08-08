@@ -126,6 +126,16 @@ CROSS JOINing dates × instruments and LEFT JOINing the bars, so holes arrive as
 explicit NULLs rather than a ragged result. What a hole becomes is a choice:
 `Holes.NAN`, `FORWARD_FILL` or `DROP_DATE`.
 
+**A hole is not a closed market.** The calendar is `SELECT DISTINCT ts` over the
+requested instruments, so a date only exists if *someone* traded. Weekends, holidays and
+closures are structurally absent — never filled with invented prices. A hole is a date
+the grid has where *this* instrument has no bar: a halt, a pre-listing, a delisting.
+
+The consequence is that the calendar comes from your universe rather than the market.
+For liquid names those coincide; for thin ones they don't, and **`lookback` counts rows,
+not sessions**. Sourcing the calendar from a known-complete reference instrument would
+fix it, and is owed alongside a real trading calendar for `lastSettledSession()`.
+
 **Column labels follow `instrument_id` order**, matching the grid query. Ordering them
 alphabetically instead puts every symbol's prices under a different symbol's name.
 
