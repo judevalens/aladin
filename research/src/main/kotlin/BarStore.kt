@@ -85,66 +85,6 @@ class BarMatrix(
     fun nd(): D2Array<Double> = mk.ndarray(rowMajor, rows, cols)
 }
 
-/**
- * One-time: lift the close-only `bars` fixture into `ohlcv`, registering an instrument
- * per symbol, so the fixture flows through the same path as fetched data.
- */
-fun Connection.seedFixture(table: String = "bars", source: String = "fixture") {
-    createInstrumentsTable(); createOhlcvTable(); createCoverageTable()
-    val already = createStatement().use { st ->
-        st.executeQuery("SELECT count(*) FROM ohlcv WHERE source = '$source'").use { it.next(); it.getLong(1) }
-    }
-    if (already > 0) return
-
-    val symbols = createStatement().use { st ->
-        st.executeQuery("SELECT DISTINCT symbol FROM $table ORDER BY symbol").use { rs ->
-            buildList { while (rs.next()) add(rs.getString(1)) }
-        }
-    }
-    symbols.forEachIndexed { i, sym ->
-        registerInstrument(Instrument((i + 1).toLong(), sym, LocalDate.of(1990, 1, 1), null))
-    }
-    val ids = symbols.withIndex().associate { (i, s) -> s to (i + 1).toLong() }
-    prepareStatement("INSERT INTO ohlcv VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING").use { ps ->
-        createStatement().use { st ->
-            st.executeQuery("SELECT ts, symbol, close FROM $table").use { rs ->
-                while (rs.next()) {
-                    ps.setString(1, source); ps.setLong(2, ids.getValue(rs.getString(2)))
-                    ps.setString(3, Schema.OHLCV_1D.wire); ps.setTimestamp(4, rs.getTimestamp(1))
-                    ps.setObject(5, null); ps.setObject(6, null); ps.setObject(7, null)
-                    ps.setDouble(8, rs.getDouble(3)); ps.setObject(9, null); ps.setBoolean(10, false)
-                    ps.addBatch()
-                }
-            }
-        }
-        ps.executeBatch()
-    }
-    val (lo, hi) = createStatement().use { st ->
-        st.executeQuery("SELECT min(ts), max(ts) FROM $table").use {
-            it.next(); it.getTimestamp(1).toLocalDateTime().toLocalDate() to
-                       it.getTimestamp(2).toLocalDateTime().toLocalDate()
-        }
-    }
-    ids.values.forEach { recordCoverage(Slice(source, it, Schema.OHLCV_1D), DateRange(lo, hi)) }
-}
-
-/** Convenience for the strategy entry points: the whole fixture universe, through loadMatrix. */
-fun loadBars(table: String = "bars", db: String = RESEARCH_DB): BarMatrix =
-    openDb(db).use { conn ->
-        conn.seedFixture(table, source = table)
-        val symbols = conn.createStatement().use { st ->
-            st.executeQuery("SELECT DISTINCT symbol FROM $table ORDER BY symbol").use { rs ->
-                buildList { while (rs.next()) add(rs.getString(1)) }
-            }
-        }
-        val (lo, hi) = conn.createStatement().use { st ->
-            st.executeQuery("SELECT min(ts), max(ts) FROM $table").use {
-                it.next(); it.getTimestamp(1).toLocalDateTime().toLocalDate() to
-                           it.getTimestamp(2).toLocalDateTime().toLocalDate()
-            }
-        }
-        conn.loadMatrix(symbols, DateRange(lo, hi), asOf = lo, source = table)
-    }
 // ---------------------------------------------------------------------------
 // DataFrame -> multik.
 //
