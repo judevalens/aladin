@@ -219,30 +219,8 @@ class DatabentoFetcher(
             "pretty_px" to "true", "pretty_ts" to "true",
         ))
 
-        val lines = csv.lineSequence().filter { it.isNotBlank() }.toList()
-        if (lines.size <= 1) {
-            check(expected <= 0L) { "server reports $expected records but the response was empty" }
-            return emptyList()
-        }
-        check(expected < 0L || lines.size - 1L == expected) {
-            "truncated: parsed ${lines.size - 1} rows, server reports $expected. " +
-                    "Pagination is undocumented, so a partial result will not be stored."
-        }
-
-        val h = lines.first().split(",").withIndex().associate { (i, n) -> n.trim() to i }
-        for (c in listOf("ts_event", "symbol", "close")) require(c in h) { "no `$c` column: ${lines.first()}" }
-
-        return lines.drop(1).mapNotNull { line ->
-            val p = line.split(",")
-            val id = instruments[p[h.getValue("symbol")]] ?: return@mapNotNull null
-            fun px(c: String) = h[c]?.let { p[it].toDoubleOrNull() }
-            BarRow(
-                ts = java.time.OffsetDateTime.parse(p[h.getValue("ts_event")]).toLocalDateTime(),
-                instrumentId = id,
-                open = px("open"), high = px("high"), low = px("low"), close = px("close"),
-                volume = h["volume"]?.let { p[it].toLongOrNull() },
-            )
-        }
+        OhlcvCsv.assertComplete(csv, expected)
+        return OhlcvCsv.parse(csv, instruments)
     }
 
     private fun get(endpoint: String, symbols: Collection<String>, schema: Schema, range: DateRange) =

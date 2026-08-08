@@ -48,7 +48,7 @@ class DatabentoBatchFetcher(
         check(done.state == "done") { "job ${job.id} ended in state '${done.state}'" }
 
         val files = download(job.id)
-        val rows = files.filter { it.name.endsWith(".csv") }.flatMap { parse(it, instruments) }
+        val rows = files.filter { it.name.endsWith(".csv") }.flatMap { OhlcvCsv.parse(it.readText(), instruments) }
         done.recordCount?.let {
             check(rows.size.toLong() == it) { "job ${job.id}: parsed ${rows.size} rows, job reports $it" }
         }
@@ -99,24 +99,6 @@ class DatabentoBatchFetcher(
                 check(r.statusCode() == 200) { "download $name -> ${r.statusCode()}" }
             }
             out
-        }
-    }
-
-    private fun parse(file: File, instruments: Map<String, Long>): List<BarRow> {
-        val lines = file.readLines().filter { it.isNotBlank() }
-        if (lines.size <= 1) return emptyList()
-        val h = lines.first().split(",").withIndex().associate { (i, n) -> n.trim() to i }
-        for (c in listOf("ts_event", "symbol", "close")) require(c in h) { "${file.name}: no `$c` column" }
-        return lines.drop(1).mapNotNull { line ->
-            val p = line.split(",")
-            val id = instruments[p[h.getValue("symbol")]] ?: return@mapNotNull null
-            fun px(c: String) = h[c]?.let { p[it].toDoubleOrNull() }
-            BarRow(
-                ts = OffsetDateTime.parse(p[h.getValue("ts_event")]).toLocalDateTime(),
-                instrumentId = id,
-                open = px("open"), high = px("high"), low = px("low"), close = px("close"),
-                volume = h["volume"]?.let { p[it].toLongOrNull() },
-            )
         }
     }
 

@@ -40,6 +40,8 @@ interface Bars {
 class BarStore(
     private val conn: Connection,
     private val fetcher: BarFetcher?,
+    /** Resolves identity on a miss. Null means identity is minted locally instead. */
+    private val symbology: SymbologySource? = null,
     /** Where bars are read from. Defaults to the fetcher's scope, or the only one held. */
     private val source: String = fetcher?.source ?: conn.soleSource(),
 ) : Bars, Closeable {
@@ -85,24 +87,33 @@ class BarStore(
     }
 
     /**
-     * A symbol the registry has never seen gets an id here.
+     * Resolve identity as-of the date, asking the vendor at most once per symbol ever.
      *
-     * KNOWN GAP: the validity window is open, because without vendor symbology we do
-     * not know when the instrument actually listed. That makes as-of resolution
-     * optimistic for minted instruments — it will never say "did not exist then". Real
-     * validity needs `symbology.resolve`, which is also what D6 needs.
+     * With a [symbology] source the validity windows are real, so a delisted ticker
+     * correctly resolves to nothing after its last day. Without one, identity is minted
+     * locally with an OPEN window — usable, but optimistic: it can never answer "did
+     * not exist then".
+     *
+     * A symbol that resolves to nothing is dropped here and reported by
+     * [loadMatrix]'s own check, rather than silently becoming an empty column.
      */
     private fun identify(symbols: List<String>, asOf: LocalDate): Map<String, Long> =
-        symbols.associateWith { sym ->
-            conn.resolveInstrument(sym, asOf) ?: run {
-                val id = conn.createStatement().use { st ->
-                    st.executeQuery("SELECT coalesce(max(instrument_id), 0) + 1 FROM instruments")
-                        .use { it.next(); it.getLong(1) }
-                }
-                conn.registerInstrument(Instrument(id, sym, PROVISIONAL_FROM, null))
-                id
+        buildMap {
+            for (sym in symbols) {
+                val id = conn.resolveOrFetch(sym, asOf, symbology)
+                    ?: if (symbology != null) continue else mint(sym)
+                put(sym, id)
             }
         }
+
+    private fun mint(symbol: String): Long {
+        val id = conn.createStatement().use { st ->
+            st.executeQuery("SELECT coalesce(max(instrument_id), 0) + 1 FROM instruments")
+                .use { it.next(); it.getLong(1) }
+        }
+        conn.registerInstrument(Instrument(id, symbol, PROVISIONAL_FROM, null))
+        return id
+    }
 
     companion object {
         private val PROVISIONAL_FROM: LocalDate = LocalDate.parse("1900-01-01")
@@ -123,6 +134,7 @@ class BarStore(
                 autoApproveUnder = autoApproveUnder,
                 hardCeiling = hardCeiling,
             ),
+            symbology = DatabentoSymbology(),
         )
     }
 }
