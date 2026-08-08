@@ -27,6 +27,15 @@ interface BarFetcher {
     /** True when the vendor returns split/dividend-adjusted prices. Recorded, never assumed. */
     val adjusted: Boolean get() = false
 
+    /**
+     * The span this source can actually serve, or null when unknown/unbounded.
+     *
+     * Asking outside it is not an error the caller made so much as one the store should
+     * not have made on their behalf: without this, requesting a range that predates the
+     * dataset costs a round trip and then throws, halfway through a multi-gap fetch.
+     */
+    val availability: DateRange? get() = null
+
     fun fetch(instruments: Map<String, Long>, schema: Schema, range: DateRange): List<BarRow>
 }
 

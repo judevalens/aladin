@@ -32,7 +32,7 @@ class VendorHttp(
     private val requestTimeout: Duration = Duration.ofMinutes(2),
     private val client: HttpClient = HttpClient.newBuilder().connectTimeout(connectTimeout).build(),
     private val sleep: (Duration) -> Unit = { Thread.sleep(it.toMillis()) },
-) {
+) : AutoCloseable {
     private val auth = "Basic " + Base64.getEncoder().encodeToString("$apiKey:".toByteArray())
 
     fun get(endpoint: String, params: Map<String, String> = emptyMap()): String =
@@ -92,6 +92,16 @@ class VendorHttp(
         }
         error("$endpoint failed after $maxAttempts attempts. Last: $lastError")
     }
+
+    /**
+     * Release the client's threads.
+     *
+     * Without this the JVM does not exit when main throws: HttpClient keeps live threads
+     * until closed or collected, so a crashed run lingers — and a lingering run holds the
+     * DuckDB file lock, which then blocks the next one with a confusing error about a
+     * conflicting PID.
+     */
+    override fun close() = client.close()
 
     /** Honour Retry-After when given; otherwise exponential, capped. */
     private fun backoff(attempt: Int, retryAfter: String?): Duration =

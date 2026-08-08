@@ -11,6 +11,7 @@ import aladin.vendor.DatabentoBatchFetcher
 import aladin.vendor.DatabentoFetcher
 import aladin.vendor.DatabentoSymbology
 import aladin.vendor.SymbologySource
+import aladin.vendor.VendorHttp
 import org.jetbrains.kotlinx.dataframe.AnyFrame
 import java.io.Closeable
 import java.sql.Connection
@@ -105,7 +106,18 @@ class BarStore(
     /** Approved spend so far, when the fetcher is budgeted. */
     val spentUsd: Double get() = (fetcher as? BudgetedFetcher)?.spentUsd ?: 0.0
 
-    override fun close() = conn.close()
+    /**
+     * Releases the connection and anything the store owns.
+     *
+     * The vendor clients hold HttpClient threads; leaving them running keeps the JVM
+     * alive after main returns, and a lingering JVM holds the DuckDB file lock — which
+     * surfaces on the *next* run as a confusing conflict with a stale PID.
+     */
+    override fun close() {
+        (fetcher as? AutoCloseable)?.runCatching { close() }
+        (symbology as? AutoCloseable)?.runCatching { close() }
+        conn.close()
+    }
 
     companion object {
         /** Read-only over what is already on disk. Never fetches, never spends. */
@@ -123,15 +135,21 @@ class BarStore(
             autoApproveUnder: Double = Env.double("DATABENTO_AUTO_APPROVE_UNDER", 0.10),
             hardCeiling: Double = Env.double("DATABENTO_HARD_CEILING", 5.00),
             batch: Boolean = true,
-        ): BarStore = BarStore(
-            openDb(path),
-            BudgetedFetcher(
-                if (batch) DatabentoBatchFetcher() else DatabentoFetcher(),
-                autoApproveUnder = autoApproveUnder,
-                hardCeiling = hardCeiling,
-            ),
-            symbology = DatabentoSymbology(),
-        )
+        ): BarStore {
+            // one HTTP client for all three, so there is one pool to close rather than three
+            val http = VendorHttp.databento()
+            val dataset = Env["DATABENTO_DATASET"] ?: "EQUS.SUMMARY"
+            return BarStore(
+                openDb(path),
+                BudgetedFetcher(
+                    if (batch) DatabentoBatchFetcher(dataset, http = http)
+                    else DatabentoFetcher(dataset, http = http),
+                    autoApproveUnder = autoApproveUnder,
+                    hardCeiling = hardCeiling,
+                ),
+                symbology = DatabentoSymbology(dataset, http),
+            )
+        }
     }
 }
 

@@ -85,6 +85,12 @@ exist then resolves to nothing — a real answer, since pre-IPO and post-delisti
 exactly what survivorship bias hides. Two instruments claiming one ticker on one date
 fails loudly rather than tie-breaking.
 
+**A request is clamped to what the source can serve.** Each fetcher declares its
+`availability` from the dataset's own range, and `ensureBars` intersects the request
+with it — at both ends, since today's bar is partial too. Asking outside costs a round
+trip and then throws, and with several gaps in flight it throws *after* some have
+already been fetched and committed.
+
 **Coverage means a range is paid for once.** It cannot be derived from the bars table:
 a missing row is ambiguous between weekend, holiday, halt, pre-IPO, post-delisting and
 not-fetched. Only a record of what was *requested* distinguishes them. `rows = 0` is a
@@ -147,3 +153,11 @@ contract — the published reference would not load.
 - Batch (`batch.submit_job` → poll `list_jobs` → `list_files` → download) suits bulk;
   streaming suits read-through gaps. Both implement `BarFetcher`, so the store is
   indifferent.
+- `metadata.get_dataset_range` gives each dataset's bounds — `EQUS.SUMMARY`
+  2024-07-01+, `XPSX.ITCH` 2018-05-01+. Fetchers expose it as `availability` so the
+  store clamps rather than discovering the limit through a 422.
+
+**Single-venue data looks fine and isn't.** A store can hold several scopes at once,
+which is correct — but bars from `XPSX.ITCH` carry PSX's slice of the tape, with volumes
+in the hundreds where the consolidated figure is millions. Nothing in the numbers says
+so. Check `source` before trusting a backtest built on them.

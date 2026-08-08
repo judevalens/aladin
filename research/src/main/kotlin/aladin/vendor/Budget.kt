@@ -54,7 +54,9 @@ class BudgetedFetcher(
     /** Never spend more than this, approved or not. */
     private val hardCeiling: Double = 25.00,
     private val approver: CostApprover = ConsoleApprover,
-) : BarFetcher by delegate {
+) : BarFetcher by delegate, AutoCloseable {
+
+    override fun close() = (delegate as? AutoCloseable)?.close() ?: Unit
 
     /** Total approved and spent this session. */
     var spentUsd: Double = 0.0

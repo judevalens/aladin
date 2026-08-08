@@ -14,7 +14,7 @@ private fun r(a: String, b: String) = DateRange(d(a), d(b))
 private fun live(id: Long, symbol: String) = listOf(Instrument(id, symbol, d("1900-01-01"), null))
 
 /** Deterministic bars: close = instrumentId * 1000 + dayOfMonth, so a mislabelled column shows. */
-private class FakeVendor : BarFetcher {
+private class FakeVendor(override val availability: DateRange? = null) : BarFetcher {
     override val source = "test:fake"
     val calls = mutableListOf<Pair<DateRange, Set<String>>>()
     override fun fetch(instruments: Map<String, Long>, schema: Schema, range: DateRange): List<BarRow> {
@@ -40,8 +40,13 @@ private class FakeSymbology(private val known: Map<String, List<Instrument>>) : 
     }
 }
 
-private fun store(name: String, sym: SymbologySource? = null, block: (BarStore, FakeVendor) -> Unit) {
-    val vendor = FakeVendor()
+private fun store(
+    name: String,
+    sym: SymbologySource? = null,
+    availability: DateRange? = null,
+    block: (BarStore, FakeVendor) -> Unit,
+) {
+    val vendor = FakeVendor(availability)
     BarStore(openScratch(name), vendor, sym, source = vendor.source).use { block(it, vendor) }
 }
 
@@ -176,6 +181,31 @@ class BarStoreTest {
             val close = store.bars(listOf("A"), range, field = "close")
             val high = store.bars(listOf("A"), range, field = "high")
             assertEquals(close[0, 0] + 1, high[0, 0], "the field argument selects the column")
+        }
+    }
+
+    /**
+     * Regression: asking for a range predating the dataset used to cost a round trip and
+     * then throw — and with several gaps in flight, throw after some had already been
+     * fetched and committed.
+     */
+    @Test
+    fun `a request is clamped to what the source can actually serve`() {
+        val syms = FakeSymbology(mapOf("A" to live(10, "A")))
+        store("s13", syms, availability = r("2024-03-05", "2099-01-01")) { store, vendor ->
+            val m = store.bars(listOf("A"), r("2024-03-01", "2024-03-10"))
+            assertEquals(listOf(r("2024-03-05", "2024-03-10")), vendor.calls.map { it.first },
+                "the vendor must never be asked for dates it cannot serve")
+            assertEquals(6, m.rows)
+        }
+    }
+
+    @Test
+    fun `a range entirely outside what the source serves fetches nothing`() {
+        val syms = FakeSymbology(mapOf("A" to live(10, "A")))
+        store("s14", syms, availability = r("2025-01-01", "2099-01-01")) { store, vendor ->
+            runCatching { store.bars(listOf("A"), r("2024-03-01", "2024-03-10")) }
+            assertTrue(vendor.calls.isEmpty(), "nothing serviceable means no request at all")
         }
     }
 

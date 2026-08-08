@@ -52,7 +52,7 @@ class BarMatrix(
     /** Zero-copy 2-D view: multik wraps the same buffer rather than duplicating it. */
     fun nd(): D2Array<Double> = mk.ndarray(rowMajor, rows, cols)
 
-    override fun toString() = "BarMatrix($rows x $cols, holes=$holes, $symbols)"
+  //  override fun toString() = "BarMatrix($rows x $cols, holes=$holes, $symbols)"
 }
 
 // ---------------------------------------------------------------------------

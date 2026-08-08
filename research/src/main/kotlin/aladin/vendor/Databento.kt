@@ -39,14 +39,29 @@ private const val MAX_SYMBOLS_PER_REQUEST = 2_000
 
 private fun defaultDataset() = Env["DATABENTO_DATASET"] ?: "EQUS.SUMMARY"
 
+/**
+ * What a dataset can serve. Looked up once per client and cached — it changes only as
+ * the vendor ingests more, and a stale upper bound costs at most a wasted day.
+ */
+internal fun datasetRange(http: VendorHttp, dataset: String): DateRange {
+    val o = Json.parseToJsonElement(
+        http.get("metadata.get_dataset_range", mapOf("dataset" to dataset))
+    ).jsonObject
+    fun date(k: String) = LocalDate.parse(o[k]!!.jsonPrimitive.content.substring(0, 10))
+    return DateRange(date("start"), date("end"))
+}
+
 /** Streaming client — suits read-through gaps, where the answer is wanted now. */
 class DatabentoFetcher(
     private val dataset: String = defaultDataset(),
     private val http: VendorHttp = VendorHttp.databento(),
-) : PricedFetcher {
+) : PricedFetcher, AutoCloseable {
+
+    override fun close() = http.close()
 
     override val source = "databento:$dataset"
     override val adjusted = false          // Databento serves raw venue data
+    override val availability: DateRange by lazy { datasetRange(http, dataset) }
 
     override fun estimateCostUsd(symbols: Collection<String>, schema: Schema, range: DateRange): Double =
         http.post("metadata.get_cost", params(symbols, schema, range)).trim().toDoubleOrNull() ?: 0.0
@@ -92,10 +107,13 @@ class DatabentoBatchFetcher(
     private val pollEvery: Duration = Duration.ofSeconds(5),
     private val timeout: Duration = Duration.ofMinutes(30),
     private val http: VendorHttp = VendorHttp.databento(),
-) : BarFetcher {
+) : BarFetcher, AutoCloseable {
+
+    override fun close() = http.close()
 
     override val source = "databento:$dataset"
     override val adjusted = false
+    override val availability: DateRange by lazy { datasetRange(http, dataset) }
 
     override fun fetch(instruments: Map<String, Long>, schema: Schema, range: DateRange): List<BarRow> {
         val job = submit(instruments.keys, schema, range)
@@ -179,18 +197,14 @@ class DatabentoBatchFetcher(
 class DatabentoSymbology(
     private val dataset: String = defaultDataset(),
     private val http: VendorHttp = VendorHttp.databento(),
-) : SymbologySource {
+) : SymbologySource, AutoCloseable {
+
+    override fun close() = http.close()
 
     override val source = "databento:$dataset"
 
     /** The dataset's own bounds — asking outside them teaches nothing. */
-    private val bounds: Pair<LocalDate, LocalDate> by lazy {
-        val o = Json.parseToJsonElement(
-            http.get("metadata.get_dataset_range", mapOf("dataset" to dataset))
-        ).jsonObject
-        fun date(k: String) = LocalDate.parse(o[k]!!.jsonPrimitive.content.substring(0, 10))
-        date("start") to date("end")
-    }
+    private val bounds: DateRange by lazy { datasetRange(http, dataset) }
 
     override fun history(symbol: String): List<Instrument> {
         val (from, to) = bounds

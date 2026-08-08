@@ -69,9 +69,15 @@ fun Connection.ensureBars(
 ): Long = synchronized(ensureLock) {
     if (instruments.isEmpty()) return@synchronized 0
 
-    val settled = lastSettledSession()
-    if (range.from.isAfter(settled)) return@synchronized 0
-    val want = DateRange(range.from, minOf(range.to, settled))
+    // Clamp to what can actually be served, at both ends. Today's bar is partial until
+    // the close; the dataset's own start is a hard floor. Asking outside either costs a
+    // round trip and then throws — and with several gaps in flight, throws after some
+    // have already been fetched and committed.
+    val serviceable = fetcher.availability
+    val floor = maxOf(range.from, serviceable?.from ?: range.from)
+    val ceiling = minOf(range.to, serviceable?.to ?: range.to, lastSettledSession())
+    if (floor.isAfter(ceiling)) return@synchronized 0
+    val want = DateRange(floor, ceiling)
 
     val perGap = instruments.entries.flatMap { (sym, id) ->
         missingRanges(Slice(fetcher.source, id, schema), want).map { gap -> gap to (sym to id) }
