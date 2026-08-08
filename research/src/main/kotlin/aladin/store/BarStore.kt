@@ -100,6 +100,19 @@ class BarStore(
         """
     )
 
+    /**
+     * Instruments whose history looks like two different companies sharing a ticker.
+     *
+     * A smoke alarm rather than a resolver — the store keys on `instrument_id` so a
+     * recycled ticker cannot merge two companies, but that only holds while the vendor's
+     * identity layer is right. When it isn't, this is what notices.
+     */
+    fun identityBreaks(
+        schema: Schema = Schema.OHLCV_1D,
+        minGapDays: Long = 90,
+        minRatio: Double = 2.0,
+    ): List<IdentityBreak> = conn.identityBreaks(source, schema, minGapDays, minRatio)
+
     /** Register an instrument whose identity is known without asking a vendor. */
     fun register(instrument: Instrument): BarStore = apply { conn.registerInstrument(instrument) }
 

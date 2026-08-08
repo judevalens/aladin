@@ -218,3 +218,83 @@ class BarStoreTest {
         }
     }
 }
+
+/**
+ * The store keys on instrument_id so a recycled ticker cannot merge two companies into
+ * one series — but that guarantee only holds while the vendor's identity layer is right.
+ * Databento maps SPCX to one instrument_id straight through the ticker moving from
+ * Tuttle Capital's SPAC ETF to SpaceX, so the store faithfully holds a $23 fund and a
+ * $150 rocket company as one instrument. These tests cover noticing that from the data.
+ */
+class IdentityBreakTest {
+
+    /** A quiet ETF, two years of silence, then a different company at 7x the price. */
+    private class RecycledTicker : BarFetcher {
+        override val source = "test:recycled"
+        override fun fetch(instruments: Map<String, Long>, schema: Schema, range: DateRange): List<BarRow> {
+            val id = instruments.values.first()
+            val etf = (0L..5L).map {
+                BarRow(d("2024-04-01").plusDays(it).atStartOfDay(), id, null, null, null, 23.2, 100L)
+            }
+            val newco = (0L..5L).map {
+                BarRow(d("2026-06-12").plusDays(it).atStartOfDay(), id, null, null, null, 163.9, 1_600_000L)
+            }
+            return (etf + newco).filter { !it.ts.toLocalDate().isBefore(range.from) && !it.ts.toLocalDate().isAfter(range.to) }
+        }
+    }
+
+    @Test
+    fun `a long silence followed by a price jump is flagged`() {
+        val vendor = RecycledTicker()
+        BarStore(openScratch("b1"), vendor, source = vendor.source).use { store ->
+            store.register(Instrument(15024, "SPCX", d("1900-01-01"), null))
+            store.bars(listOf("SPCX"), r("2024-01-01", "2026-08-01"))
+
+            val breaks = store.identityBreaks()
+            assertEquals(1, breaks.size, "743 silent days and a 7x jump is not one instrument")
+            val b = breaks.single()
+            assertEquals("SPCX", b.symbol)
+            assertEquals(d("2024-04-06"), b.lastBefore)
+            assertEquals(d("2026-06-12"), b.firstAfter)
+            assertTrue(b.ratio > 6.0, "got ${b.ratio}")
+        }
+    }
+
+    /** Either signal alone is ordinary: a halt explains a gap, a split explains a jump. */
+    @Test
+    fun `a gap without a price jump is not flagged`() {
+        val halted = object : BarFetcher {
+            override val source = "test:halt"
+            override fun fetch(i: Map<String, Long>, s: Schema, range: DateRange): List<BarRow> {
+                val id = i.values.first()
+                return listOf(d("2024-01-02"), d("2024-09-02")).map {
+                    BarRow(it.atStartOfDay(), id, null, null, null, 50.0, 1L)
+                }
+            }
+        }
+        BarStore(openScratch("b2"), halted, source = halted.source).use { store ->
+            store.register(Instrument(1, "HALT", d("1900-01-01"), null))
+            store.bars(listOf("HALT"), r("2024-01-01", "2024-12-31"))
+            assertTrue(store.identityBreaks().isEmpty(), "a suspension is not an identity change")
+        }
+    }
+
+    @Test
+    fun `a price jump without a gap is not flagged`() {
+        val split = object : BarFetcher {
+            override val source = "test:split"
+            override fun fetch(i: Map<String, Long>, s: Schema, range: DateRange): List<BarRow> {
+                val id = i.values.first()
+                return (0L..5L).map {
+                    val day = d("2024-01-02").plusDays(it)
+                    BarRow(day.atStartOfDay(), id, null, null, null, if (it < 3) 400.0 else 100.0, 1L)
+                }
+            }
+        }
+        BarStore(openScratch("b3"), split, source = split.source).use { store ->
+            store.register(Instrument(1, "SPLIT", d("1900-01-01"), null))
+            store.bars(listOf("SPLIT"), r("2024-01-01", "2024-01-31"))
+            assertTrue(store.identityBreaks().isEmpty(), "a 4-for-1 on consecutive days is a split")
+        }
+    }
+}

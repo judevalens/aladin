@@ -97,6 +97,25 @@ not-fetched. Only a record of what was *requested* distinguishes them. `rows = 0
 real answer, so a delisted name is asked about once. Coverage never reaches today,
 since the current session's bar is partial until the close.
 
+**Vendor identity can be wrong, so the store watches for it.** Keying on
+`instrument_id` stops a recycled ticker merging two companies into one price series —
+but only while the vendor's identity layer is right. Databento maps `SPCX` to a single
+`instrument_id` from 2020 to now, straight through the ticker moving from Tuttle
+Capital's SPAC ETF to SpaceX's June 2026 IPO: a $23 fund and a $150 rocket company in
+one series, showing a 7× "return" no holder ever saw.
+
+`store.identityBreaks()` finds it from the shape of the data alone — a long silence
+*and* a large price jump across it:
+
+```
+SPCX (id 15024): silent 743 days from 2024-05-30 to 2026-06-12, then 23.57 -> 163.87 (7.0x)
+```
+
+Either signal alone is ordinary — a halt explains a gap, a split explains a jump — so
+only the conjunction is flagged. It is a smoke alarm, not a resolver: a hit means go and
+look. The fix for a real one is an explicit `register()` splitting the instrument into
+two validity windows, which as-of resolution then honours.
+
 **`source` is the data SCOPE, not the vendor** — `databento:EQUS.SUMMARY`, not
 `databento`. AAPL on 2024-08-01 is 218.36 on 62,500,996 shares consolidated, and
 219.65 on 21,277,576 from `XNAS.ITCH`. Neither is inaccurate; each answers a narrower
