@@ -201,7 +201,7 @@ HERE=\$(cd "\$(dirname "\${BASH_SOURCE[0]}")/.." && pwd)
 set -a; . "\$HERE/env"; set +a
 LOGDIR=\${ALADIN_LOG_DIR:-$PREFIX/logs}
 mkdir -p "\$LOGDIR"
-${wd:+cd "$wd"
+${wd:+cd \"$wd\"
 }${penv:+export $penv
 }exec $* >> "\$LOGDIR/$name.log" 2>&1
 EOF
