@@ -25,9 +25,22 @@ import { cn } from "@/lib/utils";
  * destroys them).
  *
  * So this is modelled on research-overview-ui.tsx (RESEARCH_SURFACE_PRD §11: no rail item,
- * reuse the workspace shell; a single column, a few labelled sections, no chrome):
+ * reuse the workspace shell; a single column, a few labelled sections, no chrome).
  *
- *   what I want out of this  ·  what's in here  ·  the plan
+ * TAKE 4 — tutor-specific, because take 3 was a passive index and that is not enough.
+ * The shape being close to research is fine and intended; what makes this Tutor is that
+ * the folder is the AGENT'S CONTEXT and the surface is a control plane over it:
+ *
+ *   what I want out of this  ·  what we're learning  ·  ask the tutor  ·  what's in here
+ *
+ * "What we're learning" is the top-down view — topics, not page ranges, each carrying a
+ * state that comes from something that actually happened (a quiz taken, an aid built).
+ * Research's §15 boundary applies unchanged: this surface LAUNCHES a known thing in one
+ * action (quiz me on this topic); anything needing a form is Control and lives elsewhere.
+ *
+ * The honesty rule stays load-bearing. State is rendered from real events only — there is
+ * no mastery score, no % read, no streak, and a topic nothing has happened to says exactly
+ * that. Suggestions are marked as the agent's, not as fact, and cost one click to accept.
  *
  * Rules it holds to, each earned from a specific failure above:
  *   - no panes, no tabs, no toolbar, no mode switcher, no composer, no reader
@@ -69,38 +82,64 @@ const MATERIAL: MaterialRow[] = [
   { id: "m3", title: "Collar payoff", kind: "app", icon: Boxes, kindLabel: "shard" },
 ];
 
-type PlanItem = {
+/**
+ * A topic is the unit of the top-down view. `state` is DERIVED from events, never set by
+ * a scoring model: untouched · reading · checked (with the real score) · shaky (a specific
+ * miss). That keeps the surface from inventing a fact about the user's understanding.
+ */
+type Topic = {
   id: string;
   title: string;
   objective: string;
   span: string;
-  status: "planned" | "learned";
+  state:
+    | { kind: "untouched" }
+    | { kind: "reading" }
+    | { kind: "checked"; got: number; of: number }
+    | { kind: "shaky"; missed: string };
   aid?: { title: string; kindLabel: string };
 };
 
-const PLAN: PlanItem[] = [
+const TOPICS: Topic[] = [
   {
-    id: "p1",
+    id: "t1",
     title: "Payoff algebra of the basic legs",
     objective: "Write the payoff of a call, put and forward from first principles.",
     span: "pp. 41–68",
-    status: "learned",
+    state: { kind: "checked", got: 5, of: 5 },
   },
   {
-    id: "p2",
+    id: "t2",
     title: "Collars and spreads",
     objective: "Derive max gain and max loss for a collar from its legs.",
     span: "pp. 88–104",
-    status: "planned",
+    state: { kind: "shaky", missed: "which leg sets the floor" },
     aid: { title: "Collar payoff", kindLabel: "shard" },
   },
   {
-    id: "p3",
+    id: "t3",
     title: "Greeks as partial derivatives",
     objective: "Read each greek as a partial derivative and say what it measures.",
     span: "pp. 152–197",
-    status: "planned",
+    state: { kind: "reading" },
   },
+  {
+    id: "t4",
+    title: "Volatility surface fitting",
+    objective: "Explain why a single vol number cannot price a whole book.",
+    span: "pp. 244–301",
+    state: { kind: "untouched" },
+  },
+];
+
+/**
+ * The agent's proposals, from parts of the source no topic covers yet. Marked as
+ * suggestions and accepted in one click — never silently added, because the plan is the
+ * user's document and §4a's whole point is that they argue with it.
+ */
+const SUGGESTED = [
+  { id: "s1", title: "Put-call parity", why: "leant on from §4.2 onward but never covered", span: "pp. 71–80" },
+  { id: "s2", title: "Early exercise on American puts", why: "the only section your goal mentions that has no topic", span: "pp. 118–131" },
 ];
 
 export function TutorNotebookSpike() {
@@ -114,19 +153,26 @@ export function TutorNotebookSpike() {
 }
 
 function NotebookOverview() {
+  // The top-down view in one line: how many topics, and how many need attention. Counts of
+  // states that actually happened — not a percentage, and not a score.
+  const shaky = TOPICS.filter((t) => t.state.kind === "shaky").length;
+  const untouched = TOPICS.filter((t) => t.state.kind === "untouched").length;
   return (
     <div className="mx-auto w-full max-w-[62rem] px-8 py-7">
       <header className="mb-7">
         <h1 className="font-display text-[24px] leading-tight text-ink">{NOTEBOOK.title}</h1>
         <div className="mt-2 flex flex-wrap items-center gap-x-4 font-mono text-[10.5px] uppercase tracking-[0.5px] text-ink-4">
           <span>1 source</span>
-          <span>3 items</span>
+          <span>{TOPICS.length} topics</span>
+          {shaky ? <span className="text-amber">{shaky} shaky</span> : null}
+          {untouched ? <span>{untouched} untouched</span> : null}
         </div>
       </header>
 
       <Goal />
+      <Learning />
+      <AskTheTutor />
       <Material />
-      <Plan />
     </div>
   );
 }
@@ -189,60 +235,136 @@ function Material() {
 }
 
 /**
- * The plan. Ordered items with a real span; an authored aid hangs off its item as a plain
- * child row, which is how the plan finds its aids without a catalogue anywhere on screen.
+ * The top-down view of what we're learning. One row per topic: what it is, what it's for,
+ * where it lives in the source, the state, and the one action that matters — check me on
+ * this. The action is VISIBLE, not hover-revealed, because a surface whose verbs only
+ * appear on hover reads as having none (the mistake in take 1).
  *
- * Status is user-set and rendered by absence: a learned item is struck through and quiet.
- * There is no progress bar, because "3 of 7 items" is a number about the plan, not about
- * understanding, and inventing it is the thing research's Overview refuses to do.
+ * §15's boundary: "quiz me on this topic" is a one-action launch of a known thing, so it
+ * belongs here. Choosing the aid kind, the length, or a custom scope is a form — that is
+ * Control, and it is not on this page.
  */
-function Plan() {
-  const empty = PLAN.length === 0;
+function Learning() {
   return (
     <section className="mb-8">
-      <SectionLabel>The plan</SectionLabel>
-      {empty ? (
+      <SectionLabel>What we&apos;re learning</SectionLabel>
+      {TOPICS.length === 0 ? (
         <Empty>
-          Nothing planned yet. Ask the copilot to read the source's outline and draft a way
+          No topics yet. Ask the tutor to read the source&apos;s outline and propose a way
           through it — then cut what you already know.
         </Empty>
       ) : (
         <div className="-mx-2">
-          {PLAN.map((item) => (
-            <div key={item.id}>
-              <button
-                type="button"
-                className="flex w-full items-baseline gap-3 rounded-card px-2 py-2 text-left transition-colors hover:bg-raise"
-              >
-                <span className="min-w-0 flex-1">
-                  <span
-                    className={cn(
-                      "block text-[13px]",
-                      item.status === "learned" ? "text-ink-4 line-through" : "text-ink",
-                    )}
-                  >
-                    {item.title}
-                  </span>
+          {TOPICS.map((t) => (
+            <div key={t.id} className="rounded-card px-2 py-2 transition-colors hover:bg-raise">
+              <div className="flex items-baseline gap-3">
+                <button type="button" className="min-w-0 flex-1 text-left">
+                  <span className="block text-[13px] text-ink">{t.title}</span>
                   <span className="mt-0.5 block text-[12px] leading-snug text-ink-3">
-                    {item.objective}
+                    {t.objective}
                   </span>
-                </span>
-                <span className="shrink-0 font-mono text-[10px] text-ink-4">{item.span}</span>
-              </button>
-              {item.aid ? (
+                </button>
+                <TopicState state={t.state} />
+                <span className="shrink-0 font-mono text-[10px] text-ink-4">{t.span}</span>
                 <button
                   type="button"
-                  className="ml-6 flex items-baseline gap-3 rounded-card px-2 py-1 text-left transition-colors hover:bg-raise"
+                  className="shrink-0 rounded-chip px-1.5 py-0.5 font-mono text-[10px] text-ink-4 transition-colors hover:bg-card hover:text-ink"
+                >
+                  quiz me
+                </button>
+              </div>
+              {t.aid ? (
+                <button
+                  type="button"
+                  className="ml-4 mt-1 flex items-baseline gap-2 text-left text-[12px] text-ink-2 hover:text-ink"
                 >
                   <Boxes className="size-3 shrink-0 text-ink-4" />
-                  <span className="text-[12px] text-ink-2">{item.aid.title}</span>
-                  <span className="font-mono text-[10px] text-ink-4">{item.aid.kindLabel}</span>
+                  {t.aid.title}
+                  <span className="font-mono text-[10px] text-ink-4">{t.aid.kindLabel}</span>
                 </button>
               ) : null}
             </div>
           ))}
         </div>
       )}
+
+      {SUGGESTED.length ? (
+        <div className="mt-4">
+          <p className="mb-1.5 font-mono text-[10px] uppercase tracking-[0.5px] text-ink-4">
+            the tutor suggests
+          </p>
+          <div className="-mx-2">
+            {SUGGESTED.map((sg) => (
+              <div
+                key={sg.id}
+                className="flex items-baseline gap-3 rounded-card px-2 py-1.5 transition-colors hover:bg-raise"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="text-[13px] text-ink-2">{sg.title}</span>
+                  <span className="ml-2 text-[12px] text-ink-4">{sg.why}</span>
+                </span>
+                <span className="shrink-0 font-mono text-[10px] text-ink-4">{sg.span}</span>
+                <button
+                  type="button"
+                  className="shrink-0 rounded-chip px-1.5 py-0.5 font-mono text-[10px] text-ink-4 transition-colors hover:bg-card hover:text-ink"
+                >
+                  add
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+/**
+ * State rendered from what happened, and silent when there is nothing to say. `untouched`
+ * is the only case that gets no ink at all — an empty state is not a status worth a badge.
+ */
+function TopicState({ state }: { state: Topic["state"] }) {
+  if (state.kind === "untouched") return null;
+  if (state.kind === "reading")
+    return <span className="shrink-0 font-mono text-[10px] text-ink-4">reading</span>;
+  if (state.kind === "checked")
+    return (
+      <span className="shrink-0 font-mono text-[10px] text-ink-4">
+        {state.got}/{state.of}
+      </span>
+    );
+  return (
+    <span className="shrink-0 truncate font-mono text-[10px] text-amber" title={state.missed}>
+      missed {state.missed}
+    </span>
+  );
+}
+
+/**
+ * The interaction widgets. Whole-folder actions, one click each, no form — the agent takes
+ * everything in this notebook as its context, so none of these need arguments. Anything
+ * that would need a parameter belongs in the dock as a sentence, not here as a control.
+ */
+function AskTheTutor() {
+  const actions = [
+    { id: "quiz-shaky", label: "Quiz me on what's shaky" },
+    { id: "suggest", label: "What should I learn next?" },
+    { id: "where", label: "Where am I losing the thread?" },
+  ];
+  return (
+    <section className="mb-8">
+      <SectionLabel>Ask the tutor</SectionLabel>
+      <div className="-mx-2 flex flex-wrap gap-1">
+        {actions.map((a) => (
+          <button
+            key={a.id}
+            type="button"
+            className="rounded-chip px-2 py-1 text-[12px] text-ink-2 transition-colors hover:bg-raise hover:text-ink"
+          >
+            {a.label}
+          </button>
+        ))}
+      </div>
     </section>
   );
 }
