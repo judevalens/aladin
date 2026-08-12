@@ -193,6 +193,14 @@ emit_run() { # name, per-process-env (may be empty), workdir (may be empty), com
   # The per-process vars are `export`ed on their own line, NOT written as an
   # `exec VAR=x cmd` prefix: exec is a builtin and takes no assignment prefix,
   # so that form dies with "exec: PORT=3510: not found".
+  # Built as plain strings, not with ${var:+...} inside the heredoc: that form
+  # mangles the quoting, and these paths contain a space ("Application Support"),
+  # so an unquoted cd becomes two arguments and set -e kills the runner before it
+  # ever execs.
+  local cd_line="" env_line=""
+  [[ -n "$wd" ]]   && cd_line="cd \"$wd\""
+  [[ -n "$penv" ]] && env_line="export $penv"
+
   cat > "$STAGE/run/$name.sh" <<EOF
 #!/usr/bin/env bash
 # Run the $name process from this release. Logs -> \$LOGDIR/$name.log
@@ -201,9 +209,9 @@ HERE=\$(cd "\$(dirname "\${BASH_SOURCE[0]}")/.." && pwd)
 set -a; . "\$HERE/env"; set +a
 LOGDIR=\${ALADIN_LOG_DIR:-$PREFIX/logs}
 mkdir -p "\$LOGDIR"
-${wd:+cd \"$wd\"
-}${penv:+export $penv
-}exec $* >> "\$LOGDIR/$name.log" 2>&1
+$cd_line
+$env_line
+exec $* >> "\$LOGDIR/$name.log" 2>&1
 EOF
   chmod +x "$STAGE/run/$name.sh"
 }
