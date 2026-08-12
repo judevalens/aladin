@@ -102,7 +102,7 @@ if (!withIssues.length) {
 
 await agent(
   `Append the audit findings below to design/AUDIT_FINDINGS.md (create it if missing — it
-is a generated scratch doc, NOT one of the locked handoff specs; never edit PRD.md /
+is a generated scratch doc, NOT one of the locked handoff specs; never edit UI_ARCHITECTURE.md /
 UI_ARCHITECTURE.md).
 
 Add a new section grouped by file, each finding as:

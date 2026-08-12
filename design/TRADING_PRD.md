@@ -234,9 +234,18 @@ kept as-is rather than renumbered, since T1–T5 are referenced elsewhere.)*
 - **T2 — Strategy protocol + backtest (L1/L2).** Manifest, process contract, first
   runtime, `strategies` (incl. `hypothesis`) / `strategy_versions` (code hash —
   reproducibility is the point) / `backtest_runs` / `backtest_trades`. **D1 resolves
-  here.** ⚠️ **Constraint from `PORTFOLIO_PRD.md` §3: a strategy's target weights are
-  weights of its OWN SLEEVE, not of the whole book.** Settle this in the protocol — after
-  the fact it changes the process contract, every stored manifest, and every recorded run.
+  here.** ⚠️ **Constraint: a strategy's target weights are weights of its OWN SLEEVE, not of
+  the whole book.** The portfolio assigns each armed strategy a capital sleeve and the
+  strategy allocates within it. Settle this in the protocol — after the fact it changes the
+  process contract, every stored manifest, and every recorded run.
+
+  Two portfolio rules that follow from it, recorded here because they constrain what T2 may
+  store (from the deleted `PORTFOLIO_PRD.md`, which was written early for exactly this):
+  **attribution is DERIVED, never stored** — the broker reports one position of N shares, so
+  any per-strategy split is a model computed on read, never written back, or it becomes the
+  second source of truth §2 forbids and drifts from the broker. And **the residual is the
+  product**: `actual − expected` is the unattributed bucket (manual trades, partial fills,
+  failed orders, fat fingers), and surfacing it is the point rather than an edge case.
 - **T3 — Live scan → watchlist.** Same process, trailing window, latest bar.
   `scan_runs` / `signals`. Scheduled post-close; daily bars need no intraday infra.
 - **T4 — Journal.** `trades` links signal → strategy → outcome, plus a note for what

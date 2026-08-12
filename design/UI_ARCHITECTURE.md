@@ -4,9 +4,10 @@
 > the code, not what an older design package proposed. Written for an agent arriving cold —
 > especially one doing design/UI work.
 >
-> Companions: `screens/` (reference renders) · `../CLAUDE.md` (commands, conventions,
-> backend) · `TRADING_PRD.md` (product intent). **Do not start from `README.md`** — see §9.
-> `DESIGN_SPEC.md` and `BROWSER_SPEC.md` were removed; what was still true lives here.
+> Companions: `screens/` (reference renders of the original static views — Home, Folders,
+> Signals, Sources, Graph; useful for the visual register, but they predate the trading pivot
+> so treat them as mood, not spec) · `../CLAUDE.md` (commands, conventions, backend) ·
+> `TRADING_PRD.md` (product intent).
 
 ---
 
@@ -205,14 +206,23 @@ treat it as authoritative.
 | doc | status |
 |---|---|
 | **this file** | current, verified against code |
-| ~~`DESIGN_SPEC.md`~~ | **deleted.** Tailwind **v3** config format (the app is v4 inline `@theme` in `src/index.css`), a shadcn component map (the app uses `@base-ui/react`), and specs for a Home dashboard, graph modal and "Ask-my-graph" that do not exist. Its live content — token names and the don'ts — is in §5 here; the tokens' source of truth is `src/index.css`. In git history if needed. |
-| ~~`BROWSER_SPEC.md`~~ | **deleted.** It was *accurate* — its measurements are in the code — so the parts that carry intent were moved here first: the drill rule (§3) and the Miller dimensions. In git history for the finer pixel detail. |
+| `screens/` | reference renders; pre-pivot, so visual register only |
 | `TRADING_PRD.md` | **the north star** — read for product intent |
 | `RESEARCH_SURFACE_PRD.md` | LOCKED; the research folder pattern, and the best statement of the surface register |
 | `INGESTION_PRD.md`, `SHARD_MODEL.md` | current for those subsystems |
 | `TUTOR_PRD.md` | draft rev 3, design record; **nothing built** |
-| `README.md` | **HISTORICAL.** The original handoff package. Opens "Aladin is a personal knowledge graph", describes a `claims` layer that has since been deleted, and calls graph persistence "the #1 priority; it's the moat" — all superseded by the trading pivot. Useful only as an archive. |
-| `PRD.md`, `LEARN_PRD.md`, `CURATION_UX_PRD.md`, `PORTFOLIO_PRD.md` | aspirational or superseded; referenced by no code |
+
+**Deleted, and why** — all recoverable from git history:
+
+| removed | reason |
+|---|---|
+| `DESIGN_SPEC.md` | Tailwind **v3** config format (app is v4 inline `@theme`), a shadcn component map (app uses `@base-ui/react`), and specs for a Home dashboard, graph modal and "Ask-my-graph" that do not exist. Token names + don'ts salvaged into §5; `src/index.css` is the real source of truth. |
+| `BROWSER_SPEC.md` | It was *accurate* — its numbers are in the code — so the intent-carrying parts were salvaged first: the drill rule (§3) and the Miller dimensions. Git history has the finer pixel detail. |
+| `PRD.md` | The original product plan, built on the abandoned knowledge-graph framing (entities/theses/claims, Ask-my-graph, "graph persistence is the moat"). Superseded by `TRADING_PRD.md`. |
+| `LEARN_PRD.md` | Superseded by `TUTOR_PRD.md`, which replaced the same surface. |
+| `CURATION_UX_PRD.md` | Curation UX for the knowledge-graph product; referenced by no code. |
+| `PORTFOLIO_PRD.md` | Deferred surface, but it **constrained T2** — so its three load-bearing rules (sleeve-relative target weights, attribution derived-never-stored, the residual is the product) were moved into `TRADING_PRD.md` §7 T2 before deletion. |
+| `README.md` | An index to the above. Once `PRD`/`DESIGN_SPEC`/`BROWSER_SPEC` were gone it pointed at nothing. |
 
 ## 10. Checklist before you finish a UI change
 
