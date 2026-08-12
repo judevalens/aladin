@@ -516,9 +516,18 @@ existed only to serve the canvas. Deferred with it.
 
 **It removes the last genuinely net-new artifact kind, and the "new kinds are the product"
 thesis with it.** The other kind named was a study/pomodoro table, and that does not need to
-be a kind at all: the page editor already supports `checkListItem` and `table`, and
-`create_page` / `insert_blocks` take markdown — so the agent can write "This week" as an
-ordinary page today, in an ordinary folder, with no schema.
+be a kind at all — it can be either of two things that already ship, and the choice is a
+real one:
+
+| | what it gives | what it costs |
+|---|---|---|
+| **a page** | persists, hand-editable, rides the sync spine, diffable. `checkListItem` and `table` are already supported and `create_page`/`insert_blocks` take markdown, so the agent writes it today | inert. A page can *list* "Mon · 2 × 25"; it cannot count down |
+| **a shard** | a real mini app — pomodoro is a **timer**, not a list, and a shard can run one, track the session, and compute | **it cannot persist anything back.** The host bridge is a deliberate v1 stub: `doc-surface-ui.tsx:136` answers `ping` and rejects every other command, and shard data-wiring is paused until the data model settles |
+
+So the honest split: **a page for the plan** (what to study, in what order — the part worth
+keeping), **a shard when you want it to *do* something** (run the 25 minutes), accepting that
+the shard's own session state is iframe-local until the bridge lands. Neither needs a new
+artifact kind, and both are things the copilot already knows how to author.
 
 So with canvas out, the honest remaining build for a learning folder is **two small generic
 primitives** and nothing else:
