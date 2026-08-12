@@ -284,6 +284,31 @@ enough once the app tier is off-cluster.
 Ports match what the containers published (api `8080`, mcp `8091`, collab
 `3510/3511`, copilot `3550`), so `make prod-app` needs no change.
 
+### The deploy — `make prod-update`
+
+```bash
+make prod-update                       # build main, back up + drill, activate, verify
+REF=some-branch make prod-update       # any ref
+SKIP_DRILL=1 make prod-update          # keep the backup, skip proving it restores
+SKIP_BACKUP=1 make prod-update         # no restore point — only for a no-migration redeploy
+```
+
+Four steps in order, failing fast: **build** → **back up and prove the dump restores** →
+**activate** (the api applies pending migrations on boot) → **`prod-doctor`**.
+
+The backup step is not padding. Activation migrates the canonical store one-way, so a deploy
+that cannot be rolled back is a deploy that should not start — and the drill is what makes the
+dump a backup rather than a file. A broken build never reaches the backup; a failed backup or
+drill never reaches the migration. The diagnostic runs even when activation fails, because
+that is when you most want it.
+
+It also tells you what you actually shipped — old release → new release, and the commits that
+just went live — and flags two things worth catching before they surprise you: uncommitted work
+(never included, since a release builds from a `git archive` of a committed ref) and a ref that
+is *behind* the running release, i.e. a rollback.
+
+The individual targets remain for when you want one step:
+
 ### `prod-release` builds · `prod-run` activates — on purpose
 
 Note the asymmetry with the compose targets: `prod-up` chains `prod-build`, but **`prod-run`
