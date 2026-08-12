@@ -1,12 +1,19 @@
-> **Status:** draft PRD — **rev 2 (2026-08-11)**. Not locked. Product intent for the next
+> **Status:** draft PRD — **rev 3 (2026-08-11)**. Not locked. Product intent for the next
 > Aladin surface — **"Tutor."** Companion plan: `~/.claude/plans/tutor-surface.md`.
 >
-> **What changed in rev 2.** The ingestion engine shipped and now runs in prod (a 361-page
-> paper → 361 pages, 6147 typed regions, 870 chunks), which closes **D-B** and removes the
-> subsystem this PRD called "the hard, net-new half." That reframes the surface: the unit
-> of a lesson is no longer a document but a **plan item** in a study plan the user and the
-> agent co-author and keep revising (**D-I**, §3, §4a, §6). Equations render as real math
-> via vision→LaTeX (**D-J**), gated on the §13 T0 spike. §13 is the build order.
+> **rev 2.** The ingestion engine shipped and runs in prod (a 361-page paper → 361 pages,
+> 6147 typed regions, 870 chunks), closing **D-B** and removing the subsystem this PRD
+> called "the hard, net-new half." The unit of work became a **plan item** in a study plan
+> the user and agent co-author and keep revising (**D-I**, §3, §4a, §6).
+>
+> **rev 3 — the surface is a learning copilot, not a teacher.** The source teaches; Aladin
+> structures the path, checks understanding, and builds **study aids the user asks for**
+> (quiz, flashcards, visualizer, step-through, overview, mind map — §4b, **D-D**), grounded
+> in retrieved source text rather than the model's own knowledge. Restating the material is
+> a non-goal (§9): the default answer to "explain this" is a **pointer** to where it's
+> explained (§7). Two consequences: the reader becomes the primary pane, and the equation
+> gate is **demoted** — the user sees real typeset math in the PDF, so LaTeX is needed only
+> for formulas an aid manipulates (§13).
 > Reads on top of `TRADING_PRD.md` (north star), `SHARD_MODEL.md` (the output medium),
 > `DESIGN_SPEC.md` (tokens/components).
 
@@ -21,20 +28,37 @@
 
 ## 1. What this surface is
 
-**Tutor turns a source into an interactive lesson.** The user brings raw material they
-want to internalize — a research PDF, an ebook chapter — and Aladin hands back a
-**teaching Shard**: a sandboxed, interactive React app that explains the material in
-stages, checks understanding, and lets the user *manipulate* the ideas (sliders,
-walkthroughs, quizzes, definitions on demand), rather than re-reading prose.
+**Tutor is a learning copilot over a source you are working through. It is not a teacher,
+and the distinction is the product.**
+
+> **rev 3 (2026-08-11).** Stated by the user: *"it should be more of a learning
+> helper/copilot than a teacher — it makes it easy to structure learning, but it's not
+> really teaching or sourcing the underlying material."* Taken literally, because it
+> resolves a tension rev 2 still carried.
+
+**The source teaches. Aladin helps you get through it.** That division of labour is not
+modesty, it's accuracy: a generated explanation of a chapter is a *paraphrase* — lower
+fidelity than the chapter, and carrying invention risk the chapter doesn't have. Aladin's
+leverage is the three things a PDF genuinely cannot do:
+
+1. **Structure** — turn 361 undifferentiated pages into a path with an order and a
+   stopping point you chose (the plan, §3/§4a).
+2. **Check** — ask whether you actually got it, and find the gap when you didn't.
+3. **Make it manipulable** — a payoff you can drag, a derivation you can step through.
+   The one case where generated artifact genuinely beats prose.
+
+Everything else, the source already does better. So the default move is to **point at the
+material** — "that's derived on p. 94" — not to restate it.
 
 The flow, end to end:
 
 ```
-  drop a PDF               ingest + author                 a lesson you explore
-  ──────────               ───────────────                 ────────────────────
-  source PDF   →   ingest engine  →   Lesson Author   →    Shard (interactive)
-                   (images/eqns/       turn over               opens as a tab,
-                    code → text)       Copilot + kit           lives in your library
+  drop a PDF          ingest + plan together        work through it, with help
+  ──────────          ─────────────────────        ──────────────────────────
+  source PDF   →   ingest engine  →  study plan  →  you read the source
+                   (pages/regions/    (you + agent)   agent structures · checks you
+                    chunks/outline)   revisable       · builds an aid when
+                                                        interaction earns its place
 ```
 
 Three moving parts, two of which **already exist**:
@@ -128,10 +152,45 @@ is a plan they can edit, that happens to have been drafted by an agent:
 The feel to aim for: **a reading list you and a knowledgeable colleague drew up together,
 which remembers where you got to.** Not a wizard, not a chatbot transcript.
 
-### 4b. The lesson — what "super-interactive" and "explore" mean
+### 4b. The aids — what generation is *for*
 
-The user's phrase was *"a super interactive shard that teaches and lets you explore."*
-Concretely, a good lesson is **not** a styled document. It should reliably contain:
+> **rev 3.** These were "lessons," authored by the agent for a whole span. They are
+> **study aids the user asks for**, built against the source for accuracy, alongside a
+> source that stays open. The user's own examples set the shape:
+>
+> > *"build a shard that has a quiz and visualizer for partial derivatives"* ·
+> > *"build me a quiz or flash cards"* · *"a shard that gives an overview or creates a
+> > mind map"*
+>
+> Three things follow, and they are the design:
+>
+> **1. The user decides what gets built, not the agent.** These are requests, not
+> automatic output. The agent's job is to build the asked-for thing accurately — not to
+> decide that chapter 4 deserves a lesson. Aids are generated on request; the plan (§4a)
+> is what's proposed.
+>
+> **2. There is a catalogue, not an open canvas.** A small set of aid kinds the agent
+> composes reliably (see D-D). This is why the kit exists: "quiz over §3.2" should produce
+> the same solid `Quiz` every time, not a fresh improvisation.
+>
+> | aid | what it's for |
+> |---|---|
+> | **Quiz** | check understanding of a span or a concept; say what was missed |
+> | **Flashcards** | drill terms/definitions/results worth memorising |
+> | **Visualizer** | make a concept manipulable — partial derivatives, a payoff, a distribution |
+> | **StepThrough** | advance a derivation one line at a time, source equation on screen |
+> | **Overview** | orient before reading: what's here, in what order, what depends on what |
+> | **Mind map** | how the pieces relate, when the prose buries the structure |
+>
+> **3. Scope is a span *or* a concept.** "Partial derivatives" is not a page range — it's
+> an idea threaded through the source. `search_document` (shipped,
+> `workspace_tools.go:615`) is what makes concept-scoped aids possible: find every region
+> touching the concept, build from those. Plan items scope by span; ad-hoc requests scope
+> by concept. **Both must ground in retrieved text**, never in the model's own memory of
+> what partial derivatives are — that's the difference between an aid built *from your
+> source* and a generic explainer, and it's the whole reason this lives in Aladin.
+
+When an aid *is* requested, the bar for it is unchanged — it should reliably contain:
 
 - **Staged explanation** — the idea unfolds in sections/steps (hash-routed or stepper),
   not one wall of text. The user controls pace.
@@ -292,7 +351,14 @@ Entity Context has a **verbatim** guarantee — it never rewrites the user's mat
 Tutor is the *opposite* by design: a lesson **transforms** the source into an
 explanation. That makes grounding the safeguard instead of verbatim-ness:
 
-- The lesson must **stay faithful to the source** and **cite back to it** for its key
+**rev 3 — the strongest form of the guarantee is a pointer.** Because the source teaches
+(§1), the agent's *default* answer to "explain this" is **where it is explained**, not a
+restatement: "that's derived on p. 94, and the step you're stuck on is the substitution in
+eq. 4.7." A citation is cheap to verify and cannot hallucinate the underlying material. An
+explanation is neither. Restate only when the user asks for a restatement, or when the aid
+is one of the four kinds §4b licenses — and even then, cite.
+
+- The aid must **stay faithful to the source** and **cite back to it** for its key
   claims (section/quote references), so the user can verify and go deeper.
 - It must not **silently fabricate** facts, figures, equations, or data the source
   doesn't contain. Model-added scaffolding (analogies, worked examples) is fine and
@@ -325,6 +391,12 @@ explanation. That makes grounding the safeguard instead of verbatim-ness:
 
 ## 9. Explicit non-goals
 
+- **Not a teacher, and not a replacement for reading the source** (rev 3, §1). Aladin
+  structures, checks, and makes things manipulable. It does not stand between the user and
+  the material, and a lesson that lets them skip the paper is a failure, not a feature.
+- **Not a paraphrase engine.** Restating a chapter in nicer prose produces something
+  strictly worse than the chapter — lower fidelity, plus invention risk. If an aid isn't
+  one of §4b's four kinds, the correct output is a pointer.
 - **Not a curriculum / MOOC for strangers.** No authored course content we maintain, no
   onboarding layer. The user supplies the source; single-player (`TRADING_PRD.md` §1, §3).
 - **Not a document reader.** The output is an interactive lesson, not a PDF viewer. If the
@@ -343,22 +415,28 @@ explanation. That makes grounding the safeguard instead of verbatim-ness:
 |---|---|---|
 | **D-A** | **Ingest engine** | **RESOLVED — a proper ingest engine.** Multimodal transcription: rasterize PDF pages → vision model → structured markdown (equations→LaTeX, code→fenced, figures→captioned), with an optional text-layer fast-path (§5). Handles images/equations/code per the requirement. |
 | **D-E** | **v1 source types** | **RESOLVED — PDF only.** Article URL and YouTube/transcript are fast-follows (L4); each slots into the ingest engine as another front-end. |
-| **D-F** | **Surface name** | **RESOLVED — "Tutor."** Nav destination `/tutor`, module `modules/tutor`, spike `/spike/tutor`. |
+| **D-F** | **Surface name** | **RESOLVED — "Tutor."** Nav `/tutor`, module `modules/tutor`, spike `/spike/tutor`. *Kept knowingly in rev 3:* the name says "teacher" and §1 says it explicitly isn't one. Reconsidered and retained (the cost of renaming outweighs the ambiguity while nothing is built) — but names steer builds, so if a reviewer starts specing exposition-style lessons, this row is the reason, and §1/§9 are the correction. |
 | **D-B** | **Where ingested text lives** | **RESOLVED by shipping — `artifact_documents` / `_pages` / `_regions` / `_chunks`** (§6). Not the proposed `artifact_text` blob: typed regions are what make the equation pipeline (§13) possible at all. Verified in prod on a 361-page source. Fanning into `records` for the entity layer stays open, and is not Tutor's call. |
 | **D-I** | **Unit of a lesson** | **RESOLVED — a plan item.** Not the document (361 pages can't be one turn) and not auto-chaptering (fires N expensive turns for sections nobody asked for). The user and agent co-author a revisable plan; lessons are authored per item, on demand (§3, §4a). |
 | **D-J** | **How equations reach the lesson** | **RESOLVED — vision → LaTeX, rendered.** Formula crops transcribe to LaTeX and render (KaTeX) in the shard, so math is typeset content a lesson can step through and bind to a simulator. Gated on the §13 T0 spike: this is the one assumption that can sink the surface. |
 | **D-C** | **Generation driver** — general Copilot capability vs. a dedicated "Lesson Author" turn? | Open. *Rec:* a dedicated Lesson-Author system prompt + a surface-kicked turn, streamed in the existing dock. Add a `tutor` surface kind to `systemPrompt(surface)` (`copilot.go:824`). |
-| **D-D** | **Teaching kit primitives** — build `Quiz`/`Simulator`/`Glossary`/`StepThrough`/`Reveal`/`Figure` into `@aladin/kit`, or freehand? | Open. *Rec:* build them into the kit (`docsurface/kit.tsx`) — consistent, reliable output; the authoring guide teaches their use. |
+| **D-D** | **Teaching kit primitives** | **RESOLVED in shape by rev 3 — a catalogue, in the kit.** The aid kinds *are* the primitives: `Quiz`, `Flashcards`, `Visualizer`, `StepThrough`, `Overview`, `MindMap`, plus `Glossary`/`Formula`. Built into `@aladin/kit` (`docsurface/kit.tsx`) so "quiz over §3.2" yields the same solid component every time rather than a fresh improvisation. Still open: which ship first — see §13 T3, which deliberately builds two or three aids freehand before fixing the API. |
 | **D-G** | **Source→turn attachment** — copilot turns are text-only today. | Open. *Rec:* explicit `source_artifact_id` on the turn; the agent reads it via `get_artifact`. Don't stuff the paper into `surfaceContext` (caps at 1800 chars, `copilot.go:871`). |
 | **D-H** | **How much "explore" in v1** | Open. *Rec:* self-contained interactivity only; live entity/ticker links + data bridge deferred to v2 (§4). |
 
 ## 11. Success criteria
 
-- A user drops a white paper and, in one guided flow, ends up with a **published,
-  interactive lesson** that opens as a tab and that they can actually learn from — staged
-  explanation, at least one manipulable model, a check-for-understanding, definitions on
-  demand, the source's equations/diagrams/code rendered as first-class content —
-  **grounded in the source**.
+> **rev 3 — the measure is the user's understanding of the source, not the quality of the
+> output.** A beautiful shard the user enjoyed while never opening the paper is a failure.
+> A plan that got them through chapter 4 with two pointers and one simulator is a success,
+> even though it "generated" almost nothing.
+
+- A user gets **further into a source they'd otherwise have bounced off** — measured by
+  their own report ("I finished it," "I finally get the collar payoff"), not by artifacts
+  produced.
+- When an aid *is* generated it earns its place under §4b — manipulable, step-through,
+  a check, or a map — and is **grounded in the source**, with equations/diagrams/code
+  rendered as first-class content rather than flattened.
 - The lesson is a **durable artifact** in the workspace (in a folder, survives refresh,
   reopenable, provenance back to its source).
 - The **ingest engine reliably** transposes a typical text-or-figure PDF into structured
@@ -415,12 +493,29 @@ first-class capability, both surfaces simply consume the same `artifact_text`. T
 nothing extra now (the plan already runs L0 off artifact upload, not off a Tutor action)
 and is the single most important thing to get right for the broader surface.
 
-## 13. Build order (rev 2)
+## 13. Build order (rev 3)
 
 Sequenced so the assumption most likely to be wrong is tested first, and so nothing
 downstream is built on an unproven foundation. **T0 is a gate, not a phase.**
 
-### T0 — Equation fidelity spike *(gate: build or redesign)*
+> **rev 3 re-ordering.** Making the source the teacher **demotes this gate**. Under rev 2
+> a lesson replaced reading, so every equation had to re-render faithfully or the product
+> looked broken. Under rev 3 the user reads the actual PDF — already typeset, and already
+> renderable: the pdf.js viewer with a selectable text layer is on `main`. LaTeX is then
+> needed only for the *specific* formulas an aid manipulates or steps through, not for all
+> 527. That is a far smaller and far safer requirement.
+>
+> So the order becomes **T1 (plan) → reading alongside → T0′ (narrow equation spike, only
+> when the first manipulable aid needs it) → T2 → T3 → T4.** T0 below stands as written,
+> but it is now scoped to "can we get LaTeX for the handful of formulas an aid binds to,"
+> and it no longer blocks starting.
+>
+> **New dependency this exposes:** the surface has to put the **source and the assistant
+> side by side**. "Read the paper, with help" is the core loop now, so a lesson-as-tab
+> layout is no longer sufficient — the reader is the primary pane. That is a layout
+> requirement rev 2 never had, and it is cheap only because the viewer already exists.
+
+### T0 — Equation fidelity spike *(scoped by rev 3: no longer a blocking gate)*
 
 **The question:** can a vision model turn a formula crop into LaTeX that renders as the
 same equation? Everything else in Tutor is assembly of things that already work; this is
@@ -455,14 +550,14 @@ Reactivity rides the outbox sync spine — **not** REST-list + `reload()` (stand
 Ships useful on its own: a scoped, revisable reading plan over a source is already worth
 having with zero lessons authored.
 
-### T2 — Lesson authoring from an item
+### T2 — Building an aid on request
 
 D-C (a `tutor` surface kind in `systemPrompt(surface)`), D-G (attach the item's scope to
 the turn — its chunk/page span, *not* the paper stuffed into `surfaceContext`, which caps
 at 1800 chars), and the gated `publish_app` review. Uses the existing Copilot + Shard path;
 no forked authoring engine (§5's rule that must not bend).
 
-### T3 — The teaching kit
+### T3 — The aid catalogue (the kit)
 
 D-D: `Quiz` / `Simulator` / `Glossary` / `StepThrough` / `Reveal` / `Figure` / `Formula` in
 `@aladin/kit`. Deliberately *after* T2: author two or three real lessons freehand first and
