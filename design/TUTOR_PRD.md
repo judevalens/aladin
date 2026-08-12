@@ -503,6 +503,39 @@ first-class capability, both surfaces simply consume the same `artifact_text`. T
 nothing extra now (the plan already runs L0 off artifact upload, not off a Tutor action)
 and is the single most important thing to get right for the broader surface.
 
+## 12b. Template folders (the payoff of the generic container)
+
+A folder typed by its properties and its stateful artifacts (D-K) makes **template folders**
+fall out: a starter folder pre-seeded with the artifacts a given kind of work needs — a
+strategy bench, a stats learning bench, a paper-review bench.
+
+**This closes the last argument for a folder kind.** `00037` justified `kind='research'`
+with five things: structural slots at creation, a constrained `+` menu, seeded typed
+properties, a stable address for agents, and state. D-K moves state onto the artifacts.
+A template supplies the other four — slots and properties *at creation*, a scoped menu, a
+known shape to address. Nothing is left that a kind was needed for.
+
+And a template becomes **data rather than code**. With kinds, adding "options-pricing bench"
+is a migration plus a Rust sync arm plus a TS union. Here it is a recipe: properties to
+seed, artifacts to create.
+
+**Build it in that order, and not before it earns it:**
+
+- **v0 — a saved prompt.** No schema at all. Create the folder by hand, then ask the
+  copilot to seed it; `create_page` and `create_app` both already take a `folder_id`, so
+  pages and shards work today. This is the honest way to find out which templates get
+  reused, before any of them is made durable.
+- **The two primitives v0 is missing**, both small and both generic: `tree_nodes.metadata`
+  + a `jsonb_path_ops` GIN index (mirroring mig 00035, so the copilot can set the folder's
+  properties), and a `create_folder` MCP tool (the agent can fill a folder today but cannot
+  make one).
+- **v1 — a stored recipe**, only for templates v0 proved you re-run.
+
+**The failure mode to design against:** templates that drift from what the user actually
+does, and the pull to parameterise them until the recipe is a small programming language.
+Keep a template a flat list of properties and artifacts. If a template needs branching, it
+wanted to be a copilot prompt.
+
 ## 13. Build order (rev 3)
 
 Sequenced so the assumption most likely to be wrong is tested first, and so nothing
