@@ -16,6 +16,22 @@ export interface UsePropertyFilter {
   results: Artifact[] | undefined;
 }
 
+// Both of these are module-level ON PURPOSE, and it is not a micro-optimisation.
+//
+// useSyncExternalStore calls getSnapshot on EVERY render and compares the result with Object.is.
+// The previous idle store returned a fresh `[] as Artifact[]` from snapshot(), so the value was
+// never equal to the last one, React concluded the store had changed, re-rendered, called
+// snapshot() again... — "Maximum update depth exceeded" (React #185), crashing the property-filter
+// dialog the instant it opened, because no key is selected yet at that point.
+//
+// The functions were already stable; it was the VALUE that was not. React's rule is that
+// getSnapshot must return a cached value, not merely a pure function.
+const NO_RESULTS: Artifact[] = [];
+const IDLE_STORE = {
+  subscribe: () => () => {},
+  snapshot: () => NO_RESULTS,
+};
+
 /**
  * H1c — filter artifacts by a typed property. Results come from a server-side query (the whole
  * workspace, not just the cached subset) that RE-RUNS on node DataEvents, so the view stays live as
@@ -50,10 +66,7 @@ export function usePropertyFilter(): UsePropertyFilter {
   // A stable no-op store while no key is selected keeps the hook order fixed (no conditional hooks)
   // and avoids firing a query with an empty key (the server rejects it).
   const store = useMemo(
-    () =>
-      key
-        ? repos.propertyQuery.observe(key, value)
-        : { subscribe: () => () => {}, snapshot: () => [] as Artifact[] },
+    () => (key ? repos.propertyQuery.observe(key, value) : IDLE_STORE),
     [repos, key, value],
   );
   const results = useSyncExternalStore(store.subscribe, store.snapshot);
