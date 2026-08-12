@@ -164,7 +164,10 @@ function NotebookOverview() {
         <div className="mt-2 flex flex-wrap items-center gap-x-4 font-mono text-[10.5px] uppercase tracking-[0.5px] text-ink-4">
           <span>1 source</span>
           <span>{TOPICS.length} topics</span>
-          {shaky ? <span className="text-amber">{shaky} shaky</span> : null}
+          {/* Deliberately NOT amber: the row below carries the actionable detail ("missed
+              which leg sets the floor"), and amber-ing the summary too points the eye at
+              two places for one fact. The count orients; the row acts. */}
+          {shaky ? <span className="text-ink-3">{shaky} shaky</span> : null}
           {untouched ? <span>{untouched} untouched</span> : null}
         </div>
       </header>
