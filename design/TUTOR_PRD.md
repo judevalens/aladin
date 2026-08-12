@@ -503,6 +503,39 @@ first-class capability, both surfaces simply consume the same `artifact_text`. T
 nothing extra now (the plan already runs L0 off artifact upload, not off a Tutor action)
 and is the single most important thing to get right for the broader surface.
 
+## 12a. Scope: canvas is deferred, and what that leaves
+
+**The canvas kind is OUT** (user, 2026-08-11): it is a new ingestion/creation surface in its
+own right and has not been designed. Nothing here should assume it.
+
+Two consequences, and the second is the important one.
+
+**It retires the hardest open question.** The excerpt→source anchor — `artifact_refs` can
+only target page/shard by BlockNote block id, so "Hamilton p. 571" has nowhere to live —
+existed only to serve the canvas. Deferred with it.
+
+**It removes the last genuinely net-new artifact kind, and the "new kinds are the product"
+thesis with it.** The other kind named was a study/pomodoro table, and that does not need to
+be a kind at all: the page editor already supports `checkListItem` and `table`, and
+`create_page` / `insert_blocks` take markdown — so the agent can write "This week" as an
+ordinary page today, in an ordinary folder, with no schema.
+
+So with canvas out, the honest remaining build for a learning folder is **two small generic
+primitives** and nothing else:
+
+- `tree_nodes.metadata` + a `jsonb_path_ops` GIN index (mirroring mig 00035), so folders can
+  carry properties and be filtered by them;
+- a `create_folder` MCP tool, so the agent can make the container it already knows how to
+  fill.
+
+Everything else — grouping, the tab strip, the reader, notes, shards, folder-as-context,
+templates v0 — already exists or is a prompt.
+
+**The trade to accept knowingly:** a study table written as a page is not queryable state.
+"What is undone across every bench" means parsing markdown. That is fine while there is one
+bench and becomes the reason to promote it to a typed kind later — when there are several,
+and the query is one you actually want.
+
 ## 12b. Template folders (the payoff of the generic container)
 
 A folder typed by its properties and its stateful artifacts (D-K) makes **template folders**
