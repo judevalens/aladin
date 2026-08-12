@@ -120,19 +120,38 @@ projection (`make ops-backfill-graph`), Redis is queue/cache, and the client
 SQLite/IndexedDB re-hydrate from the server.
 
 ```bash
-make prod-backup     # one-off pg_dump -Fc to ~/aladin-backups (verified + retained)
-```
-
-Schedule a daily 03:00 backup with launchd:
-
-```bash
-cp scripts/ops/com.aladin.prod.backup.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/com.aladin.prod.backup.plist
-launchctl start com.aladin.prod.backup     # test-run once now
+make prod-backup          # one-off pg_dump -Fc to ~/aladin-backups (verified + retained)
+make prod-backup-install  # install/refresh the nightly 03:00 LaunchAgent (verifies it runs)
+make prod-backup-status   # is the agent healthy? what dumps exist?
+make prod-restore-drill   # PROVE the newest dump restores (throwaway DB; never touches `aladin`)
 ```
 
 Logs land in `~/aladin-backups/backup.log`. Retention keeps the newest 14 dumps
 (`ALADIN_BACKUP_RETAIN`).
+
+> **Do not install the LaunchAgent by hand.** `~/Documents` is TCC-protected, so
+> a launchd agent pointed at `scripts/ops/backup_prod.sh` **in the repo** dies
+> with `Operation not permitted` (exit 126) — the job fires nightly and silently
+> never writes a dump. `make prod-backup-install` copies the script to
+> `~/Library/Application Support/aladin/` and then kickstarts it to confirm a
+> real dump lands. Re-run that target after editing `backup_prod.sh`.
+
+> **Docker Desktop must start at login**, or none of this survives a reboot:
+> `restart: unless-stopped` needs a running daemon, and the 03:00 backup exits 1
+> when the Postgres container is absent. Turn on Docker Desktop → Settings →
+> General → *Start Docker Desktop when you sign in*.
+
+### What "protected" does and doesn't mean here
+
+Dumps live in `~/aladin-backups` on the **same disk** as the Postgres volume.
+That covers a bad migration, a wrong `DROP`, or `make prod-down ARGS=-v`. It does
+**not** cover disk failure, theft, or loss — for that the dumps must leave the
+machine. Revisit once there's work in prod you'd miss.
+
+Run `make prod-restore-drill` after any schema change you care about. A dump that
+`pg_restore` accepts can still be useless (schema-only, truncated, wrong DB), so
+the drill gates on a per-table row-count diff against live prod, not on exit
+codes.
 
 ### Restore
 
@@ -148,6 +167,129 @@ docker exec -i aladin-prod-postgres pg_restore -U aladin -d aladin --clean --if-
 # pointing DATABASE_URL/NEO4J_* at the prod host ports 5455 / 7689).
 make prod-up
 ```
+
+## Native release (the app tier runs on the host)
+
+**Docker holds the data tier; the app tier is a native release.** The split is not
+stylistic:
+
+- The Go binaries are static `CGO_ENABLED=0` builds and the image's runtime stage
+  is alpine + `ca-certificates` — the container buys nothing over running them.
+- **The ingestion worker *must* be native.** Docker on macOS has no Metal
+  passthrough, so MPS is unreachable from any container
+  (`design/INGESTION_PRD.md` §13b). A containerised worker cannot segment PDFs
+  at all: the image has no Python.
+- Promtail already tails native log *files* (`./logs` → `/var/log/aladin`), so
+  observability was built for this shape.
+
+| tier | where | what |
+|---|---|---|
+| data | Docker (`docker-compose.prod.yml`) | postgres · redis · neo4j (+ loki/grafana) |
+| app | native release | api · worker · mcp · blocknote · copilot-agent |
+
+```bash
+make prod-release                      # build from main (default)
+make prod-release REF=some-branch      # build from any ref
+make prod-release NO_SWITCH=1          # build without flipping `current`
+make prod-release-list                 # what's built, what's live
+make prod-release-version              # the current release's stamp
+make prod-release-clean                # prune old releases (KEEP=3)
+make prod-release-clean DRY_RUN=1      # ...show the plan without deleting
+```
+
+### Pruning
+
+A release is ~520MB (461MB of it `node_modules`), so they add up fast. The build
+prunes to 5 on its own; `make prod-release-clean` is the explicit control
+(`KEEP=3` by default, `DRY_RUN=1` to preview). It prints every release with its
+disposition and **never removes**:
+
+- whatever `current` points at — even when it's old;
+- a release with a **live process running out of it**. After a `current` flip the
+  previous release is no longer current but may still be serving; deleting it
+  from under a running api/worker gives you a half-deleted binary and a baffling
+  crash.
+
+It also sweeps `*.partial` directories from interrupted builds.
+
+A release is built from a **clean `git archive` export of the ref**, never the
+working tree, so it always corresponds to a commit. Layout — deliberately outside
+`~/Documents`, which is TCC-protected and unreadable to launchd agents:
+
+```
+~/Library/Application Support/aladin/
+  releases/<stamp>-<sha>/  bin/ services/ tools/ run/ env VERSION
+  current -> releases/...  atomic symlink — flipping it IS the deploy
+  venv/doclayout/          shared across releases (~800MB, never copied per build)
+  data/                    DATA_VOLUME_PATH
+  logs/                    per-process logs
+```
+
+`env` is generated from `backend_v2/.env.prod` with the compose hostnames
+rewritten to published host ports (`postgres:5432`→`127.0.0.1:5455`,
+`redis:6379`→`6381`, `neo4j:7687`→`7689`). **Prod Redis publishes `6381` solely
+so the native worker can reach the queue** — inside the compose network is not
+enough once the app tier is off-cluster.
+
+Ports match what the containers published (api `8080`, mcp `8091`, collab
+`3510/3511`, copilot `3550`), so `make prod-app` needs no change.
+
+### Running it
+
+```bash
+make prod-run           # start `current` — kills anything from a previous release first
+make prod-run-stop      # stop every process running from any release
+make prod-run-status    # what's running, from which release, flags stale ones
+```
+
+`prod-run` is **not additive**, and that is its main job. After a `current` flip
+the previous release's processes keep running and keep serving the OLD code on
+the same ports — a deploy that looks successful while nothing changed.
+`prod-run` stops everything from any release, then starts `current`.
+
+Order of operations, which matters:
+
+1. **Port check first.** If a foreign process (usually the prod *container* tier)
+   holds 8080/8091/3510, it refuses and stops nothing — so a failed start never
+   leaves you with the old processes killed and the new ones unable to bind.
+   Ports held by release processes don't count; those are about to be freed.
+2. **Stop**, SIGTERM first (the worker is mid-flight on queue tasks), escalating
+   to SIGKILL after `STOP_TIMEOUT` (15s).
+3. **api first, alone, until `/healthz` passes** — it applies the migrations, and
+   starting several migrating processes at once hits the same goose
+   `CREATE EXTENSION` cold-start race the compose `depends_on` guards against.
+4. The rest follow.
+
+`PROCS` selects processes (default `api mcp blocknote worker`; `copilot-agent` is
+omitted because `gen_prod_env.sh` doesn't write `ANTHROPIC_API_KEY`). Each logs
+to `~/Library/Application Support/aladin/logs/<name>.log`.
+
+The container app tier and the native one bind the same ports, so retire the
+containers first:
+
+```bash
+# data tier only — keeps postgres/redis/neo4j, stops the app containers
+COMPOSE_PROFILES=api,worker,mcp,collab docker compose -p aladin-prod \
+  --env-file backend_v2/.env.prod -f docker-compose.prod.yml stop api worker mcp blocknote
+
+make prod-backup && make prod-restore-drill   # the api migrates on boot
+make prod-run
+```
+
+> **The first native boot applies every pending migration.** Prod sits at goose
+> version 26; a current ref carries migrations through `00041`. That is a
+> one-way change to your canonical store — run `make prod-backup` and
+> `make prod-restore-drill` immediately before, every time.
+
+**Node version.** The sidecars are built against `node:20-alpine`; this host runs
+Node 25. The build warns and keeps going. Set `ALADIN_NODE=/path/to/node20` to
+pin it if collab or copilot turns misbehave.
+
+**Not yet done: supervision.** Nothing restarts these processes on crash or after
+a reboot — that's what `restart: unless-stopped` was giving you. The `run/*.sh`
+scripts exist as the seam a launchd agent will exec. Until those land, treat the
+native tier as manually started, and remember the backup agent needs the Postgres
+container up at 03:00.
 
 ## Optional integrations
 

@@ -151,7 +151,9 @@ ops-reset-stuck-cycles: ## Close stale active/running cycles; optional AGE=30m
 	python3 scripts/ops/aladin_ops.py reset-stuck-cycles --age $(or $(AGE),30m)
 
 # --- PROD stack ---------------------------------------------------------------
-.PHONY: prod-env prod-check-env prod-build prod-up prod-down prod-restart prod-ps prod-logs prod-psql prod-backup prod-app prod-app-clear prod-app-uninstall
+.PHONY: prod-env prod-check-env prod-build prod-up prod-down prod-restart prod-ps prod-logs prod-psql prod-backup prod-backup-install prod-backup-status prod-restore-drill prod-run prod-run-stop prod-run-status prod-release prod-release-list prod-release-clean prod-release-version prod-app prod-app-clear prod-app-uninstall
+
+PROD_BACKUP_INSTALL_DIR := $(HOME)/Library/Application Support/aladin
 
 prod-env: ## Generate backend_v2/.env.prod (random infra passwords + OpenAI/Tavily from .env); FORCE=1 to regenerate
 	bash scripts/ops/gen_prod_env.sh
@@ -183,6 +185,62 @@ prod-psql: ## Open psql on the prod Postgres
 
 prod-backup: ## Run a one-off prod Postgres backup (pg_dump -Fc, retained)
 	bash scripts/ops/backup_prod.sh
+
+prod-backup-install: ## Install/refresh the nightly 03:00 backup LaunchAgent (re-run after editing backup_prod.sh)
+	@# The script is COPIED out of the repo on purpose: ~/Documents is TCC-protected
+	@# and a launchd agent reading from there fails with exit 126, silently never
+	@# producing a dump. See scripts/ops/com.aladin.prod.backup.plist.
+	mkdir -p "$(PROD_BACKUP_INSTALL_DIR)"
+	cp scripts/ops/backup_prod.sh "$(PROD_BACKUP_INSTALL_DIR)/backup_prod.sh"
+	chmod +x "$(PROD_BACKUP_INSTALL_DIR)/backup_prod.sh"
+	mkdir -p "$(HOME)/aladin-backups"
+	cp scripts/ops/com.aladin.prod.backup.plist "$(HOME)/Library/LaunchAgents/"
+	-launchctl bootout gui/$(shell id -u)/com.aladin.prod.backup 2>/dev/null
+	launchctl bootstrap gui/$(shell id -u) "$(HOME)/Library/LaunchAgents/com.aladin.prod.backup.plist"
+	@echo ">> installed. Verifying it can actually run under launchd..."
+	launchctl kickstart -k gui/$(shell id -u)/com.aladin.prod.backup
+	@sleep 8
+	@launchctl print gui/$(shell id -u)/com.aladin.prod.backup | grep -E 'last exit code' \
+		| grep -q 'last exit code = 0' \
+		&& echo ">> OK — launchd ran the backup successfully (nightly 03:00)." \
+		|| { echo ">> FAILED — check ~/aladin-backups/backup.log"; exit 1; }
+
+prod-backup-status: ## Show the backup agent's state + the dumps on disk
+	@launchctl print gui/$(shell id -u)/com.aladin.prod.backup 2>/dev/null \
+		| grep -E 'state|runs|last exit code' || echo ">> agent not installed — run 'make prod-backup-install'"
+	@echo "--- dumps in $(HOME)/aladin-backups ---"
+	@ls -lht "$(HOME)/aladin-backups"/aladin-prod-*.dump 2>/dev/null | head -5 || echo ">> no dumps yet"
+
+prod-restore-drill: ## Prove the newest dump restores (into a throwaway DB; never touches `aladin`)
+	bash scripts/ops/restore_drill.sh
+
+# --- native prod app tier (Go + node sidecars run as host processes) ----------
+# Only the DATA tier stays in Docker. See PROD.md "Native release".
+prod-release: ## Build a native prod release from a git ref (REF=main; NO_SWITCH=1 to not flip `current`)
+	REF=$(or $(REF),main) bash scripts/ops/build_prod_release.sh
+
+prod-release-list: ## List built releases and which one `current` points at
+	@P="$(HOME)/Library/Application Support/aladin"; \
+	if C=$$(readlink "$$P/current" 2>/dev/null) && [ -n "$$C" ]; then \
+		echo "current -> $$(basename "$$C")"; \
+	else echo "current -> (none)"; fi; \
+	echo "--- releases ---"; ls -1t "$$P/releases" 2>/dev/null || echo "(none built)"
+
+prod-run: ## Start the current release's app tier, killing any processes from a previous release first
+	bash scripts/ops/run_prod_release.sh start
+
+prod-run-stop: ## Stop every process running from any release
+	bash scripts/ops/run_prod_release.sh stop
+
+prod-run-status: ## Show which release each running process came from (flags stale ones)
+	@bash scripts/ops/run_prod_release.sh status
+
+prod-release-clean: ## Prune old releases (KEEP=3; DRY_RUN=1 to preview). Never removes `current` or one with a live process
+	KEEP=$(or $(KEEP),3) bash scripts/ops/clean_prod_releases.sh
+
+prod-release-version: ## Show the VERSION stamp of the current release
+	@cat "$(HOME)/Library/Application Support/aladin/current/VERSION" 2>/dev/null \
+		|| echo ">> no current release — run 'make prod-release'"
 
 prod-app: ## Build the desktop app pointed at prod + install it to /Applications (identifier com.aladin.app)
 	cd aladin_react && VITE_DESKTOP_API_BASE_URL=http://localhost:8080 VITE_COLLAB_WS_URL=ws://localhost:3511 \
