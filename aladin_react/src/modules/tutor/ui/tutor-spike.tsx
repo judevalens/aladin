@@ -9,7 +9,6 @@ import {
   ListChecks,
   Network,
   Plus,
-  Quote,
   Scissors,
   Sparkles,
   SplitSquareHorizontal,
@@ -284,16 +283,12 @@ function PlanPane({
         ))}
         <button
           type="button"
-          className="mt-1 flex w-full items-center gap-1.5 rounded-card border border-dashed border-line-2 px-3 py-2 text-xs text-ink-4 transition-colors hover:border-line hover:text-ink-3"
+          className="mt-2 flex w-full items-center gap-1.5 px-3 py-1 text-xs text-ink-4 transition-colors hover:text-ink-2"
         >
           <Plus className="size-3" /> Add an item
         </button>
       </div>
 
-      <p className="shrink-0 border-t border-line px-4 py-2 text-[10px] leading-relaxed text-ink-4">
-        The plan outlives every aid built from it. Revisable forever — this is the durable
-        object, not the shards.
-      </p>
     </aside>
   );
 }
@@ -317,8 +312,8 @@ function PlanRow({
   return (
     <div
       className={cn(
-        "group mb-1 rounded-card border px-3 py-2.5 transition-colors",
-        active ? "border-amber-line bg-card" : "border-transparent hover:border-line hover:bg-raise",
+        "group mb-px border-l-2 px-3 py-2 transition-colors",
+        active ? "border-amber bg-raise" : "border-transparent hover:bg-raise",
       )}
     >
       <button type="button" onClick={onPick} className="w-full text-left">
@@ -433,21 +428,18 @@ function ReaderPane() {
       <div className="mt-5 space-y-4">
         {PAGE.blocks.map((b, i) =>
           b.kind === "formula" ? (
-            <div key={i} className="rounded-card border border-line bg-card px-4 py-3">
+            <div key={i} className="group/f border-l-2 border-line-2 py-1 pl-4">
+              {/* The source's OWN typeset math — the user is reading the paper, so nothing
+                  here is transcribed. The flattened text the AGENT retrieves appears
+                  underneath on hover: subscripts are lost, which is exactly why an aid that
+                  MANIPULATES a formula needs vision-to-LaTeX (D-J) and the reader never does. */}
               <div className="flex items-baseline justify-between gap-3">
-                {/* rev 3: the reader shows the source's OWN typeset math — the user is reading
-                    the paper, so nothing here is transcribed. */}
                 <code className="font-mono text-sm text-ink">{b.text}</code>
                 <span className="shrink-0 font-mono text-[10px] text-ink-4">{b.cite}</span>
               </div>
-              {/* ...and what the AGENT retrieves is the flattened extraction. Showing both
-                  makes the architecture visible: subscripts are lost, which is exactly why
-                  an aid that MANIPULATES a formula needs vision\u2192LaTeX (D-J) while the
-                  reader never does. */}
-              <p className="mt-2 flex items-center gap-1.5 border-t border-line pt-2 font-mono text-[10px] text-ink-4">
-                <span className="shrink-0 uppercase tracking-wider">agent reads</span>
-                <code className="truncate">{b.extracted}</code>
-              </p>
+              <code className="mt-1 block truncate font-mono text-[10px] text-ink-4 opacity-0 transition-opacity group-hover/f:opacity-100">
+                agent reads · {b.extracted}
+              </code>
             </div>
           ) : (
             <p key={i} className="text-sm leading-relaxed text-ink-2">
@@ -456,10 +448,6 @@ function ReaderPane() {
           ),
         )}
       </div>
-      <p className="mt-8 border-t border-line pt-3 text-[10px] leading-relaxed text-ink-4">
-        This pane is the source, not a paraphrase of it. Aladin does not stand between you
-        and the material (§9).
-      </p>
     </div>
   );
 }
@@ -543,13 +531,10 @@ function AskPane({ scenario, onBuild }: { scenario: Scenario; onBuild: () => voi
               key={c.kind}
               type="button"
               onClick={onBuild}
-              className="flex items-center gap-1.5 rounded-card border border-line bg-card px-2 py-1.5 text-left transition-colors hover:border-amber-line"
+              className="flex items-center gap-1.5 rounded-chip px-2 py-1.5 text-left transition-colors hover:bg-raise"
             >
-              <c.icon className="size-3 shrink-0 text-ink-3" />
-              <span className="min-w-0">
-                <span className="block truncate text-[11px] text-ink">{c.label}</span>
-                <span className="block truncate text-[9px] text-ink-4">{c.what}</span>
-              </span>
+              <c.icon className="size-3 shrink-0 text-ink-4" />
+              <span className="truncate text-[11px] text-ink-2">{c.label}</span>
             </button>
           ))}
         </div>
@@ -583,7 +568,7 @@ function Exchange({ you, answer }: { you: string; answer: React.ReactNode }) {
         <ChevronRight className="mt-0.5 size-3 shrink-0 text-ink-4" />
         {you}
       </p>
-      <div className="rounded-card border border-line bg-card px-3 py-2.5">{answer}</div>
+      <div className="pl-4">{answer}</div>
     </div>
   );
 }
@@ -592,14 +577,10 @@ function Pointer({ page, label, quote }: { page: number; label: string; quote: s
   return (
     <button
       type="button"
-      className="mt-2 flex w-full items-start gap-2 rounded-chip border border-line-2 bg-field px-2 py-1.5 text-left transition-colors hover:border-amber-line"
+      className="mt-2 flex w-full items-baseline gap-2 border-l-2 border-amber-line pl-2 text-left transition-colors hover:border-amber"
     >
-      <Quote className="mt-0.5 size-3 shrink-0 text-ink-4" />
-      <span className="min-w-0 flex-1">
-        <span className="block font-mono text-[10px] text-ink-3">{label}</span>
-        <code className="mt-0.5 block truncate font-mono text-[11px] text-ink">{quote}</code>
-      </span>
-      <span className="shrink-0 font-mono text-[10px] text-ink-4">p.{page} →</span>
+      <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-ink">{quote}</code>
+      <span className="shrink-0 font-mono text-[10px] text-ink-4">{label} · p.{page} →</span>
     </button>
   );
 }
@@ -689,16 +670,14 @@ function VisualizerAid() {
           <Slider label="K₂ (call)" value={k2} min={101} max={135} onChange={setK2} />
         </div>
 
-        <div className="mt-3 grid grid-cols-2 gap-2 border-t border-line pt-3">
+        <div className="mt-4 grid grid-cols-2 gap-2">
           <Stat label="max gain" value={`+${maxGain.toFixed(0)}`} tone="text-for" note="K₂ − S₀ − C" />
           <Stat label="max loss" value={maxLoss.toFixed(0)} tone="text-against" note="K₁ − S₀ − C" />
         </div>
       </div>
 
-      <p className="mt-4 flex items-start gap-1.5 rounded-card border border-line bg-field px-3 py-2 text-[11px] leading-relaxed text-ink-3">
-        <Quote className="mt-0.5 size-3 shrink-0 text-ink-4" />
-        Grounded in the source: the payoff, both strikes and the premium all come from
-        retrieved text, not from the model's own knowledge of collars.
+      <p className="mt-4 text-[10px] leading-relaxed text-ink-4">
+        Grounded in the source — payoff, strikes and premium all from retrieved text.
       </p>
     </div>
   );
