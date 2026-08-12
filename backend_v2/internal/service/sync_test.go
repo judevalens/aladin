@@ -171,3 +171,46 @@ func countEntities(frames []Frame) int {
 	}
 	return n
 }
+
+// A cursor NEWER than the server's horizon cannot have come from this database: cursors are
+// Postgres xids and therefore cluster-local, so a restore from backup, a `down -v` + recreate,
+// or repointing a client at another backend all leave the client holding a number this server
+// will never reach. PullSince finds no frames above it, so without this guard the client
+// reports "up to date" and receives nothing forever — the divergence that forced a manual
+// client wipe after every prod DB reset.
+func TestPullSnapshotsWhenCursorIsAheadOfHorizon(t *testing.T) {
+	// horizon 40 (server rewound), client cursor 900 (from the old timeline), retention fine.
+	ob := &fakeOutbox{horizon: 40, minXid: 1, hasMin: true}
+	svc := NewSyncService(ob, &fakeSource{kind: "tree"})
+
+	got, err := svc.Pull(context.Background(), "u1", 900)
+	if err != nil {
+		t.Fatalf("Pull: %v", err)
+	}
+	if got.Mode != PullModeSnapshot {
+		t.Fatalf("expected a snapshot for a cursor past the horizon, got mode %q", got.Mode)
+	}
+	if ob.pullCalled {
+		t.Fatal("PullSince must not be called for an impossible cursor — it would return nothing and look healthy")
+	}
+	if got.Cursor != 40 {
+		t.Fatalf("snapshot should resume at the server's horizon 40, got %d", got.Cursor)
+	}
+}
+
+// The ordinary case must still take the delta path: cursor at or below the horizon.
+func TestPullTakesDeltaWhenCursorIsWithinHorizon(t *testing.T) {
+	ob := &fakeOutbox{horizon: 40, minXid: 1, hasMin: true}
+	svc := NewSyncService(ob, &fakeSource{kind: "tree"})
+
+	got, err := svc.Pull(context.Background(), "u1", 40)
+	if err != nil {
+		t.Fatalf("Pull: %v", err)
+	}
+	if got.Mode != PullModeDelta {
+		t.Fatalf("expected delta at cursor == horizon, got %q", got.Mode)
+	}
+	if !ob.pullCalled || ob.pullCursor != 40 {
+		t.Fatalf("PullSince should have run with cursor 40, called=%v cursor=%d", ob.pullCalled, ob.pullCursor)
+	}
+}

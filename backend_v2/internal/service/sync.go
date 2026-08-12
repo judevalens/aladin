@@ -64,6 +64,27 @@ func (s *DefaultSyncService) Pull(ctx context.Context, userID string, cursor uin
 	if ok && cursor < minXid {
 		return s.snapshot(ctx, userID)
 	}
+	// Cursor NEWER than our horizon → it cannot have come from this database. Cursors are
+	// Postgres xids and therefore cluster-local, so a restore from backup, a `prod-down -v`
+	// and recreate, or pointing a client at a different backend all leave the client holding a
+	// number this server will never reach.
+	//
+	// Without this the failure is silent and permanent, which is the worst shape available:
+	// the too-old guard above catches its case, PullSince simply finds no frames above an
+	// impossible cursor, and the client sits reporting "up to date" while receiving nothing,
+	// forever. That is what forced a manual client wipe (`make prod-app-clear`) after every
+	// prod DB reset. Snapshotting makes the client self-heal on its next pull, the same way
+	// the local SQLite replica already recovers from an unusable file (Db::open_or_recover).
+	//
+	// Note this is not a heuristic: in normal operation the client's cursor came FROM a
+	// horizon this server issued, so cursor > horizon is only reachable if the timeline changed.
+	current, err := s.outbox.Horizon(ctx)
+	if err != nil {
+		return PullResult{}, err
+	}
+	if cursor > current {
+		return s.snapshot(ctx, userID)
+	}
 	frames, horizon, err := s.outbox.PullSince(ctx, userID, cursor)
 	if err != nil {
 		return PullResult{}, err
