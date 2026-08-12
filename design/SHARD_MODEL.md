@@ -914,3 +914,37 @@ it *is* the design."
   `aladin_react/src-tauri/src/vendor_cache.rs`
 - Naming: code says `docsurface`/`"app"` until `rename/doc-surface-to-shard`
   merges; "Shard" in user-facing strings only.
+
+---
+
+## Addendum (2026-08-11) — two axes, not one: own state vs workspace data
+
+This document specifies, in detail, how a shard **reads the workspace**: `nodes.get` /
+`nodes.subscribe`, `refs` as the permission grant (`ids ⊆ refs`), `NodeView` DTOs, a
+principal-scoped `EntityService`. That path is deliberately paused pending the data model —
+the standing rule being *don't build the KG shard-first*.
+
+It does **not** cover a different thing that got bundled with it in conversation: a shard
+remembering **its own state**. These are separate axes and only one of them is blocked.
+
+| | what it is | designed? | blocked by the data model? |
+|---|---|---|---|
+| **workspace data** | read entities/records through the bridge, under a refs grant | yes, extensively (this doc) | **yes, on purpose** |
+| **own state** | a shard persisting something opaque to Aladin — which pomodoro session you're on, which quiz answers you gave, where you left off | **no — absent from this model** | **no.** It needs no entity-layer decisions at all |
+
+The distinction matters because the *cheap* half was being held up by the *expensive* one.
+A generated study shard needs only own-state: a pomodoro that cannot record that you did the
+25 minutes is a toy, and that has nothing to do with the entity layer.
+
+**Shape, if it is ever built** (sketch, not a spec — nothing here is decided):
+
+- one table keyed by `(shard artifact_id, user_id)` holding an opaque blob, versioned;
+- two bridge commands — `state.get` / `state.set` — added at the host's existing switch
+  (`doc-surface-ui.tsx:136` already answers `ping` and rejects unknown commands, so this is
+  an additive branch, not new plumbing);
+- **opacity is the point**: Aladin never interprets the blob, so no schema negotiation and no
+  coupling to the entity layer. The moment it wants to *query* across shard state, that state
+  has stopped being own-state and belongs in a typed artifact instead.
+
+Recorded because it is the difference between agent-generated shards being demos and being
+usable, and because it is genuinely unblocked today.
