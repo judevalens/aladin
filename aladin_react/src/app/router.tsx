@@ -23,6 +23,7 @@ import { TutorSpike } from "@/modules/tutor/ui/tutor-spike";
 import { TutorReadSpike } from "@/modules/tutor/ui/tutor-read-spike";
 import { TutorNotebookSpike } from "@/modules/tutor/ui/tutor-notebook-spike";
 import { TutorKindsSpike } from "@/modules/tutor/ui/tutor-kinds-spike";
+import { TutorPurposeSpike } from "@/modules/tutor/ui/tutor-purpose-spike";
 import { TickerRoute } from "@/modules/tickers/ui/ticker-route";
 import { MarketsUI } from "@/modules/markets/ui/markets-ui";
 import { TickerModal } from "@/modules/markets/ui/ticker-modal";
@@ -91,6 +92,12 @@ export const router = createBrowserRouter([
     // ARTIFACT KINDS opening as tabs (canvas, study table). No Tutor surface at all.
     path: "/spike/tutor-kinds",
     element: <TutorKindsSpike />,
+  },
+  {
+    // Dev-only spike — strategy vs learning as a `purpose` DISCRIMINATOR on the existing
+    // research folder, not a fourth tree kind. One tree, one Overview component.
+    path: "/spike/tutor-purpose",
+    element: <TutorPurposeSpike />,
   },
   {
     // Dev-only Entity Context spike — Phase A of the entity surface on mock
