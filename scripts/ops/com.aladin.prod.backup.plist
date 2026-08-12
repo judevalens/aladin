@@ -2,15 +2,22 @@
 <!--
   Daily Aladin PROD Postgres backup (macOS launchd LaunchAgent).
 
-  Install:
-    cp scripts/ops/com.aladin.prod.backup.plist ~/Library/LaunchAgents/
-    launchctl load ~/Library/LaunchAgents/com.aladin.prod.backup.plist
+  Install (copies the script out of ~/Documents, then loads the agent):
+    make prod-backup-install
 
   Run once now (test):
-    launchctl start com.aladin.prod.backup
+    launchctl kickstart -k gui/$UID/com.aladin.prod.backup
 
   Uninstall:
-    launchctl unload ~/Library/LaunchAgents/com.aladin.prod.backup.plist
+    launchctl bootout gui/$UID/com.aladin.prod.backup
+
+  WHY THE SCRIPT IS NOT RUN FROM THE REPO: ~/Documents is a TCC-protected
+  directory. A launchd agent has no Full Disk Access, so pointing
+  ProgramArguments at scripts/ops/backup_prod.sh in the repo fails with
+  "Operation not permitted" (exit 126) — the job runs nightly and silently
+  never produces a dump. `make prod-backup-install` copies the script to
+  ~/Library/Application Support/aladin/ (not TCC-protected) and points this
+  plist there. Re-run that target after editing backup_prod.sh.
 
   Runs at 03:00 daily. If the Mac is asleep at 03:00, launchd runs it at wake.
   Logs -> ~/aladin-backups/backup.log.
@@ -23,11 +30,11 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/judepaulemon/Documents/aladin/scripts/ops/backup_prod.sh</string>
+        <string>/Users/judepaulemon/Library/Application Support/aladin/backup_prod.sh</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Users/judepaulemon/Documents/aladin</string>
+    <string>/Users/judepaulemon/Library/Application Support/aladin</string>
 
     <!-- launchd's PATH is minimal; add Docker Desktop's CLI location. -->
     <key>EnvironmentVariables</key>
