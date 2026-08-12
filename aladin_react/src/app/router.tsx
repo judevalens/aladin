@@ -19,6 +19,7 @@ import { EntitiesIndexUI } from "@/modules/entities/ui/entities-index-ui";
 import { EntitiesIndexSpike } from "@/modules/entities/ui/entities-index-spike";
 import { EntitiesInboxSpike } from "@/modules/entities/ui/entities-inbox-spike";
 import { EntitiesHomeSpike } from "@/modules/entities/ui/entities-home-spike";
+import { TutorSpike } from "@/modules/tutor/ui/tutor-spike";
 import { TickerRoute } from "@/modules/tickers/ui/ticker-route";
 import { MarketsUI } from "@/modules/markets/ui/markets-ui";
 import { TickerModal } from "@/modules/markets/ui/ticker-modal";
@@ -63,6 +64,12 @@ export const router = createBrowserRouter([
     // the block editor's look-and-feel outside the login wall.
     path: "/spike/editor",
     element: <EditorPreview />,
+  },
+  {
+    // Dev-only Tutor spike — the learning-copilot surface on mock data (design/TUTOR_PRD.md
+    // rev 3), standalone, no auth. Three scenarios: plan it · read+ask · an aid built.
+    path: "/spike/tutor",
+    element: <TutorSpike />,
   },
   {
     // Dev-only Entity Context spike — Phase A of the entity surface on mock
