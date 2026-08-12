@@ -35,7 +35,7 @@ services:
     volumes:
       - prod_postgres_data:/var/lib/postgresql/data
     restart: unless-stopped   # the canonical store MUST come back after a host reboot
-    # mem_limit: 2g           # tune to host RAM; protects the DB from an OOM-happy neighbour
+    mem_limit: 2g             # protects the canonical store from an OOM-happy neighbour
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U aladin -d aladin"]
       interval: 5s
@@ -48,10 +48,16 @@ services:
     container_name: aladin-prod-redis
     profiles: ["worker"]
     command: redis-server --appendonly yes
+    ports:
+      # Published for the NATIVE prod worker (see PROD.md "Native release").
+      # The app tier runs as host processes, so the queue must be reachable from
+      # the host — inside the compose network alone is not enough. (dev 6379,
+      # sandbox 6380)
+      - "6381:6379"
     volumes:
       - prod_redis_data:/data
     restart: unless-stopped
-    # mem_limit: 512m
+    mem_limit: 512m
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -71,7 +77,7 @@ services:
     volumes:
       - prod_neo4j_data:/data
     restart: unless-stopped
-    # mem_limit: 2g           # neo4j is a JVM — most likely to balloon; cap it to protect postgres
+    mem_limit: 2g             # neo4j is a JVM — most likely to balloon; cap it to protect postgres
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:7474 >/dev/null 2>&1 || exit 1"]
       interval: 10s
@@ -168,7 +174,7 @@ services:
       mcp:                   # its whole tool surface is the MCP server
         condition: service_started
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3550/healthz"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3550/healthz"]   # see blocknote note
       interval: 10s
       timeout: 3s
       retries: 10
@@ -193,7 +199,10 @@ services:
       api:                   # needs the schema (page_ydoc) migrated + api auth up
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3500/healthz"]
+      # 127.0.0.1, NOT localhost: Node resolves localhost to ::1 first while the
+      # server binds IPv4 0.0.0.0, so `localhost` here fails "connection refused"
+      # forever against a perfectly healthy service.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3500/healthz"]
       interval: 10s
       timeout: 3s
       retries: 10
