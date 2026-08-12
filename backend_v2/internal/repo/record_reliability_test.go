@@ -21,10 +21,15 @@ func TestRecordReliability(t *testing.T) {
 	defer pool.Close()
 
 	id := "rel-" + uuid.NewString()
-	// Seed a 'captured' record whose last touch was an hour ago (stranded by a crash).
+	// Seed a 'captured' record stranded by a crash. The age is deliberately ABSURD rather than
+	// "an hour ago": ListStuck is a GLOBAL read ordered by updated_at ASC with LIMIT, and the
+	// sandbox Postgres is shared by every package's tests, so accumulated non-terminal records
+	// from sibling runs pushed a merely-hour-old row past the limit and this test failed for
+	// reasons that had nothing to do with the code under test. Being the oldest row makes it
+	// deterministic without touching the production limit.
 	if _, err := pool.Exec(ctx, `
 		INSERT INTO records (id, type, label, content, status, source_revision, created_at, updated_at)
-		VALUES ($1, 'post', 'l', 'c', 'captured', 1, now() - interval '2 hours', now() - interval '1 hour')
+		VALUES ($1, 'post', 'l', 'c', 'captured', 1, now() - interval '11 years', now() - interval '10 years')
 	`, id); err != nil {
 		t.Fatalf("seed record: %v", err)
 	}
