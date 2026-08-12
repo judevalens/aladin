@@ -1,8 +1,10 @@
 # PRD — Ingestion
 
 > **Audience:** whoever builds and extends the ingestion engine.
-> **Date:** 2026-08-01. Revision 2 — adds Part II: structure and semantics (§9–§13).
-> Revision 1 (2026-07-31) defined extraction and the status model; those still stand.
+> **Date:** 2026-08-01. Revision 3 — adds §13f, a representation for non-text content
+> (tables, equations, figures), after measuring that 60% of a real document was being lost.
+> Revision 2 added Part II: structure and semantics (§9–§13). Revision 1 (2026-07-31)
+> defined extraction and the status model; both still stand.
 > **Status:** v1 shipped on `feat/ingestion-engine`. Part II is designed, not built.
 >
 > Companions: `RESEARCH_SURFACE_PRD.md` (§21 research artifacts, §3 #9 context artifact) ·
@@ -151,7 +153,9 @@ tells you not just what's there but whether it's readable.
 - **v2 (P1–P3 done, 2026-08-01)** — layout segmentation and the chunk tree are built.
   A PDF with no bookmarks now gets an outline anyway: regions → sections nested by their
   own heading numbers → `GET /api/artifacts/{id}/outline`, and `get_artifact` falls back
-  to it when the file carries none. Remaining: embeddings (P4) and the concept graph (P5).
+  to it when the file carries none. Remaining: typed non-text content (P4, §13f), then
+  embeddings (P5) and the concept graph (P6) — **in that order**, because §13f changes what
+  a chunk's text *is*, and embedding before it means embedding the wrong thing twice.
 - **v2 rest** — semantic search over chunk embeddings; embedding drift for boundaries
   segmentation missed.
 - **later, and only if wanted** — enrichment over ingested text. Separate step, separate
@@ -491,6 +495,145 @@ Two of its steps also get cheaper: step 2 asks a VLM to preserve headings/sectio
 segmentation does deterministically; and for scans there is nothing to rasterize (§13b —
 the page image is embedded) and nothing to re-OCR.
 
+## 13f. A representation for non-text content  **LOCKED** — measured 2026-08-01
+
+Everything above treats a document as text with structure over it. On the MIT thesis
+(`An Empirical Analysis of Quantitative Trading Strategies`, 280pp, a Paper Capture scan)
+that assumption costs most of the document:
+
+| measurement | value |
+|---|---|
+| text sitting in `table` / `figure` / `isolate_formula` regions | **60.5%** of all chars |
+| substantial tables (>800 chars) | **51** |
+| tables recoverable geometrically (`PyMuPDF find_tables`) | **0 / 51** |
+| cells present in the OCR text layer | **63%** |
+| sign fidelity of the text layer | **drops minus signs** (`-0.0711` → `0.0711`) |
+
+A worked case, p211 — a ranked parameter sweep, `(W,V,K,θ)` × year → Sharpe. Flattened to
+reading order it becomes ~150 orphaned floats: **every row label destroyed**, so no number
+can be attributed to a configuration. That is not lossy, it is *confidently wrong-shaped* —
+readable enough to quote, impossible to attribute. §13d's rule (no error budget on anchors)
+is violated by the current path, on 60% of this document.
+
+**The rule: text is one representation among several.** A region whose class is `table`,
+`isolate_formula` or `figure` gets a **typed representation** instead of a text blob, and
+the chunk that contains it carries an *anchor and caption* rather than swallowing its
+characters. That also removes ~98K chars of scraped axis-label noise from the embeddings.
+
+### Tables — two layers
+
+**Layer 1, the faithful grid. Always produced.** Cells as printed, plus a one-paragraph
+description. This is the anchor: what gets quoted, cited and rendered.
+
+**Layer 2, the canonical relation. Produced when it applies.** Not the grid in JSON —
+**tidy triples**, `(entity, dims, metric) → value`:
+
+```
+(strategy=(W8,V8,K20,θ0.5), {period: 1998},      sharpe_ratio) → 1.3136
+(strategy=(W8,V8,K20,θ0.5), {period: 1998–2007}, sharpe_ratio) → 0.4975
+(strategy=(W8,V8,K20,θ0.5), {period: 1998},      hit_rate)     → 0.51
+(strategy=buy_and_hold,     {period: 1998–2007}, sharpe_ratio) → 0.2346
+```
+
+Two properties earn the second layer. **It dissolves a real schema trap:** p211's bbox holds
+*two stacked tables* (`Sharpe Ratios`, then a fresh `Pin` header). As one 42-row grid, row 22
+becomes data and 220 hit rates are silently relabelled as Sharpe ratios. As triples, `metric`
+is a field and the anomaly is not representable. **And it makes tables comparable** — across
+papers, and against the research bench's own sweep output, which has this exact shape.
+
+**Layer 2 is optional and the model may decline it.** A taxonomy, a notation key, nested or
+merged headers — forcing those into triples manufactures structure that isn't there. Layer 1
+always survives. This is §2's rev-2 clause exactly: interpretation allowed when derived,
+disposable and anchored — every triple points at a cell, which points at a bbox, which
+points at a page.
+
+### Canonicalizing values is half the work
+
+`0 0964` → `0.0964` · `(1.23)` → `-1.23` (accounting negatives) · `1,234` → `1234` ·
+`—` / `n/a` / blank → **null, distinctly from zero** · `1998-2007` is an **interval**, not a
+string. **Units are recorded as read and flagged when inferred** — a `return` column of
+`0.15` and one of `15.0` mean the same thing, and guessing silently is how a backtest
+comparison goes wrong by 100×.
+
+### Equations — LaTeX, and the only class we can prove
+
+The text layer gives `TPir = { li i= 1,2,.- Nin}`; the crop reads cleanly as
+`TP_{in} = \{I_i \mid i = 1,2,\cdots N_{in}\}`. Subscripts and pipes are exactly what OCR
+drops, and in a quant paper those symbols *are* the strategy definition.
+
+LaTeX **round-trips**: render the transcription back to an image and compare. Everywhere
+else fidelity is estimated; here it is verified. Worth the certainty.
+
+### Figures — there is no canonical form
+
+A chart's canonical form is its underlying series, and it is not recoverable. Producing one
+is manufacturing data. Figures get **description plus landmarks**, permanently marked
+`estimated`, and are **never promoted to layer 2** — no triples, no joins, never queryable
+as measurements. A chart with values printed on it is just layer-1 reading.
+
+This asymmetry is stated because the instinct later will be *"we canonicalize tables, why
+not charts"*. One is transcription; the other is invention.
+
+### Provenance is part of the value
+
+| tier | means | citable as |
+|---|---|---|
+| `measured` | geometry on a born-digital PDF | exact |
+| `transcribed` | VLM on a crop | exact, with confidence |
+| `estimated` | read off a chart | **approximate — never as a measurement** |
+
+### Verification, without a human on all 51
+
+The text layer cannot gate this (63% coverage, dropped signs), so three cheap independent
+checks produce a **per-cell confidence** rather than a pass/fail:
+
+1. **Double-read diff** — transcribe twice at different DPI. Hallucinated cells are unstable
+   across reads; real ones are not. Strongest single signal, costs one extra call.
+2. **Text-layer corroboration** — useless as truth, fine as a second attestation. Absence
+   means nothing; *disagreement* flags.
+3. **Structural invariants** — uniform row width, non-empty headers, no empty block, and any
+   declared total or aggregate column checks out.
+
+Failures are **marked, never silently dropped or corrected**. A low-confidence cell the agent
+knows is low-confidence is safe; a wrong cell it trusts is not.
+
+### Storage
+
+```
+artifact_region_content  (region_id → artifact_regions, ordinal, kind, title,
+                          description, body, provenance, confidence, checks jsonb)
+                          -- ordinal: ONE region may hold N logical objects (p211 holds 2)
+artifact_table_cells     (content_id, row, col, raw, value numeric, unit, low_confidence)
+artifact_table_facts     (content_id, cell_id → artifact_table_cells,   -- the anchor
+                          entity, dims jsonb, metric, value numeric, unit)
+```
+
+### Consumption — three levels, cost proportional to need
+
+**index** (`list_tables`: caption, shape, page — ~20 tokens each, all 51 fit in ~1K) →
+**description** (what it means) → **cells**. A snippet of a table is meaningless, so the
+retrieval unit is the whole object and the index has to be good enough to choose before
+reading. Chunks carry the anchor, not the characters.
+
+### Acceptance test
+
+The stored form must answer, **without the image**, what the image answers. For p211:
+
+- best full-period Sharpe and its parameterization → `0.4975`, `(8,8,20,0.5)`
+- how it compares to the benchmark → `0.2346` (Buy-and-Hold)
+- the corresponding hit rate → `≈0.51`
+
+The third is the non-obvious reading — the strategies are barely better than a coin flip on
+direction and still roughly double the benchmark Sharpe, so the edge is magnitude asymmetry,
+not directional accuracy. It is invisible in the text layer, and it survives only if the
+two-block structure does. **That one question is the test.**
+
+### One extraction, two consumers
+
+Extending §13e one level up: Research queries layer 2 to sit a paper's sweep beside its own;
+Tutor renders layer 1 plus the description to teach the table. Same VLM call, no second
+pipeline.
+
 ## 14. Open
 
 - **Are inferred boundaries auto-applied or reviewable?** `tools/pdftoc` deliberately makes
@@ -498,8 +641,9 @@ the page image is embedded) and nothing to re-OCR.
   Silent structure you can't correct is the failure mode.
 - **When does the concept pass run** — on ingest, or on demand? It is N LLM calls per
   document, so this is a cost decision, not a technical one.
-- **Multi-column and tables.** Segmentation gives boxes; reading order across columns is a
-  separate problem and tables are not prose.
+- ~~**Multi-column and tables.**~~ Tables are **closed by §13f** — they are not prose and
+  they no longer pretend to be. **Multi-column reading order is still open:** segmentation
+  gives boxes, and ordering them across columns is a separate problem.
 - **Re-ingestion.** A better layout model invalidates chunk boundaries, which invalidates
   embeddings and anchors. `extractor` on `artifact_documents` is the version marker; the
   cascade needs one too.

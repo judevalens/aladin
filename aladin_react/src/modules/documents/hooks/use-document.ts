@@ -2,12 +2,19 @@ import { useCallback, useEffect, useState } from "react";
 import { debounceTime, filter } from "rxjs";
 
 import { useAppComposition } from "@/app/composition/app-composition";
-import type { IngestedDocument } from "@/repos/documents/document-repo";
+import type { DocumentChunk, IngestedDocument } from "@/repos/documents/document-repo";
 
 export interface UseDocument {
   document: IngestedDocument | null;
   loading: boolean;
   error: string | null;
+}
+
+/** One row of the flattened outline, ready to render. */
+export interface OutlineEntry {
+  title: string;
+  depth: number;
+  page: number;
 }
 
 /**
@@ -67,4 +74,57 @@ export function useDocument(artifactId: string, withText: boolean): UseDocument 
   }, [repos, artifactId, withText, nonce]);
 
   return { document, loading, error };
+}
+
+/**
+ * The outline segmentation RECOVERED (INGESTION_PRD §11), for files that carry none of
+ * their own — which is most of them: the MIT thesis has zero embedded bookmarks across
+ * 280 pages, so without this a research PDF opens with no way to navigate it.
+ *
+ * `enabled` is how the caller says "the file's own bookmarks already answered this".
+ * Authored structure beats inferred structure (§5), so we only pay for the fallback.
+ */
+export function useDocumentOutline(artifactId: string, enabled: boolean): OutlineEntry[] {
+  const { repos } = useAppComposition();
+  const [entries, setEntries] = useState<OutlineEntry[]>([]);
+
+  useEffect(() => {
+    if (!artifactId || !enabled) {
+      setEntries([]);
+      return;
+    }
+    let cancelled = false;
+    repos.documents
+      .outline(artifactId)
+      .then((chunks) => {
+        if (!cancelled) setEntries(flattenOutline(chunks));
+      })
+      .catch(() => {
+        // A missing outline is a missing sidebar, not an error state — the PDF still reads.
+        if (!cancelled) setEntries([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [repos, artifactId, enabled]);
+
+  return entries;
+}
+
+/**
+ * Sections only. A `block` is a leaf of body text with no title (§11) — real in the tree,
+ * meaningless as a navigation row.
+ */
+function flattenOutline(chunks: DocumentChunk[]): OutlineEntry[] {
+  const out: OutlineEntry[] = [];
+  const walk = (nodes: DocumentChunk[]) => {
+    for (const node of nodes) {
+      if (node.kind === "section" && node.title) {
+        out.push({ title: node.title, depth: node.depth, page: node.pageFrom });
+      }
+      if (node.children?.length) walk(node.children);
+    }
+  };
+  walk(chunks);
+  return out;
 }
