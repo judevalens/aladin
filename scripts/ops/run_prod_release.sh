@@ -37,7 +37,7 @@ die() { printf 'run: %s\n' "$*" >&2; exit 1; }
 port_for() {
   case "$1" in
     api) echo 8080 ;; mcp) echo 8091 ;;
-    blocknote) echo 3510 ;; copilot-agent) echo 3550 ;;
+    blocknote) echo 3510 ;; copilot-agent) echo 3560 ;;  # 3560: dev owns 3550
     *) echo "" ;;
   esac
 }
@@ -84,7 +84,10 @@ do_stop() {
     say "nothing running from any release"
     return 0
   fi
-  local pids=""
+  # `local` matters: bash is dynamically scoped, so without it this read would
+  # clobber the caller's `rel` (do_start holds the release path in it) and the
+  # subsequent runner lookup resolves to "/run/api.sh".
+  local pids="" pid rel label
   while IFS=$'\t' read -r pid rel label; do
     [[ -n "$pid" ]] || continue
     echo "   stopping $label (pid $pid) from $(basename "$rel")"
@@ -193,10 +196,10 @@ do_status() {
     return 0
   fi
   printf '%-16s %8s  %s\n' "PROCESS" "PID" "RELEASE"
-  local stale=0
+  local stale=0 pid rel label mark        # local: see the note in do_stop
   while IFS=$'\t' read -r pid rel label; do
     [[ -n "$pid" ]] || continue
-    local mark=""
+    mark=""
     if [[ "$rel" != "$cur" ]]; then mark="  <- STALE (not current)"; stale=1; fi
     printf '%-16s %8s  %s%s\n' "$label" "$pid" "$(basename "$rel")" "$mark"
   done <<< "$procs"

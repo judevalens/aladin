@@ -46,7 +46,10 @@ services:
   redis:
     image: redis:7-alpine
     container_name: aladin-prod-redis
-    profiles: ["worker"]
+    # No profile — part of the always-on DATA tier, like postgres. It used to be
+    # gated behind `worker`, which broke once the worker went native: nothing
+    # containerised pulls it in any more, and activating the `worker` profile just
+    # to get redis fails, because that service depends on the `api` service.
     command: redis-server --appendonly yes
     ports:
       # Published for the NATIVE prod worker (see PROD.md "Native release").
@@ -68,7 +71,7 @@ services:
   neo4j:
     image: neo4j:5
     container_name: aladin-prod-neo4j
-    profiles: ["worker"]
+    # No profile — always-on DATA tier (see the redis note).
     environment:
       NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:?set NEO4J_PASSWORD in backend_v2/.env.prod}
     ports:
@@ -167,7 +170,9 @@ services:
       # fallback, never breaks a thread.
       CLAUDE_CONFIG_DIR: /sessions
     ports:
-      - "3550:3550"          # host 3550 (same as dev — only one runs at a time)
+      # 3560, not 3550: dev's copilot-agent owns 3550, and prod is meant to run
+      # continuously alongside the dev loop now that the app tier is native.
+      - "3560:3550"
     volumes:
       - prod_copilot_sessions:/sessions
     depends_on:
