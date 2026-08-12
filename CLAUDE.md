@@ -34,8 +34,8 @@ backend_v2/
   internal/               api → service → repo layering; db/migrations/*.sql (goose)
 services/blocknote/       collab sidecar (converter :3500, collab :3501)
 services/copilot-agent/   copilot agent sidecar (Claude Agent SDK, :3550)
-design/                   handoff source of truth: PRD.md + DESIGN_SPEC.md +
-                          BROWSER_SPEC.md + screens/  (the locked design)
+design/                   UI_ARCHITECTURE.md (frontend onboarding map: shell, tokens,
+                          conventions, traps) + TRADING_PRD.md (north star) + screens/
 ```
 
 > Note: a duplicate `cn()` exists at `src/shared/lib/utils.ts`. Components/ui use
@@ -99,9 +99,13 @@ components** — use the Aladin tokens:
 shadcn's own tokens (`bg-background`, `text-foreground`, `border-border`, …) are mapped
 onto these, so restyled primitives inherit the theme.
 
-**The locked design lives in `design/`:** `PRD.md` (product), `DESIGN_SPEC.md`
-(tokens + shadcn component map), `BROWSER_SPEC.md` (Folders/browser), `screens/`
-(reference renders). Consult these before design work.
+**Before any UI work read `design/UI_ARCHITECTURE.md`** — the current frontend map: the
+shell layout, the `artifact.kind` switch that renders surfaces, the auth-free `/spike/*`
+routes for iterating without a login, the token rules, the drill rule, and the traps that
+have actually bitten. `design/screens/` holds reference renders; `design/TRADING_PRD.md` is
+the product north star. (`DESIGN_SPEC.md`/`BROWSER_SPEC.md` were removed — a Tailwind v3
+config and a shadcn map that no longer match the app; what was still true moved into
+UI_ARCHITECTURE.md.)
 
 ## Component conventions
 

@@ -11,8 +11,8 @@ export const meta = {
 // args (all optional):
 //   args.targets : string[]  explicit file globs/paths to audit
 //                            (default: components/ui + modules/*/ui)
-//   args.specPath: string    design spec doc (default design/DESIGN_SPEC.md)
-const SPEC = (args && args.specPath) || 'design/DESIGN_SPEC.md'
+//   args.specPath: string    design doc (default design/UI_ARCHITECTURE.md)
+const SPEC = (args && args.specPath) || 'design/UI_ARCHITECTURE.md'
 const TARGETS = (args && args.targets && args.targets.length)
   ? args.targets
   : [
@@ -72,7 +72,7 @@ FILE TO AUDIT: ${file}
 
 Read it, then read these references:
   - ${SPEC}                       (design system: tokens + shadcn component map)
-  - design/BROWSER_SPEC.md        (Folders/browser spec — for tree/explorer files)
+  - design/UI_ARCHITECTURE.md §3  (shell, drill rule — for tree/explorer files)
   - aladin_react/src/index.css    (the actual Aladin Dark/Soft tokens that exist)
 
 Report violations of the design system. Specifically look for:
@@ -103,7 +103,7 @@ if (!withIssues.length) {
 await agent(
   `Append the audit findings below to design/AUDIT_FINDINGS.md (create it if missing — it
 is a generated scratch doc, NOT one of the locked handoff specs; never edit PRD.md /
-DESIGN_SPEC.md / BROWSER_SPEC.md).
+UI_ARCHITECTURE.md).
 
 Add a new section grouped by file, each finding as:
   - [SEVERITY][category] file: detail — fix: suggestion

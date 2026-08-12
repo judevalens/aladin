@@ -14,9 +14,11 @@
 > not exist (`/home` renders the Folders workspace). And this is no longer
 > "documentation only — meant to be implemented": it is implemented and running in prod.
 >
-> Still accurate and still worth reading: `DESIGN_SPEC.md` (tokens, component map) and
-> `BROWSER_SPEC.md` (the Folders browser). Kept for the visual fidelity bar and as an archive
-> of the original intent.
+> `DESIGN_SPEC.md` and `BROWSER_SPEC.md`, which this package used to point at, have since
+> been **deleted** — a Tailwind v3 config and a shadcn component map that no longer match the
+> app. What was still true (tokens, the drill rule, the don'ts) moved into
+> `UI_ARCHITECTURE.md`; the rest is in git history. Kept here only as an archive of original
+> intent.
 
 
 Aladin is a personal knowledge graph that doubles as a research/trading assistant. It ships as a dark-minimal **IDE shell** with a Home briefing dashboard, a knowledge-graph explorer, and an **Ask-my-graph** command palette.
@@ -25,8 +27,6 @@ This package is documentation only — meant to be implemented in your existing 
 
 ## What's here
 - **`PRD.md`** — the product plan: vision, target user, the trading-first wedge, the data model (entities / theses / claims), the two core loops (Capture + Consume), Ask-my-graph, the full feature set, risks, and the roadmap (what's built vs. parked). **Start here for the *what* and *why*.**
-- **`DESIGN_SPEC.md`** — how to build the IDE design in **Tailwind + React + shadcn/lucide**: theme tokens (Dark + Soft) as CSS variables + Tailwind config, the shadcn component map, screen-by-screen layout/spacing/typography, the ⌘K + Ask-mode spec, icon mapping, and build order. **Use this for the *how*.**
-- **`BROWSER_SPEC.md`** — a deep, exact spec for the **Folders view (the file browser)**: the nested tree, the **drill rule** (3 levels then a fixed 864×460 Miller-column popup), the cascading column behavior, leaf preview, right-click context menu, tabbed editor, and full state wiring. Use this when the browser needs to be pixel/behaviour-precise.
 - **`/screens`** — reference renders of the static views (Home dark + soft, Folders, Signals, Sources, Graph). Overlays (command palette, drill-in panel, graph modal) are described in the spec.
 
 ## Fidelity
@@ -34,5 +34,5 @@ High-fidelity — final colors, type, spacing, and interactions are specified. R
 
 ## Suggested reading order
 1. `PRD.md` §1–5 (vision, user, primitive, loops, shell).
-2. `DESIGN_SPEC.md` §1–3 (tokens, component map, shell), then §4–6 for the key surfaces.
+2. `UI_ARCHITECTURE.md` (current) — tokens, shell, conventions.
 3. `PRD.md` §9–10 (roadmap + engineering notes) before architecting the data layer — **persistence of the graph is the #1 priority; it's the moat.**

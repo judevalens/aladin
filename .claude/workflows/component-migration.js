@@ -48,7 +48,7 @@ TRANSFORMATION: ${INSTRUCTION}
 
 Rules:
   - Edit ONLY ${file}. Do not touch other files.
-  - Honor the Aladin conventions in CLAUDE.md and design/DESIGN_SPEC.md (semantic tokens
+  - Honor the Aladin conventions in CLAUDE.md and design/UI_ARCHITECTURE.md (semantic tokens
     via @/lib/utils cn(); no hardcoded colors; small radii; no Material-isms).
   - Keep the change minimal and behavior-preserving unless the instruction says otherwise.
   - If the transformation does not apply to this file, make no edit and say so.

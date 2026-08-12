@@ -9,7 +9,7 @@
 >
 > Companions: `TRADING_PRD.md` (roadmap, D5 execution safety, D6 universe) ·
 > `RESEARCH_SURFACE_PRD.md` (the research folder; §5's "view above research folders") ·
-> `DESIGN_SPEC.md` (authoritative for styling).
+> `UI_ARCHITECTURE.md` (authoritative for styling).
 
 ---
 

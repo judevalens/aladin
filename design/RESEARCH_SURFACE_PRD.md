@@ -5,7 +5,7 @@
 >
 > Sections marked **LOCKED** are settled. Sections marked **OPEN** are not — don't design past them without asking.
 >
-> Companions: `TRADING_PRD.md` (engineering-facing north star; §5 and §7 still govern, §0/§3's "not a backtest engine" line does not) · `DESIGN_SPEC.md` (tokens + components, **authoritative for styling**) · `ENTITY_CONTEXT_PRD.md` (house style for hierarchy and provenance).
+> Companions: `TRADING_PRD.md` (engineering-facing north star; §5 and §7 still govern, §0/§3's "not a backtest engine" line does not) · `UI_ARCHITECTURE.md` (tokens + conventions, **authoritative for styling**) · `ENTITY_CONTEXT_PRD.md` (house style for hierarchy and provenance).
 
 ---
 
@@ -260,7 +260,7 @@ The captured material — pages, links, files, shards, imported papers, pasted t
 
 # PART V — Design system
 
-`DESIGN_SPEC.md` governs. Never hardcode a hex.
+`UI_ARCHITECTURE.md` §5 governs. Never hardcode a hex.
 
 **Surfaces** `bg-rail` · `bg-panel` · `bg-bg` · `bg-chrome` · `bg-field` · `bg-card` · `bg-raise` · `bg-explorer`
 **Ink** `text-ink` → `text-ink-2` → `text-ink-3` → `text-ink-4`

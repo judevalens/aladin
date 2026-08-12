@@ -4,9 +4,9 @@
 > the code, not what an older design package proposed. Written for an agent arriving cold —
 > especially one doing design/UI work.
 >
-> Companions: `DESIGN_SPEC.md` (tokens, component map, visual spec) · `BROWSER_SPEC.md`
-> (the Folders browser, pixel-precise) · `screens/` (reference renders) · `../CLAUDE.md`
-> (commands, conventions, backend). **Do not start from `README.md`** — see §9.
+> Companions: `screens/` (reference renders) · `../CLAUDE.md` (commands, conventions,
+> backend) · `TRADING_PRD.md` (product intent). **Do not start from `README.md`** — see §9.
+> `DESIGN_SPEC.md` and `BROWSER_SPEC.md` were removed; what was still true lives here.
 
 ---
 
@@ -69,15 +69,34 @@ One shell wraps every authenticated surface —
 
 - **Rail** — 7 destinations, defined as a literal array at the top of the shell file:
   Home · Markets · Folders · Insights · Entities · Sources · Graph.
-- **Browser pane** — `browser-pane-ui.tsx`. The folder/artifact tree. `BROWSER_SPEC.md` is
-  the precise spec, including the drill rule (3 levels, then an 864×460 Miller-column popup —
-  `miller-columns.tsx`).
+- **Browser pane** — `browser-pane-ui.tsx`. The folder/artifact tree, governed by **the
+  drill rule** below.
+- **Miller popup** — `miller-columns.tsx`, `460` tall by up to `864` wide (`COLUMN_WIDTH * 4`
+  — exactly four columns). Anchored to the clicked row's rect and clamped to the viewport.
 - **Work pane** — `work-pane-ui.tsx`. Tab strip + breadcrumb, and **a switch on
   `activeArtifact.kind`** that picks the viewer. This is the extension point: a new artifact
   kind is a new branch here, not a new route.
 - **Copilot dock** — `modules/copilot/ui/copilot-dock-ui.tsx`. The agent lives here, always.
   **Do not build a second chat surface**; that mistake is documented in the Tutor spikes.
 - **Terminal dock** — collapsible, bottom of the work pane.
+
+### The drill rule (agents get this wrong)
+
+`MAX_INLINE = 2` in `browser-pane-ui.tsx`. A folder expands **inline** only while
+`depth < 2`, so the tree shows three visible levels (0, 1, 2). A folder at `depth >= 2` does
+**not** expand — clicking it **drills**, opening the Miller popup seeded with that folder's
+ancestor path. This is what stops indentation marching off the left edge.
+
+```
+onClick(node):
+  folder && depth >= MAX_INLINE  → openMiller(node.id, rowRect)   // drill
+  folder                         → toggle(node.id) in openSet     // expand inline
+  leaf                           → open it as a tab
+```
+
+Leaves always open in the work pane; only inline folders toggle. If you change the tree,
+preserve this — flattening it to "expand everything inline" is the obvious-looking change and
+it breaks at depth 4.
 
 ### The kind switch (how a thing gets rendered)
 
@@ -126,11 +145,16 @@ stock shadcn — never ship the default shadcn look.
    - radii `rounded-chip/card/modal`; shadows `shadow-panel/modal/toast`
 2. **Two themes**, Dark (default) and Soft, driven by `data-theme` on `<html>`
    (`app/state/theme-slice.ts`). Tokens handle it — if you use tokens you get both for free.
+   **One component tree**, never two builds and never a per-theme branch.
 3. **Compose classes with `cn()` from `@/lib/utils`.** Note there is a duplicate `cn()` at
    `shared/lib/utils.ts`; prefer `@/lib/utils` and don't add a third.
 4. **Amber is the only accent — spend it.** It marks the one thing that needs attention on a
    surface. Two amber elements competing means neither reads.
-5. **Don't invent metrics.** No progress rings, mastery scores, or zeroed stat tiles for data
+5. **Avoid the clichés this app deliberately rejects**: no gradients, no emoji, no
+   rounded-corner-plus-left-accent card. Calm and minimal.
+6. **`whitespace-nowrap shrink-0` on header meta rows.** Leaving whitespace at its default
+   wrapped them; this bit once already.
+7. **Don't invent metrics.** No progress rings, mastery scores, or zeroed stat tiles for data
    that doesn't exist. An empty state names what belongs there in one sentence. Silence is the
    correct rendering of "fine". (`RESEARCH_SURFACE_PRD.md` §2 is explicit.)
 
@@ -181,8 +205,8 @@ treat it as authoritative.
 | doc | status |
 |---|---|
 | **this file** | current, verified against code |
-| `DESIGN_SPEC.md` | current for tokens/components/visual spec |
-| `BROWSER_SPEC.md` | current for the Folders browser |
+| ~~`DESIGN_SPEC.md`~~ | **deleted.** Tailwind **v3** config format (the app is v4 inline `@theme` in `src/index.css`), a shadcn component map (the app uses `@base-ui/react`), and specs for a Home dashboard, graph modal and "Ask-my-graph" that do not exist. Its live content — token names and the don'ts — is in §5 here; the tokens' source of truth is `src/index.css`. In git history if needed. |
+| ~~`BROWSER_SPEC.md`~~ | **deleted.** It was *accurate* — its measurements are in the code — so the parts that carry intent were moved here first: the drill rule (§3) and the Miller dimensions. In git history for the finer pixel detail. |
 | `TRADING_PRD.md` | **the north star** — read for product intent |
 | `RESEARCH_SURFACE_PRD.md` | LOCKED; the research folder pattern, and the best statement of the surface register |
 | `INGESTION_PRD.md`, `SHARD_MODEL.md` | current for those subsystems |

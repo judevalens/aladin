@@ -3,7 +3,7 @@
 > **Status:** living plan, not a locked spec (2026-07-15). Supersedes `PRD.md` as the
 > product north star. `PRD.md` and `DATA_MODEL.md` remain accurate about the *substrate*
 > (entity/claim layer, ingestion) and stale about the *product* — read them as history.
-> Companion docs: `DESIGN_SPEC.md` (tokens/components, unchanged), `BROWSER_SPEC.md`,
+> Companion docs: `UI_ARCHITECTURE.md` (frontend map, tokens/conventions),
 > `backend_v2/PIPELINE.md` (ingestion, authoritative).
 
 ---

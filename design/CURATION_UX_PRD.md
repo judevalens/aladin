@@ -1,7 +1,7 @@
 # Curation UX — PRD (DRAFT for design exploration)
 
 > Status: **DRAFT** — for design-agent exploration. NOT part of the locked design set
-> (`PRD.md` / `DESIGN_SPEC.md` / `BROWSER_SPEC.md`). Goal of this doc: model *how curation
+> (`PRD.md` / `UI_ARCHITECTURE.md`). Goal of this doc: model *how curation
 > works*, not final visuals.
 
 ## TL;DR
@@ -144,7 +144,7 @@ an entity with zero human-verified fields (all-AI) vs a heavily-curated one.
 
 - **Design system:** Aladin **dark-minimal IDE** aesthetic; tokens in
   `aladin_react/src/index.css` (surfaces `bg-rail/panel/card/…`, ink ramp, `bg-amber`,
-  `border-line`, semantic `text-for` / `text-against`). Follow `design/DESIGN_SPEC.md`.
+  `border-line`, semantic `text-for` / `text-against`). Follow `design/UI_ARCHITECTURE.md` §5.
 - **Match the existing surfaces:** the built **Insights** surface
   (`aladin_react/src/modules/insights`) — curation should feel like the same product,
   same card grammar. (The Signals surface was removed with the claim layer.)

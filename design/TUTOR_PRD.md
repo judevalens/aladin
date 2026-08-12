@@ -15,7 +15,7 @@
 > gate is **demoted** — the user sees real typeset math in the PDF, so LaTeX is needed only
 > for formulas an aid manipulates (§13).
 > Reads on top of `TRADING_PRD.md` (north star), `SHARD_MODEL.md` (the output medium),
-> `DESIGN_SPEC.md` (tokens/components).
+> `UI_ARCHITECTURE.md` (tokens/conventions).
 
 # PRD — Tutor (a learning copilot over your sources)
 

@@ -1,7 +1,7 @@
 > **Status:** draft PRD (2026-07-24). Not locked. Product intent for the next Aladin
 > surface — provisional name **"Learn."** Companion implementation plan:
 > `~/.claude/plans/learn-surface.md`. Reads on top of `TRADING_PRD.md` (north star),
-> `SHARD_MODEL.md` (the output medium), `DESIGN_SPEC.md` (tokens/components).
+> `SHARD_MODEL.md` (the output medium), `UI_ARCHITECTURE.md` (tokens/conventions).
 
 # PRD — Learn (source → interactive teaching Shard)
 
