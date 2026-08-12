@@ -361,6 +361,32 @@ scripts exist as the seam a launchd agent will exec. Until those land, treat the
 native tier as manually started, and remember the backup agent needs the Postgres
 container up at 03:00.
 
+## Starting over — `make prod-nuke`
+
+```bash
+DRY_RUN=1 make prod-nuke     # show the plan, delete nothing
+make prod-nuke               # prints the plan, then asks you to type `nuke`
+CONFIRM=nuke make prod-nuke  # non-interactive
+```
+
+Removes the whole **local** install, which no other command covered: the docker containers
+and `prod_*` volumes, `~/Library/Application Support/aladin` (releases, the shared torch
+venv, logs, copilot sessions, **and `data/` — the file root holding your uploads**), the
+nightly backup LaunchAgent, `/Applications/Aladin.app`, and the client's local SQLite.
+`prod-down -v` only ever covered the volumes; `prod-release-clean` never touches `current`.
+
+**Two things it keeps by default, deliberately:**
+
+| kept | why | to delete anyway |
+|---|---|---|
+| `~/aladin-backups` | wiping a database and its dumps in one command turns "start over" into data loss | `INCLUDE_BACKUPS=1` |
+| `backend_v2/.env.prod` | regenerating means new infra passwords and re-pasting API keys, for no benefit | `INCLUDE_SECRETS=1` |
+
+It refuses to run unattended without `CONFIRM=nuke`, refuses while the desktop app is
+running (`FORCE=1` overrides), and every deletion goes through a guard that rejects an empty
+path, `$HOME`, `/`, or anything outside the install — so a wrong `ALADIN_PREFIX` cannot take
+a home directory with it. Rebuild instructions print at the end.
+
 ## Optional integrations
 
 Off by default; enable by setting keys in `backend_v2/.env.prod`:
