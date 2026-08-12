@@ -123,9 +123,36 @@ wait_for_health() { # url, seconds
   return 1
 }
 
+# `prod-run` does NOT build — unlike `prod-up`, which chains prod-build. That is deliberate:
+# `current` plus the atomic flip IS the deploy, so a rollback is flip + run with no build, and
+# starting after a reboot should not silently rebuild and change what runs. The cost of that
+# separation is a footgun — after committing a fix, `make prod-run` restarts the OLD release and
+# looks like a deploy — so say so rather than letting it pass silently. A warning, not a block:
+# running an older release on purpose is legitimate.
+warn_if_behind() {
+  local rel=$1
+  command -v git >/dev/null 2>&1 || return 0
+  local commit head
+  commit=$(sed -n 's/^commit *//p' "$rel/VERSION" 2>/dev/null | head -1)
+  [[ -n "$commit" ]] || return 0
+  head=$(git rev-parse HEAD 2>/dev/null) || return 0
+  [[ "$commit" == "$head" ]] && return 0
+  if git merge-base --is-ancestor "$commit" HEAD 2>/dev/null; then
+    local n; n=$(git rev-list --count "$commit..HEAD" 2>/dev/null)
+    printf '\033[33m!\033[0m this release is %s commit(s) behind HEAD — `make prod-release` to pick them up\n' "$n"
+  else
+    printf '\033[33m!\033[0m this release was built from %s, which is not an ancestor of HEAD\n' "${commit:0:8}"
+  fi
+  # Uncommitted work can never be in a release: it is built from a `git archive` of a ref.
+  if ! git diff --quiet HEAD 2>/dev/null; then
+    printf '\033[33m!\033[0m you have uncommitted changes — releases build from a committed ref, so they are not included\n'
+  fi
+}
+
 do_start() {
   local rel; rel=$(resolve_current)
   say "current release: $(basename "$rel")"
+  warn_if_behind "$rel"
 
   # Port check BEFORE stopping anything. If a foreign process (the prod
   # container tier) holds a port, refusing after the stop would leave nothing

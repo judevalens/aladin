@@ -284,6 +284,24 @@ enough once the app tier is off-cluster.
 Ports match what the containers published (api `8080`, mcp `8091`, collab
 `3510/3511`, copilot `3550`), so `make prod-app` needs no change.
 
+### `prod-release` builds · `prod-run` activates — on purpose
+
+Note the asymmetry with the compose targets: `prod-up` chains `prod-build`, but **`prod-run`
+does not chain `prod-release`.** That is deliberate. `current` plus the atomic symlink flip
+**is** the deploy, so a rollback is a flip and a run with no build at all, and starting after a
+reboot must not silently rebuild and change what is running when you only asked to start it.
+
+The cost of that separation is a footgun — after committing a fix, `make prod-run` restarts the
+**old** release and looks like a deploy — so `prod-run` warns when `current` is behind HEAD, and
+when you have uncommitted work (a release is built from a `git archive` of a committed ref, so
+uncommitted changes can never be in one). It warns rather than blocks: running an older release
+deliberately is legitimate.
+
+```bash
+make prod-release && make prod-run    # deploy new code
+make prod-run                         # just start/restart what's current
+```
+
 ### Is it fine? — `make prod-doctor`
 
 ```bash
