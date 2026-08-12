@@ -948,3 +948,47 @@ A generated study shard needs only own-state: a pomodoro that cannot record that
 
 Recorded because it is the difference between agent-generated shards being demos and being
 usable, and because it is genuinely unblocked today.
+
+---
+
+## Addendum (2026-08-11) — determinism: adjusting a shard without regenerating it
+
+The problem, stated by the user: *shards are free code, and adjusting one risks the agent
+rewriting everything.* Free-form generation makes every edit a re-roll.
+
+The good news is that the mechanism already exists and the gap is narrower than it looks.
+
+**1. `edit_file` is the deterministic path, and it already ships.** It is exact string
+replacement — `old_string` must match once, errors if absent or ambiguous — so only the
+matched region can change. Drift on adjustment is therefore a **policy** failure, not a
+missing capability: it happens when the agent reaches for `write_file` (a full overwrite) to
+make a small change. The cheapest hardening is to make that hard to do by accident — refuse
+`write_file` against a file that already exists unless an explicit overwrite flag is passed,
+so a rewrite is a decision rather than a default.
+
+**2. The kit is the real lever, and today it is layout-only.** Determinism is inversely
+proportional to how much free code the agent writes. The kit ships 24 components and every
+one is structural — `Page`, `Section`, `Panel`, `Card`, `Stat`, `Tabs`, `Dialog`, the
+stance colours. Nothing domain-level. So a quiz, a timer, a flashcard deck are all authored
+freehand *every time*, which is exactly where re-rolls diverge. A `<Quiz questions={…}>`
+cannot drift; a hand-rolled quiz always can. **Adding domain primitives converts "generate
+code" into "supply data to fixed components"** — the same argument TUTOR_PRD D-D makes for
+consistency, which turns out to matter more for determinism.
+
+**3. The manifest already carries the durable contract** — that is this document's thesis,
+and the regen experiment supports it: blind regeneration from `anchors.json` reproduced the
+skeleton, with `binding` + `kind` + `intent` carrying the weight while `source`/`refs` were
+weak. One caveat from the same experiment is directly relevant here: **numeric datasets
+drift, because they are not captured**. Inlined mock data is re-invented on every regen —
+another argument for data arriving through own-state or the bridge rather than being baked
+into the code.
+
+**4. The missing piece is verification, not generation.** `shard_build_state` records build
+status only (`page_id`, `channel`, `status`, `errors`, `build_id`) — there is **no file
+history and no diff**. So even when an adjustment *is* surgical, there is no way to see what
+moved or to revert if it wasn't. Determinism you cannot check is a claim, not a property.
+File-level history is the smallest thing that turns it into one.
+
+**Summary of the order to attack it**, cheapest first and none of it decided: make
+`write_file` refuse to silently overwrite → add file history so an adjustment is inspectable
+and revertible → grow the kit so there is less free code to diverge in the first place.
