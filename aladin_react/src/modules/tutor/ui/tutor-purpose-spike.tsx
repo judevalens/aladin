@@ -15,29 +15,42 @@ import { cn } from "@/lib/utils";
  * Dev-only spike (/spike/tutor-purpose) — how you tell a strategy-development folder from a
  * learning folder, without a second kind.
  *
- * The user's ask: keep the research folder, but be able to tell which sort it is. The answer
- * is already written in the migration that created it — 00037_research_folders.sql:6 says the
- * pattern is "One tree, one set of components, A DISCRIMINATOR." So this is a COLUMN on the
- * existing 1:1 extension, not a fourth tree kind:
+ * The user's ask: keep the research folder, but be able to tell which sort it is.
  *
- *     ALTER TABLE research_strategies
- *       ADD COLUMN purpose text NOT NULL DEFAULT 'strategy'
- *       CHECK (purpose IN ('strategy', 'learning'));
+ * ┌─ SCHEMA: NOT DECIDED. Do not implement from this file. ────────────────────────────┐
+ * │ This spike originally argued for a `purpose` column on research_strategies:        │
+ * │                                                                                    │
+ * │     ALTER TABLE research_strategies                                                │
+ * │       ADD COLUMN purpose text NOT NULL DEFAULT 'strategy' ...                      │
+ * │                                                                                    │
+ * │ REJECTED by the user: "mixing table responsibilities like that will bite later."    │
+ * │ Correct, and the tell was already visible — a learning row would carry five         │
+ * │ strategy columns it can never use (exec_mode, run_state, manifest, code_hash,       │
+ * │ universe), and a table named research_strategies would hold rows that are not       │
+ * │ strategies. Every later reader has to know which columns are live for which         │
+ * │ purpose, and nothing in the schema tells them.                                      │
+ * │                                                                                    │
+ * │ Options still open, none chosen:                                                    │
+ * │   B. a neutral base row (discriminator + the shared prose region) with              │
+ * │      research_strategies and learning_folders each 1:1 off IT. Clean split of       │
+ * │      responsibilities; costs moving existing columns.                                │
+ * │   C. kind='learning' with its own extension. Cleanest separation, pays the          │
+ * │      ~31-file cost of a fourth kind.                                                │
+ * │   D. extension-row PRESENCE as the discriminator, both under kind='research'.       │
+ * │      No new column, but then "research" names two things and reads need two joins.  │
+ * └────────────────────────────────────────────────────────────────────────────────────┘
  *
- * Why that and not kind='learning': the adversarial review priced a second kind at ~31 files
- * across 5 layers (Go + SQL + Rust + TS), and the justification for a kind is folder-level
- * STATE (00037:10 — "Folders don't have state"). A learning folder has no state of its own,
- * so it fails that test — but it IS the same shape as research: a container with a prose
- * region, gathered material, and typed slots. Same kind, different purpose.
+ * What this spike still establishes, and what survives any of B/C/D: the READ MODEL. One
+ * discriminator drives the glyph and label in the tree, which Overview sections render,
+ * which views the tab group offers, and which system prompt the copilot uses — and it does
+ * NOT fork the route, the tree, or the Overview component. That is a UI finding, independent
+ * of where the field physically lives.
  *
- * What `purpose` drives, and nothing more:
- *   · the glyph and label in the tree, so you can tell at a glance
- *   · which Overview sections render (hypothesis+code vs goal+topics)
- *   · which views the tab group offers (runs/code vs canvas/study)
- *   · which system prompt the copilot uses for turns in this folder
- *
- * What it must NOT drive: a separate route, a separate tree, a separate Overview component.
- * The moment those fork, this is a kind in all but name and the cost comes back.
+ * The shape argument that motivated all of this is unaffected: a learning folder has no
+ * folder-level state of its own (ingest status belongs to a source, build state to a shard),
+ * so it fails 00037:10's test for a kind — "folders don't have state" — while matching
+ * research's SHAPE exactly: a container with a prose region, gathered material, typed slots.
+ * Whether that similarity is best expressed as one table, two, or two kinds is the open part.
  */
 
 type Purpose = "strategy" | "learning";
