@@ -63,6 +63,40 @@ if [[ "$prod_counts" != "$drill_counts" ]]; then
   exit 1
 fi
 
+# Cross-check the two halves. A dump and a tarball can each be individually valid and still
+# not reconstruct a working system: what matters is whether every file the RESTORED database
+# references actually exists in the archive paired with it. artifacts.metadata->>'storageKey'
+# is a logical "<kind>/<name>" (never a path), and FilesystemArtifactStore maps kind 'file' to
+# uploads/ and 'audio' to audio/ — so that mapping is what a real restore depends on.
+stamp=$(basename "$DUMP" .dump)
+archive="$BACKUP_DIR/$stamp-files.tar.gz"
+keys=$(psql_q "$DRILL_DB" "select metadata->>'storageKey' from artifacts where metadata->>'storageKey' is not null;")
+if [[ -z "$keys" ]]; then
+  echo "drill: no artifact files referenced — nothing to cross-check"
+elif [[ ! -f "$archive" ]]; then
+  echo "drill: FAILED — the restored database references $(wc -l <<<"$keys" | tr -d ' ') file(s)" >&2
+  echo "drill:          but there is no paired archive $(basename "$archive")." >&2
+  echo "drill:          Restoring this dump would give you documents whose bytes are gone." >&2
+  exit 1
+else
+  listing=$(tar -tzf "$archive")
+  missing=0
+  while IFS= read -r key; do
+    [[ -n "$key" ]] || continue
+    case "$key" in
+      file/*)  want="./uploads/${key#file/}" ;;
+      audio/*) want="./audio/${key#audio/}" ;;
+      *)       want="./${key}" ;;
+    esac
+    grep -qxF "$want" <<<"$listing" || { echo "drill: MISSING from archive: $key (expected $want)" >&2; missing=$((missing+1)); }
+  done <<<"$keys"
+  if [[ $missing -gt 0 ]]; then
+    echo "drill: FAILED — $missing referenced file(s) absent from the paired archive" >&2
+    exit 1
+  fi
+  echo "drill: $(wc -l <<<"$keys" | tr -d ' ') referenced file(s) all present in the paired archive"
+fi
+
 tables=$(psql_q "$DRILL_DB" "select count(*) from information_schema.tables where table_schema='public';")
 exts=$(psql_q "$DRILL_DB" "select string_agg(extname,',' order by extname) from pg_extension;")
 
