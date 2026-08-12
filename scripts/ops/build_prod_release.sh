@@ -188,8 +188,8 @@ chmod 600 "$ENVF"
 
 # --- 6. run scripts (the seam launchd agents will use later) -----------------
 say "writing run scripts"
-emit_run() { # name, per-process-env (may be empty), command...
-  local name=$1 penv=$2; shift 2
+emit_run() { # name, per-process-env (may be empty), workdir (may be empty), command...
+  local name=$1 penv=$2 wd=$3; shift 3
   # The per-process vars are `export`ed on their own line, NOT written as an
   # `exec VAR=x cmd` prefix: exec is a builtin and takes no assignment prefix,
   # so that form dies with "exec: PORT=3510: not found".
@@ -201,18 +201,35 @@ HERE=\$(cd "\$(dirname "\${BASH_SOURCE[0]}")/.." && pwd)
 set -a; . "\$HERE/env"; set +a
 LOGDIR=\${ALADIN_LOG_DIR:-$PREFIX/logs}
 mkdir -p "\$LOGDIR"
-${penv:+export $penv
+${wd:+cd "$wd"
+}${penv:+export $penv
 }exec $* >> "\$LOGDIR/$name.log" 2>&1
 EOF
   chmod +x "$STAGE/run/$name.sh"
 }
-emit_run api      ''  '"$HERE/bin/api"'
-emit_run worker   ''  '"$HERE/bin/worker"'
-emit_run mcp      ''  '"$HERE/bin/mcp"'
+# api/worker/mcp run from $PREFIX/data, the prod FILE ROOT. This is not
+# cosmetic: NewArtifactFileStore resolves uploads and audio CWD-RELATIVELY
+# ("./uploads", "./audio" — see internal/app/wiring.go), so the working
+# directory *is* where user files land. Inheriting it from whoever ran
+# `make prod-run` put prod uploads in the git working tree, outside the backup
+# and one `git clean -xfd` from gone. Pinning it also satisfies that file's own
+# requirement that api and worker agree on the directory.
+#
+# DATA_VOLUME_PATH (shard builds) already points at the same root, so uploads/,
+# audio/ and the shard tree end up under one folder that backup_prod.sh can
+# capture as a unit. Stored artifact rows hold a LOGICAL storageKey
+# ("file/<name>"), never a filesystem path, so relocating the files is safe.
+emit_run api      ''  "$PREFIX/data"  '"$HERE/bin/api"'
+emit_run worker   ''  "$PREFIX/data"  '"$HERE/bin/worker"'
+emit_run mcp      ''  "$PREFIX/data"  '"$HERE/bin/mcp"'
 # PORT is set per-process: both sidecars read process.env.PORT, so it cannot
 # live in the shared env file without one of them stealing the other's port.
-emit_run blocknote      'PORT=3510 COLLAB_PORT=3511' "\"$NODE_BIN\" \"\$HERE/services/blocknote/server.js\""
-emit_run copilot-agent  'PORT=3560'                  "\"$NODE_BIN\" \"\$HERE/services/copilot-agent/server.js\""
+emit_run blocknote      'PORT=3510 COLLAB_PORT=3511' '' "\"$NODE_BIN\" \"\$HERE/services/blocknote/server.js\""
+# copilot-agent keeps the inherited cwd ON PURPOSE: the Claude CLI keys its
+# per-project state (trust, onboarding) off the working directory, and moving it
+# to a fresh path reintroduces the "MCP stuck pending" failure this release
+# already had to fix once.
+emit_run copilot-agent  'PORT=3560'                  '' "\"$NODE_BIN\" \"\$HERE/services/copilot-agent/server.js\""
 
 # --- 7. stamp ----------------------------------------------------------------
 cat > "$STAGE/VERSION" <<EOF

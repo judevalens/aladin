@@ -69,7 +69,28 @@ const minCharsPerPage = 24
 // normalize squeezes the whitespace PDF text extraction produces. Extractors emit text
 // positionally, so line breaks are wherever the glyphs happened to sit; collapsing runs
 // keeps the stored text readable and searchable without pretending to reflow paragraphs.
+// storable drops code points Postgres refuses inside a text value. PDF text
+// extraction routinely emits NUL (0x00) and stray control codes — perfectly
+// valid UTF-8, but illegal in a text column, and a single one fails the whole
+// page INSERT with SQLSTATE 22021. That failure lands mid-document, leaving the
+// row stuck at status='ingesting'; since ClaimPending only claims artifacts with
+// NO document row, a wedged document is never retried. Cheaper to sanitise the
+// text than to lose the document.
+//
+// Passing through strings.Map also repairs invalid UTF-8 byte sequences, which
+// Postgres rejects for the same reason: they become U+FFFD, which stores fine.
+func storable(r rune) rune {
+	if r == '\n' || r == '\t' {
+		return r
+	}
+	if r < 0x20 || r == 0x7f {
+		return -1
+	}
+	return r
+}
+
 func normalize(text string) string {
+	text = strings.Map(storable, text)
 	lines := strings.Split(text, "\n")
 	kept := make([]string, 0, len(lines))
 	for _, line := range lines {
