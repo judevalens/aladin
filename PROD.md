@@ -114,10 +114,31 @@ make prod-app       # rebuild the desktop app if the frontend changed
 
 ## Backups
 
-Postgres is the **only** irreplaceable store — page text (`page_ydoc`),
-artifacts, entities, and claims all live there. Neo4j is a rebuildable
-projection (`make ops-backfill-graph`), Redis is queue/cache, and the client
-SQLite/IndexedDB re-hydrate from the server.
+Two stores are irreplaceable, and a backup that takes only the first is a trap:
+
+1. **Postgres** — page text (`page_ydoc`), artifacts, entities, documents.
+2. **The file root**, `~/Library/Application Support/aladin/data` — the artifact
+   **bytes**. Postgres records only a logical `storageKey` (`file/<name>`), so a
+   `pg_dump` alone preserves the metadata of your documents while losing the
+   documents themselves.
+
+api, worker and mcp are pinned to that root as their working directory, because
+`NewArtifactFileStore` resolves `uploads/` and `audio/` **CWD-relatively** — the
+working directory literally decides where user files land. Inheriting it from
+whoever ran `make prod-run` put prod uploads in the git working tree, untracked
+and unbacked. `DATA_VOLUME_PATH` (shard builds) points at the same root, so
+everything on disk is one folder:
+
+```
+~/Library/Application Support/aladin/data/
+  uploads/     uploaded files (PDFs …)
+  audio/       recordings
+  users/…      shard builds
+```
+
+Neo4j is a rebuildable projection (`make ops-backfill-graph`), Redis is
+queue/cache, and the client SQLite/IndexedDB re-hydrate from the server — none
+are backed up on purpose.
 
 ```bash
 make prod-backup          # one-off pg_dump -Fc to ~/aladin-backups (verified + retained)
@@ -155,12 +176,24 @@ codes.
 
 ### Restore
 
+**Restore both halves of the set** — they share one timestamp for exactly this
+reason. Postgres alone leaves every document row pointing at bytes that no longer
+exist.
+
 ```bash
-# Bring up Postgres only (no app profiles), so nothing reads while you restore.
-make prod-up PROD_PROFILES=""
-# Restore into the running database.
+# Stop the app tier so nothing reads or writes while you restore.
+make prod-run-stop
+# Data tier only.
+docker compose -p aladin-prod --env-file backend_v2/.env.prod \
+  -f docker-compose.prod.yml up -d postgres redis neo4j
+# 1. the database
 docker exec -i aladin-prod-postgres pg_restore -U aladin -d aladin --clean --if-exists \
   < ~/aladin-backups/aladin-prod-YYYYMMDD-HHMMSS.dump
+# 2. the files, from the archive with the SAME timestamp
+tar -xzf ~/aladin-backups/aladin-prod-YYYYMMDD-HHMMSS-files.tar.gz \
+  -C ~/Library/Application\ Support/aladin/data
+# 3. back up
+make prod-run
 # Bring the full stack back. The worker's incremental projector re-populates
 # Neo4j as records are touched; for an immediate full rebuild of the graph lens,
 # run cmd/backfill-graph against the prod DB (see `make ops-backfill-graph`,
