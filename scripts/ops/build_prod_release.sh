@@ -161,7 +161,17 @@ BLOCKNOTE_AUTH_RESOLVE_URL="http://127.0.0.1:8080/api/auth/resolve"
 
 # --- host paths (the container used /data on a docker volume)
 DATA_VOLUME_PATH="$PREFIX/data"
-CLAUDE_CONFIG_DIR="$PREFIX/copilot-sessions"
+
+# CLAUDE_CONFIG_DIR is deliberately NOT set. The compose stack pointed it at a
+# volume so SDK session transcripts survived redeploys on an ephemeral container
+# filesystem; running natively, the default ~/.claude is already persistent, so
+# the workaround buys nothing — and it actively breaks the copilot. In a FRESH
+# config dir the CLI never attempts the MCP connection at all: it reports the
+# server as "pending" forever, and the sidecar's init guard fails the turn with
+# "tool server unreachable" even though the MCP server is healthy. Measured, with
+# an identical bad bearer, everything else equal:
+#     ~/.claude       -> mcp status "failed"  (connection attempted, 401)
+#     fresh empty dir -> mcp status "pending" (never attempted)
 
 # --- layout model: segment.go reads these two (internal/ingestion/segment.go)
 ALADIN_DOCLAYOUT_PYTHON="$VENV/bin/python"
