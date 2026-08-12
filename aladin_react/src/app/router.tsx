@@ -21,6 +21,7 @@ import { EntitiesInboxSpike } from "@/modules/entities/ui/entities-inbox-spike";
 import { EntitiesHomeSpike } from "@/modules/entities/ui/entities-home-spike";
 import { TutorSpike } from "@/modules/tutor/ui/tutor-spike";
 import { TutorReadSpike } from "@/modules/tutor/ui/tutor-read-spike";
+import { TutorNotebookSpike } from "@/modules/tutor/ui/tutor-notebook-spike";
 import { TickerRoute } from "@/modules/tickers/ui/ticker-route";
 import { MarketsUI } from "@/modules/markets/ui/markets-ui";
 import { TickerModal } from "@/modules/markets/ui/ticker-modal";
@@ -77,6 +78,12 @@ export const router = createBrowserRouter([
     // from the text (select → ask) and lands inline. Contrast with /spike/tutor.
     path: "/spike/tutor-read",
     element: <TutorReadSpike />,
+  },
+  {
+    // Dev-only Tutor spike, take 3 — a notebook: a calm single-column index of what a
+    // source accrued, modelled on the research Overview. No panes, no chat, no reader.
+    path: "/spike/tutor-notebook",
+    element: <TutorNotebookSpike />,
   },
   {
     // Dev-only Entity Context spike — Phase A of the entity surface on mock
