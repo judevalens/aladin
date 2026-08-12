@@ -227,7 +227,24 @@ working tree, so it always corresponds to a commit. Layout — deliberately outs
 
 `env` is generated from `backend_v2/.env.prod` with the compose hostnames
 rewritten to published host ports (`postgres:5432`→`127.0.0.1:5455`,
-`redis:6379`→`6381`, `neo4j:7687`→`7689`). **Prod Redis publishes `6381` solely
+`redis:6379`→`6381`, `neo4j:7687`→`7689`).
+
+> **The release `env` is a build-time SNAPSHOT.** Editing `backend_v2/.env.prod`
+> changes nothing that is running — the processes read the copy inside the
+> release. After any secret or config change: `make prod-release && make prod-run`.
+> This is the price of a release being reproducible from a commit, and it is the
+> first thing to check when a key you "already added" reads as missing.
+
+Two env traps worth knowing, both in the node sidecars:
+
+- They read config with `??`, which falls back only on *nullish* — so a
+  present-but-empty `COPILOT_AGENT_SHARED_SECRET=""` is **worse** than an absent
+  one: empty disables the service (fail closed) instead of taking the default.
+- `COPILOT_AUTH="subscription"` **deletes `ANTHROPIC_API_KEY`** from the process
+  env so the SDK can't silently prefer it. An API key set alongside it is
+  discarded by design. Use `COPILOT_AUTH="api"` to bill the key; `subscription`
+  is viable now that prod is native (the process can reach `~/.claude`), but was
+  never possible in a container. **Prod Redis publishes `6381` solely
 so the native worker can reach the queue** — inside the compose network is not
 enough once the app tier is off-cluster.
 

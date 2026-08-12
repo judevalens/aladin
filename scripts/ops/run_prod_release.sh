@@ -26,9 +26,11 @@ PREFIX=${ALADIN_PREFIX:-$HOME/Library/Application Support/aladin}
 RELEASES=$PREFIX/releases
 CURRENT=$PREFIX/current
 STOP_TIMEOUT=${STOP_TIMEOUT:-15}
-# copilot-agent is omitted by default: it needs ANTHROPIC_API_KEY, which
-# gen_prod_env.sh does not write. Add it to PROCS once that key is in .env.prod.
-PROCS=${PROCS:-api mcp blocknote worker}
+# copilot-agent starts by default. It boots without ANTHROPIC_API_KEY (which
+# gen_prod_env.sh does not write) rather than failing — /healthz reports
+# "anthropicKey": false — so a missing key is visible instead of the dock just
+# erroring on send with the sidecar absent entirely.
+PROCS=${PROCS:-api mcp blocknote worker copilot-agent}
 
 say() { printf '\033[1m>> %s\033[0m\n' "$*"; }
 die() { printf 'run: %s\n' "$*" >&2; exit 1; }
