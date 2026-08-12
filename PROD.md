@@ -284,6 +284,26 @@ enough once the app tier is off-cluster.
 Ports match what the containers published (api `8080`, mcp `8091`, collab
 `3510/3511`, copilot `3550`), so `make prod-app` needs no change.
 
+### Is it fine? — `make prod-doctor`
+
+```bash
+make prod-doctor        # exits non-zero if something is actually wrong
+```
+
+One command that checks the data tier (containers, and the **published ports** the native
+tier reaches them through), the release and whether any process is running from a **stale**
+one, every health endpoint, the backup agent and dump age **and its paired file archive**,
+migration level, wedged documents, and disk headroom. Each check exists because that thing
+broke at least once. It names the fix inline and exits 1 on a problem, 0 on warnings only.
+
+> **There is deliberately no supervision.** No launchd agents for the app tier: this stack
+> moves to a real server eventually, so agents built for the laptop would be thrown away.
+> (An attempt is in the git history — macOS parked `KeepAlive` respawns at
+> `pended nondemand spawn` and never fired them, even with `ProcessType: Interactive`.)
+> Consequence to accept knowingly: **nothing restarts on crash or reboot.** After a restart,
+> open Docker, `make prod-run`, `make prod-doctor`. The nightly backup also exits non-zero
+> whenever the Postgres container is down at 03:00 — `prod-doctor` is how you notice.
+
 ### Running it
 
 ```bash

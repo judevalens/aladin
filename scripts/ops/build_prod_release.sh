@@ -188,8 +188,14 @@ chmod 600 "$ENVF"
 
 # --- 6. run scripts (the seam launchd agents will use later) -----------------
 say "writing run scripts"
-emit_run() { # name, per-process-env (may be empty), workdir (may be empty), command...
-  local name=$1 penv=$2 wd=$3; shift 3
+emit_run() { # name, per-process-env, workdir, wait-gate (pg|api|), command...
+  local name=$1 penv=$2 wd=$3 gate=$4; shift 4
+  # Guard, because this failed silently once: adding the `gate` slot without updating the
+  # callers meant shift 4 ate the COMMAND, and the generated runner ended with a bare
+  # `exec  >> log` that exits 0 without starting anything — which reads to launchd as a
+  # clean run. Generation-time failure is much cheaper than a service that "ran fine".
+  [[ $# -ge 1 ]] || die "emit_run $name: no command (a caller is missing the gate argument)"
+  case "$gate" in pg|api|'') ;; *) die "emit_run $name: bad gate '$gate' (want pg|api|empty)" ;; esac
   # The per-process vars are `export`ed on their own line, NOT written as an
   # `exec VAR=x cmd` prefix: exec is a builtin and takes no assignment prefix,
   # so that form dies with "exec: PORT=3510: not found".
@@ -197,18 +203,43 @@ emit_run() { # name, per-process-env (may be empty), workdir (may be empty), com
   # mangles the quoting, and these paths contain a space ("Application Support"),
   # so an unquoted cd becomes two arguments and set -e kills the runner before it
   # ever execs.
-  local cd_line="" env_line=""
+  local cd_line="" env_line="" gate_line=""
   [[ -n "$wd" ]]   && cd_line="cd \"$wd\""
   [[ -n "$penv" ]] && env_line="export $penv"
+  # Readiness gates make startup order self-organising, which matters because launchd has
+  # NO dependency graph: every agent fires at login at once. Two orderings must survive that:
+  # the data tier lives in Docker (which may not be up yet at login), and the api must
+  # migrate ALONE before worker/mcp connect — the goose CREATE EXTENSION cold-start race that
+  # compose handled with `depends_on: condition: service_healthy`.
+  case "$gate" in
+    pg)  gate_line='wait_for "postgres" 120 bash -c "</dev/tcp/127.0.0.1/5455" 2>/dev/null' ;;
+    api) gate_line='wait_for "api" 180 curl -fsS -m 2 http://127.0.0.1:8080/healthz' ;;
+  esac
 
   cat > "$STAGE/run/$name.sh" <<EOF
 #!/usr/bin/env bash
 # Run the $name process from this release. Logs -> \$LOGDIR/$name.log
 set -euo pipefail
-HERE=\$(cd "\$(dirname "\${BASH_SOURCE[0]}")/.." && pwd)
+HERE=\$(cd "\$(dirname "\${BASH_SOURCE[0]}")/.." && pwd -P)
 set -a; . "\$HERE/env"; set +a
 LOGDIR=\${ALADIN_LOG_DIR:-$PREFIX/logs}
 mkdir -p "\$LOGDIR"
+
+# Exit non-zero rather than block forever: launchd's KeepAlive retries, and a bounded wait
+# turns "the DB is not up" into a visible restart loop instead of a process that looks alive.
+wait_for() {
+  local what=\$1 secs=\$2; shift 2
+  local n=0
+  until "\$@" >/dev/null 2>&1; do
+    n=\$((n + 1))
+    if [[ \$n -ge \$secs ]]; then
+      echo "\$(date -u +%FT%TZ) $name: gave up waiting for \$what after \${secs}s" >> "\$LOGDIR/$name.log"
+      exit 1
+    fi
+    sleep 1
+  done
+}
+$gate_line
 $cd_line
 $env_line
 exec $* >> "\$LOGDIR/$name.log" 2>&1
@@ -227,17 +258,17 @@ EOF
 # audio/ and the shard tree end up under one folder that backup_prod.sh can
 # capture as a unit. Stored artifact rows hold a LOGICAL storageKey
 # ("file/<name>"), never a filesystem path, so relocating the files is safe.
-emit_run api      ''  "$PREFIX/data"  '"$HERE/bin/api"'
-emit_run worker   ''  "$PREFIX/data"  '"$HERE/bin/worker"'
-emit_run mcp      ''  "$PREFIX/data"  '"$HERE/bin/mcp"'
+emit_run api      ''  "$PREFIX/data"  pg   '"$HERE/bin/api"'
+emit_run worker   ''  "$PREFIX/data"  api  '"$HERE/bin/worker"'
+emit_run mcp      ''  "$PREFIX/data"  api  '"$HERE/bin/mcp"'
 # PORT is set per-process: both sidecars read process.env.PORT, so it cannot
 # live in the shared env file without one of them stealing the other's port.
-emit_run blocknote      'PORT=3510 COLLAB_PORT=3511' '' "\"$NODE_BIN\" \"\$HERE/services/blocknote/server.js\""
+emit_run blocknote      'PORT=3510 COLLAB_PORT=3511' '' api "\"$NODE_BIN\" \"\$HERE/services/blocknote/server.js\""
 # copilot-agent keeps the inherited cwd ON PURPOSE: the Claude CLI keys its
 # per-project state (trust, onboarding) off the working directory, and moving it
 # to a fresh path reintroduces the "MCP stuck pending" failure this release
 # already had to fix once.
-emit_run copilot-agent  'PORT=3560'                  '' "\"$NODE_BIN\" \"\$HERE/services/copilot-agent/server.js\""
+emit_run copilot-agent  'PORT=3560'                  '' api "\"$NODE_BIN\" \"\$HERE/services/copilot-agent/server.js\""
 
 # --- 7. stamp ----------------------------------------------------------------
 cat > "$STAGE/VERSION" <<EOF

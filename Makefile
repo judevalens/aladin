@@ -151,7 +151,7 @@ ops-reset-stuck-cycles: ## Close stale active/running cycles; optional AGE=30m
 	python3 scripts/ops/aladin_ops.py reset-stuck-cycles --age $(or $(AGE),30m)
 
 # --- PROD stack ---------------------------------------------------------------
-.PHONY: prod-env prod-check-env prod-build prod-up prod-down prod-restart prod-ps prod-logs prod-psql prod-backup prod-backup-install prod-backup-status prod-restore-drill prod-run prod-run-stop prod-run-status prod-release prod-release-list prod-release-clean prod-release-version prod-app prod-app-clear prod-app-uninstall
+.PHONY: prod-env prod-check-env prod-build prod-up prod-down prod-restart prod-ps prod-logs prod-psql prod-backup prod-backup-install prod-backup-status prod-restore-drill prod-run prod-run-stop prod-run-status prod-doctor prod-release prod-release-list prod-release-clean prod-release-version prod-app prod-app-clear prod-app-uninstall
 
 PROD_BACKUP_INSTALL_DIR := $(HOME)/Library/Application Support/aladin
 
@@ -234,6 +234,9 @@ prod-run-stop: ## Stop every process running from any release
 
 prod-run-status: ## Show which release each running process came from (flags stale ones)
 	@bash scripts/ops/run_prod_release.sh status
+
+prod-doctor: ## Diagnose the whole prod stack: data tier, processes, health, backups, disk
+	@bash scripts/ops/prod_doctor.sh
 
 prod-release-clean: ## Prune old releases (KEEP=3; DRY_RUN=1 to preview). Never removes `current` or one with a live process
 	KEEP=$(or $(KEEP),3) bash scripts/ops/clean_prod_releases.sh
