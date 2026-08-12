@@ -17,12 +17,13 @@
 > Reads on top of `TRADING_PRD.md` (north star), `SHARD_MODEL.md` (the output medium),
 > `DESIGN_SPEC.md` (tokens/components).
 
-# PRD — Tutor (source → interactive teaching Shard)
+# PRD — Tutor (a learning copilot over your sources)
 
-> Drop in a source you want to understand — a white paper, a chapter, a dense PDF — and
-> get back a **super-interactive lesson you can explore**, authored by Copilot and
-> rendered as a Shard. This document states the intent: what the surface is for, what
-> must be true, and how it behaves.
+> Drop in a source you want to understand — a white paper, a chapter, a dense PDF. Aladin
+> helps you **plan a way through it**, checks whether you got it, and builds the study aids
+> you ask for — a quiz, flashcards, a visualizer, a mind map — grounded in that source.
+> **The source teaches; this surface helps you get through it.** This document states the
+> intent: what the surface is for, what must be true, and how it behaves.
 
 ---
 
@@ -57,15 +58,15 @@ The flow, end to end:
   ──────────          ─────────────────────        ──────────────────────────
   source PDF   →   ingest engine  →  study plan  →  you read the source
                    (pages/regions/    (you + agent)   agent structures · checks you
-                    chunks/outline)   revisable       · builds an aid when
-                                                        interaction earns its place
+                    chunks/outline)   revisable       · builds the aids you ask for
 ```
 
 Three moving parts, two of which **already exist**:
 
-- **Copilot** authors the lesson. It already has the full Shard toolchain
+- **Copilot** builds the aids you ask for. It already has the full Shard toolchain
   (`create_app → write_file → build_app → publish_app`) and is already prompted to build
-  shards (`internal/service/copilot.go`). We give it a *teaching* brief and a source.
+  shards (`internal/service/copilot.go`). We give it a *study-aid* brief and the retrieved
+  source text to build from.
 - **Shard** is the medium. Agent-authored multi-file React, esbuild-in-Go, sandboxed
   opaque-origin iframe, composed from `@aladin/kit`, rendered as a work-pane tab
   (`modules/doc-surface/`). No new runtime.
@@ -75,16 +76,18 @@ Three moving parts, two of which **already exist**:
   bullet used to make — that an agent cannot teach what it cannot read — is answered.
 
 The net-new work left is therefore *not* a subsystem. It is **the plan** (§6) — the object
-that makes a 361-page source teachable in pieces — and **equation fidelity** (§13 T0), the
-one step whose feasibility is still unproven.
+that makes a 361-page source approachable in pieces — and the **reading pane** the plan
+lives beside (§13). Equation fidelity remains a real question, but rev 3 demoted it from a
+gate: the user reads the PDF's own typeset math.
 
 ## 2. Why it matters (product thesis)
 
 The `TRADING_PRD.md` §1 corollary is the whole justification: *"when in doubt, build the
 thing that teaches you the domain."* A novice trader with a strong technical background
-learns markets **through** the harness. The fastest way to metabolize a dense source —
-a factor-model paper, a chapter on options greeks, a talk on market microstructure — is
-not to re-read it but to **take it apart interactively**. Tutor is that tool.
+learns markets **through** the harness. Dense sources — a factor-model paper, a chapter on
+options greeks — are not hard because the prose is bad; they are hard because there is no
+path through them, no one checking whether you got it, and no way to *poke* the ideas.
+Tutor supplies those three things and leaves the explaining to the source.
 
 **This is not the "education layer" §1 rules out.** That exclusion is about onboarding,
 guardrails, and hand-holding for *strangers whose judgment we can't model*. Tutor is the
@@ -92,12 +95,13 @@ opposite: a **single-player instrument for the user's own understanding**, that 
 *any* source they choose, with zero curriculum we have to maintain. Self-first, exactly
 as §1 demands.
 
-**The lesson is a durable artifact, not a throwaway view.** Per the standing feedback
-that primitives must tie back to the platform (not "just a pretty list"), a generated
-lesson is a Shard artifact that lives in a folder, survives refresh, is reopenable, and
-carries provenance back to its source. Over time the user accrues a **personal library
-of interactive explanations of the things they chose to understand** — the same "nothing
-is thrown away" bet the research log makes (`TRADING_PRD.md` §2), applied to learning.
+**Plans and aids are durable artifacts, not throwaway views.** Per the standing feedback
+that primitives must tie back to the platform (not "just a pretty list"), a generated aid
+is a Shard artifact that lives in a folder, survives refresh, is reopenable, and carries
+provenance back to its source; the plan outlives every aid built from it. Over time the
+user accrues **a record of what they set out to understand and how far they got** — the
+same "nothing is thrown away" bet the research log makes (`TRADING_PRD.md` §2), applied to
+learning.
 
 ## 3. The core loop (what the user actually does)
 
@@ -114,12 +118,15 @@ is thrown away" bet the research log makes (`TRADING_PRD.md` §2), applied to le
    objective ("after this you can price a collar from its legs"). The user **edits it**:
    drop what they already know, split what's too big, reorder, add "I want a worked
    example." The plan is the conversation's *artifact*, not its transcript.
-3. **Author one lesson, when wanted.** The user picks an item and asks for it. A *Lesson
-   Author* turn runs scoped to **that item's span only** — small enough to be reliable,
-   which is exactly why the plan exists. They watch it build in the dock.
-4. **Approve publish.** `publish_app` is gated (`copilot.go:54`) — the lesson holds for
-   one click. The natural review gate.
-5. **Explore it.** It opens as a work-pane tab, and the plan item now points at it.
+3. **Read the source.** This is the part Aladin does not replace. The reader is the
+   primary pane; the plan sits beside it, and the agent is there to answer *where* rather
+   than to re-explain (§7).
+4. **Ask for an aid when one would help.** "Quiz me on this," "flashcards for these
+   terms," "a visualizer for partial derivatives." An *Aid Builder* turn runs scoped to
+   that item's span — or, for a concept, to what `search_document` retrieves — small
+   enough to be reliable, which is exactly why the plan exists. They watch it build.
+5. **Approve publish.** `publish_app` is gated (`copilot.go:54`) — the aid holds for one
+   click. The natural review gate. It opens as a tab and the plan item points at it.
 6. **Come back and revise.** Days later the plan is still there, showing what's authored
    and what isn't. The user re-scopes an item, adds one the source suggested, re-authors a
    lesson that landed badly, or marks something learned. **The plan is revisable forever** —
@@ -227,12 +234,13 @@ When an aid *is* requested, the bar for it is unchanged — it should reliably c
   L1  Agent-readable    get_artifact returns text · search indexes files
         │               source artifact ── attached to ──┐
         ▼                                                 ▼
-  L2  Lesson Author     a Copilot turn: teaching system prompt + source artifact
-        │               → create_app → write_file (teaching kit) → preview/verify
+  L2  Aid Builder       a Copilot turn: study-aid prompt + RETRIEVED source text
+        │               (span from a plan item, or concept via search_document)
+        │               → create_app → write_file (aid catalogue) → preview/verify
         │               → build_app → publish_app (GATED: user approves)
         ▼
-  L3  The lesson        a Shard artifact (kind:"app") with source_artifact_id
-                        rendered in the work pane · listed in the Tutor library
+  L3  The aid           a Shard artifact (kind:"app") with source_artifact_id +
+                        plan_item_id · a tab beside the reader · listed in the plan
 ```
 
 ### The ingest engine (L0) — the hard, net-new half
@@ -309,7 +317,7 @@ returns `""` for files, is moot: the agent reads documents through dedicated too
 
 ### Study plan (net-new) — the surface's spine
 
-The plan is the durable object; a lesson is its output. Thin, per `TRADING_PRD.md` §2.
+The plan is the durable object; aids are its output. Thin, per `TRADING_PRD.md` §2.
 
 | field | notes |
 |---|---|
@@ -319,7 +327,7 @@ The plan is the durable object; a lesson is its output. Thin, per `TRADING_PRD.m
 | `goal` | what the user said they wanted out of the source — the brief every authoring turn inherits |
 | `created_at` / `updated_at` | |
 
-**Plan item** — ordered, scoped, revisable. This is the unit a lesson is authored from.
+**Plan item** — ordered, scoped, revisable. This is the unit an aid is built against.
 
 | field | notes |
 |---|---|
@@ -348,8 +356,9 @@ Optional, later: the shard's `anchors.json` `refs[]` carry entity ids the lesson
 ## 7. The trust guarantee (and how it differs from Entity Context)
 
 Entity Context has a **verbatim** guarantee — it never rewrites the user's material.
-Tutor is the *opposite* by design: a lesson **transforms** the source into an
-explanation. That makes grounding the safeguard instead of verbatim-ness:
+Tutor sits between: it does not promise verbatim-ness, because an aid **transforms** the
+source (a quiz is not a quotation), but under rev 3 it does not claim the licence to
+explain freely either. Grounding is the safeguard, and it has two tiers:
 
 **rev 3 — the strongest form of the guarantee is a pointer.** Because the source teaches
 (§1), the agent's *default* answer to "explain this" is **where it is explained**, not a
