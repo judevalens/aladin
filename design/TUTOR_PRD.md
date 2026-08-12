@@ -1,5 +1,12 @@
-> **Status:** draft PRD (2026-07-24). Not locked. Product intent for the next Aladin
-> surface — **"Tutor."** Companion implementation plan: `~/.claude/plans/tutor-surface.md`.
+> **Status:** draft PRD — **rev 2 (2026-08-11)**. Not locked. Product intent for the next
+> Aladin surface — **"Tutor."** Companion plan: `~/.claude/plans/tutor-surface.md`.
+>
+> **What changed in rev 2.** The ingestion engine shipped and now runs in prod (a 361-page
+> paper → 361 pages, 6147 typed regions, 870 chunks), which closes **D-B** and removes the
+> subsystem this PRD called "the hard, net-new half." That reframes the surface: the unit
+> of a lesson is no longer a document but a **plan item** in a study plan the user and the
+> agent co-author and keep revising (**D-I**, §3, §4a, §6). Equations render as real math
+> via vision→LaTeX (**D-J**), gated on the §13 T0 spike. §13 is the build order.
 > Reads on top of `TRADING_PRD.md` (north star), `SHARD_MODEL.md` (the output medium),
 > `DESIGN_SPEC.md` (tokens/components).
 
@@ -38,11 +45,14 @@ Three moving parts, two of which **already exist**:
 - **Shard** is the medium. Agent-authored multi-file React, esbuild-in-Go, sandboxed
   opaque-origin iframe, composed from `@aladin/kit`, rendered as a work-pane tab
   (`modules/doc-surface/`). No new runtime.
-- **The ingest engine** is the one net-new subsystem, and the harder half. Today an
-  uploaded PDF is bytes on disk with **no text representation** — `get_artifact` returns
-  empty content for `file` artifacts and they aren't searchable
-  (`internal/service/artifacts.go:497`, `internal/service/search.go:169`). An agent
-  cannot teach what it cannot read. **This is the unlock.**
+- **The ingest engine** was the one net-new subsystem. **It is now shipped and running in
+  prod** (`INGESTION_PRD.md`): a dropped PDF becomes pages, typed regions, chunks and an
+  outline, readable by an agent through `read_document` / `search_document`. The claim this
+  bullet used to make — that an agent cannot teach what it cannot read — is answered.
+
+The net-new work left is therefore *not* a subsystem. It is **the plan** (§6) — the object
+that makes a 361-page source teachable in pieces — and **equation fidelity** (§13 T0), the
+one step whose feasibility is still unproven.
 
 ## 2. Why it matters (product thesis)
 
@@ -67,20 +77,58 @@ is thrown away" bet the research log makes (`TRADING_PRD.md` §2), applied to le
 
 ## 3. The core loop (what the user actually does)
 
-1. **Bring a source.** Drop a PDF (v1 scope — see §10 D-E).
-2. **Aladin ingests it.** The ingest engine transposes the document — including
-   **figures, equations, and code** — into structured, agent-readable text (§5). Legible
-   progress; legible failure.
-3. **Copilot authors the lesson.** A *Lesson Author* turn runs: Copilot reads the
-   ingested source and builds an interactive teaching Shard using the teaching kit
-   primitives. The user **watches it build** in the Copilot dock (the tool trail already
-   streams `create_app`/`write_file`/`build`).
-4. **The user approves publish.** `publish_app` is gated (`copilot.go:54`) — the finished
-   lesson holds for one click before it goes live. The natural review gate.
-5. **The lesson opens and is explored.** It renders as a work-pane tab; the user reads,
-   manipulates, and checks understanding. It's now in their Tutor library.
+> **rev 2 change.** The loop is no longer "drop a PDF, get a lesson." A dense source is
+> not one lesson — the paper that motivated this rev is **361 pages**. The unit of work is
+> a **study plan** the user and the agent write *together* and keep revising. Lessons are
+> generated *from plan items*, on demand, one at a time. The plan is the durable thing;
+> lessons are its output.
 
-## 4. What "super-interactive" and "explore" mean (the bar)
+1. **Bring a source.** Drop a PDF (v1 scope — see §10 D-E). Ingest runs (§5): outline,
+   pages, regions, chunks. Legible progress; legible failure.
+2. **Plan it together.** The agent reads the outline and proposes a study plan — an
+   ordered set of items, each scoped to a real span of the source, each with a stated
+   objective ("after this you can price a collar from its legs"). The user **edits it**:
+   drop what they already know, split what's too big, reorder, add "I want a worked
+   example." The plan is the conversation's *artifact*, not its transcript.
+3. **Author one lesson, when wanted.** The user picks an item and asks for it. A *Lesson
+   Author* turn runs scoped to **that item's span only** — small enough to be reliable,
+   which is exactly why the plan exists. They watch it build in the dock.
+4. **Approve publish.** `publish_app` is gated (`copilot.go:54`) — the lesson holds for
+   one click. The natural review gate.
+5. **Explore it.** It opens as a work-pane tab, and the plan item now points at it.
+6. **Come back and revise.** Days later the plan is still there, showing what's authored
+   and what isn't. The user re-scopes an item, adds one the source suggested, re-authors a
+   lesson that landed badly, or marks something learned. **The plan is revisable forever** —
+   it is the learning analogue of the research log, not a one-shot wizard output.
+
+The loop's shape matters: step 2 makes step 3 *possible*. A 361-page source can't be
+taught in one turn, and silently teaching only the first 30 pages is the failure mode §8
+forbids. Planning first is not ceremony — it's the mechanism that keeps each authoring
+turn inside a window the agent can actually hold.
+
+## 4. What it should feel like (the bar)
+
+### 4a. The plan — a syllabus you argue with
+
+The first thing the user sees after ingest is **not** a lesson and **not** a chat log. It
+is a plan they can edit, that happens to have been drafted by an agent:
+
+- **It knows the source.** Items are scoped to real spans (`pp. 88–104`, §3.2), taken from
+  the outline the engine already extracts — never invented chapter names.
+- **It states outcomes, not topics.** "Payoff algebra of collars" beats "Chapter 4."
+  Each item says what the user will be able to *do*.
+- **It is edited by talking or by hand.** "Skip the intro, I know Black–Scholes" removes
+  items; so does clicking delete. Reordering, splitting a fat item, and re-scoping are
+  first-class — the plan is a document the user owns, not a proposal they accept or reject.
+- **It is honest about size.** An item covering 60 pages says so, and the surface suggests
+  splitting it, because that item will produce a bad lesson.
+- **It persists and it is revisable.** Reopened next week it shows what's authored, what
+  isn't, what was marked learned. Adding an item later is normal, not a re-run.
+
+The feel to aim for: **a reading list you and a knowledgeable colleague drew up together,
+which remembers where you got to.** Not a wizard, not a chatbot transcript.
+
+### 4b. The lesson — what "super-interactive" and "explore" mean
 
 The user's phrase was *"a super interactive shard that teaches and lets you explore."*
 Concretely, a good lesson is **not** a styled document. It should reliably contain:
@@ -182,22 +230,49 @@ the existing engine.
 
 Thin, in the spirit of `TRADING_PRD.md` §2 — add the minimum, throw nothing away.
 
-### Ingested source text (net-new)
-Uploaded artifacts gain a structured text representation an agent can read.
+### Ingested source text — **SHIPPED, D-B closed**
+
+This is no longer a design question. The ingestion engine (`INGESTION_PRD.md`) shipped the
+tables, and they are richer than the single `text` blob this section originally proposed.
+Verified in prod against a 361-page paper: **6147 regions, 870 chunks, 361 pages.**
+
+| table | what it holds | Tutor uses it for |
+|---|---|---|
+| `artifact_documents` | `status`, `extractor`, `page_count` — exactly the provenance fields specced here | ingest state; refusing to plan over a failed source (§7) |
+| `artifact_pages` | per-page text | the span an authoring turn actually reads |
+| `artifact_regions` | typed boxes: `title`, `plain text`, `isolate_formula`, `formula_caption`, `table`, `figure`, `abandon` | **the equation pipeline (§13), figure handling, dropping headers/footers** |
+| `artifact_chunks` | the navigable tree (870 for that paper) | the outline the plan is scoped against |
+
+Retrieval already exists over MCP — `read_document`, `search_document`, and the outline
+path (`internal/mcp/workspace_tools.go:560`). The original worry, that `get_artifact`
+returns `""` for files, is moot: the agent reads documents through dedicated tools instead.
+`search.go:169` still excludes files from federated search — a real gap, but not Tutor's.
+
+### Study plan (net-new) — the surface's spine
+
+The plan is the durable object; a lesson is its output. Thin, per `TRADING_PRD.md` §2.
 
 | field | notes |
 |---|---|
-| `artifact_id` | the `file` artifact this text belongs to |
-| `text` | structured markdown from the ingest engine — headings, LaTeX equations, fenced code, figure captions |
-| `extractor` | which path produced it (`pdf-multimodal`, `pdf-textlayer`) — for reproducibility |
-| `status` | `pending \| ok \| failed` (+ error) — ingest is async and can fail legibly |
-| `page_count` / `ingested_at` | provenance |
+| `id` / `user_id` | |
+| `source_artifact_id` | the ingested source it plans over (one source in v1; multi-source is a later join table, don't build it now) |
+| `title` | agent-proposed, user-editable |
+| `goal` | what the user said they wanted out of the source — the brief every authoring turn inherits |
+| `created_at` / `updated_at` | |
 
-*(Shape TBD — a dedicated `artifact_text` table vs. folding into the `records`
-enrichment pipeline. See D-B.)*
+**Plan item** — ordered, scoped, revisable. This is the unit a lesson is authored from.
 
-`get_artifact` returns this text for `file` kinds (today it returns `""`); the `search`
-federation learns to index it (today files are excluded, `search.go:169`).
+| field | notes |
+|---|---|
+| `plan_id` / `ordinal` | ordering is user-editable; reordering must not renumber anything the user can see |
+| `title` | "Payoff algebra of collars" |
+| `objective` | what the user can do afterwards — the teaching brief |
+| `scope` | the span: chunk ids and/or a page range. **Must reference the real document**, so an authoring turn can fetch exactly that text and nothing else |
+| `status` | `planned \| authored \| learned` — user-set, not inferred |
+| `lesson_artifact_id` | the Shard once authored (nullable). Re-authoring replaces it; the plan item survives |
+
+Two properties the schema must protect: **an item outlives its lesson** (re-author freely),
+and **scope is a reference, not a copy** (re-ingesting the source must not orphan the plan).
 
 ### Lesson provenance (net-new, thin)
 A lesson **is** a Shard artifact (`kind:"app"`) — no new heavy table. It gains:
@@ -205,6 +280,7 @@ A lesson **is** a Shard artifact (`kind:"app"`) — no new heavy table. It gains
 | field | notes |
 |---|---|
 | `source_artifact_id` | the source it was generated from — the provenance FK |
+| `plan_item_id` | the item it was authored for — how the plan finds its lessons |
 | (marker) | distinguishes a "lesson" shard from a hand-built shard (a metadata flag) |
 
 Optional, later: the shard's `anchors.json` `refs[]` carry entity ids the lesson teaches
@@ -268,7 +344,9 @@ explanation. That makes grounding the safeguard instead of verbatim-ness:
 | **D-A** | **Ingest engine** | **RESOLVED — a proper ingest engine.** Multimodal transcription: rasterize PDF pages → vision model → structured markdown (equations→LaTeX, code→fenced, figures→captioned), with an optional text-layer fast-path (§5). Handles images/equations/code per the requirement. |
 | **D-E** | **v1 source types** | **RESOLVED — PDF only.** Article URL and YouTube/transcript are fast-follows (L4); each slots into the ingest engine as another front-end. |
 | **D-F** | **Surface name** | **RESOLVED — "Tutor."** Nav destination `/tutor`, module `modules/tutor`, spike `/spike/tutor`. |
-| **D-B** | **Where ingested text lives** — new `artifact_text` table vs. the `records` enrichment pipeline? | Open. *Rec:* dedicated `artifact_text` table (clean status/lifecycle) **and** optionally fan into `records` so ingested sources also enrich the entity layer. |
+| **D-B** | **Where ingested text lives** | **RESOLVED by shipping — `artifact_documents` / `_pages` / `_regions` / `_chunks`** (§6). Not the proposed `artifact_text` blob: typed regions are what make the equation pipeline (§13) possible at all. Verified in prod on a 361-page source. Fanning into `records` for the entity layer stays open, and is not Tutor's call. |
+| **D-I** | **Unit of a lesson** | **RESOLVED — a plan item.** Not the document (361 pages can't be one turn) and not auto-chaptering (fires N expensive turns for sections nobody asked for). The user and agent co-author a revisable plan; lessons are authored per item, on demand (§3, §4a). |
+| **D-J** | **How equations reach the lesson** | **RESOLVED — vision → LaTeX, rendered.** Formula crops transcribe to LaTeX and render (KaTeX) in the shard, so math is typeset content a lesson can step through and bind to a simulator. Gated on the §13 T0 spike: this is the one assumption that can sink the surface. |
 | **D-C** | **Generation driver** — general Copilot capability vs. a dedicated "Lesson Author" turn? | Open. *Rec:* a dedicated Lesson-Author system prompt + a surface-kicked turn, streamed in the existing dock. Add a `tutor` surface kind to `systemPrompt(surface)` (`copilot.go:824`). |
 | **D-D** | **Teaching kit primitives** — build `Quiz`/`Simulator`/`Glossary`/`StepThrough`/`Reveal`/`Figure` into `@aladin/kit`, or freehand? | Open. *Rec:* build them into the kit (`docsurface/kit.tsx`) — consistent, reliable output; the authoring guide teaches their use. |
 | **D-G** | **Source→turn attachment** — copilot turns are text-only today. | Open. *Rec:* explicit `source_artifact_id` on the turn; the agent reads it via `get_artifact`. Don't stuff the paper into `surfaceContext` (caps at 1800 chars, `copilot.go:871`). |
@@ -336,3 +414,74 @@ inside Tutor, the research surface has to reach into Tutor later to reuse it; if
 first-class capability, both surfaces simply consume the same `artifact_text`. This costs
 nothing extra now (the plan already runs L0 off artifact upload, not off a Tutor action)
 and is the single most important thing to get right for the broader surface.
+
+## 13. Build order (rev 2)
+
+Sequenced so the assumption most likely to be wrong is tested first, and so nothing
+downstream is built on an unproven foundation. **T0 is a gate, not a phase.**
+
+### T0 — Equation fidelity spike *(gate: build or redesign)*
+
+**The question:** can a vision model turn a formula crop into LaTeX that renders as the
+same equation? Everything else in Tutor is assembly of things that already work; this is
+the only genuinely unproven step, and §6 shows why it's decisive — that paper has **527
+`isolate_formula` regions**. Math *is* the content.
+
+What today's engine already gives, from the text layer:
+
+```
+Lmax = K2 −K1 −C
+fT = ST −S0 −(ST −K)+ + C = K −S0 −(K −ST)+ + C
+```
+
+Legible, structurally lost: `K2` is really K₂, `ST` is S_T, `(ST −K)+` is a positive part.
+A lesson rendering that verbatim looks broken to anyone who knows the material.
+
+**Do:** crop ~20 `isolate_formula` regions (their bboxes are already stored), send each to
+a vision model, render the LaTeX, compare side by side with the crop.
+**Pass:** the large majority round-trip to the same equation, and failures are *detectable*
+(low confidence / malformed LaTeX) rather than silently wrong — a confidently wrong formula
+is worse than none, per §7.
+**If it fails:** fall back to embedding the crop image (inert math, still faithful) and
+re-scope §4b's "poke the equation" promise before building the surface, not after.
+
+No surface, no schema, no plan object. An afternoon.
+
+### T1 — The plan object and surface
+
+The spine (§6): `study_plan` + `plan_item`, the `/tutor` destination, create-a-plan from an
+ingested source, agent proposes from the outline, user edits/reorders/re-scopes, persists.
+Reactivity rides the outbox sync spine — **not** REST-list + `reload()` (standing rule).
+Ships useful on its own: a scoped, revisable reading plan over a source is already worth
+having with zero lessons authored.
+
+### T2 — Lesson authoring from an item
+
+D-C (a `tutor` surface kind in `systemPrompt(surface)`), D-G (attach the item's scope to
+the turn — its chunk/page span, *not* the paper stuffed into `surfaceContext`, which caps
+at 1800 chars), and the gated `publish_app` review. Uses the existing Copilot + Shard path;
+no forked authoring engine (§5's rule that must not bend).
+
+### T3 — The teaching kit
+
+D-D: `Quiz` / `Simulator` / `Glossary` / `StepThrough` / `Reveal` / `Figure` / `Formula` in
+`@aladin/kit`. Deliberately *after* T2: author two or three real lessons freehand first and
+let the primitives fall out of what the agent actually reaches for. Building the kit first
+means guessing.
+
+### T4 — Library and progress
+
+Plan list, per-item status, re-author, "what I've learned." The accrual §2 promises.
+
+**Explicitly not in this order:** connected exploration (v2, D-H) stays gated on shard
+data-wiring being unpaused; multi-source plans; anything that forks the authoring path.
+
+### What already exists (do not rebuild)
+
+| need | status |
+|---|---|
+| PDF → pages/regions/chunks/outline | **shipped, running in prod** (`INGESTION_PRD`) |
+| agent reads a document | **shipped** — `read_document`, `search_document`, outline (`workspace_tools.go:560`) |
+| Shard runtime, build, sandbox, publish gate | **shipped** |
+| Copilot authoring turns + tool trail | **shipped** |
+| region bboxes for cropping | **shipped** — `artifact_regions.x0/y0/x1/y1` |
