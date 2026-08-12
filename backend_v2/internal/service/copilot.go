@@ -902,9 +902,21 @@ func (s *defaultCopilotService) surfaceContext(ctx context.Context, userID strin
 			}
 		}
 		var edit string
-		if art.Type == "app" {
+		switch art.Type {
+		case "app":
 			edit = fmt.Sprintf(" To change it, EDIT THIS shard — read_file/write_file/edit_file with page_id=%q. Do NOT create a new shard.", surface.ID)
-		} else {
+		case "file":
+			// A file is a SOURCE, not editable prose. Without this branch it fell into the
+			// page case below and the agent was told to "EDIT THIS page — get_page then
+			// insert_blocks", i.e. to rewrite the user's own PDF as a BlockNote document:
+			// every one of those calls can only fail, and the instruction is the opposite of
+			// what a source is for. Point it at the document tools instead (INGESTION_PRD's
+			// retrieval contract) and at citing pages.
+			edit = fmt.Sprintf(" It is a SOURCE the user is reading, NOT an editable page."+
+				" If it has been ingested, read it with read_document / search_document (artifact_id=%q)"+
+				" and cite page numbers when you answer. Never call get_page, insert_blocks, update_block"+
+				" or update_page on it, and never try to rewrite it.", surface.ID)
+		default:
 			edit = fmt.Sprintf(" To change it, EDIT THIS page — get_page then insert_blocks/update_block/update_page with page id %q. Do NOT create a new page.", surface.ID)
 		}
 		header := fmt.Sprintf("Current context — the user is viewing the %s %q (id %s).%s", artifactNoun(art.Type), art.Title, surface.ID, edit)
@@ -963,6 +975,9 @@ func artifactNoun(t string) string {
 		return "shard"
 	case "page":
 		return "page"
+	case "file":
+		// "the artifact X" told the agent nothing about what it was allowed to do with it.
+		return "source file"
 	default:
 		return "artifact"
 	}

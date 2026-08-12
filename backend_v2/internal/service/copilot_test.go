@@ -547,3 +547,63 @@ func TestCopilotNotConfigured(t *testing.T) {
 		t.Fatal("expected an error when copilot is not configured")
 	}
 }
+
+// stubArtifacts satisfies ArtifactService by embedding it (every other method is nil and
+// would panic if called — this test only needs Get).
+type stubArtifacts struct {
+	ArtifactService
+	art ArtifactResponse
+}
+
+func (s stubArtifacts) Get(context.Context, string) (ArtifactResponse, error) { return s.art, nil }
+
+// A `file` artifact is a SOURCE, not an editable page. Before this branch existed a file fell
+// through to the page case and the agent was told "EDIT THIS page — get_page then
+// insert_blocks", i.e. to rewrite the user's own PDF as a BlockNote document. Every such call
+// can only fail, and it is the opposite of what a source is for.
+func TestCopilotSurfaceContextFileIsNotEditableAsAPage(t *testing.T) {
+	svc := &defaultCopilotService{
+		CopilotDeps: CopilotDeps{Artifacts: stubArtifacts{art: ArtifactResponse{
+			Type: "file", Title: "Hamilton ch. 19",
+		}}},
+		running: map[string]runningTurn{},
+	}
+	got := svc.surfaceContext(context.Background(), "u1", CopilotSurface{Kind: "artifact", ID: "artifact-1"})
+
+	// Assert on the INSTRUCTION, not on tool names: the fixed message deliberately names
+	// get_page/insert_blocks inside a prohibition, which is more useful to the model than a
+	// vague "don't edit it". What must never appear is the affirmative page-editing framing.
+	for _, banned := range []string{"To change it, EDIT THIS", "Do NOT create a new page"} {
+		if strings.Contains(got, banned) {
+			t.Fatalf("a file artifact must not be described as editable; found %q in %q", banned, got)
+		}
+	}
+	if !strings.Contains(got, "Never call") {
+		t.Fatalf("expected an explicit prohibition on the page-edit tools, got %q", got)
+	}
+	for _, want := range []string{"read_document", "search_document", "cite page numbers"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected document-retrieval guidance %q, got %q", want, got)
+		}
+	}
+}
+
+// The shard and page branches must keep their edit instructions — the fix above is a new
+// branch, not a change to the existing ones.
+func TestCopilotSurfaceContextShardAndPageStillEditable(t *testing.T) {
+	shard := &defaultCopilotService{
+		CopilotDeps: CopilotDeps{Artifacts: stubArtifacts{art: ArtifactResponse{Type: "app", Title: "Collar payoff"}}},
+		running:     map[string]runningTurn{},
+	}
+	if got := shard.surfaceContext(context.Background(), "u1", CopilotSurface{Kind: "artifact", ID: "a1"}); !strings.Contains(got, "EDIT THIS shard") {
+		t.Fatalf("shard should still be editable as a shard, got %q", got)
+	}
+
+	page := &defaultCopilotService{
+		CopilotDeps: CopilotDeps{Artifacts: stubArtifacts{art: ArtifactResponse{Type: "page", Title: "Notes"}}},
+		running:     map[string]runningTurn{},
+	}
+	if got := page.surfaceContext(context.Background(), "u1", CopilotSurface{Kind: "artifact", ID: "a2"}); !strings.Contains(got, "EDIT THIS page") {
+		t.Fatalf("page should still be editable as a page, got %q", got)
+	}
+}
