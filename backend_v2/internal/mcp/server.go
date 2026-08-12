@@ -248,15 +248,44 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return s.httpServer.Shutdown(ctx)
 }
 
+// statusRecorder captures the response code so the access log can report it.
+// http.ResponseWriter has no getter, and WriteHeader may never be called at all
+// (an implicit 200 on first Write), so default to 200 and record explicitly.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *statusRecorder) WriteHeader(code int) {
+	w.status = code
+	w.ResponseWriter.WriteHeader(code)
+}
+
+// Flush keeps the MCP streamable-HTTP GET working: that response is a long-lived
+// SSE stream, and wrapping the writer would otherwise hide http.Flusher from it.
+func (w *statusRecorder) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Unwrap lets http.ResponseController reach the real writer (deadlines, flush).
+func (w *statusRecorder) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
 func traceRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		next.ServeHTTP(w, r)
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(rec, r)
+		// Status matters here: a 401 and a healthy handshake were previously
+		// indistinguishable in this log, which made "MCP unreachable" from the
+		// copilot impossible to diagnose from the server side.
 		slog.Info(
 			"mcp: request completed",
 			"component", "mcp",
 			"method", r.Method,
 			"path", r.URL.Path,
+			"status", rec.status,
 			"duration_ms", time.Since(start).Milliseconds(),
 		)
 	})
