@@ -1,4 +1,23 @@
-# Aladin — Handoff
+# Aladin — Handoff  ⚠️ HISTORICAL
+
+> **This is the ORIGINAL design handoff package (pre-implementation). Parts of it are now
+> wrong, and it is no longer the place to start.**
+>
+> - **For onboarding, read [`UI_ARCHITECTURE.md`](UI_ARCHITECTURE.md)** — the current
+>   frontend map, verified against the code.
+> - **For product intent, read [`TRADING_PRD.md`](TRADING_PRD.md)** — the north star.
+>
+> What below is superseded: Aladin is **not** a personal knowledge graph — that framing was
+> abandoned for a personal algo/swing-trading research workspace. The `claims` layer it
+> describes has been **deleted** from the codebase. "Persistence of the graph is the #1
+> priority; it's the moat" is no longer true. The Home briefing dashboard it specifies does
+> not exist (`/home` renders the Folders workspace). And this is no longer
+> "documentation only — meant to be implemented": it is implemented and running in prod.
+>
+> Still accurate and still worth reading: `DESIGN_SPEC.md` (tokens, component map) and
+> `BROWSER_SPEC.md` (the Folders browser). Kept for the visual fidelity bar and as an archive
+> of the original intent.
+
 
 Aladin is a personal knowledge graph that doubles as a research/trading assistant. It ships as a dark-minimal **IDE shell** with a Home briefing dashboard, a knowledge-graph explorer, and an **Ask-my-graph** command palette.
 
