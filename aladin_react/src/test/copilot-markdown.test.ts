@@ -5,6 +5,7 @@ import {
   parseActivityItems,
   parseApprovalBlock,
   parseCopilotMarkdown,
+  parseDiffBlock,
 } from "@/modules/copilot/ui/copilot-markdown";
 
 describe("parseCopilotMarkdown", () => {
@@ -154,5 +155,41 @@ describe("parseApprovalBlock", () => {
     });
     expect(parseApprovalBlock({ action: "Delete file" }, "")).toBeNull();
     expect(parseApprovalBlock({}, "{")).toBeNull();
+  });
+});
+
+describe("parseDiffBlock", () => {
+  it("parses JSON diff blocks with bounded lines and stats", () => {
+    const lines = Array.from({ length: 90 }, (_, i) => ({ kind: i % 2 === 0 ? "add" : "remove", text: `line ${i}` }));
+    const diff = parseDiffBlock(
+      {},
+      JSON.stringify({
+        title: "Update shard",
+        path: "src/index.tsx",
+        lines,
+      }),
+    );
+
+    expect(diff).toMatchObject({ title: "Update shard", path: "src/index.tsx", added: 40, removed: 40 });
+    expect(diff?.lines).toHaveLength(80);
+  });
+
+  it("parses unified diff bodies and ignores file headers", () => {
+    expect(
+      parseDiffBlock(
+        { title: "Patch" },
+        ["--- a/src/index.tsx", "+++ b/src/index.tsx", " import React from 'react';", "-old", "+new"].join("\n"),
+      ),
+    ).toEqual({
+      title: "Patch",
+      added: 1,
+      removed: 1,
+      lines: [
+        { kind: "context", text: "import React from 'react';" },
+        { kind: "remove", text: "old" },
+        { kind: "add", text: "new" },
+      ],
+    });
+    expect(parseDiffBlock({}, "")).toBeNull();
   });
 });

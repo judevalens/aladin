@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   CornerDownRight,
   FileText,
+  GitCompare,
   Layers,
   RefreshCw,
   Send,
@@ -284,6 +285,40 @@ function DirectiveBlock({
         </div>
       );
     }
+    case "aladin-diff": {
+      const diff = parseDiffBlock(segment.attrs, segment.body);
+      if (!diff) return <MarkdownText text={directiveFallback(segment)} />;
+      return (
+        <div className="my-2 rounded-card border border-line bg-field">
+          <div className="flex items-center gap-2 border-b border-line px-2.5 py-2">
+            <Icon as={GitCompare} size="inline" mark className="shrink-0 text-amber" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-small font-semibold text-ink">{diff.title}</p>
+              {diff.path ? <p className="truncate font-mono text-meta text-ink-4">{diff.path}</p> : null}
+            </div>
+            <span className="shrink-0 font-mono text-meta text-ink-4">
+              +{diff.added} / -{diff.removed}
+            </span>
+          </div>
+          <div className="max-h-72 overflow-auto p-2 font-mono text-meta">
+            {diff.lines.map((line, index) => (
+              <pre
+                key={`${line.kind}-${index}-${line.text}`}
+                className={cn(
+                  "min-w-0 overflow-hidden text-ellipsis whitespace-pre-wrap rounded-tap px-1.5 py-0.5",
+                  line.kind === "add" && "bg-for-soft text-for",
+                  line.kind === "remove" && "bg-against-soft text-against",
+                  line.kind === "context" && "text-ink-4",
+                )}
+              >
+                {line.kind === "add" ? "+" : line.kind === "remove" ? "-" : " "}
+                {line.text}
+              </pre>
+            ))}
+          </div>
+        </div>
+      );
+    }
     default:
       return <MarkdownText text={directiveFallback(segment)} />;
   }
@@ -512,6 +547,61 @@ function parseApprovalDetails(value: unknown): string[] {
   if (Array.isArray(value)) return value.flatMap((v) => textField(v, 220) ?? []).slice(0, 6);
   const detail = textField(value, 220);
   return detail ? [detail] : [];
+}
+
+export type DiffBlock = {
+  title: string;
+  path?: string;
+  added: number;
+  removed: number;
+  lines: { kind: "add" | "remove" | "context"; text: string }[];
+};
+
+export function parseDiffBlock(attrs: Record<string, string>, body: string): DiffBlock | null {
+  let data: Record<string, unknown> = {};
+  if (body.trim().startsWith("{")) {
+    try {
+      const parsed = JSON.parse(body);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+      data = parsed as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }
+
+  const merged: Record<string, unknown> = { ...data, ...attrs };
+  const title = textField(merged.title ?? merged.summary ?? merged.path, 120) ?? "Changes";
+  const path = textField(merged.path ?? merged.file, 180);
+  const rawLines = Array.isArray(merged.lines) ? merged.lines : parseUnifiedDiffLines(body);
+  const lines = rawLines.slice(0, 80).flatMap((line) => parseDiffLine(line));
+  if (lines.length === 0) return null;
+  const added = lines.filter((line) => line.kind === "add").length;
+  const removed = lines.filter((line) => line.kind === "remove").length;
+  return { title, path, added, removed, lines };
+}
+
+function parseUnifiedDiffLines(body: string): unknown[] {
+  return body
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith("+") || line.startsWith("-") || line.startsWith(" "))
+    .filter((line) => !line.startsWith("+++") && !line.startsWith("---"));
+}
+
+function parseDiffLine(value: unknown): DiffBlock["lines"] {
+  if (typeof value === "string") {
+    const prefix = value[0];
+    const text = textField(value.slice(prefix === "+" || prefix === "-" || prefix === " " ? 1 : 0), 220);
+    if (!text) return [];
+    if (prefix === "+") return [{ kind: "add", text }];
+    if (prefix === "-") return [{ kind: "remove", text }];
+    return [{ kind: "context", text }];
+  }
+  if (!value || typeof value !== "object") return [];
+  const record = value as Record<string, unknown>;
+  const text = textField(record.text ?? record.value, 220);
+  if (!text) return [];
+  const kind = record.kind === "add" || record.kind === "remove" ? record.kind : "context";
+  return [{ kind, text }];
 }
 
 /** A subtle blinking caret appended to streaming text. */

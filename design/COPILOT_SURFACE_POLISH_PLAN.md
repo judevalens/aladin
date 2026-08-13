@@ -42,7 +42,9 @@ Aladin owns all rendering, permissions, and actions.
   and timestamps; `aladin-actions` supports validated open actions plus
   deterministic continue/retry/send-prompt follow-ups.
 - Phase 8 is started: persisted `aladin-approval` blocks can render bounded,
-  native approval cards with action, target, risk, status, and exact detail rows.
+  native approval cards with action, target, risk, status, and exact detail rows;
+  persisted `aladin-diff` blocks can render bounded, display-only change previews
+  from JSON or unified diff text.
 
 ## Current Problems
 
