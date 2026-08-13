@@ -1,9 +1,11 @@
 import {
   AlertTriangle,
+  Archive,
   ArrowUp,
   Check,
   ChevronDown,
   MessageSquare,
+  Pencil,
   Plus,
   Search,
   Sparkles,
@@ -11,7 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { Icon } from "@/components/ui/icon";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
 import type { CopilotSurface } from "@/repos/copilot/copilot-repo";
 import type { CopilotProposal, CopilotToolRun } from "@/app/state/copilot-slice";
 import {
@@ -64,6 +66,8 @@ export function CopilotDockUI() {
     rejectProposal,
     loadThreads,
     openThread,
+    renameThread,
+    archiveThread,
     newThread,
     fetchHealthWarning,
     queuedText,
@@ -221,6 +225,8 @@ export function CopilotDockUI() {
                 proposals={proposals}
                 status={status}
                 onOpenThread={openThread}
+                onRenameThread={renameThread}
+                onArchiveThread={archiveThread}
               />
             </DropdownMenuContent>
           </DropdownMenu>
@@ -457,6 +463,8 @@ function ThreadMenuItems({
   proposals,
   status,
   onOpenThread,
+  onRenameThread,
+  onArchiveThread,
 }: {
   threads: { id: string; title: string; updatedAt: string }[];
   query: string;
@@ -464,8 +472,12 @@ function ThreadMenuItems({
   proposals: CopilotProposal[];
   status: "idle" | "sending" | "streaming";
   onOpenThread: (threadId: string) => void;
+  onRenameThread: (threadId: string, title: string) => Promise<boolean>;
+  onArchiveThread: (threadId: string) => Promise<boolean>;
 }) {
   const q = query.trim().toLowerCase();
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState("");
   const filtered = q
     ? threads.filter((t) => (t.title || "Untitled").toLowerCase().includes(q))
     : threads;
@@ -481,16 +493,33 @@ function ThreadMenuItems({
     <div className="max-h-80 overflow-y-auto p-1">
       {filtered.map((thread) => {
         const active = thread.id === activeThreadId;
+        const editing = thread.id === editingId;
         const pendingApprovals = proposals.filter(
           (p) =>
             p.threadId === thread.id &&
             (p.status === "pending" || p.status === "approving" || p.status === "rejecting"),
         ).length;
         const running = active && status !== "idle";
+        const startRename = (event: MouseEvent) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setEditingId(thread.id);
+          setEditingTitle(thread.title || "Untitled");
+        };
+        const submitRename = async () => {
+          const ok = await onRenameThread(thread.id, editingTitle);
+          if (ok) setEditingId(null);
+        };
         return (
           <DropdownMenuItem
             key={thread.id}
-            onClick={() => void onOpenThread(thread.id)}
+            onSelect={(event) => {
+              if (editing) {
+                event.preventDefault();
+                return;
+              }
+              void onOpenThread(thread.id);
+            }}
             className={cn("flex items-start gap-2 rounded-card px-2 py-2", active && "bg-raise")}
           >
             <Icon
@@ -498,14 +527,85 @@ function ThreadMenuItems({
               size="inline"
               className={cn("mt-0.5 shrink-0", active ? "text-amber" : "text-ink-4")}
             />
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-small text-ink">{thread.title || "Untitled"}</span>
-              <span className="mt-0.5 flex items-center gap-1.5 font-mono text-meta text-ink-4">
-                {running ? <StatusPill tone="amber" label="running" /> : null}
-                {pendingApprovals > 0 ? <StatusPill tone="against" label="approval" /> : null}
-                {!running && pendingApprovals === 0 ? <span>{formatThreadTime(thread.updatedAt)}</span> : null}
+            {editing ? (
+              <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                <input
+                  autoFocus
+                  value={editingTitle}
+                  onChange={(event) => setEditingTitle(event.target.value)}
+                  onClick={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => {
+                    event.stopPropagation();
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void submitRename();
+                    }
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      setEditingId(null);
+                    }
+                  }}
+                  className="min-w-0 flex-1 rounded-tap border border-line bg-field px-2 py-1 text-small text-ink outline-none focus:border-amber-line"
+                />
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    void submitRename();
+                  }}
+                  className="grid size-6 place-items-center rounded-tap text-ink-3 hover:bg-raise hover:text-for"
+                  aria-label="Save thread title"
+                >
+                  <Icon as={Check} size="inline" mark />
+                </button>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setEditingId(null);
+                  }}
+                  className="grid size-6 place-items-center rounded-tap text-ink-3 hover:bg-raise hover:text-ink"
+                  aria-label="Cancel rename"
+                >
+                  <Icon as={X} size="inline" mark />
+                </button>
               </span>
-            </span>
+            ) : (
+              <>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-small text-ink">{thread.title || "Untitled"}</span>
+                  <span className="mt-0.5 flex items-center gap-1.5 font-mono text-meta text-ink-4">
+                    {running ? <StatusPill tone="amber" label="running" /> : null}
+                    {pendingApprovals > 0 ? <StatusPill tone="against" label="approval" /> : null}
+                    {!running && pendingApprovals === 0 ? <span>{formatThreadTime(thread.updatedAt)}</span> : null}
+                  </span>
+                </span>
+                <span className="flex shrink-0 items-center gap-0.5">
+                  <button
+                    type="button"
+                    onClick={startRename}
+                    className="grid size-6 place-items-center rounded-tap text-ink-4 hover:bg-field hover:text-ink"
+                    aria-label="Rename thread"
+                  >
+                    <Icon as={Pencil} size="inline" mark />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      void onArchiveThread(thread.id);
+                    }}
+                    className="grid size-6 place-items-center rounded-tap text-ink-4 hover:bg-field hover:text-against"
+                    aria-label="Archive thread"
+                  >
+                    <Icon as={Archive} size="inline" mark />
+                  </button>
+                </span>
+              </>
+            )}
           </DropdownMenuItem>
         );
       })}

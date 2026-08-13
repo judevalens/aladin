@@ -155,6 +155,8 @@ export interface CopilotSlice {
   toggleCopilot: () => void;
   setCopilotOpen: (open: boolean) => void;
   setCopilotThreads: (threads: CopilotThreadView[]) => void;
+  renameCopilotThreadLocal: (thread: CopilotThreadView) => void;
+  archiveCopilotThreadLocal: (threadId: string) => void;
   /** Switch to a persisted thread and hydrate its messages. */
   openCopilotThread: (threadId: string, messages: CopilotMessageView[]) => void;
   /** Start a fresh, empty conversation. */
@@ -232,6 +234,32 @@ export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice
   toggleCopilot: () => set((state) => ({ copilotOpen: !state.copilotOpen })),
   setCopilotOpen: (open) => set({ copilotOpen: open }),
   setCopilotThreads: (threads) => set({ copilotThreads: threads }),
+  renameCopilotThreadLocal: (thread) =>
+    set((state) => ({
+      copilotThreads: state.copilotThreads.map((t) => (t.id === thread.id ? thread : t)),
+    })),
+  archiveCopilotThreadLocal: (threadId) =>
+    set((state) => {
+      const nextThreads = state.copilotThreads.filter((t) => t.id !== threadId);
+      if (state.activeThreadId !== threadId) {
+        return { copilotThreads: nextThreads };
+      }
+      persistThreadId(null);
+      return {
+        copilotThreads: nextThreads,
+        activeThreadId: null,
+        copilotMessages: [],
+        copilotStreaming: "",
+        copilotStatus: "idle" as CopilotStatus,
+        copilotActiveTool: null,
+        copilotToolTrail: [],
+        copilotThinking: false,
+        copilotSessionId: null,
+        copilotError: null,
+        copilotErrorCode: null,
+        copilotQueuedText: null,
+      };
+    }),
 
   openCopilotThread: (threadId, messages) =>
     set(() => {

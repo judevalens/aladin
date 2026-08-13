@@ -51,6 +51,8 @@ export interface CopilotRepo {
   rejectAction(actionId: string): Promise<void>;
   listThreads(): Promise<CopilotThreadView[]>;
   getThread(threadId: string): Promise<CopilotThreadDetail>;
+  renameThread(threadId: string, title: string): Promise<CopilotThreadView>;
+  archiveThread(threadId: string): Promise<void>;
   /** Preflight health: is the sidecar up and its MCP tool server reachable? */
   getStatus(): Promise<CopilotStatus>;
 }
@@ -117,5 +119,18 @@ export function createCopilotRepo(client: ApiClient): CopilotRepo {
           thread: res.thread,
           messages: (res.messages ?? []).map(toMessageView),
         })),
+
+    renameThread: (threadId, title) =>
+      client.fetch<CopilotThreadView>(`/api/copilot/threads/${encodeURIComponent(threadId)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ title }),
+      }),
+
+    archiveThread: (threadId) =>
+      client
+        .fetch<{ ok: boolean }>(`/api/copilot/threads/${encodeURIComponent(threadId)}`, {
+          method: "DELETE",
+        })
+        .then(() => undefined),
   };
 }

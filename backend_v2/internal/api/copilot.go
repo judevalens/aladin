@@ -15,6 +15,8 @@ func (s *Server) registerCopilotRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/copilot/action/{id}/reject", s.handleCopilotReject)
 	mux.HandleFunc("GET /api/copilot/threads", s.handleCopilotThreads)
 	mux.HandleFunc("GET /api/copilot/threads/{id}", s.handleCopilotThread)
+	mux.HandleFunc("PATCH /api/copilot/threads/{id}", s.handleCopilotRenameThread)
+	mux.HandleFunc("DELETE /api/copilot/threads/{id}", s.handleCopilotArchiveThread)
 	mux.HandleFunc("GET /api/copilot/status", s.handleCopilotStatus)
 }
 
@@ -109,6 +111,32 @@ func (s *Server) handleCopilotThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, detail)
+}
+
+// PATCH /api/copilot/threads/{id} {title} — rename one owned thread.
+func (s *Server) handleCopilotRenameThread(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Title string `json:"title"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeDecodeError(w, r, err)
+		return
+	}
+	thread, err := s.deps.Copilot().RenameThread(r.Context(), principalUserID(r), r.PathValue("id"), req.Title)
+	if err != nil {
+		s.writeCopilotError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, thread)
+}
+
+// DELETE /api/copilot/threads/{id} — archive one owned thread (soft delete).
+func (s *Server) handleCopilotArchiveThread(w http.ResponseWriter, r *http.Request) {
+	if err := s.deps.Copilot().ArchiveThread(r.Context(), principalUserID(r), r.PathValue("id")); err != nil {
+		s.writeCopilotError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 // copilotBearer extracts the caller's raw credential so the copilot-agent sidecar can

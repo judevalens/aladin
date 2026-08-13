@@ -109,6 +109,44 @@ export function useCopilot() {
     [repos.copilot],
   );
 
+  const renameThread = useCallback(
+    async (threadId: string, title: string) => {
+      const trimmed = title.trim();
+      if (!trimmed) return false;
+      try {
+        const thread = await repos.copilot.renameThread(threadId, trimmed);
+        useAppStore.getState().renameCopilotThreadLocal(thread);
+        void loadThreads();
+        return true;
+      } catch {
+        useAppStore.setState({
+          copilotError: "Couldn't rename that thread — try again.",
+          copilotErrorCode: null,
+        });
+        return false;
+      }
+    },
+    [repos.copilot, loadThreads],
+  );
+
+  const archiveThread = useCallback(
+    async (threadId: string) => {
+      try {
+        await repos.copilot.archiveThread(threadId);
+        useAppStore.getState().archiveCopilotThreadLocal(threadId);
+        void loadThreads();
+        return true;
+      } catch {
+        useAppStore.setState({
+          copilotError: "Couldn't archive that thread — try again.",
+          copilotErrorCode: null,
+        });
+        return false;
+      }
+    },
+    [repos.copilot, loadThreads],
+  );
+
   const stop = useCallback(() => {
     const sessionId = useAppStore.getState().copilotSessionId;
     if (sessionId) {
@@ -245,6 +283,8 @@ export function useCopilot() {
     rejectProposal,
     loadThreads,
     openThread,
+    renameThread,
+    archiveThread,
     newThread,
     fetchHealthWarning,
     queuedText,

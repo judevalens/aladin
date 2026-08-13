@@ -207,6 +207,41 @@ describe("copilot drafts", () => {
   });
 });
 
+describe("copilot thread management", () => {
+  it("renames a thread in the local switcher list", () => {
+    const store = makeStore();
+    store.getState().setCopilotThreads([
+      { id: "t1", title: "Old", updatedAt: "2026-01-01T00:00:00Z" },
+      { id: "t2", title: "Other", updatedAt: "2026-01-02T00:00:00Z" },
+    ]);
+
+    store.getState().renameCopilotThreadLocal({
+      id: "t1",
+      title: "New",
+      updatedAt: "2026-01-03T00:00:00Z",
+    });
+
+    expect(store.getState().copilotThreads.map((t) => t.title)).toEqual(["New", "Other"]);
+  });
+
+  it("archives the active thread locally and returns to a fresh chat", () => {
+    const store = makeStore();
+    store.getState().setCopilotThreads([
+      { id: "t1", title: "Active", updatedAt: "2026-01-01T00:00:00Z" },
+      { id: "t2", title: "Other", updatedAt: "2026-01-02T00:00:00Z" },
+    ]);
+    store.getState().openCopilotThread("t1", [
+      { id: "m1", role: "user", content: "hello", citations: [] },
+    ]);
+
+    store.getState().archiveCopilotThreadLocal("t1");
+
+    expect(store.getState().copilotThreads.map((t) => t.id)).toEqual(["t2"]);
+    expect(store.getState().activeThreadId).toBeNull();
+    expect(store.getState().copilotMessages).toEqual([]);
+  });
+});
+
 describe("turnDigest", () => {
   it("collapses consecutive tools and appends cost + steps", async () => {
     const { turnDigest } = await import("@/modules/copilot/ui/copilot-dock-ui");

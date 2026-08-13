@@ -113,19 +113,28 @@ func (a *fakeAgent) resolveCalls() []resolveCall {
 type fakeCopilotStore struct {
 	mu          sync.Mutex
 	owners      map[string]string
+	titles      map[string]string
+	archived    map[string]bool
 	msgs        map[string][]CopilotMessage
 	sdkSessions map[string]string
 	touches     int
 }
 
 func newFakeStore() *fakeCopilotStore {
-	return &fakeCopilotStore{owners: map[string]string{}, msgs: map[string][]CopilotMessage{}, sdkSessions: map[string]string{}}
+	return &fakeCopilotStore{
+		owners:      map[string]string{},
+		titles:      map[string]string{},
+		archived:    map[string]bool{},
+		msgs:        map[string][]CopilotMessage{},
+		sdkSessions: map[string]string{},
+	}
 }
 
-func (s *fakeCopilotStore) CreateThread(_ context.Context, id, userID, _ string) error {
+func (s *fakeCopilotStore) CreateThread(_ context.Context, id, userID, title string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.owners[id] = userID
+	s.titles[id] = title
 	return nil
 }
 func (s *fakeCopilotStore) TouchThread(_ context.Context, _ string) error {
@@ -140,10 +149,28 @@ func (s *fakeCopilotStore) ListThreads(_ context.Context, _ string) ([]CopilotTh
 func (s *fakeCopilotStore) GetThread(_ context.Context, userID, threadID string) (CopilotThread, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.owners[threadID] != userID {
+	if s.owners[threadID] != userID || s.archived[threadID] {
 		return CopilotThread{}, false, nil
 	}
-	return CopilotThread{ID: threadID, SDKSessionID: s.sdkSessions[threadID]}, true, nil
+	return CopilotThread{ID: threadID, Title: s.titles[threadID], SDKSessionID: s.sdkSessions[threadID]}, true, nil
+}
+func (s *fakeCopilotStore) RenameThread(_ context.Context, userID, threadID, title string) (CopilotThread, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.owners[threadID] != userID || s.archived[threadID] {
+		return CopilotThread{}, false, nil
+	}
+	s.titles[threadID] = title
+	return CopilotThread{ID: threadID, Title: title, SDKSessionID: s.sdkSessions[threadID]}, true, nil
+}
+func (s *fakeCopilotStore) ArchiveThread(_ context.Context, userID, threadID string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.owners[threadID] != userID || s.archived[threadID] {
+		return false, nil
+	}
+	s.archived[threadID] = true
+	return true, nil
 }
 func (s *fakeCopilotStore) SetThreadSDKSession(_ context.Context, threadID, sessionID string) error {
 	s.mu.Lock()
@@ -299,6 +326,39 @@ func TestCopilotSendRequiresBearer(t *testing.T) {
 	_, err := svc.SendMessage(context.Background(), CopilotSendInput{Principal: Principal{UserID: "u1"}, Text: "hi"})
 	if err == nil {
 		t.Fatal("expected an error when no bearer is forwarded")
+	}
+}
+
+func TestCopilotThreadManagementRenamesAndArchives(t *testing.T) {
+	store := newFakeStore()
+	const userID = "u1"
+	const threadID = "t1"
+	if err := store.CreateThread(context.Background(), threadID, userID, "Old title"); err != nil {
+		t.Fatalf("seed thread: %v", err)
+	}
+	svc := NewCopilotService(CopilotDeps{
+		Store: store, Agent: &fakeAgent{}, Realtime: NewInMemoryRealtimeEventService(NewSubscriptionKeyResolver()),
+	})
+
+	renamed, err := svc.RenameThread(context.Background(), userID, threadID, "  New title  ")
+	if err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	if renamed.Title != "New title" {
+		t.Fatalf("renamed title = %q, want trimmed title", renamed.Title)
+	}
+	if _, err := svc.RenameThread(context.Background(), userID, threadID, "  "); err == nil {
+		t.Fatal("blank rename should fail")
+	}
+	if _, err := svc.RenameThread(context.Background(), "other", threadID, "Nope"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("non-owner rename err = %v, want ErrNotFound", err)
+	}
+
+	if err := svc.ArchiveThread(context.Background(), userID, threadID); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+	if _, err := svc.RenameThread(context.Background(), userID, threadID, "After archive"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("archived thread rename err = %v, want ErrNotFound", err)
 	}
 }
 

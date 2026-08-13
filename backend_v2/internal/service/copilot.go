@@ -29,6 +29,8 @@ type CopilotService interface {
 	SendMessage(ctx context.Context, in CopilotSendInput) (CopilotSendResult, error)
 	ListThreads(ctx context.Context, userID string) ([]CopilotThread, error)
 	GetThread(ctx context.Context, userID, threadID string) (CopilotThreadDetail, error)
+	RenameThread(ctx context.Context, userID, threadID, title string) (CopilotThread, error)
+	ArchiveThread(ctx context.Context, userID, threadID string) error
 	// Cancel stops an in-flight turn (halting the work + cost), scoped to its owner.
 	Cancel(ctx context.Context, userID, sessionID string) error
 	// ApproveAction releases a gated tool call held open in the sidecar; RejectAction
@@ -142,6 +144,8 @@ type CopilotStore interface {
 	ListThreads(ctx context.Context, userID string) ([]CopilotThread, error)
 	// GetThread returns the thread iff it belongs to userID (found=false otherwise).
 	GetThread(ctx context.Context, userID, threadID string) (CopilotThread, bool, error)
+	RenameThread(ctx context.Context, userID, threadID, title string) (CopilotThread, bool, error)
+	ArchiveThread(ctx context.Context, userID, threadID string) (bool, error)
 	// SetThreadSDKSession stamps the Claude Agent SDK session id to resume next turn.
 	SetThreadSDKSession(ctx context.Context, threadID, sessionID string) error
 	AppendMessage(ctx context.Context, m StoredCopilotMessage) error
@@ -422,6 +426,41 @@ func (s *defaultCopilotService) GetThread(ctx context.Context, userID, threadID 
 		return CopilotThreadDetail{}, err
 	}
 	return CopilotThreadDetail{Thread: thread, Messages: messages}, nil
+}
+
+func (s *defaultCopilotService) RenameThread(ctx context.Context, userID, threadID, title string) (CopilotThread, error) {
+	if strings.TrimSpace(userID) == "" {
+		return CopilotThread{}, ErrUnauthenticated
+	}
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return CopilotThread{}, BadRequest("title is required")
+	}
+	if len(title) > 120 {
+		title = title[:120]
+	}
+	thread, ok, err := s.Store.RenameThread(ctx, userID, threadID, title)
+	if err != nil {
+		return CopilotThread{}, err
+	}
+	if !ok {
+		return CopilotThread{}, ErrNotFound
+	}
+	return thread, nil
+}
+
+func (s *defaultCopilotService) ArchiveThread(ctx context.Context, userID, threadID string) error {
+	if strings.TrimSpace(userID) == "" {
+		return ErrUnauthenticated
+	}
+	ok, err := s.Store.ArchiveThread(ctx, userID, threadID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // runAgent drives ONE turn through the sidecar, in its own goroutine: start the turn,

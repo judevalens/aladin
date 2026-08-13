@@ -46,6 +46,7 @@ func (r *PostgresCopilotStore) ListThreads(ctx context.Context, userID string) (
 		SELECT id::text, title, to_char(updated_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at
 		  FROM copilot_threads
 		 WHERE user_id = $1::uuid
+		   AND archived_at IS NULL
 		 ORDER BY updated_at DESC
 	`, userID)
 	if err != nil {
@@ -78,6 +79,42 @@ func (r *PostgresCopilotStore) GetThread(ctx context.Context, userID, threadID s
 		return coreservice.CopilotThread{}, false, fmt.Errorf("copilot get thread: %w", err)
 	}
 	return t, true, nil
+}
+
+func (r *PostgresCopilotStore) RenameThread(ctx context.Context, userID, threadID, title string) (coreservice.CopilotThread, bool, error) {
+	var t coreservice.CopilotThread
+	err := r.pool.QueryRow(ctx, `
+		UPDATE copilot_threads
+		   SET title = $3,
+		       updated_at = now()
+		 WHERE id = $1::uuid
+		   AND user_id = $2::uuid
+		   AND archived_at IS NULL
+		RETURNING id::text, title, COALESCE(sdk_session_id, '') AS sdk_session_id,
+		          to_char(updated_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at
+	`, threadID, userID, title).Scan(&t.ID, &t.Title, &t.SDKSessionID, &t.UpdatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return coreservice.CopilotThread{}, false, nil
+		}
+		return coreservice.CopilotThread{}, false, fmt.Errorf("copilot rename thread: %w", err)
+	}
+	return t, true, nil
+}
+
+func (r *PostgresCopilotStore) ArchiveThread(ctx context.Context, userID, threadID string) (bool, error) {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE copilot_threads
+		   SET archived_at = now(),
+		       updated_at = now()
+		 WHERE id = $1::uuid
+		   AND user_id = $2::uuid
+		   AND archived_at IS NULL
+	`, threadID, userID)
+	if err != nil {
+		return false, fmt.Errorf("copilot archive thread: %w", err)
+	}
+	return tag.RowsAffected() > 0, nil
 }
 
 // SetThreadSDKSession stamps the Claude Agent SDK session id resumed on the next
