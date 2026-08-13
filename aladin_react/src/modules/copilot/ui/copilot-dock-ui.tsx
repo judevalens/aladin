@@ -524,7 +524,7 @@ function activeThread(
   return found ? found.title || "Untitled" : null;
 }
 
-function ThreadMenuItems({
+export function ThreadMenuItems({
   threads,
   query,
   activeThreadId,

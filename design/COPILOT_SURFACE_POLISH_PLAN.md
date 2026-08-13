@@ -51,7 +51,9 @@ Aladin owns all rendering, permissions, and actions.
 - Phase 9 is started: rich directive parser tests now have render-level coverage
   for native block rendering, validated actions, and malformed fallback behavior;
   live activity timeline tests cover grouped tool runs, expandable summaries, and
-  overflow counts; queued follow-up tests cover scoped thread/surface delivery.
+  overflow counts; queued follow-up tests cover scoped thread/surface delivery;
+  thread switcher tests cover search, empty states, approval/running/pinned
+  badges, and row actions.
 - The backend system prompt now advertises the supported rich directive contract
   and safety rules so final answers can use native blocks intentionally.
 
