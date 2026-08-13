@@ -172,17 +172,35 @@ function DirectiveBlock({
             activity
           </div>
           <div className="space-y-1">
-            {items.map((item, index) => (
-              <div key={`${item.label}-${index}`} className="flex items-center gap-2 text-small text-ink-2">
-                <span
-                  className={cn(
-                    "size-1.5 rounded-full",
-                    item.status === "error" ? "bg-against" : item.status === "running" ? "bg-amber" : "bg-for",
-                  )}
-                />
-                <span className="min-w-0 truncate">{item.label}</span>
-              </div>
-            ))}
+            {items.map((item, index) => {
+              const details = activityDetails(item);
+              const row = (
+                <div className="flex items-center gap-2 text-small text-ink-2">
+                  <span
+                    className={cn(
+                      "size-1.5 shrink-0 rounded-full",
+                      item.status === "error" ? "bg-against" : item.status === "running" ? "bg-amber" : "bg-for",
+                    )}
+                  />
+                  <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                  {item.time ? <span className="shrink-0 font-mono text-meta text-ink-4">{item.time}</span> : null}
+                </div>
+              );
+              return details.length > 0 ? (
+                <details key={`${item.label}-${index}`} className="rounded-tap open:bg-raise/50">
+                  <summary className="cursor-default list-none">{row}</summary>
+                  <div className="mt-1 space-y-0.5 border-l border-line pl-3 font-mono text-meta text-ink-4">
+                    {details.map((detail) => (
+                      <p key={detail} className="truncate">
+                        {detail}
+                      </p>
+                    ))}
+                  </div>
+                </details>
+              ) : (
+                <div key={`${item.label}-${index}`}>{row}</div>
+              );
+            })}
           </div>
         </div>
       );
@@ -279,19 +297,52 @@ function directiveFallback(segment: Extract<MarkdownSegment, { kind: "directive"
   return `::${segment.name}${attrs ? `{${attrs}}` : ""}`;
 }
 
-function parseActivityItems(body: string): { label: string; status: "running" | "ok" | "error" }[] {
+export type ActivityItem = {
+  label: string;
+  status: "running" | "ok" | "error";
+  detail?: string;
+  inputSummary?: string;
+  resultSummary?: string;
+  time?: string;
+};
+
+export function parseActivityItems(body: string): ActivityItem[] {
   try {
     const parsed = JSON.parse(body);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.flatMap((item) => {
+    const rawItems: unknown[] = Array.isArray(parsed)
+      ? parsed
+      : parsed && typeof parsed === "object" && Array.isArray(parsed.items)
+        ? (parsed.items as unknown[])
+        : [];
+    return rawItems.slice(0, 12).flatMap((item) => {
       if (!item || typeof item !== "object") return [];
-      const label = typeof item.label === "string" ? item.label.trim() : "";
-      const status = item.status === "running" || item.status === "error" ? item.status : "ok";
-      return label ? [{ label, status }] : [];
+      const record = item as Record<string, unknown>;
+      const label = textField(record.label, 120);
+      const status = record.status === "running" || record.status === "error" ? record.status : "ok";
+      const detail = textField(record.detail ?? record.message ?? record.error, 500);
+      const inputSummary = textField(record.inputSummary, 500);
+      const resultSummary = textField(record.resultSummary, 500);
+      const time = textField(record.time ?? record.finishedAt ?? record.startedAt, 80);
+      return label ? [{ label, status, detail, inputSummary, resultSummary, time }] : [];
     });
   } catch {
     return [];
   }
+}
+
+function activityDetails(item: ActivityItem): string[] {
+  return [
+    item.inputSummary ? `in: ${item.inputSummary}` : "",
+    item.resultSummary ? `out: ${item.resultSummary}` : "",
+    item.detail ?? "",
+  ].filter(Boolean);
+}
+
+function textField(value: unknown, max: number): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const text = value.replace(/\s+/g, " ").trim();
+  if (!text) return undefined;
+  return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
 type ActionItem =

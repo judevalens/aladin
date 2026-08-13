@@ -37,6 +37,9 @@ Aladin owns all rendering, permissions, and actions.
 - Phase 6 has a first cut: the current surface resolves active artifact
   title/type from the workspace tree, so composer copy and suggestions can use
   the actual page/shard/source context.
+- Phase 7 is started: persisted `aladin-activity` blocks can render rich,
+  bounded detail fields such as input summaries, result summaries, detail text,
+  and timestamps.
 
 ## Current Problems
 
