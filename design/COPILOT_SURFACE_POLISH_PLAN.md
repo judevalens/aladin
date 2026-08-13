@@ -48,6 +48,8 @@ Aladin owns all rendering, permissions, and actions.
   render bounded build/preview status, diagnostics, and an open-shard action;
   persisted `aladin-error-recovery` blocks can render bounded recovery messages
   with validated follow-up/open actions.
+- Phase 9 is started: rich directive parser tests now have render-level coverage
+  for native block rendering, validated actions, and malformed fallback behavior.
 
 ## Current Problems
 
