@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { Eyebrow } from "@/components/ui/eyebrow";
+import { Icon } from "@/components/ui/icon";
 import {
   Code2,
   FileText,
@@ -47,17 +49,17 @@ export function ResearchOverviewUI({
 
   if (loading && !folder) {
     return (
-      <div className="p-8 font-mono text-[11px] uppercase tracking-wide text-ink-4">Loading…</div>
+      <Eyebrow className="p-8 text-ink-4">Loading…</Eyebrow>
     );
   }
-  if (error) return <div className="p-8 text-[13px] text-against">{error}</div>;
+  if (error) return <div className="p-8 text-body text-against">{error}</div>;
   if (!folder) return null;
 
   return (
     <div className="mx-auto w-full max-w-workspace-max px-8 py-7">
       <header className="mb-6">
-        <h1 className="font-display text-[24px] leading-tight text-ink">{folder.title}</h1>
-        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[10.5px] uppercase tracking-[0.5px] text-ink-4">
+        <h1 className="font-display text-title leading-tight text-ink">{folder.title}</h1>
+        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-meta uppercase tracking-[0.5px] text-ink-4">
           <span>{folder.execMode}-driven</span>
           <span>{material.length} item{material.length === 1 ? "" : "s"}</span>
           {folder.runState !== "idle" ? (
@@ -109,7 +111,7 @@ function Hypothesis({
         }}
         rows={3}
         placeholder="What do you believe — and what would show it's wrong?"
-        className="w-full resize-y rounded-card border border-line bg-card px-4 py-3.5 font-display text-[15px] leading-relaxed text-ink outline-none transition-colors placeholder:font-sans placeholder:text-[13.5px] placeholder:text-ink-4 focus:border-amber-line"
+        className="w-full resize-y rounded-card border border-line bg-card px-4 py-3.5 font-display text-lead leading-relaxed text-ink outline-none transition-colors placeholder:font-sans placeholder:text-body placeholder:text-ink-4 focus:border-amber-line"
       />
     </section>
   );
@@ -128,14 +130,14 @@ function Material({ items, onOpen }: { items: ResearchMaterial[]; onOpen: (id: s
     <section className="mb-7">
       <SectionLabel>Material · {items.length}</SectionLabel>
       {items.length === 0 ? (
-        <p className="rounded-card border border-dashed border-line bg-card px-4 py-3.5 text-[13px] leading-relaxed text-ink-4">
+        <p className="rounded-card border border-dashed border-line bg-card px-4 py-3.5 text-body leading-relaxed text-ink-4">
           Nothing captured yet. Drop the paper, the forum thread, or the notes that made
           you think this was worth testing.
         </p>
       ) : (
         <ul className="overflow-hidden rounded-card border border-line">
           {items.map((item, index) => {
-            const Icon = MATERIAL_ICONS[item.kind] ?? (item.isContainer ? Folder : FileText);
+            const Glyph = MATERIAL_ICONS[item.kind] ?? (item.isContainer ? Folder : FileText);
             return (
               <li key={item.id}>
                 <button
@@ -148,14 +150,14 @@ function Material({ items, onOpen }: { items: ResearchMaterial[]; onOpen: (id: s
                     item.isContainer ? "cursor-default" : "hover:bg-raise",
                   )}
                 >
-                  <Icon className="size-4 shrink-0 text-ink-4" strokeWidth={1.75} />
-                  <span className="min-w-0 flex-1 truncate text-[13.5px] text-ink-2">
+                  <Icon as={Glyph} className="shrink-0 text-ink-4" />
+                  <span className="min-w-0 flex-1 truncate text-body text-ink-2">
                     {item.title || "Untitled"}
                   </span>
                   <IngestionMark item={item} />
-                  <span className="shrink-0 font-mono text-[10.5px] uppercase tracking-wide text-ink-4">
+                  <Eyebrow as="span" className="shrink-0 text-ink-4">
                     {item.kind}
-                  </span>
+                  </Eyebrow>
                 </button>
               </li>
             );
@@ -184,7 +186,7 @@ function StrategyCode({
     <section>
       <SectionLabel>Strategy code</SectionLabel>
       {!attached ? (
-        <p className="rounded-card border border-dashed border-line bg-card px-4 py-3.5 text-[13px] leading-relaxed text-ink-4">
+        <p className="rounded-card border border-dashed border-line bg-card px-4 py-3.5 text-body leading-relaxed text-ink-4">
           No code yet. A strategy is a directory of files — import one from git, point at a
           local directory, or start writing here.
         </p>
@@ -194,16 +196,16 @@ function StrategyCode({
           onClick={onOpenCode}
           className="flex w-full items-center gap-3 rounded-card border border-line bg-card px-3.5 py-3 text-left transition-colors hover:bg-raise"
         >
-          <Code2 className="size-4 shrink-0 text-ink-4" strokeWidth={1.75} />
+          <Icon as={Code2} className="shrink-0 text-ink-4" />
           <span className="min-w-0 flex-1">
-            <span className="block truncate font-mono text-[12.5px] text-ink-2">
+            <span className="block truncate font-mono text-small text-ink-2">
               {folder.sourceRef}
             </span>
-            <span className="mt-0.5 block font-mono text-[10.5px] uppercase tracking-wide text-ink-4">
+            <Eyebrow as="span" className="mt-0.5 block text-ink-4">
               {folder.sourceKind}
               {folder.commitSha ? ` · ${folder.commitSha.slice(0, 8)}` : ""}
               {folder.codeHash ? ` · ${folder.codeHash.slice(0, 8)}` : " · never run"}
-            </span>
+            </Eyebrow>
           </span>
         </button>
       )}
@@ -229,7 +231,7 @@ function IngestionMark({ item }: { item: ResearchMaterial }) {
     <span
       title={document.error || document.status}
       className={cn(
-        "shrink-0 font-mono text-[10px] uppercase tracking-wide",
+        "shrink-0 font-mono text-meta uppercase tracking-wide",
         working ? "text-ink-4" : document.status === "unsupported" ? "text-amber" : "text-against",
       )}
     >
@@ -240,9 +242,9 @@ function IngestionMark({ item }: { item: ResearchMaterial }) {
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <h2 className="mb-2 font-mono text-[10.5px] uppercase tracking-[0.6px] text-ink-4">
+    <Eyebrow as="h2" className="mb-2 text-ink-4">
       {children}
-    </h2>
+    </Eyebrow>
   );
 }
 

@@ -161,7 +161,7 @@ export function PdfView({ url, targetPage, onVisiblePageChange, zoom = 1, classN
   if (error) {
     return (
       <div className={cn("flex items-center justify-center bg-rail p-8", className)}>
-        <p className="max-w-sm text-center text-[13px] leading-relaxed text-ink-4">{error}</p>
+        <p className="max-w-sm text-center text-body leading-relaxed text-ink-4">{error}</p>
       </div>
     );
   }
@@ -283,7 +283,7 @@ function PageSlot({
           glare in a dark workspace. The page's own pixels arrive with the render; until then
           the slot stays a dark placeholder holding its geometry. */}
       <div
-        className="relative overflow-hidden rounded-[3px] bg-card shadow-[0_1px_2px_rgb(0_0_0/0.35),0_10px_28px_-12px_rgb(0_0_0/0.55)]"
+        className="relative overflow-hidden rounded-tap bg-card shadow-page"
         style={{ width: width || undefined, height: height || undefined }}
       >
         <canvas ref={canvasRef} className={cn("block h-full w-full transition-opacity duration-150", rendered ? "opacity-100" : "opacity-0")} />
@@ -291,7 +291,7 @@ function PageSlot({
         <div ref={textRef} className="textLayer" />
         {!rendered ? <div className="absolute inset-0 animate-pulse bg-card" /> : null}
       </div>
-      <div className="pt-1.5 text-center font-mono text-[10px] tabular-nums text-ink-4">{page}</div>
+      <div className="pt-1.5 text-center font-mono text-meta tabular-nums text-ink-4">{page}</div>
     </div>
   );
 }

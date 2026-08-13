@@ -1,4 +1,6 @@
 import { Activity, AlertTriangle, CheckCircle2, Clock, Loader2, XCircle } from "lucide-react";
+import { Eyebrow } from "@/components/ui/eyebrow";
+import { Icon } from "@/components/ui/icon";
 
 import { cn } from "@/lib/utils";
 import { usePipelineStats } from "@/modules/pipeline/hooks/use-pipeline-stats";
@@ -36,10 +38,10 @@ function StatCard({
     <div className="rounded-card border border-line bg-card p-3.5">
       <div className="flex items-center gap-1.5 text-ink-4">
         {icon}
-        <span className="font-mono text-[10px] uppercase tracking-[0.12em]">{label}</span>
+        <Eyebrow as="span">{label}</Eyebrow>
       </div>
-      <div className={cn("mt-1.5 font-display text-2xl", valueTone)}>{value}</div>
-      {hint ? <div className="mt-0.5 text-[11px] text-ink-4">{hint}</div> : null}
+      <div className={cn("mt-1.5 font-display text-title", valueTone)}>{value}</div>
+      {hint ? <div className="mt-0.5 text-meta text-ink-4">{hint}</div> : null}
     </div>
   );
 }
@@ -53,7 +55,7 @@ function StageBreakdown({ byStatus }: { byStatus: Record<string, number> }) {
     ...Object.keys(byStatus).filter((k) => !STAGE_ORDER.includes(k)),
   ];
   if (keys.length === 0) {
-    return <p className="text-[13px] text-ink-4">No records ingested yet.</p>;
+    return <p className="text-body text-ink-4">No records ingested yet.</p>;
   }
   return (
     <ul className="flex flex-wrap gap-2">
@@ -64,13 +66,13 @@ function StageBreakdown({ byStatus }: { byStatus: Record<string, number> }) {
         >
           <span
             className={cn(
-              "font-mono text-[10px] uppercase",
+              "font-mono text-meta uppercase",
               k === "complete" ? "text-for" : k === "failed" ? "text-against" : "text-ink-3",
             )}
           >
             {k}
           </span>
-          <span className="text-[13px] text-ink">{byStatus[k]}</span>
+          <span className="text-body text-ink">{byStatus[k]}</span>
         </li>
       ))}
     </ul>
@@ -86,50 +88,50 @@ function Body({ stats }: { stats: PipelineStats }) {
           label="In flight"
           value={records.inFlight}
           hint={`oldest ${fmtDuration(records.oldestInFlightSecs)}`}
-          icon={<Loader2 className="size-3.5" />}
+          icon={<Icon as={Loader2} size="inline" mark />}
         />
         <StatCard
           label="Stuck"
           value={records.stuckOver15Min}
           hint="no progress 15m+"
           tone={records.stuckOver15Min > 0 ? "amber" : "ink"}
-          icon={<AlertTriangle className="size-3.5" />}
+          icon={<Icon as={AlertTriangle} size="inline" mark />}
         />
         <StatCard
           label="Failed"
           value={records.failed}
           tone={records.failed > 0 ? "against" : "ink"}
-          icon={<XCircle className="size-3.5" />}
+          icon={<Icon as={XCircle} size="inline" mark />}
         />
         <StatCard
           label="Done / hr"
           value={throughput.completedLast1h}
           hint={`${throughput.completedLast24h} in 24h`}
           tone="for"
-          icon={<CheckCircle2 className="size-3.5" />}
+          icon={<Icon as={CheckCircle2} size="inline" mark />}
         />
         <StatCard
           label="Avg latency"
           value={fmtDuration(throughput.avgLatencySecs)}
           hint="capture → complete"
-          icon={<Clock className="size-3.5" />}
+          icon={<Icon as={Clock} size="inline" mark />}
         />
         <StatCard
           label="Relationships"
           value={stats.relationships}
-          icon={<Activity className="size-3.5" />}
+          icon={<Icon as={Activity} size="inline" mark />}
         />
       </div>
 
       <section>
-        <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-ink-4">
+        <Eyebrow as="h3" className="mb-2 text-ink-4">
           Records by stage
-        </h3>
+        </Eyebrow>
         <StageBreakdown byStatus={records.byStatus} />
       </section>
 
       <section>
-        <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-ink-4">
+        <h3 className="mb-2 font-mono text-meta uppercase tracking-[0.14em] text-ink-4">
           Insights · {Object.values(stats.insights.byType).reduce((a, b) => a + b, 0)}
         </h3>
         <StageBreakdown byStatus={stats.insights.byType} />
@@ -144,15 +146,15 @@ export function PipelineStatusUI() {
   return (
     <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-bg">
       <header className="flex items-center gap-2 border-b border-line bg-panel px-4 py-2.5">
-        <Activity className="size-4 text-amber" />
-        <span className="font-display text-[13px] text-ink">Ingestion pipeline</span>
-        <span className="ml-auto font-mono text-[11px] text-ink-4">live · 5s</span>
+        <Icon as={Activity} mark className="text-amber" />
+        <span className="font-display text-body text-ink">Ingestion pipeline</span>
+        <span className="ml-auto font-mono text-meta text-ink-4">live · 5s</span>
       </header>
       <div className="min-h-0 flex-1 overflow-auto px-6 py-6">
         {loading && !stats ? (
-          <p className="mt-10 text-center text-[13px] text-ink-4">Loading…</p>
+          <p className="mt-10 text-center text-body text-ink-4">Loading…</p>
         ) : error && !stats ? (
-          <p className="mt-10 text-center text-[13px] text-against">{error}</p>
+          <p className="mt-10 text-center text-body text-against">{error}</p>
         ) : stats ? (
           <Body stats={stats} />
         ) : null}

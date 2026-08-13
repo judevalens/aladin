@@ -1,4 +1,6 @@
 import { useMemo, useRef, useState } from "react";
+import { Eyebrow } from "@/components/ui/eyebrow";
+import { Icon } from "@/components/ui/icon";
 import { FileWarning, Loader2, Minus, Plus, ScanLine } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -129,12 +131,12 @@ export function DocumentReader({
       {outline.length > 0 ? (
         <nav className="flex w-64 shrink-0 flex-col border-r border-line bg-panel">
           <div className="flex items-center gap-2 px-4 py-2.5">
-            <h2 className="font-mono text-[10px] uppercase tracking-[0.7px] text-ink-4">Contents</h2>
-            <span className="font-mono text-[10px] tabular-nums text-ink-4">{outline.length}</span>
+            <Eyebrow as="h2" className="text-ink-4">Contents</Eyebrow>
+            <span className="font-mono text-meta tabular-nums text-ink-4">{outline.length}</span>
             {outlineRecovered ? (
               <span
                 title="This file carries no outline of its own — segmentation recovered one."
-                className="ml-auto rounded-chip bg-[rgb(var(--amber-soft))] px-1.5 py-px font-mono text-[9px] uppercase tracking-[0.5px] text-amber"
+                className="ml-auto rounded-chip bg-[rgb(var(--amber-soft))] px-1.5 py-px font-mono text-meta uppercase tracking-[0.5px] text-amber"
               >
                 Recovered
               </span>
@@ -151,7 +153,7 @@ export function DocumentReader({
                       onClick={() => jumpTo(entry.page)}
                       style={{ paddingLeft: 8 + Math.max(0, entry.depth) * 11 }}
                       className={cn(
-                        "group flex w-full items-baseline gap-2 rounded-md py-[5px] pr-2 text-left text-[12.5px] leading-snug transition-colors",
+                        "group flex w-full items-baseline gap-2 rounded-control py-1 pr-2 text-left text-small leading-snug transition-colors",
                         active
                           ? "bg-[rgb(var(--amber-soft))] text-amber"
                           : "text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink-2",
@@ -160,7 +162,7 @@ export function DocumentReader({
                       <span className="min-w-0 flex-1 truncate">{entry.title}</span>
                       <span
                         className={cn(
-                          "shrink-0 font-mono text-[10px] tabular-nums",
+                          "shrink-0 font-mono text-meta tabular-nums",
                           active ? "text-amber" : "text-ink-4",
                         )}
                       >
@@ -177,29 +179,29 @@ export function DocumentReader({
 
       <div className="flex min-w-0 flex-1 flex-col bg-rail">
         <header className="flex h-10 shrink-0 items-center gap-3 border-b border-line bg-panel pl-4 pr-3">
-          <h1 className="min-w-0 flex-1 truncate font-display text-[13px] text-ink" title={title}>
+          <h1 className="min-w-0 flex-1 truncate font-display text-body text-ink" title={title}>
             {title}
           </h1>
 
-          <span className="shrink-0 whitespace-nowrap font-mono text-[10.5px] tabular-nums text-ink-4">
+          <span className="shrink-0 whitespace-nowrap font-mono text-meta tabular-nums text-ink-4">
             {mode === "page" ? `${currentPage} / ${pageCount}` : `${pageCount} pp`}
           </span>
 
           {mode === "page" ? (
             <div className="flex shrink-0 items-center gap-0.5">
               <IconButton label="Zoom out" onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.15).toFixed(2)))}>
-                <Minus className="size-3" strokeWidth={2} />
+                <Icon as={Minus} size="inline" mark />
               </IconButton>
-              <span className="w-9 text-center font-mono text-[10.5px] tabular-nums text-ink-4">
+              <span className="w-9 text-center font-mono text-meta tabular-nums text-ink-4">
                 {Math.round(zoom * 100)}%
               </span>
               <IconButton label="Zoom in" onClick={() => setZoom((z) => Math.min(2.5, +(z + 0.15).toFixed(2)))}>
-                <Plus className="size-3" strokeWidth={2} />
+                <Icon as={Plus} size="inline" mark />
               </IconButton>
             </div>
           ) : null}
 
-          <div className="flex shrink-0 items-center gap-px rounded-chip bg-field p-[3px]">
+          <div className="flex shrink-0 items-center gap-px rounded-chip bg-field p-1">
             <ModeButton active={mode === "page"} onClick={() => switchTo("page")}>
               Page
             </ModeButton>
@@ -234,19 +236,19 @@ export function DocumentReader({
               {/* §13f: this mode is honest about what it is. Tables and equations do not
                   survive the flattening, so it is for copying prose, not for reading a
                   paper — Page mode is for that. */}
-              <p className="mb-6 border-l-2 border-line-2 pl-3 text-[12px] leading-relaxed text-ink-4">
+              <p className="mb-6 border-l-2 border-line-2 pl-3 text-small leading-relaxed text-ink-4">
                 Extracted text — what the machine layer reads. Tables, figures and equations don&apos;t
                 survive this view; switch to Page for those.
               </p>
               {(pages ?? []).map((page) => (
                 <section key={page.page} data-page={page.page} className="scroll-mt-6 pb-7">
-                  <div className="mb-2 select-none font-mono text-[10px] uppercase tracking-wide text-ink-4">
+                  <Eyebrow className="mb-2 select-none text-ink-4">
                     p{page.page}
-                  </div>
+                  </Eyebrow>
                   {page.text ? (
-                    <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed text-ink-2">{page.text}</p>
+                    <p className="whitespace-pre-wrap text-body leading-relaxed text-ink-2">{page.text}</p>
                   ) : (
-                    <p className="text-[13px] italic text-ink-4">No text on this page.</p>
+                    <p className="text-body italic text-ink-4">No text on this page.</p>
                   )}
                 </section>
               ))}
@@ -272,7 +274,7 @@ function ModeButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "rounded-chip px-2 py-[3px] font-mono text-[10px] uppercase tracking-[0.5px] transition-colors",
+        "rounded-chip px-2 py-1 font-mono text-meta uppercase tracking-[0.5px] transition-colors",
         active ? "bg-raise text-ink" : "text-ink-4 hover:text-ink-2",
       )}
     >
@@ -296,7 +298,7 @@ function IconButton({
       onClick={onClick}
       aria-label={label}
       title={label}
-      className="flex size-6 items-center justify-center rounded-md text-ink-4 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink-2"
+      className="flex size-6 items-center justify-center rounded-control text-ink-4 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink-2"
     >
       {children}
     </button>
@@ -335,7 +337,9 @@ function StatusNotice({ document }: { document: IngestedDocument }) {
 }
 
 function Notice({
-  icon: Icon,
+  // `Glyph`, not `Icon` — this file imports the <Icon> primitive, and a prop named `Icon`
+  // would shadow it inside this component only, which is the worst kind of trap.
+  icon: Glyph,
   title,
   body,
   spin = false,
@@ -350,12 +354,14 @@ function Notice({
   return (
     <div className="flex h-full items-center justify-center p-8">
       <div className="max-w-md text-center">
-        <Icon
+        {/* Empty-state illustration at 24px — deliberately off the <Icon> scale (§5 rule 9's
+            carve-out), so its raw strokeWidth is intentional. */}
+        <Glyph
           className={cn("mx-auto mb-3 size-6", tone === "against" ? "text-against" : "text-ink-4", spin && "animate-spin")}
           strokeWidth={1.5}
         />
-        <p className="font-display text-[15px] text-ink">{title}</p>
-        <p className="mt-1.5 text-[13px] leading-relaxed text-ink-4">{body}</p>
+        <p className="font-display text-lead text-ink">{title}</p>
+        <p className="mt-1.5 text-body leading-relaxed text-ink-4">{body}</p>
       </div>
     </div>
   );
@@ -390,7 +396,7 @@ export function FileArtifactPaneUI({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {unread ? (
-        <p className="border-b border-line bg-panel px-6 py-2 text-[12.5px] text-ink-4">
+        <p className="border-b border-line bg-panel px-6 py-2 text-small text-ink-4">
           Not read yet — no text or outline has been extracted. Extraction runs in the
           background worker; if this doesn&apos;t change, the worker isn&apos;t running.
         </p>
@@ -411,7 +417,7 @@ function StatusLine({ document }: { document: IngestedDocument }) {
   return (
     <p
       className={cn(
-        "px-6 py-2 text-[12.5px]",
+        "px-6 py-2 text-small",
         document.status === "failed" ? "text-against" : working ? "text-ink-4" : "text-amber",
       )}
     >

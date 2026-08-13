@@ -102,6 +102,13 @@
     --container-workspace-max: 72ch;
 
     /* Shadows */
+    /* The modal scrim. One value for all eight themes on purpose: a scrim darkens what is
+       behind it, so it does not follow the surface ramp. Was inlined as bg-[rgba(6,6,8,0.5)]
+       in ticker-modal, which rule 1 forbids and nothing else could reuse. */
+    --color-scrim: rgba(6, 6, 8, 0.5);
+    /* A page/card lift for content that sits ON a surface (PDF pages), lighter than
+       --shadow-panel, which is a pane-edge shadow. */
+    --shadow-page: 0 1px 2px rgb(0 0 0 / 0.35), 0 10px 28px -12px rgb(0 0 0 / 0.55);
     --shadow-panel: -24px 0 60px rgba(0, 0, 0, 0.5);
     --shadow-modal: 0 28px 70px rgba(0, 0, 0, 0.6);
     --shadow-toast: 0 12px 40px rgba(0, 0, 0, 0.5);

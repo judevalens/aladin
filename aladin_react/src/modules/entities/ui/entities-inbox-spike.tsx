@@ -13,6 +13,7 @@ import {
   TrendingUp,
   X,
 } from "lucide-react";
+import { Icon } from "@/components/ui/icon";
 import { useMemo, useState } from "react";
 
 import { cn } from "@/lib/utils";
@@ -114,16 +115,16 @@ function toCard(e: PoolEntity): EntityListItem {
 function SectionHead({ title, hint, count }: { title: string; hint?: string; count?: string }) {
   return (
     <div className="mb-2.5 flex items-center gap-2">
-      <span className="font-display text-[13px] font-semibold text-ink">{title}</span>
-      {hint && <span className="font-mono text-[10px] text-ink-4">{hint}</span>}
+      <span className="font-display text-body font-semibold text-ink">{title}</span>
+      {hint && <span className="font-mono text-meta text-ink-4">{hint}</span>}
       <span className="h-px flex-1 bg-line-2" />
-      {count && <span className="font-mono text-[10px] text-ink-4">{count}</span>}
+      {count && <span className="font-mono text-meta text-ink-4">{count}</span>}
     </div>
   );
 }
 
 function ViewToggle({ view, onView }: { view: EntityView; onView: (v: EntityView) => void }) {
-  const btn = (v: EntityView, Icon: typeof LayoutGrid, label: string) => (
+  const btn = (v: EntityView, Glyph: typeof LayoutGrid, label: string) => (
     <button
       type="button"
       title={label}
@@ -135,7 +136,7 @@ function ViewToggle({ view, onView }: { view: EntityView; onView: (v: EntityView
         view === v ? "bg-[rgb(var(--sel))] text-ink" : "text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink",
       )}
     >
-      <Icon size={14} strokeWidth={1.9} />
+      <Icon as={Glyph} size="inline" />
     </button>
   );
   return (
@@ -148,30 +149,30 @@ function ViewToggle({ view, onView }: { view: EntityView; onView: (v: EntityView
 
 function DecisionCard({ d, onDecide }: { d: (typeof DECISIONS)[number]; onDecide: () => void }) {
   return (
-    <div className="rounded-[12px] border border-line-2 bg-card p-3">
+    <div className="rounded-card border border-line-2 bg-card p-3">
       <div className="flex items-center gap-2">
         <span className="flex min-w-0 flex-1 items-center gap-2">
-          <span className="truncate font-display text-[13.5px] font-semibold text-ink">{d.from}</span>
-          <span className="shrink-0 font-mono text-[9px] text-ink-4">{d.fromKind}</span>
-          <ArrowLeftRight size={12} strokeWidth={1.9} className="shrink-0 text-ink-4" />
-          <span className="truncate font-display text-[13.5px] font-semibold text-ink">{d.to}</span>
-          <span className="shrink-0 font-mono text-[9px] text-ink-4">{d.toKind}</span>
+          <span className="truncate font-display text-body font-semibold text-ink">{d.from}</span>
+          <span className="shrink-0 font-mono text-meta text-ink-4">{d.fromKind}</span>
+          <Icon as={ArrowLeftRight} size="inline" className="shrink-0 text-ink-4" />
+          <span className="truncate font-display text-body font-semibold text-ink">{d.to}</span>
+          <span className="shrink-0 font-mono text-meta text-ink-4">{d.toKind}</span>
         </span>
-        <span className="shrink-0 font-mono text-[10px] text-ink-3">{d.pct}%</span>
+        <span className="shrink-0 font-mono text-meta text-ink-3">{d.pct}%</span>
       </div>
-      <div className={cn("mt-1 font-mono text-[9.5px]", d.tone)}>{d.verdict}</div>
+      <div className={cn("mt-1 font-mono text-meta", d.tone)}>{d.verdict}</div>
       <div className="mt-2.5 flex items-center gap-2">
         <button
           onClick={onDecide}
-          className="flex items-center gap-1 rounded-chip bg-amber px-2.5 py-1 text-[11px] font-semibold text-primary-foreground transition hover:brightness-[1.08]"
+          className="flex items-center gap-1 rounded-chip bg-amber px-2.5 py-1 text-meta font-semibold text-primary-foreground transition hover:brightness-[1.08]"
         >
-          <Check size={12} strokeWidth={2.4} /> Merge
+          <Icon as={Check} size="inline" mark /> Merge
         </button>
         <button
           onClick={onDecide}
-          className="flex items-center gap-1 rounded-chip border border-line px-2.5 py-1 text-[11px] font-semibold text-ink-2 transition hover:brightness-[1.08]"
+          className="flex items-center gap-1 rounded-chip border border-line px-2.5 py-1 text-meta font-semibold text-ink-2 transition hover:brightness-[1.08]"
         >
-          <X size={12} strokeWidth={2.4} /> Keep separate
+          <Icon as={X} size="inline" mark /> Keep separate
         </button>
       </div>
     </div>
@@ -179,34 +180,34 @@ function DecisionCard({ d, onDecide }: { d: (typeof DECISIONS)[number]; onDecide
 }
 
 function ActivityRow({ a }: { a: (typeof ACTIVITY)[number] }) {
-  const Icon = a.icon;
+  const Glyph = a.icon;
   return (
-    <button className="group flex w-full items-center gap-3 rounded-[10px] px-2 py-2 text-left transition-colors hover:bg-raise">
+    <button className="group flex w-full items-center gap-3 rounded-control px-2 py-2 text-left transition-colors hover:bg-raise">
       <EntityGlyph kind={a.kind} name={a.name} size={26} />
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline gap-2">
-          <span className="truncate font-display text-[13px] font-semibold text-ink">{a.name}</span>
-          <span className="flex shrink-0 items-center gap-1 font-mono text-[9.5px] text-ink-3">
-            <Icon size={10} strokeWidth={1.8} /> {a.change}
+          <span className="truncate font-display text-body font-semibold text-ink">{a.name}</span>
+          <span className="flex shrink-0 items-center gap-1 font-mono text-meta text-ink-3">
+            <Icon as={Glyph} size="inline" /> {a.change}
           </span>
         </span>
-        <span className="mt-0.5 block truncate text-[11.5px] text-ink-4">{a.detail}</span>
+        <span className="mt-0.5 block truncate text-small text-ink-4">{a.detail}</span>
       </span>
-      <span className="shrink-0 font-mono text-[9.5px] text-ink-4">{a.time}</span>
+      <span className="shrink-0 font-mono text-meta text-ink-4">{a.time}</span>
     </button>
   );
 }
 
 function NewEntityRow({ n }: { n: (typeof NEW_ENTITIES)[number] }) {
   return (
-    <button className="flex w-full items-start gap-2.5 rounded-[10px] px-2 py-2 text-left transition-colors hover:bg-raise">
+    <button className="flex w-full items-start gap-2.5 rounded-control px-2 py-2 text-left transition-colors hover:bg-raise">
       <EntityGlyph kind={n.kind} name={n.name} size={24} />
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline gap-1.5">
-          <span className="truncate font-display text-[12.5px] font-semibold text-ink">{n.name}</span>
-          <span className="shrink-0 font-mono text-[8.5px] text-ink-4">{n.time}</span>
+          <span className="truncate font-display text-small font-semibold text-ink">{n.name}</span>
+          <span className="shrink-0 font-mono text-meta text-ink-4">{n.time}</span>
         </span>
-        <span className="mt-0.5 line-clamp-1 text-[11px] text-ink-4">{n.gist}</span>
+        <span className="mt-0.5 line-clamp-1 text-meta text-ink-4">{n.gist}</span>
       </span>
     </button>
   );
@@ -239,27 +240,27 @@ function EntitiesHome() {
     <div className="flex h-full w-full flex-col overflow-hidden">
       {/* header bar — search + the Overview/Grid toggle */}
       <div className="flex items-center gap-3 border-b border-line px-5 pt-4 pb-3">
-        <Globe size={15} strokeWidth={1.8} className="text-ink-3" />
+        <Icon as={Globe} className="text-ink-3" />
         <span className="eyebrow">Entities</span>
         <div className="relative ml-1 w-72">
-          <Search size={13} strokeWidth={1.9} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-4" />
+          <Icon as={Search} size="inline" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-4" />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search a ticker, company, thesis…"
-            className="w-full rounded-chip border border-line bg-field py-1.5 pl-8 pr-7 text-[12.5px] text-ink outline-none placeholder:text-ink-4 focus:border-amber-line"
+            className="w-full rounded-chip border border-line bg-field py-1.5 pl-8 pr-7 text-small text-ink outline-none placeholder:text-ink-4 focus:border-amber-line"
           />
           {searching && (
             <button
               onClick={() => setQuery("")}
               className="absolute right-2 top-1/2 -translate-y-1/2 text-ink-4 hover:text-ink-2"
             >
-              <X size={13} strokeWidth={2.2} />
+              <Icon as={X} size="inline" mark />
             </button>
           )}
         </div>
         <ViewToggle view={showGrid ? "grid" : "overview"} onView={selectView} />
-        <span className="ml-auto font-mono text-[10px] text-ink-4">
+        <span className="ml-auto font-mono text-meta text-ink-4">
           {showGrid ? (
             <>
               <span className="text-ink-3">{pool.length}</span> {searching ? "shown" : "entities"}
@@ -284,7 +285,7 @@ function EntitiesHome() {
               ))}
             </div>
           ) : (
-            <p className="text-[13px] text-ink-3">No entity matches “{query.trim()}”.</p>
+            <p className="text-body text-ink-3">No entity matches “{query.trim()}”.</p>
           )}
         </div>
       ) : (
@@ -298,12 +299,12 @@ function EntitiesHome() {
                   {decisions.map((d) => (
                     <DecisionCard key={d.id} d={d} onDecide={() => drop(d.id)} />
                   ))}
-                  <button className="w-full rounded-[10px] border border-dashed border-line py-2 font-mono text-[11px] text-ink-4 transition-colors hover:border-amber-line hover:text-ink-2">
+                  <button className="w-full rounded-control border border-dashed border-line py-2 font-mono text-meta text-ink-4 transition-colors hover:border-amber-line hover:text-ink-2">
                     review all 9 →
                   </button>
                 </div>
               ) : (
-                <p className="rounded-[12px] border border-line-2 bg-card px-4 py-6 text-center text-[12px] text-ink-4">
+                <p className="rounded-card border border-line-2 bg-card px-4 py-6 text-center text-small text-ink-4">
                   Inbox zero — nothing to sort out.
                 </p>
               )}
@@ -336,15 +337,15 @@ function EntitiesHome() {
                 {LOOSE.map((l) => (
                   <button
                     key={l.name}
-                    className="group flex items-center gap-1 rounded-chip border border-line-2 bg-bg px-2 py-1 font-mono text-[10.5px] text-ink-3 transition-colors hover:border-amber-line hover:text-ink"
+                    className="group flex items-center gap-1 rounded-chip border border-line-2 bg-bg px-2 py-1 font-mono text-meta text-ink-3 transition-colors hover:border-amber-line hover:text-ink"
                   >
-                    <Link2 size={10} strokeWidth={1.8} className="text-ink-4 group-hover:text-amber" />
+                    <Icon as={Link2} size="inline" className="text-ink-4 group-hover:text-amber" />
                     {l.name}
                   </button>
                 ))}
               </div>
-              <button className="mt-2.5 flex items-center gap-1 font-mono text-[10px] text-ink-4 hover:text-ink-2">
-                <Plus size={11} strokeWidth={1.8} /> weave a thread
+              <button className="mt-2.5 flex items-center gap-1 font-mono text-meta text-ink-4 hover:text-ink-2">
+                <Icon as={Plus} size="inline" /> weave a thread
               </button>
             </section>
           </div>
@@ -358,7 +359,7 @@ export function EntitiesInboxSpike() {
   const theme = useAppStore((s) => s.theme);
   return (
     <div className="flex h-screen flex-col bg-bg text-ink">
-      <div className="flex items-center gap-3 border-b border-line bg-chrome px-4 py-2 text-xs text-ink-3">
+      <div className="flex items-center gap-3 border-b border-line bg-chrome px-4 py-2 text-small text-ink-3">
         <span className="font-mono">/spike/entities-inbox</span>
         <span className="text-ink-4">·</span>
         <span>theme: {theme}</span>

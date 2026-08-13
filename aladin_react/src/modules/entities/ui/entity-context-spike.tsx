@@ -18,7 +18,7 @@ export function EntityContextSpike() {
 
   return (
     <div className="flex h-screen flex-col bg-bg text-ink">
-      <div className="flex items-center gap-3 border-b border-line bg-chrome px-4 py-2 text-xs text-ink-3">
+      <div className="flex items-center gap-3 border-b border-line bg-chrome px-4 py-2 text-small text-ink-3">
         <span className="font-mono">/spike/entity-context</span>
         <span className="text-ink-4">·</span>
         <span>theme: {theme}</span>

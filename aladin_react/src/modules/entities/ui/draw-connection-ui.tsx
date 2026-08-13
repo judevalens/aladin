@@ -68,7 +68,7 @@ export function DrawConnectionUI({
   };
 
   return (
-    <div className="mb-[34px] rounded-[10px] border border-amber-line bg-card p-[13px]">
+    <div className="mb-8 rounded-control border border-amber-line bg-card p-3">
       {/* relation type */}
       <div className="mb-3 flex flex-wrap gap-1.5">
         {REL_OPTIONS.map((key) => (
@@ -77,7 +77,7 @@ export function DrawConnectionUI({
             type="button"
             onClick={() => setRel(key)}
             className={cn(
-              "rounded-chip border px-2 py-1 font-mono text-[9.5px] font-bold uppercase tracking-[0.4px] transition-colors",
+              "rounded-chip border px-2 py-1 font-mono text-meta font-bold uppercase tracking-[0.4px] transition-colors",
               rel === key
                 ? "border-amber-line bg-amber-soft text-amber"
                 : "border-line text-ink-3 hover:border-amber-line",
@@ -91,15 +91,15 @@ export function DrawConnectionUI({
       {/* target entity */}
       {target ? (
         <div className="mb-3 flex items-center gap-2">
-          <span className="font-display text-[14px] font-semibold text-ink">{target.name}</span>
-          <span className="font-mono text-[9px] text-ink-4">{target.kind}</span>
+          <span className="font-display text-lead font-semibold text-ink">{target.name}</span>
+          <span className="font-mono text-meta text-ink-4">{target.kind}</span>
           <button
             type="button"
             onClick={() => {
               setTarget(null);
               setQuery("");
             }}
-            className="font-mono text-[9px] text-ink-3 underline hover:text-ink"
+            className="font-mono text-meta text-ink-3 underline hover:text-ink"
           >
             change
           </button>
@@ -111,7 +111,7 @@ export function DrawConnectionUI({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Connect to…"
-            className="w-full rounded-chip border border-line bg-field px-2.5 py-1.5 text-[13px] text-ink outline-none placeholder:text-ink-4 focus:border-amber-line"
+            className="w-full rounded-chip border border-line bg-field px-2.5 py-1.5 text-body text-ink outline-none placeholder:text-ink-4 focus:border-amber-line"
           />
           {hits.length > 0 && (
             <div className="mt-1.5 flex flex-col gap-px">
@@ -122,17 +122,17 @@ export function DrawConnectionUI({
                   onClick={() => setTarget(hit)}
                   className="flex items-baseline gap-2 rounded-chip px-2 py-1.5 text-left hover:bg-raise"
                 >
-                  <span className="font-display text-[13px] font-semibold text-ink">
+                  <span className="font-display text-body font-semibold text-ink">
                     {hit.name}
                   </span>
-                  <span className="font-mono text-[9px] text-ink-4">{hit.kind}</span>
+                  <span className="font-mono text-meta text-ink-4">{hit.kind}</span>
                   {hit.aliases.length > 0 && (
-                    <span className="truncate font-mono text-[9px] text-ink-4">
+                    <span className="truncate font-mono text-meta text-ink-4">
                       · {hit.aliases.join(", ")}
                     </span>
                   )}
                   {hit.trustTier === "placeholder" && (
-                    <span className="font-mono text-[8.5px] text-ink-4">unresolved</span>
+                    <span className="font-mono text-meta text-ink-4">unresolved</span>
                   )}
                 </button>
               ))}
@@ -147,24 +147,24 @@ export function DrawConnectionUI({
         onChange={(e) => setWhy(e.target.value)}
         rows={2}
         placeholder="Why? — the reasoning is the substance"
-        className="mb-3 w-full resize-none rounded-chip border border-line bg-field px-2.5 py-1.5 text-[12px] leading-[1.5] text-ink outline-none placeholder:text-ink-4 focus:border-amber-line"
+        className="mb-3 w-full resize-none rounded-chip border border-line bg-field px-2.5 py-1.5 text-small leading-[1.5] text-ink outline-none placeholder:text-ink-4 focus:border-amber-line"
       />
 
-      {error && <p className="mb-2 text-[11.5px] text-against">{error}</p>}
+      {error && <p className="mb-2 text-small text-against">{error}</p>}
 
       <div className="flex items-center gap-2">
         <button
           type="button"
           disabled={!ready}
           onClick={confirm}
-          className="cursor-pointer rounded-chip bg-amber px-[11px] py-1.5 text-[11.5px] font-semibold text-primary-foreground transition hover:brightness-[1.08] disabled:cursor-not-allowed disabled:opacity-40"
+          className="cursor-pointer rounded-chip bg-amber px-2.5 py-1.5 text-small font-semibold text-primary-foreground transition hover:brightness-[1.08] disabled:cursor-not-allowed disabled:opacity-40"
         >
           {saving ? "Drawing…" : "Draw"}
         </button>
         <button
           type="button"
           onClick={onCancel}
-          className="cursor-pointer rounded-chip border border-line px-[10px] py-1.5 text-[11.5px] font-semibold text-ink-2 transition hover:brightness-[1.08]"
+          className="cursor-pointer rounded-chip border border-line px-2.5 py-1.5 text-small font-semibold text-ink-2 transition hover:brightness-[1.08]"
         >
           Cancel
         </button>

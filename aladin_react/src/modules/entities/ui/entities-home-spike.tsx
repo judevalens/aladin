@@ -1,4 +1,5 @@
 import { AlertTriangle, CalendarClock, Globe, Sparkles, Zap } from "lucide-react";
+import { Icon } from "@/components/ui/icon";
 import { useState } from "react";
 
 import { cn } from "@/lib/utils";
@@ -89,7 +90,7 @@ function neighborsOf(id: string): Set<string> {
 }
 
 const edgeStyle: Record<EdgeKind, { stroke: string; width: number; dash?: string }> = {
-  supply: { stroke: "rgb(255 255 255 / 0.11)", width: 1 },
+  supply: { stroke: "var(--line-2)", width: 1 },
   thesis: { stroke: "var(--echo)", width: 1, dash: "1 4" },
   catalyst: { stroke: "var(--amber)", width: 1, dash: "3 3" },
   tension: { stroke: "var(--against)", width: 1.6, dash: "4 3" },
@@ -171,40 +172,40 @@ function EntitiesResearchHome() {
       <aside className="flex w-[300px] shrink-0 flex-col gap-5 overflow-y-auto border-r border-line px-5 py-6">
         <div>
           <div className="eyebrow mb-2">This week, your research</div>
-          <p className="text-[13.5px] leading-[1.6] text-ink-2">
+          <p className="text-body leading-[1.6] text-ink-2">
             concentrated on <span className="font-medium text-ink">AI infrastructure</span>.{" "}
             <span className="font-medium text-ink">NVDA</span> is your most-connected name —
             under 3 theses and your whole semis chain.
           </p>
         </div>
 
-        <div className="rounded-[12px] border border-against/40 bg-card p-3.5">
-          <div className="flex items-center gap-1.5 font-mono text-[10px] text-against">
-            <AlertTriangle size={12} strokeWidth={2} /> concentration risk
+        <div className="rounded-card border border-against/40 bg-card p-3.5">
+          <div className="flex items-center gap-1.5 font-mono text-meta text-against">
+            <Icon as={AlertTriangle} size="inline" mark /> concentration risk
           </div>
-          <p className="mt-1.5 text-[12px] leading-[1.5] text-ink-2">
+          <p className="mt-1.5 text-small leading-[1.5] text-ink-2">
             <span className="text-ink">TSMC</span> is a single point of failure across{" "}
             <span className="text-ink">5 of your longs</span> — NVDA, AVGO, MU, and 2 more all
             depend on it.
           </p>
         </div>
 
-        <div className="rounded-[12px] border border-amber-line bg-amber-soft p-3.5">
-          <div className="flex items-center gap-1.5 font-mono text-[10px] text-amber">
-            <CalendarClock size={12} strokeWidth={2} /> catalysts this week
+        <div className="rounded-card border border-amber-line bg-amber-soft p-3.5">
+          <div className="flex items-center gap-1.5 font-mono text-meta text-amber">
+            <Icon as={CalendarClock} size="inline" mark /> catalysts this week
           </div>
-          <p className="mt-1.5 text-[12px] leading-[1.5] text-ink-2">
+          <p className="mt-1.5 text-small leading-[1.5] text-ink-2">
             <span className="text-ink">NVDA earnings Wed</span> and{" "}
             <span className="text-ink">CPI Thu</span> — both hit your AI-infra cluster. China
             export controls loom over NVDA + TSMC.
           </p>
         </div>
 
-        <div className="rounded-[12px] border border-against/30 bg-card p-3.5">
-          <div className="flex items-center gap-1.5 font-mono text-[10px] text-against">
-            <Zap size={12} strokeWidth={2} /> conviction contested
+        <div className="rounded-card border border-against/30 bg-card p-3.5">
+          <div className="flex items-center gap-1.5 font-mono text-meta text-against">
+            <Icon as={Zap} size="inline" mark /> conviction contested
           </div>
-          <p className="mt-1.5 text-[12px] leading-[1.5] text-ink-2">
+          <p className="mt-1.5 text-small leading-[1.5] text-ink-2">
             Your <span className="text-ink">‘AI capex supercycle’</span> thesis collides with
             the <span className="text-ink">‘capex digestion’</span> note you added Monday.
           </p>
@@ -212,14 +213,14 @@ function EntitiesResearchHome() {
 
         <div>
           <div className="eyebrow mb-2 flex items-center gap-1.5">
-            <Sparkles size={11} strokeWidth={1.8} /> Orphans · no thesis
+            <Icon as={Sparkles} size="inline" /> Orphans · no thesis
           </div>
-          <p className="mb-2 text-[11px] leading-[1.5] text-ink-4">
+          <p className="mb-2 text-meta leading-[1.5] text-ink-4">
             You're watching these but haven't threaded them into a thesis.
           </p>
           <div className="flex flex-wrap gap-1.5">
             {["ARM", "PLTR", "MU"].map((n) => (
-              <span key={n} className="rounded-chip border border-line-2 bg-bg px-2 py-0.5 font-mono text-[10px] text-ink-3">
+              <span key={n} className="rounded-chip border border-line-2 bg-bg px-2 py-0.5 font-mono text-meta text-ink-3">
                 {n}
               </span>
             ))}
@@ -229,7 +230,7 @@ function EntitiesResearchHome() {
 
       <div className="relative min-w-0 flex-1">
         <Constellation />
-        <div className="pointer-events-none absolute bottom-4 left-5 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[10px] text-ink-4">
+        <div className="pointer-events-none absolute bottom-4 left-5 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-meta text-ink-4">
           <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-amber" /> ticker</span>
           <span className="flex items-center gap-1.5"><span className="size-2 rotate-45 bg-echo" /> thesis</span>
           <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-catalyst" /> catalyst</span>
@@ -245,7 +246,7 @@ export function EntitiesHomeSpike() {
   const theme = useAppStore((s) => s.theme);
   return (
     <div className="flex h-screen flex-col bg-bg text-ink">
-      <div className="flex items-center gap-3 border-b border-line bg-chrome px-4 py-2 text-xs text-ink-3">
+      <div className="flex items-center gap-3 border-b border-line bg-chrome px-4 py-2 text-small text-ink-3">
         <span className="font-mono">/spike/entities-home</span>
         <span className="text-ink-4">·</span>
         <span>theme: {theme}</span>
@@ -258,12 +259,12 @@ export function EntitiesHomeSpike() {
       </div>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="flex items-center gap-3 border-b border-line px-5 py-3">
-          <Globe size={15} strokeWidth={1.8} className="text-ink-3" />
+          <Icon as={Globe} className="text-ink-3" />
           <span className="eyebrow">Research map</span>
-          <span className="rounded-chip bg-[rgb(var(--sel))] px-2.5 py-1 text-[12px] text-ink">Map</span>
-          <span className="rounded-chip px-2.5 py-1 text-[12px] text-ink-3">Inbox</span>
-          <span className="rounded-chip px-2.5 py-1 text-[12px] text-ink-3">Browse</span>
-          <span className="ml-auto font-mono text-[10px] text-ink-4">
+          <span className="rounded-chip bg-[rgb(var(--sel))] px-2.5 py-1 text-small text-ink">Map</span>
+          <span className="rounded-chip px-2.5 py-1 text-small text-ink-3">Inbox</span>
+          <span className="rounded-chip px-2.5 py-1 text-small text-ink-3">Browse</span>
+          <span className="ml-auto font-mono text-meta text-ink-4">
             <span className="text-ink-3">42</span> names · <span className="text-ink-3">11</span> theses · <span className="text-amber">3</span> catalysts this week
           </span>
         </div>

@@ -279,7 +279,8 @@ these against the changed files, not the whole tree:
 grep -nE '#[0-9a-fA-F]{3,8}|rgba?\(' <files> | grep -vE 'rgba?\(var\(--'
 grep -nE 'text-\[[0-9.]+(px|rem)\]' <files>           # rule 7  type
 grep -nE 'rounded-\[[0-9]+px\]|rounded-(sm|md|lg)\b' <files>   # rule 8  radius
-grep -nE 'strokeWidth=|size=\{[0-9]+\}' <files>       # rule 9  icons — use <Icon>
+# rule 9  icons — capitalized tag only: <line>/<path>/<circle> in an SVG are not icons
+grep -nE '<[A-Z][A-Za-z0-9]*(\s+[^<>]*)?(strokeWidth=|size=\{[0-9]+\})' <files>
 grep -nE '\b(p|px|py|m|mb|mt|gap)-\[[0-9]+px\]' <files>        # rule 11 spacing
 ```
 

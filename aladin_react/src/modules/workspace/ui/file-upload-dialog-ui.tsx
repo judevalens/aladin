@@ -63,17 +63,18 @@ export function FileUploadDialogUI({
               if (dropped) setFile(dropped);
             }}
             className={cn(
-              "flex w-full flex-col items-center gap-2 rounded-md border border-dashed px-6 py-10 text-center transition-colors",
+              "flex w-full flex-col items-center gap-2 rounded-control border border-dashed px-6 py-10 text-center transition-colors",
               dragging ? "border-amber bg-amber-soft" : "border-line bg-field hover:bg-raise",
             )}
           >
+            {/* Drop-zone illustration at 24px — §5 rule 9's carve-out. */}
             <UploadCloud className="size-6 text-ink-3" strokeWidth={1.6} />
             {file ? (
-              <span className="text-sm text-ink">
+              <span className="text-body text-ink">
                 {file.name} <span className="text-ink-4">({formatBytes(file.size)})</span>
               </span>
             ) : (
-              <span className="text-sm text-ink-3">Drop a file here, or click to choose</span>
+              <span className="text-body text-ink-3">Drop a file here, or click to choose</span>
             )}
           </button>
           <input

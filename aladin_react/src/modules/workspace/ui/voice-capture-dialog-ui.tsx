@@ -1,4 +1,5 @@
 import { Check, ChevronDown, Folder, Pause, Play } from "lucide-react";
+import { Icon } from "@/components/ui/icon";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -78,13 +79,13 @@ export function VoiceCaptureDialogUI() {
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    className="flex w-full items-center justify-between rounded-md border border-line bg-field px-3 py-2 text-sm text-ink transition-colors hover:bg-raise"
+                    className="flex w-full items-center justify-between rounded-control border border-line bg-field px-3 py-2 text-body text-ink transition-colors hover:bg-raise"
                   >
                     <span className="flex items-center gap-2 truncate">
-                      <Folder className="size-[15px] text-ink-3" strokeWidth={1.75} />
+                      <Icon as={Folder} className="text-ink-3" />
                       {selectedFolder?.title ?? "Workspace"}
                     </span>
-                    <ChevronDown className="size-4 text-ink-3" strokeWidth={1.75} />
+                    <Icon as={ChevronDown} className="text-ink-3" />
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="max-h-64 w-[--radix-dropdown-menu-trigger-width] overflow-y-auto">
@@ -96,7 +97,7 @@ export function VoiceCaptureDialogUI() {
                     >
                       <span className="flex-1 truncate">{folder.title}</span>
                       {folder.id === selectedFolderId ? (
-                        <Check className="size-[15px] text-amber" strokeWidth={2} />
+                        <Icon as={Check} mark className="text-amber" />
                       ) : null}
                     </DropdownMenuItem>
                   ))}
@@ -104,10 +105,10 @@ export function VoiceCaptureDialogUI() {
               </DropdownMenu>
             </div>
 
-            <div className="rounded-md border border-line bg-field p-4">
+            <div className="rounded-control border border-line bg-field p-4">
               {isRecording ? (
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between text-sm text-ink-2">
+                  <div className="flex items-center justify-between text-body text-ink-2">
                     <span className="flex items-center gap-2">
                       <span
                         className={cn(
@@ -130,14 +131,14 @@ export function VoiceCaptureDialogUI() {
               ) : draft.audioUrl ? (
                 <audio className="w-full" controls src={draft.audioUrl} />
               ) : (
-                <p className="text-sm leading-7 text-ink-3">
+                <p className="text-body leading-7 text-ink-3">
                   No audio captured yet. Start recording to create a preview.
                 </p>
               )}
             </div>
 
             {permissionError || draft.errorMessage ? (
-              <div className="space-y-3 rounded-md border border-against/40 bg-against/10 px-4 py-3 text-sm leading-6 text-against">
+              <div className="space-y-3 rounded-control border border-against/40 bg-against/10 px-4 py-3 text-body leading-6 text-against">
                 <p>{permissionError ?? draft.errorMessage}</p>
                 {permissionError ? (
                   <Button variant="secondary" size="sm" onClick={onStartRecording}>
@@ -156,12 +157,12 @@ export function VoiceCaptureDialogUI() {
             <>
               {paused ? (
                 <Button variant="secondary" onClick={onResumeRecording}>
-                  <Play className="size-[15px]" strokeWidth={1.75} />
+                  <Icon as={Play} />
                   Resume
                 </Button>
               ) : (
                 <Button variant="secondary" onClick={onPauseRecording}>
-                  <Pause className="size-[15px]" strokeWidth={1.75} />
+                  <Icon as={Pause} />
                   Pause
                 </Button>
               )}

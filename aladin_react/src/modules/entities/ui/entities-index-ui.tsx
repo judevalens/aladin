@@ -12,6 +12,7 @@ import {
   TrendingUp,
   X,
 } from "lucide-react";
+import { Icon } from "@/components/ui/icon";
 import { useMemo, useState } from "react";
 
 import { cn } from "@/lib/utils";
@@ -54,10 +55,10 @@ const NEW_ENTITIES = [
 function SectionHead({ title, hint, count }: { title: string; hint?: string; count?: string }) {
   return (
     <div className="mb-2.5 flex items-center gap-2">
-      <span className="font-display text-[13px] font-semibold text-ink">{title}</span>
-      {hint && <span className="font-mono text-[10px] text-ink-4">{hint}</span>}
+      <span className="font-display text-body font-semibold text-ink">{title}</span>
+      {hint && <span className="font-mono text-meta text-ink-4">{hint}</span>}
       <span className="h-px flex-1 bg-line-2" />
-      {count && <span className="font-mono text-[10px] text-ink-4">{count}</span>}
+      {count && <span className="font-mono text-meta text-ink-4">{count}</span>}
     </div>
   );
 }
@@ -65,7 +66,7 @@ function SectionHead({ title, hint, count }: { title: string; hint?: string; cou
 // Home / Grid switch — the dashboard is the default; the grid is the browse-everything
 // (and search-results) view.
 function ViewToggle({ view, onView }: { view: EntityView; onView: (v: EntityView) => void }) {
-  const btn = (v: EntityView, Icon: typeof LayoutGrid, label: string) => (
+  const btn = (v: EntityView, Glyph: typeof LayoutGrid, label: string) => (
     <button
       type="button"
       title={label}
@@ -77,7 +78,7 @@ function ViewToggle({ view, onView }: { view: EntityView; onView: (v: EntityView
         view === v ? "bg-[rgb(var(--sel))] text-ink" : "text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink",
       )}
     >
-      <Icon size={14} strokeWidth={1.9} />
+      <Icon as={Glyph} size="inline" />
     </button>
   );
   return (
@@ -89,34 +90,34 @@ function ViewToggle({ view, onView }: { view: EntityView; onView: (v: EntityView
 }
 
 function ActivityRow({ a }: { a: (typeof ACTIVITY)[number] }) {
-  const Icon = a.icon;
+  const Glyph = a.icon;
   return (
-    <div className="group flex w-full items-center gap-3 rounded-[10px] px-2 py-2 text-left">
+    <div className="group flex w-full items-center gap-3 rounded-control px-2 py-2 text-left">
       <EntityGlyph kind={a.kind} name={a.name} size={26} />
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline gap-2">
-          <span className="truncate font-display text-[13px] font-semibold text-ink">{a.name}</span>
-          <span className="flex shrink-0 items-center gap-1 font-mono text-[9.5px] text-ink-3">
-            <Icon size={10} strokeWidth={1.8} /> {a.change}
+          <span className="truncate font-display text-body font-semibold text-ink">{a.name}</span>
+          <span className="flex shrink-0 items-center gap-1 font-mono text-meta text-ink-3">
+            <Icon as={Glyph} size="inline" /> {a.change}
           </span>
         </span>
-        <span className="mt-0.5 block truncate text-[11.5px] text-ink-4">{a.detail}</span>
+        <span className="mt-0.5 block truncate text-small text-ink-4">{a.detail}</span>
       </span>
-      <span className="shrink-0 font-mono text-[9.5px] text-ink-4">{a.time}</span>
+      <span className="shrink-0 font-mono text-meta text-ink-4">{a.time}</span>
     </div>
   );
 }
 
 function NewEntityRow({ n }: { n: (typeof NEW_ENTITIES)[number] }) {
   return (
-    <div className="flex w-full items-start gap-2.5 rounded-[10px] px-2 py-2 text-left">
+    <div className="flex w-full items-start gap-2.5 rounded-control px-2 py-2 text-left">
       <EntityGlyph kind={n.kind} name={n.name} size={24} />
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline gap-1.5">
-          <span className="truncate font-display text-[12.5px] font-semibold text-ink">{n.name}</span>
-          <span className="shrink-0 font-mono text-[8.5px] text-ink-4">{n.time}</span>
+          <span className="truncate font-display text-small font-semibold text-ink">{n.name}</span>
+          <span className="shrink-0 font-mono text-meta text-ink-4">{n.time}</span>
         </span>
-        <span className="mt-0.5 line-clamp-1 text-[11px] text-ink-4">{n.gist}</span>
+        <span className="mt-0.5 line-clamp-1 text-meta text-ink-4">{n.gist}</span>
       </span>
     </div>
   );
@@ -131,19 +132,19 @@ function EntityGrid({
   list: ReturnType<typeof useEntityList>;
   onOpen: (id: string) => void;
 }) {
-  if (list.error) return <p className="text-[13px] text-ink-2">{list.error}</p>;
+  if (list.error) return <p className="text-body text-ink-2">{list.error}</p>;
   if (list.loading && list.entities.length === 0) {
     return (
       <div className="[column-gap:14px] columns-[250px]">
         {Array.from({ length: 8 }).map((_, i) => (
-          <div key={i} className="mb-[14px] h-[150px] break-inside-avoid rounded-[14px] bg-card" />
+          <div key={i} className="mb-3.5 h-[150px] break-inside-avoid rounded-modal bg-card" />
         ))}
       </div>
     );
   }
   if (list.entities.length === 0) {
     return (
-      <p className="text-[13px] text-ink-3">
+      <p className="text-body text-ink-3">
         {list.query.trim()
           ? `No entity matches “${list.query.trim()}”.`
           : "No entities yet — they appear as you tag pages, @mention things, or ingest sources."}
@@ -190,15 +191,15 @@ export function EntitiesIndexUI() {
     <div className="flex h-full w-full min-w-0 flex-col overflow-hidden">
       {/* header — search + the Home/Grid toggle */}
       <div className="flex items-center gap-3 border-b border-line px-5 pt-4 pb-3">
-        <Globe size={15} strokeWidth={1.8} className="text-ink-3" />
+        <Icon as={Globe} className="text-ink-3" />
         <span className="eyebrow">Entities</span>
         <div className="relative ml-1 w-72">
-          <Search size={13} strokeWidth={1.9} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-4" />
+          <Icon as={Search} size="inline" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-4" />
           <input
             value={list.query}
             onChange={(e) => list.setQuery(e.target.value)}
             placeholder="Search a ticker, company, thesis…"
-            className="w-full rounded-chip border border-line bg-field py-1.5 pl-8 pr-7 text-[12.5px] text-ink outline-none placeholder:text-ink-4 focus:border-amber-line"
+            className="w-full rounded-chip border border-line bg-field py-1.5 pl-8 pr-7 text-small text-ink outline-none placeholder:text-ink-4 focus:border-amber-line"
           />
           {searching && (
             <button
@@ -206,12 +207,12 @@ export function EntitiesIndexUI() {
               onClick={() => list.setQuery("")}
               className="absolute right-2 top-1/2 -translate-y-1/2 text-ink-4 hover:text-ink-2"
             >
-              <X size={13} strokeWidth={2.2} />
+              <Icon as={X} size="inline" mark />
             </button>
           )}
         </div>
         <ViewToggle view={showGrid ? "grid" : "overview"} onView={selectView} />
-        <span className="ml-auto font-mono text-[10px] text-ink-4">
+        <span className="ml-auto font-mono text-meta text-ink-4">
           {showGrid ? (
             <>
               <span className="text-ink-3">{list.entities.length}</span> {searching ? "shown" : "entities"}
@@ -242,15 +243,15 @@ export function EntitiesIndexUI() {
                 count={queue.items.length > 0 ? `${decisions.length} of ${queue.items.length}` : undefined}
               />
               {queue.error ? (
-                <p className="text-[12.5px] text-ink-2">{queue.error}</p>
+                <p className="text-small text-ink-2">{queue.error}</p>
               ) : queue.loading ? (
                 <div className="space-y-2.5">
                   {[0, 1, 2].map((i) => (
-                    <div key={i} className="h-[104px] animate-pulse rounded-[12px] bg-card" />
+                    <div key={i} className="h-[104px] animate-pulse rounded-card bg-card" />
                   ))}
                 </div>
               ) : queue.items.length === 0 ? (
-                <p className="rounded-[12px] border border-line-2 bg-card px-4 py-6 text-center text-[12px] text-ink-4">
+                <p className="rounded-card border border-line-2 bg-card px-4 py-6 text-center text-small text-ink-4">
                   Inbox zero — nothing to sort out.
                 </p>
               ) : (
@@ -268,7 +269,7 @@ export function EntitiesIndexUI() {
                     <button
                       type="button"
                       onClick={() => setShowAllDecisions(true)}
-                      className="w-full rounded-[10px] border border-dashed border-line py-2 font-mono text-[11px] text-ink-4 transition-colors hover:border-amber-line hover:text-ink-2"
+                      className="w-full rounded-control border border-dashed border-line py-2 font-mono text-meta text-ink-4 transition-colors hover:border-amber-line hover:text-ink-2"
                     >
                       review all {queue.items.length} →
                     </button>
@@ -308,22 +309,22 @@ export function EntitiesIndexUI() {
                         key={e.id}
                         type="button"
                         onClick={() => setPeekId(e.id)}
-                        className="group flex items-center gap-1 rounded-chip border border-line-2 bg-bg px-2 py-1 font-mono text-[10.5px] text-ink-3 transition-colors hover:border-amber-line hover:text-ink"
+                        className="group flex items-center gap-1 rounded-chip border border-line-2 bg-bg px-2 py-1 font-mono text-meta text-ink-3 transition-colors hover:border-amber-line hover:text-ink"
                       >
-                        <Link2 size={10} strokeWidth={1.8} className="text-ink-4 group-hover:text-amber" />
+                        <Icon as={Link2} size="inline" className="text-ink-4 group-hover:text-amber" />
                         {e.name}
                       </button>
                     ))}
                   </div>
                   <button
                     type="button"
-                    className="mt-2.5 flex items-center gap-1 font-mono text-[10px] text-ink-4 hover:text-ink-2"
+                    className="mt-2.5 flex items-center gap-1 font-mono text-meta text-ink-4 hover:text-ink-2"
                   >
-                    <Plus size={11} strokeWidth={1.8} /> weave a thread
+                    <Icon as={Plus} size="inline" /> weave a thread
                   </button>
                 </>
               ) : (
-                <p className="text-[11.5px] text-ink-4">Everything's connected — no loose threads.</p>
+                <p className="text-small text-ink-4">Everything's connected — no loose threads.</p>
               )}
             </section>
           </div>

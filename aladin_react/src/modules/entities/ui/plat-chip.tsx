@@ -22,7 +22,7 @@ export function PlatChip({ p, size = 22 }: { p: Platform; size?: number }) {
   if (!meta) return null;
   return (
     <span
-      className="grid shrink-0 place-items-center rounded-sm font-mono font-bold tracking-[0.2px]"
+      className="grid shrink-0 place-items-center rounded-tap font-mono font-bold tracking-[0.2px]"
       style={{
         width: size,
         height: size,

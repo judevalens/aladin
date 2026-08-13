@@ -1,4 +1,4 @@
-import type { HTMLAttributes } from "react";
+import type { ElementType, HTMLAttributes } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -12,14 +12,22 @@ import { cn } from "@/lib/utils";
  *
  * `tone="loud"` is §5 rule 4 (amber is the only accent — spend it) applied to labels: at most
  * one per surface, and only when that section is the one needing attention.
+ *
+ * `as` exists because these labels are not all block-level section headings: plenty sit inline
+ * inside a flex row next to their value ("DAY RANGE  184.10 – 187.62"). Forcing a `div` there
+ * would change the layout, which is how a primitive gets abandoned. Default stays `div`.
  */
 export function Eyebrow({
   className,
   tone = "quiet",
+  as: Tag = "div",
   ...props
-}: HTMLAttributes<HTMLDivElement> & { tone?: "quiet" | "loud" }) {
+}: HTMLAttributes<HTMLElement> & {
+  tone?: "quiet" | "loud";
+  as?: Extract<ElementType, "div" | "span" | "p" | "h2" | "h3" | "h4">;
+}) {
   return (
-    <div
+    <Tag
       className={cn(
         "font-mono text-meta font-semibold uppercase tracking-[0.08em]",
         tone === "quiet" ? "text-ink-3" : "text-amber",

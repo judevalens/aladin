@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { Eyebrow } from "@/components/ui/eyebrow";
+import { Icon } from "@/components/ui/icon";
 import { Star } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -22,8 +24,8 @@ import { useWatchlists } from "@/modules/markets/hooks/use-watchlists";
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="font-mono text-[10px] uppercase tracking-[0.4px] text-ink-4">{label}</span>
-      <span className="font-mono text-[13px] text-ink">{value}</span>
+      <Eyebrow as="span" className="text-ink-4">{label}</Eyebrow>
+      <span className="font-mono text-body text-ink">{value}</span>
     </div>
   );
 }
@@ -66,20 +68,20 @@ export function TickerDetail({
         {/* identity */}
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="font-display text-2xl font-semibold text-ink">{quote.symbol}</h2>
-            <span className="rounded-chip border border-line px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.4px] text-ink-3">
+            <h2 className="font-display text-title font-semibold text-ink">{quote.symbol}</h2>
+            <Eyebrow as="span" className="rounded-chip border border-line px-1.5 py-0.5 text-ink-3">
               {quote.sector}
-            </span>
+            </Eyebrow>
           </div>
-          <p className="mt-0.5 text-sm text-ink-3">{quote.name}</p>
+          <p className="mt-0.5 text-body text-ink-3">{quote.name}</p>
         </div>
 
         {/* price */}
         <div className="flex items-end gap-3">
-          <span className="font-display text-4xl font-semibold tracking-[-0.5px] text-ink">
+          <span className="font-display text-display font-semibold tracking-[-0.5px] text-ink">
             {fmtPrice(quote.last)}
           </span>
-          <span className={cn("mb-1 font-mono text-sm", up ? "text-for" : "text-against")}>
+          <span className={cn("mb-1 font-mono text-body", up ? "text-for" : "text-against")}>
             {up ? "▲" : "▼"} {fmtSigned(quote.change)} {fmtPct(quote.changePct)}
           </span>
         </div>
@@ -92,7 +94,7 @@ export function TickerDetail({
               type="button"
               onClick={() => setTf(t)}
               className={cn(
-                "rounded-chip px-2.5 py-1 font-mono text-[11px] transition-colors",
+                "rounded-chip px-2.5 py-1 font-mono text-meta transition-colors",
                 t === tf ? "bg-raise text-ink" : "text-ink-4 hover:text-ink-2",
               )}
             >
@@ -106,8 +108,8 @@ export function TickerDetail({
         {/* day range */}
         <div>
           <div className="mb-2 flex items-baseline justify-between">
-            <span className="font-mono text-[10px] uppercase tracking-[0.4px] text-ink-4">Day range</span>
-            <span className="font-mono text-[11px] text-ink-3">
+            <Eyebrow as="span" className="text-ink-4">Day range</Eyebrow>
+            <span className="font-mono text-meta text-ink-3">
               {fmtPrice(quote.low)} – {fmtPrice(quote.high)}
             </span>
           </div>
@@ -127,13 +129,13 @@ export function TickerDetail({
         {/* 52-week range */}
         <div>
           <div className="mb-2 flex items-baseline justify-between">
-            <span className="font-mono text-[10px] uppercase tracking-[0.4px] text-ink-4">52-week range</span>
-            <span className="font-mono text-[11px] text-ink-3">
+            <Eyebrow as="span" className="text-ink-4">52-week range</Eyebrow>
+            <span className="font-mono text-meta text-ink-3">
               {Math.round(((quote.last - quote.week52Low) / (quote.week52High - quote.week52Low || 1)) * 100)}% of range
             </span>
           </div>
           <RangeBar low={quote.week52Low} high={quote.week52High} value={quote.last} />
-          <div className="mt-1 flex justify-between font-mono text-[10px] text-ink-4">
+          <div className="mt-1 flex justify-between font-mono text-meta text-ink-4">
             <span>{fmtPrice(quote.week52Low)}</span>
             <span>{fmtPrice(quote.week52High)}</span>
           </div>
@@ -141,14 +143,14 @@ export function TickerDetail({
 
         {/* news */}
         <div className="border-t border-line-2 pt-4">
-          <span className="font-mono text-[10px] uppercase tracking-[0.4px] text-ink-4">Latest on {quote.symbol}</span>
+          <Eyebrow as="span" className="text-ink-4">Latest on {quote.symbol}</Eyebrow>
           <div className="mt-3 flex flex-col gap-3">
             {news.map((n, i) => (
               <div key={i} className="flex gap-2.5">
                 <span className="mt-1 h-full w-[2px] shrink-0 rounded bg-amber-line" />
                 <div>
-                  <p className="text-[13px] leading-snug text-ink-2">{n.title}</p>
-                  <p className="mt-0.5 font-mono text-[10px] text-ink-4">
+                  <p className="text-body leading-snug text-ink-2">{n.title}</p>
+                  <p className="mt-0.5 font-mono text-meta text-ink-4">
                     {n.source} · {n.ago}
                   </p>
                 </div>
@@ -164,20 +166,20 @@ export function TickerDetail({
           <button
             type="button"
             className={cn(
-              "flex flex-1 items-center justify-center gap-2 rounded-card border py-2.5 text-[13px] font-semibold transition-colors",
+              "flex flex-1 items-center justify-center gap-2 rounded-card border py-2.5 text-body font-semibold transition-colors",
               watched
                 ? "border-amber-line bg-amber-soft text-amber"
                 : "border-line text-ink-2 hover:border-amber-line hover:text-ink",
             )}
           >
-            <Star className={cn("size-4", watched && "fill-amber")} strokeWidth={1.75} />
+            <Icon as={Star} className={cn(watched && "fill-amber")} />
             {watched ? "In a list" : "Add to list"}
           </button>
         </AddToListMenu>
         <button
           type="button"
           onClick={onTrade}
-          className="flex-1 rounded-card bg-amber py-2.5 text-[13px] font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+          className="flex-1 rounded-card bg-amber py-2.5 text-body font-semibold text-primary-foreground transition-opacity hover:opacity-90"
         >
           Trade
         </button>
