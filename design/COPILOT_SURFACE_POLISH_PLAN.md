@@ -98,8 +98,9 @@ Remaining rough edges:
   builds/previews, page/file edits, gated approvals, and recoverable failures;
   runtime post-processing is still intentionally avoided so the model's prose is
   not duplicated or rewritten after streaming
-- broader dock-level integration tests should cover scroll pinning, empty-state
-  transitions, thread switches during streaming, and approval recovery together
+- broader dock-level integration tests now cover scroll pinning, empty-state
+  transitions, and active-thread proposal filtering; thread switches during
+  streaming and approval recovery should still be covered together
 - visual QA should verify the polished composer and rich blocks at mobile and
   dock widths, not only through component tests
 

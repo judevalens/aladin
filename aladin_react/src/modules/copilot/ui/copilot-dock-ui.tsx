@@ -269,6 +269,9 @@ export function CopilotDockUI() {
         <div
           ref={scrollRef}
           onScroll={onTranscriptScroll}
+          role="log"
+          aria-label="Copilot transcript"
+          aria-live="polite"
           className="relative min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-4"
         >
           {messages.length === 0 && !streaming ? (
