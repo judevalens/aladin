@@ -1,6 +1,7 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { Subject, type Observable } from "rxjs";
 import type { NodeRow } from "@/repos/local-repo-types";
+import type { ShardKvRow } from "@/repos/shard-kv/local-shard-kv-types";
 import type { LocalWatchlist } from "@/repos/watchlist/local-watchlist-types";
 
 export interface EntityDeletedEvent {
@@ -14,7 +15,9 @@ export type DataEvent =
   | { type: "nodeUpserted"; payload: NodeRow }
   | { type: "nodeDeleted"; payload: EntityDeletedEvent }
   | { type: "watchlistUpserted"; payload: LocalWatchlist }
-  | { type: "watchlistDeleted"; payload: EntityDeletedEvent };
+  | { type: "watchlistDeleted"; payload: EntityDeletedEvent }
+  | { type: "shardKvUpserted"; payload: ShardKvRow }
+  | { type: "shardKvDeleted"; payload: EntityDeletedEvent };
 
 export interface DataEventsRepo {
   events(): Observable<DataEvent>;

@@ -28,6 +28,7 @@ pub fn db_clear_workspace(db: State<'_, Db>) -> DbResult<()> {
         conn.execute_batch(
             "DELETE FROM nodes;
              DELETE FROM watchlists;
+             DELETE FROM shard_kv;
              DELETE FROM field_seq;
              DELETE FROM field_intent;
              DELETE FROM existence_intent;

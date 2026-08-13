@@ -4,6 +4,7 @@ use serde::Serialize;
 use tauri::ipc::Channel;
 
 use crate::db::repo::nodes::NodeRow;
+use crate::db::repo::shard_kv::ShardKvRow;
 use crate::db::repo::watchlists::WatchlistRow;
 
 /// Data-layer redesign — workspace data events. The pull/live engines apply frame
@@ -17,6 +18,8 @@ pub enum DataEvent {
     NodeDeleted(EntityDeletedEvent),
     WatchlistUpserted(WatchlistRow),
     WatchlistDeleted(EntityDeletedEvent),
+    ShardKvUpserted(ShardKvRow),
+    ShardKvDeleted(EntityDeletedEvent),
 }
 
 #[derive(Debug, Clone, Serialize)]

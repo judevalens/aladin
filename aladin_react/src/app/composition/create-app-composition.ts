@@ -30,6 +30,8 @@ import * as integrationService from "@/services/integrations/integration-service
 import { WorkspaceSyncService } from "@/services/workspace/workspace-sync-service";
 import { createRealtimeBoot } from "@/app/composition/realtime-boot";
 import { createShardApi } from "@/shared/api/shard-api";
+import { createLocalShardKVRepo } from "@/repos/shard-kv/local-shard-kv-repo";
+import { createShardKVPort } from "@/modules/doc-surface/bridge/shard-kv-port";
 import { createAppEventProcessor } from "@/shared/realtime/app-event-processor";
 import { createWebSocketAppEventSource } from "@/shared/realtime/websocket-app-event-source";
 import { createShardBuildEventHandler } from "@/shared/realtime/shard-build-event-handler";
@@ -63,9 +65,19 @@ export function createAppComposition() {
   const dataEvents = createDataEventsRepo();
   const local = createLocalRepos();
   const localSync = createLocalSyncRepo();
+  const shardApi = createShardApi(apiClient);
   const apis = {
     artifacts: createArtifactApi(apiClient),
-    shards: createShardApi(apiClient),
+    shards: shardApi,
+    // The bridge host's storage port for shard local state: replica reads +
+    // live per-key changes on desktop (the sync engine), REST fallback on web;
+    // REST writes everywhere (published channel — the host owns the channel).
+    shardKV: createShardKVPort(
+      shardApi,
+      typeof window !== "undefined" && "__TAURI_INTERNALS__" in window
+        ? createLocalShardKVRepo(dataEvents)
+        : null,
+    ),
   };
 
   const repos = {

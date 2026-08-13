@@ -4,7 +4,7 @@ use std::sync::Arc;
 use rusqlite::Connection;
 
 use crate::api::sync::{Frame, FrameEntity};
-use crate::db::repo::{nodes, watchlists};
+use crate::db::repo::{nodes, shard_kv, watchlists};
 use crate::db::DbResult;
 use crate::events::DataEvent;
 
@@ -56,6 +56,23 @@ impl EntityHandler for WatchlistHandler {
     }
 }
 
+/// The shard-KV handler: shard local state ("shard_kv" kind, one entity per key)
+/// lives in `shard_kv`. The engine stays shard-agnostic — the host's bridge layer
+/// does the per-iframe prefix routing off the emitted events.
+struct ShardKvHandler;
+
+impl EntityHandler for ShardKvHandler {
+    fn apply(&self, conn: &Connection, entity: &FrameEntity) -> DbResult<Option<DataEvent>> {
+        shard_kv::apply(
+            conn,
+            &entity.entity_id,
+            entity.seq as i64,
+            &entity.op,
+            entity.data.as_ref(),
+        )
+    }
+}
+
 /// Routes frame entities to handlers by entity kind.
 pub struct Registry {
     handlers: HashMap<String, Arc<dyn EntityHandler>>,
@@ -76,6 +93,7 @@ impl Registry {
         handlers.insert("artifact".to_string(), tree.clone());
         handlers.insert("research".to_string(), tree);
         handlers.insert("watchlist".to_string(), Arc::new(WatchlistHandler));
+        handlers.insert("shard_kv".to_string(), Arc::new(ShardKvHandler));
         Self { handlers }
     }
 

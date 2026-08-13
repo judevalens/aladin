@@ -421,17 +421,31 @@ function applyTheme(theme: unknown) {
   _themeSubs.forEach((fn) => fn());
 }
 
+// BridgeError carries the host's structured failure: `code` discriminates
+// ("conflict" | "quota" | "too-large" | "unknown-method" | …) and `data` holds
+// the code-specific payload (a conflict's { currentRevision, currentValue }).
+export class BridgeError extends Error {
+  code: string;
+  data: unknown;
+  constructor(message: string, code: string, data: unknown) {
+    super(message);
+    this.name = "BridgeError";
+    this.code = code;
+    this.data = data;
+  }
+}
+
 function ensureWired() {
   if (_wired || typeof window === "undefined") return;
   _wired = true;
   window.addEventListener("message", (e: MessageEvent) => {
-    const m = e.data as { aladin?: string; type?: string; id?: number; ok?: boolean; data?: unknown; error?: string; channel?: string };
+    const m = e.data as { aladin?: string; type?: string; id?: number; ok?: boolean; data?: unknown; error?: string; code?: string; channel?: string };
     if (!m || m.aladin !== BRIDGE) return;
     if (m.type === "response" && m.id != null && _pending.has(m.id)) {
       const p = _pending.get(m.id)!;
       _pending.delete(m.id);
       if (m.ok) p.resolve(m.data);
-      else p.reject(new Error(m.error || "bridge error"));
+      else p.reject(new BridgeError(m.error || "bridge error", m.code || "error", m.data));
     } else if (m.type === "push" && m.channel === "theme") {
       applyTheme((m.data as { theme?: string } | null)?.theme);
     } else if (m.type === "push" && m.channel && _subs.has(m.channel)) {
@@ -503,6 +517,200 @@ export function useTheme(): string {
 // Wire at import so every kit-using shard receives theme pushes immediately —
 // not only after its first bridge call.
 ensureWired();
+
+// --- shard local state (kv) ---------------------------------------------------
+//
+// The shard's private key/value document store (design/SHARD_LOCAL_STATE.md),
+// served by the host bridge: path-shaped keys, per-key revisions, prefix
+// subscriptions. The host owns channel selection (the app binds your real data;
+// previews get a scratch sandbox) — shard code never sees channels. Most shards
+// use the hooks; `kv` is the imperative client.
+
+export type KVEntry = { key: string; value: unknown; revision: number; deleted?: boolean };
+
+export const kv = {
+  get(key: string): Promise<KVEntry | null> {
+    return post("kv.get", { key }).then((d) => (d as KVEntry) ?? null);
+  },
+  list(prefix = ""): Promise<KVEntry[]> {
+    return post("kv.list", { prefix }).then((d) => ((d as { entries?: KVEntry[] })?.entries ?? []));
+  },
+  set(key: string, value: unknown, baseRevision: number): Promise<{ revision: number }> {
+    return post("kv.set", { key, value, baseRevision }) as Promise<{ revision: number }>;
+  },
+  remove(key: string, baseRevision: number): Promise<void> {
+    return post("kv.delete", { key, baseRevision }).then(() => undefined);
+  },
+  // subscribe pushes the current entries under prefix, then every change
+  // (deleted:true for tombstones); returns an unsubscribe fn.
+  subscribe(prefix: string, cb: (entry: KVEntry) => void): () => void {
+    ensureWired();
+    const channel = "kv:" + ++_seq;
+    _subs.set(channel, cb as unknown as (n: Node) => void);
+    post("kv.subscribe", { prefix, channel }).catch(() => {});
+    return () => {
+      _subs.delete(channel);
+      post("kv.unsubscribe", { channel }).catch(() => {});
+    };
+  },
+};
+
+// conflictOf narrows a rejection to the conflict payload, or null.
+function conflictOf(err: unknown): { currentRevision: number; currentValue: unknown } | null {
+  if (err instanceof BridgeError && err.code === "conflict") {
+    const d = (err.data ?? {}) as { currentRevision?: number; currentValue?: unknown };
+    return { currentRevision: d.currentRevision ?? 0, currentValue: d.currentValue };
+  }
+  return null;
+}
+
+/**
+ * useShardState — persistent widget state under one key. Renders instantly from
+ * local state (the shard is the single writer of its own view); persists
+ * write-through with the per-key revision guard, and on a conflict (another
+ * client edited the same key) re-applies your updater to the stored current and
+ * retries — generated code never handles concurrency by hand. Live pushes from
+ * other clients adopt automatically (revision-guarded).
+ */
+export function useShardState<T>(
+  key: string,
+  initial: T,
+): [T, (next: T | ((prev: T) => T)) => void, { loading: boolean; error: string | null }] {
+  const [value, setValue] = useState<T>(initial);
+  const [meta, setMeta] = useState<{ loading: boolean; error: string | null }>({ loading: true, error: null });
+  const stateRef = useState(() => ({ revision: 0, value: initial, alive: true, chain: Promise.resolve() }))[0];
+
+  useEffect(() => {
+    stateRef.alive = true;
+    kv.get(key)
+      .then((entry) => {
+        if (!stateRef.alive) return;
+        if (entry) {
+          stateRef.revision = entry.revision;
+          stateRef.value = entry.value as T;
+          setValue(entry.value as T);
+        }
+        setMeta({ loading: false, error: null });
+      })
+      .catch((e: Error) => {
+        if (stateRef.alive) setMeta({ loading: false, error: e.message });
+      });
+    const unsub = kv.subscribe(key, (entry) => {
+      if (!stateRef.alive || entry.key !== key) return;
+      if (entry.revision <= stateRef.revision) return; // echo / stale
+      stateRef.revision = entry.revision;
+      if (!entry.deleted) {
+        stateRef.value = entry.value as T;
+        setValue(entry.value as T);
+      }
+    });
+    return () => {
+      stateRef.alive = false;
+      unsub();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  const set = (next: T | ((prev: T) => T)) => {
+    const updater = typeof next === "function" ? (next as (prev: T) => T) : null;
+    const desired = updater ? updater(stateRef.value) : (next as T);
+    stateRef.value = desired;
+    setValue(desired);
+    // Serialize persists; on conflict re-apply the updater to the stored
+    // current (bounded retries), else last-write-wins with the fresh revision.
+    stateRef.chain = stateRef.chain.then(async () => {
+      let attempt = 0;
+      let target = stateRef.value;
+      for (;;) {
+        try {
+          const res = await kv.set(key, target, stateRef.revision);
+          stateRef.revision = res.revision;
+          if (stateRef.alive) setMeta({ loading: false, error: null });
+          return;
+        } catch (err) {
+          const conflict = conflictOf(err);
+          if (!conflict || attempt >= 3) {
+            if (stateRef.alive) setMeta({ loading: false, error: err instanceof Error ? err.message : String(err) });
+            return;
+          }
+          attempt++;
+          stateRef.revision = conflict.currentRevision;
+          target = updater ? updater(conflict.currentValue as T) : target;
+          stateRef.value = target;
+          if (stateRef.alive) setValue(target);
+        }
+      }
+    });
+  };
+
+  return [value, set, meta];
+}
+
+/**
+ * useKV — a live view of every key under a prefix (the shard's mini-app data:
+ * "expenses/", "annotations/"…). put/remove are revision-guarded internally; a
+ * put that loses a race retries once against the stored revision (the user's
+ * whole-document action wins).
+ */
+export function useKV(prefix: string): {
+  entries: Record<string, unknown>;
+  put(key: string, value: unknown): void;
+  remove(key: string): void;
+  loading: boolean;
+  error: string | null;
+} {
+  const [entries, setEntries] = useState<Record<string, unknown>>({});
+  const [meta, setMeta] = useState<{ loading: boolean; error: string | null }>({ loading: true, error: null });
+  const revsRef = useState(() => new Map<string, number>())[0];
+
+  useEffect(() => {
+    setEntries({});
+    revsRef.clear();
+    setMeta({ loading: true, error: null });
+    const unsub = kv.subscribe(prefix, (entry) => {
+      const known = revsRef.get(entry.key) ?? 0;
+      if (entry.revision <= known) return;
+      revsRef.set(entry.key, entry.revision);
+      setEntries((prev) => {
+        const next = { ...prev };
+        if (entry.deleted) delete next[entry.key];
+        else next[entry.key] = entry.value;
+        return next;
+      });
+      setMeta({ loading: false, error: null });
+    });
+    // Subscribe seeds current entries; an empty prefix set still ends loading.
+    kv.list(prefix)
+      .then(() => setMeta((m) => ({ ...m, loading: false })))
+      .catch((e: Error) => setMeta({ loading: false, error: e.message }));
+    return unsub;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefix]);
+
+  const write = (key: string, value: unknown, isDelete: boolean) => {
+    const attempt = (baseRevision: number, retried: boolean) => {
+      const op = isDelete ? kv.remove(key, baseRevision) : kv.set(key, value, baseRevision).then(() => undefined);
+      op.catch((err: unknown) => {
+        const conflict = conflictOf(err);
+        if (conflict && !retried) {
+          revsRef.set(key, conflict.currentRevision);
+          attempt(conflict.currentRevision, true);
+          return;
+        }
+        setMeta({ loading: false, error: err instanceof Error ? err.message : String(err) });
+      });
+    };
+    attempt(revsRef.get(key) ?? 0, false);
+  };
+
+  return {
+    entries,
+    put: (key, value) => write(key, value, false),
+    remove: (key) => write(key, undefined, true),
+    loading: meta.loading,
+    error: meta.error,
+  };
+}
 
 export type NodeState = { node: Node | null; loading: boolean; error: string | null };
 

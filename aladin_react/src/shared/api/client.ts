@@ -1,25 +1,31 @@
 export class ApiError extends Error {
   status?: number;
   statusText?: string;
+  /** Parsed JSON error body when the response carried one (e.g. a 409's
+   *  conflict payload). Undefined when the body wasn't JSON. */
+  body?: unknown;
 
-  constructor(message: string, status?: number, statusText?: string) {
+  constructor(message: string, status?: number, statusText?: string, body?: unknown) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.statusText = statusText;
+    this.body = body;
   }
 }
 
 export async function parseResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`;
+    let parsed: unknown;
     try {
       const body = (await response.json()) as { error?: string; message?: string };
+      parsed = body;
       message = body.error ?? body.message ?? message;
     } catch {
       // ignore
     }
-    throw new ApiError(message, response.status, response.statusText);
+    throw new ApiError(message, response.status, response.statusText, parsed);
   }
 
   if (response.status === 204) {

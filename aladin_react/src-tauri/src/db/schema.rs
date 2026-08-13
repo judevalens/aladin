@@ -2,7 +2,7 @@ use rusqlite::Connection;
 
 use super::DbResult;
 
-const CURRENT_VERSION: i32 = 16;
+const CURRENT_VERSION: i32 = 17;
 
 /// Migrate the local cache schema. ATOMIC: every pending block AND the `user_version` stamp run in
 /// ONE transaction, so a mid-migration failure rolls back cleanly — the version is never advanced
@@ -66,6 +66,9 @@ pub fn migrate(conn: &mut Connection) -> DbResult<()> {
     if version < 16 {
         tx.execute_batch(MIGRATION_V16)?;
     }
+    if version < 17 {
+        tx.execute_batch(MIGRATION_V17)?;
+    }
     tx.execute_batch(&format!("PRAGMA user_version = {CURRENT_VERSION};"))?;
     tx.commit()?;
     Ok(())
@@ -110,6 +113,24 @@ mod tests {
 // Stored as the raw JSON object the frame carried; the read layer hands it to the UI.
 const MIGRATION_V16: &str = "
 ALTER TABLE nodes ADD COLUMN research_json TEXT;
+";
+
+// Shard local state (design/SHARD_LOCAL_STATE.md): the shard_kv read cache. One row
+// PER KEY — id is the frame entity id \"<shard_id>#<key>\"; revision is the server's
+// per-key optimistic-concurrency counter (also the frame seq); is_deleted is the
+// tombstone. Published channel only (draft never syncs), so no channel column.
+const MIGRATION_V17: &str = "
+CREATE TABLE IF NOT EXISTS shard_kv (
+    id         TEXT PRIMARY KEY,
+    shard_id   TEXT NOT NULL,
+    key        TEXT NOT NULL,
+    value_json TEXT,
+    revision   INTEGER NOT NULL DEFAULT 0,
+    seq        INTEGER NOT NULL DEFAULT 0,
+    is_deleted INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS shard_kv_shard_key ON shard_kv (shard_id, key);
 ";
 
 // Claim layer removed — the "signal" kind is gone from the sync spine, so its local read

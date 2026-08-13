@@ -44,6 +44,8 @@ type Dependencies interface {
 	Preview() coreservice.PreviewService
 	// ShardBuild runs builds while recording status + emitting build-status events.
 	ShardBuild() coreservice.ShardBuildService
+	// ShardKV is the per-shard key/value document store (shard local state).
+	ShardKV() coreservice.ShardKVService
 	// Relationships is the additive cross-world edge layer (artifacts ↔ records ↔ insights).
 	Relationships() coreservice.RelationshipService
 	// Research is the research bench's write/read side (RESEARCH_SURFACE_PRD §5).
@@ -110,6 +112,7 @@ type StaticDependencies struct {
 	WorkspaceRuntimeSvc    coreservice.WorkspaceRuntime
 	PreviewSvc             coreservice.PreviewService
 	ShardBuildSvc          coreservice.ShardBuildService
+	ShardKVSvc             coreservice.ShardKVService
 	RelationshipsSvc       coreservice.RelationshipService
 	GraphPaneSvc           coreservice.GraphPaneService
 	ResearchSvc            coreservice.ResearchService
@@ -168,6 +171,9 @@ func (d StaticDependencies) Preview() coreservice.PreviewService {
 }
 func (d StaticDependencies) ShardBuild() coreservice.ShardBuildService {
 	return d.ShardBuildSvc
+}
+func (d StaticDependencies) ShardKV() coreservice.ShardKVService {
+	return d.ShardKVSvc
 }
 func (d StaticDependencies) Relationships() coreservice.RelationshipService {
 	return d.RelationshipsSvc
@@ -244,6 +250,7 @@ type wiring struct {
 	workspaceRuntime    coreservice.WorkspaceRuntime
 	preview             coreservice.PreviewService
 	shardBuild          coreservice.ShardBuildService
+	shardKV             coreservice.ShardKVService
 	relationships       coreservice.RelationshipService
 	graphPane           coreservice.GraphPaneService
 	research            coreservice.ResearchService
@@ -293,6 +300,7 @@ func (w wiring) DocSurfaceStore() coreservice.DocSurfaceStore   { return w.docSu
 func (w wiring) WorkspaceRuntime() coreservice.WorkspaceRuntime { return w.workspaceRuntime }
 func (w wiring) Preview() coreservice.PreviewService            { return w.preview }
 func (w wiring) ShardBuild() coreservice.ShardBuildService      { return w.shardBuild }
+func (w wiring) ShardKV() coreservice.ShardKVService            { return w.shardKV }
 func (w wiring) Relationships() coreservice.RelationshipService { return w.relationships }
 func (w wiring) GraphPane() coreservice.GraphPaneService        { return w.graphPane }
 func (w wiring) Research() coreservice.ResearchService          { return w.research }
@@ -334,6 +342,7 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 	docRuntime := docsurface.NewBuilder(docStore, filepath.Join(dataVolumePath, "cache", "esm"))
 	docPreview := docsurface.NewPreviewSessions(docStore, docRuntime, docsurface.PreviewOptions{})
 	shardBuild := coreservice.NewShardBuildService(docRuntime, repo.NewShardBuildPostgres(pool))
+	shardKVRepo := repo.NewShardKVPostgres(pool)
 	feedRepo := repo.NewFeedPostgres(pool)
 	insightRepo := repo.NewInsightPostgres(pool)
 	relationshipRepo := repo.NewRelationshipPostgres(pool)
@@ -352,7 +361,7 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 	}
 	providerConnectionRepo := repo.NewProviderConnectionPostgres(pool)
 	syncRepo := repo.NewSyncPostgres(pool)
-	syncSvc := coreservice.NewSyncService(syncRepo, repo.NewTreeSyncSource(pool), repo.NewWatchlistSyncSource(pool))
+	syncSvc := coreservice.NewSyncService(syncRepo, repo.NewTreeSyncSource(pool), repo.NewWatchlistSyncSource(pool), repo.NewShardKVSyncSource(pool))
 	realtimeKeys := coreservice.NewSubscriptionKeyResolver()
 	realtime := coreservice.NewInMemoryRealtimeEventService(realtimeKeys)
 	outboxDrainer := coreservice.NewOutboxDrainer(syncRepo, realtime, coreservice.DefaultDrainInterval)
@@ -484,6 +493,7 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		workspaceRuntime:    docRuntime,
 		preview:             docPreview,
 		shardBuild:          shardBuild,
+		shardKV:             coreservice.NewShardKVService(artifactsSvc, shardKVRepo),
 		relationships:       coreservice.NewRelationshipService(relationshipRepo),
 		graphPane:           coreservice.NewGraphPaneService(graphPaneRepo),
 		research:            coreservice.NewResearchService(repo.NewResearchPostgres(pool)),

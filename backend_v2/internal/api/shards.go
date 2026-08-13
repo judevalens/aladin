@@ -1,10 +1,14 @@
 package api
 
 import (
+	"encoding/json"
+	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"aladin/backend_v2/internal/docsurface"
+	"aladin/backend_v2/internal/service"
 )
 
 func (s *Server) registerShardRoutes(mux *http.ServeMux) {
@@ -15,6 +19,14 @@ func (s *Server) registerShardRoutes(mux *http.ServeMux) {
 	// The parsed anchor manifest (for the host: provenance, deep links, and the
 	// M3 bridge's ref grant). 404 if the shard has no anchors.json.
 	mux.HandleFunc("GET /api/shards/{id}/manifest", s.handleShardManifest)
+	// Shard local state (design/SHARD_LOCAL_STATE.md): the host bridge's storage
+	// backend. ?channel selects published (default — the user's data) or draft
+	// (the agent sandbox). Writes are revision-guarded; a lost write is a 409
+	// carrying the current value + revision.
+	mux.HandleFunc("GET /api/shards/{id}/kv", s.handleShardKVList)
+	mux.HandleFunc("GET /api/shards/{id}/kv/{key...}", s.handleShardKVGet)
+	mux.HandleFunc("PUT /api/shards/{id}/kv/{key...}", s.handleShardKVSet)
+	mux.HandleFunc("DELETE /api/shards/{id}/kv/{key...}", s.handleShardKVDelete)
 }
 
 // ownedShard verifies the path id names an "app" artifact owned by the principal,
@@ -51,6 +63,110 @@ func (s *Server) handleShardBuildState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, st)
+}
+
+// shardKVConflictBody is the doc's 409 shape: the latest value + revision so the
+// client re-applies and retries.
+type shardKVConflictBody struct {
+	Error           string          `json:"error"` // always "conflict"
+	Key             string          `json:"key"`
+	CurrentRevision int64           `json:"currentRevision"`
+	CurrentValue    json.RawMessage `json:"currentValue"`
+	Deleted         bool            `json:"deleted,omitempty"`
+}
+
+// writeShardKVError maps service errors: ShardKVConflict → 409 with the current
+// entry; everything else falls through to the standard access/bad-request paths.
+func writeShardKVError(w http.ResponseWriter, r *http.Request, err error) {
+	var conflict *service.ShardKVConflict
+	if errors.As(err, &conflict) {
+		writeJSON(w, http.StatusConflict, shardKVConflictBody{
+			Error:           "conflict",
+			Key:             conflict.Current.Key,
+			CurrentRevision: conflict.Current.Revision,
+			CurrentValue:    conflict.Current.Value,
+			Deleted:         conflict.Current.Deleted,
+		})
+		return
+	}
+	if writeAccessError(w, r, err) {
+		return
+	}
+	var bad service.BadRequest
+	if errors.As(err, &bad) {
+		writeAPIError(w, r, http.StatusBadRequest, categoryBadRequest, bad.Error(), nil)
+		return
+	}
+	if errors.Is(err, service.ErrNotFound) {
+		writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Not found", nil)
+		return
+	}
+	writeAPIError(w, r, http.StatusInternalServerError, categoryInternal, "shard state unavailable", err)
+}
+
+func shardKVChannel(r *http.Request) service.BuildChannel {
+	// Published is the default: it is the user's real data and what the pane
+	// binds; draft is the agent's sandbox (preview/emulator, MCP flows).
+	if r.URL.Query().Get("channel") == string(service.ChannelDraft) {
+		return service.ChannelDraft
+	}
+	return service.ChannelPublished
+}
+
+func (s *Server) handleShardKVList(w http.ResponseWriter, r *http.Request) {
+	pageID := strings.TrimSpace(r.PathValue("id"))
+	entries, err := s.deps.ShardKV().List(r.Context(), pageID, shardKVChannel(r), r.URL.Query().Get("prefix"))
+	if err != nil {
+		writeShardKVError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"entries": entries})
+}
+
+func (s *Server) handleShardKVGet(w http.ResponseWriter, r *http.Request) {
+	pageID := strings.TrimSpace(r.PathValue("id"))
+	entry, ok, err := s.deps.ShardKV().Get(r.Context(), pageID, shardKVChannel(r), r.PathValue("key"))
+	if err != nil {
+		writeShardKVError(w, r, err)
+		return
+	}
+	if !ok {
+		writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "no such key", nil)
+		return
+	}
+	writeJSON(w, http.StatusOK, entry)
+}
+
+func (s *Server) handleShardKVSet(w http.ResponseWriter, r *http.Request) {
+	pageID := strings.TrimSpace(r.PathValue("id"))
+	var body struct {
+		Value        json.RawMessage `json:"value"`
+		BaseRevision int64           `json:"baseRevision"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeAPIError(w, r, http.StatusBadRequest, categoryBadRequest, "invalid JSON body", err)
+		return
+	}
+	entry, err := s.deps.ShardKV().Set(r.Context(), pageID, shardKVChannel(r), r.PathValue("key"), body.Value, body.BaseRevision)
+	if err != nil {
+		writeShardKVError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, entry)
+}
+
+func (s *Server) handleShardKVDelete(w http.ResponseWriter, r *http.Request) {
+	pageID := strings.TrimSpace(r.PathValue("id"))
+	baseRevision, err := strconv.ParseInt(r.URL.Query().Get("baseRevision"), 10, 64)
+	if err != nil {
+		writeAPIError(w, r, http.StatusBadRequest, categoryBadRequest, "baseRevision query param required", err)
+		return
+	}
+	if err := s.deps.ShardKV().Delete(r.Context(), pageID, shardKVChannel(r), r.PathValue("key"), baseRevision); err != nil {
+		writeShardKVError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleShardManifest(w http.ResponseWriter, r *http.Request) {

@@ -136,13 +136,15 @@ export function DocSurfaceUI({ artifact, hidden = false }: { artifact: Artifact;
   const showError = status === "failed";
 
   // One bridge host per iframe: answers the kit's bridge/1 requests (source-
-  // window checked) and pushes theme switches into the frame.
+  // window checked), proxies shard local state, and pushes theme switches.
+  const { runtime } = useAppComposition();
   const hostRef = useRef<BridgeHost | null>(null);
   useEffect(() => {
     const host = createBridgeHost({
       pageId: artifact.id,
       getWindow: () => iframeRef.current?.contentWindow,
       getTheme: () => useAppStore.getState().theme,
+      kv: runtime.apis.shardKV,
     });
     host.attach();
     hostRef.current = host;
@@ -150,7 +152,7 @@ export function DocSurfaceUI({ artifact, hidden = false }: { artifact: Artifact;
       host.detach();
       hostRef.current = null;
     };
-  }, [artifact.id]);
+  }, [artifact.id, runtime]);
 
   // Live theme sync — pushed even while this frame is CSS-hidden in the
   // keep-alive set, so it re-surfaces already in the right theme.

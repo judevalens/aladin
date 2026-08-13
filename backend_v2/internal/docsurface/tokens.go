@@ -246,18 +246,43 @@ const previewBridgeEmulatorJS = `(function(){
     data:{id:id,note:"preview stub — the live host serves nodes.get from your workspace"}};}
   function reply(r){window.postMessage(r,"*");}
   function theme(){return document.documentElement.getAttribute("data-theme")||"dark";}
+  // In-memory shard-KV honoring the revision guard + prefix subscriptions, so
+  // stateful shards RUN headless. Scratch by design — the doc-lifetime sandbox
+  // (the draft-channel analogue); the live host binds your real published data.
+  var store=new Map(); var kvSubs=new Map();
+  function entryOf(k){var e=store.get(k);return {key:k,value:e.value,revision:e.revision,deleted:false};}
+  function pushKV(k){kvSubs.forEach(function(prefix,channel){
+    if(k.indexOf(prefix)===0){var e=store.get(k);
+      reply({aladin:"bridge/1",type:"push",channel:channel,
+        data:e?entryOf(k):{key:k,value:null,revision:0,deleted:true}});}});}
+  function conflict(id,k){var e=store.get(k);
+    reply({aladin:"bridge/1",type:"response",id:id,ok:false,error:"conflict on "+k,code:"conflict",
+      data:{key:k,currentRevision:e?e.revision:0,currentValue:e?e.value:null,deleted:false}});}
   window.addEventListener("message",function(e){
     var m=e.data; if(!m||m.aladin!=="bridge/1"||m.type!=="request")return;
-    var ids=(m.params&&m.params.ids)||[];
-    if(m.method==="hello"){reply({aladin:"bridge/1",type:"response",id:m.id,ok:true,
-      data:{protocol:"bridge/1",theme:theme(),capabilities:["theme"],methods:["hello","theme.get","nodes.get","nodes.subscribe","nodes.unsubscribe"]}});}
-    else if(m.method==="theme.get"){reply({aladin:"bridge/1",type:"response",id:m.id,ok:true,data:{theme:theme()}});}
-    else if(m.method==="nodes.get"){reply({aladin:"bridge/1",type:"response",id:m.id,ok:true,data:ids.map(node)});}
-    else if(m.method==="nodes.subscribe"){
-      reply({aladin:"bridge/1",type:"response",id:m.id,ok:true,data:true});
-      ids.forEach(function(id){reply({aladin:"bridge/1",type:"push",channel:m.params.channel,data:node(id)});});
-    }
-    else if(m.method==="nodes.unsubscribe"){reply({aladin:"bridge/1",type:"response",id:m.id,ok:true,data:true});}
+    var p=m.params||{}; var ids=p.ids||[];
+    function ok(data){reply({aladin:"bridge/1",type:"response",id:m.id,ok:true,data:data});}
+    if(m.method==="hello"){ok({protocol:"bridge/1",theme:theme(),capabilities:["theme","kv"],
+      methods:["hello","theme.get","kv.get","kv.list","kv.set","kv.delete","kv.subscribe","kv.unsubscribe","nodes.get","nodes.subscribe","nodes.unsubscribe"]});}
+    else if(m.method==="theme.get"){ok({theme:theme()});}
+    else if(m.method==="kv.get"){ok(store.has(p.key)?entryOf(p.key):null);}
+    else if(m.method==="kv.list"){var out=[];store.forEach(function(_,k){
+      if(k.indexOf(p.prefix||"")===0)out.push(entryOf(k));});ok({entries:out});}
+    else if(m.method==="kv.set"){var cur=store.get(p.key);var base=(cur?cur.revision:0);
+      if((p.baseRevision||0)!==base){conflict(m.id,p.key);return;}
+      store.set(p.key,{value:p.value,revision:base+1});
+      ok({revision:base+1});pushKV(p.key);}
+    else if(m.method==="kv.delete"){var cur2=store.get(p.key);
+      if(cur2&&(p.baseRevision||0)!==cur2.revision){conflict(m.id,p.key);return;}
+      store.delete(p.key);ok(true);pushKV(p.key);}
+    else if(m.method==="kv.subscribe"){kvSubs.set(p.channel,p.prefix||"");ok(true);
+      store.forEach(function(_,k){if(k.indexOf(p.prefix||"")===0)
+        reply({aladin:"bridge/1",type:"push",channel:p.channel,data:entryOf(k)});});}
+    else if(m.method==="kv.unsubscribe"){kvSubs.delete(p.channel);ok(true);}
+    else if(m.method==="nodes.get"){ok(ids.map(node));}
+    else if(m.method==="nodes.subscribe"){ok(true);
+      ids.forEach(function(id){reply({aladin:"bridge/1",type:"push",channel:p.channel,data:node(id)});});}
+    else if(m.method==="nodes.unsubscribe"){ok(true);}
     else{reply({aladin:"bridge/1",type:"response",id:m.id,ok:false,error:"preview emulator: unknown method "+m.method,code:"unknown-method"});}
   });
 })();`
