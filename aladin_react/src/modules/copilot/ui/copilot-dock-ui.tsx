@@ -1206,7 +1206,7 @@ function toolDigestLabel(name: string): string {
   }
 }
 
-function AssistantBubble({
+export function AssistantBubble({
   content,
   citations,
   meta,

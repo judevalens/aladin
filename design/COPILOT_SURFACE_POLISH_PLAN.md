@@ -61,7 +61,8 @@ Aladin owns all rendering, permissions, and actions.
   tests cover visibility and clearing; health warning banner tests cover
   preflight warning visibility and dismissal; latest transcript button tests
   cover hidden, visible, and repin click behavior; empty transcript tests cover
-  grounded first-run copy, surface labels, and suggestion actions.
+  grounded first-run copy, surface labels, and suggestion actions; assistant
+  bubble tests cover citation de-duping/navigation and completed-turn digests.
 - The backend system prompt now advertises the supported rich directive contract
   and safety rules so final answers can use native blocks intentionally.
 
