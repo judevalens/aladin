@@ -1,4 +1,5 @@
 import { FlaskConical, LineChart, Search, SlidersHorizontal, Star } from "lucide-react";
+import { Icon } from "@/components/ui/icon";
 import { useState, type ReactNode } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { PlaceholderPane } from "@/components/ui/aladin";
@@ -45,7 +46,7 @@ export function WorkPaneUI() {
               <button
                 key={entry.key}
                 className={cn(
-                  "group relative flex h-full items-center gap-2 border-r px-4 text-[12.5px] transition-colors",
+                  "group relative flex h-full items-center gap-2 border-r px-4 text-small transition-colors",
                   active
                     ? "border-line bg-bg font-medium text-ink"
                     : "border-line bg-panel text-ink-3 hover:bg-raise hover:text-ink",
@@ -55,11 +56,11 @@ export function WorkPaneUI() {
                 type="button"
               >
                 {isResearch ? (
-                  <FlaskConical className="h-3.5 w-3.5 shrink-0 text-amber" strokeWidth={1.75} />
+                  <Icon as={FlaskConical} size="inline" className="shrink-0 text-amber" />
                 ) : null}
                 <span className="max-w-[200px] truncate">{entry.label}</span>
                 <span
-                  className="ml-1 flex h-4 w-4 items-center justify-center rounded text-ink-4 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
+                  className="ml-1 flex h-4 w-4 items-center justify-center rounded-tap text-ink-4 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
                   onClick={(event) => {
                     event.stopPropagation();
                     onCloseTab(entry.key);
@@ -160,13 +161,13 @@ function WorkPaneStatusBar({
 }) {
   return (
     <div className="flex items-center gap-3 border-b border-line bg-panel px-3.5 py-1.5">
-      <nav className="flex min-w-0 flex-1 items-center text-[12px] text-ink-3">
+      <nav className="flex min-w-0 flex-1 items-center text-small text-ink-3">
         {folders.map((crumb, index) => (
           <div key={crumb.id} className="flex min-w-0 items-center">
             <button
               type="button"
               onClick={() => onJumpToFolder(crumb.id)}
-              className="max-w-[14ch] truncate rounded px-1 py-0.5 hover:bg-[rgb(var(--hover))] hover:text-ink"
+              className="max-w-[14ch] truncate rounded-tap px-1 py-0.5 hover:bg-[rgb(var(--hover))] hover:text-ink"
               title={crumb.title}
             >
               {crumb.title}
@@ -183,24 +184,24 @@ function WorkPaneStatusBar({
       </nav>
       <div className="flex items-center gap-0.5">
         <StatusUtilityIcon ariaLabel="Search document" onClick={() => undefined}>
-          <Search className="h-[15px] w-[15px]" strokeWidth={1.75} />
+          <Icon as={Search} />
         </StatusUtilityIcon>
         <StatusUtilityIcon ariaLabel="Favorite document" onClick={() => undefined}>
-          <Star className="h-[15px] w-[15px]" strokeWidth={1.75} />
+          <Icon as={Star} />
         </StatusUtilityIcon>
         <StatusUtilityIcon
           ariaLabel="Toggle graph context"
           isActive={graphOpen}
           onClick={onToggleGraph}
         >
-          <LineChart className="h-[15px] w-[15px]" strokeWidth={1.75} />
+          <Icon as={LineChart} />
         </StatusUtilityIcon>
         <StatusUtilityIcon
           ariaLabel="Toggle inspector"
           isActive={inspectorOpen}
           onClick={onToggleInspector}
         >
-          <SlidersHorizontal className="h-[15px] w-[15px]" strokeWidth={1.75} />
+          <Icon as={SlidersHorizontal} />
         </StatusUtilityIcon>
       </div>
     </div>
@@ -224,8 +225,7 @@ function StatusUtilityIcon({
       aria-label={ariaLabel}
       title={ariaLabel}
       onClick={onClick}
-      className={cn(
-        "flex h-6 w-6 items-center justify-center rounded transition-colors",
+      className={cn("flex h-6 w-6 items-center justify-center rounded-tap transition-colors",
         isActive
           ? "bg-[rgb(var(--sel))] text-ink"
           : "text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink",

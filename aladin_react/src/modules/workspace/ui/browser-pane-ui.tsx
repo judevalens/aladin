@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { Eyebrow } from "@/components/ui/eyebrow";
+import { Icon } from "@/components/ui/icon";
 import { ChevronRight, Code2, Columns3, FileJson, FileText, FlaskConical, Folder, History, Layout, LayoutDashboard, Link2, Mic, Paperclip, Plus, ScanSearch, Search, SlidersHorizontal } from "lucide-react";
 import type { ArtifactKind } from "@/shared/api/models";
 import type { LucideIcon } from "lucide-react";
@@ -81,7 +83,7 @@ export function BrowserPaneUI() {
   if (loading) {
     return (
       <section className="flex w-[274px] shrink-0 flex-col overflow-hidden border-r border-line bg-explorer">
-        <div className="p-5 text-sm text-ink-2">Loading browser tree…</div>
+        <div className="p-5 text-body text-ink-2">Loading browser tree…</div>
       </section>
     );
   }
@@ -89,7 +91,7 @@ export function BrowserPaneUI() {
   if (errorMessage) {
     return (
       <section className="flex w-[274px] shrink-0 flex-col overflow-hidden border-r border-line bg-explorer p-4">
-        <AladinPanel className="rounded-md border border-against/40 bg-against/10 p-4 text-sm text-against">{errorMessage}</AladinPanel>
+        <AladinPanel className="rounded-control border border-against/40 bg-against/10 p-4 text-body text-against">{errorMessage}</AladinPanel>
       </section>
     );
   }
@@ -98,34 +100,34 @@ export function BrowserPaneUI() {
     <section className="flex w-[274px] shrink-0 flex-col overflow-hidden border-r border-line bg-explorer">
       {/* Header */}
       <div className="flex items-center gap-2 px-3 pt-[13px] pb-[11px]">
-        <span className="font-mono text-[11px] font-bold uppercase tracking-[1px] text-ink-3">Workspace</span>
+        <Eyebrow>Workspace</Eyebrow>
         <div className="ml-auto flex items-center gap-0.5">
           <button
             type="button"
             onClick={() => openCommandPalette(true)}
-            className="grid h-6 w-6 place-items-center rounded-md text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
+            className="grid h-6 w-6 place-items-center rounded-control text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
             aria-label="Add item"
             title="Add item"
           >
-            <Plus className="h-4 w-4" strokeWidth={1.75} />
+            <Icon as={Plus} />
           </button>
           <button
             type="button"
             onClick={(event) => openMiller(null, event.currentTarget.getBoundingClientRect())}
-            className="grid h-6 w-6 place-items-center rounded-md text-ink-2 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
+            className="grid h-6 w-6 place-items-center rounded-control text-ink-2 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
             aria-label="Browse in columns"
             title="Browse in columns"
           >
-            <Columns3 className="h-4 w-4" strokeWidth={1.75} />
+            <Icon as={Columns3} />
           </button>
           <button
             type="button"
             onClick={() => setPropertyFilterOpen(true)}
-            className="grid h-6 w-6 place-items-center rounded-md text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
+            className="grid h-6 w-6 place-items-center rounded-control text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
             aria-label="Filter by property"
             title="Filter by property"
           >
-            <SlidersHorizontal className="h-4 w-4" strokeWidth={1.75} />
+            <Icon as={SlidersHorizontal} />
           </button>
         </div>
       </div>
@@ -135,11 +137,11 @@ export function BrowserPaneUI() {
         <button
           type="button"
           onClick={() => openCommandPalette(true)}
-          className="flex w-full items-center gap-2 rounded-lg border border-line bg-field px-2.5 py-1.5 text-left transition-colors hover:border-ink-4"
+          className="flex w-full items-center gap-2 rounded-control border border-line bg-field px-2.5 py-1.5 text-left transition-colors hover:border-ink-4"
         >
-          <Search className="h-3.5 w-3.5 shrink-0 text-ink-3" strokeWidth={1.75} />
-          <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-ink-3">search or ask</span>
-          <kbd className="rounded border border-line px-1 font-mono text-[10px] text-ink-4">⌘K</kbd>
+          <Icon as={Search} size="inline" className="shrink-0 text-ink-3" />
+          <span className="min-w-0 flex-1 truncate font-mono text-small text-ink-3">search or ask</span>
+          <kbd className="rounded-tap border border-line px-1 font-mono text-meta text-ink-4">⌘K</kbd>
         </button>
       </div>
 
@@ -168,7 +170,7 @@ export function BrowserPaneUI() {
           />
         ))}
         {rows.length === 0 ? (
-          <div className="px-3 py-10 text-center text-[12px] text-ink-4">Nothing here yet.</div>
+          <div className="px-3 py-10 text-center text-small text-ink-4">Nothing here yet.</div>
         ) : null}
       </div>
 
@@ -272,13 +274,13 @@ function BrowserPaneRow({
           onClick={handleClick}
           style={{ paddingLeft: 10 + row.depth * 15 }}
           className={cn(
-            "relative flex h-7 w-full items-center gap-[7px] rounded-md pr-2.5 text-left transition-colors",
+            "relative flex h-7 w-full items-center gap-[7px] rounded-control pr-2.5 text-left transition-colors",
             isActive
               ? "bg-[rgb(var(--sel))] text-ink"
               : cn("hover:bg-[rgb(var(--hover))]", isContainer ? "text-ink" : "text-ink-2"),
           )}
         >
-          {isActive ? <span className="absolute left-0 top-[5px] bottom-[5px] w-0.5 rounded bg-amber" /> : null}
+          {isActive ? <span className="absolute left-0 top-[5px] bottom-[5px] w-0.5 rounded-tap bg-amber" /> : null}
           {/* Vertical guide lines — one per ancestor depth; consecutive rows make them continuous. */}
           {Array.from({ length: row.depth }, (_, ancestorDepth) => (
             <span
@@ -290,32 +292,21 @@ function BrowserPaneRow({
           ))}
           {/* Chevron / spacer (14px) */}
           {isExpandableFolder ? (
-            <ChevronRight
-              className={cn("h-3.5 w-3.5 shrink-0 text-ink-3 transition-transform duration-100", isExpanded && "rotate-90")}
-              strokeWidth={2}
-            />
+            <Icon as={ChevronRight} size="inline" mark className={cn("shrink-0 text-ink-3 transition-transform duration-100", isExpanded && "rotate-90")} />
           ) : (
             <span className="h-3.5 w-3.5 shrink-0" />
           )}
           {/* Type icon (16px) */}
-          <TypeIcon
-            className={cn(
-              "h-4 w-4 shrink-0",
-              isResearch ? "text-amber" : isContainer ? "text-ink-2" : "text-ink-3",
-              isSlot && "text-ink-4",
-            )}
-            strokeWidth={1.75}
-          />
+          <Icon as={TypeIcon} className={cn(" shrink-0", isResearch ? "text-amber" : isContainer ? "text-ink-2" : "text-ink-3", isSlot && "text-ink-4", )} />
           <span
-            className={cn(
-              "min-w-0 flex-1 truncate text-[13px]",
+            className={cn("min-w-0 flex-1 truncate text-body",
               isActive ? "font-semibold" : isContainer ? "font-medium" : "font-normal",
             )}
           >
             {row.title}
           </span>
           {isContainer ? (
-            <span className="flex shrink-0 items-center gap-1 font-mono text-[10.5px] text-ink-4">
+            <span className="flex shrink-0 items-center gap-1 font-mono text-meta text-ink-4">
               {showRunDot ? (
                 <span
                   className="size-1.5 rounded-full bg-amber"
@@ -324,7 +315,7 @@ function BrowserPaneRow({
                 />
               ) : null}
               {row.childCount ?? 0}
-              {isDrillFolder ? <ChevronRight className="h-3.5 w-3.5" strokeWidth={2} /> : null}
+              {isDrillFolder ? <Icon as={ChevronRight} size="inline" mark /> : null}
             </span>
           ) : null}
         </button>
@@ -333,7 +324,7 @@ function BrowserPaneRow({
         {isSlot ? null : isContainer && row.folderId ? (
           <>
             <ContextMenuItem onSelect={() => onOpenMiller(row.folderId!, rect())}>
-              <Columns3 className="h-[15px] w-[15px] text-amber" strokeWidth={1.75} />
+              <Icon as={Columns3} className="text-amber" />
               <span className="font-medium">Browse in columns</span>
             </ContextMenuItem>
             <ContextMenuSeparator />
@@ -372,7 +363,7 @@ function BrowserPaneRow({
             <ContextMenuItem
               onSelect={() => onOpenMiller(row.ancestorFolderIds.at(-1) ?? null, rect(), row.artifactId)}
             >
-              <Columns3 className="h-[15px] w-[15px] text-ink-3" strokeWidth={1.75} />
+              <Icon as={Columns3} className="text-ink-3" />
               Reveal in columns
             </ContextMenuItem>
             <ContextMenuSeparator />

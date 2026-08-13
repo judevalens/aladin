@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
  */
 export const CopilotMarkdown = memo(function CopilotMarkdown({ text }: { text: string }) {
   return (
-    <div className="text-[13px] leading-relaxed text-ink-2">
+    <div className="text-body leading-relaxed text-ink-2">
       <Markdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -29,9 +29,9 @@ export const CopilotMarkdown = memo(function CopilotMarkdown({ text }: { text: s
           ul: ({ children }) => <ul className="mb-2 ml-4 list-disc space-y-1 last:mb-0">{children}</ul>,
           ol: ({ children }) => <ol className="mb-2 ml-4 list-decimal space-y-1 last:mb-0">{children}</ol>,
           li: ({ children }) => <li className="marker:text-ink-4">{children}</li>,
-          h1: ({ children }) => <h1 className="mb-1.5 mt-1 font-display text-[15px] font-semibold text-ink">{children}</h1>,
-          h2: ({ children }) => <h2 className="mb-1.5 mt-1 font-display text-[14px] font-semibold text-ink">{children}</h2>,
-          h3: ({ children }) => <h3 className="mb-1 mt-1 text-[13px] font-semibold text-ink">{children}</h3>,
+          h1: ({ children }) => <h1 className="mb-1.5 mt-1 font-display text-lead font-semibold text-ink">{children}</h1>,
+          h2: ({ children }) => <h2 className="mb-1.5 mt-1 font-display text-lead font-semibold text-ink">{children}</h2>,
+          h3: ({ children }) => <h3 className="mb-1 mt-1 text-body font-semibold text-ink">{children}</h3>,
           blockquote: ({ children }) => (
             <blockquote className="my-2 border-l-2 border-amber-line pl-2.5 text-ink-3">{children}</blockquote>
           ),
@@ -40,11 +40,11 @@ export const CopilotMarkdown = memo(function CopilotMarkdown({ text }: { text: s
             const isBlock = /language-/.test(className ?? "");
             if (isBlock) {
               return (
-                <code className="font-mono text-[12px] text-ink">{children}</code>
+                <code className="font-mono text-small text-ink">{children}</code>
               );
             }
             return (
-              <code className="rounded bg-raise px-1 py-0.5 font-mono text-[12px] text-ink">{children}</code>
+              <code className="rounded-tap bg-raise px-1 py-0.5 font-mono text-small text-ink">{children}</code>
             );
           },
           pre: ({ children }) => (
@@ -52,7 +52,7 @@ export const CopilotMarkdown = memo(function CopilotMarkdown({ text }: { text: s
           ),
           table: ({ children }) => (
             <div className="my-2 overflow-x-auto">
-              <table className="w-full border-collapse text-[12px]">{children}</table>
+              <table className="w-full border-collapse text-small">{children}</table>
             </div>
           ),
           th: ({ children }) => <th className="border border-line px-2 py-1 text-left font-semibold text-ink">{children}</th>,

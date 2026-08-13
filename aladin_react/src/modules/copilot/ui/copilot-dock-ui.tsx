@@ -1,4 +1,5 @@
 import { AlertTriangle, ArrowUp, Check, ChevronDown, Plus, Sparkles, Square, X } from "lucide-react";
+import { Icon } from "@/components/ui/icon";
 import { useEffect, useRef, useState } from "react";
 import type { CopilotSurface } from "@/repos/copilot/copilot-repo";
 import type { CopilotProposal, CopilotToolRun } from "@/app/state/copilot-slice";
@@ -148,18 +149,18 @@ export function CopilotDockUI() {
       >
         {/* Header */}
         <div className="flex h-11 shrink-0 items-center gap-2 border-b border-line px-3">
-          <Sparkles className="size-4 text-amber" strokeWidth={1.75} />
-          <span className="font-display text-sm font-semibold text-ink">Copilot</span>
+          <Icon as={Sparkles} className="text-amber" />
+          <span className="font-display text-body font-semibold text-ink">Copilot</span>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="ml-1 flex items-center gap-1 rounded-chip px-1.5 py-0.5 font-mono text-[10px] text-ink-3 hover:bg-raise hover:text-ink"
+                className="ml-1 flex items-center gap-1 rounded-chip px-1.5 py-0.5 font-mono text-meta text-ink-3 hover:bg-raise hover:text-ink"
                 aria-label="Threads"
               >
                 {activeThread(threads, activeThreadId) ?? "New chat"}
-                <ChevronDown className="size-3" strokeWidth={2} />
+                <Icon as={ChevronDown} size="inline" mark />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="max-h-80 w-64 overflow-y-auto">
@@ -183,18 +184,18 @@ export function CopilotDockUI() {
               onClick={newThread}
               aria-label="New chat"
               title="New chat"
-              className="grid size-6 place-items-center rounded text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink"
+              className="grid size-6 place-items-center rounded-tap text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink"
             >
-              <Plus className="size-4" strokeWidth={1.75} />
+              <Icon as={Plus} />
             </button>
             <button
               type="button"
               onClick={() => setOpen(false)}
               aria-label="Close copilot"
               title="Close"
-              className="grid size-6 place-items-center rounded text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink"
+              className="grid size-6 place-items-center rounded-tap text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink"
             >
-              <X className="size-4" strokeWidth={1.75} />
+              <Icon as={X} />
             </button>
           </div>
         </div>
@@ -207,12 +208,14 @@ export function CopilotDockUI() {
         >
           {messages.length === 0 && !streaming ? (
             <div className="mt-6 flex flex-col items-center gap-3 px-4 text-center">
+              {/* Empty-state illustration, not chrome — deliberately off the <Icon>
+                  scale, so §5 rule 9's grep flags it on purpose. */}
               <Sparkles className="size-5 text-ink-4" strokeWidth={1.5} />
-              <p className="text-[13px] text-ink-3">
+              <p className="text-body text-ink-3">
                 Ask about your research — grounded in your Aladin data.
               </p>
               {surfaceLabel ? (
-                <p className="font-mono text-[10px] text-ink-4">Looking at {surfaceLabel}</p>
+                <p className="font-mono text-meta text-ink-4">Looking at {surfaceLabel}</p>
               ) : null}
               <div className="mt-1 flex flex-col items-stretch gap-1.5">
                 {suggestionsFor(surface).map((s) => (
@@ -220,7 +223,7 @@ export function CopilotDockUI() {
                     key={s}
                     type="button"
                     onClick={() => void send(s)}
-                    className="rounded-chip border border-line px-3 py-1.5 text-left text-[12px] text-ink-2 transition-colors hover:border-amber-line hover:text-ink"
+                    className="rounded-chip border border-line px-3 py-1.5 text-left text-small text-ink-2 transition-colors hover:border-amber-line hover:text-ink"
                   >
                     {s}
                   </button>
@@ -249,23 +252,23 @@ export function CopilotDockUI() {
           {busy && toolTrail.length > 0 ? <ToolTrail trail={toolTrail} /> : null}
 
           {awaitingApproval ? (
-            <p className="font-mono text-[10px] text-amber">waiting for your approval…</p>
+            <p className="font-mono text-meta text-amber">waiting for your approval…</p>
           ) : activeTool ? (
-            <p className="animate-pulse font-mono text-[10px] text-ink-4">{activeTool}…</p>
+            <p className="animate-pulse font-mono text-meta text-ink-4">{activeTool}…</p>
           ) : thinking ? (
-            <p className="animate-pulse font-mono text-[10px] text-ink-4">reasoning…</p>
+            <p className="animate-pulse font-mono text-meta text-ink-4">reasoning…</p>
           ) : status === "sending" ? (
-            <p className="animate-pulse font-mono text-[10px] text-ink-4">thinking…</p>
+            <p className="animate-pulse font-mono text-meta text-ink-4">thinking…</p>
           ) : null}
 
           {error ? (
             <div className="rounded-card border border-against/40 bg-against/10 px-3 py-2">
-              <p className="text-[12px] text-against">{error}</p>
+              <p className="text-small text-against">{error}</p>
               {errorCode === "max_turns" ? (
                 <button
                   type="button"
                   onClick={() => void send("continue")}
-                  className="mt-1.5 rounded-chip border border-line px-2.5 py-1 text-[11px] text-ink-2 transition-colors hover:border-amber-line hover:text-ink"
+                  className="mt-1.5 rounded-chip border border-line px-2.5 py-1 text-meta text-ink-2 transition-colors hover:border-amber-line hover:text-ink"
                 >
                   Continue where it left off
                 </button>
@@ -279,7 +282,7 @@ export function CopilotDockUI() {
             <button
               type="button"
               onClick={repin}
-              className="pointer-events-auto absolute bottom-2 left-1/2 -translate-x-1/2 rounded-chip border border-line bg-raise px-2.5 py-1 font-mono text-[10px] text-ink-2 shadow-panel transition-colors hover:border-amber-line hover:text-ink"
+              className="pointer-events-auto absolute bottom-2 left-1/2 -translate-x-1/2 rounded-chip border border-line bg-raise px-2.5 py-1 font-mono text-meta text-ink-2 shadow-panel transition-colors hover:border-amber-line hover:text-ink"
             >
               ↓ latest
             </button>
@@ -290,20 +293,20 @@ export function CopilotDockUI() {
         <div className="shrink-0 border-t border-line p-2.5">
           {healthWarning ? (
             <div className="mb-1.5 flex items-start justify-between gap-2 rounded-card border border-amber-line bg-amber-soft/40 px-2.5 py-1.5">
-              <p className="text-[11px] text-ink-2">{healthWarning}</p>
+              <p className="text-meta text-ink-2">{healthWarning}</p>
               <button
                 type="button"
                 onClick={() => setHealthWarning(null)}
                 aria-label="Dismiss warning"
                 className="text-ink-4 hover:text-ink"
               >
-                <X className="size-3" strokeWidth={2} />
+                <Icon as={X} size="inline" mark />
               </button>
             </div>
           ) : null}
           {queuedText ? (
             <div className="mb-1.5 flex items-center justify-between gap-2 rounded-card border border-line bg-raise px-2.5 py-1.5">
-              <p className="truncate font-mono text-[10px] text-ink-3">
+              <p className="truncate font-mono text-meta text-ink-3">
                 queued — sends when the copilot finishes: “{queuedText}”
               </p>
               <button
@@ -312,7 +315,7 @@ export function CopilotDockUI() {
                 aria-label="Remove queued message"
                 className="text-ink-4 hover:text-ink"
               >
-                <X className="size-3" strokeWidth={2} />
+                <Icon as={X} size="inline" mark />
               </button>
             </div>
           ) : null}
@@ -320,7 +323,7 @@ export function CopilotDockUI() {
             {surfaceLabel ? (
               <div className="flex items-center gap-1.5 border-b border-line/60 px-3 pb-1 pt-1.5">
                 <span className="size-1 shrink-0 rounded-full bg-amber" />
-                <span className="truncate font-mono text-[10px] text-ink-4">
+                <span className="truncate font-mono text-meta text-ink-4">
                   asking about {surfaceLabel}
                 </span>
               </div>
@@ -344,7 +347,7 @@ export function CopilotDockUI() {
                 }}
                 rows={1}
                 placeholder={composerPlaceholder(busy, surfaceLabel)}
-                className="max-h-40 min-h-[22px] flex-1 resize-none bg-transparent text-[13px] leading-relaxed text-ink outline-none placeholder:text-ink-4"
+                className="max-h-40 min-h-[22px] flex-1 resize-none bg-transparent text-body leading-relaxed text-ink outline-none placeholder:text-ink-4"
               />
               <div className="flex shrink-0 items-center gap-1">
                 {busy ? (
@@ -355,7 +358,7 @@ export function CopilotDockUI() {
                     title="Stop"
                     className="grid size-8 place-items-center rounded-chip border border-line bg-raise text-ink-2 transition-colors hover:border-against/50 hover:text-against"
                   >
-                    <Square className="size-3 fill-current" strokeWidth={2} />
+                    <Icon as={Square} size="inline" mark className="fill-current" />
                   </button>
                 ) : null}
                 <button
@@ -364,20 +367,19 @@ export function CopilotDockUI() {
                   disabled={!input.trim()}
                   aria-label={busy ? "Queue message" : "Send"}
                   title={busy ? "Queue — sends when the turn finishes" : "Send"}
-                  className={cn(
-                    "grid size-8 place-items-center rounded-chip transition-all",
+                  className={cn("grid size-8 place-items-center rounded-chip transition-all",
                     busy
                       ? "border border-line bg-raise text-ink-2 hover:border-amber-line hover:text-amber"
                       : "bg-amber text-primary-foreground disabled:opacity-30",
                   )}
                 >
-                  <ArrowUp className="size-4" strokeWidth={2.25} />
+                  <Icon as={ArrowUp} mark />
                 </button>
               </div>
             </div>
             {/* Keyboard hint — only while composing, so it never adds idle noise. */}
             <div className="hidden items-center justify-end gap-2 px-3 pb-1.5 group-focus-within:flex">
-              <span className="font-mono text-[9px] text-ink-4">
+              <span className="font-mono text-meta text-ink-4">
                 {busy ? "⏎ queue" : "⏎ send"} · ⇧⏎ newline · esc close
               </span>
             </div>
@@ -418,11 +420,10 @@ function ToolTrail({ trail }: { trail: CopilotToolRun[] }) {
       {groups.map((g, i) => (
         <span
           key={`${g.label}-${i}`}
-          className="flex items-center gap-1.5 rounded-chip border border-line px-2 py-0.5 font-mono text-[10px] text-ink-3"
+          className="flex items-center gap-1.5 rounded-chip border border-line px-2 py-0.5 font-mono text-meta text-ink-3"
         >
           <span
-            className={cn(
-              "size-1.5 rounded-full",
+            className={cn("size-1.5 rounded-full",
               g.status === "running" && "animate-pulse bg-amber",
               g.status === "ok" && "bg-for",
               g.status === "error" && "bg-against",
@@ -453,8 +454,8 @@ function ProposalCard({
   ) {
     const approved = proposal.status === "approved";
     return (
-      <p className="flex items-center gap-1.5 font-mono text-[10px] text-ink-4">
-        <Check className={cn("size-3", approved ? "text-for" : "text-ink-4")} strokeWidth={2.4} />
+      <p className="flex items-center gap-1.5 font-mono text-meta text-ink-4">
+        <Icon as={Check} size="inline" mark className={cn(approved ? "text-for" : "text-ink-4")} />
         {proposal.message || (approved ? "Applied." : proposal.status === "expired" ? "That approval expired." : "Dismissed.")}
       </p>
     );
@@ -465,10 +466,10 @@ function ProposalCard({
   return (
     <div className="rounded-card border border-amber-line bg-amber-soft/40 p-3">
       <div className="flex items-start gap-2">
-        <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber" strokeWidth={2} />
+        <Icon as={AlertTriangle} size="inline" mark className="mt-0.5 shrink-0 text-amber" />
         <div className="min-w-0 flex-1">
-          <p className="text-[12px] text-ink">{proposal.summary}</p>
-          <p className="mt-0.5 font-mono text-[10px] text-ink-4">
+          <p className="text-small text-ink">{proposal.summary}</p>
+          <p className="mt-0.5 font-mono text-meta text-ink-4">
             {proposal.status === "approving"
               ? "Approving…"
               : proposal.status === "rejecting"
@@ -482,7 +483,7 @@ function ProposalCard({
           type="button"
           disabled={inFlight}
           onClick={onApprove}
-          className="flex-1 rounded-chip bg-amber py-1.5 text-[12px] font-semibold text-primary-foreground transition-opacity disabled:opacity-50"
+          className="flex-1 rounded-chip bg-amber py-1.5 text-small font-semibold text-primary-foreground transition-opacity disabled:opacity-50"
         >
           Approve
         </button>
@@ -490,13 +491,13 @@ function ProposalCard({
           type="button"
           disabled={inFlight}
           onClick={onReject}
-          className="flex-1 rounded-chip border border-line py-1.5 text-[12px] text-ink-2 transition-colors hover:text-ink disabled:opacity-50"
+          className="flex-1 rounded-chip border border-line py-1.5 text-small text-ink-2 transition-colors hover:text-ink disabled:opacity-50"
         >
           Reject
         </button>
       </div>
       {proposal.message ? (
-        <p className="mt-1.5 font-mono text-[10px] text-against">{proposal.message}</p>
+        <p className="mt-1.5 font-mono text-meta text-against">{proposal.message}</p>
       ) : null}
     </div>
   );
@@ -549,7 +550,7 @@ function MessageBubble({ message }: { message: CopilotMessageView }) {
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[85%] whitespace-pre-wrap rounded-card bg-raise px-3 py-2 text-[13px] text-ink">
+        <div className="max-w-[85%] whitespace-pre-wrap rounded-card bg-raise px-3 py-2 text-body text-ink">
           {message.content}
         </div>
       </div>
@@ -625,7 +626,7 @@ function AssistantBubble({
               key={`${c.kind}|${c.id}`}
               type="button"
               onClick={() => navCitation(c)}
-              className="max-w-[180px] truncate rounded-chip border border-line px-2 py-0.5 font-mono text-[10px] text-ink-3 transition-colors hover:border-amber-line hover:text-ink"
+              className="max-w-[180px] truncate rounded-chip border border-line px-2 py-0.5 font-mono text-meta text-ink-3 transition-colors hover:border-amber-line hover:text-ink"
               title={`${c.kind}: ${c.title}`}
             >
               {c.title}
@@ -634,7 +635,7 @@ function AssistantBubble({
         </div>
       ) : null}
       {!streaming && turnDigest(meta) ? (
-        <p className="font-mono text-[10px] text-ink-4">{turnDigest(meta)}</p>
+        <p className="font-mono text-meta text-ink-4">{turnDigest(meta)}</p>
       ) : null}
     </div>
   );

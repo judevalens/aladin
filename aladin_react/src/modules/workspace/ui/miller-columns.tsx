@@ -1,4 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Eyebrow } from "@/components/ui/eyebrow";
+import { Icon } from "@/components/ui/icon";
 import { createPortal } from "react-dom";
 import { ArrowRight, ChevronRight, Columns3, FileText, FlaskConical, Folder, Home, Layout, Link2, Mic, Paperclip, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -96,21 +98,20 @@ export function MillerColumns({
   return createPortal(
     <div className="fixed inset-0 z-40" onMouseDown={onClose}>
       <div
-        className="fixed z-40 flex flex-col overflow-hidden rounded-card border border-line bg-explorer animate-pop"
+        className="fixed z-40 flex flex-col overflow-hidden rounded-card border border-line bg-explorer shadow-modal animate-pop"
         style={{
           left,
           top,
           width: paneWidth,
           height: PANE_HEIGHT,
-          boxShadow: "0 22px 60px rgba(0,0,0,.62), 0 0 0 1px rgba(0,0,0,.4)",
           transformOrigin: "top left",
         }}
         onMouseDown={(event) => event.stopPropagation()}
       >
         {/* Header — live breadcrumb */}
         <div className="flex items-center gap-2.5 border-b border-line2 px-3 py-2">
-          <Columns3 className="h-4 w-4 shrink-0 text-ink-2" strokeWidth={1.75} />
-          <div className="flex min-w-0 flex-1 items-center gap-1 truncate font-mono text-[10.5px]">
+          <Icon as={Columns3} className="shrink-0 text-ink-2" />
+          <div className="flex min-w-0 flex-1 items-center gap-1 truncate font-mono text-meta">
             <span className={breadcrumb.length === 0 && !leaf ? "text-ink" : "text-ink-3"}>workspace</span>
             {breadcrumb.map((name, i) => (
               <span key={i} className={i === breadcrumb.length - 1 && !leaf ? "text-ink" : "text-ink-3"}>
@@ -128,10 +129,10 @@ export function MillerColumns({
           <button
             type="button"
             onClick={onClose}
-            className="grid h-6 w-6 shrink-0 place-items-center rounded text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
+            className="grid h-6 w-6 shrink-0 place-items-center rounded-tap text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
             aria-label="Close columns"
           >
-            <X className="h-4 w-4" />
+            <Icon as={X} mark />
           </button>
         </div>
 
@@ -151,9 +152,9 @@ export function MillerColumns({
                 style={{ width: COLUMN_WIDTH, scrollSnapAlign: "end" }}
               >
                 <div className="flex items-center gap-[7px] border-b border-line2 px-3 py-2">
-                  <ColIcon className="h-4 w-4 shrink-0 text-ink-2" strokeWidth={1.75} />
-                  <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-ink">{column.title}</span>
-                  <span className="font-mono text-[10px] text-ink-4">{column.nodes.length}</span>
+                  <Icon as={ColIcon} className="shrink-0 text-ink-2" />
+                  <span className="min-w-0 flex-1 truncate text-small font-semibold text-ink">{column.title}</span>
+                  <span className="font-mono text-meta text-ink-4">{column.nodes.length}</span>
                 </div>
                 <div className="flex min-h-0 flex-1 flex-col gap-px overflow-y-auto px-[7px] pt-[5px] pb-2">
                   {column.nodes.map((node) => (
@@ -176,7 +177,7 @@ export function MillerColumns({
                     />
                   ))}
                   {column.nodes.length === 0 ? (
-                    <div className="px-2 py-2 text-[12px] text-ink-4">Empty</div>
+                    <div className="px-2 py-2 text-small text-ink-4">Empty</div>
                   ) : null}
                 </div>
               </div>
@@ -196,7 +197,7 @@ export function MillerColumns({
         </div>
 
         {/* Footer hints */}
-        <div className="flex h-[30px] items-center gap-3 border-t border-line px-3 font-mono text-[10px] text-ink-4">
+        <div className="flex h-[30px] items-center gap-3 border-t border-line px-3 font-mono text-meta text-ink-4">
           <span>click folder to expand →</span>
           <span>double-click a file to open</span>
           <span className="ml-auto">esc to close</span>
@@ -223,7 +224,7 @@ function MillerRow({
   // Drill-down treats a research folder as a column like any other container (§5).
   const isFolder = isContainerKind(node.kind);
   const isResearch = node.kind === "research";
-  const Icon = isResearch
+  const Glyph = isResearch
     ? FlaskConical
     : isFolder
       ? Folder
@@ -242,18 +243,15 @@ function MillerRow({
         selected ? "bg-amber-soft text-ink" : "text-ink-2 hover:bg-[rgb(var(--hover))] hover:text-ink",
       )}
     >
-      {selected ? <span className="absolute left-0 top-[5px] bottom-[5px] w-0.5 rounded bg-amber" /> : null}
-      <Icon
-        className={cn("h-4 w-4 shrink-0", isFolder && selected ? "text-amber" : isFolder ? "text-ink-2" : "text-ink-3")}
-        strokeWidth={1.75}
-      />
-      <span className={cn("min-w-0 flex-1 truncate text-[12.5px]", isFolder ? "font-medium" : "font-normal", selected && "font-semibold")}>
+      {selected ? <span className="absolute left-0 top-[5px] bottom-[5px] w-0.5 rounded-tap bg-amber" /> : null}
+      <Icon as={Glyph} className={cn("shrink-0", isFolder && selected ? "text-amber" : isFolder ? "text-ink-2" : "text-ink-3")} />
+      <span className={cn("min-w-0 flex-1 truncate text-small", isFolder ? "font-medium" : "font-normal", selected && "font-semibold")}>
         {name}
       </span>
       {isFolder ? (
-        <span className="flex shrink-0 items-center gap-1 font-mono text-[10px] text-ink-4">
+        <span className="flex shrink-0 items-center gap-1 font-mono text-meta text-ink-4">
           {node.children?.length ?? 0}
-          <ChevronRight className="h-3.5 w-3.5" strokeWidth={2} />
+          <Icon as={ChevronRight} size="inline" mark />
         </span>
       ) : null}
     </button>
@@ -271,26 +269,28 @@ function LeafPreview({
 }) {
   const preview = leaf.artifactPreview!;
   const meta = TYPE_META[preview.kind];
-  const Icon = meta.icon;
+  const Glyph = meta.icon;
   return (
     <div className="flex shrink-0 flex-col bg-card" style={{ width: PREVIEW_WIDTH }}>
       <div className="flex flex-col gap-3 p-[18px]">
         <div
-          className="grid h-[122px] place-items-center rounded-[10px] border border-line"
+          className="grid h-[122px] place-items-center rounded-control border border-line"
           style={{
             background:
               "repeating-linear-gradient(135deg, var(--field), var(--field) 10px, var(--card) 10px, var(--card) 20px)",
           }}
         >
-          <Icon className="h-[26px] w-[26px] text-ink-3" strokeWidth={1.5} />
+          {/* Illustration, not chrome — the <Icon> scale (14/16/18) is for UI glyphs.
+              §5 rule 9's grep will flag this line; that is intended. */}
+          <Glyph className="h-[26px] w-[26px] text-ink-3" strokeWidth={1.5} />
         </div>
         <div className="space-y-1">
-          <div className="font-mono text-[10px] uppercase text-amber">
+          <Eyebrow tone="loud">
             {meta.label}
             {preview.updatedLabel ? ` · ${preview.updatedLabel}` : ""}
-          </div>
-          <div className="text-[14.5px] font-semibold text-ink">{preview.title}</div>
-          <div className="font-mono text-[10.5px] text-ink-3">
+          </Eyebrow>
+          <div className="text-lead font-semibold text-ink">{preview.title}</div>
+          <div className="font-mono text-meta text-ink-3">
             workspace{pathNames.length ? ` / ${pathNames.join(" / ")}` : ""}
           </div>
         </div>
@@ -299,10 +299,10 @@ function LeafPreview({
         <button
           type="button"
           onClick={onOpen}
-          className="flex w-full items-center justify-center gap-1.5 rounded-[9px] bg-amber py-[9px] text-[13px] font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+          className="flex w-full items-center justify-center gap-1.5 rounded-control bg-amber py-[9px] text-body font-semibold text-primary-foreground transition-opacity hover:opacity-90"
         >
           Open in editor
-          <ArrowRight className="h-4 w-4" strokeWidth={2} />
+          <Icon as={ArrowRight} mark />
         </button>
       </div>
     </div>

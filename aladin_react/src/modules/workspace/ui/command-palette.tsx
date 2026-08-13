@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Icon } from "@/components/ui/icon";
 import { useNavigate } from "react-router-dom";
 import { Building2, CandlestickChart, FilePlus2, FileText, FlaskConical, FolderPlus, Globe, Layers, Link2, Mic, Upload, User } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -124,27 +125,27 @@ export function CommandPalette({
         {!hasQuery && (
           <CommandGroup heading="Create">
             <CommandItem value="new note" onSelect={() => run(actions.onCreateNote)}>
-              <FilePlus2 className="h-[15px] w-[15px] text-ink-3" strokeWidth={1.75} />
+              <Icon as={FilePlus2} className="text-ink-3" />
               New note
             </CommandItem>
             <CommandItem value="new folder" onSelect={() => run(actions.onCreateFolder)}>
-              <FolderPlus className="h-[15px] w-[15px] text-ink-3" strokeWidth={1.75} />
+              <Icon as={FolderPlus} className="text-ink-3" />
               New folder
             </CommandItem>
             <CommandItem value="new research" onSelect={() => run(actions.onCreateResearch)}>
-              <FlaskConical className="h-[15px] w-[15px] text-ink-3" strokeWidth={1.75} />
+              <Icon as={FlaskConical} className="text-ink-3" />
               New research
             </CommandItem>
             <CommandItem value="new link" onSelect={() => run(actions.onCreateLink)}>
-              <Link2 className="h-[15px] w-[15px] text-ink-3" strokeWidth={1.75} />
+              <Icon as={Link2} className="text-ink-3" />
               New link
             </CommandItem>
             <CommandItem value="new voice note" onSelect={() => run(actions.onCreateVoice)}>
-              <Mic className="h-[15px] w-[15px] text-ink-3" strokeWidth={1.75} />
+              <Icon as={Mic} className="text-ink-3" />
               New voice note
             </CommandItem>
             <CommandItem value="upload file" onSelect={() => run(actions.onCreateFile)}>
-              <Upload className="h-[15px] w-[15px] text-ink-3" strokeWidth={1.75} />
+              <Icon as={Upload} className="text-ink-3" />
               Upload file
             </CommandItem>
           </CommandGroup>
@@ -153,15 +154,15 @@ export function CommandPalette({
         {sections.map((section) => (
           <CommandGroup key={section.type} heading={section.label}>
             {section.hits.map((hit) => {
-              const Icon = KIND_ICON[hit.kind] ?? Globe;
+              const Glyph = KIND_ICON[hit.kind] ?? Globe;
               return (
                 <CommandItem key={`${hit.kind}-${hit.id}`} value={`${hit.kind}-${hit.id}`} onSelect={() => openHit(hit)}>
-                  <Icon className="h-[15px] w-[15px] text-ink-3" strokeWidth={1.75} />
+                  <Icon as={Glyph} className="text-ink-3" />
                   <span className={hit.kind === "ticker" ? "font-mono text-ink" : "text-ink"}>
                     {hit.title}
                   </span>
                   {hit.subtitle && <span className="truncate text-ink-3">{hit.subtitle}</span>}
-                  <span className="ml-auto shrink-0 font-mono text-[10px] uppercase text-ink-4">
+                  <span className="ml-auto shrink-0 font-mono text-meta uppercase text-ink-4">
                     {hit.kind}
                   </span>
                 </CommandItem>

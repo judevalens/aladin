@@ -1,4 +1,5 @@
 import { CandlestickChart, Check, Command, Contrast, Folder, GitGraph, Globe, Home, Lightbulb, LogOut, Network, Plus, Sparkles, SquareTerminal } from "lucide-react";
+import { Icon } from "@/components/ui/icon";
 import { useEffect } from "react";
 import { Outlet } from "react-router-dom";
 import { CommandPalette } from "@/modules/workspace/ui/command-palette";
@@ -113,7 +114,7 @@ export function WorkspaceShellUI() {
             <button
               type="button"
               onClick={() => setCommandOpen(true)}
-              className="grid size-8 place-items-center rounded-[9px] bg-amber font-display text-sm font-bold text-primary-foreground"
+              className="grid size-8 place-items-center rounded-control bg-amber font-display text-body font-bold text-primary-foreground"
               aria-label="Open command palette"
             >
               A
@@ -125,10 +126,10 @@ export function WorkspaceShellUI() {
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
-                      className="mt-1 grid size-[38px] place-items-center rounded-[9px] text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
+                      className="mt-1 grid size-[38px] place-items-center rounded-control text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
                       aria-label="Capture"
                     >
-                      <Plus className="size-[18px] text-amber" strokeWidth={1.7} />
+                      <Icon as={Plus} size="rail" className="text-amber" />
                     </button>
                   </DropdownMenuTrigger>
                 </TooltipTrigger>
@@ -148,7 +149,7 @@ export function WorkspaceShellUI() {
 
             <div className="mt-1 flex flex-col items-center gap-1">
               {navItems.map((item) => {
-                const Icon = item.icon;
+                const Glyph = item.icon;
                 const active = item.key === selectedDestination;
                 return (
                   <Tooltip key={item.key}>
@@ -157,7 +158,7 @@ export function WorkspaceShellUI() {
                         type="button"
                         onClick={() => onNavigate(item.path)}
                         className={cn(
-                          "relative grid size-[38px] place-items-center rounded-[9px] transition-colors",
+                          "relative grid size-[38px] place-items-center rounded-control transition-colors",
                           active
                             ? "bg-[rgb(var(--sel))] text-ink"
                             : "text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink",
@@ -165,7 +166,7 @@ export function WorkspaceShellUI() {
                         aria-label={item.label}
                         aria-current={active ? "page" : undefined}
                       >
-                        <Icon className="size-[18px]" strokeWidth={1.7} />
+                        <Icon as={Glyph} size="rail" />
                       </button>
                     </TooltipTrigger>
                     <TooltipContent side="right">{item.label}</TooltipContent>
@@ -181,7 +182,7 @@ export function WorkspaceShellUI() {
                     type="button"
                     onClick={toggleTerminal}
                     className={cn(
-                      "grid size-[38px] place-items-center rounded-[9px] transition-colors",
+                      "grid size-[38px] place-items-center rounded-control transition-colors",
                       terminalOpen
                         ? "bg-[rgb(var(--sel))] text-ink"
                         : "text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink",
@@ -189,7 +190,7 @@ export function WorkspaceShellUI() {
                     aria-label="Toggle terminal"
                     aria-pressed={terminalOpen}
                   >
-                    <SquareTerminal className="size-[18px]" strokeWidth={1.7} />
+                    <Icon as={SquareTerminal} size="rail" />
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="right">Terminal · ⌘`</TooltipContent>
@@ -201,7 +202,7 @@ export function WorkspaceShellUI() {
                     type="button"
                     onClick={toggleCopilot}
                     className={cn(
-                      "grid size-[38px] place-items-center rounded-[9px] transition-colors",
+                      "grid size-[38px] place-items-center rounded-control transition-colors",
                       copilotOpen
                         ? "bg-[rgb(var(--sel))] text-ink"
                         : "text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink",
@@ -209,7 +210,7 @@ export function WorkspaceShellUI() {
                     aria-label="Toggle copilot"
                     aria-pressed={copilotOpen}
                   >
-                    <Sparkles className="size-[18px]" strokeWidth={1.7} />
+                    <Icon as={Sparkles} size="rail" />
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="right">Copilot · ⌘J</TooltipContent>
@@ -223,10 +224,10 @@ export function WorkspaceShellUI() {
                     <DropdownMenuTrigger asChild>
                       <button
                         type="button"
-                        className="grid size-[38px] place-items-center rounded-[9px] text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink aria-expanded:bg-[rgb(var(--sel))] aria-expanded:text-ink"
+                        className="grid size-[38px] place-items-center rounded-control text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink aria-expanded:bg-[rgb(var(--sel))] aria-expanded:text-ink"
                         aria-label="Theme"
                       >
-                        <Contrast className="size-[17px]" strokeWidth={1.7} />
+                        <Icon as={Contrast} />
                       </button>
                     </DropdownMenuTrigger>
                   </TooltipTrigger>
@@ -241,16 +242,10 @@ export function WorkspaceShellUI() {
                       onClick={() => setTheme(t.name)}
                       className="flex items-start gap-2"
                     >
-                      <Check
-                        className={cn(
-                          "mt-0.5 size-3.5 shrink-0",
-                          theme === t.name ? "text-amber" : "text-transparent",
-                        )}
-                        strokeWidth={2.4}
-                      />
+                      <Icon as={Check} size="inline" mark className={cn("mt-0.5 shrink-0", theme === t.name ? "text-amber" : "text-transparent", )} />
                       <span className="flex min-w-0 flex-col">
-                        <span className="text-[13px] text-ink">{t.label}</span>
-                        <span className="font-mono text-[10px] text-ink-4">{t.hint}</span>
+                        <span className="text-body text-ink">{t.label}</span>
+                        <span className="font-mono text-meta text-ink-4">{t.hint}</span>
                       </span>
                     </DropdownMenuItem>
                   ))}
@@ -263,7 +258,7 @@ export function WorkspaceShellUI() {
                     <DropdownMenuTrigger asChild>
                       <button
                         type="button"
-                        className="grid size-8 place-items-center rounded-full border border-line bg-field text-[11px] font-semibold uppercase text-ink-2 transition-colors hover:text-ink"
+                        className="grid size-8 place-items-center rounded-full border border-line bg-field text-meta font-semibold uppercase text-ink-2 transition-colors hover:text-ink"
                         aria-label="Account"
                       >
                         {(userEmail ?? "?").slice(0, 1)}
@@ -276,7 +271,7 @@ export function WorkspaceShellUI() {
                   <DropdownMenuLabel className="truncate font-normal text-ink-2">{userEmail}</DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={onLogout} disabled={logoutPending}>
-                    <LogOut className="mr-2 size-[15px]" strokeWidth={1.75} />
+                    <Icon as={LogOut} className="mr-2]" />
                     Sign out
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -287,10 +282,10 @@ export function WorkspaceShellUI() {
                   <button
                     type="button"
                     onClick={() => setCommandOpen(true)}
-                    className="grid size-[38px] place-items-center rounded-[9px] text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
+                    className="grid size-[38px] place-items-center rounded-control text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
                     aria-label="Command palette"
                   >
-                    <Command className="size-[17px]" strokeWidth={1.7} />
+                    <Icon as={Command} />
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="right">Command · ⌘K</TooltipContent>

@@ -1,4 +1,5 @@
 import "@xterm/xterm/css/xterm.css";
+import { Icon } from "@/components/ui/icon";
 import { Plus, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAppStore } from "@/app/state/store";
@@ -83,7 +84,7 @@ export function TerminalDockUI() {
               <div
                 key={session.id}
                 className={cn(
-                  "group flex h-7 shrink-0 items-center gap-1.5 rounded-chip border px-2.5 text-[12px] transition-colors",
+                  "group flex h-7 shrink-0 items-center gap-1.5 rounded-chip border px-2.5 text-small transition-colors",
                   active
                     ? "border-line bg-bg text-ink"
                     : "border-transparent text-ink-3 hover:bg-raise hover:text-ink",
@@ -95,10 +96,10 @@ export function TerminalDockUI() {
                 <button
                   type="button"
                   aria-label={`Close ${session.title}`}
-                  className="grid size-4 place-items-center rounded text-ink-4 hover:bg-[rgb(var(--hover))] hover:text-ink"
+                  className="grid size-4 place-items-center rounded-tap text-ink-4 hover:bg-[rgb(var(--hover))] hover:text-ink"
                   onClick={() => removeSession(session.id)}
                 >
-                  <X className="size-3" strokeWidth={2} />
+                  <Icon as={X} size="inline" mark />
                 </button>
               </div>
             );
@@ -109,18 +110,18 @@ export function TerminalDockUI() {
           aria-label="New terminal"
           title="New terminal"
           onClick={createSession}
-          className="grid size-6 shrink-0 place-items-center rounded text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink"
+          className="grid size-6 shrink-0 place-items-center rounded-tap text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink"
         >
-          <Plus className="size-4" strokeWidth={1.75} />
+          <Icon as={Plus} />
         </button>
         <button
           type="button"
           aria-label="Hide terminal"
           title="Hide terminal"
           onClick={() => setOpen(false)}
-          className="grid size-6 shrink-0 place-items-center rounded text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink"
+          className="grid size-6 shrink-0 place-items-center rounded-tap text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink"
         >
-          <X className="size-4" strokeWidth={1.75} />
+          <Icon as={X} />
         </button>
       </div>
       {/* Instances — all kept mounted AND laid out; only the active one is shown.
@@ -131,8 +132,7 @@ export function TerminalDockUI() {
         {sessions.map((session) => (
           <div
             key={session.id}
-            className={cn(
-              "absolute inset-0 px-3 py-1.5",
+            className={cn("absolute inset-0 px-3 py-1.5",
               session.id === activeId ? "visible z-10" : "invisible",
             )}
           >

@@ -185,7 +185,10 @@ stock shadcn — never ship the default shadcn look.
    `rounded-card` (12) · `rounded-modal` (14).
 9. **Icons go through `<Icon>`** (`components/ui/icon.tsx`): `size="inline|default|rail"` and
    `mark` for chevrons/checks/×. Never set `strokeWidth` or a raw pixel size at a call site —
-   that freedom produced 13 stroke weights across 62 files.
+   that freedom produced 13 stroke weights across 62 files. **One carve-out:** an
+   *illustration* (an empty-state or preview-card glyph at 20px+) is not chrome and may stay
+   raw — but it must carry a comment saying so, because the grep below will flag it. Two exist
+   today: `miller-columns.tsx` (26px preview) and `copilot-dock-ui.tsx` (20px empty state).
 10. **Section labels go through `<Eyebrow>`** (`components/ui/eyebrow.tsx`). The `.eyebrow`
    class still exists in `index.css` and is being migrated off; don't add new uses of it.
 11. **Spacing is the 4px step scale.** Arbitrary px is *layout* only (pane widths, the 38px
