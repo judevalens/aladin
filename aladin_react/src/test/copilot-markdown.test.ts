@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseActivityItems, parseCopilotMarkdown } from "@/modules/copilot/ui/copilot-markdown";
+import { parseActionItems, parseActivityItems, parseCopilotMarkdown } from "@/modules/copilot/ui/copilot-markdown";
 
 describe("parseCopilotMarkdown", () => {
   it("splits markdown around leaf directives", () => {
@@ -80,5 +80,36 @@ describe("parseActivityItems", () => {
     const items = parseActivityItems(JSON.stringify(raw));
     expect(items).toHaveLength(11);
     expect(parseActivityItems("{")).toEqual([]);
+  });
+});
+
+describe("parseActionItems", () => {
+  it("supports native follow-up actions with deterministic fallback prompts", () => {
+    expect(
+      parseActionItems(
+        JSON.stringify([
+          { action: "continue", label: "Continue" },
+          { action: "retry", label: "Retry" },
+        ]),
+      ),
+    ).toEqual([
+      { action: "continue", label: "Continue", prompt: "continue", target: "continue" },
+      { action: "retry", label: "Retry", prompt: "try again", target: "try again" },
+    ]);
+  });
+
+  it("validates open actions and accepts artifact id aliases", () => {
+    expect(
+      parseActionItems(
+        JSON.stringify([
+          { action: "open_artifact", label: "Open shard", id: "shd_1", kind: "app" },
+          { action: "open_ticker", label: "Open NVDA", symbol: "nvda" },
+          { action: "open_ticker", label: "Bad", symbol: "NVDA<script>" },
+        ]),
+      ),
+    ).toEqual([
+      { action: "open_artifact", label: "Open shard", id: "shd_1", kind: "shard", target: "shd_1" },
+      { action: "open_ticker", label: "Open NVDA", symbol: "NVDA", target: "NVDA" },
+    ]);
   });
 });

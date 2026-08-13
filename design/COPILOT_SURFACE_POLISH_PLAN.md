@@ -39,7 +39,8 @@ Aladin owns all rendering, permissions, and actions.
   the actual page/shard/source context.
 - Phase 7 is started: persisted `aladin-activity` blocks can render rich,
   bounded detail fields such as input summaries, result summaries, detail text,
-  and timestamps.
+  and timestamps; `aladin-actions` supports validated open actions plus
+  deterministic continue/retry/send-prompt follow-ups.
 
 ## Current Problems
 

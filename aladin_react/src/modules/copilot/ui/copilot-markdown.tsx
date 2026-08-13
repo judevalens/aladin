@@ -1,4 +1,14 @@
-import { Activity, BarChart3, CornerDownRight, FileText, Layers, UserRound } from "lucide-react";
+import {
+  Activity,
+  BarChart3,
+  CornerDownRight,
+  FileText,
+  Layers,
+  RefreshCw,
+  Send,
+  UserRound,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { memo } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -215,14 +225,16 @@ function DirectiveBlock({
               key={`${action.action}-${action.target}`}
               type="button"
               onClick={() => {
-                if (action.action === "send_prompt" && onPrompt) onPrompt(action.prompt);
+                if ((action.action === "send_prompt" || action.action === "continue" || action.action === "retry") && onPrompt) {
+                  onPrompt(action.prompt);
+                }
                 if (action.action === "open_artifact") onNavigate(action.kind, action.id, action.label);
                 if (action.action === "open_ticker") onNavigate("ticker", action.symbol, action.symbol);
               }}
-              disabled={action.action === "send_prompt" && !onPrompt}
+              disabled={isPromptAction(action) && !onPrompt}
               className="inline-flex min-w-0 items-center gap-1.5 rounded-chip border border-line bg-raise px-2.5 py-1.5 text-small text-ink-2 transition-colors hover:border-amber-line hover:text-ink"
             >
-              <Icon as={CornerDownRight} size="inline" mark className="shrink-0 text-amber" />
+              <Icon as={actionIcon(action)} size="inline" mark className="shrink-0 text-amber" />
               <span className="truncate">{action.label}</span>
             </button>
           ))}
@@ -346,11 +358,11 @@ function textField(value: unknown, max: number): string | undefined {
 }
 
 type ActionItem =
-  | { action: "send_prompt"; label: string; prompt: string; target: string }
+  | { action: "send_prompt" | "continue" | "retry"; label: string; prompt: string; target: string }
   | { action: "open_artifact"; label: string; id: string; kind: string; target: string }
   | { action: "open_ticker"; label: string; symbol: string; target: string };
 
-function parseActionItems(body: string): ActionItem[] {
+export function parseActionItems(body: string): ActionItem[] {
   try {
     const parsed = JSON.parse(body);
     if (!Array.isArray(parsed)) return [];
@@ -360,24 +372,26 @@ function parseActionItems(body: string): ActionItem[] {
       const label = typeof item.label === "string" ? item.label.trim() : "";
       const action = typeof item.action === "string" ? item.action : "";
       if (!label) continue;
-      if (action === "send_prompt") {
-        const prompt = typeof item.prompt === "string" ? item.prompt.trim() : "";
+      if (action === "send_prompt" || action === "continue" || action === "retry") {
+        const fallbackPrompt = action === "continue" ? "continue" : action === "retry" ? "try again" : "";
+        const prompt = typeof item.prompt === "string" ? item.prompt.trim() : fallbackPrompt;
         if (prompt) {
           actions.push({ action, label: label.slice(0, 80), prompt: prompt.slice(0, 1000), target: prompt });
         }
         continue;
       }
       if (action === "open_artifact") {
-        const id = typeof item.artifactId === "string" ? item.artifactId.trim() : "";
-        const kind = typeof item.kind === "string" ? item.kind.trim() : "page";
+        const id = typeof item.artifactId === "string" ? item.artifactId.trim() : typeof item.id === "string" ? item.id.trim() : "";
+        const rawKind = typeof item.kind === "string" ? item.kind.trim() : "page";
+        const kind = safeArtifactKind(rawKind);
         if (id) {
-          actions.push({ action, label: label.slice(0, 80), id, kind: kind === "app" ? "shard" : kind, target: id });
+          actions.push({ action, label: label.slice(0, 80), id: id.slice(0, 160), kind, target: id });
         }
         continue;
       }
       if (action === "open_ticker") {
         const symbol = typeof item.symbol === "string" ? item.symbol.trim().toUpperCase() : "";
-        if (symbol) actions.push({ action, label: label.slice(0, 80), symbol, target: symbol });
+        if (isSafeSymbol(symbol)) actions.push({ action, label: label.slice(0, 80), symbol, target: symbol });
         continue;
       }
       const prompt = typeof item.prompt === "string" ? item.prompt.trim() : "";
@@ -394,6 +408,27 @@ function parseActionItems(body: string): ActionItem[] {
   } catch {
     return [];
   }
+}
+
+function isPromptAction(action: ActionItem): action is Extract<ActionItem, { prompt: string }> {
+  return action.action === "send_prompt" || action.action === "continue" || action.action === "retry";
+}
+
+function actionIcon(action: ActionItem): LucideIcon {
+  if (action.action === "open_artifact") return FileText;
+  if (action.action === "open_ticker") return BarChart3;
+  if (action.action === "retry") return RefreshCw;
+  if (action.action === "continue") return CornerDownRight;
+  return Send;
+}
+
+function safeArtifactKind(kind: string): string {
+  if (kind === "app") return "shard";
+  return ["page", "shard", "document", "artifact"].includes(kind) ? kind : "page";
+}
+
+function isSafeSymbol(symbol: string): boolean {
+  return /^[A-Z][A-Z0-9.-]{0,11}$/.test(symbol);
 }
 
 /** A subtle blinking caret appended to streaming text. */
