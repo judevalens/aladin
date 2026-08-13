@@ -58,7 +58,8 @@ Aladin owns all rendering, permissions, and actions.
   suggestions, scope summaries, and artifact-kind labels; reconnect banner tests
   cover open, reconnecting, and offline stream states; error banner tests cover
   exact error display and max-turn continue recovery; queued-follow-up banner
-  tests cover visibility and clearing.
+  tests cover visibility and clearing; health warning banner tests cover
+  preflight warning visibility and dismissal.
 - The backend system prompt now advertises the supported rich directive contract
   and safety rules so final answers can use native blocks intentionally.
 

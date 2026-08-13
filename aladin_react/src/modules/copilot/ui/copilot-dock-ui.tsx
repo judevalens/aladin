@@ -341,19 +341,7 @@ export function CopilotDockUI() {
 
         {/* Composer */}
         <div className="shrink-0 border-t border-line p-2.5">
-          {healthWarning ? (
-            <div className="mb-1.5 flex items-start justify-between gap-2 rounded-card border border-amber-line bg-amber-soft/40 px-2.5 py-1.5">
-              <p className="text-meta text-ink-2">{healthWarning}</p>
-              <button
-                type="button"
-                onClick={() => setHealthWarning(null)}
-                aria-label="Dismiss warning"
-                className="text-ink-4 hover:text-ink"
-              >
-                <Icon as={X} size="inline" mark />
-              </button>
-            </div>
-          ) : null}
+          <HealthWarningBanner message={healthWarning} onDismiss={() => setHealthWarning(null)} />
           <QueuedFollowupBanner text={queuedText} onClear={() => queueFollowup(null)} />
           <RealtimeStatusBanner state={realtimeState} />
           <div className="group rounded-card border border-line bg-field transition-colors focus-within:border-amber-line">
@@ -516,6 +504,29 @@ export function CopilotErrorBanner({
           Continue where it left off
         </button>
       ) : null}
+    </div>
+  );
+}
+
+export function HealthWarningBanner({
+  message,
+  onDismiss,
+}: {
+  message: string | null;
+  onDismiss: () => void;
+}) {
+  if (!message) return null;
+  return (
+    <div className="mb-1.5 flex items-start justify-between gap-2 rounded-card border border-amber-line bg-amber-soft/40 px-2.5 py-1.5">
+      <p className="text-meta text-ink-2">{message}</p>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Dismiss warning"
+        className="text-ink-4 hover:text-ink"
+      >
+        <Icon as={X} size="inline" mark />
+      </button>
     </div>
   );
 }
