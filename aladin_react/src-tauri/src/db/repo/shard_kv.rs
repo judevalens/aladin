@@ -158,7 +158,10 @@ pub fn get_entry(conn: &Connection, id: &str) -> DbResult<Option<ShardKvRow>> {
 pub fn list_prefix(conn: &Connection, shard_id: &str, prefix: &str) -> DbResult<Vec<ShardKvRow>> {
     let like = format!(
         "{}%",
-        prefix.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+        prefix
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_")
     );
     let mut stmt = conn.prepare(&format!(
         "SELECT {SHARD_KV_COLS} FROM shard_kv
