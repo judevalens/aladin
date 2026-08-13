@@ -1,5 +1,6 @@
 import {
   Activity,
+  AlertCircle,
   AlertTriangle,
   AppWindow,
   BarChart3,
@@ -369,6 +370,48 @@ function DirectiveBlock({
         </div>
       );
     }
+    case "aladin-error-recovery": {
+      const recovery = parseErrorRecoveryBlock(segment.body);
+      if (!recovery) return <MarkdownText text={directiveFallback(segment)} />;
+      return (
+        <div className="my-2 rounded-card border border-against/30 bg-against-soft/40 p-3">
+          <div className="flex items-start gap-2">
+            <Icon as={AlertCircle} size="inline" mark className="mt-0.5 shrink-0 text-against" />
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 items-center gap-2">
+                <p className="min-w-0 flex-1 truncate text-small font-semibold text-ink">{recovery.title}</p>
+                {recovery.code ? (
+                  <span className="shrink-0 rounded-chip border border-line bg-raise px-1.5 py-0.5 font-mono text-meta text-ink-4">
+                    {recovery.code}
+                  </span>
+                ) : null}
+              </div>
+              <p className="mt-1 text-small text-ink-2">{recovery.message}</p>
+            </div>
+          </div>
+          {recovery.actions.length > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {recovery.actions.map((action) => (
+                <button
+                  key={`${action.action}-${action.target}`}
+                  type="button"
+                  onClick={() => {
+                    if (isPromptAction(action) && onPrompt) onPrompt(action.prompt);
+                    if (action.action === "open_artifact") onNavigate(action.kind, action.id, action.label);
+                    if (action.action === "open_ticker") onNavigate("ticker", action.symbol, action.symbol);
+                  }}
+                  disabled={isPromptAction(action) && !onPrompt}
+                  className="inline-flex min-w-0 items-center gap-1.5 rounded-chip border border-line bg-field px-2.5 py-1.5 text-small text-ink-2 transition-colors hover:border-amber-line hover:text-ink"
+                >
+                  <Icon as={actionIcon(action)} size="inline" mark className="shrink-0 text-amber" />
+                  <span className="truncate">{action.label}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      );
+    }
     default:
       return <MarkdownText text={directiveFallback(segment)} />;
   }
@@ -485,7 +528,7 @@ function textField(value: unknown, max: number): string | undefined {
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
-type ActionItem =
+export type ActionItem =
   | { action: "send_prompt" | "continue" | "retry"; label: string; prompt: string; target: string }
   | { action: "open_artifact"; label: string; id: string; kind: string; target: string }
   | { action: "open_ticker"; label: string; symbol: string; target: string };
@@ -708,6 +751,38 @@ function parsePreviewDiagnostics(value: unknown): string[] {
       .slice(0, 8);
   }
   return [];
+}
+
+export type ErrorRecoveryBlock = {
+  title: string;
+  message: string;
+  code?: string;
+  actions: ActionItem[];
+};
+
+export function parseErrorRecoveryBlock(body: string): ErrorRecoveryBlock | null {
+  if (!body.trim()) return null;
+  let data: Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(body);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    data = parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  const message = textField(data.message ?? data.error ?? data.detail, 500);
+  if (!message) return null;
+  const title = textField(data.title, 120) ?? "Couldn’t complete that";
+  const code = textField(data.code, 80);
+  const actions = parseRecoveryActions(data);
+  return { title, message, code, actions };
+}
+
+function parseRecoveryActions(data: Record<string, unknown>): ActionItem[] {
+  if (Array.isArray(data.actions)) return parseActionItems(JSON.stringify(data.actions));
+  const retryPrompt = textField(data.retryPrompt, 1000);
+  if (!retryPrompt) return [];
+  return [{ action: "retry", label: "Try again", prompt: retryPrompt, target: retryPrompt }];
 }
 
 /** A subtle blinking caret appended to streaming text. */

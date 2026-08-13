@@ -45,7 +45,9 @@ Aladin owns all rendering, permissions, and actions.
   native approval cards with action, target, risk, status, and exact detail rows;
   persisted `aladin-diff` blocks can render bounded, display-only change previews
   from JSON or unified diff text; persisted `aladin-shard-preview` blocks can
-  render bounded build/preview status, diagnostics, and an open-shard action.
+  render bounded build/preview status, diagnostics, and an open-shard action;
+  persisted `aladin-error-recovery` blocks can render bounded recovery messages
+  with validated follow-up/open actions.
 
 ## Current Problems
 

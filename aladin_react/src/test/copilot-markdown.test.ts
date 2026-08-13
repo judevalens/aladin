@@ -6,6 +6,7 @@ import {
   parseApprovalBlock,
   parseCopilotMarkdown,
   parseDiffBlock,
+  parseErrorRecoveryBlock,
   parseShardPreviewBlock,
 } from "@/modules/copilot/ui/copilot-markdown";
 
@@ -237,5 +238,44 @@ describe("parseShardPreviewBlock", () => {
   it("rejects malformed preview bodies and empty titles", () => {
     expect(parseShardPreviewBlock({}, "{")).toBeNull();
     expect(parseShardPreviewBlock({}, "{}")).toBeNull();
+  });
+});
+
+describe("parseErrorRecoveryBlock", () => {
+  it("parses recovery messages with validated native actions", () => {
+    expect(
+      parseErrorRecoveryBlock(
+        JSON.stringify({
+          title: "Build failed",
+          message: "The shard could not compile.",
+          code: "BUILD_FAILED",
+          actions: [
+            { action: "retry", label: "Retry build", prompt: "retry the build" },
+            { action: "open_artifact", label: "Open shard", artifactId: "shd_1", kind: "shard" },
+            { action: "open_ticker", label: "Bad ticker", symbol: "<script>" },
+          ],
+        }),
+      ),
+    ).toEqual({
+      title: "Build failed",
+      message: "The shard could not compile.",
+      code: "BUILD_FAILED",
+      actions: [
+        { action: "retry", label: "Retry build", prompt: "retry the build", target: "retry the build" },
+        { action: "open_artifact", label: "Open shard", id: "shd_1", kind: "shard", target: "shd_1" },
+      ],
+    });
+  });
+
+  it("supports a deterministic retry prompt fallback and rejects malformed blocks", () => {
+    expect(
+      parseErrorRecoveryBlock(JSON.stringify({ message: "Timed out.", retryPrompt: "continue after timeout" })),
+    ).toEqual({
+      title: "Couldn’t complete that",
+      message: "Timed out.",
+      actions: [{ action: "retry", label: "Try again", prompt: "continue after timeout", target: "continue after timeout" }],
+    });
+    expect(parseErrorRecoveryBlock("{")).toBeNull();
+    expect(parseErrorRecoveryBlock(JSON.stringify({ title: "No message" }))).toBeNull();
   });
 });
