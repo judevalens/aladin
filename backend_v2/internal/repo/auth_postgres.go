@@ -229,3 +229,40 @@ func (r *PostgresAuthRepository) TouchIntegrationToken(ctx context.Context, toke
 	}
 	return nil
 }
+
+func (r *PostgresAuthRepository) CreateContentToken(ctx context.Context, tokenHash, userID string, expiresAt time.Time) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO content_tokens (token_hash, user_id, expires_at)
+		VALUES ($1, $2::uuid, $3)
+	`, tokenHash, userID, expiresAt)
+	if err != nil {
+		return fmt.Errorf("Auth CreateContentToken: %w", err)
+	}
+	return nil
+}
+
+func (r *PostgresAuthRepository) GetContentTokenUser(ctx context.Context, tokenHash string, now time.Time) (coreservice.CurrentUser, error) {
+	var user coreservice.CurrentUser
+	err := r.pool.QueryRow(ctx, `
+		SELECT u.id::text, u.email
+		  FROM content_tokens t
+		  JOIN users u ON u.id = t.user_id
+		 WHERE t.token_hash = $1
+		   AND t.expires_at > $2
+	`, tokenHash, now).Scan(&user.ID, &user.Email)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return coreservice.CurrentUser{}, coreservice.ErrUnauthenticated
+		}
+		return coreservice.CurrentUser{}, fmt.Errorf("Auth GetContentTokenUser: %w", err)
+	}
+	return user, nil
+}
+
+func (r *PostgresAuthRepository) DeleteExpiredContentTokens(ctx context.Context, now time.Time) error {
+	_, err := r.pool.Exec(ctx, `DELETE FROM content_tokens WHERE expires_at <= $1`, now)
+	if err != nil {
+		return fmt.Errorf("Auth DeleteExpiredContentTokens: %w", err)
+	}
+	return nil
+}

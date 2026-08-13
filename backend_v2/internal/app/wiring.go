@@ -46,6 +46,8 @@ type Dependencies interface {
 	ShardBuild() coreservice.ShardBuildService
 	// ShardKV is the per-shard key/value document store (shard local state).
 	ShardKV() coreservice.ShardKVService
+	// ShardBridge serves the workspace plane to shards under the manifest grant.
+	ShardBridge() coreservice.ShardBridgeService
 	// Relationships is the additive cross-world edge layer (artifacts ↔ records ↔ insights).
 	Relationships() coreservice.RelationshipService
 	// Research is the research bench's write/read side (RESEARCH_SURFACE_PRD §5).
@@ -113,6 +115,7 @@ type StaticDependencies struct {
 	PreviewSvc             coreservice.PreviewService
 	ShardBuildSvc          coreservice.ShardBuildService
 	ShardKVSvc             coreservice.ShardKVService
+	ShardBridgeSvc         coreservice.ShardBridgeService
 	RelationshipsSvc       coreservice.RelationshipService
 	GraphPaneSvc           coreservice.GraphPaneService
 	ResearchSvc            coreservice.ResearchService
@@ -174,6 +177,9 @@ func (d StaticDependencies) ShardBuild() coreservice.ShardBuildService {
 }
 func (d StaticDependencies) ShardKV() coreservice.ShardKVService {
 	return d.ShardKVSvc
+}
+func (d StaticDependencies) ShardBridge() coreservice.ShardBridgeService {
+	return d.ShardBridgeSvc
 }
 func (d StaticDependencies) Relationships() coreservice.RelationshipService {
 	return d.RelationshipsSvc
@@ -251,6 +257,7 @@ type wiring struct {
 	preview             coreservice.PreviewService
 	shardBuild          coreservice.ShardBuildService
 	shardKV             coreservice.ShardKVService
+	shardBridge         coreservice.ShardBridgeService
 	relationships       coreservice.RelationshipService
 	graphPane           coreservice.GraphPaneService
 	research            coreservice.ResearchService
@@ -301,6 +308,7 @@ func (w wiring) WorkspaceRuntime() coreservice.WorkspaceRuntime { return w.works
 func (w wiring) Preview() coreservice.PreviewService            { return w.preview }
 func (w wiring) ShardBuild() coreservice.ShardBuildService      { return w.shardBuild }
 func (w wiring) ShardKV() coreservice.ShardKVService            { return w.shardKV }
+func (w wiring) ShardBridge() coreservice.ShardBridgeService    { return w.shardBridge }
 func (w wiring) Relationships() coreservice.RelationshipService { return w.relationships }
 func (w wiring) GraphPane() coreservice.GraphPaneService        { return w.graphPane }
 func (w wiring) Research() coreservice.ResearchService          { return w.research }
@@ -343,6 +351,7 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 	docPreview := docsurface.NewPreviewSessions(docStore, docRuntime, docsurface.PreviewOptions{})
 	shardBuild := coreservice.NewShardBuildService(docRuntime, repo.NewShardBuildPostgres(pool))
 	shardKVRepo := repo.NewShardKVPostgres(pool)
+	researchSvc := coreservice.NewResearchService(repo.NewResearchPostgres(pool))
 	feedRepo := repo.NewFeedPostgres(pool)
 	insightRepo := repo.NewInsightPostgres(pool)
 	relationshipRepo := repo.NewRelationshipPostgres(pool)
@@ -494,9 +503,17 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		preview:             docPreview,
 		shardBuild:          shardBuild,
 		shardKV:             coreservice.NewShardKVService(artifactsSvc, shardKVRepo),
+		// The workspace plane: refs-as-grant over the launch entity kinds.
+		shardBridge: coreservice.NewShardBridgeService(artifactsSvc, docStore,
+			coreservice.NewEntityRegistry(
+				coreservice.NewArtifactEntityService(artifactsSvc),
+				coreservice.NewRecordEntityService(recordRepo),
+				coreservice.NewWatchlistEntityService(watchlistSvc),
+				coreservice.NewResearchEntityService(researchSvc),
+			)),
 		relationships:       coreservice.NewRelationshipService(relationshipRepo),
 		graphPane:           coreservice.NewGraphPaneService(graphPaneRepo),
-		research:            coreservice.NewResearchService(repo.NewResearchPostgres(pool)),
+		research:            researchSvc,
 		documents:           coreservice.NewDocumentService(repo.NewDocumentPostgres(pool, artifactFiles)),
 		entityTags:          entityTagsSvc,
 		artifactRefs:        artifactRefsSvc,

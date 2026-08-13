@@ -877,7 +877,21 @@ func (f *fakeAuthService) ResolveBearerToken(_ context.Context, token string) (a
 			Email:     "user@example.com",
 		}, nil
 	}
+	if token == "content-valid" {
+		// The scoped shard-document credential: same user, content:read only.
+		return artifactservice.Principal{
+			UserID:    "user-1",
+			ActorType: artifactservice.ActorTypeContentToken,
+			ActorID:   "user-1",
+			Email:     "user@example.com",
+			Scopes:    []string{artifactservice.ScopeContentRead},
+		}, nil
+	}
 	return artifactservice.Principal{}, artifactservice.ErrUnauthenticated
+}
+
+func (f *fakeAuthService) MintContentToken(context.Context) (artifactservice.ContentToken, error) {
+	return artifactservice.ContentToken{Token: "content-valid", ExpiresAt: "2026-01-01T00:00:00Z"}, nil
 }
 
 func (f *fakeProviderConnectionService) ListProviders(context.Context) ([]artifactservice.ProviderDescriptor, error) {

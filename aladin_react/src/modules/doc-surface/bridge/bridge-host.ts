@@ -17,8 +17,9 @@
 // hanging into its 8s timeout.
 
 import { ShardKVConflictError } from "@/shared/api/shard-api";
-import type { ShardKVEntryWire } from "@/shared/api/shard-api";
+import type { ShardApi, ShardKVEntryWire } from "@/shared/api/shard-api";
 import type { ShardKVPort } from "@/modules/doc-surface/bridge/shard-kv-port";
+import type { ShardDataHub } from "@/modules/doc-surface/bridge/shard-data-hub";
 
 const BRIDGE = "bridge/1";
 
@@ -31,8 +32,11 @@ const METHODS = [
   "kv.delete",
   "kv.subscribe",
   "kv.unsubscribe",
+  "nodes.get",
+  "nodes.subscribe",
+  "nodes.unsubscribe",
 ] as const;
-const CAPABILITIES = ["theme", "kv"] as const;
+const CAPABILITIES = ["theme", "kv", "nodes"] as const;
 
 type BridgeRequest = {
   aladin?: string;
@@ -50,6 +54,10 @@ export interface BridgeHostDeps {
   getTheme: () => string;
   /** Shard local state storage (published channel). */
   kv: ShardKVPort;
+  /** Workspace reads under the manifest grant (server-enforced). */
+  api: ShardApi;
+  /** Liveness for workspace subscriptions (frames → pushes). */
+  hub: ShardDataHub;
 }
 
 export interface BridgeHost {
@@ -70,6 +78,9 @@ export function createBridgeHost(deps: BridgeHostDeps): BridgeHost {
   // demuxed to channels by prefix — and torn down with the host (LRU eviction /
   // draft reload), never trusted to the shard's own unsubscribe.
   const kvSubs = new Map<string, string>();
+  // Workspace subscription channels this host opened, so detach can drop them
+  // from the hub even if the shard never unsubscribes (LRU eviction, reload).
+  const nodeChannels = new Set<string>();
   let stopChanges: (() => void) | null = null;
 
   function reply(to: Window, id: number | undefined, ok: boolean, body: Record<string, unknown>) {
@@ -183,6 +194,43 @@ export function createBridgeHost(deps: BridgeHostDeps): BridgeHost {
         kvSubs.delete(String(p.channel ?? ""));
         reply(to, m.id, true, { data: true });
         return;
+      case "nodes.get": {
+        const ids = Array.isArray(p.ids) ? (p.ids as string[]).map(String) : [];
+        deps.api
+          .bridgeNodes(deps.pageId, ids)
+          .then((res) => reply(to, m.id, true, { data: res.nodes }))
+          .catch((err: unknown) => fail(to, m.id, err));
+        return;
+      }
+      case "nodes.subscribe": {
+        const channel = String(p.channel ?? "");
+        const ids = Array.isArray(p.ids) ? (p.ids as string[]).map(String) : [];
+        if (!channel) {
+          reply(to, m.id, false, { error: "channel is required", code: "bad-request" });
+          return;
+        }
+        // The hub owns liveness; the host owns the channel's lifetime.
+        deps.hub.subscribe(deps.pageId, {
+          channel,
+          ids: new Set(ids),
+          push: (node) => push(channel, node),
+        });
+        nodeChannels.add(channel);
+        reply(to, m.id, true, { data: true });
+        // Contract: push the current value, then updates.
+        deps.api
+          .bridgeNodes(deps.pageId, ids)
+          .then((res) => res.nodes.forEach((n) => push(channel, n)))
+          .catch(() => {});
+        return;
+      }
+      case "nodes.unsubscribe": {
+        const channel = String(p.channel ?? "");
+        deps.hub.unsubscribe(deps.pageId, channel);
+        nodeChannels.delete(channel);
+        reply(to, m.id, true, { data: true });
+        return;
+      }
       default:
         reply(to, m.id, false, {
           error: `unknown method: ${String(m.method)}`,
@@ -204,6 +252,8 @@ export function createBridgeHost(deps: BridgeHostDeps): BridgeHost {
       kvSubs.clear();
       stopChanges?.();
       stopChanges = null;
+      nodeChannels.clear();
+      deps.hub.dropShard(deps.pageId);
     },
     pushTheme(theme: string) {
       push("theme", { theme });

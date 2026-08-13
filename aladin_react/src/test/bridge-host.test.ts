@@ -2,8 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createBridgeHost } from "@/modules/doc-surface/bridge/bridge-host";
 import type { BridgeHost } from "@/modules/doc-surface/bridge/bridge-host";
 import type { ShardKVPort, ShardKVPortChange } from "@/modules/doc-surface/bridge/shard-kv-port";
+import type { ShardDataHub } from "@/modules/doc-surface/bridge/shard-data-hub";
 import { ShardKVConflictError } from "@/shared/api/shard-api";
-import type { ShardKVEntryWire } from "@/shared/api/shard-api";
+import type { NodeViewWire, ShardApi, ShardKVEntryWire } from "@/shared/api/shard-api";
 
 // The bridge host filters on the SOURCE WINDOW (opaque-origin frames have
 // origin "null"), so the tests drive it with synthetic MessageEvents whose
@@ -78,6 +79,43 @@ function fakeKVPort() {
   };
 }
 
+// The workspace plane's two collaborators: the granted REST reader and the hub
+// that owns liveness. Both recorded so the host's contract can be asserted.
+function fakeNodes() {
+  const nodes: NodeViewWire[] = [{ id: "artifact-a", kind: "artifact", title: "Memo", seq: "3" }];
+  const calls: string[][] = [];
+  const subscribed: Array<{ shardId: string; channel: string; ids: string[] }> = [];
+  let dropped: string | null = null;
+  const api = {
+    bridgeNodes: async (_shardId: string, ids: string[]) => {
+      calls.push(ids);
+      return { nodes: nodes.filter((n) => ids.includes(n.id)), missing: [] };
+    },
+  } as unknown as ShardApi;
+  const hub = {
+    subscribe: (shardId: string, sub: { channel: string; ids: Set<string> }) =>
+      subscribed.push({ shardId, channel: sub.channel, ids: [...sub.ids] }),
+    unsubscribe: (_shardId: string, channel: string) => {
+      const i = subscribed.findIndex((s) => s.channel === channel);
+      if (i >= 0) subscribed.splice(i, 1);
+    },
+    dropShard: (shardId: string) => {
+      dropped = shardId;
+    },
+    handleFrame: () => {},
+    refetchAll: () => {},
+  } as unknown as ShardDataHub;
+  return {
+    api,
+    hub,
+    calls,
+    subscribed,
+    get dropped() {
+      return dropped;
+    },
+  };
+}
+
 async function flush() {
   await new Promise((r) => setTimeout(r, 0));
 }
@@ -89,11 +127,18 @@ describe("createBridgeHost", () => {
     host = null;
   });
 
-  function attach(getTheme = () => "dark", kvFake = fakeKVPort()) {
+  function attach(getTheme = () => "dark", kvFake = fakeKVPort(), nodesFake = fakeNodes()) {
     const { w, posted } = stubWindow();
-    host = createBridgeHost({ pageId: "artifact-1", getWindow: () => w, getTheme, kv: kvFake.port });
+    host = createBridgeHost({
+      pageId: "artifact-1",
+      getWindow: () => w,
+      getTheme,
+      kv: kvFake.port,
+      api: nodesFake.api,
+      hub: nodesFake.hub,
+    });
     host.attach();
-    return { w, posted, kvFake };
+    return { w, posted, kvFake, nodesFake };
   }
 
   it("answers hello with protocol, theme, and capabilities", () => {
@@ -105,7 +150,7 @@ describe("createBridgeHost", () => {
       type: "response",
       id: 1,
       ok: true,
-      data: { protocol: "bridge/1", theme: "cool", capabilities: ["theme", "kv"] },
+      data: { protocol: "bridge/1", theme: "cool", capabilities: ["theme", "kv", "nodes"] },
     });
   });
 
@@ -119,7 +164,7 @@ describe("createBridgeHost", () => {
 
   it("rejects unknown methods with code unknown-method (fail fast, no timeout)", () => {
     const { w, posted } = attach();
-    request({ source: w }, { id: 3, method: "nodes.get", params: { ids: ["x"] } });
+    request({ source: w }, { id: 3, method: "nodes.related", params: { id: "x" } });
     expect(posted[0].msg).toMatchObject({ id: 3, ok: false, code: "unknown-method" });
   });
 
@@ -206,5 +251,32 @@ describe("createBridgeHost", () => {
     expect(kvFake.changeSubs).toBe(1);
     host!.detach();
     expect(kvFake.changeSubs).toBe(0);
+  });
+
+  it("nodes.get proxies to the granted endpoint", async () => {
+    const { w, posted, nodesFake } = attach();
+    request({ source: w }, { id: 20, method: "nodes.get", params: { ids: ["artifact-a"] } });
+    await flush();
+    expect(nodesFake.calls).toEqual([["artifact-a"]]);
+    expect(posted[0].msg).toMatchObject({ id: 20, ok: true });
+    expect((posted[0].msg as { data: NodeViewWire[] }).data[0]).toMatchObject({ id: "artifact-a", title: "Memo" });
+  });
+
+  it("nodes.subscribe registers with the hub and pushes the current value first", async () => {
+    const { w, posted, nodesFake } = attach();
+    request({ source: w }, { id: 21, method: "nodes.subscribe", params: { ids: ["artifact-a"], channel: "sub:1" } });
+    await flush();
+    expect(nodesFake.subscribed).toEqual([{ shardId: "artifact-1", channel: "sub:1", ids: ["artifact-a"] }]);
+    const pushes = posted.filter((p) => p.msg.type === "push");
+    expect(pushes).toHaveLength(1);
+    expect(pushes[0].msg).toMatchObject({ channel: "sub:1", data: { id: "artifact-a" } });
+  });
+
+  it("detach drops the shard from the hub (LRU eviction safety)", async () => {
+    const { w, nodesFake } = attach();
+    request({ source: w }, { id: 22, method: "nodes.subscribe", params: { ids: ["artifact-a"], channel: "sub:2" } });
+    await flush();
+    host!.detach();
+    expect(nodesFake.dropped).toBe("artifact-1");
   });
 });

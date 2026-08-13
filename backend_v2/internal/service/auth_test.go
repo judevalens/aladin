@@ -200,12 +200,18 @@ func TestRequireScopeHonorsIntegrationTokenScopes(t *testing.T) {
 	}
 }
 
+type contentTokenFixture struct {
+	userID    string
+	expiresAt time.Time
+}
+
 type fakeAuthRepo struct {
 	created         IntegrationTokenRecord
 	principalRecord IntegrationTokenPrincipalRecord
 	sessionUser     CurrentUser
 	touched         bool
 	sessionTouched  bool
+	contentTokens   map[string]contentTokenFixture
 }
 
 func (r *fakeAuthRepo) CreateUser(context.Context, string, string) (CurrentUser, error) {
@@ -267,5 +273,30 @@ func (r *fakeAuthRepo) GetIntegrationTokenByHash(context.Context, string, time.T
 
 func (r *fakeAuthRepo) TouchIntegrationToken(context.Context, string) error {
 	r.touched = true
+	return nil
+}
+
+func (r *fakeAuthRepo) CreateContentToken(_ context.Context, tokenHash, userID string, expiresAt time.Time) error {
+	if r.contentTokens == nil {
+		r.contentTokens = map[string]contentTokenFixture{}
+	}
+	r.contentTokens[tokenHash] = contentTokenFixture{userID: userID, expiresAt: expiresAt}
+	return nil
+}
+
+func (r *fakeAuthRepo) GetContentTokenUser(_ context.Context, tokenHash string, now time.Time) (CurrentUser, error) {
+	rec, ok := r.contentTokens[tokenHash]
+	if !ok || !rec.expiresAt.After(now) {
+		return CurrentUser{}, ErrUnauthenticated
+	}
+	return CurrentUser{ID: rec.userID, Email: "content@example.com"}, nil
+}
+
+func (r *fakeAuthRepo) DeleteExpiredContentTokens(_ context.Context, now time.Time) error {
+	for hash, rec := range r.contentTokens {
+		if !rec.expiresAt.After(now) {
+			delete(r.contentTokens, hash)
+		}
+	}
 	return nil
 }

@@ -48,8 +48,37 @@ function rethrowConflict(err: unknown): never {
   throw err;
 }
 
+// One workspace entity as a shard sees it (service.NodeView). `id` echoes the
+// REF the shard asked with, so qualified refs (watchlist:<uuid>) line up.
+export interface NodeViewWire {
+  id: string;
+  kind: string;
+  title: string;
+  data?: unknown;
+  seq?: string;
+  truncated?: boolean;
+}
+
+// The parsed anchors.json (service/docsurface Manifest) — the host reads it for
+// per-anchor provenance and staleness.
+export interface ShardManifestWire {
+  version: number;
+  intent?: string;
+  anchors: Array<{
+    id: string;
+    kind?: string;
+    route: string;
+    source?: string;
+    binding?: unknown;
+    refs?: string[];
+    meaning: string;
+  }>;
+}
+
 export interface ShardApi {
   getBuildState(shardId: string, channel: ShardChannel): Promise<ShardBuildWire>;
+  getManifest(shardId: string): Promise<ShardManifestWire | null>;
+  bridgeNodes(shardId: string, ids: string[]): Promise<{ nodes: NodeViewWire[]; missing: string[] }>;
   kvList(shardId: string, prefix?: string): Promise<ShardKVEntryWire[]>;
   kvGet(shardId: string, key: string): Promise<ShardKVEntryWire | null>;
   kvSet(shardId: string, key: string, value: unknown, baseRevision: number): Promise<ShardKVEntryWire>;
@@ -61,6 +90,18 @@ export function createShardApi(client: ApiClient): ShardApi {
     getBuildState: (shardId, channel) =>
       client.fetch<ShardBuildWire>(
         `/api/shards/${shardId}/build-state?channel=${channel}`,
+      ),
+    getManifest: (shardId) =>
+      client
+        .fetch<ShardManifestWire>(`/api/shards/${shardId}/manifest`)
+        .catch((err: unknown) => {
+          if (err instanceof ApiError && err.status === 404) return null;
+          throw err;
+        }),
+    bridgeNodes: (shardId, ids) =>
+      client.fetch<{ nodes: NodeViewWire[]; missing: string[] }>(
+        `/api/shards/${shardId}/bridge/nodes`,
+        { method: "POST", body: JSON.stringify({ ids }) },
       ),
     kvList: (shardId, prefix = "") =>
       client

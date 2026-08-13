@@ -17,6 +17,9 @@ func (s *Server) registerAuthRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/auth/logout", s.handleAuthLogout)
 	mux.HandleFunc("GET /api/auth/me", s.handleAuthMe)
 	mux.HandleFunc("GET /api/auth/resolve", s.handleAuthResolve)
+	// Mints the scoped credential the app puts in a shard iframe's URL, so the
+	// session bearer never rides a document a shard's JS can read.
+	mux.HandleFunc("POST /api/auth/content-token", s.handleContentTokenMint)
 	mux.HandleFunc("GET /api/integration-tokens", s.handleIntegrationTokensList)
 	mux.HandleFunc("POST /api/integration-tokens", s.handleIntegrationTokensCreate)
 	mux.HandleFunc("POST /api/integration-tokens/{id}/revoke", s.handleIntegrationTokensRevoke)
@@ -131,6 +134,18 @@ func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 	}
 	clearSessionCookie(w, r)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleContentTokenMint(w http.ResponseWriter, r *http.Request) {
+	token, err := s.deps.Auth().MintContentToken(r.Context())
+	if err != nil {
+		if writeAccessError(w, r, err) {
+			return
+		}
+		writeAPIError(w, r, http.StatusInternalServerError, categoryInternal, "could not mint content token", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, token)
 }
 
 func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {

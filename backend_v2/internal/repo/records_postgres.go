@@ -2,10 +2,12 @@ package repo
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	coreservice "aladin/backend_v2/internal/service"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -144,4 +146,30 @@ func (r *PostgresRecordRepository) ResetForRetry(ctx context.Context, id string)
 		return false, err
 	}
 	return tag.RowsAffected() > 0, nil
+}
+
+// GetRecord reads one record for the shard bridge's entity registry. Records
+// carry no owner column (see the baseline schema) — the same property the
+// existing List/Children reads have — so the shard's manifest grant is the gate.
+func (r *PostgresRecordRepository) GetRecord(ctx context.Context, id string) (coreservice.RecordResponse, bool, error) {
+	row := r.pool.QueryRow(ctx, `
+		SELECT
+		    a.id, a.type, a.label, a.content, a.source_url,
+		    a.parent_id, a.enrichment, a.metadata, a.created_at,
+		    COUNT(c.id) AS child_count
+		  FROM records a
+		  LEFT JOIN records c ON c.parent_id = a.id AND c.status != 'superseded'
+		 WHERE a.id = $1
+		   AND a.status != 'superseded'
+		 GROUP BY a.id, a.type, a.label, a.content, a.source_url, a.parent_id,
+		          a.enrichment, a.metadata, a.created_at
+	`, id)
+	rec, err := scanRecordRow(row, true)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return coreservice.RecordResponse{}, false, nil
+	}
+	if err != nil {
+		return coreservice.RecordResponse{}, false, err
+	}
+	return rec, true, nil
 }

@@ -32,6 +32,8 @@ import { createRealtimeBoot } from "@/app/composition/realtime-boot";
 import { createShardApi } from "@/shared/api/shard-api";
 import { createLocalShardKVRepo } from "@/repos/shard-kv/local-shard-kv-repo";
 import { createShardKVPort } from "@/modules/doc-surface/bridge/shard-kv-port";
+import { createShardDataHub, createShardFrameHandler } from "@/modules/doc-surface/bridge/shard-data-hub";
+import { createContentTokenStore } from "@/shared/runtime/content-token-store";
 import { createAppEventProcessor } from "@/shared/realtime/app-event-processor";
 import { createWebSocketAppEventSource } from "@/shared/realtime/websocket-app-event-source";
 import { createShardBuildEventHandler } from "@/shared/realtime/shard-build-event-handler";
@@ -66,6 +68,9 @@ export function createAppComposition() {
   const local = createLocalRepos();
   const localSync = createLocalSyncRepo();
   const shardApi = createShardApi(apiClient);
+  // Scoped credential for shard iframe URLs (never the session bearer — shard
+  // JS can read its own URL).
+  const contentTokens = createContentTokenStore(apiClient);
   const apis = {
     artifacts: createArtifactApi(apiClient),
     shards: shardApi,
@@ -78,6 +83,9 @@ export function createAppComposition() {
         ? createLocalShardKVRepo(dataEvents)
         : null,
     ),
+    // Workspace-plane liveness: sync frames (already on the ws) → per-shard
+    // single-entity refetch → push into the subscribed iframe.
+    shardDataHub: createShardDataHub(shardApi),
   };
 
   const repos = {
@@ -144,6 +152,9 @@ export function createAppComposition() {
   // unchanged.
   const appEvents = createAppEventProcessor();
   appEvents.register(createShardBuildEventHandler());
+  // Sync frames drive shard live regions: the hub refetches just the entities a
+  // shard subscribed to and pushes them into its iframe.
+  appEvents.register(createShardFrameHandler(apis.shardDataHub));
   appEvents.register(createQuoteEventHandler());
   // Copilot streaming rides the existing workspace "*" subscription (the backend publishes an
   // AnyResource key for copilot.* events), so no new subscription is needed — just the handler.
@@ -166,6 +177,9 @@ export function createAppComposition() {
     onConnectionChange: (state) => {
       if (state === "open" && wasDisconnected) {
         useAppStore.getState().noteCopilotWsReconnect();
+        // No replay cursor: frames during the gap are gone, so every live shard
+        // region reconciles against the server instead of waiting forever.
+        apis.shardDataHub.refetchAll();
       }
       wasDisconnected = state === "closed";
     },
@@ -199,6 +213,7 @@ export function createAppComposition() {
       dataEvents,
       localSync,
       apis,
+      contentTokens,
       realtime,
     },
     repos,

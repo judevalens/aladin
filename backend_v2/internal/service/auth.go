@@ -29,6 +29,11 @@ const principalContextKey authContextKey = "principal"
 const (
 	ActorTypeUserSession      = "user_session"
 	ActorTypeIntegrationToken = "integration_token"
+	// ActorTypeContentToken authenticates a shard iframe's own document request.
+	// The token rides the frame URL and is readable by shard JS, so it is
+	// deliberately powerless everywhere else: authMiddleware rejects it on any
+	// route that isn't /content.
+	ActorTypeContentToken = "content_token"
 )
 
 const (
@@ -37,8 +42,16 @@ const (
 	ScopeSourcesRead    = "sources:read"
 	ScopeSourcesWrite   = "sources:write"
 	ScopeInsightsRead   = "insights:read"
-	ScopeAll            = "*"
+	// ScopeContentRead is the ONLY scope a content token carries: fetch the
+	// built shard document. It grants nothing on /api.
+	ScopeContentRead = "content:read"
+	ScopeAll         = "*"
 )
+
+// ContentTokenTTL bounds a shard document credential's life. Long enough that a
+// working session never re-mints mid-view, short enough that a leaked frame URL
+// stops working the same day.
+const ContentTokenTTL = 12 * time.Hour
 
 type CurrentUser struct {
 	ID    string `json:"id"`
@@ -62,6 +75,11 @@ type AuthService interface {
 	ListIntegrationTokens(context.Context) ([]IntegrationToken, error)
 	RevokeIntegrationToken(context.Context, string) error
 	ResolveBearerToken(context.Context, string) (Principal, error)
+	// MintContentToken issues a short-lived, content-only credential for the
+	// calling user — what the app puts in a shard iframe's URL instead of the
+	// session bearer. Requires a real user session (a content token cannot mint
+	// another).
+	MintContentToken(context.Context) (ContentToken, error)
 }
 
 type AuthRepository interface {
@@ -77,6 +95,16 @@ type AuthRepository interface {
 	RevokeIntegrationToken(context.Context, string, string) error
 	GetIntegrationTokenByHash(context.Context, string, time.Time) (IntegrationTokenPrincipalRecord, error)
 	TouchIntegrationToken(context.Context, string) error
+	// Content tokens: the scoped credential a shard iframe carries in its URL.
+	CreateContentToken(ctx context.Context, tokenHash, userID string, expiresAt time.Time) error
+	GetContentTokenUser(ctx context.Context, tokenHash string, now time.Time) (CurrentUser, error)
+	DeleteExpiredContentTokens(ctx context.Context, now time.Time) error
+}
+
+// ContentToken is a minted shard-document credential.
+type ContentToken struct {
+	Token     string `json:"token"`
+	ExpiresAt string `json:"expiresAt"`
 }
 
 type PasswordHasher interface {
@@ -282,17 +310,52 @@ func (s *AuthServiceImpl) ResolveBearerToken(ctx context.Context, token string) 
 	}
 
 	rec, err := s.repo.GetIntegrationTokenByHash(ctx, tokenHash, s.now().UTC())
-	if err != nil {
+	if err == nil {
+		_ = s.repo.TouchIntegrationToken(ctx, tokenHash)
+		return Principal{
+			UserID:    rec.UserID,
+			ActorType: ActorTypeIntegrationToken,
+			ActorID:   rec.ID,
+			Email:     rec.Email,
+			Scopes:    rec.Scopes,
+		}, nil
+	}
+
+	// Last: a content token — the shard-document credential. It resolves to the
+	// same user but carries only content:read; authMiddleware refuses it
+	// anywhere but /content.
+	user, cerr := s.repo.GetContentTokenUser(ctx, tokenHash, s.now().UTC())
+	if cerr != nil {
 		return Principal{}, ErrUnauthenticated
 	}
-	_ = s.repo.TouchIntegrationToken(ctx, tokenHash)
 	return Principal{
-		UserID:    rec.UserID,
-		ActorType: ActorTypeIntegrationToken,
-		ActorID:   rec.ID,
-		Email:     rec.Email,
-		Scopes:    rec.Scopes,
+		UserID:    user.ID,
+		ActorType: ActorTypeContentToken,
+		ActorID:   user.ID,
+		Email:     user.Email,
+		Scopes:    []string{ScopeContentRead},
 	}, nil
+}
+
+func (s *AuthServiceImpl) MintContentToken(ctx context.Context) (ContentToken, error) {
+	// RequireUserSession, not RequirePrincipal: a content token must never be
+	// able to mint a fresh one and extend its own reach.
+	principal, err := RequireUserSession(ctx)
+	if err != nil {
+		return ContentToken{}, err
+	}
+	token, err := randomToken()
+	if err != nil {
+		return ContentToken{}, err
+	}
+	expiresAt := s.now().UTC().Add(ContentTokenTTL)
+	if err := s.repo.CreateContentToken(ctx, hashSessionToken(token), principal.UserID, expiresAt); err != nil {
+		return ContentToken{}, err
+	}
+	// Opportunistic cleanup — these are short-lived and never listed anywhere,
+	// so nothing else would ever reap them.
+	_ = s.repo.DeleteExpiredContentTokens(ctx, s.now().UTC())
+	return ContentToken{Token: token, ExpiresAt: expiresAt.Format(time.RFC3339)}, nil
 }
 
 func (s *AuthServiceImpl) createSession(ctx context.Context, user CurrentUser, userAgent string) (AuthSession, error) {

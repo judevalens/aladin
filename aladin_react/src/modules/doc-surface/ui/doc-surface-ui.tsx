@@ -19,17 +19,36 @@ import { cn } from "@/lib/utils";
 //
 // channel selects the published (default) or draft build; nonce (a build id) is
 // appended so a fresh build reloads the iframe by changing its src.
-function useServedUrl(pageId: string, channel: ShardChannel, nonce?: string): string {
+function useServedUrl(pageId: string, channel: ShardChannel, nonce?: string): string | null {
   const { runtime } = useAppComposition();
-  // Memoized so the iframe reloads ONLY on channel/build changes. The theme is
-  // deliberately read non-reactively (getState): it stamps data-theme for a
-  // correct FIRST paint; live switches ride the bridge push with no reload, and
-  // the next natural reload (a new build nonce) picks up the then-current theme.
+  const needsToken = runtime.desktopSession.getToken() !== null;
+  // The desktop iframe authenticates with a token in its URL — and shard JS can
+  // read that URL, so it must be the CONTENT token (scoped to /content), never
+  // the session bearer. Minted asynchronously; until it arrives we render no
+  // iframe rather than one that would 401.
+  const [contentToken, setContentToken] = useState<string | null>(() =>
+    runtime.contentTokens.peek(),
+  );
+  useEffect(() => {
+    if (!needsToken || contentToken) return;
+    let alive = true;
+    void runtime.contentTokens.get().then((t) => {
+      if (alive) setContentToken(t);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [runtime, needsToken, contentToken]);
+
+  // Memoized so the iframe reloads ONLY on channel/build/token changes. The
+  // theme is deliberately read non-reactively (getState): it stamps data-theme
+  // for a correct FIRST paint; live switches ride the bridge push with no
+  // reload, and the next natural reload picks up the then-current theme.
   return useMemo(() => {
+    if (needsToken && !contentToken) return null;
     const base = runtime.config.apiBaseUrl;
-    const token = runtime.desktopSession.getToken();
     const params = new URLSearchParams();
-    if (token) params.set("access_token", token);
+    if (contentToken) params.set("access_token", contentToken);
     if (channel === "draft") params.set("channel", "draft");
     if (nonce) params.set("v", nonce);
     const theme = useAppStore.getState().theme;
@@ -41,7 +60,7 @@ function useServedUrl(pageId: string, channel: ShardChannel, nonce?: string): st
     }
     const q = params.toString();
     return `${base}/content/${pageId}/${q ? `?${q}` : ""}`;
-  }, [runtime, pageId, channel, nonce]);
+  }, [runtime, pageId, channel, nonce, needsToken, contentToken]);
 }
 
 // useShardBuild seeds the draft build state for a page (one fetch on mount) and
@@ -145,6 +164,8 @@ export function DocSurfaceUI({ artifact, hidden = false }: { artifact: Artifact;
       getWindow: () => iframeRef.current?.contentWindow,
       getTheme: () => useAppStore.getState().theme,
       kv: runtime.apis.shardKV,
+      api: runtime.apis.shards,
+      hub: runtime.apis.shardDataHub,
     });
     host.attach();
     hostRef.current = host;
@@ -162,13 +183,17 @@ export function DocSurfaceUI({ artifact, hidden = false }: { artifact: Artifact;
 
   return (
     <div className={cn("relative h-full w-full", hidden && "hidden")}>
-      <iframe
-        ref={iframeRef}
-        title={artifact.title}
-        src={src}
-        sandbox="allow-scripts"
-        className="h-full w-full border-0 bg-bg"
-      />
+      {/* src is null only while the content token is being minted (desktop);
+          mounting the frame without it would just 401. */}
+      {src && (
+        <iframe
+          ref={iframeRef}
+          title={artifact.title}
+          src={src}
+          sandbox="allow-scripts"
+          className="h-full w-full border-0 bg-bg"
+        />
+      )}
       {showChip && status && <BuildStatusChip status={status} />}
       {showError && <BuildErrorOverlay log={draft?.errors ?? ""} />}
     </div>

@@ -205,6 +205,10 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 		if authorization := strings.TrimSpace(r.Header.Get("Authorization")); authorization != "" {
 			principal, authErr := coreservice.ResolveBearerPrincipal(r.Context(), s.deps.Auth(), authorization)
 			if authErr == nil {
+				if !contentTokenAllowed(principal, r) {
+					writeAPIError(w, r, http.StatusUnauthorized, categoryBadRequest, "Unauthenticated", coreservice.ErrUnauthenticated)
+					return
+				}
 				next.ServeHTTP(w, r.WithContext(coreservice.WithPrincipal(r.Context(), principal)))
 				return
 			}
@@ -216,6 +220,10 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			if token := strings.TrimSpace(r.URL.Query().Get("access_token")); token != "" {
 				principal, authErr := coreservice.ResolveBearerPrincipal(r.Context(), s.deps.Auth(), "Bearer "+token)
 				if authErr == nil {
+					if !contentTokenAllowed(principal, r) {
+						writeAPIError(w, r, http.StatusUnauthorized, categoryBadRequest, "Unauthenticated", coreservice.ErrUnauthenticated)
+						return
+					}
 					next.ServeHTTP(w, r.WithContext(coreservice.WithPrincipal(r.Context(), principal)))
 					return
 				}
@@ -257,6 +265,18 @@ func isRealtimeWebSocketRoute(r *http.Request) bool {
 
 func isContentRoute(r *http.Request) bool {
 	return r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/content/")
+}
+
+// contentTokenAllowed is the choke point that makes a shard's URL credential
+// safe: a content-token principal may ONLY fetch shard documents. The token is
+// readable by the shard's own JS (it is in the frame URL) and the shard CSP
+// permits outbound calls, so without this a shard could act as the viewer
+// against /api. Every other principal type passes through untouched.
+func contentTokenAllowed(principal coreservice.Principal, r *http.Request) bool {
+	if principal.ActorType != coreservice.ActorTypeContentToken {
+		return true
+	}
+	return isContentRoute(r)
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

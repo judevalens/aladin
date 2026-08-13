@@ -23,6 +23,10 @@ func (s *Server) registerShardRoutes(mux *http.ServeMux) {
 	// backend. ?channel selects published (default — the user's data) or draft
 	// (the agent sandbox). Writes are revision-guarded; a lost write is a 409
 	// carrying the current value + revision.
+	// The workspace plane: the host proxies a shard's nodes.get here, and the
+	// grant (ids ⊆ anchors.json refs) is re-checked server-side — the host is
+	// never the only gate.
+	mux.HandleFunc("POST /api/shards/{id}/bridge/nodes", s.handleShardBridgeNodes)
 	mux.HandleFunc("GET /api/shards/{id}/kv", s.handleShardKVList)
 	mux.HandleFunc("GET /api/shards/{id}/kv/{key...}", s.handleShardKVGet)
 	mux.HandleFunc("PUT /api/shards/{id}/kv/{key...}", s.handleShardKVSet)
@@ -63,6 +67,35 @@ func (s *Server) handleShardBuildState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, st)
+}
+
+func (s *Server) handleShardBridgeNodes(w http.ResponseWriter, r *http.Request) {
+	pageID := strings.TrimSpace(r.PathValue("id"))
+	var body struct {
+		IDs []string `json:"ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeAPIError(w, r, http.StatusBadRequest, categoryBadRequest, "invalid JSON body", err)
+		return
+	}
+	nodes, missing, err := s.deps.ShardBridge().GetNodes(r.Context(), pageID, body.IDs)
+	if err != nil {
+		if writeAccessError(w, r, err) {
+			return
+		}
+		var bad service.BadRequest
+		if errors.As(err, &bad) {
+			writeAPIError(w, r, http.StatusBadRequest, categoryBadRequest, bad.Error(), nil)
+			return
+		}
+		if errors.Is(err, service.ErrNotFound) {
+			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Not found", nil)
+			return
+		}
+		writeAPIError(w, r, http.StatusInternalServerError, categoryInternal, "bridge read failed", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"nodes": nodes, "missing": missing})
 }
 
 // shardKVConflictBody is the doc's 409 shape: the latest value + revision so the

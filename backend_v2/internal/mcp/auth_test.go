@@ -114,3 +114,7 @@ func (f *fakeAuthService) ResolveBearerToken(_ context.Context, token string) (s
 	}
 	return principal, nil
 }
+
+func (f *fakeAuthService) MintContentToken(context.Context) (service.ContentToken, error) {
+	return service.ContentToken{}, service.ErrUnauthenticated
+}

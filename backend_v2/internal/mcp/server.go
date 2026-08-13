@@ -185,7 +185,7 @@ func New(addr string, deps app.Dependencies, pages service.PageDocumentService, 
 		Instructions: mcpInstructions,
 	})
 	registerTools(server, deps.Artifacts(), pages, converter, bridge, deps.EntityTags(), deps.ArtifactRefs())
-	registerDocSurfaceTools(server, deps.Artifacts(), deps.DocSurfaceStore(), deps.ShardBuild(), deps.Preview())
+	registerDocSurfaceTools(server, deps.Artifacts(), deps.DocSurfaceStore(), deps.ShardBuild(), deps.Preview(), deps.ShardBridge())
 	registerWorkspaceTools(server, workspaceToolServer{
 		search:      deps.Search(),
 		entities:    deps.EntityContext(),

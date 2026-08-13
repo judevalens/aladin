@@ -92,10 +92,13 @@ type docToolServer struct {
 	store     service.DocSurfaceStore
 	build     service.ShardBuildService
 	preview   service.PreviewService
+	// bridge audits the manifest's refs at publish (nil in tests that don't
+	// exercise the workspace plane).
+	bridge service.ShardBridgeService
 }
 
-func registerDocSurfaceTools(server *sdkmcp.Server, artifacts service.ArtifactService, store service.DocSurfaceStore, build service.ShardBuildService, preview service.PreviewService) {
-	t := docToolServer{artifacts: artifacts, store: store, build: build, preview: preview}
+func registerDocSurfaceTools(server *sdkmcp.Server, artifacts service.ArtifactService, store service.DocSurfaceStore, build service.ShardBuildService, preview service.PreviewService, bridge service.ShardBridgeService) {
+	t := docToolServer{artifacts: artifacts, store: store, build: build, preview: preview, bridge: bridge}
 
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "create_app",
@@ -543,6 +546,37 @@ func (t docToolServer) publishApp(ctx context.Context, _ *sdkmcp.CallToolRequest
 	verified, warning, err := t.verifyMount(ctx, in.PageID)
 	if err != nil {
 		return nil, publishAppOutput{}, err
+	}
+	// Gate on the manifest's REFS too: a shard that declares data it can't read
+	// renders an empty region for the user with no error anywhere. A missing or
+	// unknown-kind ref is a hard refusal; a ref whose kind emits no sync frames
+	// publishes with a warning (renderable, but the region can never go live).
+	if t.bridge != nil {
+		refs, rerr := t.bridge.CheckRefs(ctx, in.PageID)
+		if rerr != nil {
+			return nil, publishAppOutput{}, rerr
+		}
+		if !refs.OK {
+			var problems []string
+			if len(refs.Missing) > 0 {
+				problems = append(problems, "not found: "+strings.Join(refs.Missing, ", "))
+			}
+			if len(refs.UnknownKind) > 0 {
+				problems = append(problems, "unknown kind: "+strings.Join(refs.UnknownKind, ", "))
+			}
+			return nil, publishAppOutput{}, service.BadRequest(
+				"publish blocked — anchors.json refs don't resolve (" + strings.Join(problems, "; ") +
+					"). Fix the ids or drop them from refs.")
+		}
+		if len(refs.Unobservable) > 0 {
+			unobservable := "these refs can be read but never update live (their kind emits no change events): " +
+				strings.Join(refs.Unobservable, ", ")
+			if warning == "" {
+				warning = unobservable
+			} else {
+				warning += "; " + unobservable
+			}
+		}
 	}
 	summary := strings.TrimSpace(in.Summary)
 	if summary != "" {
