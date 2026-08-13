@@ -1,9 +1,11 @@
 import {
   Activity,
   AlertTriangle,
+  AppWindow,
   BarChart3,
   CheckCircle2,
   CornerDownRight,
+  ExternalLink,
   FileText,
   GitCompare,
   Layers,
@@ -319,6 +321,54 @@ function DirectiveBlock({
         </div>
       );
     }
+    case "aladin-shard-preview": {
+      const preview = parseShardPreviewBlock(segment.attrs, segment.body);
+      if (!preview) return <MarkdownText text={directiveFallback(segment)} />;
+      const errored = preview.status === "error";
+      const previewId = preview.id;
+      return (
+        <div className="my-2 rounded-card border border-line bg-field">
+          <div className="flex items-start gap-2 border-b border-line px-2.5 py-2">
+            <Icon as={AppWindow} size="inline" mark className="mt-0.5 shrink-0 text-amber" />
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 items-center gap-2">
+                <p className="min-w-0 flex-1 truncate text-small font-semibold text-ink">{preview.title}</p>
+                <span
+                  className={cn(
+                    "shrink-0 rounded-chip border px-1.5 py-0.5 font-mono text-meta",
+                    errored ? "border-against/30 bg-against-soft text-against" : "border-line bg-raise text-ink-4",
+                  )}
+                >
+                  {preview.status}
+                </span>
+              </div>
+              <p className="mt-0.5 truncate font-mono text-meta text-ink-4">{preview.subtitle}</p>
+            </div>
+          </div>
+          {preview.diagnostics.length > 0 ? (
+            <div className="space-y-0.5 px-2.5 py-2 font-mono text-meta text-ink-4">
+              {preview.diagnostics.map((diagnostic) => (
+                <p key={diagnostic} className={cn("truncate", errored && "text-against")}>
+                  {diagnostic}
+                </p>
+              ))}
+            </div>
+          ) : null}
+          {previewId ? (
+            <div className="border-t border-line px-2.5 py-2">
+              <button
+                type="button"
+                onClick={() => onNavigate("shard", previewId, preview.title)}
+                className="inline-flex max-w-full items-center gap-1.5 rounded-chip border border-line bg-raise px-2.5 py-1.5 text-small text-ink-2 transition-colors hover:border-amber-line hover:text-ink"
+              >
+                <Icon as={ExternalLink} size="inline" mark className="shrink-0 text-amber" />
+                <span className="truncate">Open shard</span>
+              </button>
+            </div>
+          ) : null}
+        </div>
+      );
+    }
     default:
       return <MarkdownText text={directiveFallback(segment)} />;
   }
@@ -602,6 +652,62 @@ function parseDiffLine(value: unknown): DiffBlock["lines"] {
   if (!text) return [];
   const kind = record.kind === "add" || record.kind === "remove" ? record.kind : "context";
   return [{ kind, text }];
+}
+
+export type ShardPreviewBlock = {
+  id?: string;
+  title: string;
+  status: "building" | "ready" | "published" | "error";
+  subtitle: string;
+  diagnostics: string[];
+};
+
+export function parseShardPreviewBlock(attrs: Record<string, string>, body: string): ShardPreviewBlock | null {
+  let data: Record<string, unknown> = {};
+  if (body.trim()) {
+    try {
+      const parsed = JSON.parse(body);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+      data = parsed as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }
+  const merged: Record<string, unknown> = { ...data, ...attrs };
+  const id = textField(merged.artifactId ?? merged.pageId ?? merged.id, 160);
+  const title = textField(merged.title ?? merged.name ?? id, 120);
+  if (!title) return null;
+  const status = shardPreviewStatus(merged.status, merged.buildOk ?? merged.ok);
+  const url = safePreviewPath(merged.previewUrl ?? merged.url);
+  const subtitle =
+    textField(merged.subtitle ?? merged.summary, 160) ??
+    (url ? `preview: ${url}` : status === "error" ? "build needs attention" : "preview ready");
+  const diagnostics = parsePreviewDiagnostics(merged.diagnostics ?? merged.errors ?? merged.log);
+  return { id, title, status, subtitle, diagnostics };
+}
+
+function shardPreviewStatus(status: unknown, ok: unknown): ShardPreviewBlock["status"] {
+  if (status === "building" || status === "ready" || status === "published" || status === "error") return status;
+  if (ok === false) return "error";
+  if (ok === true) return "ready";
+  return "ready";
+}
+
+function safePreviewPath(value: unknown): string | undefined {
+  const path = textField(value, 180);
+  if (!path || !path.startsWith("/") || path.startsWith("//")) return undefined;
+  return path;
+}
+
+function parsePreviewDiagnostics(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap((v) => textField(v, 220) ?? []).slice(0, 8);
+  if (typeof value === "string") {
+    return value
+      .split(/\r?\n/)
+      .flatMap((line) => textField(line, 220) ?? [])
+      .slice(0, 8);
+  }
+  return [];
 }
 
 /** A subtle blinking caret appended to streaming text. */

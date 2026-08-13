@@ -6,6 +6,7 @@ import {
   parseApprovalBlock,
   parseCopilotMarkdown,
   parseDiffBlock,
+  parseShardPreviewBlock,
 } from "@/modules/copilot/ui/copilot-markdown";
 
 describe("parseCopilotMarkdown", () => {
@@ -191,5 +192,50 @@ describe("parseDiffBlock", () => {
       ],
     });
     expect(parseDiffBlock({}, "")).toBeNull();
+  });
+});
+
+describe("parseShardPreviewBlock", () => {
+  it("parses ready shard previews from attrs and safe preview paths", () => {
+    expect(
+      parseShardPreviewBlock(
+        { artifactId: "shd_1", title: "Collar payoff", status: "published" },
+        JSON.stringify({ previewUrl: "/preview/shd_1" }),
+      ),
+    ).toEqual({
+      id: "shd_1",
+      title: "Collar payoff",
+      status: "published",
+      subtitle: "preview: /preview/shd_1",
+      diagnostics: [],
+    });
+  });
+
+  it("shows failed builds with bounded diagnostics and rejects unsafe URLs", () => {
+    const preview = parseShardPreviewBlock(
+      {},
+      JSON.stringify({
+        pageId: "p1",
+        title: "Broken shard",
+        buildOk: false,
+        previewUrl: "https://example.com/preview",
+        diagnostics: ["src/index.tsx:12 Missing prop", "x".repeat(260), "third"],
+      }),
+    );
+
+    expect(preview).toMatchObject({
+      id: "p1",
+      title: "Broken shard",
+      status: "error",
+      subtitle: "build needs attention",
+    });
+    expect(preview?.diagnostics).toHaveLength(3);
+    expect(preview?.diagnostics[1]).toHaveLength(221);
+    expect(preview?.diagnostics[1]?.endsWith("…")).toBe(true);
+  });
+
+  it("rejects malformed preview bodies and empty titles", () => {
+    expect(parseShardPreviewBlock({}, "{")).toBeNull();
+    expect(parseShardPreviewBlock({}, "{}")).toBeNull();
   });
 });
