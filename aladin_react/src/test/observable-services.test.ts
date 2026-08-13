@@ -61,6 +61,7 @@ describe("observable services", () => {
     createResearch: vi.fn(),
       renameFolder: vi.fn(),
     renameResearch: vi.fn(),
+    deleteFolder: vi.fn(),
       createArtifact: vi.fn(),
     };
     const artifactRepo: ArtifactRepo = {
@@ -74,6 +75,7 @@ describe("observable services", () => {
       })),
       createArtifact: vi.fn(),
       renameArtifact: vi.fn(),
+    deleteArtifact: vi.fn(),
       uploadVoiceArtifact: vi.fn(),
       uploadFileArtifact: vi.fn(),
       getResourceBlob: vi.fn(),

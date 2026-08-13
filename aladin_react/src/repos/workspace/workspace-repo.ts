@@ -130,6 +130,11 @@ export interface WorkspaceRepo {
   renameFolder(folderId: string, title: string): Promise<FolderNode>;
   /** Renames a research folder via its own endpoint; the tree updates off the frame. */
   renameResearch(nodeId: string, title: string): Promise<BrowserNodeRow>;
+  /**
+   * Deletes a folder (or research folder) — one call for both, because the server tombstones
+   * the tree node and the node is the entity spine for either kind.
+   */
+  deleteFolder(folderId: string): Promise<void>;
 }
 
 export function createWorkspaceRepo(
@@ -224,6 +229,14 @@ export function createWorkspaceRepo(
       }
       return rowToArtifact(client, result.artifact);
     },
+    async deleteFolder(folderId) {
+      await browser.deleteNode({
+        id: folderId,
+        updatedAt: Date.now(),
+        mutationId: createMutationId(),
+      });
+    },
+
     async renameFolder(folderId, title) {
       const current = await browser.getNode(folderId);
       const row = await browser.renameNode({

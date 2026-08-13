@@ -20,12 +20,14 @@ import { ARTIFACT_ICONS, RESEARCH_SLOT_ICONS } from "@/modules/workspace/ui/kind
 import { useBrowserPane } from "@/modules/workspace/hooks/use-workspace-state";
 import { useAppStore } from "@/app/state/store";
 import { PropertyFilterDialogUI } from "@/modules/artifacts/ui/property-filter-dialog-ui";
+import { DeleteConfirmDialog, type DeleteTarget } from "@/modules/workspace/ui/delete-confirm-dialog";
 import { cn } from "@/lib/utils";
 
 const MAX_INLINE = 2; // depths 0,1 expand inline; depth >= 2 drills into the Miller popup
 
 export function BrowserPaneUI() {
   const [propertyFilterOpen, setPropertyFilterOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const {
     loading,
     errorMessage,
@@ -42,6 +44,8 @@ export function BrowserPaneUI() {
     onStartRenameResearch,
     onStartRenameArtifact,
     onCreateFolderHere,
+    onDeleteFolder,
+    onDeleteArtifact,
     onCreateResearchHere,
     onCreateNoteHere,
   } = useBrowserPane();
@@ -144,6 +148,7 @@ export function BrowserPaneUI() {
             onToggleFolder={onToggleFolder}
             onOpenResearch={onOpenResearchView}
             onOpenArtifact={onOpenArtifact}
+            onRequestDelete={setDeleteTarget}
             onStartRenameFolder={onStartRenameFolder}
             onStartRenameResearch={onStartRenameResearch}
             onStartRenameArtifact={onStartRenameArtifact}
@@ -168,9 +173,14 @@ export function BrowserPaneUI() {
       ) : null}
       {/* Mounted only while open: the hook reaches for app composition + fetches facets, so
           keeping it unmounted avoids that work (and lets the pane render without providers). */}
-      {propertyFilterOpen && (
-        <PropertyFilterDialogUI open onOpenChange={setPropertyFilterOpen} />
-      )}
+      {propertyFilterOpen && <PropertyFilterDialogUI open onOpenChange={setPropertyFilterOpen} />}
+      <DeleteConfirmDialog
+        target={deleteTarget}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={(target) =>
+          target.kind === "artifact" ? onDeleteArtifact(target.id) : onDeleteFolder(target.id)
+        }
+      />
     </section>
   );
 }
@@ -182,6 +192,7 @@ function BrowserPaneRow({
   onToggleFolder,
   onOpenResearch,
   onOpenArtifact,
+  onRequestDelete,
   onStartRenameFolder,
   onStartRenameResearch,
   onStartRenameArtifact,
@@ -196,6 +207,7 @@ function BrowserPaneRow({
   onToggleFolder: (folderId: string) => void;
   onOpenResearch: (contextId: string, view: ResearchView) => void;
   onOpenArtifact: (artifactId: string) => void;
+  onRequestDelete: (target: DeleteTarget) => void;
   onStartRenameFolder: (folderId: string, title: string) => void;
   onStartRenameResearch: (nodeId: string, title: string) => void;
   onStartRenameArtifact: (artifactId: string, title: string) => void;
@@ -337,6 +349,19 @@ function BrowserPaneRow({
             >
               Rename
             </ContextMenuItem>
+            <ContextMenuItem
+              className="text-against data-[highlighted]:text-against"
+              onSelect={() =>
+                onRequestDelete({
+                  kind: isResearch ? "research" : "folder",
+                  id: row.folderId!,
+                  title: row.title,
+                  childCount: row.childCount,
+                })
+              }
+            >
+              Delete
+            </ContextMenuItem>
           </>
         ) : null}
         {row.kind === "artifact" && row.artifactId ? (
@@ -352,6 +377,12 @@ function BrowserPaneRow({
             </ContextMenuItem>
             <ContextMenuSeparator />
             <ContextMenuItem onSelect={() => onStartRenameArtifact(row.artifactId!, row.title)}>Rename</ContextMenuItem>
+            <ContextMenuItem
+              className="text-against data-[highlighted]:text-against"
+              onSelect={() => onRequestDelete({ kind: "artifact", id: row.artifactId!, title: row.title })}
+            >
+              Delete
+            </ContextMenuItem>
           </>
         ) : null}
       </ContextMenuContent>
