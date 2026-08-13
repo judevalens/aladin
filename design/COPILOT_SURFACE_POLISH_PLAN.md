@@ -23,14 +23,16 @@ Aladin owns all rendering, permissions, and actions.
 - Phase 2 is implemented: the composer has stable autogrow sizing, no focus-only
   helper row, fixed send/stop controls, queued follow-up visibility, and
   per-thread drafts.
-- Phase 3 has a first cut: the thread menu now has search, a new-thread action,
-  active/running/approval states, and relative saved times. Rename, archive, pin,
-  and richer grouping remain.
+- Phase 3 has a stronger first cut: the thread menu now has search, a
+  new-thread action, active/running/approval states, relative saved times,
+  persisted rename, soft archive, and pin/unpin ordering. Richer surface
+  grouping remains.
 - Phase 4 has a first cut: live tool chips are now a compact activity timeline,
   and completed-turn footers use readable tool labels.
-- Phase 5 is implemented as a local parser: `aladin-artifact`, `aladin-ticker`,
-  `aladin-activity`, and `aladin-actions` render native UI; unknown or malformed
-  directives degrade to inert markdown text.
+- Phase 5 is implemented as a local parser: `aladin-artifact`,
+  `aladin-entity`, `aladin-ticker`, `aladin-activity`, and `aladin-actions`
+  render native UI; unknown or malformed directives degrade to inert markdown
+  text. Actions currently support send-prompt, open-artifact, and open-ticker.
 - Phase 6 has a first cut: the current surface resolves active artifact
   title/type from the workspace tree, so composer copy and suggestions can use
   the actual page/shard/source context.
