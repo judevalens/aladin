@@ -99,7 +99,15 @@
     /* Reading measure for the work pane. `max-w-workspace-max` was in use in four
        files with NO token behind it, so it silently resolved to nothing and those
        surfaces were full-bleed. 72ch matches the editor measure. */
-    --container-workspace-max: 72ch;
+    /* The reading measure for editors, artifact panes and the research overview.
+       45rem = 720px, which is the DEFAULT of the editor preview's own width switcher
+       (/spike/editor offers 640 / 720 / 860) — so this matches an existing design decision
+       rather than inventing one.
+
+       Deliberately rem, not ch: `ch` resolves against the LOCAL font size, so the same token
+       produced ~725px next to 16px text and a much narrower column inside the 13-15px editor.
+       One token that means different widths in different places is not a token. */
+    --container-workspace-max: 45rem;
 
     /* Shadows */
     /* The modal scrim. One value for all eight themes on purpose: a scrim darkens what is
