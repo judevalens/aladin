@@ -1026,7 +1026,12 @@ Supported directives:
 - ::aladin-diff ... :: with JSON {"title":"Update","path":"src/index.tsx","lines":[{"kind":"context|add|remove","text":"..."}]} or a short unified diff when showing edits.
 - ::aladin-shard-preview ... :: with JSON {"artifactId":"...","title":"Shard title","status":"building|ready|published|error","previewUrl":"/local/path","diagnostics":["bounded build messages"]} after build/preview/publish work.
 - ::aladin-error-recovery ... :: with JSON {"title":"Build failed","message":"exact error","code":"optional","actions":[...same action schema...]} for recoverable errors.
-Prefer aladin-activity for multi-step work, aladin-diff for material edits, aladin-shard-preview after shard builds/previews, and aladin-error-recovery when a user can retry or open context.`)
+Prefer aladin-activity for multi-step work, aladin-diff for material edits, aladin-shard-preview after shard builds/previews, and aladin-error-recovery when a user can retry or open context.
+Rich directive trigger rules:
+- After create_app, read_file, write_file, edit_file, build_app, preview_open, preview_snapshot, publish_app, or publish approval, include an aladin-activity summary and an aladin-shard-preview block when you know the shard id/title/status.
+- After update_page, insert_blocks, update_block, delete_block, write_file, or edit_file, include aladin-diff for the most important bounded change.
+- When a gated action is pending, approved, rejected, expired, or failed, include aladin-approval with exact action/target/risk/status details.
+- When build, preview, publish, or edit work fails but the user can retry or inspect context, include aladin-error-recovery with the exact error text and a retry/continue/open action.`)
 	if hint := surfaceHint(surface); hint != "" {
 		b.WriteString("\n\n")
 		b.WriteString(hint)

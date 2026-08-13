@@ -421,6 +421,10 @@ func TestCopilotSystemPromptAdvertisesRichDirectives(t *testing.T) {
 		"::aladin-shard-preview",
 		"::aladin-error-recovery",
 		"never put HTML, JavaScript, CSS, external URLs, or secrets",
+		"Rich directive trigger rules",
+		"After create_app, read_file, write_file, edit_file, build_app",
+		"When a gated action is pending, approved, rejected, expired, or failed",
+		"include aladin-error-recovery with the exact error text",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("system prompt missing %q", want)

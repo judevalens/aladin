@@ -94,9 +94,10 @@ Remaining rough edges:
 - thread management now groups active, approval-needed, pinned, and recent
   threads, but still needs richer workspace/surface grouping once thread rows
   carry surface metadata
-- backend final answers should intentionally emit rich directives in more common
-  workflows, especially build failures, approvals, shard previews, and recovery
-  paths
+- backend final answers now have explicit rich directive trigger rules for shard
+  builds/previews, page/file edits, gated approvals, and recoverable failures;
+  runtime post-processing is still intentionally avoided so the model's prose is
+  not duplicated or rewritten after streaming
 - broader dock-level integration tests should cover scroll pinning, empty-state
   transitions, thread switches during streaming, and approval recovery together
 - visual QA should verify the polished composer and rich blocks at mobile and
