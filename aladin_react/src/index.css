@@ -7,6 +7,10 @@
 
 @source "../node_modules/@blocknote/shadcn";
 
+.document-outline-scroll [data-radix-scroll-area-viewport] > div {
+    display: block !important;
+}
+
 /* The dark-family themes (dark, soft, cool) should always resolve `dark:` utilities;
    the light theme must NOT — so scope the variant to the dark family explicitly. */
 @custom-variant dark (&:where([data-theme="dark"] *, [data-theme="soft"] *, [data-theme="cool"] *, [data-theme="contrast"] *, [data-theme="linear"] *, [data-theme="apple-dark"] *));

@@ -132,13 +132,13 @@ export function DocumentReader({
               scrollbar element in the DOM at all until the pointer is already inside, so a
               46-entry outline looked like it simply didn't scroll.
 
-              The `[&_...>div]:!block` is the other half. Radix gives its viewport a child with
+              The `document-outline-scroll` CSS rule is the other half. Radix gives its viewport a child with
               an inline `display: table`, which sizes to CONTENT — 490px inside a 255px pane
               here. `truncate` never engages against a table box, so long titles ran under the
               border and took the page numbers off screen with them. */}
           <ScrollArea
             type="auto"
-            className="min-h-0 flex-1 [&_[data-radix-scroll-area-viewport]>div]:!block"
+            className="document-outline-scroll min-h-0 flex-1"
           >
             {/* A 1.5px gap so consecutive highlighted rows read as separate targets — with
                 the rows flush, the active row's amber block merged into its neighbour's
