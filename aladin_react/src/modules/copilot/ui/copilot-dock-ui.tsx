@@ -382,19 +382,7 @@ export function CopilotDockUI() {
               </button>
             </div>
           ) : null}
-          {realtimeState !== "open" ? (
-            <div className="mb-1.5 flex items-center gap-2 rounded-card border border-line bg-raise px-2.5 py-1.5">
-              <span
-                className={cn(
-                  "size-1.5 rounded-full",
-                  realtimeState === "connecting" ? "animate-pulse bg-amber" : "bg-against",
-                )}
-              />
-              <p className="font-mono text-meta text-ink-3">
-                {realtimeState === "connecting" ? "reconnecting stream…" : "stream offline — reconnecting"}
-              </p>
-            </div>
-          ) : null}
+          <RealtimeStatusBanner state={realtimeState} />
           <div className="group rounded-card border border-line bg-field transition-colors focus-within:border-amber-line">
             {surfaceScope ? <ScopeChip scope={surfaceScope} onNewThread={newThread} /> : null}
             <div className="flex items-end gap-2 px-3 py-2.5">
@@ -511,6 +499,24 @@ function ScopeChip({
           </button>
         </PopoverContent>
       </Popover>
+    </div>
+  );
+}
+
+export function RealtimeStatusBanner({ state }: { state: "connecting" | "open" | "closed" }) {
+  if (state === "open") return null;
+  return (
+    <div className="mb-1.5 flex items-center gap-2 rounded-card border border-line bg-raise px-2.5 py-1.5">
+      <span
+        aria-hidden
+        className={cn(
+          "size-1.5 rounded-full",
+          state === "connecting" ? "animate-pulse bg-amber" : "bg-against",
+        )}
+      />
+      <p className="font-mono text-meta text-ink-3">
+        {state === "connecting" ? "reconnecting stream…" : "stream offline — reconnecting"}
+      </p>
     </div>
   );
 }
