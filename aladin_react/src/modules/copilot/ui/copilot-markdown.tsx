@@ -1,6 +1,8 @@
 import {
   Activity,
+  AlertTriangle,
   BarChart3,
+  CheckCircle2,
   CornerDownRight,
   FileText,
   Layers,
@@ -241,6 +243,47 @@ function DirectiveBlock({
         </div>
       );
     }
+    case "aladin-approval": {
+      const approval = parseApprovalBlock(segment.attrs, segment.body);
+      if (!approval) return <MarkdownText text={directiveFallback(segment)} />;
+      const pending = approval.status === "pending";
+      return (
+        <div
+          className={cn(
+            "my-2 rounded-card border p-3",
+            pending ? "border-amber-line bg-amber-soft/40" : "border-line bg-field",
+          )}
+        >
+          <div className="flex items-start gap-2">
+            <Icon
+              as={pending ? AlertTriangle : CheckCircle2}
+              size="inline"
+              mark
+              className={cn("mt-0.5 shrink-0", pending ? "text-amber" : "text-for")}
+            />
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 items-center gap-2">
+                <p className="min-w-0 flex-1 truncate text-small font-semibold text-ink">{approval.action}</p>
+                <span className="shrink-0 rounded-chip border border-line bg-raise px-1.5 py-0.5 font-mono text-meta text-ink-4">
+                  {approval.status}
+                </span>
+              </div>
+              <p className="mt-0.5 truncate text-small text-ink-2">{approval.target}</p>
+              {approval.risk ? <p className="mt-1 text-small text-ink-3">{approval.risk}</p> : null}
+            </div>
+          </div>
+          {approval.details.length > 0 ? (
+            <div className="mt-2 space-y-0.5 border-l border-line pl-3 font-mono text-meta text-ink-4">
+              {approval.details.map((detail) => (
+                <p key={detail} className="truncate">
+                  {detail}
+                </p>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      );
+    }
     default:
       return <MarkdownText text={directiveFallback(segment)} />;
   }
@@ -429,6 +472,46 @@ function safeArtifactKind(kind: string): string {
 
 function isSafeSymbol(symbol: string): boolean {
   return /^[A-Z][A-Z0-9.-]{0,11}$/.test(symbol);
+}
+
+export type ApprovalBlock = {
+  action: string;
+  target: string;
+  status: "pending" | "approved" | "rejected" | "expired";
+  risk?: string;
+  details: string[];
+};
+
+export function parseApprovalBlock(attrs: Record<string, string>, body: string): ApprovalBlock | null {
+  let data: Record<string, unknown> = {};
+  if (body.trim()) {
+    try {
+      const parsed = JSON.parse(body);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+      data = parsed as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }
+
+  const merged: Record<string, unknown> = { ...data, ...attrs };
+  const action = textField(merged.action ?? merged.summary ?? merged.tool, 120);
+  const target = textField(merged.target ?? merged.title ?? merged.path ?? merged.artifactId ?? merged.id, 160);
+  if (!action || !target) return null;
+  const status = approvalStatus(merged.status);
+  const risk = textField(merged.risk ?? merged.message, 280);
+  const details = parseApprovalDetails(merged.details ?? merged.detail ?? merged.exactAction);
+  return { action, target, status, risk, details };
+}
+
+function approvalStatus(value: unknown): ApprovalBlock["status"] {
+  return value === "approved" || value === "rejected" || value === "expired" ? value : "pending";
+}
+
+function parseApprovalDetails(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap((v) => textField(v, 220) ?? []).slice(0, 6);
+  const detail = textField(value, 220);
+  return detail ? [detail] : [];
 }
 
 /** A subtle blinking caret appended to streaming text. */

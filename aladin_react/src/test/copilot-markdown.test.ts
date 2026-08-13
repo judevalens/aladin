@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { parseActionItems, parseActivityItems, parseCopilotMarkdown } from "@/modules/copilot/ui/copilot-markdown";
+import {
+  parseActionItems,
+  parseActivityItems,
+  parseApprovalBlock,
+  parseCopilotMarkdown,
+} from "@/modules/copilot/ui/copilot-markdown";
 
 describe("parseCopilotMarkdown", () => {
   it("splits markdown around leaf directives", () => {
@@ -111,5 +116,43 @@ describe("parseActionItems", () => {
       { action: "open_artifact", label: "Open shard", id: "shd_1", kind: "shard", target: "shd_1" },
       { action: "open_ticker", label: "Open NVDA", symbol: "NVDA", target: "NVDA" },
     ]);
+  });
+});
+
+describe("parseApprovalBlock", () => {
+  it("parses approval cards from JSON body and caps detail rows", () => {
+    const block = parseApprovalBlock(
+      {},
+      JSON.stringify({
+        action: "Publish shard",
+        target: "Collar payoff",
+        status: "pending",
+        risk: "Makes this shard visible in the workspace.",
+        details: ["bundle: dist/index.js", "x".repeat(250), "extra"],
+      }),
+    );
+
+    expect(block).toMatchObject({
+      action: "Publish shard",
+      target: "Collar payoff",
+      status: "pending",
+      risk: "Makes this shard visible in the workspace.",
+    });
+    expect(block?.details).toHaveLength(3);
+    expect(block?.details[1]).toHaveLength(221);
+    expect(block?.details[1]?.endsWith("…")).toBe(true);
+  });
+
+  it("supports leaf attributes and rejects malformed cards", () => {
+    expect(
+      parseApprovalBlock({ action: "Delete file", target: "old.tsx", status: "approved" }, ""),
+    ).toEqual({
+      action: "Delete file",
+      target: "old.tsx",
+      status: "approved",
+      details: [],
+    });
+    expect(parseApprovalBlock({ action: "Delete file" }, "")).toBeNull();
+    expect(parseApprovalBlock({}, "{")).toBeNull();
   });
 });
