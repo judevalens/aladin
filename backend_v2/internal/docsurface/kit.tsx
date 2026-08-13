@@ -10,7 +10,7 @@
 // Built once (esbuild, react externalized → shared instance) and served
 // content-addressed at /vendor/<sha>; agents `import { … } from "@aladin/kit"`.
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import type {
   ReactNode,
   ButtonHTMLAttributes,
@@ -404,6 +404,23 @@ const _pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Er
 const _subs = new Map<string, (n: Node) => void>();
 let _wired = false;
 
+// --- theme (host-pushed) ------------------------------------------------------
+// The serve route stamps <html data-theme> for a correct first paint; the host
+// then pushes {channel:"theme"} on every switch. Stamping the attribute is the
+// whole activation — theme.css ships every [data-theme] block, so utilities and
+// var() chains flip with zero re-render. _themeSubs exists for code that
+// resolves tokens to concrete values at render (tok(), chart helpers): useTheme
+// re-renders those consumers so they re-read computed styles.
+let _theme = "";
+const _themeSubs = new Set<() => void>();
+
+function applyTheme(theme: unknown) {
+  if (typeof theme !== "string" || theme === "" || theme === _theme) return;
+  _theme = theme;
+  document.documentElement.dataset.theme = theme;
+  _themeSubs.forEach((fn) => fn());
+}
+
 function ensureWired() {
   if (_wired || typeof window === "undefined") return;
   _wired = true;
@@ -415,10 +432,20 @@ function ensureWired() {
       _pending.delete(m.id);
       if (m.ok) p.resolve(m.data);
       else p.reject(new Error(m.error || "bridge error"));
+    } else if (m.type === "push" && m.channel === "theme") {
+      applyTheme((m.data as { theme?: string } | null)?.theme);
     } else if (m.type === "push" && m.channel && _subs.has(m.channel)) {
       _subs.get(m.channel)!(m.data as Node);
     }
   });
+  // Seed from the served document, then reconcile with the host (covers a theme
+  // switch that happened while this frame was hidden in the keep-alive set, and
+  // hosts that serve no stamp). Fire-and-forget: previews without a theme-aware
+  // emulator just keep the stamp.
+  _theme = document.documentElement.dataset.theme || "";
+  post("theme.get", {})
+    .then((d) => applyTheme((d as { theme?: string } | null)?.theme))
+    .catch(() => {});
 }
 
 function post(method: string, params: Record<string, unknown>): Promise<unknown> {
@@ -457,6 +484,25 @@ export const bridge = {
     };
   },
 };
+
+// useTheme returns the active Aladin theme name ("dark", "light", …) and
+// re-renders on host theme switches. Utilities and var()-based styles follow the
+// theme with NO code — reach for this hook only when a value is resolved at
+// render time (tok(), chartSeries(), hand-computed colors).
+export function useTheme(): string {
+  return useSyncExternalStore(
+    (onChange) => {
+      _themeSubs.add(onChange);
+      return () => _themeSubs.delete(onChange);
+    },
+    () => _theme,
+    () => _theme,
+  );
+}
+
+// Wire at import so every kit-using shard receives theme pushes immediately —
+// not only after its first bridge call.
+ensureWired();
 
 export type NodeState = { node: Node | null; loading: boolean; error: string | null };
 

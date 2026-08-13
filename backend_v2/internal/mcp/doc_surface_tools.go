@@ -279,6 +279,7 @@ type publishAppOutput struct {
 type previewOpenInput struct {
 	PageID  string `json:"page_id"`
 	Channel string `json:"channel,omitempty"` // "draft" (default) | "published"
+	Theme   string `json:"theme,omitempty"`   // Aladin theme name to render in (e.g. "light"); default dark
 }
 type previewNavigateInput struct {
 	PageID string `json:"page_id"`
@@ -576,7 +577,7 @@ func (t docToolServer) publishApp(ctx context.Context, _ *sdkmcp.CallToolRequest
 //   - verified=true → every route mounted with no uncaught exceptions.
 func (t docToolServer) verifyMount(ctx context.Context, pageID string) (bool, string, error) {
 	routes := t.manifestRoutes(ctx, pageID)
-	first, err := t.preview.Open(ctx, pageID, service.ChannelPublished)
+	first, err := t.preview.Open(ctx, pageID, service.ChannelPublished, service.PreviewOpenOptions{})
 	if err != nil {
 		if docsurface.IsRendererUnavailable(err) {
 			return false, "renderer unavailable — published WITHOUT mount verification; preview the routes manually before relying on this build.", nil
@@ -684,7 +685,7 @@ func (t docToolServer) previewOpen(ctx context.Context, _ *sdkmcp.CallToolReques
 	if in.Channel == string(service.ChannelPublished) {
 		channel = service.ChannelPublished
 	}
-	st, err := t.preview.Open(ctx, in.PageID, channel)
+	st, err := t.preview.Open(ctx, in.PageID, channel, service.PreviewOpenOptions{Theme: in.Theme})
 	if err != nil {
 		return nil, service.PreviewState{}, err
 	}

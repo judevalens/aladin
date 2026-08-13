@@ -6,7 +6,7 @@ import (
 )
 
 func TestPreviewHTMLCarriesMetaCSP(t *testing.T) {
-	html := PreviewHTML("My Page", TokensCSS, "body{color:red}", `console.log("hi")`, CSP, ImportMap{})
+	html := PreviewHTML("My Page", TokensCSS, "body{color:red}", `console.log("hi")`, CSP, ImportMap{}, "")
 
 	// The policy must travel inline as a meta tag (SetDocumentContent has no headers).
 	wantMeta := `<meta http-equiv="Content-Security-Policy" content="` + CSP + `">`
@@ -36,8 +36,8 @@ func TestPreviewHTMLCarriesMetaCSP(t *testing.T) {
 // EntryHTML plus the meta tag and nothing else, so what the agent previews is
 // what the iframe serves.
 func TestPreviewHTMLMatchesEntryBody(t *testing.T) {
-	entry := EntryHTML("T", TokensCSS, "", `1`, ImportMap{})
-	preview := PreviewHTML("T", TokensCSS, "", `1`, CSP, ImportMap{})
+	entry := EntryHTML("T", TokensCSS, "", `1`, ImportMap{}, "")
+	preview := PreviewHTML("T", TokensCSS, "", `1`, CSP, ImportMap{}, "")
 	// PreviewHTML = EntryHTML + two preview-only head injections: the CSP meta and
 	// the bridge emulator. Removing exactly that block should recover EntryHTML.
 	injected := "<meta http-equiv=\"Content-Security-Policy\" content=\"" + CSP + "\">\n" +
@@ -51,13 +51,13 @@ func TestPreviewHTMLMatchesEntryBody(t *testing.T) {
 // module script; a legacy build (nil Imports) stays a bare classic script.
 func TestEntryHTMLImportMap(t *testing.T) {
 	im := ImportMap{Imports: map[string]string{"react": "/vendor/abc123", "react-dom/client": "/vendor/def456"}}
-	esm := EntryHTML("T", TokensCSS, "", `createRoot()`, im)
+	esm := EntryHTML("T", TokensCSS, "", `createRoot()`, im, "")
 	for _, frag := range []string{`<script type="importmap">`, `<script type="module">`, `/vendor/abc123`, `"react-dom/client"`} {
 		if !strings.Contains(esm, frag) {
 			t.Errorf("ESM EntryHTML missing %q", frag)
 		}
 	}
-	legacy := EntryHTML("T", TokensCSS, "", `var x=1`, ImportMap{})
+	legacy := EntryHTML("T", TokensCSS, "", `var x=1`, ImportMap{}, "")
 	if strings.Contains(legacy, "importmap") || strings.Contains(legacy, `type="module"`) {
 		t.Errorf("legacy (nil import map) must be a bare <script>:\n%s", legacy)
 	}

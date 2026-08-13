@@ -91,6 +91,55 @@ func themeRootMirror(theme string) string {
 	return ":root{" + body + "}"
 }
 
+// shardThemeTailCSS is everything in theme.css AFTER the @theme block — the
+// keyframes, the dark base-var block, and every [data-theme] override block —
+// re-emitted as a plain <style>. That CSS also rides the text/tailwindcss block
+// (the engine passes non-@theme rules through), but the plain copy applies at
+// PARSE time: with the serve-route's data-theme stamp, the first paint is in the
+// right theme before the runtime engine has run at all. (The @custom-variant
+// line in the tail is an unknown at-rule to the browser — skipped, harmless.)
+var shardThemeTailCSS = themePlainTail(themeCSS)
+
+// themePlainTail returns the content following the first @theme block's closing
+// brace (the @theme body has no nested braces).
+func themePlainTail(theme string) string {
+	i := strings.Index(theme, "@theme")
+	if i < 0 {
+		return ""
+	}
+	open := strings.IndexByte(theme[i:], '{')
+	if open < 0 {
+		return ""
+	}
+	open += i
+	end := strings.IndexByte(theme[open:], '}')
+	if end < 0 {
+		return ""
+	}
+	return strings.TrimSpace(theme[open+end+1:])
+}
+
+// reThemeName matches the [data-theme="…"] selectors in theme.css; the set of
+// names is derived from the stylesheet itself so a new theme block is
+// automatically servable with no Go change.
+var reThemeName = regexp.MustCompile(`\[data-theme="([a-z-]+)"\]`)
+
+// themeNames is the set of valid theme names parsed from the embedded theme.css.
+var themeNames = func() map[string]bool {
+	names := map[string]bool{}
+	for _, m := range reThemeName.FindAllStringSubmatch(themeCSS, -1) {
+		names[m[1]] = true
+	}
+	return names
+}()
+
+// ValidTheme reports whether name is a theme the embedded stylesheet defines.
+// Serve callers use it to sanitize the ?theme= query param — an unknown name is
+// dropped (the doc then falls back to the default dark palette).
+func ValidTheme(name string) bool {
+	return themeNames[name]
+}
+
 // tailwindBrowserJS is the @tailwindcss/browser v4 engine (a self-contained,
 // WASM-free, network-free IIFE — verified: no fetch/eval/WebAssembly, so it runs
 // under the shard CSP's connect-src 'none' + script-src 'unsafe-inline'). It
@@ -119,7 +168,11 @@ func breakInlineClosers(s string) string {
 // 'self' matches nothing, so same-host sub-resources can't be loaded. Inlining
 // also means only the entry document needs auth (no sub-resource requests). The
 // CSP ('unsafe-inline' script/style, connect-src 'none') is set by the serve route.
-func EntryHTML(title, tokensCSS, bundleCSS, bundleJS string, im ImportMap) string {
+//
+// theme, when non-empty (already validated via ValidTheme), is stamped as
+// data-theme on <html> so the FIRST PAINT is in the viewer's theme; the host
+// bridge re-stamps live on later switches. Empty theme = default dark.
+func EntryHTML(title, tokensCSS, bundleCSS, bundleJS string, im ImportMap, theme string) string {
 	// Tailwind is the agent default styling: the theme/tokens go in a
 	// type="text/tailwindcss" block (so the runtime engine compiles the @theme
 	// into utilities), and the engine script follows it (it scans the DOM +
@@ -128,8 +181,10 @@ func EntryHTML(title, tokensCSS, bundleCSS, bundleJS string, im ImportMap) strin
 	css := `<style type="text/tailwindcss">@import "tailwindcss";` + "\n" + tokensCSS + "</style>" +
 		"<script>" + breakInlineClosers(tailwindBrowserJS) + "</script>" +
 		// A plain :root mirror of the @theme tokens so var(--color-*) resolves at
-		// runtime (see shardColorRootCSS): `@theme inline` does not emit these.
-		"<style>" + shardColorRootCSS + "</style>"
+		// runtime (see shardColorRootCSS): `@theme inline` does not emit these —
+		// then the theme tail (base vars + every [data-theme] block) so the
+		// stamped theme colors apply at parse time (see shardThemeTailCSS).
+		"<style>" + shardColorRootCSS + "\n" + shardThemeTailCSS + "</style>"
 	if bundleCSS != "" {
 		css += "<style>" + breakInlineClosers(bundleCSS) + "</style>"
 	}
@@ -143,8 +198,12 @@ func EntryHTML(title, tokensCSS, bundleCSS, bundleJS string, im ImportMap) strin
 		scripts = `<script type="importmap">` + breakInlineClosers(string(imJSON)) + "</script>\n" +
 			`<script type="module">` + breakInlineClosers(bundleJS) + "</script>"
 	}
+	htmlOpen := `<html lang="en">`
+	if theme != "" {
+		htmlOpen = `<html lang="en" data-theme="` + html.EscapeString(theme) + `">`
+	}
 	return `<!doctype html>
-<html lang="en">
+` + htmlOpen + `
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -176,25 +235,30 @@ func CSPWithVendorScheme() string {
 }
 
 // previewBridgeEmulatorJS stands in for the production host's bridge: it answers
-// the kit's nodes.get/subscribe postMessages with stub nodes, so a data-wired
-// shard (useNode/useNodes) renders in the headless preview instead of hanging on a
-// host that isn't there. Preview-only — EntryHTML (the served doc) never carries
-// it; the real app's host responds with workspace data. See kit.tsx L5 bridge.
+// the kit's hello/theme.get with the stamped document theme and nodes.get/
+// subscribe with stub nodes, so themed and data-wired shards render in the
+// headless preview instead of hanging on a host that isn't there. Preview-only —
+// EntryHTML (the served doc) never carries it; the real app's host responds with
+// workspace data. See kit.tsx L5 bridge.
 const previewBridgeEmulatorJS = `(function(){
   if(window.__aladinBridgeEmu)return; window.__aladinBridgeEmu=1;
   function node(id){return {id:id,type:"preview",title:"Preview node "+id,
     data:{id:id,note:"preview stub — the live host serves nodes.get from your workspace"}};}
   function reply(r){window.postMessage(r,"*");}
+  function theme(){return document.documentElement.getAttribute("data-theme")||"dark";}
   window.addEventListener("message",function(e){
     var m=e.data; if(!m||m.aladin!=="bridge/1"||m.type!=="request")return;
     var ids=(m.params&&m.params.ids)||[];
-    if(m.method==="nodes.get"){reply({aladin:"bridge/1",type:"response",id:m.id,ok:true,data:ids.map(node)});}
+    if(m.method==="hello"){reply({aladin:"bridge/1",type:"response",id:m.id,ok:true,
+      data:{protocol:"bridge/1",theme:theme(),capabilities:["theme"],methods:["hello","theme.get","nodes.get","nodes.subscribe","nodes.unsubscribe"]}});}
+    else if(m.method==="theme.get"){reply({aladin:"bridge/1",type:"response",id:m.id,ok:true,data:{theme:theme()}});}
+    else if(m.method==="nodes.get"){reply({aladin:"bridge/1",type:"response",id:m.id,ok:true,data:ids.map(node)});}
     else if(m.method==="nodes.subscribe"){
       reply({aladin:"bridge/1",type:"response",id:m.id,ok:true,data:true});
       ids.forEach(function(id){reply({aladin:"bridge/1",type:"push",channel:m.params.channel,data:node(id)});});
     }
     else if(m.method==="nodes.unsubscribe"){reply({aladin:"bridge/1",type:"response",id:m.id,ok:true,data:true});}
-    else{reply({aladin:"bridge/1",type:"response",id:m.id,ok:false,error:"preview emulator: unknown method "+m.method});}
+    else{reply({aladin:"bridge/1",type:"response",id:m.id,ok:false,error:"preview emulator: unknown method "+m.method,code:"unknown-method"});}
   });
 })();`
 
@@ -203,8 +267,8 @@ const previewBridgeEmulatorJS = `(function(){
 // <meta http-equiv> tag (page.SetDocumentContent loads HTML with no HTTP headers,
 // so the policy must travel inline) and a bridge emulator so data-wired shards
 // render without the production host.
-func PreviewHTML(title, tokensCSS, bundleCSS, bundleJS, csp string, im ImportMap) string {
-	doc := EntryHTML(title, tokensCSS, bundleCSS, bundleJS, im)
+func PreviewHTML(title, tokensCSS, bundleCSS, bundleJS, csp string, im ImportMap, theme string) string {
+	doc := EntryHTML(title, tokensCSS, bundleCSS, bundleJS, im, theme)
 	// Insert immediately after the charset meta: the CSP first (so it's the first
 	// thing the parser applies), then the bridge emulator (before the body bundle,
 	// so its listener is ready when the shard mounts). EntryHTML always emits this

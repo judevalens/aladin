@@ -55,7 +55,7 @@ type fakePreview struct {
 	states  map[string]service.PreviewState // route -> state ("#/" is the Open landing)
 }
 
-func (f fakePreview) Open(_ context.Context, _ string, _ service.BuildChannel) (service.PreviewState, error) {
+func (f fakePreview) Open(_ context.Context, _ string, _ service.BuildChannel, _ service.PreviewOpenOptions) (service.PreviewState, error) {
 	if f.openErr != nil {
 		return service.PreviewState{}, f.openErr
 	}

@@ -79,6 +79,14 @@ func (s *Server) handleContentServe(w http.ResponseWriter, r *http.Request) {
 	// the published build (dist/).
 	distRel := docsurface.DistDir(docsurface.ParseChannel(r.URL.Query().Get("channel")))
 
+	// ?theme= stamps data-theme on the doc so the first paint matches the app's
+	// theme (the host bridge re-stamps live afterwards). Unknown names are dropped
+	// — the doc falls back to the default dark palette.
+	theme := r.URL.Query().Get("theme")
+	if !docsurface.ValidTheme(theme) {
+		theme = ""
+	}
+
 	store := s.deps.DocSurfaceStore()
 	bundleJS, err := store.ReadFile(r.Context(), pageID, distRel+"/bundle.js")
 	if err != nil {
@@ -113,7 +121,7 @@ func (s *Server) handleContentServe(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.Header().Set("Content-Security-Policy", csp)
-	_, _ = w.Write([]byte(docsurface.EntryHTML(rec.Title, docsurface.TokensCSS, string(bundleCSS), string(bundleJS), im)))
+	_, _ = w.Write([]byte(docsurface.EntryHTML(rec.Title, docsurface.TokensCSS, string(bundleCSS), string(bundleJS), im, theme)))
 }
 
 // derivePublicOrigin computes the origin the doc (and thus /vendor) is served from,

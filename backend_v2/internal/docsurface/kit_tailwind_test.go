@@ -9,7 +9,7 @@ import (
 // type="text/tailwindcss" block (so the engine compiles the @theme into
 // utilities) + the engine script + the embedded design tokens.
 func TestEntryHTMLInjectsRuntimeTailwind(t *testing.T) {
-	out := EntryHTML("Shard", TokensCSS, "", "console.log(0)", ImportMap{Imports: map[string]string{}})
+	out := EntryHTML("Shard", TokensCSS, "", "console.log(0)", ImportMap{Imports: map[string]string{}}, "")
 	for _, want := range []string{
 		`<style type="text/tailwindcss">`, // the Tailwind input block
 		`@import "tailwindcss"`,            // pulls in utilities/preflight

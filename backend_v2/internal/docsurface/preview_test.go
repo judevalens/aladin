@@ -98,7 +98,7 @@ func TestPreviewSession_Interactive(t *testing.T) {
 	m, ctx := newPreviewFixture(t, PreviewOptions{})
 
 	// Open: React-equivalent mount, console captured, no exceptions.
-	st, err := m.Open(ctx, "p1", service.ChannelPublished)
+	st, err := m.Open(ctx, "p1", service.ChannelPublished, service.PreviewOpenOptions{})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -207,7 +207,7 @@ createRoot(document.getElementById("root")).render(<App/>);`
 	m := NewPreviewSessions(st, rt, PreviewOptions{}).(*PreviewSessions)
 	t.Cleanup(func() { _ = m.CloseAll(context.Background()) })
 
-	state, err := m.Open(ctx, "p1", service.ChannelPublished) // Open rebuilds (vendors) then loads via the import map
+	state, err := m.Open(ctx, "p1", service.ChannelPublished, service.PreviewOpenOptions{}) // Open rebuilds (vendors) then loads via the import map
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -229,7 +229,7 @@ createRoot(document.getElementById("root")).render(<App/>);`
 func TestPreviewSession_ClickMissingSelector(t *testing.T) {
 	chromeAvailable(t)
 	m, ctx := newPreviewFixture(t, PreviewOptions{})
-	if _, err := m.Open(ctx, "p1", service.ChannelPublished); err != nil {
+	if _, err := m.Open(ctx, "p1", service.ChannelPublished, service.PreviewOpenOptions{}); err != nil {
 		t.Fatalf("Open: %v", err)
 	}
 	_, err := m.Click(ctx, "p1", "#does-not-exist")
@@ -250,7 +250,7 @@ func TestPreviewSession_RequiresOpen(t *testing.T) {
 func TestPreviewSession_IdleReaper(t *testing.T) {
 	chromeAvailable(t)
 	m, ctx := newPreviewFixture(t, PreviewOptions{IdleTTL: 150 * time.Millisecond})
-	if _, err := m.Open(ctx, "p1", service.ChannelPublished); err != nil {
+	if _, err := m.Open(ctx, "p1", service.ChannelPublished, service.PreviewOpenOptions{}); err != nil {
 		t.Fatalf("Open: %v", err)
 	}
 	deadline := time.Now().Add(3 * time.Second)
@@ -269,10 +269,10 @@ func TestPreviewSession_IdleReaper(t *testing.T) {
 func TestPreviewSession_MaxSessionsEvict(t *testing.T) {
 	chromeAvailable(t)
 	m, ctx := newPreviewFixture(t, PreviewOptions{MaxSessions: 1}, "p1", "p2")
-	if _, err := m.Open(ctx, "p1", service.ChannelPublished); err != nil {
+	if _, err := m.Open(ctx, "p1", service.ChannelPublished, service.PreviewOpenOptions{}); err != nil {
 		t.Fatalf("Open p1: %v", err)
 	}
-	if _, err := m.Open(ctx, "p2", service.ChannelPublished); err != nil {
+	if _, err := m.Open(ctx, "p2", service.ChannelPublished, service.PreviewOpenOptions{}); err != nil {
 		t.Fatalf("Open p2: %v", err)
 	}
 	m.mu.Lock()
@@ -288,7 +288,7 @@ func TestPreviewSession_MaxSessionsEvict(t *testing.T) {
 func TestPreviewSession_CloseAndCloseAll(t *testing.T) {
 	chromeAvailable(t)
 	m, ctx := newPreviewFixture(t, PreviewOptions{})
-	if _, err := m.Open(ctx, "p1", service.ChannelPublished); err != nil {
+	if _, err := m.Open(ctx, "p1", service.ChannelPublished, service.PreviewOpenOptions{}); err != nil {
 		t.Fatalf("Open: %v", err)
 	}
 	if err := m.Close(ctx, "p1"); err != nil {
@@ -300,7 +300,7 @@ func TestPreviewSession_CloseAndCloseAll(t *testing.T) {
 	if n != 0 {
 		t.Fatalf("session not removed after Close: %d", n)
 	}
-	if _, err := m.Open(ctx, "p1", service.ChannelPublished); err != nil {
+	if _, err := m.Open(ctx, "p1", service.ChannelPublished, service.PreviewOpenOptions{}); err != nil {
 		t.Fatalf("re-Open: %v", err)
 	}
 	if err := m.CloseAll(ctx); err != nil { // t.Cleanup will call it again — must be safe.
@@ -315,7 +315,7 @@ func TestPreviewSession_SelfHealsDeadBrowser(t *testing.T) {
 	chromeAvailable(t)
 	m, ctx := newPreviewFixture(t, PreviewOptions{})
 
-	if _, err := m.Open(ctx, "p1", service.ChannelPublished); err != nil {
+	if _, err := m.Open(ctx, "p1", service.ChannelPublished, service.PreviewOpenOptions{}); err != nil {
 		t.Fatalf("first Open: %v", err)
 	}
 
@@ -341,7 +341,7 @@ func TestPreviewSession_SelfHealsDeadBrowser(t *testing.T) {
 	}
 
 	// A second Open must rebuild the browser and mount again.
-	st, err := m.Open(ctx, "p1", service.ChannelPublished)
+	st, err := m.Open(ctx, "p1", service.ChannelPublished, service.PreviewOpenOptions{})
 	if err != nil {
 		t.Fatalf("Open after crash should self-heal, got: %v", err)
 	}
@@ -356,7 +356,7 @@ func TestPreviewSession_ResetThenReopen(t *testing.T) {
 	chromeAvailable(t)
 	m, ctx := newPreviewFixture(t, PreviewOptions{})
 
-	if _, err := m.Open(ctx, "p1", service.ChannelPublished); err != nil {
+	if _, err := m.Open(ctx, "p1", service.ChannelPublished, service.PreviewOpenOptions{}); err != nil {
 		t.Fatalf("Open: %v", err)
 	}
 	if err := m.Reset(ctx); err != nil {
@@ -369,7 +369,7 @@ func TestPreviewSession_ResetThenReopen(t *testing.T) {
 		t.Fatalf("after Reset want 0 sessions & alloc not ready, got sessions=%d ready=%v", n, ready)
 	}
 
-	st, err := m.Open(ctx, "p1", service.ChannelPublished)
+	st, err := m.Open(ctx, "p1", service.ChannelPublished, service.PreviewOpenOptions{})
 	if err != nil {
 		t.Fatalf("Open after Reset should rebuild, got: %v", err)
 	}
@@ -382,7 +382,7 @@ func TestPreviewSession_ResetThenReopen(t *testing.T) {
 func TestPreviewSession_RendererUnavailable(t *testing.T) {
 	t.Setenv("DOCSURFACE_CHROME_PATH", filepath.Join(t.TempDir(), "no-such-chrome"))
 	m, ctx := newPreviewFixture(t, PreviewOptions{})
-	_, err := m.Open(ctx, "p1", service.ChannelPublished)
+	_, err := m.Open(ctx, "p1", service.ChannelPublished, service.PreviewOpenOptions{})
 	if err == nil || !strings.Contains(err.Error(), "renderer unavailable") {
 		t.Fatalf("want 'renderer unavailable', got %v", err)
 	}

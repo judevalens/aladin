@@ -105,11 +105,18 @@ type PreviewState struct {
 // a fatal error, so the rest of the MCP surface keeps working. The tab loads the
 // exact same inlined bundle under the exact same opaque-origin CSP as the served
 // iframe, so eval/click run against untrusted agent code with zero host reach.
+// PreviewOpenOptions tunes how a preview document is composed. Theme, when a
+// valid theme name, stamps data-theme on the preview doc so screenshots/checks
+// can run in any of the app's themes; empty = default dark.
+type PreviewOpenOptions struct {
+	Theme string
+}
+
 type PreviewService interface {
 	// Open (re)builds pageID on the given channel then loads the freshest inlined
 	// HTML into the tab (reusing the page's existing tab if present, else creating
 	// one). A build failure is returned as an error carrying the build log.
-	Open(ctx context.Context, pageID string, channel BuildChannel) (PreviewState, error)
+	Open(ctx context.Context, pageID string, channel BuildChannel, opts PreviewOpenOptions) (PreviewState, error)
 	// Navigate sets the in-app hash route (e.g. "#/section/sub") and waits for the
 	// view to settle.
 	Navigate(ctx context.Context, pageID, route string) (PreviewState, error)

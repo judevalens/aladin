@@ -21,11 +21,11 @@ func TestShardColorRootMirror(t *testing.T) {
 	}
 }
 
-// EntryHTML must inline the :root mirror as a PLAIN <style> (not inside the
-// text/tailwindcss block, which the browser ignores).
+// EntryHTML must inline the :root mirror + the theme tail as a PLAIN <style>
+// (not inside the text/tailwindcss block, which the browser ignores).
 func TestEntryHTMLIncludesColorRoot(t *testing.T) {
-	html := EntryHTML("t", TokensCSS, "", "console.log(1)", ImportMap{})
-	if !strings.Contains(html, "<style>"+shardColorRootCSS+"</style>") {
-		t.Fatalf("EntryHTML missing the plain :root color mirror style")
+	html := EntryHTML("t", TokensCSS, "", "console.log(1)", ImportMap{}, "")
+	if !strings.Contains(html, "<style>"+shardColorRootCSS+"\n"+shardThemeTailCSS+"</style>") {
+		t.Fatalf("EntryHTML missing the plain :root color mirror + theme tail style")
 	}
 }

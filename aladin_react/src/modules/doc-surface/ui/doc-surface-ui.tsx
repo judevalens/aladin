@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Artifact } from "@/shared/api/models";
 import { useAppComposition } from "@/app/composition/app-composition";
 import { useAppStore } from "@/app/state/store";
 import { shardBuildFromWire, shardBuildKey } from "@/app/state/shard-build-slice";
 import type { ShardChannel } from "@/app/state/shard-build-slice";
+import { createBridgeHost } from "@/modules/doc-surface/bridge/bridge-host";
+import type { BridgeHost } from "@/modules/doc-surface/bridge/bridge-host";
 import { cn } from "@/lib/utils";
 
 // useServedUrl resolves the content-origin URL for a Doc Surface page. In web dev
@@ -19,19 +21,27 @@ import { cn } from "@/lib/utils";
 // appended so a fresh build reloads the iframe by changing its src.
 function useServedUrl(pageId: string, channel: ShardChannel, nonce?: string): string {
   const { runtime } = useAppComposition();
-  const base = runtime.config.apiBaseUrl;
-  const token = runtime.desktopSession.getToken();
-  const params = new URLSearchParams();
-  if (token) params.set("access_token", token);
-  if (channel === "draft") params.set("channel", "draft");
-  if (nonce) params.set("v", nonce);
-  // In the desktop app, signal the serve route to emit vendor://deps/<sha> import
-  // URLs so deps load from the local Tauri cache (zero network after first fetch).
-  if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
-    params.set("client", "tauri");
-  }
-  const q = params.toString();
-  return `${base}/content/${pageId}/${q ? `?${q}` : ""}`;
+  // Memoized so the iframe reloads ONLY on channel/build changes. The theme is
+  // deliberately read non-reactively (getState): it stamps data-theme for a
+  // correct FIRST paint; live switches ride the bridge push with no reload, and
+  // the next natural reload (a new build nonce) picks up the then-current theme.
+  return useMemo(() => {
+    const base = runtime.config.apiBaseUrl;
+    const token = runtime.desktopSession.getToken();
+    const params = new URLSearchParams();
+    if (token) params.set("access_token", token);
+    if (channel === "draft") params.set("channel", "draft");
+    if (nonce) params.set("v", nonce);
+    const theme = useAppStore.getState().theme;
+    if (theme) params.set("theme", theme);
+    // In the desktop app, signal the serve route to emit vendor://deps/<sha> import
+    // URLs so deps load from the local Tauri cache (zero network after first fetch).
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      params.set("client", "tauri");
+    }
+    const q = params.toString();
+    return `${base}/content/${pageId}/${q ? `?${q}` : ""}`;
+  }, [runtime, pageId, channel, nonce]);
 }
 
 // useShardBuild seeds the draft build state for a page (one fetch on mount) and
@@ -99,8 +109,7 @@ function BuildErrorOverlay({ log }: { log: string }) {
  *
  * Isolation: `sandbox="allow-scripts"` with NO `allow-same-origin` → the frame
  * has an opaque origin and cannot reach Aladin's DOM/cookies/storage. The only
- * channel back is the origin/source-checked postMessage bridge below (read-only
- * stub for v1).
+ * channel back is the source-window-checked bridge/1 host (bridge-host.ts).
  *
  * Live build view: once a successful DRAFT build exists, the iframe serves the
  * draft channel and reloads on each new build; a status chip reflects the live
@@ -109,6 +118,7 @@ function BuildErrorOverlay({ log }: { log: string }) {
 export function DocSurfaceUI({ artifact, hidden = false }: { artifact: Artifact; hidden?: boolean }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const draft = useShardBuild(artifact.id);
+  const theme = useAppStore((s) => s.theme);
 
   // Serve draft only once a successful draft build exists; reload on its build id.
   // Until then, serve the published build (the default, always-valid view).
@@ -125,29 +135,28 @@ export function DocSurfaceUI({ artifact, hidden = false }: { artifact: Artifact;
   const showChip = status === "building" || status === "ok" || status === "failed";
   const showError = status === "failed";
 
+  // One bridge host per iframe: answers the kit's bridge/1 requests (source-
+  // window checked) and pushes theme switches into the frame.
+  const hostRef = useRef<BridgeHost | null>(null);
   useEffect(() => {
-    function onMessage(event: MessageEvent) {
-      // A sandboxed (opaque-origin) frame has event.origin "null"; the reliable
-      // check is the source window, not the origin string.
-      if (event.source !== iframeRef.current?.contentWindow) return;
-      const data = event.data as { type?: string; cmd?: string; id?: number } | null;
-      if (data?.type !== "aladin:bridge") return;
-      // v1 capability set is read-only and tiny. Unknown commands are rejected.
-      if (data.cmd === "ping") {
-        (event.source as Window).postMessage(
-          { type: "aladin:bridge-reply", id: data.id, ok: true, result: "pong" },
-          "*",
-        );
-      } else {
-        (event.source as Window).postMessage(
-          { type: "aladin:bridge-reply", id: data.id, ok: false, error: "unknown command" },
-          "*",
-        );
-      }
-    }
-    window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
-  }, []);
+    const host = createBridgeHost({
+      pageId: artifact.id,
+      getWindow: () => iframeRef.current?.contentWindow,
+      getTheme: () => useAppStore.getState().theme,
+    });
+    host.attach();
+    hostRef.current = host;
+    return () => {
+      host.detach();
+      hostRef.current = null;
+    };
+  }, [artifact.id]);
+
+  // Live theme sync — pushed even while this frame is CSS-hidden in the
+  // keep-alive set, so it re-surfaces already in the right theme.
+  useEffect(() => {
+    hostRef.current?.pushTheme(theme);
+  }, [theme]);
 
   return (
     <div className={cn("relative h-full w-full", hidden && "hidden")}>
