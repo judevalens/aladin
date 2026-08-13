@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { Eyebrow } from "@/components/ui/eyebrow";
 import { Icon } from "@/components/ui/icon";
 import { FileWarning, Loader2, Minus, Plus, ScanLine } from "lucide-react";
@@ -9,7 +9,7 @@ import { useArtifactResource } from "@/modules/artifacts/hooks/use-artifact-reso
 import { useDocument, useDocumentOutline } from "@/modules/documents/hooks/use-document";
 import type { OutlineEntry } from "@/modules/documents/hooks/use-document";
 import { PdfView } from "@/modules/documents/ui/pdf-view";
-import type { DocumentPage, DocumentStatus, IngestedDocument } from "@/repos/documents/document-repo";
+import type { DocumentStatus, IngestedDocument } from "@/repos/documents/document-repo";
 import type { Artifact } from "@/shared/api/models";
 
 /**
@@ -23,13 +23,13 @@ import type { Artifact } from "@/shared/api/models";
  * machines (search, retrieval, citation). A human should be handed the page, which renders
  * all of it correctly and for free.
  *
- * Text remains available as a mode, because copying clean prose is a real thing to want.
- * It is not the default, and its cost is only paid when asked for — `withText` stays false
- * until you switch, so opening a book no longer pulls a book.
+ * There was a Page/Text segmented toggle in the header. It was removed: it read as chrome
+ * bolted onto the title bar, and the extracted-text view it revealed is a machine artifact —
+ * tables and equations do not survive the flattening. `useDocument` keeps its `withText`
+ * parameter (other callers pass false too), so bringing a text view back is a UI change only.
  */
 export function DocumentViewerUI({ artifact }: { artifact: Artifact }) {
-  const [wantsText, setWantsText] = useState(false);
-  const { document, loading, error } = useDocument(artifact.id, wantsText);
+  const { document, loading, error } = useDocument(artifact.id, false);
   const { url, loading: resourceLoading } = useArtifactResource(artifact);
 
   // Authored structure beats inferred structure (§5), so the recovered tree is a FALLBACK.
@@ -58,8 +58,6 @@ export function DocumentViewerUI({ artifact }: { artifact: Artifact }) {
       outlineRecovered={authored.length === 0 && outline.length > 0}
       url={url}
       resourceLoading={resourceLoading}
-      pages={document.pages}
-      onWantsText={setWantsText}
     />
   );
 }
@@ -72,9 +70,6 @@ export interface DocumentReaderProps {
   outlineRecovered: boolean;
   url: string | null;
   resourceLoading: boolean;
-  pages?: DocumentPage[];
-  /** Text is fetched lazily, so the reader tells its owner when it's actually wanted. */
-  onWantsText?: (wanted: boolean) => void;
 }
 
 /**
@@ -89,19 +84,10 @@ export function DocumentReader({
   outlineRecovered,
   url,
   resourceLoading,
-  pages,
-  onWantsText,
 }: DocumentReaderProps) {
-  const [mode, setMode] = useState<"page" | "text">("page");
   const [zoom, setZoom] = useState(1);
   const [targetPage, setTargetPage] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const pagesRef = useRef<HTMLDivElement | null>(null);
-
-  const switchTo = (next: "page" | "text") => {
-    setMode(next);
-    onWantsText?.(next === "text");
-  };
 
   // The outline entry you're inside: the last one that started at or before this page.
   // Without it the sidebar is a list of links; with it, it's a position.
@@ -114,11 +100,6 @@ export function DocumentReader({
   }, [outline, currentPage]);
 
   const jumpTo = (page: number) => {
-    if (mode === "text") {
-      pagesRef.current?.querySelector(`[data-page="${page}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
-      setCurrentPage(page);
-      return;
-    }
     setTargetPage(page);
     setCurrentPage(page);
   };
@@ -184,102 +165,42 @@ export function DocumentReader({
           </h1>
 
           <span className="shrink-0 whitespace-nowrap font-mono text-meta tabular-nums text-ink-4">
-            {mode === "page" ? `${currentPage} / ${pageCount}` : `${pageCount} pp`}
+            {currentPage} / {pageCount}
           </span>
 
-          {mode === "page" ? (
-            <div className="flex shrink-0 items-center gap-0.5">
-              <IconButton label="Zoom out" onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.15).toFixed(2)))}>
-                <Icon as={Minus} size="inline" mark />
-              </IconButton>
-              <span className="w-9 text-center font-mono text-meta tabular-nums text-ink-4">
-                {Math.round(zoom * 100)}%
-              </span>
-              <IconButton label="Zoom in" onClick={() => setZoom((z) => Math.min(2.5, +(z + 0.15).toFixed(2)))}>
-                <Icon as={Plus} size="inline" mark />
-              </IconButton>
-            </div>
-          ) : null}
-
-          <div className="flex shrink-0 items-center gap-px rounded-chip bg-field p-1">
-            <ModeButton active={mode === "page"} onClick={() => switchTo("page")}>
-              Page
-            </ModeButton>
-            <ModeButton active={mode === "text"} onClick={() => switchTo("text")}>
-              Text
-            </ModeButton>
+          <div className="flex shrink-0 items-center gap-0.5">
+            <IconButton label="Zoom out" onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.15).toFixed(2)))}>
+              <Icon as={Minus} size="inline" mark />
+            </IconButton>
+            <span className="w-9 text-center font-mono text-meta tabular-nums text-ink-4">
+              {Math.round(zoom * 100)}%
+            </span>
+            <IconButton label="Zoom in" onClick={() => setZoom((z) => Math.min(2.5, +(z + 0.15).toFixed(2)))}>
+              <Icon as={Plus} size="inline" mark />
+            </IconButton>
           </div>
         </header>
 
-        {mode === "page" ? (
-          url ? (
-            <PdfView
-              url={url}
-              targetPage={targetPage}
-              onVisiblePageChange={setCurrentPage}
-              zoom={zoom}
-              className="min-h-0 flex-1"
-            />
-          ) : resourceLoading ? (
-            <Notice icon={Loader2} title="Loading…" body="Fetching the file." spin />
-          ) : (
-            <Notice
-              icon={FileWarning}
-              title="Couldn't load the file"
-              body="The document was read, but its bytes couldn't be fetched. Text mode still works."
-              tone="against"
-            />
-          )
+        {url ? (
+          <PdfView
+            url={url}
+            targetPage={targetPage}
+            onVisiblePageChange={setCurrentPage}
+            zoom={zoom}
+            className="min-h-0 flex-1"
+          />
+        ) : resourceLoading ? (
+          <Notice icon={Loader2} title="Loading…" body="Fetching the file." spin />
         ) : (
-          <ScrollArea className="min-h-0 flex-1">
-            <div ref={pagesRef} className="mx-auto w-full max-w-[52rem] px-8 py-7">
-              {/* §13f: this mode is honest about what it is. Tables and equations do not
-                  survive the flattening, so it is for copying prose, not for reading a
-                  paper — Page mode is for that. */}
-              <p className="mb-6 border-l-2 border-line-2 pl-3 text-small leading-relaxed text-ink-4">
-                Extracted text — what the machine layer reads. Tables, figures and equations don&apos;t
-                survive this view; switch to Page for those.
-              </p>
-              {(pages ?? []).map((page) => (
-                <section key={page.page} data-page={page.page} className="scroll-mt-6 pb-7">
-                  <Eyebrow className="mb-2 select-none text-ink-4">
-                    p{page.page}
-                  </Eyebrow>
-                  {page.text ? (
-                    <p className="whitespace-pre-wrap text-body leading-relaxed text-ink-2">{page.text}</p>
-                  ) : (
-                    <p className="text-body italic text-ink-4">No text on this page.</p>
-                  )}
-                </section>
-              ))}
-            </div>
-          </ScrollArea>
+          <Notice
+            icon={FileWarning}
+            title="Couldn't load the file"
+            body="The document was read, but its bytes couldn't be fetched."
+            tone="against"
+          />
         )}
       </div>
     </div>
-  );
-}
-
-function ModeButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "rounded-chip px-2 py-1 font-mono text-meta uppercase tracking-[0.5px] transition-colors",
-        active ? "bg-raise text-ink" : "text-ink-4 hover:text-ink-2",
-      )}
-    >
-      {children}
-    </button>
   );
 }
 

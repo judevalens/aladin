@@ -47,10 +47,6 @@ createRoot(document.getElementById("harness")!).render(
       outlineRecovered
       url="/__harness.pdf"
       resourceLoading={false}
-      pages={[
-        { page: 1, text: "Extracted text mode — this is what the machine layer sees." },
-        { page: 2, text: "" },
-      ]}
     />
   </div>,
 );
