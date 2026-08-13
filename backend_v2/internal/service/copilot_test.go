@@ -410,6 +410,24 @@ func TestCopilotToolSummariesAreBoundedAndRedacted(t *testing.T) {
 	}
 }
 
+func TestCopilotSystemPromptAdvertisesRichDirectives(t *testing.T) {
+	prompt := (&defaultCopilotService{}).systemPrompt(CopilotSurface{})
+	for _, want := range []string{
+		"::aladin-artifact",
+		"::aladin-activity",
+		"::aladin-actions",
+		"::aladin-approval",
+		"::aladin-diff",
+		"::aladin-shard-preview",
+		"::aladin-error-recovery",
+		"never put HTML, JavaScript, CSS, external URLs, or secrets",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("system prompt missing %q", want)
+		}
+	}
+}
+
 // TestCopilotCancelStops — a running turn cancels cleanly (a done event, no error), the
 // sidecar is told to abort, and a non-owner cannot cancel it.
 func TestCopilotCancelStops(t *testing.T) {

@@ -1014,7 +1014,19 @@ Market intelligence tools: get_news (explain WHY a stock moved — a catalyst vs
 You can also set PRICE ALERTS: create_alert (symbol, direction "above"/"below", threshold) — it's recurring and self-re-arms (fires on a genuine cross with momentum, then waits for a real pullback before it can fire again, so no jitter spam). Creating one asks the user to approve first. When it fires, the user gets a notification. list_alerts and delete_alert manage them. If the price is already past the threshold at creation, the alert is still set but won't fire until it pulls back and crosses again — tell the user that.
 Prefer specific, concise answers. When you reference an entity, artifact, or ticker, use the tool that fetches it so the app can cite it.
 If the tools return nothing relevant, say so plainly rather than guessing.
-If a tool returns an error, tell the user the EXACT error message verbatim and what you were trying to do — never vaguely say "a technical issue" or claim the action is impossible. The capability exists; a specific error means something is misconfigured (e.g. a service is down) and the exact text helps fix it.`)
+If a tool returns an error, tell the user the EXACT error message verbatim and what you were trying to do — never vaguely say "a technical issue" or claim the action is impossible. The capability exists; a specific error means something is misconfigured (e.g. a service is down) and the exact text helps fix it.
+
+You may enrich final answers with Aladin markdown directives. These directives are declarative data only: never put HTML, JavaScript, CSS, external URLs, or secrets in them. Keep ordinary prose readable before/after the block, and use a directive only when it helps the user inspect or act on workspace state.
+Supported directives:
+- ::aladin-artifact{id="artifact_id" kind="page|shard|document|artifact" title="Title"} for workspace objects you fetched or created.
+- ::aladin-ticker{symbol="NVDA"} for tickers you fetched.
+- ::aladin-activity ... :: with JSON [{"label":"Read shard files","status":"ok|running|error","detail":"optional","inputSummary":"optional","resultSummary":"optional"}].
+- ::aladin-actions ... :: with JSON [{"label":"Continue","action":"continue"},{"label":"Retry","action":"retry","prompt":"try again"},{"label":"Open shard","action":"open_artifact","artifactId":"...","kind":"shard"},{"label":"Open NVDA","action":"open_ticker","symbol":"NVDA"}].
+- ::aladin-approval ... :: with JSON {"action":"Publish shard","target":"Shard title","status":"pending|approved|rejected|expired","risk":"what changes","details":["exact action"]} when summarizing a pending or completed gated action.
+- ::aladin-diff ... :: with JSON {"title":"Update","path":"src/index.tsx","lines":[{"kind":"context|add|remove","text":"..."}]} or a short unified diff when showing edits.
+- ::aladin-shard-preview ... :: with JSON {"artifactId":"...","title":"Shard title","status":"building|ready|published|error","previewUrl":"/local/path","diagnostics":["bounded build messages"]} after build/preview/publish work.
+- ::aladin-error-recovery ... :: with JSON {"title":"Build failed","message":"exact error","code":"optional","actions":[...same action schema...]} for recoverable errors.
+Prefer aladin-activity for multi-step work, aladin-diff for material edits, aladin-shard-preview after shard builds/previews, and aladin-error-recovery when a user can retry or open context.`)
 	if hint := surfaceHint(surface); hint != "" {
 		b.WriteString("\n\n")
 		b.WriteString(hint)
