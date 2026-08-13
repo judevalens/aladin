@@ -384,6 +384,739 @@ export function Dialog({
   );
 }
 
+// --- L4b data display --------------------------------------------------------
+//
+// The read-out components every data shard otherwise hand-rolls. All
+// dependency-free and token-styled; charts stay with recharts (install_lib) —
+// these cover the tabular/at-a-glance cases where a chart library is overkill.
+
+export interface Column<T> {
+  key: string;
+  label: ReactNode;
+  /** Cell renderer; defaults to String(row[key]). */
+  render?: (row: T) => ReactNode;
+  align?: "left" | "right";
+  width?: string;
+}
+
+/**
+ * DataTable — a token-styled table. Each row carries data-aladin-key={rowKey},
+ * so rows are addressable from the outside (deep links, verification) without
+ * the shard doing anything extra.
+ */
+export function DataTable<T>({
+  columns,
+  rows,
+  rowKey,
+  onRowClick,
+  empty,
+  className,
+}: {
+  columns: Array<Column<T>>;
+  rows: T[];
+  rowKey: (row: T) => string;
+  onRowClick?: (row: T) => void;
+  empty?: ReactNode;
+  className?: string;
+}) {
+  if (rows.length === 0) {
+    return <>{empty ?? <EmptyState title="Nothing to show" />}</>;
+  }
+  return (
+    <div className={cn("overflow-x-auto rounded-card border border-line", className)}>
+      <table className="w-full border-collapse text-sm">
+        <thead>
+          <tr className="border-b border-line bg-raise">
+            {columns.map((c) => (
+              <th
+                key={c.key}
+                style={c.width ? { width: c.width } : undefined}
+                className={cn(
+                  "px-3 py-2 font-mono text-[11px] font-normal uppercase tracking-wide text-ink-3",
+                  c.align === "right" ? "text-right" : "text-left",
+                )}
+              >
+                {c.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr
+              key={rowKey(row)}
+              data-aladin-key={rowKey(row)}
+              onClick={onRowClick ? () => onRowClick(row) : undefined}
+              className={cn(
+                "border-b border-line-2 last:border-0",
+                onRowClick && "cursor-pointer hover:bg-raise",
+              )}
+            >
+              {columns.map((c) => (
+                <td
+                  key={c.key}
+                  className={cn("px-3 py-2 text-ink", c.align === "right" && "text-right tabular-nums")}
+                >
+                  {c.render ? c.render(row) : String((row as Record<string, unknown>)[c.key] ?? "")}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** KeyValue — a definition list for entity/detail views. */
+export function KeyValue({
+  items,
+  className,
+}: {
+  items: Array<{ label: ReactNode; value: ReactNode; hint?: string }>;
+  className?: string;
+}) {
+  return (
+    <dl className={cn("grid grid-cols-[minmax(6rem,auto)_1fr] gap-x-4 gap-y-2 text-sm", className)}>
+      {items.map((item, i) => (
+        <div key={i} className="contents">
+          <dt className="font-mono text-[11px] uppercase tracking-wide text-ink-3" title={item.hint}>
+            {item.label}
+          </dt>
+          <dd className="text-ink">{item.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/** Delta — a signed number in the semantic up/down hues. */
+export function Delta({
+  value,
+  suffix = "",
+  className,
+}: {
+  value: number;
+  suffix?: string;
+  className?: string;
+}) {
+  const tone = value > 0 ? "text-for" : value < 0 ? "text-against" : "text-ink-3";
+  const sign = value > 0 ? "+" : "";
+  return (
+    <span className={cn("font-mono tabular-nums", tone, className)}>
+      {sign}
+      {value}
+      {suffix}
+    </span>
+  );
+}
+
+/** MetricRow — a row of headline numbers, each with an optional delta. */
+export function MetricRow({
+  metrics,
+  className,
+}: {
+  metrics: Array<{ label: string; value: ReactNode; delta?: number; hint?: string }>;
+  className?: string;
+}) {
+  return (
+    <div className={cn("grid gap-3", className)} style={{ gridTemplateColumns: `repeat(${Math.min(metrics.length, 4)}, minmax(0, 1fr))` }}>
+      {metrics.map((m) => (
+        <div key={m.label} className="rounded-card border border-line bg-card p-3" title={m.hint}>
+          <div className="font-mono text-[11px] uppercase tracking-wide text-ink-3">{m.label}</div>
+          <div className="mt-1 flex items-baseline gap-2">
+            <span className="font-display text-xl text-ink">{m.value}</span>
+            {m.delta !== undefined && <Delta value={m.delta} />}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Sparkline — an inline trend line, hand-drawn SVG (no chart dependency).
+ * Colors resolve through useTheme so a theme switch repaints it.
+ */
+export function Sparkline({
+  points,
+  width = 120,
+  height = 28,
+  tone,
+  className,
+}: {
+  points: number[];
+  width?: number;
+  height?: number;
+  tone?: "for" | "against" | "amber";
+  className?: string;
+}) {
+  useTheme(); // re-resolve tok() colors when the theme changes
+  if (points.length < 2) return <svg width={width} height={height} className={className} />;
+  const min = Math.min(...points);
+  const max = Math.max(...points);
+  const span = max - min || 1;
+  const dx = width / (points.length - 1);
+  const d = points
+    .map((p, i) => `${i === 0 ? "M" : "L"}${(i * dx).toFixed(2)},${(height - ((p - min) / span) * height).toFixed(2)}`)
+    .join(" ");
+  const auto = points[points.length - 1] >= points[0] ? "for" : "against";
+  const stroke = tok("text-" + (tone ?? auto));
+  return (
+    <svg width={width} height={height} className={className} aria-hidden="true">
+      <path d={d} fill="none" stroke={stroke} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** ProgressBar — a bounded 0..max meter. */
+export function ProgressBar({
+  value,
+  max = 100,
+  label,
+  className,
+}: {
+  value: number;
+  max?: number;
+  label?: ReactNode;
+  className?: string;
+}) {
+  const pct = Math.max(0, Math.min(100, (value / (max || 1)) * 100));
+  return (
+    <div className={className}>
+      {label && (
+        <div className="mb-1 flex justify-between font-mono text-[11px] text-ink-3">
+          <span>{label}</span>
+          <span className="tabular-nums">{Math.round(pct)}%</span>
+        </div>
+      )}
+      <div
+        className="h-1.5 w-full overflow-hidden rounded-chip bg-field"
+        role="progressbar"
+        aria-valuenow={value}
+        aria-valuemin={0}
+        aria-valuemax={max}
+      >
+        <div className="h-full bg-amber transition-[width]" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+// --- L4c app chrome + forms --------------------------------------------------
+
+/**
+ * AppShell — the standard mini-app frame: a hash-routed sidebar plus content.
+ * Pair with HashRouter/Route; nav entries link to the same hash routes the
+ * manifest declares.
+ */
+export function AppShell({
+  title,
+  nav,
+  footer,
+  className,
+  children,
+}: {
+  title?: ReactNode;
+  nav?: Array<{ id: string; label: ReactNode; to: string }>;
+  footer?: ReactNode;
+  className?: string;
+  children?: ReactNode;
+}) {
+  const route = useRoute();
+  return (
+    <div className={cn("flex min-h-screen bg-bg text-ink", className)}>
+      <aside className="flex w-52 shrink-0 flex-col border-r border-line bg-rail p-3">
+        {title && <div className="mb-3 px-2 font-display text-sm text-ink">{title}</div>}
+        <nav className="flex flex-col gap-0.5">
+          {(nav ?? []).map((item) => (
+            <a
+              key={item.id}
+              href={item.to}
+              className={cn(
+                "rounded-chip px-2 py-1.5 text-sm transition-colors",
+                route === item.to ? "bg-amber-soft text-amber" : "text-ink-2 hover:bg-raise hover:text-ink",
+              )}
+            >
+              {item.label}
+            </a>
+          ))}
+        </nav>
+        {footer && <div className="mt-auto px-2 pt-3 text-[11px] text-ink-4">{footer}</div>}
+      </aside>
+      <main className="min-w-0 flex-1 overflow-auto p-5">{children}</main>
+    </div>
+  );
+}
+
+/** SearchInput — a labeled filter box with a clear affordance. */
+export function SearchInput({
+  value,
+  onChange,
+  placeholder = "Search…",
+  className,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  placeholder?: string;
+  className?: string;
+}) {
+  return (
+    <div className={cn("relative", className)}>
+      <Input
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        className="pr-7"
+      />
+      {value && (
+        <button
+          type="button"
+          aria-label="Clear search"
+          onClick={() => onChange("")}
+          className="absolute right-2 top-1/2 -translate-y-1/2 text-ink-4 hover:text-ink"
+        >
+          ×
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Select — the native control, token-styled. */
+export function Select({
+  options,
+  value,
+  onChange,
+  className,
+}: {
+  options: Array<{ value: string; label: string }>;
+  value: string;
+  onChange: (next: string) => void;
+  className?: string;
+}) {
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)} className={cn(fieldCls, "pr-8", className)}>
+      {options.map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+export function Checkbox({
+  checked,
+  onChange,
+  label,
+  className,
+}: {
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  label?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <label className={cn("inline-flex cursor-pointer items-center gap-2 text-sm text-ink", className)}>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="h-3.5 w-3.5 accent-[var(--amber)]"
+      />
+      {label}
+    </label>
+  );
+}
+
+export function RadioGroup({
+  name,
+  options,
+  value,
+  onChange,
+  className,
+}: {
+  name: string;
+  options: Array<{ value: string; label: ReactNode }>;
+  value: string;
+  onChange: (next: string) => void;
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex flex-col gap-1.5", className)} role="radiogroup">
+      {options.map((o) => (
+        <label key={o.value} className="inline-flex cursor-pointer items-center gap-2 text-sm text-ink">
+          <input
+            type="radio"
+            name={name}
+            value={o.value}
+            checked={value === o.value}
+            onChange={() => onChange(o.value)}
+            className="h-3.5 w-3.5 accent-[var(--amber)]"
+          />
+          {o.label}
+        </label>
+      ))}
+    </div>
+  );
+}
+
+export function EmptyState({
+  title,
+  hint,
+  action,
+  className,
+}: {
+  title: ReactNode;
+  hint?: ReactNode;
+  action?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn("rounded-card border border-dashed border-line p-8 text-center", className)}>
+      <div className="text-sm text-ink-2">{title}</div>
+      {hint && <div className="mt-1 text-[12px] text-ink-4">{hint}</div>}
+      {action && <div className="mt-3">{action}</div>}
+    </div>
+  );
+}
+
+export function LoadingState({ label = "Loading…", className }: { label?: string; className?: string }) {
+  return (
+    <div className={cn("flex items-center gap-2 p-6 text-sm text-ink-3", className)}>
+      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber" />
+      {label}
+    </div>
+  );
+}
+
+// Toasts — a tiny module-level bus so any component can raise one without
+// threading props. <Toasts/> renders them; mount it once near the app root.
+type Toast = { id: number; message: ReactNode; tone: "neutral" | "for" | "against" };
+let _toastSeq = 0;
+const _toasts: Toast[] = [];
+const _toastSubs = new Set<() => void>();
+
+function emitToasts() {
+  _toastSubs.forEach((fn) => fn());
+}
+
+export function useToast() {
+  return {
+    show(message: ReactNode, tone: Toast["tone"] = "neutral", ms = 3000) {
+      const toast: Toast = { id: ++_toastSeq, message, tone };
+      _toasts.push(toast);
+      emitToasts();
+      setTimeout(() => {
+        const i = _toasts.findIndex((t) => t.id === toast.id);
+        if (i >= 0) {
+          _toasts.splice(i, 1);
+          emitToasts();
+        }
+      }, ms);
+    },
+  };
+}
+
+export function Toasts({ className }: { className?: string }) {
+  const toasts = useSyncExternalStore(
+    (onChange) => {
+      _toastSubs.add(onChange);
+      return () => _toastSubs.delete(onChange);
+    },
+    () => _toasts.length, // a version key; the array itself is stable
+    () => 0,
+  );
+  void toasts;
+  if (_toasts.length === 0) return null;
+  return (
+    <div className={cn("fixed bottom-4 right-4 z-50 flex flex-col gap-2", className)}>
+      {_toasts.map((t) => (
+        <div
+          key={t.id}
+          className={cn(
+            "animate-pop rounded-card border bg-raise px-3 py-2 text-sm shadow-toast",
+            t.tone === "for" ? "border-line text-for" : t.tone === "against" ? "border-line text-against" : "border-line text-ink",
+          )}
+        >
+          {t.message}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// --- L4d interactive / stateful ----------------------------------------------
+//
+// The interactive pieces a teaching or tracking shard needs. Each takes an
+// optional stateKey: with it the component persists through useShardState (so
+// progress survives reload and follows the user across clients); without it the
+// state is in-memory. Data in, fixed behavior out — the determinism lever that
+// makes a regenerated shard behave like the original.
+
+/** usePersisted picks persistent or local state from the same call site. */
+function usePersisted<T>(stateKey: string | undefined, initial: T): [T, (next: T | ((prev: T) => T)) => void] {
+  const [local, setLocal] = useState<T>(initial);
+  const [stored, setStored] = useShardState<T>(stateKey ?? "__unused__", initial);
+  return stateKey ? [stored, setStored] : [local, setLocal];
+}
+
+export interface QuizQuestion {
+  id: string;
+  prompt: ReactNode;
+  choices: Array<{ id: string; text: ReactNode }>;
+  answerId: string;
+  explanation?: ReactNode;
+}
+
+/** Quiz — answer, get graded, see why. Persists answers when stateKey is set. */
+export function Quiz({
+  questions,
+  stateKey,
+  onComplete,
+  className,
+}: {
+  questions: QuizQuestion[];
+  stateKey?: string;
+  onComplete?: (score: number) => void;
+  className?: string;
+}) {
+  const [answers, setAnswers] = usePersisted<Record<string, string>>(stateKey, {});
+  const answered = questions.filter((q) => answers[q.id]).length;
+  const score = questions.filter((q) => answers[q.id] === q.answerId).length;
+  useEffect(() => {
+    if (answered === questions.length && questions.length > 0) onComplete?.(score);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [answered, questions.length]);
+
+  return (
+    <div className={cn("flex flex-col gap-4", className)}>
+      {questions.map((q) => {
+        const picked = answers[q.id];
+        return (
+          <Card key={q.id}>
+            <div className="mb-2 text-sm text-ink">{q.prompt}</div>
+            <div className="flex flex-col gap-1.5">
+              {q.choices.map((c) => {
+                const isPicked = picked === c.id;
+                const isAnswer = c.id === q.answerId;
+                const tone = !picked
+                  ? "border-line hover:bg-raise"
+                  : isAnswer
+                    ? "border-line text-for"
+                    : isPicked
+                      ? "border-line text-against"
+                      : "border-line text-ink-3";
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    disabled={!!picked}
+                    onClick={() => setAnswers((prev) => ({ ...prev, [q.id]: c.id }))}
+                    className={cn("rounded-chip border px-2.5 py-1.5 text-left text-sm transition-colors", tone)}
+                  >
+                    {c.text}
+                  </button>
+                );
+              })}
+            </div>
+            {picked && q.explanation && <div className="mt-2 text-[12px] text-ink-2">{q.explanation}</div>}
+          </Card>
+        );
+      })}
+      <div className="font-mono text-[11px] text-ink-3">
+        {answered}/{questions.length} answered · {score} correct
+      </div>
+    </div>
+  );
+}
+
+/** Flashcards — flip and step through a deck; remembers position. */
+export function Flashcards({
+  cards,
+  stateKey,
+  className,
+}: {
+  cards: Array<{ id: string; front: ReactNode; back: ReactNode }>;
+  stateKey?: string;
+  className?: string;
+}) {
+  const [index, setIndex] = usePersisted<number>(stateKey, 0);
+  const [flipped, setFlipped] = useState(false);
+  if (cards.length === 0) return <EmptyState title="No cards" />;
+  const card = cards[Math.min(index, cards.length - 1)];
+  const step = (delta: number) => {
+    setFlipped(false);
+    setIndex((prev) => Math.max(0, Math.min(cards.length - 1, prev + delta)));
+  };
+  return (
+    <div className={cn("flex flex-col items-center gap-3", className)}>
+      <button
+        type="button"
+        onClick={() => setFlipped((f) => !f)}
+        className="min-h-32 w-full rounded-card border border-line bg-card p-6 text-center text-ink transition-colors hover:bg-raise"
+      >
+        {flipped ? card.back : card.front}
+      </button>
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="sm" onClick={() => step(-1)} disabled={index === 0}>
+          ‹ Prev
+        </Button>
+        <span className="font-mono text-[11px] text-ink-3">
+          {Math.min(index, cards.length - 1) + 1} / {cards.length}
+        </span>
+        <Button variant="ghost" size="sm" onClick={() => step(1)} disabled={index >= cards.length - 1}>
+          Next ›
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Timer — a countdown that survives reload: it persists the TARGET timestamp,
+ * not a tick count, so a running timer resumes at the right remaining time.
+ */
+export function Timer({
+  seconds,
+  label,
+  stateKey,
+  onComplete,
+  className,
+}: {
+  seconds: number;
+  label?: ReactNode;
+  stateKey?: string;
+  onComplete?: () => void;
+  className?: string;
+}) {
+  const [endsAt, setEndsAt] = usePersisted<number | null>(stateKey, null);
+  const [remaining, setRemaining] = useState(seconds);
+  const fired = useState(() => ({ done: false }))[0];
+
+  useEffect(() => {
+    if (!endsAt) {
+      setRemaining(seconds);
+      fired.done = false;
+      return;
+    }
+    const tick = () => {
+      const left = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+      setRemaining(left);
+      if (left === 0 && !fired.done) {
+        fired.done = true;
+        onComplete?.();
+      }
+    };
+    tick();
+    const id = setInterval(tick, 250);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [endsAt, seconds]);
+
+  const mm = String(Math.floor(remaining / 60)).padStart(2, "0");
+  const ss = String(remaining % 60).padStart(2, "0");
+  const running = !!endsAt && remaining > 0;
+  return (
+    <div className={cn("flex items-center gap-3", className)}>
+      <div className="font-display text-2xl tabular-nums text-ink">
+        {mm}:{ss}
+      </div>
+      {label && <span className="text-sm text-ink-2">{label}</span>}
+      <Button size="sm" variant={running ? "outline" : "primary"} onClick={() => setEndsAt(running ? null : Date.now() + seconds * 1000)}>
+        {running ? "Stop" : "Start"}
+      </Button>
+    </div>
+  );
+}
+
+/** Checklist — persistent ticks. */
+export function Checklist({
+  items,
+  stateKey,
+  onChange,
+  className,
+}: {
+  items: Array<{ id: string; label: ReactNode }>;
+  stateKey?: string;
+  onChange?: (checked: Record<string, boolean>) => void;
+  className?: string;
+}) {
+  const [checked, setChecked] = usePersisted<Record<string, boolean>>(stateKey, {});
+  const done = items.filter((i) => checked[i.id]).length;
+  return (
+    <div className={cn("flex flex-col gap-2", className)}>
+      {items.map((item) => (
+        <Checkbox
+          key={item.id}
+          checked={!!checked[item.id]}
+          label={<span className={cn(checked[item.id] && "text-ink-3 line-through")}>{item.label}</span>}
+          onChange={(next) =>
+            setChecked((prev) => {
+              const updated = { ...prev, [item.id]: next };
+              onChange?.(updated);
+              return updated;
+            })
+          }
+        />
+      ))}
+      <ProgressBar value={done} max={items.length || 1} label={`${done}/${items.length} done`} />
+    </div>
+  );
+}
+
+/** Stepper — a linear walkthrough that remembers where you were. */
+export function Stepper({
+  steps,
+  stateKey,
+  className,
+}: {
+  steps: Array<{ id: string; title: ReactNode; content?: ReactNode }>;
+  stateKey?: string;
+  className?: string;
+}) {
+  const [current, setCurrent] = usePersisted<number>(stateKey, 0);
+  if (steps.length === 0) return <EmptyState title="No steps" />;
+  const index = Math.max(0, Math.min(current, steps.length - 1));
+  return (
+    <div className={cn("flex flex-col gap-3", className)}>
+      <ol className="flex flex-wrap items-center gap-2">
+        {steps.map((s, i) => (
+          <li key={s.id} className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setCurrent(i)}
+              className={cn(
+                "flex h-6 w-6 items-center justify-center rounded-full border font-mono text-[11px] transition-colors",
+                i === index
+                  ? "border-amber-line bg-amber-soft text-amber"
+                  : i < index
+                    ? "border-line text-for"
+                    : "border-line text-ink-3 hover:text-ink",
+              )}
+              aria-current={i === index ? "step" : undefined}
+            >
+              {i + 1}
+            </button>
+            <span className={cn("text-sm", i === index ? "text-ink" : "text-ink-3")}>{s.title}</span>
+            {i < steps.length - 1 && <span className="text-ink-4">›</span>}
+          </li>
+        ))}
+      </ol>
+      <Card>{steps[index].content}</Card>
+      <div className="flex gap-2">
+        <Button variant="ghost" size="sm" onClick={() => setCurrent(index - 1)} disabled={index === 0}>
+          ‹ Back
+        </Button>
+        <Button size="sm" onClick={() => setCurrent(index + 1)} disabled={index >= steps.length - 1}>
+          Next ›
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 // --- L5 bridge (host ↔ shard channel: nodes.get / nodes.subscribe) -----------
 //
 // A shard is sandboxed (opaque origin); it reaches workspace/graph data only

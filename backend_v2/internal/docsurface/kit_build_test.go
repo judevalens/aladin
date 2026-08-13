@@ -21,6 +21,10 @@ func TestBuildKitCompilesWithVizHelpers(t *testing.T) {
 		"Region", "useRoute", // core
 		"chartSeries", "chartAxis", "chartGrid", "chartTooltip", "tok", // L3 viz
 		"Button", "Card", "Badge", "Input", "Textarea", "Field", "Callout", "Stat", "Tabs", "Dialog", "Divider", // L4 UI
+		"DataTable", "KeyValue", "MetricRow", "Sparkline", "Delta", "ProgressBar", // L4b data display
+		"AppShell", "SearchInput", "Select", "Checkbox", "RadioGroup", "EmptyState", "LoadingState", "useToast", "Toasts", // L4c chrome + forms
+		"Quiz", "Flashcards", "Timer", "Checklist", "Stepper", // L4d interactive/stateful
+		"useTheme", "kv", "useShardState", "useKV", // platform + local state
 		"bridge", "useNode", "useNodes", // L5 bridge
 	} {
 		if !strings.Contains(js, sym) {

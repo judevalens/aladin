@@ -24,6 +24,11 @@ const appArtifactType = "app"
 const starterIndexTSX = `import { createRoot } from "react-dom/client";
 import { Page, Section, Region } from "@aladin/kit";
 
+// The three levers most shards want (get_authoring_guide has the full reference):
+//   theme  — automatic; only call useTheme() where you compute a color at render
+//   memory — useShardState("settings", initial) for one value, useKV("items/") for a collection
+//   data   — declare ids in an anchor's "refs" in anchors.json, then useNode(id)
+
 function App() {
   return (
     <Page>
@@ -77,6 +82,18 @@ index.tsx MUST be a complete module and end with:
 - Routing (hash, for multi-view shards): <Route path="/x">…</Route>, <Link to="/x">…</Link>, useRoute()
 - UI: <Button variant="primary|outline|ghost|danger" size="sm|md">, <Badge tone="neutral|amber|for|against">, <Callout tone="info|warn|for|against" title="…">, <Stat label={…} value={…} sub={…}/>, <Tabs tabs={[{id,label,content}]}/>, <Dialog open onClose title>, <Input>, <Textarea>, <Field label hint>
 - Semantic colored text: <For>, <Against>, <Catalyst>, <Echo>
+- Data display: <DataTable columns={[{key,label,render?,align?,width?}]} rows={…} rowKey={r=>r.id} onRowClick? empty?/>, <KeyValue items={[{label,value,hint?}]}/>, <MetricRow metrics={[{label,value,delta?,hint?}]}/>, <Sparkline points={[1,2,3]} tone?/>, <Delta value={-2.5} suffix?/>, <ProgressBar value max? label?/>
+- App chrome + forms: <AppShell title nav={[{id,label,to}]} footer?>…</AppShell> (hash-routed sidebar), <SearchInput value onChange/>, <Select options={[{value,label}]} value onChange/>, <Checkbox checked onChange label?/>, <RadioGroup name options value onChange/>, <EmptyState title hint? action?/>, <LoadingState label?/>, useToast().show(msg, "neutral|for|against") with a single <Toasts/> mounted near the root
+- Interactive/stateful — each takes an OPTIONAL stateKey; with it the component persists (survives reload, follows the user across clients), without it state is in-memory: <Quiz questions={[{id,prompt,choices:[{id,text}],answerId,explanation?}]} stateKey? onComplete?/>, <Flashcards cards={[{id,front,back}]} stateKey?/>, <Timer seconds label? stateKey? onComplete?/> (persists the target timestamp, so a running timer resumes correctly), <Checklist items={[{id,label}]} stateKey? onChange?/>, <Stepper steps={[{id,title,content}]} stateKey?/>
+
+Shard-local storage (the shard's own little database — persists per user, survives reload, syncs across the user's clients):
+  const [value, setValue] = useShardState<T>("settings", initial)  // one key; setValue takes a value or (prev)=>next and retries safely if another client wrote first
+  const { entries, put, remove, loading } = useKV("expenses/")     // a LIVE view of every key under a prefix — this is how a mini-app holds a collection
+  Keys are stable paths: "settings", "filters", "layout/main", "scenario/base", "expenses/2026-08-01". A prefix IS a collection. Values are small JSON (16KiB max per key, 1MiB per shard). Use it for app/UI data — filters, layouts, entries, progress — never for knowledge that belongs in the workspace.
+
+Theme: shards follow the app's theme automatically (utilities + tokens re-resolve on switch). Only when you compute a color at render time (tok(), chart colors, hand-drawn SVG) call useTheme() in that component so it re-renders on a switch.
+
+Workspace data (read-only, opt-in): declare the entity ids a region depends on in that anchor's "refs" in anchors.json, then const { node } = useNode("artifact-…") / useNodes([...]). Refs are the GRANT — a read of anything undeclared is refused, and publish fails if a ref doesn't resolve. Id forms: "artifact-…", "record-…", "research-…", and "watchlist:<uuid>" for kinds whose ids are bare uuids.
 
 Tokens (Tailwind classes): surfaces bg-bg/bg-panel/bg-card/bg-raise/bg-field; ink text-ink/text-ink-2/text-ink-3/text-ink-4; accent text-amber, border-amber-line; lines border-line; radius rounded-card/rounded-chip/rounded-modal; fonts font-display/font-mono/font-sans.
 
@@ -84,7 +101,7 @@ Charts: run install_lib "recharts" first, import from "recharts", theme via the 
 
 Animations: Tailwind (transition-*, hover:*, animate-pulse) or your own CSS keyframes in a .css file you write_file and import.
 
-Loop: after each write_file/edit_file, READ the returned build log — if it has errors, fix the exact file and write again until build.ok is true. Keep components small and valid; prefer kit primitives over hand-rolled markup.`
+Loop: after each write_file/edit_file, READ the returned build log — if it has errors, fix the exact file and write again until build.ok is true. Then verify_app (it checks that every anchor you declared is really in the DOM on its route, that refs resolve, and that nothing threw) before publish_app. Keep components small and valid; prefer kit primitives over hand-rolled markup.`
 
 // docToolServer carries the deps the Doc Surface tools need. The artifact
 // service scopes every Get/Create/Update to the caller's principal; the store
@@ -134,6 +151,10 @@ func registerDocSurfaceTools(server *sdkmcp.Server, artifacts service.ArtifactSe
 		Name:        "build_app",
 		Description: "Build a Doc Surface page (bundles index.tsx with esbuild). Returns ok + a build log; on failure, read the log, fix the files, and build again.",
 	}, t.buildApp)
+	sdkmcp.AddTool(server, &sdkmcp.Tool{
+		Name:        "get_authoring_guide",
+		Description: "The @aladin/kit reference: every component with its props, the token classes, shard-local storage (useShardState/useKV), theming, and how to declare workspace refs. Call this BEFORE editing an existing shard — create_app returns the same guide, so an edit is the one path that would otherwise have no reference. With page_id it also returns that shard's file list, anchors.json, and current index.tsx.",
+	}, t.getAuthoringGuide)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "verify_app",
 		Description: "Verify a shard WITHOUT publishing: validates anchors.json, checks every declared ref resolves, then drives each declared route through the live preview and reports per route whether it mounted, which declared anchors are actually in the DOM, uncaught exceptions (unhandled promise rejections included), and console errors. Defaults to the draft channel; pass strict_console=true to treat console errors as failures. Run this before publish_app — publish applies the same checks, but this shows you the whole report while you can still fix it.",
@@ -318,6 +339,19 @@ type refsSummary struct {
 	Missing      []string `json:"missing,omitempty"`
 	UnknownKind  []string `json:"unknown_kind,omitempty"`
 	Unobservable []string `json:"unobservable,omitempty"`
+}
+
+type authoringGuideInput struct {
+	// PageID is optional: with it the guide comes back alongside the shard's
+	// current files and manifest, which is what an EDIT actually needs.
+	PageID string `json:"page_id,omitempty"`
+}
+
+type authoringGuideOutput struct {
+	AuthoringGuide string   `json:"authoring_guide"`
+	Files          []string `json:"files,omitempty"`
+	Anchors        string   `json:"anchors_json,omitempty"`
+	IndexTSX       string   `json:"current_index_tsx,omitempty"`
 }
 
 type verifyAppInput struct {
@@ -633,6 +667,41 @@ func (t docToolServer) buildApp(ctx context.Context, _ *sdkmcp.CallToolRequest, 
 		return nil, service.BuildResult{}, err
 	}
 	return nil, res, nil
+}
+
+// getAuthoringGuide hands back the kit reference on demand. create_app returns
+// it too, but an agent EDITING an existing shard never went through create_app
+// — so it was guessing components and props with no reference anywhere in
+// reach. With a page_id it also returns that shard's current files, manifest,
+// and index.tsx, which is the context an edit actually needs.
+func (t docToolServer) getAuthoringGuide(ctx context.Context, _ *sdkmcp.CallToolRequest, in authoringGuideInput) (*sdkmcp.CallToolResult, authoringGuideOutput, error) {
+	out := authoringGuideOutput{AuthoringGuide: kitAuthoringGuide}
+	if strings.TrimSpace(in.PageID) == "" {
+		return nil, out, nil
+	}
+	if err := t.requireApp(ctx, in.PageID); err != nil {
+		return nil, authoringGuideOutput{}, err
+	}
+	if entries, err := t.store.ListDir(ctx, in.PageID, ""); err == nil {
+		for _, e := range entries {
+			if e.Name == historyDir || e.Name == "dist" {
+				continue // build output + snapshots aren't authoring context
+			}
+			name := e.Name
+			if e.IsDir {
+				name += "/"
+			}
+			out.Files = append(out.Files, name)
+		}
+		sort.Strings(out.Files)
+	}
+	if data, err := t.store.ReadFile(ctx, in.PageID, docsurface.ManifestFileName); err == nil {
+		out.Anchors = string(data)
+	}
+	if data, err := t.store.ReadFile(ctx, in.PageID, "index.tsx"); err == nil {
+		out.IndexTSX = string(data)
+	}
+	return nil, out, nil
 }
 
 // verifyAppTool is the agent-facing verification pass: the full structured
