@@ -327,17 +327,7 @@ export function CopilotDockUI() {
           <CopilotErrorBanner error={error} code={errorCode} onContinue={() => void send("continue")} />
         </div>
 
-        {unpinned && busy ? (
-          <div className="pointer-events-none relative">
-            <button
-              type="button"
-              onClick={repin}
-              className="pointer-events-auto absolute bottom-2 left-1/2 -translate-x-1/2 rounded-chip border border-line bg-raise px-2.5 py-1 font-mono text-meta text-ink-2 shadow-panel transition-colors hover:border-amber-line hover:text-ink"
-            >
-              ↓ latest
-            </button>
-          </div>
-        ) : null}
+        <LatestTranscriptButton visible={unpinned && busy} onClick={repin} />
 
         {/* Composer */}
         <div className="shrink-0 border-t border-line p-2.5">
@@ -478,6 +468,27 @@ export function RealtimeStatusBanner({ state }: { state: "connecting" | "open" |
       <p className="font-mono text-meta text-ink-3">
         {state === "connecting" ? "reconnecting stream…" : "stream offline — reconnecting"}
       </p>
+    </div>
+  );
+}
+
+export function LatestTranscriptButton({
+  visible,
+  onClick,
+}: {
+  visible: boolean;
+  onClick: () => void;
+}) {
+  if (!visible) return null;
+  return (
+    <div className="pointer-events-none relative">
+      <button
+        type="button"
+        onClick={onClick}
+        className="pointer-events-auto absolute bottom-2 left-1/2 -translate-x-1/2 rounded-chip border border-line bg-raise px-2.5 py-1 font-mono text-meta text-ink-2 shadow-panel transition-colors hover:border-amber-line hover:text-ink"
+      >
+        ↓ latest
+      </button>
     </div>
   );
 }
