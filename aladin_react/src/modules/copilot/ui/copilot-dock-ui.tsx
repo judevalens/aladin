@@ -727,7 +727,7 @@ function formatThreadTime(raw: string): string {
  * Compact live activity: consecutive runs of the same tool collapse to one row
  * with a count; the most recent few rows stay visible while the turn runs.
  */
-function ActivityTimeline({ trail }: { trail: CopilotToolRun[] }) {
+export function ActivityTimeline({ trail }: { trail: CopilotToolRun[] }) {
   const groups: {
     label: string;
     count: number;

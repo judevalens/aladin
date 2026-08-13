@@ -49,7 +49,9 @@ Aladin owns all rendering, permissions, and actions.
   persisted `aladin-error-recovery` blocks can render bounded recovery messages
   with validated follow-up/open actions.
 - Phase 9 is started: rich directive parser tests now have render-level coverage
-  for native block rendering, validated actions, and malformed fallback behavior.
+  for native block rendering, validated actions, and malformed fallback behavior;
+  live activity timeline tests cover grouped tool runs, expandable summaries, and
+  overflow counts.
 - The backend system prompt now advertises the supported rich directive contract
   and safety rules so final answers can use native blocks intentionally.
 
