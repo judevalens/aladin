@@ -1,4 +1,5 @@
 import { AlertTriangle, CalendarClock, Globe, Sparkles, Zap } from "lucide-react";
+import { Eyebrow } from "@/components/ui/eyebrow";
 import { Icon } from "@/components/ui/icon";
 import { useState } from "react";
 
@@ -171,7 +172,7 @@ function EntitiesResearchHome() {
     <div className="flex h-full w-full overflow-hidden">
       <aside className="flex w-[300px] shrink-0 flex-col gap-5 overflow-y-auto border-r border-line px-5 py-6">
         <div>
-          <div className="eyebrow mb-2">This week, your research</div>
+          <Eyebrow className="mb-2">This week, your research</Eyebrow>
           <p className="text-body leading-[1.6] text-ink-2">
             concentrated on <span className="font-medium text-ink">AI infrastructure</span>.{" "}
             <span className="font-medium text-ink">NVDA</span> is your most-connected name —
@@ -212,9 +213,9 @@ function EntitiesResearchHome() {
         </div>
 
         <div>
-          <div className="eyebrow mb-2 flex items-center gap-1.5">
+          <Eyebrow className="mb-2 flex items-center gap-1.5">
             <Icon as={Sparkles} size="inline" /> Orphans · no thesis
-          </div>
+          </Eyebrow>
           <p className="mb-2 text-meta leading-[1.5] text-ink-4">
             You're watching these but haven't threaded them into a thesis.
           </p>
@@ -260,7 +261,7 @@ export function EntitiesHomeSpike() {
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="flex items-center gap-3 border-b border-line px-5 py-3">
           <Icon as={Globe} className="text-ink-3" />
-          <span className="eyebrow">Research map</span>
+          <Eyebrow as="span">Research map</Eyebrow>
           <span className="rounded-chip bg-[rgb(var(--sel))] px-2.5 py-1 text-small text-ink">Map</span>
           <span className="rounded-chip px-2.5 py-1 text-small text-ink-3">Inbox</span>
           <span className="rounded-chip px-2.5 py-1 text-small text-ink-3">Browse</span>

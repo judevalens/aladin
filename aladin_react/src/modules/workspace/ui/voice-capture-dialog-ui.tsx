@@ -1,4 +1,5 @@
 import { Check, ChevronDown, Folder, Pause, Play } from "lucide-react";
+import { Eyebrow } from "@/components/ui/eyebrow";
 import { Icon } from "@/components/ui/icon";
 import { Button } from "@/components/ui/button";
 import {
@@ -59,14 +60,14 @@ export function VoiceCaptureDialogUI() {
         {draft ? (
           <DialogBody className="space-y-5 pb-4">
             <div className="space-y-2">
-              <label className="eyebrow">Title</label>
+              <Eyebrow as="label">Title</Eyebrow>
               <Input
                 value={draft.title}
                 onChange={(event) => onPatchDraft({ title: event.target.value })}
               />
             </div>
             <div className="space-y-2">
-              <label className="eyebrow">Notes</label>
+              <Eyebrow as="label">Notes</Eyebrow>
               <Textarea
                 value={draft.description}
                 onChange={(event) => onPatchDraft({ description: event.target.value })}
@@ -74,7 +75,7 @@ export function VoiceCaptureDialogUI() {
             </div>
 
             <div className="space-y-2">
-              <label className="eyebrow">Save to</label>
+              <Eyebrow as="label">Save to</Eyebrow>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button

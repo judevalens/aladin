@@ -1,4 +1,6 @@
 import { Trash2 } from "lucide-react";
+import { Eyebrow } from "@/components/ui/eyebrow";
+import { Icon } from "@/components/ui/icon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -50,9 +52,9 @@ export function SourceDetailsDialog({
                 ))}
               </div>
               <div className="border-t border-line pt-4">
-                <div className="eyebrow">Config snapshot</div>
+                <Eyebrow>Config snapshot</Eyebrow>
                 <Textarea
-                  className="mt-3 min-h-[180px] font-mono text-xs"
+                  className="mt-3 min-h-[180px] font-mono text-small"
                   readOnly
                   value={JSON.stringify(selectedSource.config, null, 2)}
                 />
@@ -64,7 +66,7 @@ export function SourceDetailsDialog({
                 onClick={onRemoveSelectedSource}
                 disabled={removeSourcePending}
               >
-                <Trash2 className="h-4 w-4" />
+                <Icon as={Trash2} mark />
                 Remove source
               </Button>
             </DialogFooter>

@@ -1,4 +1,5 @@
 import { Globe } from "lucide-react";
+import { Eyebrow } from "@/components/ui/eyebrow";
 import { Icon } from "@/components/ui/icon";
 
 import { useAppStore } from "@/app/state/store";
@@ -90,7 +91,7 @@ export function EntitiesIndexSpike() {
           <div className="border-b border-line px-5 pt-4 pb-3">
             <div className="flex items-center gap-3">
               <Icon as={Globe} className="text-ink-3" />
-              <span className="eyebrow">Entities</span>
+              <Eyebrow as="span">Entities</Eyebrow>
               <span className="font-mono text-meta text-ink-4">{MOCK.length} shown</span>
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-1.5">

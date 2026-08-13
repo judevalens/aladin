@@ -13,6 +13,7 @@ import {
   TrendingUp,
   X,
 } from "lucide-react";
+import { Eyebrow } from "@/components/ui/eyebrow";
 import { Icon } from "@/components/ui/icon";
 import { useMemo, useState } from "react";
 
@@ -241,7 +242,7 @@ function EntitiesHome() {
       {/* header bar — search + the Overview/Grid toggle */}
       <div className="flex items-center gap-3 border-b border-line px-5 pt-4 pb-3">
         <Icon as={Globe} className="text-ink-3" />
-        <span className="eyebrow">Entities</span>
+        <Eyebrow as="span">Entities</Eyebrow>
         <div className="relative ml-1 w-72">
           <Icon as={Search} size="inline" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-4" />
           <input

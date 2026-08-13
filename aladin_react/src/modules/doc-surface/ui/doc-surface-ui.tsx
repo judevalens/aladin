@@ -68,7 +68,7 @@ function BuildStatusChip({ status }: { status: "building" | "ok" | "failed" }) {
   return (
     <div
       className={cn(
-        "pointer-events-none absolute right-3 top-3 z-10 flex items-center gap-1.5 rounded-chip border bg-panel/90 px-2.5 py-1 text-[11px] font-mono shadow-panel backdrop-blur",
+        "pointer-events-none absolute right-3 top-3 z-10 flex items-center gap-1.5 rounded-chip border bg-panel/90 px-2.5 py-1 text-meta font-mono shadow-panel backdrop-blur",
         tone,
       )}
     >
@@ -86,8 +86,8 @@ function BuildStatusChip({ status }: { status: "building" | "ok" | "failed" }) {
 function BuildErrorOverlay({ log }: { log: string }) {
   return (
     <div className="absolute inset-0 z-20 overflow-auto bg-bg/95 p-6 backdrop-blur">
-      <div className="mb-2 text-[12px] font-medium text-against">Build failed</div>
-      <pre className="whitespace-pre-wrap break-words font-mono text-[11.5px] leading-relaxed text-ink-2">
+      <div className="mb-2 text-small font-medium text-against">Build failed</div>
+      <pre className="whitespace-pre-wrap break-words font-mono text-small leading-relaxed text-ink-2">
         {log || "(no diagnostics)"}
       </pre>
     </div>

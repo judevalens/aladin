@@ -1,4 +1,5 @@
 import { History } from "lucide-react";
+import { Icon } from "@/components/ui/icon";
 import { useState } from "react";
 import { useAppComposition } from "@/app/composition/app-composition";
 import { useAppStore } from "@/app/state/store";
@@ -40,7 +41,7 @@ export function PageEditorUI({ pageId }: { pageId: string }) {
   const user = authState.status === "data" ? authState.value.user : null;
   if (!user) {
     return (
-      <div className="px-7 py-6 text-sm text-ink-2">Loading page…</div>
+      <div className="px-7 py-6 text-body text-ink-2">Loading page…</div>
     );
   }
 
@@ -52,9 +53,9 @@ export function PageEditorUI({ pageId }: { pageId: string }) {
         <button
           onClick={() => setHistoryOpen((v) => !v)}
           title="Edit history"
-          className="flex items-center gap-1.5 rounded-md border border-line bg-field/90 px-2.5 py-1 text-xs font-medium text-ink-2 backdrop-blur-sm hover:bg-raise hover:text-ink"
+          className="flex items-center gap-1.5 rounded-control border border-line bg-field/90 px-2.5 py-1 text-small font-medium text-ink-2 backdrop-blur-sm hover:bg-raise hover:text-ink"
         >
-          <History className="h-3.5 w-3.5" />
+          <Icon as={History} size="inline" mark />
           History
         </button>
       </div>

@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Eyebrow } from "@/components/ui/eyebrow";
+import { Icon } from "@/components/ui/icon";
 import { Plus, X } from "lucide-react";
 import { useAppComposition } from "@/app/composition/app-composition";
 import {
@@ -20,14 +22,14 @@ import { mergePropertyDefs, type PropertyDef } from "@/repos/artifacts/property-
 // Types you can create ad-hoc from the "New … as" row. `tags` is intentionally
 // excluded — tag properties come only from a preset/template, not free creation.
 const CREATABLE_TYPES: ArtifactPropertyType[] = ["text", "number", "date", "select", "url"];
-const GHOST = "min-w-0 bg-transparent text-[13px] outline-none placeholder:text-ink-4";
-const TILE = "min-w-0 rounded-md bg-field px-2 py-0.5 text-[13px] text-ink outline-none";
+const GHOST = "min-w-0 bg-transparent text-body outline-none placeholder:text-ink-4";
+const TILE = "min-w-0 rounded-control bg-field px-2 py-0.5 text-body text-ink outline-none";
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <h3 className="mb-1.5 px-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-ink-4">
+    <Eyebrow as="h3" className="mb-1.5 px-1.5 text-ink-4">
       {children}
-    </h3>
+    </Eyebrow>
   );
 }
 
@@ -57,7 +59,7 @@ function TagsField({
       {values.map((tag) => (
         <span
           key={tag}
-          className="inline-flex items-center gap-1 rounded-chip border border-line bg-raise px-1.5 py-0.5 text-[11px] text-ink-2"
+          className="inline-flex items-center gap-1 rounded-chip border border-line bg-raise px-1.5 py-0.5 text-meta text-ink-2"
         >
           {tag}
           <button
@@ -66,7 +68,7 @@ function TagsField({
             onClick={() => onChange(values.filter((t) => t !== tag))}
             className="text-ink-4 hover:text-against"
           >
-            <X className="size-2.5" strokeWidth={2.5} />
+            <Icon as={X} size="inline" mark />
           </button>
         </span>
       ))}
@@ -86,7 +88,7 @@ function TagsField({
         }}
       />
       {suggestions.length > 0 ? (
-        <div className="absolute left-0 top-full z-20 mt-1 w-44 overflow-hidden rounded-md border border-line bg-panel py-1 shadow-panel">
+        <div className="absolute left-0 top-full z-20 mt-1 w-44 overflow-hidden rounded-control border border-line bg-panel py-1 shadow-panel">
           {suggestions.map((s) => (
             <button
               key={s}
@@ -96,7 +98,7 @@ function TagsField({
                 event.preventDefault();
                 add(s);
               }}
-              className="block w-full px-2.5 py-1 text-left text-[12px] text-ink-2 hover:bg-raise"
+              className="block w-full px-2.5 py-1 text-left text-small text-ink-2 hover:bg-raise"
             >
               {s}
             </button>
@@ -158,9 +160,9 @@ function PropertyRow({
   onRemove: () => void;
 }) {
   return (
-    <div className="group flex items-center gap-2 rounded-md px-1.5 py-1 transition-colors hover:bg-raise">
+    <div className="group flex items-center gap-2 rounded-control px-1.5 py-1 transition-colors hover:bg-raise">
       {/* Free name, bold. The value's type is fixed at creation. */}
-      <span className="w-[34%] shrink-0 truncate text-[13px] font-semibold text-ink">
+      <span className="w-[34%] shrink-0 truncate text-body font-semibold text-ink">
         {property.key || <span className="font-normal text-ink-4">Untitled</span>}
       </span>
       {property.type === "tags" ? (
@@ -178,7 +180,7 @@ function PropertyRow({
         onClick={onRemove}
         className="ml-auto grid size-5 shrink-0 place-items-center rounded text-ink-4 opacity-0 transition-opacity hover:text-against group-hover:opacity-100"
       >
-        <X className="size-3.5" strokeWidth={2} />
+        <Icon as={X} size="inline" mark />
       </button>
     </div>
   );
@@ -241,9 +243,9 @@ function AddProperty({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="mt-1 flex w-full items-center gap-1.5 rounded-md px-1.5 py-1.5 text-[13px] text-ink-4 transition-colors hover:bg-raise hover:text-ink-2"
+          className="mt-1 flex w-full items-center gap-1.5 rounded-control px-1.5 py-1.5 text-body text-ink-4 transition-colors hover:bg-raise hover:text-ink-2"
         >
-          <Plus className="size-[15px]" strokeWidth={1.75} />
+          <Icon as={Plus} />
           Add property
         </button>
       </PopoverTrigger>
@@ -267,7 +269,7 @@ function AddProperty({
                 {filtered.map((def) => (
                   <CommandItem key={def.key} value={def.key} onSelect={() => addTemplate(def)}>
                     <span className="flex-1 truncate">{def.key}</span>
-                    <span className="text-[11px] text-ink-4">{def.type}</span>
+                    <span className="text-meta text-ink-4">{def.type}</span>
                   </CommandItem>
                 ))}
               </CommandGroup>
@@ -275,7 +277,7 @@ function AddProperty({
           ) : null}
           {canCreate ? (
             <div className="border-t border-line p-2">
-              <div className="mb-1.5 px-0.5 text-[11px] text-ink-4">
+              <div className="mb-1.5 px-0.5 text-meta text-ink-4">
                 New “{trimmed}” as
               </div>
               <div className="flex flex-wrap gap-1">
@@ -284,7 +286,7 @@ function AddProperty({
                     key={t}
                     type="button"
                     onClick={() => addCustom(t)}
-                    className="rounded-md border border-line bg-field px-2 py-0.5 text-[12px] text-ink-2 transition-colors hover:bg-raise hover:text-ink"
+                    className="rounded-control border border-line bg-field px-2 py-0.5 text-small text-ink-2 transition-colors hover:bg-raise hover:text-ink"
                   >
                     {t}
                   </button>
@@ -292,7 +294,7 @@ function AddProperty({
               </div>
             </div>
           ) : (
-            <p className="px-3 py-3 text-center text-[12px] text-ink-4">
+            <p className="px-3 py-3 text-center text-small text-ink-4">
               {available.length ? "Type a name to add or create." : "All properties added."}
             </p>
           )}
@@ -373,9 +375,9 @@ export function PropertiesSection({ artifact }: { artifact: Artifact }) {
               key={def.key}
               type="button"
               onClick={() => persist([...rows, defToProperty(def)])}
-              className="inline-flex items-center gap-1 rounded-chip border border-dashed border-line px-2 py-0.5 text-[11px] text-ink-3 transition-colors hover:border-line-2 hover:text-ink-2"
+              className="inline-flex items-center gap-1 rounded-chip border border-dashed border-line px-2 py-0.5 text-meta text-ink-3 transition-colors hover:border-line-2 hover:text-ink-2"
             >
-              <Plus className="size-2.5" strokeWidth={2.5} />
+              <Icon as={Plus} size="inline" mark />
               {def.key}
             </button>
           ))}

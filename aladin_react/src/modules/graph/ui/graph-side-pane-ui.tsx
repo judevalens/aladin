@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { Eyebrow } from "@/components/ui/eyebrow";
+import { Icon } from "@/components/ui/icon";
 import { FileText, Plus, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -33,9 +35,9 @@ function kindHue(kind: string): string {
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-ink-4">
+    <Eyebrow as="h3" className="mb-2 text-ink-4">
       {children}
-    </h3>
+    </Eyebrow>
   );
 }
 
@@ -94,7 +96,7 @@ function EntityList({
             picking && "bg-[rgb(var(--sel))] text-ink",
           )}
         >
-          <Plus className="size-3.5" />
+          <Icon as={Plus} size="inline" mark />
         </button>
       </div>
 
@@ -105,7 +107,7 @@ function EntityList({
       ) : null}
 
       {entities.length === 0 ? (
-        <p className="text-[13px] text-ink-4">No entities on this page yet. Tag one with +.</p>
+        <p className="text-body text-ink-4">No entities on this page yet. Tag one with +.</p>
       ) : (
         <ul className="flex flex-wrap gap-2">
           {entities.map((e) => {
@@ -125,12 +127,12 @@ function EntityList({
                   onClick={() => onOpenEntity(e.id)}
                   className="flex items-center gap-2 rounded-chip px-2.5 py-1 text-left transition-colors hover:bg-[rgb(var(--hover))]"
                 >
-                  <span className={cn("font-mono text-[10px] uppercase", kindHue(e.kind))}>
+                  <span className={cn("font-mono text-meta uppercase", kindHue(e.kind))}>
                     {e.kind || "entity"}
                   </span>
-                  <span className="text-[13px] text-ink">{e.name}</span>
+                  <span className="text-body text-ink">{e.name}</span>
                   {e.mentions > 0 ? (
-                    <span className="font-mono text-[11px] text-ink-4">{e.mentions}×</span>
+                    <span className="font-mono text-meta text-ink-4">{e.mentions}×</span>
                   ) : null}
                 </button>
                 {removable ? (
@@ -141,7 +143,7 @@ function EntityList({
                     disabled={pendingId === e.id}
                     className="mr-1.5 flex size-4 items-center justify-center rounded text-ink-4 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
                   >
-                    <X className="size-3" />
+                    <Icon as={X} size="inline" mark />
                   </button>
                 ) : null}
               </li>
@@ -173,9 +175,9 @@ function LinkedArtifactRow({ item }: { item: GraphLinkedArtifact }) {
         onClick={() => openArtifact(item.id)}
         className="flex w-full items-center gap-2 rounded-card border border-line bg-card px-3 py-2 text-left transition-colors hover:bg-raise"
       >
-        <FileText className="size-4 shrink-0 text-ink-4" />
-        <span className="min-w-0 flex-1 truncate text-[13px] text-ink-2">{item.title || item.id}</span>
-        <span className="shrink-0 rounded-chip border border-line px-1.5 py-0.5 font-mono text-[10px] text-ink-4">
+        <Icon as={FileText} mark className="shrink-0 text-ink-4" />
+        <span className="min-w-0 flex-1 truncate text-body text-ink-2">{item.title || item.id}</span>
+        <span className="shrink-0 rounded-chip border border-line px-1.5 py-0.5 font-mono text-meta text-ink-4">
           {linkedRelationLabel(item.relation)}
         </span>
       </button>
@@ -188,7 +190,7 @@ function LinkedArtifactList({ items }: { items: GraphLinkedArtifact[] }) {
     <section>
       <SectionLabel>Linked artifacts · {items.length}</SectionLabel>
       {items.length === 0 ? (
-        <p className="text-[13px] text-ink-4">No other artifacts connected yet.</p>
+        <p className="text-body text-ink-4">No other artifacts connected yet.</p>
       ) : (
         <ul className="flex flex-col gap-2">
           {items.map((item) => (
@@ -243,14 +245,14 @@ export function GraphSidePaneUI({
   return (
     <aside className="flex h-full w-[340px] shrink-0 flex-col overflow-hidden border-l border-line bg-panel">
       <header className="flex items-center gap-2 border-b border-line px-3 py-2.5">
-        <span className="font-display text-[13px] text-ink">On the graph</span>
+        <span className="font-display text-body text-ink">On the graph</span>
         <button
           type="button"
           aria-label="Close graph pane"
           onClick={onClose}
           className="ml-auto flex size-6 items-center justify-center rounded text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
         >
-          <X className="size-4" />
+          <Icon as={X} mark />
         </button>
       </header>
 
@@ -269,9 +271,9 @@ export function GraphSidePaneUI({
               onOpenEntity={setPeekEntityId}
             />
           ) : loading ? (
-            <p className="text-[13px] text-ink-4">Loading…</p>
+            <p className="text-body text-ink-4">Loading…</p>
           ) : error ? (
-            <p className="text-[13px] text-against">{error}</p>
+            <p className="text-body text-against">{error}</p>
           ) : null}
         </div>
       </div>

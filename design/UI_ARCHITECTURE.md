@@ -189,8 +189,9 @@ stock shadcn — never ship the default shadcn look.
    *illustration* (an empty-state or preview-card glyph at 20px+) is not chrome and may stay
    raw — but it must carry a comment saying so, because the grep below will flag it. Two exist
    today: `miller-columns.tsx` (26px preview) and `copilot-dock-ui.tsx` (20px empty state).
-10. **Section labels go through `<Eyebrow>`** (`components/ui/eyebrow.tsx`). The `.eyebrow`
-   class still exists in `index.css` and is being migrated off; don't add new uses of it.
+10. **Section labels go through `<Eyebrow>`** (`components/ui/eyebrow.tsx`) — `tone="loud"`
+   for the one that needs attention, `as="span" | "label" | "h2" | …` when the layout needs
+   that element. The old `.eyebrow` class is **deleted**; there is no other eyebrow.
 11. **Spacing is the 4px step scale.** Arbitrary px is *layout* only (pane widths, the 38px
    rail cell), and layout is rare.
 12. **Don't invent metrics.** No progress rings, mastery scores, or zeroed stat tiles for data
