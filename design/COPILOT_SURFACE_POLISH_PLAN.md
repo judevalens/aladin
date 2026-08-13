@@ -54,7 +54,8 @@ Aladin owns all rendering, permissions, and actions.
   overflow counts; queued follow-up tests cover scoped thread/surface delivery;
   thread switcher tests cover search, empty states, approval/running/pinned
   badges, and row actions; proposal-card tests cover pending, in-flight, and
-  settled approval states.
+  settled approval states; composer surface tests cover placeholders,
+  suggestions, scope summaries, and artifact-kind labels.
 - The backend system prompt now advertises the supported rich directive contract
   and safety rules so final answers can use native blocks intentionally.
 

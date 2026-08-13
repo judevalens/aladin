@@ -863,7 +863,7 @@ export function ProposalCard({
   );
 }
 
-function suggestionsFor(surface: CopilotSurface): string[] {
+export function suggestionsFor(surface: CopilotSurface): string[] {
   switch (surface.kind) {
     case "ticker": {
       const s = surface.symbol ?? "this ticker";
@@ -906,13 +906,13 @@ function suggestionsFor(surface: CopilotSurface): string[] {
 }
 
 /** Placeholder teaches the current mode: normal ask, surface-scoped ask, or queueing. */
-function composerPlaceholder(busy: boolean, surfaceLabel: string | null): string {
+export function composerPlaceholder(busy: boolean, surfaceLabel: string | null): string {
   if (busy) return "Type a follow-up — sends when this turn finishes…";
   if (surfaceLabel) return `Ask about ${surfaceLabel}…`;
   return "Ask the copilot…";
 }
 
-function describeSurface(surface: CopilotSurface): string | null {
+export function describeSurface(surface: CopilotSurface): string | null {
   if (surface.kind === "ticker" && surface.symbol) return surface.symbol;
   if (surface.kind === "entity") return surface.label ?? "this entity";
   if (surface.kind === "artifact" || surface.kind === "page" || surface.kind === "shard") {
@@ -923,7 +923,7 @@ function describeSurface(surface: CopilotSurface): string | null {
   return null;
 }
 
-function scopeForSurface(surface: CopilotSurface, label: string | null): ScopeSummary | null {
+export function scopeForSurface(surface: CopilotSurface, label: string | null): ScopeSummary | null {
   if (!label) return null;
   switch (surface.kind) {
     case "ticker": {
@@ -973,7 +973,7 @@ function scopeForSurface(surface: CopilotSurface, label: string | null): ScopeSu
   }
 }
 
-function surfaceKindLabel(kind: CopilotSurface["artifactKind"]): string {
+export function surfaceKindLabel(kind: CopilotSurface["artifactKind"]): string {
   switch (kind) {
     case "app":
       return "shard";
