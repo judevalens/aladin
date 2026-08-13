@@ -54,7 +54,7 @@ export function NotificationBell() {
 
       <DropdownMenuContent align="start" side="right" className="w-80 p-0">
         <div className="flex items-center justify-between border-b border-line px-3 py-2">
-          <span className="font-display text-body font-semibold text-ink">Notifications</span>
+          <span className="text-body font-semibold text-ink">Notifications</span>
           {unread > 0 ? <span className="font-mono text-meta text-ink-4">{unread} unread</span> : null}
         </div>
         <div className="max-h-96 overflow-y-auto">

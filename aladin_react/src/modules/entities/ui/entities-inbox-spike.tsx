@@ -116,7 +116,7 @@ function toCard(e: PoolEntity): EntityListItem {
 function SectionHead({ title, hint, count }: { title: string; hint?: string; count?: string }) {
   return (
     <div className="mb-2.5 flex items-center gap-2">
-      <span className="font-display text-body font-semibold text-ink">{title}</span>
+      <span className="text-body font-semibold text-ink">{title}</span>
       {hint && <span className="font-mono text-meta text-ink-4">{hint}</span>}
       <span className="h-px flex-1 bg-line-2" />
       {count && <span className="font-mono text-meta text-ink-4">{count}</span>}

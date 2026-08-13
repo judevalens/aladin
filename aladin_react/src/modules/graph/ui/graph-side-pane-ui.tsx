@@ -245,7 +245,7 @@ export function GraphSidePaneUI({
   return (
     <aside className="flex h-full w-[340px] shrink-0 flex-col overflow-hidden border-l border-line bg-panel">
       <header className="flex items-center gap-2 border-b border-line px-3 py-2.5">
-        <span className="font-display text-body text-ink">On the graph</span>
+        <span className="text-body text-ink">On the graph</span>
         <button
           type="button"
           aria-label="Close graph pane"

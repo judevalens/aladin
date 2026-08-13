@@ -192,9 +192,14 @@ stock shadcn — never ship the default shadcn look.
 10. **Section labels go through `<Eyebrow>`** (`components/ui/eyebrow.tsx`) — `tone="loud"`
    for the one that needs attention, `as="span" | "label" | "h2" | …` when the layout needs
    that element. The old `.eyebrow` class is **deleted**; there is no other eyebrow.
-11. **Spacing is the 4px step scale.** Arbitrary px is *layout* only (pane widths, the 38px
+11. **`font-display` (Space Grotesk) is for NAMES, not labels.** Below `text-lead` it belongs
+   only on things that identify something — entity names, ticker symbols, document titles, the
+   amber monogram — where it aids scanning. Section headings and pane labels under 15px use
+   system sans; at `text-lead` and above, display font as usual. (Owner's call, 2026-08-12:
+   Space Grotesk at 13px in a dense list read as a different app from the shell.)
+12. **Spacing is the 4px step scale.** Arbitrary px is *layout* only (pane widths, the 38px
    rail cell), and layout is rare.
-12. **Don't invent metrics.** No progress rings, mastery scores, or zeroed stat tiles for data
+13. **Don't invent metrics.** No progress rings, mastery scores, or zeroed stat tiles for data
    that doesn't exist. An empty state names what belongs there in one sentence. Silence is the
    correct rendering of "fine". (`RESEARCH_SURFACE_PRD.md` §2 is explicit.)
 
@@ -282,7 +287,8 @@ grep -nE 'text-\[[0-9.]+(px|rem)\]' <files>           # rule 7  type
 grep -nE 'rounded-\[[0-9]+px\]|rounded-(sm|md|lg)\b' <files>   # rule 8  radius
 # rule 9  icons — capitalized tag only: <line>/<path>/<circle> in an SVG are not icons
 grep -nE '<[A-Z][A-Za-z0-9]*(\s+[^<>]*)?(strokeWidth=|size=\{[0-9]+\})' <files>
-grep -nE '\b(p|px|py|m|mb|mt|gap)-\[[0-9]+px\]' <files>        # rule 11 spacing
+grep -nE 'font-display' <files> | grep -E 'text-(meta|small|body)'   # rule 11 names-only
+grep -nE '\b(p|px|py|m|mb|mt|gap)-\[[0-9]+px\]' <files>        # rule 12 spacing
 ```
 
 The tree is not clean on rules 7–11 yet — the migration is staged (see the design-system

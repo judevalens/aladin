@@ -96,7 +96,7 @@ export function InsightsUI() {
     <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-bg">
       <header className="flex items-center gap-3 border-b border-line bg-panel px-4 py-2.5">
         <Icon as={Lightbulb} mark className="text-amber" />
-        <span className="font-display text-body text-ink">Insights</span>
+        <span className="text-body text-ink">Insights</span>
         <div className="ml-auto flex items-center gap-1">
           {STATUS_TABS.map((tab) => (
             <button

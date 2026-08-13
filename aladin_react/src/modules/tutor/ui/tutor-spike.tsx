@@ -182,7 +182,7 @@ function SpikeBar({ scenario, onPick }: { scenario: Scenario; onPick: (s: Scenar
   const active = SCENARIOS.find((s) => s.id === scenario);
   return (
     <div className="flex shrink-0 items-center gap-3 border-b border-line bg-chrome px-4 py-2">
-      <span className="flex items-center gap-1.5 font-display text-small uppercase tracking-wider text-ink-3">
+      <span className="flex items-center gap-1.5 text-small uppercase tracking-wider text-ink-3">
         <Icon as={GraduationCap} size="inline" mark /> Tutor spike
       </span>
       <div className="flex items-center gap-1">
@@ -462,7 +462,7 @@ function AskPane({ scenario, onBuild }: { scenario: Scenario; onBuild: () => voi
   return (
     <aside className="flex w-[380px] shrink-0 flex-col border-l border-line bg-panel">
       <div className="border-b border-line px-4 py-2.5">
-        <span className="font-display text-small uppercase tracking-wider text-ink-3">Ask</span>
+        <span className="text-small uppercase tracking-wider text-ink-3">Ask</span>
       </div>
 
       <div className="min-h-0 flex-1 space-y-3 overflow-auto p-4">

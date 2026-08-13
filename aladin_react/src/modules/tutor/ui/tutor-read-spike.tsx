@@ -377,7 +377,7 @@ function PlanSheet({ onClose }: { onClose: () => void }) {
     <div className="absolute inset-x-0 top-12 z-20 mx-auto max-w-[64ch] px-6">
       <div className="rounded-card bg-raise p-4 shadow-modal">
         <div className="mb-3 flex items-baseline gap-2">
-          <span className="font-display text-small uppercase tracking-wider text-ink-3">Your plan</span>
+          <span className="text-small uppercase tracking-wider text-ink-3">Your plan</span>
           <span className="text-meta text-ink-4">edit freely — this outlives every aid</span>
           <button type="button" onClick={onClose} className="ml-auto text-ink-4 hover:text-ink">
             <Icon as={X} size="inline" mark />

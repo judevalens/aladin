@@ -105,7 +105,7 @@ export function MergeReviewUI({
     <div className="mb-8 rounded-control border border-line-2 bg-card p-3">
       <div className="flex items-center gap-2">
         <Icon as={Link2} size="inline" className="shrink-0 text-ink-3" />
-        <span className="font-display text-body font-semibold text-ink">
+        <span className="text-body font-semibold text-ink">
           Same, or just similar?
         </span>
         <span className="flex-1" />
