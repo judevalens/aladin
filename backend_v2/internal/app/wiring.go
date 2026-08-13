@@ -348,8 +348,10 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 	artifactFiles := NewArtifactFileStore()
 	docStore := docsurface.NewStore(dataVolumePath)
 	docRuntime := docsurface.NewBuilder(docStore, filepath.Join(dataVolumePath, "cache", "esm"))
-	docPreview := docsurface.NewPreviewSessions(docStore, docRuntime, docsurface.PreviewOptions{})
 	shardBuild := coreservice.NewShardBuildService(docRuntime, repo.NewShardBuildPostgres(pool))
+	// Preview rebuilds ride the build service too, so an agent's preview_open
+	// updates the same build-status the work pane shows.
+	docPreview := docsurface.NewPreviewSessions(docStore, docRuntime, docsurface.PreviewOptions{Builder: shardBuild})
 	shardKVRepo := repo.NewShardKVPostgres(pool)
 	researchSvc := coreservice.NewResearchService(repo.NewResearchPostgres(pool))
 	feedRepo := repo.NewFeedPostgres(pool)

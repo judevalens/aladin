@@ -60,6 +60,11 @@ const (
 type PreviewOptions struct {
 	IdleTTL     time.Duration
 	MaxSessions int
+	// Builder, when set, is used for the rebuild every Open performs, so a
+	// preview build records shard_build_state and emits a build-status event
+	// like any other build. Without it Open falls back to the raw runtime and
+	// the work pane's status chip goes stale while an agent iterates.
+	Builder service.ShardBuildService
 }
 
 // PreviewSessions is the service.PreviewService impl. One manager owns a shared
@@ -67,6 +72,7 @@ type PreviewOptions struct {
 type PreviewSessions struct {
 	store   service.DocSurfaceStore
 	runtime service.WorkspaceRuntime
+	builder service.ShardBuildService // optional; see PreviewOptions.Builder
 
 	idleTTL      time.Duration
 	maxSessions  int
@@ -102,8 +108,9 @@ type previewSession struct {
 	started bool // browser/tab allocated (first Run done); guarded by opMu
 
 	logMu      sync.Mutex
-	console    []string
-	exceptions []string
+	console       []string
+	consoleErrors []string
+	exceptions    []string
 
 	lastUsed time.Time
 }
@@ -127,6 +134,7 @@ func NewPreviewSessions(store service.DocSurfaceStore, runtime service.Workspace
 	m := &PreviewSessions{
 		store:        store,
 		runtime:      runtime,
+		builder:      opts.Builder,
 		idleTTL:      opts.IdleTTL,
 		maxSessions:  opts.MaxSessions,
 		tickInterval: tick,
@@ -145,7 +153,9 @@ func (m *PreviewSessions) Open(ctx context.Context, pageID string, channel servi
 		return service.PreviewState{}, err
 	}
 	// Rebuild on every open so the tab always reflects the agent's latest edits.
-	res, err := m.runtime.Build(ctx, pageID, channel)
+	// Through the build SERVICE when available, so the status the work pane
+	// shows tracks what the agent is previewing.
+	res, err := m.build(ctx, pageID, channel)
 	if err != nil {
 		return service.PreviewState{}, err
 	}
@@ -182,6 +192,15 @@ func (m *PreviewSessions) Open(ctx context.Context, pageID string, channel servi
 		}
 		return service.PreviewState{}, err
 	}
+}
+
+// build runs the page's build through the status-recording service when one is
+// wired, else straight through the runtime.
+func (m *PreviewSessions) build(ctx context.Context, pageID string, channel service.BuildChannel) (service.BuildResult, error) {
+	if m.builder != nil {
+		return m.builder.Build(ctx, pageID, channel)
+	}
+	return m.runtime.Build(ctx, pageID, channel)
 }
 
 // openOnce performs one load attempt: (re)acquire the tab, warm up the browser
@@ -340,6 +359,54 @@ func (m *PreviewSessions) Console(ctx context.Context, pageID string) (service.P
 	opCtx, cancel := context.WithTimeout(s.tabCtx, opTimeout)
 	defer cancel()
 	return m.captureState(opCtx, s, pageID), nil
+}
+
+// ConsoleErrors returns the console.error lines accumulated since open.
+func (m *PreviewSessions) ConsoleErrors(ctx context.Context, pageID string) ([]string, error) {
+	s, err := m.getExisting(ctx, pageID)
+	if err != nil {
+		return nil, err
+	}
+	s.opMu.Lock()
+	defer s.opMu.Unlock()
+	return s.drainConsoleErrors(), nil
+}
+
+// CheckAnchors counts, for each declared anchor id, how many elements carry it
+// on the CURRENT route (kit Region stamps data-anchor). This is the check the
+// manifest always promised and never had: a shard whose anchors.json claims a
+// region that isn't in the DOM is lying about its own structure, and every
+// downstream consumer (deep links, provenance, live regions) is broken.
+func (m *PreviewSessions) CheckAnchors(ctx context.Context, pageID string, anchorIDs []string) (map[string]int, error) {
+	s, err := m.getExisting(ctx, pageID)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]int{}
+	if len(anchorIDs) == 0 {
+		return out, nil
+	}
+	s.opMu.Lock()
+	defer s.opMu.Unlock()
+	opCtx, cancel := context.WithTimeout(s.tabCtx, opTimeout)
+	defer cancel()
+
+	ids, err := json.Marshal(anchorIDs)
+	if err != nil {
+		return nil, err
+	}
+	// One round trip for every anchor. CSS.escape keeps a hostile/odd anchor id
+	// from breaking the selector.
+	expr := `(function(ids){var o={};ids.forEach(function(id){
+	  o[id]=document.querySelectorAll('[data-anchor="'+CSS.escape(id)+'"]').length;});return o;})(` + string(ids) + `)`
+	var counts map[string]int
+	if err := chromedp.Run(opCtx, chromedp.Evaluate(expr, &counts)); err != nil {
+		return nil, fmt.Errorf("check anchors: %w", err)
+	}
+	for id, n := range counts {
+		out[id] = n
+	}
+	return out, nil
 }
 
 // Reset force-restarts the renderer: it tears down the shared browser and all
@@ -635,6 +702,12 @@ func (s *previewSession) onEvent(ev any) {
 		line := string(e.Type) + ": " + formatConsoleArgs(e.Args)
 		s.logMu.Lock()
 		s.console = appendCapped(s.console, line, maxLogLines)
+		// console.error is partitioned out as well as kept in the full log: the
+		// verify pass reports it separately (and can be told to fail on it),
+		// while `console` stays the complete transcript for debugging.
+		if e.Type == "error" {
+			s.consoleErrors = appendCapped(s.consoleErrors, line, maxLogLines)
+		}
 		s.logMu.Unlock()
 	case *cdpruntime.EventExceptionThrown:
 		msg := e.ExceptionDetails.Text
@@ -650,6 +723,7 @@ func (s *previewSession) onEvent(ev any) {
 func (s *previewSession) resetLogs() {
 	s.logMu.Lock()
 	s.console = nil
+	s.consoleErrors = nil
 	s.exceptions = nil
 	s.logMu.Unlock()
 }
@@ -658,6 +732,14 @@ func (s *previewSession) drainLogs() (console, exceptions []string) {
 	s.logMu.Lock()
 	defer s.logMu.Unlock()
 	return lastN(s.console, logReturn), lastN(s.exceptions, logReturn)
+}
+
+// drainConsoleErrors returns the console.error lines accumulated since the last
+// reset (the verify pass reads these separately from the full console).
+func (s *previewSession) drainConsoleErrors() []string {
+	s.logMu.Lock()
+	defer s.logMu.Unlock()
+	return lastN(s.consoleErrors, logReturn)
 }
 
 // --- helpers ---------------------------------------------------------------

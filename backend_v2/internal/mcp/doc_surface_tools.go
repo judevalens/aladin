@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
+	"time"
 
 	"aladin/backend_v2/internal/docsurface"
 	"aladin/backend_v2/internal/service"
@@ -133,8 +135,12 @@ func registerDocSurfaceTools(server *sdkmcp.Server, artifacts service.ArtifactSe
 		Description: "Build a Doc Surface page (bundles index.tsx with esbuild). Returns ok + a build log; on failure, read the log, fix the files, and build again.",
 	}, t.buildApp)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
+		Name:        "verify_app",
+		Description: "Verify a shard WITHOUT publishing: validates anchors.json, checks every declared ref resolves, then drives each declared route through the live preview and reports per route whether it mounted, which declared anchors are actually in the DOM, uncaught exceptions (unhandled promise rejections included), and console errors. Defaults to the draft channel; pass strict_console=true to treat console errors as failures. Run this before publish_app — publish applies the same checks, but this shows you the whole report while you can still fix it.",
+	}, t.verifyAppTool)
+	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "publish_app",
-		Description: "Publish a built Doc Surface page: records the markdown summary (the knowledge-graph spine) and marks the page live. Requires a successful build_app first. Before going live it VERIFIES the build by driving every manifest route through the live preview — publish is REFUSED if a route fails to mount or throws (fix it and retry). If no renderer is available it publishes UNVERIFIED and returns a warning.",
+		Description: "Publish a shard: builds the published channel, VERIFIES it (every declared route mounts, throws nothing, and contains its declared anchors; every anchors.json ref resolves), records the markdown summary, and marks the page live. Publish is REFUSED if verification fails — run verify_app for the detail, fix, and retry. Refs that exist but whose kind emits no change events publish with a warning (they render but never update live). If no renderer is available it publishes UNVERIFIED and returns a warning.",
 	}, t.publishApp)
 
 	// --- interactive preview (headless inspection session) -----------------
@@ -218,6 +224,10 @@ type writeFileInput struct {
 	// diagnostics ride back in the result. Set false for bulk multi-file writes
 	// (build once at the end, or via build_app).
 	Build *bool `json:"build,omitempty"`
+	// Overwrite must be set to replace an EXISTING file. Without it a write to
+	// an existing path is refused — the common agent failure is clobbering a
+	// file it never read (use read_file/edit_file for a surgical change).
+	Overwrite bool `json:"overwrite,omitempty"`
 }
 type writeFileOutput struct {
 	OK    bool                 `json:"ok"`
@@ -277,6 +287,43 @@ type publishAppOutput struct {
 	Verified  bool          `json:"verified"`
 	Warning   string        `json:"warning,omitempty"`
 	Citations []citationOut `json:"citations,omitempty"`
+}
+
+// verifyReport is the structured result of a verification pass — the same shape
+// verify_app returns and publish_app gates on.
+type verifyReport struct {
+	OK                bool          `json:"ok"`
+	Channel           string        `json:"channel"`
+	RendererAvailable bool          `json:"renderer_available"`
+	Warning           string        `json:"warning,omitempty"`
+	ManifestProblems  []string      `json:"manifest_problems,omitempty"`
+	Refs              *refsSummary  `json:"refs,omitempty"`
+	Routes            []verifyRoute `json:"routes,omitempty"`
+}
+
+type verifyRoute struct {
+	Route          string         `json:"route"`
+	OK             bool           `json:"ok"`
+	Mounted        bool           `json:"mounted"`
+	AnchorsFound   map[string]int `json:"anchors_found,omitempty"`
+	AnchorsMissing []string       `json:"anchors_missing,omitempty"`
+	Exceptions     []string       `json:"exceptions,omitempty"`
+	ConsoleErrors  []string       `json:"console_errors,omitempty"`
+	NavigateError  string         `json:"navigate_error,omitempty"`
+}
+
+type refsSummary struct {
+	OK           bool     `json:"ok"`
+	Total        int      `json:"total"`
+	Missing      []string `json:"missing,omitempty"`
+	UnknownKind  []string `json:"unknown_kind,omitempty"`
+	Unobservable []string `json:"unobservable,omitempty"`
+}
+
+type verifyAppInput struct {
+	PageID        string `json:"page_id"`
+	Channel       string `json:"channel,omitempty"`        // "draft" (default) | "published"
+	StrictConsole bool   `json:"strict_console,omitempty"` // fail on console.error too
 }
 
 type previewOpenInput struct {
@@ -378,6 +425,9 @@ func (t docToolServer) deleteFile(ctx context.Context, _ *sdkmcp.CallToolRequest
 	if strings.TrimSpace(in.Path) == "" {
 		return nil, deleteFileOutput{}, service.BadRequest("path is required")
 	}
+	if existing, rerr := t.store.ReadFile(ctx, in.PageID, in.Path); rerr == nil {
+		t.snapshotFile(ctx, in.PageID, in.Path, existing, "delete")
+	}
 	if err := t.store.DeleteFile(ctx, in.PageID, in.Path); err != nil {
 		return nil, deleteFileOutput{}, err
 	}
@@ -416,10 +466,64 @@ func (t docToolServer) writeFile(ctx context.Context, _ *sdkmcp.CallToolRequest,
 	if strings.TrimSpace(in.Path) == "" {
 		return nil, writeFileOutput{}, service.BadRequest("path is required")
 	}
+	if existing, rerr := t.store.ReadFile(ctx, in.PageID, in.Path); rerr == nil {
+		if !in.Overwrite {
+			return nil, writeFileOutput{}, service.BadRequest(fmt.Sprintf(
+				"%s already exists (%d bytes) — read it first, then use edit_file for a targeted change, or pass overwrite:true to replace it wholesale.",
+				in.Path, len(existing)))
+		}
+		t.snapshotFile(ctx, in.PageID, in.Path, existing, "write")
+	}
 	if err := t.store.WriteFile(ctx, in.PageID, in.Path, []byte(in.Content)); err != nil {
 		return nil, writeFileOutput{}, err
 	}
 	return nil, writeFileOutput{OK: true, Path: in.Path, Build: t.maybeAutoBuild(ctx, in.PageID, in.Build)}, nil
+}
+
+// historyDir holds pre-change snapshots. Deliberately minimal: a copy of the
+// previous bytes under a sortable timestamp, inspectable and restorable with
+// the tools that already exist (list_dir / read_file / write_file), pruned to a
+// small cap. Not version control — just enough that an overwrite or delete is
+// recoverable. It lives outside the build graph (only imports are bundled).
+const historyDir = ".history"
+
+const historyKeep = 20
+
+// snapshotFile copies a file's current bytes into .history before it is
+// replaced or removed. Each snapshot is ONE flat file —
+// ".history/<stamp>-<op>-<path with / as __>" — so pruning is a plain file
+// delete (removing a directory tree is not something the store can do).
+// Best-effort by design: losing a snapshot must never fail the write the agent
+// actually asked for.
+func (t docToolServer) snapshotFile(ctx context.Context, pageID, path string, content []byte, op string) {
+	stamp := time.Now().UTC().Format("20060102T150405.000000000Z")
+	dest := fmt.Sprintf("%s/%s-%s-%s", historyDir, stamp, op, strings.ReplaceAll(path, "/", "__"))
+	if err := t.store.WriteFile(ctx, pageID, dest, content); err != nil {
+		return
+	}
+	t.pruneHistory(ctx, pageID)
+}
+
+// pruneHistory keeps the newest historyKeep snapshots. Names begin with a
+// fixed-width UTC timestamp, so lexical order is chronological.
+func (t docToolServer) pruneHistory(ctx context.Context, pageID string) {
+	entries, err := t.store.ListDir(ctx, pageID, historyDir)
+	if err != nil || len(entries) <= historyKeep {
+		return
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if !e.IsDir {
+			names = append(names, e.Name)
+		}
+	}
+	if len(names) <= historyKeep {
+		return
+	}
+	sort.Strings(names)
+	for _, name := range names[:len(names)-historyKeep] {
+		_ = t.store.DeleteFile(ctx, pageID, historyDir+"/"+name)
+	}
 }
 
 func (t docToolServer) editFile(ctx context.Context, _ *sdkmcp.CallToolRequest, in editFileInput) (*sdkmcp.CallToolResult, editFileOutput, error) {
@@ -531,22 +635,74 @@ func (t docToolServer) buildApp(ctx context.Context, _ *sdkmcp.CallToolRequest, 
 	return nil, res, nil
 }
 
+// verifyAppTool is the agent-facing verification pass: the full structured
+// report (manifest, refs, per-route mount/anchors/exceptions/console) with no
+// side effects. Run it before publish_app — publish applies the same checks,
+// but this one tells you exactly what is wrong while you can still fix it.
+func (t docToolServer) verifyAppTool(ctx context.Context, _ *sdkmcp.CallToolRequest, in verifyAppInput) (*sdkmcp.CallToolResult, verifyReport, error) {
+	if err := t.requireApp(ctx, in.PageID); err != nil {
+		return nil, verifyReport{}, err
+	}
+	channel := service.ChannelDraft
+	if in.Channel == string(service.ChannelPublished) {
+		channel = service.ChannelPublished
+	}
+	report, err := t.verifyApp(ctx, in.PageID, channel, in.StrictConsole)
+	if err != nil {
+		return nil, verifyReport{}, err
+	}
+	if t.bridge != nil {
+		refs, rerr := t.bridge.CheckRefs(ctx, in.PageID)
+		if rerr != nil {
+			return nil, verifyReport{}, rerr
+		}
+		report.Refs = &refsSummary{
+			OK:           refs.OK,
+			Total:        refs.Total,
+			Missing:      refs.Missing,
+			UnknownKind:  refs.UnknownKind,
+			Unobservable: refs.Unobservable,
+		}
+		if !refs.OK {
+			report.OK = false
+		}
+	}
+	return nil, report, nil
+}
+
 func (t docToolServer) publishApp(ctx context.Context, _ *sdkmcp.CallToolRequest, in publishAppInput) (*sdkmcp.CallToolResult, publishAppOutput, error) {
 	if err := t.requireApp(ctx, in.PageID); err != nil {
 		return nil, publishAppOutput{}, err
 	}
-	// Require a prior successful build (the marker, not just a stale bundle.js).
-	if _, err := t.store.ReadFile(ctx, in.PageID, docsurface.BuildMetaPath); err != nil {
+	// Build the PUBLISHED channel here rather than trusting a marker file. The
+	// old flow gated on dist/.build-meta.json merely EXISTING, while every
+	// write auto-builds the DRAFT channel — so a shard edited after its last
+	// build_app could publish stale bytes that no check ever saw. Building now
+	// makes "what was verified" and "what goes live" the same artifact.
+	if t.build != nil {
+		res, berr := t.build.Build(ctx, in.PageID, service.ChannelPublished)
+		if berr != nil {
+			return nil, publishAppOutput{}, berr
+		}
+		if !res.OK {
+			return nil, publishAppOutput{}, service.BadRequest("publish blocked — the published build failed:\n" + res.Log)
+		}
+	} else if _, err := t.store.ReadFile(ctx, in.PageID, docsurface.BuildMetaPath); err != nil {
 		return nil, publishAppOutput{}, service.BadRequest("no successful build found — run build_app first")
 	}
-	// Gate on a live mount check across the manifest's routes: a build that
-	// doesn't actually render must not go live. Hard-fails (refuses to publish)
-	// when the renderer is available and a route is broken; soft-warns (publishes
+	// Gate on the full verification pass against what was just built: mounts,
+	// no uncaught exceptions/rejections, and every declared anchor present.
+	// Hard-fails when the renderer is available; soft-warns (publishes
 	// UNVERIFIED) only when there's no renderer to verify with.
-	verified, warning, err := t.verifyMount(ctx, in.PageID)
+	report, err := t.verifyApp(ctx, in.PageID, service.ChannelPublished, false)
 	if err != nil {
 		return nil, publishAppOutput{}, err
 	}
+	if problems := verifyFailure(report); problems != "" {
+		return nil, publishAppOutput{}, service.BadRequest("publish blocked — verification failed:\n  - " + problems +
+			"\nRun verify_app for the full report, fix, then publish_app again.")
+	}
+	verified, warning := report.RendererAvailable, report.Warning
 	// Gate on the manifest's REFS too: a shard that declares data it can't read
 	// renders an empty region for the user with no error anywhere. A missing or
 	// unknown-kind ref is a hard refusal; a ref whose kind emits no sync frames
@@ -602,83 +758,167 @@ func (t docToolServer) publishApp(ctx context.Context, _ *sdkmcp.CallToolRequest
 	}, nil
 }
 
-// verifyMount drives the live preview across the page's declared manifest routes
-// and confirms each mounts cleanly. Returns (verified, warning, err):
-//   - err != nil   → a route failed to mount with the renderer AVAILABLE: a hard
-//     gate; publish is refused. (Also surfaces a genuine build failure.)
-//   - verified=false + warning → renderer UNAVAILABLE (no Chrome): a soft warn;
-//     the caller publishes anyway but the result is stamped unverified.
-//   - verified=true → every route mounted with no uncaught exceptions.
-func (t docToolServer) verifyMount(ctx context.Context, pageID string) (bool, string, error) {
-	routes := t.manifestRoutes(ctx, pageID)
-	first, err := t.preview.Open(ctx, pageID, service.ChannelPublished, service.PreviewOpenOptions{})
+// verifyApp drives the live preview across the page's declared routes and
+// checks, per route: it mounts, it threw no uncaught exceptions (unhandled
+// promise rejections included — the preview captures those as console.error),
+// and every anchor the manifest declares for that route actually exists in the
+// DOM. console.error lines are always REPORTED; they only fail the pass when
+// strictConsole is set, because vendored libraries legitimately log errors.
+//
+// The report is the shared truth: verify_app returns it as-is, and publish
+// turns it into a refusal.
+func (t docToolServer) verifyApp(ctx context.Context, pageID string, channel service.BuildChannel, strictConsole bool) (verifyReport, error) {
+	report := verifyReport{Channel: string(channel)}
+
+	// Structure first: a manifest that doesn't parse can't be checked against,
+	// and must never silently degrade to "just check the root".
+	if data, err := t.store.ReadFile(ctx, pageID, docsurface.ManifestFileName); err == nil {
+		report.ManifestProblems = docsurface.ValidateManifestBytes(data)
+		if len(report.ManifestProblems) > 0 {
+			return report, nil // no point driving a browser against a broken manifest
+		}
+	}
+	byRoute, routes := t.manifestAnchorsByRoute(ctx, pageID)
+
+	first, err := t.preview.Open(ctx, pageID, channel, service.PreviewOpenOptions{})
 	if err != nil {
 		if docsurface.IsRendererUnavailable(err) {
-			return false, "renderer unavailable — published WITHOUT mount verification; preview the routes manually before relying on this build.", nil
+			report.RendererAvailable = false
+			report.Warning = "renderer unavailable — nothing was verified; preview the routes manually before relying on this build."
+			return report, nil
 		}
-		return false, "", err
+		return report, err
+	}
+	report.RendererAvailable = true
+
+	check := func(route string, st service.PreviewState) verifyRoute {
+		vr := verifyRoute{
+			Route:      route,
+			Mounted:    st.Mounted,
+			Exceptions: st.Exceptions,
+		}
+		if errs, cerr := t.preview.ConsoleErrors(ctx, pageID); cerr == nil {
+			vr.ConsoleErrors = errs
+		}
+		declared := byRoute[route]
+		if len(declared) > 0 {
+			counts, aerr := t.preview.CheckAnchors(ctx, pageID, declared)
+			if aerr == nil {
+				vr.AnchorsFound = counts
+				for _, id := range declared {
+					if counts[id] == 0 {
+						vr.AnchorsMissing = append(vr.AnchorsMissing, id)
+					}
+				}
+			}
+		}
+		vr.OK = vr.Mounted && len(vr.Exceptions) == 0 && len(vr.AnchorsMissing) == 0 &&
+			(!strictConsole || len(vr.ConsoleErrors) == 0)
+		return vr
 	}
 
-	var failed []string
-	note := func(route string, st service.PreviewState) {
-		switch {
-		case !st.Mounted:
-			failed = append(failed, route+" (did not mount)")
-		case len(st.Exceptions) > 0:
-			failed = append(failed, fmt.Sprintf("%s (%d uncaught exception(s): %s)", route, len(st.Exceptions), firstLine(st.Exceptions[0])))
-		}
-	}
-	// Open landed on the app's default route ("#/"); verify it, then walk the rest.
-	note(firstNonEmpty(first.URL, "#/"), first)
+	// Open landed on the app's default route ("#/"); check it, then walk the rest.
+	firstRoute := firstNonEmpty(routeOf(first.URL), "#/")
+	report.Routes = append(report.Routes, check(firstRoute, first))
 	for _, r := range routes {
-		if r == "#/" {
+		if r == firstRoute {
 			continue // already covered by the initial Open
 		}
 		st, nerr := t.preview.Navigate(ctx, pageID, r)
 		if nerr != nil {
 			if docsurface.IsRendererUnavailable(nerr) {
-				return false, "renderer unavailable mid-verification — published UNVERIFIED.", nil
+				report.RendererAvailable = false
+				report.Warning = "renderer unavailable mid-verification — the remaining routes were not checked."
+				return report, nil
 			}
-			failed = append(failed, r+" (navigate error: "+firstLine(nerr.Error())+")")
+			report.Routes = append(report.Routes, verifyRoute{Route: r, NavigateError: firstLine(nerr.Error())})
 			continue
 		}
-		note(r, st)
+		report.Routes = append(report.Routes, check(r, st))
 	}
 
-	if len(failed) > 0 {
-		return false, "", service.BadRequest("publish blocked — these routes did not mount cleanly:\n  - " +
-			strings.Join(failed, "\n  - ") +
-			"\nFix the build (use preview_open/preview_navigate to debug), then build_app + publish_app again.")
+	report.OK = len(report.ManifestProblems) == 0
+	for _, r := range report.Routes {
+		if !r.OK {
+			report.OK = false
+		}
 	}
-	return true, "", nil
+	return report, nil
 }
 
-// manifestRoutes returns the distinct, declared routes from the page's
-// anchors.json (in declaration order). Falls back to just "#/" when there is no
-// manifest or no routes — the root must at least mount.
-func (t docToolServer) manifestRoutes(ctx context.Context, pageID string) []string {
+// verifyFailure renders a report's problems as the message a publish refusal
+// carries; "" when nothing is wrong.
+func verifyFailure(report verifyReport) string {
+	if report.OK || !report.RendererAvailable {
+		return ""
+	}
+	var lines []string
+	for _, p := range report.ManifestProblems {
+		lines = append(lines, "anchors.json: "+p)
+	}
+	for _, r := range report.Routes {
+		if r.OK {
+			continue
+		}
+		switch {
+		case r.NavigateError != "":
+			lines = append(lines, r.Route+" (navigate error: "+r.NavigateError+")")
+		case !r.Mounted:
+			lines = append(lines, r.Route+" (did not mount)")
+		case len(r.Exceptions) > 0:
+			lines = append(lines, fmt.Sprintf("%s (%d uncaught exception(s): %s)", r.Route, len(r.Exceptions), firstLine(r.Exceptions[0])))
+		case len(r.AnchorsMissing) > 0:
+			lines = append(lines, fmt.Sprintf("%s (declared anchors not in the DOM: %s)", r.Route, strings.Join(r.AnchorsMissing, ", ")))
+		case len(r.ConsoleErrors) > 0:
+			lines = append(lines, fmt.Sprintf("%s (%d console error(s): %s)", r.Route, len(r.ConsoleErrors), firstLine(r.ConsoleErrors[0])))
+		}
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return strings.Join(lines, "\n  - ")
+}
+
+// routeOf extracts the hash route from a preview URL ("about:blank#/x" → "#/x").
+func routeOf(url string) string {
+	if i := strings.IndexByte(url, '#'); i >= 0 {
+		return url[i:]
+	}
+	return ""
+}
+
+// manifestAnchorsByRoute groups declared anchor ids by their route, and returns
+// the distinct routes in declaration order. Falls back to just "#/" when there
+// is no manifest — the root must at least mount.
+func (t docToolServer) manifestAnchorsByRoute(ctx context.Context, pageID string) (map[string][]string, []string) {
 	data, err := t.store.ReadFile(ctx, pageID, docsurface.ManifestFileName)
 	if err != nil {
-		return []string{"#/"}
+		return nil, []string{"#/"}
 	}
 	m, err := docsurface.ParseManifest(data)
 	if err != nil {
-		return []string{"#/"}
+		return nil, []string{"#/"}
 	}
+	byRoute := map[string][]string{}
 	seen := map[string]bool{}
 	var routes []string
 	for _, a := range m.Anchors {
 		r := strings.TrimSpace(a.Route)
-		if r == "" || seen[r] {
+		if r == "" {
 			continue
 		}
-		seen[r] = true
-		routes = append(routes, r)
+		if !seen[r] {
+			seen[r] = true
+			routes = append(routes, r)
+		}
+		if id := strings.TrimSpace(a.ID); id != "" {
+			byRoute[r] = append(byRoute[r], id)
+		}
 	}
 	if len(routes) == 0 {
-		return []string{"#/"}
+		return byRoute, []string{"#/"}
 	}
-	return routes
+	return byRoute, routes
 }
 
 // firstLine returns s up to its first newline, trimmed and length-capped, for a

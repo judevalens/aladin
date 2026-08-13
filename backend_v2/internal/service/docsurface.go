@@ -130,6 +130,12 @@ type PreviewService interface {
 	Click(ctx context.Context, pageID, selector string) (PreviewState, error)
 	// Console returns the console + exception lines accumulated since open.
 	Console(ctx context.Context, pageID string) (PreviewState, error)
+	// CheckAnchors counts elements carrying each anchor id on the current route
+	// (the manifest's structural claim, checked against the live DOM).
+	CheckAnchors(ctx context.Context, pageID string, anchorIDs []string) (map[string]int, error)
+	// ConsoleErrors returns just the console.error lines since open, so a verify
+	// pass can report (or gate on) them separately from the full transcript.
+	ConsoleErrors(ctx context.Context, pageID string) ([]string, error)
 	// Close frees the page's tab (no-op if none open).
 	Close(ctx context.Context, pageID string) error
 	// Reset force-tears down the shared browser + every tab so the next Open

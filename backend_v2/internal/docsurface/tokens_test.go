@@ -38,9 +38,11 @@ func TestPreviewHTMLCarriesMetaCSP(t *testing.T) {
 func TestPreviewHTMLMatchesEntryBody(t *testing.T) {
 	entry := EntryHTML("T", TokensCSS, "", `1`, ImportMap{}, "")
 	preview := PreviewHTML("T", TokensCSS, "", `1`, CSP, ImportMap{}, "")
-	// PreviewHTML = EntryHTML + two preview-only head injections: the CSP meta and
-	// the bridge emulator. Removing exactly that block should recover EntryHTML.
+	// PreviewHTML = EntryHTML + three preview-only head injections: the CSP meta,
+	// the unhandled-rejection capture, and the bridge emulator. Removing exactly
+	// that block should recover EntryHTML.
 	injected := "<meta http-equiv=\"Content-Security-Policy\" content=\"" + CSP + "\">\n" +
+		"<script>" + previewRejectionCaptureJS + "</script>\n" +
 		"<script>" + breakInlineClosers(previewBridgeEmulatorJS) + "</script>\n"
 	if got := strings.Replace(preview, injected, "", 1); got != entry {
 		t.Fatalf("PreviewHTML is not EntryHTML+meta+emulator:\n--- recovered ---\n%s\n--- entry ---\n%s", got, entry)

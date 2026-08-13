@@ -92,18 +92,23 @@ Authoring loop (like a normal dev):
   2. write_file / edit_file   → author index.tsx + components, composing
      @aladin/kit (above); mount onto #root via createRoot from "react-dom/client".
      EVERY write auto-runs a DRAFT build and returns diagnostics inline — read
-     them. Use edit_file (exact old_string→new_string) for surgical edits;
-     write_file overwrites a whole file (pass build:false to skip the auto-build
-     for bulk multi-file writes, then build once).
+     them. Use edit_file (exact old_string→new_string) for surgical edits.
+     write_file only CREATES: replacing an existing file needs overwrite:true,
+     and the previous bytes are snapshotted under .history/ first. (Pass
+     build:false to skip the auto-build for bulk multi-file writes, then build once.)
   3. install_lib(page_id, name) → add a dependency (e.g. "recharts", "d3");
      import it normally. It is bundled from esm.sh at build time.
   4. build_app(page_id)        → compiles. On {ok:false}, read log, fix, rebuild.
   5. preview_open(page_id)      → build + open a LIVE headless tab. Verify it
      actually RUNS (compiling != working): expect mounted:true and an empty
      exceptions list. Walk every route and inspect before publishing.
-  6. publish_app(page_id, summary) → records a markdown summary (the knowledge-
-     graph spine — describe what the app shows) and marks it live. Requires a
-     successful build_app first.
+  6. verify_app(page_id)        → the full pass in one call: manifest validity,
+     refs resolve, and per route mounted / declared anchors present in the DOM /
+     exceptions / console errors. Fix everything it reports.
+  7. publish_app(page_id, summary) → builds the published channel, re-runs that
+     same verification (publish is REFUSED if it fails), records a markdown
+     summary (the knowledge-graph spine — describe what the app shows), and
+     marks it live.
 
 Multi-page docs — ONE app, HASH routing:
   A Doc is a single React app. "Pages"/nested sections are CLIENT-SIDE HASH
@@ -133,14 +138,20 @@ Inspecting (do this before publish):
     / preview_screenshot to confirm the right view rendered, preview_eval to read
     app state, preview_click(selector) to exercise flows (menus, in-app links).
   - preview_console → confirm no uncaught exceptions accumulated.
-  - Found a bug? write_file the fix, then preview_open again (it rebuilds + reloads
-    the same tab). Only publish_app once EVERY route mounts clean.
+  - verify_app → the one call that checks everything publish will check,
+    including the two things preview alone can't tell you: whether each anchor
+    you DECLARED in anchors.json is actually in the DOM on its route, and
+    whether every ref resolves. Run it last, before publish_app.
+  - Found a bug? edit_file the fix, then preview_open again (it rebuilds + reloads
+    the same tab). Only publish_app once verify_app is clean.
   - "renderer unavailable" means no headless browser is present — that is NOT a
     build failure; fall back to build_app + reading the log.
 
 Notes:
-  - read_file / list_dir to inspect; write_file overwrites whole files;
-    delete_file removes one (a draft build runs after each write/delete).
+  - read_file / list_dir to inspect; write_file creates (overwrite:true to
+    replace); delete_file removes one (a draft build runs after each
+    write/delete). Replaced/deleted bytes are kept under .history/ — read_file
+    one to recover, write_file it back.
   - The runtime is isolated: no network at runtime, no access to Aladin. Keep all
     state in-app. Entry point is always index.tsx at the page root.
 

@@ -287,6 +287,14 @@ const previewBridgeEmulatorJS = `(function(){
   });
 })();`
 
+// previewRejectionCaptureJS surfaces unhandled promise rejections. CDP's
+// Runtime.exceptionThrown does NOT fire for them, so a shard whose data load
+// rejects (the most common real failure) looked perfectly healthy to the gate.
+// Routing them through console.error puts them in the same accumulator the
+// verify pass already reads. Preview-only: served docs don't carry it.
+const previewRejectionCaptureJS = `window.addEventListener("unhandledrejection",function(e){
+  var r=e&&e.reason; console.error("[unhandledrejection] "+((r&&(r.stack||r.message))||String(r)));});`
+
 // PreviewHTML is EntryHTML for the headless preview renderer. It is the same
 // document the serve route emits, plus two preview-only injections: the CSP as a
 // <meta http-equiv> tag (page.SetDocumentContent loads HTML with no HTTP headers,
@@ -299,6 +307,7 @@ func PreviewHTML(title, tokensCSS, bundleCSS, bundleJS, csp string, im ImportMap
 	// so its listener is ready when the shard mounts). EntryHTML always emits this
 	// exact charset line.
 	head := "<meta http-equiv=\"Content-Security-Policy\" content=\"" + csp + "\">\n" +
+		"<script>" + previewRejectionCaptureJS + "</script>\n" +
 		"<script>" + breakInlineClosers(previewBridgeEmulatorJS) + "</script>\n"
 	return strings.Replace(doc, "<meta charset=\"utf-8\">\n", "<meta charset=\"utf-8\">\n"+head, 1)
 }
