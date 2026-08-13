@@ -164,31 +164,8 @@ export function DocSurfaceUI({ artifact, hidden = false }: { artifact: Artifact;
   );
 }
 
-// useKeepAliveIds tracks the most-recently-active page ids (LRU, capped) so their
-// iframes stay mounted across tab switches and keep their JS state.
-function useKeepAliveIds(activeId: string, cap: number): string[] {
-  const [ids, setIds] = useState<string[]>([activeId]);
-  useEffect(() => {
-    setIds((prev) => [activeId, ...prev.filter((id) => id !== activeId)].slice(0, cap));
-  }, [activeId, cap]);
-  return ids;
-}
-
-/**
- * DocSurfaceKeepAlive renders every open "app" page that is in the keep-alive
- * window, showing the active one and CSS-hiding the rest. Switching between app
- * tabs preserves each iframe's runtime state; an LRU cap bounds memory.
- */
-export function DocSurfaceKeepAlive({ activeId, artifacts }: { activeId: string; artifacts: Artifact[] }) {
-  const keep = useKeepAliveIds(activeId, 5);
-  const live = artifacts.filter((a) => keep.includes(a.id) || a.id === activeId);
-  return (
-    <div className="relative h-full w-full">
-      {live.map((a) => (
-        <div key={a.id} className={cn("absolute inset-0", a.id !== activeId && "hidden")}>
-          <DocSurfaceUI artifact={a} hidden={a.id !== activeId} />
-        </div>
-      ))}
-    </div>
-  );
-}
+// The shard-only keep-alive that used to live here (DocSurfaceKeepAlive + useKeepAliveIds) is
+// gone: the work pane now keeps EVERY tab kind mounted, so shards no longer need their own
+// mechanism, and two nested keep-alive windows would have double-mounted the iframes. See
+// `modules/workspace/hooks/use-keep-alive.ts` — the `hidden` prop below is still how a shard
+// learns it is off screen.

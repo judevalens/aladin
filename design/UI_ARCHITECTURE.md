@@ -117,15 +117,35 @@ The full rules live in `RESEARCH_SURFACE_PRD.md` **§12** — the `§12` comment
 
 ### The kind switch (how a thing gets rendered)
 
-`work-pane-ui.tsx` maps kind → viewer:
+`TabPane` in `work-pane-ui.tsx` maps kind → viewer:
 
 | `artifact.kind` | viewer |
 |---|---|
 | `note` | `PageEditorUI` (BlockNote + Yjs collab) |
-| `app` | `DocSurfaceKeepAlive` — a **Shard**: agent-authored React in a sandboxed iframe |
+| `app` | `DocSurfaceUI` — a **Shard**: agent-authored React in a sandboxed iframe |
 | `file` | `FileArtifactPaneUI` → the document viewer for ingested PDFs (pages, outline), download card otherwise |
 | `link`, `voice` | their own artifact panes |
 | *(tab kind)* `research` | `ResearchPaneUI` — a synthetic tab, not an artifact |
+
+### Tabs are PERSISTENT — panes are kept mounted (get this right)
+
+`TabPane` renders **once per open tab**, not once for the active one. Inactive panes stay
+mounted and are hidden with CSS (`absolute inset-0` + `hidden`, plus `aria-hidden`/`inert` so
+focus can't land inside an invisible editor). Switching tabs must not cost the user their
+scroll position, editor selection, PDF page, or a shard's runtime state.
+
+The mounted set is an **LRU keep-alive window**, `hooks/use-keep-alive.ts`, and it is
+**kind-aware**: a note editor holds a Yjs document and a Hocuspocus socket and a shard holds a
+live iframe, so heavy panes are capped (`HEAVY_KEEP_ALIVE`) well below cheap ones
+(`LIGHT_KEEP_ALIVE`). Twenty open tabs must not mean twenty documents syncing in the
+background. A pane evicted from the window still works — it re-mounts, losing view state, when
+revisited.
+
+A pane mounts only once its tab has been **active at least once**. That is deliberate twice
+over: an unvisited tab costs nothing, and nothing ever mounts into a `display:none` box, where
+anything measuring its own width would come up zero.
+
+If you add an artifact kind, add a branch to `TabPane` and decide whether it is heavy.
 
 ## 4. Where code lives
 

@@ -1,21 +1,21 @@
 import { FlaskConical, LineChart, Search, SlidersHorizontal, Star } from "lucide-react";
 import { Icon } from "@/components/ui/icon";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { PlaceholderPane } from "@/components/ui/aladin";
 import { FileArtifactUI, LinkArtifactUI, VoiceArtifactUI } from "@/modules/artifacts/ui/artifact-ui";
 import { PageEditorUI } from "@/modules/pages/ui/page-editor-ui";
-import { DocSurfaceKeepAlive } from "@/modules/doc-surface/ui/doc-surface-ui";
+import { DocSurfaceUI } from "@/modules/doc-surface/ui/doc-surface-ui";
 import { GraphSidePaneUI } from "@/modules/graph/ui/graph-side-pane-ui";
 import { ResearchPaneUI } from "@/modules/research/ui/research-pane-ui";
 import { FileArtifactPaneUI } from "@/modules/documents/ui/document-viewer-ui";
-import { useWorkPane, type WorkPaneCrumb } from "@/modules/workspace/hooks/use-workspace-state";
+import { useWorkPane, type WorkPaneCrumb, type WorkPaneTab } from "@/modules/workspace/hooks/use-workspace-state";
+import { capHeavyKeys, LIGHT_KEEP_ALIVE, useKeepAliveKeys } from "@/modules/workspace/hooks/use-keep-alive";
 import { cn } from "@/lib/utils";
 
 export function WorkPaneUI() {
   const {
     tabs,
-    openArtifacts,
     activeTab,
     activeArtifact,
     breadcrumbFolders,
@@ -27,6 +27,37 @@ export function WorkPaneUI() {
     onJumpToFolder,
   } = useWorkPane();
   const [graphOpen, setGraphOpen] = useState(false);
+
+  // Tabs used to be a switch on the ACTIVE artifact, so switching away unmounted the pane and
+  // threw away its scroll position, editor selection and PDF page. Now every tab in the
+  // keep-alive window stays mounted and inactive ones are hidden with CSS.
+  //
+  // The window is LRU and kind-aware: heavy panes (note editors hold a Yjs doc and a
+  // Hocuspocus socket, shards hold a live iframe) are capped tighter than cheap ones, so
+  // twenty open tabs never means twenty documents syncing in the background. A tab evicted
+  // from the window still works — it just re-mounts, and loses its view state, when revisited.
+  const keptKeys = useKeepAliveKeys(activeTab?.key ?? null, LIGHT_KEEP_ALIVE);
+  const liveTabs = useMemo(() => {
+    const byKey = new Map(tabs.map((t) => [t.key, t]));
+    const isHeavy = (key: string) => {
+      const kind = byKey.get(key)?.artifact?.kind;
+      return kind === "note" || kind === "app";
+    };
+    // The active key is included even before the effect lands, or the frame in which it
+    // changes would render an empty pane.
+    const ordered = activeTab
+      ? [activeTab.key, ...keptKeys.filter((k) => k !== activeTab.key)]
+      : keptKeys;
+    return capHeavyKeys(ordered, isHeavy)
+      .flatMap((key) => {
+        const tab = byKey.get(key);
+        return tab ? [tab] : [];
+      })
+      // Render in the strip's order, not recency order: a stable DOM order keeps React from
+      // reordering the layers on every tab switch.
+      .sort((a, b) => tabs.indexOf(a) - tabs.indexOf(b));
+  }, [tabs, keptKeys, activeTab]);
+
   const stripRef = useRef<HTMLDivElement | null>(null);
   const activeTabRef = useRef<HTMLButtonElement | null>(null);
 
@@ -106,54 +137,29 @@ export function WorkPaneUI() {
         />
       ) : null}
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <div className="min-w-0 flex-1 bg-bg">
-        {activeTab?.tab.kind === "research" ? (
-          <ResearchPaneUI contextId={activeTab.tab.contextId} view={activeTab.tab.view} />
-        ) : !activeArtifact ? (
-          <PlaceholderPane
-            title="Open a page"
-            body="Choose a note, link, voice note, or file from the browser to continue."
-            className="h-full"
-          />
-        ) : activeArtifact.kind === "note" ? (
-          <PageEditorUI pageId={activeArtifact.id} />
-        ) : activeArtifact.kind === "app" ? (
-          <DocSurfaceKeepAlive
-            activeId={activeArtifact.id}
-            artifacts={openArtifacts.filter((a) => a.kind === "app")}
-          />
-        ) : activeArtifact.kind === "link" ? (
-          <ScrollArea className="h-full">
-            <div className="mx-auto w-full max-w-workspace-max">
-              <LinkArtifactUI artifact={activeArtifact} />
-            </div>
-          </ScrollArea>
-        ) : activeArtifact.kind === "voice" ? (
-          <ScrollArea className="h-full">
-            <div className="mx-auto w-full max-w-workspace-max">
-              <VoiceArtifactUI artifact={activeArtifact} />
-            </div>
-          </ScrollArea>
-        ) : activeArtifact.kind === "file" ? (
-          // An ingested PDF opens as a document (INGESTION_PRD §6); every other file
-          // keeps the download card.
-          <FileArtifactPaneUI
-            artifact={activeArtifact}
-            fallback={
-              <ScrollArea className="h-full">
-                <div className="mx-auto w-full max-w-workspace-max">
-                  <FileArtifactUI artifact={activeArtifact} />
-                </div>
-              </ScrollArea>
-            }
-          />
-        ) : (
-          <ScrollArea className="h-full">
-            <div className="mx-auto w-full max-w-workspace-max">
-              <FileArtifactUI artifact={activeArtifact} />
-            </div>
-          </ScrollArea>
-        )}
+        {/* Every kept tab stays MOUNTED and is hidden with CSS — see the keep-alive note on
+            liveTabs above. `relative` is what the absolute layers position against. */}
+        <div className="relative min-w-0 flex-1 bg-bg">
+          {liveTabs.length === 0 ? (
+            <PlaceholderPane
+              title="Open a page"
+              body="Choose a note, link, voice note, or file from the browser to continue."
+              className="h-full"
+            />
+          ) : (
+            liveTabs.map((entry) => (
+              <div
+                key={entry.key}
+                className={cn("absolute inset-0", entry.key !== activeTab?.key && "hidden")}
+                // Hidden panes are still in the tree; keep them out of the a11y tree and out
+                // of tab order so focus can't land inside an invisible editor.
+                aria-hidden={entry.key !== activeTab?.key}
+                inert={entry.key !== activeTab?.key ? true : undefined}
+              >
+                <TabPane entry={entry} hidden={entry.key !== activeTab?.key} />
+              </div>
+            ))
+          )}
         </div>
         {graphOpen && activeArtifact ? (
           <GraphSidePaneUI artifact={activeArtifact} onClose={() => setGraphOpen(false)} />
@@ -161,6 +167,58 @@ export function WorkPaneUI() {
       </div>
     </section>
   );
+}
+
+/**
+ * One tab's pane. This is the `artifact.kind` switch that used to sit inline in WorkPaneUI,
+ * moved down a level so it renders per tab instead of only for the active one — that change is
+ * what makes tabs persistent.
+ *
+ * `hidden` is passed down rather than inferred: a shard iframe needs to know it is off screen
+ * so it can stop doing work, and CSS visibility isn't observable from inside the component.
+ */
+function TabPane({ entry, hidden }: { entry: WorkPaneTab; hidden: boolean }) {
+  if (entry.tab.kind === "research") {
+    return <ResearchPaneUI contextId={entry.tab.contextId} view={entry.tab.view} />;
+  }
+  const artifact = entry.artifact;
+  if (!artifact) {
+    // The tab is open but its artifact hasn't arrived from the replica yet.
+    return <PlaceholderPane title="Loading…" body="" className="h-full" />;
+  }
+  if (artifact.kind === "note") return <PageEditorUI pageId={artifact.id} />;
+  if (artifact.kind === "app") return <DocSurfaceUI artifact={artifact} hidden={hidden} />;
+  if (artifact.kind === "link") {
+    return (
+      <ScrollArea className="h-full">
+        <div className="mx-auto w-full max-w-workspace-max">
+          <LinkArtifactUI artifact={artifact} />
+        </div>
+      </ScrollArea>
+    );
+  }
+  if (artifact.kind === "voice") {
+    return (
+      <ScrollArea className="h-full">
+        <div className="mx-auto w-full max-w-workspace-max">
+          <VoiceArtifactUI artifact={artifact} />
+        </div>
+      </ScrollArea>
+    );
+  }
+  const downloadCard = (
+    <ScrollArea className="h-full">
+      <div className="mx-auto w-full max-w-workspace-max">
+        <FileArtifactUI artifact={artifact} />
+      </div>
+    </ScrollArea>
+  );
+  // An ingested PDF opens as a document (INGESTION_PRD §6); every other file keeps the
+  // download card.
+  if (artifact.kind === "file") {
+    return <FileArtifactPaneUI artifact={artifact} fallback={downloadCard} />;
+  }
+  return downloadCard;
 }
 
 function WorkPaneStatusBar({
