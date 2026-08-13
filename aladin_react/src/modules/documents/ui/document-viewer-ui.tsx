@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Eyebrow } from "@/components/ui/eyebrow";
 import { Icon } from "@/components/ui/icon";
-import { FileWarning, Loader2, Minus, Plus, ScanLine } from "lucide-react";
+import { FileWarning, Loader2, Minus, PanelLeft, Plus, ScanLine } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -85,6 +85,7 @@ export function DocumentReader({
   url,
   resourceLoading,
 }: DocumentReaderProps) {
+  const [outlineOpen, setOutlineOpen] = useState(true);
   const [zoom, setZoom] = useState(1);
   const [targetPage, setTargetPage] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -99,6 +100,8 @@ export function DocumentReader({
     return found;
   }, [outline, currentPage]);
 
+  const hasOutline = outline.length > 0;
+
   const jumpTo = (page: number) => {
     setTargetPage(page);
     setCurrentPage(page);
@@ -109,9 +112,11 @@ export function DocumentReader({
     // third background between two surfaces and made the left gutter wider than the right;
     // the breathing room belongs to the stage, symmetrically, on the stage's own colour.
     <div className="flex h-full min-h-0">
-      {outline.length > 0 ? (
-        <nav className="flex w-64 shrink-0 flex-col border-r border-line bg-panel">
-          <div className="flex items-center gap-2 px-4 py-2.5">
+      {hasOutline && outlineOpen ? (
+        // min-h-0 is what makes the list scroll rather than push the nav taller than the
+        // reader: without it this flex child floors at its content height.
+        <nav className="flex h-full min-h-0 w-64 shrink-0 flex-col border-r border-line bg-panel">
+          <div className="flex shrink-0 items-center gap-2 px-4 py-2.5">
             <Eyebrow as="h2" className="text-ink-4">Contents</Eyebrow>
             <span className="font-mono text-meta tabular-nums text-ink-4">{outline.length}</span>
             {outlineRecovered ? (
@@ -123,8 +128,22 @@ export function DocumentReader({
               </span>
             ) : null}
           </div>
-          <ScrollArea className="min-h-0 flex-1">
-            <ul className="px-2 pb-3">
+          {/* `type="auto"` because Radix defaults to "hover": with the default there is no
+              scrollbar element in the DOM at all until the pointer is already inside, so a
+              46-entry outline looked like it simply didn't scroll.
+
+              The `[&_...>div]:!block` is the other half. Radix gives its viewport a child with
+              an inline `display: table`, which sizes to CONTENT — 490px inside a 255px pane
+              here. `truncate` never engages against a table box, so long titles ran under the
+              border and took the page numbers off screen with them. */}
+          <ScrollArea
+            type="auto"
+            className="min-h-0 flex-1 [&_[data-radix-scroll-area-viewport]>div]:!block"
+          >
+            {/* A 1.5px gap so consecutive highlighted rows read as separate targets — with
+                the rows flush, the active row's amber block merged into its neighbour's
+                hover block and the two looked like one taller row. */}
+            <ul className="space-y-0.5 px-2 pb-3">
               {outline.map((entry, index) => {
                 const active = index === activeIndex;
                 return (
@@ -159,7 +178,18 @@ export function DocumentReader({
       ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col bg-rail">
-        <header className="flex h-10 shrink-0 items-center gap-3 border-b border-line bg-panel pl-4 pr-3">
+        <header className="flex h-10 shrink-0 items-center gap-3 border-b border-line bg-panel pl-2 pr-3">
+          {/* One control, always in the same place, rather than a chevron inside the panel
+              plus a second button to bring it back once the panel is gone. */}
+          {hasOutline ? (
+            <IconButton
+              label={outlineOpen ? "Hide contents" : `Show contents (${outline.length})`}
+              onClick={() => setOutlineOpen((open) => !open)}
+              active={outlineOpen}
+            >
+              <Icon as={PanelLeft} size="inline" />
+            </IconButton>
+          ) : null}
           <h1 className="min-w-0 flex-1 truncate font-display text-body text-ink" title={title}>
             {title}
           </h1>
@@ -208,18 +238,25 @@ function IconButton({
   label,
   onClick,
   children,
+  /** A toggle rather than an action — reads as pressed, and announces as one. */
+  active,
 }: {
   label: string;
   onClick: () => void;
   children: React.ReactNode;
+  active?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-label={label}
+      aria-pressed={active}
       title={label}
-      className="flex size-6 items-center justify-center rounded-control text-ink-4 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink-2"
+      className={cn(
+        "flex size-6 items-center justify-center rounded-control transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink-2",
+        active ? "text-ink-2" : "text-ink-4",
+      )}
     >
       {children}
     </button>

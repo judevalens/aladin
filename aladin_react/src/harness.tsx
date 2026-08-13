@@ -36,6 +36,13 @@ const OUTLINE: OutlineEntry[] = [
   { title: "Appendix A Detailed Correlation Analysis", depth: 0, page: 123 },
   { title: "Appendix B Detailed Performances of Strategy Back-Tests", depth: 0, page: 199 },
   { title: "Bibliography", depth: 0, page: 277 },
+  // Enough entries to overflow a full-height sidebar — the outline has to be SCROLLABLE to
+  // be judged, and 15 rows never overflow, so the bug hid here.
+  ...Array.from({ length: 26 }, (_, i) => ({
+    title: `B.${i + 1} Strategy ${i + 1} — rolling window, transaction costs`,
+    depth: 1,
+    page: 199 + i * 3,
+  })),
 ];
 
 createRoot(document.getElementById("harness")!).render(
