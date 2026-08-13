@@ -60,12 +60,16 @@ export function PageEditorUI({ pageId }: { pageId: string }) {
         </button>
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">
-        {/* No reading-measure cap here on purpose. Before the design-system pass this class
-            had no token behind it, so the editor had always filled the pane — and that is
-            what it should do: BlockNote carries its own gutters for drag handles and the
-            slash menu, so an outer cap stacks on top of them and pinches the text twice.
-            The measure token still applies to the card-style artifact panes. */}
-        <div className="mx-auto flex h-full w-full flex-col">
+        {/* 90% of the pane, centred — a PROPORTION, not a fixed reading measure. A fixed cap
+            was tried and reverted twice: BlockNote already carries `padding-inline: 54px` for
+            its drag-handle gutter, so a cap stacks on top of that and pinches the text twice
+            (a 720px cap left a 548px column). A percentage keeps the breathing room
+            proportional at any pane width instead.
+
+            Below ~800px of pane the 10% starts competing with BlockNote's fixed 108px of
+            gutter; if that gets tight with both docks open, this wants a min-width rather
+            than a smaller percentage. */}
+        <div className="mx-auto flex h-full w-[90%] flex-col">
           <BlockNotePageEditorDriver
             key={pageId}
             pageId={pageId}
