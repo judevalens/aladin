@@ -2,8 +2,11 @@ import {
   AlertTriangle,
   Archive,
   ArrowUp,
+  BarChart3,
   Check,
   ChevronDown,
+  FileText,
+  Focus,
   MessageSquare,
   Pencil,
   Pin,
@@ -11,12 +14,16 @@ import {
   Search,
   Sparkles,
   Square,
+  UserRound,
   X,
+  type LucideIcon,
 } from "lucide-react";
 import { Icon } from "@/components/ui/icon";
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
 import type { CopilotSurface } from "@/repos/copilot/copilot-repo";
 import type { CopilotProposal, CopilotThreadView, CopilotToolRun } from "@/app/state/copilot-slice";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ARTIFACT_ICONS } from "@/modules/workspace/ui/kind-icons";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -171,6 +178,7 @@ export function CopilotDockUI() {
   };
 
   const surfaceLabel = describeSurface(surface);
+  const surfaceScope = scopeForSurface(surface, surfaceLabel);
 
   return (
     <div className="shrink-0 overflow-hidden" style={{ width: open ? DOCK_WIDTH : 0 }}>
@@ -387,14 +395,7 @@ export function CopilotDockUI() {
             </div>
           ) : null}
           <div className="group rounded-card border border-line bg-field transition-colors focus-within:border-amber-line">
-            {surfaceLabel ? (
-              <div className="flex items-center gap-1.5 border-b border-line/60 px-3 pb-1 pt-1.5">
-                <span className="size-1 shrink-0 rounded-full bg-amber" />
-                <span className="truncate font-mono text-meta text-ink-4">
-                  asking about {surfaceLabel}
-                </span>
-              </div>
-            ) : null}
+            {surfaceScope ? <ScopeChip scope={surfaceScope} onNewThread={newThread} /> : null}
             <div className="flex items-end gap-2 px-3 py-2.5">
               <textarea
                 ref={inputRef}
@@ -446,6 +447,69 @@ export function CopilotDockUI() {
           </div>
         </div>
       </aside>
+    </div>
+  );
+}
+
+interface ScopeSummary {
+  title: string;
+  kind: string;
+  icon: LucideIcon;
+  rows: { label: string; value: string }[];
+}
+
+function ScopeChip({
+  scope,
+  onNewThread,
+}: {
+  scope: ScopeSummary;
+  onNewThread: () => void;
+}) {
+  return (
+    <div className="border-b border-line/60 px-2.5 py-1.5">
+      <Popover>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className="flex max-w-full items-center gap-1.5 rounded-chip px-1.5 py-0.5 text-left transition-colors hover:bg-raise"
+            aria-label={`Current scope: ${scope.title}`}
+          >
+            <Icon as={scope.icon} size="inline" mark className="shrink-0 text-amber" />
+            <span className="shrink-0 font-mono text-meta text-ink-4">asking about</span>
+            <span className="min-w-0 truncate font-mono text-meta text-ink-2">{scope.title}</span>
+            <Icon as={ChevronDown} size="inline" mark className="shrink-0 text-ink-4" />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent className="w-72 p-3">
+          <div className="flex items-start gap-2">
+            <Icon as={scope.icon} mark className="mt-0.5 shrink-0 text-amber" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-small font-semibold text-ink">{scope.title}</p>
+              <p className="font-mono text-meta text-ink-4">{scope.kind}</p>
+            </div>
+          </div>
+          {scope.rows.length > 0 ? (
+            <dl className="mt-2 space-y-1 rounded-card border border-line bg-field p-2">
+              {scope.rows.map((row) => (
+                <div key={row.label} className="grid grid-cols-[64px_minmax(0,1fr)] gap-2 font-mono text-meta">
+                  <dt className="text-ink-4">{row.label}</dt>
+                  <dd className="truncate text-ink-2" title={row.value}>
+                    {row.value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          ) : null}
+          <button
+            type="button"
+            onClick={onNewThread}
+            className="mt-2 inline-flex items-center gap-1.5 rounded-chip border border-line px-2.5 py-1 text-small text-ink-2 transition-colors hover:border-amber-line hover:text-ink"
+          >
+            <Icon as={Plus} size="inline" mark />
+            New chat
+          </button>
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }
@@ -828,6 +892,56 @@ function describeSurface(surface: CopilotSurface): string | null {
   }
   if (surface.kind === "markets") return "Markets";
   return null;
+}
+
+function scopeForSurface(surface: CopilotSurface, label: string | null): ScopeSummary | null {
+  if (!label) return null;
+  switch (surface.kind) {
+    case "ticker": {
+      const symbol = surface.symbol?.toUpperCase() ?? label;
+      return {
+        title: symbol,
+        kind: "ticker",
+        icon: BarChart3,
+        rows: [{ label: "symbol", value: symbol }],
+      };
+    }
+    case "entity":
+      return {
+        title: label,
+        kind: "entity",
+        icon: UserRound,
+        rows: surface.id ? [{ label: "id", value: surface.id }] : [],
+      };
+    case "artifact":
+    case "page":
+    case "shard": {
+      const kind = surfaceKindLabel(surface.artifactKind);
+      return {
+        title: label,
+        kind,
+        icon: surface.artifactKind ? ARTIFACT_ICONS[surface.artifactKind] : FileText,
+        rows: [
+          ...(surface.id ? [{ label: "id", value: surface.id }] : []),
+          ...(surface.artifactKind ? [{ label: "type", value: surface.artifactKind }] : []),
+        ],
+      };
+    }
+    case "markets":
+      return {
+        title: "Markets",
+        kind: "market surface",
+        icon: BarChart3,
+        rows: [{ label: "scope", value: "watchlists" }],
+      };
+    default:
+      return {
+        title: label,
+        kind: surface.kind || "surface",
+        icon: Focus,
+        rows: [],
+      };
+  }
 }
 
 function surfaceKindLabel(kind: CopilotSurface["artifactKind"]): string {
