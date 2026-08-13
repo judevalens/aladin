@@ -60,7 +60,12 @@ export function PageEditorUI({ pageId }: { pageId: string }) {
         </button>
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">
-        <div className="mx-auto flex h-full w-full max-w-workspace-max flex-col">
+        {/* No reading-measure cap here on purpose. Before the design-system pass this class
+            had no token behind it, so the editor had always filled the pane — and that is
+            what it should do: BlockNote carries its own gutters for drag handles and the
+            slash menu, so an outer cap stacks on top of them and pinches the text twice.
+            The measure token still applies to the card-style artifact panes. */}
+        <div className="mx-auto flex h-full w-full flex-col">
           <BlockNotePageEditorDriver
             key={pageId}
             pageId={pageId}
