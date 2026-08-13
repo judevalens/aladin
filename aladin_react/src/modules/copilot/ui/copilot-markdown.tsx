@@ -1,4 +1,4 @@
-import { Activity, BarChart3, CornerDownRight, FileText, Layers } from "lucide-react";
+import { Activity, BarChart3, CornerDownRight, FileText, Layers, UserRound } from "lucide-react";
 import { memo } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -143,6 +143,25 @@ function DirectiveBlock({
         </button>
       );
     }
+    case "aladin-entity": {
+      const id = segment.attrs.id;
+      const title = segment.attrs.title || id;
+      const kind = segment.attrs.kind || "entity";
+      if (!id || !title) return <MarkdownText text={directiveFallback(segment)} />;
+      return (
+        <button
+          type="button"
+          onClick={() => onNavigate("entity", id, title)}
+          className="my-2 flex w-full items-center gap-2 rounded-card border border-line bg-field px-2.5 py-2 text-left transition-colors hover:border-amber-line"
+        >
+          <Icon as={UserRound} mark className="shrink-0 text-amber" />
+          <span className="min-w-0">
+            <span className="block truncate text-small font-semibold text-ink">{title}</span>
+            <span className="block font-mono text-meta text-ink-4">{kind}</span>
+          </span>
+        </button>
+      );
+    }
     case "aladin-activity": {
       const items = parseActivityItems(segment.body);
       if (items.length === 0) return <MarkdownText text={directiveFallback(segment)} />;
@@ -170,14 +189,19 @@ function DirectiveBlock({
     }
     case "aladin-actions": {
       const actions = parseActionItems(segment.body);
-      if (actions.length === 0 || !onPrompt) return <MarkdownText text={directiveFallback(segment)} />;
+      if (actions.length === 0) return <MarkdownText text={directiveFallback(segment)} />;
       return (
         <div className="my-2 flex flex-wrap gap-1.5">
           {actions.map((action) => (
             <button
-              key={action.prompt}
+              key={`${action.action}-${action.target}`}
               type="button"
-              onClick={() => onPrompt(action.prompt)}
+              onClick={() => {
+                if (action.action === "send_prompt" && onPrompt) onPrompt(action.prompt);
+                if (action.action === "open_artifact") onNavigate(action.kind, action.id, action.label);
+                if (action.action === "open_ticker") onNavigate("ticker", action.symbol, action.symbol);
+              }}
+              disabled={action.action === "send_prompt" && !onPrompt}
               className="inline-flex min-w-0 items-center gap-1.5 rounded-chip border border-line bg-raise px-2.5 py-1.5 text-small text-ink-2 transition-colors hover:border-amber-line hover:text-ink"
             >
               <Icon as={CornerDownRight} size="inline" mark className="shrink-0 text-amber" />
@@ -270,17 +294,52 @@ function parseActivityItems(body: string): { label: string; status: "running" | 
   }
 }
 
-function parseActionItems(body: string): { label: string; prompt: string }[] {
+type ActionItem =
+  | { action: "send_prompt"; label: string; prompt: string; target: string }
+  | { action: "open_artifact"; label: string; id: string; kind: string; target: string }
+  | { action: "open_ticker"; label: string; symbol: string; target: string };
+
+function parseActionItems(body: string): ActionItem[] {
   try {
     const parsed = JSON.parse(body);
     if (!Array.isArray(parsed)) return [];
-    return parsed.slice(0, 4).flatMap((item) => {
-      if (!item || typeof item !== "object") return [];
+    const actions: ActionItem[] = [];
+    for (const item of parsed.slice(0, 4)) {
+      if (!item || typeof item !== "object") continue;
       const label = typeof item.label === "string" ? item.label.trim() : "";
+      const action = typeof item.action === "string" ? item.action : "";
+      if (!label) continue;
+      if (action === "send_prompt") {
+        const prompt = typeof item.prompt === "string" ? item.prompt.trim() : "";
+        if (prompt) {
+          actions.push({ action, label: label.slice(0, 80), prompt: prompt.slice(0, 1000), target: prompt });
+        }
+        continue;
+      }
+      if (action === "open_artifact") {
+        const id = typeof item.artifactId === "string" ? item.artifactId.trim() : "";
+        const kind = typeof item.kind === "string" ? item.kind.trim() : "page";
+        if (id) {
+          actions.push({ action, label: label.slice(0, 80), id, kind: kind === "app" ? "shard" : kind, target: id });
+        }
+        continue;
+      }
+      if (action === "open_ticker") {
+        const symbol = typeof item.symbol === "string" ? item.symbol.trim().toUpperCase() : "";
+        if (symbol) actions.push({ action, label: label.slice(0, 80), symbol, target: symbol });
+        continue;
+      }
       const prompt = typeof item.prompt === "string" ? item.prompt.trim() : "";
-      if (!label || !prompt) return [];
-      return [{ label: label.slice(0, 80), prompt: prompt.slice(0, 1000) }];
-    });
+      if (prompt) {
+        actions.push({
+          action: "send_prompt",
+          label: label.slice(0, 80),
+          prompt: prompt.slice(0, 1000),
+          target: prompt,
+        });
+      }
+    }
+    return actions;
   } catch {
     return [];
   }
