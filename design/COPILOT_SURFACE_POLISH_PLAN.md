@@ -57,7 +57,8 @@ Aladin owns all rendering, permissions, and actions.
   settled approval states; composer surface tests cover placeholders,
   suggestions, scope summaries, and artifact-kind labels; reconnect banner tests
   cover open, reconnecting, and offline stream states; error banner tests cover
-  exact error display and max-turn continue recovery.
+  exact error display and max-turn continue recovery; queued-follow-up banner
+  tests cover visibility and clearing.
 - The backend system prompt now advertises the supported rich directive contract
   and safety rules so final answers can use native blocks intentionally.
 

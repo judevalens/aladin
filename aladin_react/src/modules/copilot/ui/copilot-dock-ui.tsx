@@ -354,21 +354,7 @@ export function CopilotDockUI() {
               </button>
             </div>
           ) : null}
-          {queuedText ? (
-            <div className="mb-1.5 flex items-center justify-between gap-2 rounded-card border border-line bg-raise px-2.5 py-1.5">
-              <p className="truncate font-mono text-meta text-ink-3">
-                queued — sends when the copilot finishes: “{queuedText}”
-              </p>
-              <button
-                type="button"
-                onClick={() => queueFollowup(null)}
-                aria-label="Remove queued message"
-                className="text-ink-4 hover:text-ink"
-              >
-                <Icon as={X} size="inline" mark />
-              </button>
-            </div>
-          ) : null}
+          <QueuedFollowupBanner text={queuedText} onClear={() => queueFollowup(null)} />
           <RealtimeStatusBanner state={realtimeState} />
           <div className="group rounded-card border border-line bg-field transition-colors focus-within:border-amber-line">
             {surfaceScope ? <ScopeChip scope={surfaceScope} onNewThread={newThread} /> : null}
@@ -530,6 +516,31 @@ export function CopilotErrorBanner({
           Continue where it left off
         </button>
       ) : null}
+    </div>
+  );
+}
+
+export function QueuedFollowupBanner({
+  text,
+  onClear,
+}: {
+  text: string | null;
+  onClear: () => void;
+}) {
+  if (!text) return null;
+  return (
+    <div className="mb-1.5 flex items-center justify-between gap-2 rounded-card border border-line bg-raise px-2.5 py-1.5">
+      <p className="truncate font-mono text-meta text-ink-3">
+        queued — sends when the copilot finishes: “{text}”
+      </p>
+      <button
+        type="button"
+        onClick={onClear}
+        aria-label="Remove queued message"
+        className="text-ink-4 hover:text-ink"
+      >
+        <Icon as={X} size="inline" mark />
+      </button>
     </div>
   );
 }
