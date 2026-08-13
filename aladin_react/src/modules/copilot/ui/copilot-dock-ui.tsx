@@ -324,20 +324,7 @@ export function CopilotDockUI() {
             <p className="animate-pulse font-mono text-meta text-ink-4">thinking…</p>
           ) : null}
 
-          {error ? (
-            <div className="rounded-card border border-against/40 bg-against/10 px-3 py-2">
-              <p className="text-small text-against">{error}</p>
-              {errorCode === "max_turns" ? (
-                <button
-                  type="button"
-                  onClick={() => void send("continue")}
-                  className="mt-1.5 rounded-chip border border-line px-2.5 py-1 text-meta text-ink-2 transition-colors hover:border-amber-line hover:text-ink"
-                >
-                  Continue where it left off
-                </button>
-              ) : null}
-            </div>
-          ) : null}
+          <CopilotErrorBanner error={error} code={errorCode} onContinue={() => void send("continue")} />
         </div>
 
         {unpinned && busy ? (
@@ -517,6 +504,32 @@ export function RealtimeStatusBanner({ state }: { state: "connecting" | "open" |
       <p className="font-mono text-meta text-ink-3">
         {state === "connecting" ? "reconnecting stream…" : "stream offline — reconnecting"}
       </p>
+    </div>
+  );
+}
+
+export function CopilotErrorBanner({
+  error,
+  code,
+  onContinue,
+}: {
+  error: string | null;
+  code: string | null;
+  onContinue: () => void;
+}) {
+  if (!error) return null;
+  return (
+    <div className="rounded-card border border-against/40 bg-against/10 px-3 py-2">
+      <p className="text-small text-against">{error}</p>
+      {code === "max_turns" ? (
+        <button
+          type="button"
+          onClick={onContinue}
+          className="mt-1.5 rounded-chip border border-line px-2.5 py-1 text-meta text-ink-2 transition-colors hover:border-amber-line hover:text-ink"
+        >
+          Continue where it left off
+        </button>
+      ) : null}
     </div>
   );
 }
