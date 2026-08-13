@@ -51,6 +51,31 @@ export function tabKey(tab: WorkTab): string {
   return tab.kind === "artifact" ? tab.artifactId : `research:${tab.contextId}:${tab.view}`;
 }
 
+/** Moves `key` to the head of the MRU list. Idempotent, and safe for a key not yet in it. */
+export function promoteMru(mru: string[], key: string): string[] {
+  return [key, ...mru.filter((k) => k !== key)];
+}
+
+/**
+ * MRU order, restricted to tabs that are actually open.
+ *
+ * The filter is the important half: a key can only leave `openTabs` through closeTab today,
+ * but deriving the intersection rather than trusting stored state means a future path that
+ * drops a tab some other way (a sync delete, say) can't leave a row in here pointing at
+ * nothing. Anything open but missing from the MRU list is appended, so the switcher can
+ * never hide a tab.
+ */
+export function orderByMru<T extends { key: string }>(items: T[], mru: string[]): T[] {
+  const byKey = new Map(items.map((item) => [item.key, item]));
+  const ordered = mru.flatMap((key) => {
+    const item = byKey.get(key);
+    if (!item) return [];
+    byKey.delete(key);
+    return [item];
+  });
+  return [...ordered, ...byKey.values()];
+}
+
 /** The research folder a tab belongs to, or null for a loose artifact tab (§12). */
 export function tabContextId(tab: WorkTab): string | null {
   return tab.kind === "research" ? tab.contextId : null;
@@ -89,6 +114,14 @@ export interface WorkspaceShellState {
   /** The active tab's key (see tabKey). Named for the key, not the artifact id. */
   activeTabKey: string | null;
   openTabs: WorkTab[];
+  /**
+   * Tab keys in most-recently-used order, head first. The strip is ordered STRUCTURALLY
+   * (§12 grouping) which is right for reading structure and useless for "go back to the
+   * thing I was just in" — recency needs somewhere to live, and this is it. Index 0 is the
+   * active tab, so the switcher opening on index 1 is what makes a repeated Ctrl+Tab a
+   * toggle between the last two.
+   */
+  tabMru: string[];
   inspectorOverrides: Record<string, boolean>;
   browserScrollTop: number;
   focusedFolderId: string | null;
@@ -100,6 +133,7 @@ export interface WorkspaceShellState {
 export const initialWorkspaceShellState: WorkspaceShellState = {
   activeTabKey: null,
   openTabs: [],
+  tabMru: [],
   inspectorOverrides: {},
   browserScrollTop: 0,
   focusedFolderId: null,

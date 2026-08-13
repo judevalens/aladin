@@ -1,6 +1,6 @@
 import { FlaskConical, LineChart, Search, SlidersHorizontal, Star } from "lucide-react";
 import { Icon } from "@/components/ui/icon";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { PlaceholderPane } from "@/components/ui/aladin";
 import { FileArtifactUI, LinkArtifactUI, VoiceArtifactUI } from "@/modules/artifacts/ui/artifact-ui";
@@ -27,11 +27,31 @@ export function WorkPaneUI() {
     onJumpToFolder,
   } = useWorkPane();
   const [graphOpen, setGraphOpen] = useState(false);
+  const stripRef = useRef<HTMLDivElement | null>(null);
+  const activeTabRef = useRef<HTMLButtonElement | null>(null);
+
+  // If the strip is a status display, it has to display the right status. Activating a tab
+  // from the tree, from ⌘K or from the switcher can leave it off screen while the content
+  // pane changes — the strip then reports the wrong tab as current.
+  //
+  // Deliberately NOT scrollIntoView: that scrolls every scrollable ancestor, which here means
+  // the whole shell can shift. Setting scrollLeft moves only the strip.
+  useEffect(() => {
+    const strip = stripRef.current;
+    const tab = activeTabRef.current;
+    if (!strip || !tab) return;
+    const left = tab.offsetLeft;
+    const right = left + tab.offsetWidth;
+    if (left < strip.scrollLeft) strip.scrollLeft = left;
+    else if (right > strip.scrollLeft + strip.clientWidth) {
+      strip.scrollLeft = right - strip.clientWidth;
+    }
+  }, [activeTab?.key, tabs.length]);
 
   return (
     <section className="flex min-w-0 flex-1 flex-col overflow-hidden bg-bg">
       <div className="h-10 border-b border-line bg-panel">
-        <div className="scrollbar-hidden flex h-full min-w-0 overflow-x-auto overflow-y-hidden">
+        <div ref={stripRef} className="scrollbar-hidden flex h-full min-w-0 overflow-x-auto overflow-y-hidden">
           {tabs.map((entry, index) => {
             const active = entry.key === activeTab?.key;
             const current = entry.tab;
@@ -45,6 +65,7 @@ export function WorkPaneUI() {
             return (
               <button
                 key={entry.key}
+                ref={active ? activeTabRef : undefined}
                 className={cn(
                   "group relative flex h-full items-center gap-2 border-r px-4 text-small transition-colors",
                   active

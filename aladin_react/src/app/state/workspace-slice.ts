@@ -2,6 +2,7 @@ import type { StateCreator } from "zustand";
 import type { VoiceCaptureDraft } from "@/shared/api/models";
 import {
   initialWorkspaceShellState,
+  promoteMru,
   tabKey,
   type RenameDraft,
   type ResearchView,
@@ -13,6 +14,9 @@ export interface WorkspaceSlice {
   workspace: WorkspaceShellState;
   commandPaletteOpen: boolean;
   setCommandPaletteOpen: (open: boolean) => void;
+  /** The Ctrl+Tab MRU overlay. Shell chrome, like the command palette. */
+  tabSwitcherOpen: boolean;
+  setTabSwitcherOpen: (open: boolean) => void;
   /** Symbol shown in the global ticker modal; null → closed. */
   openTickerSymbol: string | null;
   openTicker: (symbol: string) => void;
@@ -50,6 +54,7 @@ function openTab(tab: WorkTab, set: (fn: (state: any) => any) => void) {
         activeTabKey: key,
         focusedFolderId: null,
         openTabs: exists ? state.workspace.openTabs : [...state.workspace.openTabs, tab],
+        tabMru: promoteMru(state.workspace.tabMru, key),
       },
     };
   });
@@ -59,6 +64,8 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice, [], [], Workspac
   workspace: initialWorkspaceShellState,
   commandPaletteOpen: false,
   setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
+  tabSwitcherOpen: false,
+  setTabSwitcherOpen: (open) => set({ tabSwitcherOpen: open }),
   openTickerSymbol: null,
   openTicker: (symbol) => set({ openTickerSymbol: symbol }),
   closeTicker: () => set({ openTickerSymbol: null }),
@@ -69,15 +76,20 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice, [], [], Workspac
       workspace: {
         ...state.workspace,
         activeTabKey: key,
+        tabMru: promoteMru(state.workspace.tabMru, key),
       },
     })),
   closeTab: (key) =>
     set((state) => {
       const openTabs = state.workspace.openTabs.filter((tab) => tabKey(tab) !== key);
+      // The fallback stays "rightmost survivor" deliberately. Now that an MRU list exists,
+      // "most recent survivor" would be better, but that is a behaviour change the switcher
+      // PRD does not ask for — worth proposing separately, not smuggling in here.
       return {
         workspace: {
           ...state.workspace,
           openTabs,
+          tabMru: state.workspace.tabMru.filter((k) => k !== key),
           activeTabKey:
             state.workspace.activeTabKey === key
               ? openTabs.length

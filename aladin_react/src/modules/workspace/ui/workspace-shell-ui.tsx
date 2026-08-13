@@ -3,6 +3,8 @@ import { Icon } from "@/components/ui/icon";
 import { useEffect } from "react";
 import { Outlet } from "react-router-dom";
 import { CommandPalette } from "@/modules/workspace/ui/command-palette";
+import { TabSwitcher } from "@/modules/workspace/ui/tab-switcher";
+import { canSwitchTabs } from "@/modules/workspace/hooks/use-tab-switcher";
 import { TickerModal } from "@/modules/markets/ui/ticker-modal";
 import { LinkCaptureDialogUI } from "@/modules/workspace/ui/link-capture-dialog-ui";
 import { FileUploadDialogUI } from "@/modules/workspace/ui/file-upload-dialog-ui";
@@ -63,6 +65,7 @@ export function WorkspaceShellUI() {
   const toggleTerminal = useAppStore((state) => state.toggleTerminal);
   const copilotOpen = useAppStore((state) => state.copilotOpen);
   const toggleCopilot = useAppStore((state) => state.toggleCopilot);
+  const tabSwitcherOpen = useAppStore((state) => state.tabSwitcherOpen);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -81,6 +84,16 @@ export function WorkspaceShellUI() {
         event.preventDefault();
         useAppStore.getState().toggleCopilot();
       }
+      // Ctrl+Tab opens the MRU tab switcher. CTRL, not ⌘, on both platforms: ⌘Tab belongs to
+      // the OS, and Ctrl+Tab is the IDE convention. preventDefault so focus doesn't walk the
+      // DOM. Once open, the overlay owns Tab — this only handles opening it.
+      if (event.key === "Tab" && event.ctrlKey && !event.metaKey && !event.altKey) {
+        event.preventDefault();
+        const store = useAppStore.getState();
+        if (store.tabSwitcherOpen) return;
+        if (!canSwitchTabs(store.workspace.openTabs)) return;
+        store.setTabSwitcherOpen(true);
+      }
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
@@ -93,6 +106,7 @@ export function WorkspaceShellUI() {
         onOpenChange={setCommandOpen}
         actions={{ onCreateFolder, onCreateResearch, onCreateNote, onCreateLink, onCreateVoice, onCreateFile }}
       />
+      {tabSwitcherOpen ? <TabSwitcher /> : null}
       <TickerModal />
       <LinkCaptureDialogUI
         open={linkDialogOpen}

@@ -103,6 +103,16 @@ export interface WorkPaneTab {
   tab: WorkTab;
   /** Set on artifact tabs once the artifact has loaded. */
   artifact?: Artifact;
+  /**
+   * The pieces `label` is built from. The strip renders `label` and ignores these; the tab
+   * switcher needs them apart, because it puts the research folder in a group header and the
+   * view name in the row. Splitting `label` back up on " · " would break on a folder title
+   * that contains one — so the derivation hands over both forms rather than one to re-parse.
+   */
+  groupTitle?: string;
+  viewLabel?: string;
+  /** The folder an artifact tab lives in — disambiguates two same-named notes. */
+  parentFolderTitle?: string | null;
 }
 
 export interface WorkPaneState {
@@ -392,13 +402,19 @@ export function useWorkPane(): WorkPaneState {
           label: artifact?.title ?? "Untitled",
           tab,
           artifact,
+          parentFolderTitle: artifact?.folderId
+            ? findFolderTitle(tree, artifact.folderId)
+            : null,
         };
       }
       const title = findFolderTitle(tree, tab.contextId) ?? "Research";
+      const viewLabel = RESEARCH_VIEW_LABEL[tab.view];
       return {
         key: tabKey(tab),
-        label: `${title} · ${RESEARCH_VIEW_LABEL[tab.view]}`,
+        label: `${title} · ${viewLabel}`,
         tab,
+        groupTitle: title,
+        viewLabel,
       };
     });
 

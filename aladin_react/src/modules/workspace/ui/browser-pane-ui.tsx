@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Eyebrow } from "@/components/ui/eyebrow";
 import { Icon } from "@/components/ui/icon";
-import { ChevronRight, Code2, Columns3, FileJson, FileText, FlaskConical, Folder, History, Layout, LayoutDashboard, Link2, Mic, Paperclip, Plus, ScanSearch, Search, SlidersHorizontal } from "lucide-react";
-import type { ArtifactKind } from "@/shared/api/models";
-import type { LucideIcon } from "lucide-react";
+import { ChevronRight, Columns3, FileText, FlaskConical, Folder, Plus, Search, SlidersHorizontal } from "lucide-react";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -18,27 +16,13 @@ import type { ResearchView } from "@/modules/workspace/domain";
 
 // Structural-slot icons (§5). Muted: the slots are chrome, the captured material is the
 // content, and only the research folder itself carries the accent.
-const RESEARCH_SLOT_ICONS: Record<ResearchView, LucideIcon> = {
-  overview: LayoutDashboard,
-  manifest: FileJson,
-  runs: History,
-  code: Code2,
-  inspect: ScanSearch,
-};
+import { ARTIFACT_ICONS, RESEARCH_SLOT_ICONS } from "@/modules/workspace/ui/kind-icons";
 import { useBrowserPane } from "@/modules/workspace/hooks/use-workspace-state";
 import { useAppStore } from "@/app/state/store";
 import { PropertyFilterDialogUI } from "@/modules/artifacts/ui/property-filter-dialog-ui";
 import { cn } from "@/lib/utils";
 
 const MAX_INLINE = 2; // depths 0,1 expand inline; depth >= 2 drills into the Miller popup
-
-const ARTIFACT_ICONS: Record<ArtifactKind, LucideIcon> = {
-  note: FileText,
-  link: Link2,
-  voice: Mic,
-  file: Paperclip,
-  app: Layout,
-};
 
 export function BrowserPaneUI() {
   const [propertyFilterOpen, setPropertyFilterOpen] = useState(false);
