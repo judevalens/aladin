@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"strings"
 
 	"aladin/backend_v2/internal/docsurface"
+	coreservice "aladin/backend_v2/internal/service"
 )
 
 func (s *Server) registerContentRoutes(mux *http.ServeMux) {
@@ -49,7 +51,8 @@ func (s *Server) handleContentServe(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Not found", nil)
 		return
 	}
-	rec, err := s.deps.Artifacts().Get(r.Context(), pageID)
+	ctx := contentReadContext(r.Context())
+	rec, err := s.deps.Artifacts().Get(ctx, pageID)
 	if err != nil {
 		if writeAccessError(w, r, err) {
 			return
@@ -88,18 +91,18 @@ func (s *Server) handleContentServe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	store := s.deps.DocSurfaceStore()
-	bundleJS, err := store.ReadFile(r.Context(), pageID, distRel+"/bundle.js")
+	bundleJS, err := store.ReadFile(ctx, pageID, distRel+"/bundle.js")
 	if err != nil {
 		w.Header().Set("Content-Security-Policy", docsurface.CSP)
 		_, _ = w.Write([]byte(docsurface.NotBuiltHTML(rec.Title)))
 		return
 	}
-	bundleCSS, _ := store.ReadFile(r.Context(), pageID, distRel+"/bundle.css")
+	bundleCSS, _ := store.ReadFile(ctx, pageID, distRel+"/bundle.css")
 
 	// Optional import map: present for ESM builds with vendored deps. Its presence
 	// switches the doc to <script type=module>; its absence is the legacy inline path.
 	var im docsurface.ImportMap
-	if data, derr := store.ReadFile(r.Context(), pageID, distRel+"/importmap.json"); derr == nil {
+	if data, derr := store.ReadFile(ctx, pageID, distRel+"/importmap.json"); derr == nil {
 		_ = json.Unmarshal(data, &im)
 		if im.Imports == nil {
 			im.Imports = map[string]string{}
@@ -122,6 +125,26 @@ func (s *Server) handleContentServe(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Security-Policy", csp)
 	_, _ = w.Write([]byte(docsurface.EntryHTML(rec.Title, docsurface.TokensCSS, string(bundleCSS), string(bundleJS), im, theme)))
+}
+
+// contentReadContext lets a content-token principal actually serve its document.
+//
+// The stored token carries ONLY content:read, but serving a shard needs to read
+// the artifact row (ownership check) and its built files, and those services
+// require artifacts:read — so a content token 403'd on the very route it exists
+// for. Rather than widen the token (a leaked one would then read every artifact
+// wherever it resolved), the grant is made HERE, in the one handler, and only
+// for the request: the token stays powerless everywhere else by construction,
+// and authMiddleware's contentTokenAllowed still bars it from any other route.
+// Every other principal type passes through untouched.
+func contentReadContext(ctx context.Context) context.Context {
+	principal, ok := coreservice.PrincipalFromContext(ctx)
+	if !ok || principal.ActorType != coreservice.ActorTypeContentToken {
+		return ctx
+	}
+	elevated := principal
+	elevated.Scopes = append(append([]string{}, principal.Scopes...), coreservice.ScopeArtifactsRead)
+	return coreservice.WithPrincipal(ctx, elevated)
 }
 
 // derivePublicOrigin computes the origin the doc (and thus /vendor) is served from,
