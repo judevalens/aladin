@@ -91,8 +91,9 @@ Resolved in the current branch:
 
 Remaining rough edges:
 
-- thread management still needs richer surface grouping, not just per-row
-  surface/status hints
+- thread management now groups active, approval-needed, pinned, and recent
+  threads, but still needs richer workspace/surface grouping once thread rows
+  carry surface metadata
 - backend final answers should intentionally emit rich directives in more common
   workflows, especially build failures, approvals, shard previews, and recovery
   paths

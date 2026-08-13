@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { CopilotProposal, CopilotThreadView } from "@/app/state/copilot-slice";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { ThreadMenuItems } from "@/modules/copilot/ui/copilot-dock-ui";
+import { ThreadMenuItems, threadMenuSections } from "@/modules/copilot/ui/copilot-dock-ui";
 
 describe("ThreadMenuItems", () => {
   it("renders running, pinned, and approval-needed state", () => {
@@ -49,6 +49,54 @@ describe("ThreadMenuItems", () => {
 
     rerender(menu(<ThreadMenuItems {...props} threads={[]} query="" />));
     expect(screen.getByText("No saved threads")).toBeTruthy();
+  });
+
+  it("groups threads by active, approval, pinned, and recent priority", () => {
+    const grouped = threadMenuSections(
+      [
+        { id: "t1", title: "Pinned shard work", updatedAt: "2026-01-02T00:00:00Z", pinned: true },
+        { id: "t2", title: "Approval thread", updatedAt: "2026-01-01T00:00:00Z" },
+        { id: "t3", title: "Running thread", updatedAt: "2026-01-03T00:00:00Z", pinned: true },
+        { id: "t4", title: "Recent research", updatedAt: "2026-01-04T00:00:00Z" },
+      ],
+      "t3",
+      [proposal("t2")],
+      "streaming",
+    );
+
+    expect(grouped.map((section) => section.label)).toEqual([
+      "Active",
+      "Needs Approval",
+      "Pinned",
+      "Recent",
+    ]);
+    expect(grouped.map((section) => section.rows.map((row) => row.thread.id))).toEqual([
+      ["t3"],
+      ["t2"],
+      ["t1"],
+      ["t4"],
+    ]);
+  });
+
+  it("renders thread groups in the menu", () => {
+    renderMenu(
+      <ThreadMenuItems
+        threads={[...threads, { id: "t3", title: "Recent research", updatedAt: "2026-01-03T00:00:00Z" }]}
+        query=""
+        activeThreadId="t1"
+        proposals={[proposal("t2")]}
+        status="streaming"
+        onOpenThread={vi.fn()}
+        onRenameThread={async () => true}
+        onArchiveThread={async () => true}
+        onSetThreadPinned={async () => true}
+      />,
+    );
+
+    expect(screen.getByText("Active")).toBeTruthy();
+    expect(screen.getByText("Needs Approval")).toBeTruthy();
+    expect(screen.getByText("Recent")).toBeTruthy();
+    expect(screen.getByText("Recent research")).toBeTruthy();
   });
 
   it("opens, pins, renames, and archives without triggering the row open action", async () => {
