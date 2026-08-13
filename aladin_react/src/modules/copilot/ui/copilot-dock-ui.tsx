@@ -1,6 +1,17 @@
-import { AlertTriangle, ArrowUp, Check, ChevronDown, Plus, Sparkles, Square, X } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowUp,
+  Check,
+  ChevronDown,
+  MessageSquare,
+  Plus,
+  Search,
+  Sparkles,
+  Square,
+  X,
+} from "lucide-react";
 import { Icon } from "@/components/ui/icon";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { CopilotSurface } from "@/repos/copilot/copilot-repo";
 import type { CopilotProposal, CopilotToolRun } from "@/app/state/copilot-slice";
 import {
@@ -23,6 +34,8 @@ import type {
 import { cn } from "@/lib/utils";
 
 const DOCK_WIDTH = 384;
+const COMPOSER_MIN_HEIGHT = 44;
+const COMPOSER_MAX_HEIGHT = 144;
 
 /**
  * The Copilot dock — Aladin's default agentic AI surface. Mounted once in the workspace shell
@@ -54,9 +67,12 @@ export function CopilotDockUI() {
     newThread,
     fetchHealthWarning,
     queuedText,
+    draftText,
+    setDraftText,
+    realtimeState,
   } = useCopilot();
 
-  const [input, setInput] = useState("");
+  const [threadQuery, setThreadQuery] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const busy = status === "sending" || status === "streaming";
@@ -108,34 +124,44 @@ export function CopilotDockUI() {
     if (el) el.scrollTop = el.scrollHeight;
   };
 
-  // Auto-grow the textarea with its content (reset after send), capped by max-h.
-  const autogrow = () => {
+  // Keep the composer stable: a comfortable two-line minimum, capped growth, then
+  // internal scrolling. Measuring in a layout effect avoids height flicker while typing.
+  useLayoutEffect(() => {
     const el = inputRef.current;
     if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
-  };
-  const resetComposerHeight = () => {
-    const el = inputRef.current;
-    if (el) el.style.height = "auto";
-  };
+    el.style.height = `${COMPOSER_MIN_HEIGHT}px`;
+    const next = Math.min(Math.max(el.scrollHeight, COMPOSER_MIN_HEIGHT), COMPOSER_MAX_HEIGHT);
+    el.style.height = `${next}px`;
+    el.style.overflowY = el.scrollHeight > COMPOSER_MAX_HEIGHT ? "auto" : "hidden";
+  }, [draftText, open]);
 
   const submit = () => {
-    if (!input.trim()) return;
-    const text = input;
+    if (!draftText.trim()) return;
+    const text = draftText;
     if (busy) {
       // Queue-of-one while a turn runs — sends automatically when it finishes.
       useAppStore.getState().queueCopilotText(text);
-      setInput("");
-      resetComposerHeight();
+      setDraftText("");
       return;
     }
-    setInput("");
-    resetComposerHeight();
+    setDraftText("");
     void send(text).then((failedText) => {
       // A failed send returns the text — put it back so nothing is lost.
-      if (failedText) setInput((current) => current || failedText);
+      if (failedText) {
+        const current = useAppStore.getState().copilotDraftFor(useAppStore.getState().activeThreadId);
+        if (!current) setDraftText(failedText);
+      }
     });
+  };
+
+  const sendPrompt = (text: string) => {
+    const prompt = text.trim();
+    if (!prompt) return;
+    if (busy) {
+      useAppStore.getState().queueCopilotText(prompt);
+      return;
+    }
+    void send(prompt);
   };
 
   const surfaceLabel = describeSurface(surface);
@@ -163,18 +189,39 @@ export function CopilotDockUI() {
                 <Icon as={ChevronDown} size="inline" mark />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="max-h-80 w-64 overflow-y-auto">
-              <DropdownMenuLabel>Threads</DropdownMenuLabel>
+            <DropdownMenuContent align="start" className="w-72">
+              <DropdownMenuLabel className="flex items-center justify-between gap-2">
+                <span>Threads</span>
+                <button
+                  type="button"
+                  onClick={newThread}
+                  className="grid size-6 place-items-center rounded-tap text-ink-3 hover:bg-raise hover:text-ink"
+                  aria-label="New chat"
+                >
+                  <Icon as={Plus} size="inline" mark />
+                </button>
+              </DropdownMenuLabel>
+              <div className="px-2 pb-2">
+                <div className="flex items-center gap-1.5 rounded-card border border-line bg-field px-2 py-1.5">
+                  <Icon as={Search} size="inline" mark className="shrink-0 text-ink-4" />
+                  <input
+                    value={threadQuery}
+                    onChange={(e) => setThreadQuery(e.target.value)}
+                    onKeyDown={(e) => e.stopPropagation()}
+                    placeholder="Search threads"
+                    className="min-w-0 flex-1 bg-transparent text-small text-ink outline-none placeholder:text-ink-4"
+                  />
+                </div>
+              </div>
               <DropdownMenuSeparator />
-              {threads.length === 0 ? (
-                <DropdownMenuItem disabled>No saved threads</DropdownMenuItem>
-              ) : (
-                threads.map((t) => (
-                  <DropdownMenuItem key={t.id} onClick={() => void openThread(t.id)}>
-                    <span className="truncate">{t.title || "Untitled"}</span>
-                  </DropdownMenuItem>
-                ))
-              )}
+              <ThreadMenuItems
+                threads={threads}
+                query={threadQuery}
+                activeThreadId={activeThreadId}
+                proposals={proposals}
+                status={status}
+                onOpenThread={openThread}
+              />
             </DropdownMenuContent>
           </DropdownMenu>
 
@@ -233,11 +280,11 @@ export function CopilotDockUI() {
           ) : null}
 
           {messages.map((m) => (
-            <MessageBubble key={m.id} message={m} />
+            <MessageBubble key={m.id} message={m} onPrompt={sendPrompt} />
           ))}
 
           {status === "streaming" && streaming ? (
-            <AssistantBubble content={streaming} citations={[]} streaming />
+            <AssistantBubble content={streaming} citations={[]} streaming onPrompt={sendPrompt} />
           ) : null}
 
           {activeProposals.map((p) => (
@@ -249,12 +296,10 @@ export function CopilotDockUI() {
             />
           ))}
 
-          {busy && toolTrail.length > 0 ? <ToolTrail trail={toolTrail} /> : null}
+          {busy && toolTrail.length > 0 ? <ActivityTimeline trail={toolTrail} /> : null}
 
           {awaitingApproval ? (
             <p className="font-mono text-meta text-amber">waiting for your approval…</p>
-          ) : activeTool ? (
-            <p className="animate-pulse font-mono text-meta text-ink-4">{activeTool}…</p>
           ) : thinking ? (
             <p className="animate-pulse font-mono text-meta text-ink-4">reasoning…</p>
           ) : status === "sending" ? (
@@ -319,6 +364,19 @@ export function CopilotDockUI() {
               </button>
             </div>
           ) : null}
+          {realtimeState !== "open" ? (
+            <div className="mb-1.5 flex items-center gap-2 rounded-card border border-line bg-raise px-2.5 py-1.5">
+              <span
+                className={cn(
+                  "size-1.5 rounded-full",
+                  realtimeState === "connecting" ? "animate-pulse bg-amber" : "bg-against",
+                )}
+              />
+              <p className="font-mono text-meta text-ink-3">
+                {realtimeState === "connecting" ? "reconnecting stream…" : "stream offline — reconnecting"}
+              </p>
+            </div>
+          ) : null}
           <div className="group rounded-card border border-line bg-field transition-colors focus-within:border-amber-line">
             {surfaceLabel ? (
               <div className="flex items-center gap-1.5 border-b border-line/60 px-3 pb-1 pt-1.5">
@@ -328,14 +386,11 @@ export function CopilotDockUI() {
                 </span>
               </div>
             ) : null}
-            <div className="flex items-end gap-1.5 px-3 py-2.5">
+            <div className="flex items-end gap-2 px-3 py-2.5">
               <textarea
                 ref={inputRef}
-                value={input}
-                onChange={(e) => {
-                  setInput(e.target.value);
-                  autogrow();
-                }}
+                value={draftText}
+                onChange={(e) => setDraftText(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
@@ -345,9 +400,10 @@ export function CopilotDockUI() {
                     setOpen(false);
                   }
                 }}
-                rows={1}
+                rows={2}
+                aria-label="Message Copilot"
                 placeholder={composerPlaceholder(busy, surfaceLabel)}
-                className="max-h-40 min-h-[22px] flex-1 resize-none bg-transparent text-body leading-relaxed text-ink outline-none placeholder:text-ink-4"
+                className="min-h-[44px] flex-1 resize-none bg-transparent py-0.5 text-body leading-relaxed text-ink outline-none placeholder:text-ink-4"
               />
               <div className="flex shrink-0 items-center gap-1">
                 {busy ? (
@@ -364,10 +420,11 @@ export function CopilotDockUI() {
                 <button
                   type="button"
                   onClick={submit}
-                  disabled={!input.trim()}
+                  disabled={!draftText.trim()}
                   aria-label={busy ? "Queue message" : "Send"}
                   title={busy ? "Queue — sends when the turn finishes" : "Send"}
-                  className={cn("grid size-8 place-items-center rounded-chip transition-all",
+                  className={cn(
+                    "grid size-8 place-items-center rounded-chip transition-all",
                     busy
                       ? "border border-line bg-raise text-ink-2 hover:border-amber-line hover:text-amber"
                       : "bg-amber text-primary-foreground disabled:opacity-30",
@@ -376,12 +433,6 @@ export function CopilotDockUI() {
                   <Icon as={ArrowUp} mark />
                 </button>
               </div>
-            </div>
-            {/* Keyboard hint — only while composing, so it never adds idle noise. */}
-            <div className="hidden items-center justify-end gap-2 px-3 pb-1.5 group-focus-within:flex">
-              <span className="font-mono text-meta text-ink-4">
-                {busy ? "⏎ queue" : "⏎ send"} · ⇧⏎ newline · esc close
-              </span>
             </div>
           </div>
         </div>
@@ -399,11 +450,97 @@ function activeThread(
   return found ? found.title || "Untitled" : null;
 }
 
+function ThreadMenuItems({
+  threads,
+  query,
+  activeThreadId,
+  proposals,
+  status,
+  onOpenThread,
+}: {
+  threads: { id: string; title: string; updatedAt: string }[];
+  query: string;
+  activeThreadId: string | null;
+  proposals: CopilotProposal[];
+  status: "idle" | "sending" | "streaming";
+  onOpenThread: (threadId: string) => void;
+}) {
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? threads.filter((t) => (t.title || "Untitled").toLowerCase().includes(q))
+    : threads;
+
+  if (threads.length === 0) {
+    return <DropdownMenuItem disabled>No saved threads</DropdownMenuItem>;
+  }
+  if (filtered.length === 0) {
+    return <DropdownMenuItem disabled>No matching threads</DropdownMenuItem>;
+  }
+
+  return (
+    <div className="max-h-80 overflow-y-auto p-1">
+      {filtered.map((thread) => {
+        const active = thread.id === activeThreadId;
+        const pendingApprovals = proposals.filter(
+          (p) =>
+            p.threadId === thread.id &&
+            (p.status === "pending" || p.status === "approving" || p.status === "rejecting"),
+        ).length;
+        const running = active && status !== "idle";
+        return (
+          <DropdownMenuItem
+            key={thread.id}
+            onClick={() => void onOpenThread(thread.id)}
+            className={cn("flex items-start gap-2 rounded-card px-2 py-2", active && "bg-raise")}
+          >
+            <Icon
+              as={MessageSquare}
+              size="inline"
+              className={cn("mt-0.5 shrink-0", active ? "text-amber" : "text-ink-4")}
+            />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-small text-ink">{thread.title || "Untitled"}</span>
+              <span className="mt-0.5 flex items-center gap-1.5 font-mono text-meta text-ink-4">
+                {running ? <StatusPill tone="amber" label="running" /> : null}
+                {pendingApprovals > 0 ? <StatusPill tone="against" label="approval" /> : null}
+                {!running && pendingApprovals === 0 ? <span>{formatThreadTime(thread.updatedAt)}</span> : null}
+              </span>
+            </span>
+          </DropdownMenuItem>
+        );
+      })}
+    </div>
+  );
+}
+
+function StatusPill({ tone, label }: { tone: "amber" | "against"; label: string }) {
+  return (
+    <span
+      className={cn(
+        "rounded-chip px-1.5 py-0.5",
+        tone === "amber" ? "bg-amber-soft text-amber" : "bg-against/10 text-against",
+      )}
+    >
+      {label}
+    </span>
+  );
+}
+
+function formatThreadTime(raw: string): string {
+  const ts = Date.parse(raw);
+  if (!Number.isFinite(ts)) return "saved";
+  const diff = Date.now() - ts;
+  if (diff < 60_000) return "just now";
+  if (diff < 60 * 60_000) return `${Math.max(1, Math.floor(diff / 60_000))}m ago`;
+  if (diff < 24 * 60 * 60_000) return `${Math.max(1, Math.floor(diff / (60 * 60_000)))}h ago`;
+  return `${Math.max(1, Math.floor(diff / (24 * 60 * 60_000)))}d ago`;
+}
+
 /**
- * Compact per-turn activity: consecutive runs of the same tool collapse to one chip
- * with a count; a colored dot marks the outcome (running pulses, ok/for, error/against).
+ * Compact live activity: consecutive runs of the same tool collapse to one row
+ * with a count; the most recent few rows stay visible while the turn runs.
  */
-function ToolTrail({ trail }: { trail: CopilotToolRun[] }) {
+function ActivityTimeline({ trail }: { trail: CopilotToolRun[] }) {
   const groups: { label: string; count: number; status: CopilotToolRun["status"] }[] = [];
   for (const run of trail) {
     const last = groups[groups.length - 1];
@@ -415,24 +552,31 @@ function ToolTrail({ trail }: { trail: CopilotToolRun[] }) {
       groups.push({ label: run.label, count: 1, status: run.status });
     }
   }
+  const visible = groups.slice(-6);
   return (
-    <div className="flex flex-wrap gap-1.5">
-      {groups.map((g, i) => (
-        <span
-          key={`${g.label}-${i}`}
-          className="flex items-center gap-1.5 rounded-chip border border-line px-2 py-0.5 font-mono text-meta text-ink-3"
-        >
-          <span
-            className={cn("size-1.5 rounded-full",
-              g.status === "running" && "animate-pulse bg-amber",
-              g.status === "ok" && "bg-for",
-              g.status === "error" && "bg-against",
-            )}
-          />
-          {g.label}
-          {g.count > 1 ? ` ×${g.count}` : ""}
-        </span>
-      ))}
+    <div className="rounded-card border border-line bg-field px-2.5 py-2">
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <span className="font-mono text-meta text-ink-4">activity</span>
+        {groups.length > visible.length ? (
+          <span className="font-mono text-meta text-ink-4">+{groups.length - visible.length}</span>
+        ) : null}
+      </div>
+      <div className="space-y-1">
+        {visible.map((g, i) => (
+          <div key={`${g.label}-${i}`} className="flex items-center gap-2 text-small text-ink-2">
+            <span
+              className={cn(
+                "size-1.5 shrink-0 rounded-full",
+                g.status === "running" && "animate-pulse bg-amber",
+                g.status === "ok" && "bg-for",
+                g.status === "error" && "bg-against",
+              )}
+            />
+            <span className="min-w-0 flex-1 truncate">{g.label}</span>
+            {g.count > 1 ? <span className="font-mono text-meta text-ink-4">x{g.count}</span> : null}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -513,12 +657,27 @@ function suggestionsFor(surface: CopilotSurface): string[] {
       return ["What do I know about this?", "What's it connected to?"];
     case "artifact":
     case "page":
-    case "shard":
+    case "shard": {
+      if (surface.artifactKind === "app") {
+        return [
+          "Summarize this shard",
+          "What would make this clearer?",
+          "Polish the interaction design",
+        ];
+      }
+      if (surface.artifactKind === "file") {
+        return [
+          "Summarize this source",
+          "What are the key claims here?",
+          "Extract the useful citations",
+        ];
+      }
       return [
         "Summarize what I'm looking at",
         "What are the key claims here?",
         "Turn this into an interactive shard",
       ];
+    }
     case "markets":
       return ["What am I watching?", "Anything notable in my watchlist?"];
     default:
@@ -537,16 +696,41 @@ function composerPlaceholder(busy: boolean, surfaceLabel: string | null): string
   return "Ask the copilot…";
 }
 
-function describeSurface(surface: { kind: string; symbol?: string; label?: string }): string | null {
+function describeSurface(surface: CopilotSurface): string | null {
   if (surface.kind === "ticker" && surface.symbol) return surface.symbol;
   if (surface.kind === "entity") return surface.label ?? "this entity";
-  if (surface.kind === "artifact" || surface.kind === "page" || surface.kind === "shard")
-    return "this item";
+  if (surface.kind === "artifact" || surface.kind === "page" || surface.kind === "shard") {
+    if (surface.label) return surface.label;
+    return `this ${surfaceKindLabel(surface.artifactKind)}`;
+  }
   if (surface.kind === "markets") return "Markets";
   return null;
 }
 
-function MessageBubble({ message }: { message: CopilotMessageView }) {
+function surfaceKindLabel(kind: CopilotSurface["artifactKind"]): string {
+  switch (kind) {
+    case "app":
+      return "shard";
+    case "file":
+      return "source";
+    case "link":
+      return "link";
+    case "voice":
+      return "voice note";
+    case "note":
+      return "page";
+    default:
+      return "item";
+  }
+}
+
+function MessageBubble({
+  message,
+  onPrompt,
+}: {
+  message: CopilotMessageView;
+  onPrompt: (prompt: string) => void;
+}) {
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
@@ -557,7 +741,12 @@ function MessageBubble({ message }: { message: CopilotMessageView }) {
     );
   }
   return (
-    <AssistantBubble content={message.content} citations={message.citations} meta={message.meta} />
+    <AssistantBubble
+      content={message.content}
+      citations={message.citations}
+      meta={message.meta}
+      onPrompt={onPrompt}
+    />
   );
 }
 
@@ -572,12 +761,13 @@ export function turnDigest(meta: CopilotMessageMeta | undefined): string {
   if (meta.activity && meta.activity.length > 0) {
     const groups: { label: string; count: number; failed: boolean }[] = [];
     for (const item of meta.activity) {
+      const label = toolDigestLabel(item.name);
       const last = groups[groups.length - 1];
-      if (last && last.label === item.name) {
+      if (last && last.label === label) {
         last.count += 1;
         last.failed = last.failed || !item.ok;
       } else {
-        groups.push({ label: item.name, count: 1, failed: !item.ok });
+        groups.push({ label, count: 1, failed: !item.ok });
       }
     }
     parts.push(
@@ -593,16 +783,107 @@ export function turnDigest(meta: CopilotMessageMeta | undefined): string {
   return parts.join(" — ");
 }
 
+function toolDigestLabel(name: string): string {
+  switch (name) {
+    case "search":
+      return "searched workspace";
+    case "get_entity":
+      return "read entity";
+    case "get_insights":
+      return "read insights";
+    case "list_artifacts":
+      return "listed artifacts";
+    case "get_artifact":
+      return "read artifact";
+    case "get_page":
+    case "list_pages":
+      return "read page";
+    case "get_watchlist":
+      return "checked watchlist";
+    case "get_browser_tree":
+    case "list_folders":
+      return "browsed workspace";
+    case "search_pages":
+      return "searched pages";
+    case "get_bars":
+      return "read price history";
+    case "get_quote":
+      return "fetched quote";
+    case "get_news":
+      return "read news";
+    case "get_movers":
+      return "scanned movers";
+    case "get_most_actives":
+      return "checked most-actives";
+    case "get_account":
+      return "read account";
+    case "get_positions":
+      return "read positions";
+    case "create_alert":
+      return "set alert";
+    case "list_alerts":
+      return "checked alerts";
+    case "delete_alert":
+      return "removed alert";
+    case "create_app":
+      return "created shard";
+    case "list_dir":
+    case "read_file":
+      return "read shard files";
+    case "write_file":
+    case "edit_file":
+      return "wrote shard code";
+    case "install_lib":
+      return "added dependency";
+    case "build_app":
+      return "built shard";
+    case "delete_file":
+      return "deleted shard file";
+    case "publish_app":
+      return "published shard";
+    case "preview_open":
+    case "preview_navigate":
+    case "preview_snapshot":
+    case "preview_screenshot":
+    case "preview_eval":
+    case "preview_click":
+    case "preview_console":
+    case "preview_close":
+    case "preview_restart":
+      return "previewed shard";
+    case "create_page":
+      return "created page";
+    case "insert_blocks":
+    case "update_block":
+    case "update_page":
+      return "edited page";
+    case "delete_block":
+      return "removed block";
+    case "add_to_watchlist":
+      return "updated watchlist";
+    case "list_watchlists":
+      return "listed watchlists";
+    case "create_watchlist":
+      return "created watchlist";
+    case "draw_edge":
+      return "linked entities";
+    default:
+      return name.replaceAll("_", " ");
+  }
+}
+
 function AssistantBubble({
   content,
   citations,
   meta,
   streaming,
+  onPrompt,
 }: {
   content: string;
   citations: CopilotCitation[];
   meta?: CopilotMessageMeta;
   streaming?: boolean;
+  onPrompt: (prompt: string) => void;
 }) {
   const navCitation = useCitationNav();
   // Dedupe citations by kind+id for display.
@@ -616,7 +897,7 @@ function AssistantBubble({
   return (
     <div className="flex flex-col gap-1.5">
       <div>
-        <CopilotMarkdown text={content} />
+        <CopilotMarkdown text={content} onPrompt={onPrompt} />
         {streaming ? <StreamCaret /> : null}
       </div>
       {unique.length > 0 ? (

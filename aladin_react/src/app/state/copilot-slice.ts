@@ -33,6 +33,7 @@ export interface CopilotThreadView {
 }
 
 export type CopilotStatus = "idle" | "sending" | "streaming";
+export type CopilotRealtimeState = "connecting" | "open" | "closed";
 
 /** One tool invocation in the live turn's activity trail. */
 export interface CopilotToolRun {
@@ -62,6 +63,7 @@ export interface CopilotProposal {
 }
 
 const localStorageKey = "aladin.copilot.activeThreadId";
+const newThreadDraftKey = "__new__";
 
 function readPersistedThreadId(): string | null {
   try {
@@ -95,6 +97,27 @@ function expireForSession(
   );
 }
 
+function acceptsTurnEvent(state: CopilotSlice, threadId: string, sessionId: string): boolean {
+  if (state.copilotSessionId === sessionId) return true;
+  if (state.copilotStatus !== "sending") return false;
+  if (!threadId) return false;
+  return state.activeThreadId === null || state.activeThreadId === threadId;
+}
+
+function bindEarlyTurn(state: CopilotSlice, threadId: string, sessionId: string) {
+  if (state.copilotSessionId === sessionId) return {};
+  persistThreadId(threadId);
+  return {
+    activeThreadId: threadId,
+    copilotSessionId: sessionId,
+    copilotStatus: "streaming" as CopilotStatus,
+  };
+}
+
+function draftKey(threadId: string | null): string {
+  return threadId ?? newThreadDraftKey;
+}
+
 export interface CopilotSlice {
   copilotOpen: boolean;
   copilotThreads: CopilotThreadView[];
@@ -124,6 +147,10 @@ export interface CopilotSlice {
   copilotWsReconnects: number;
   /** One message queued while a turn runs — auto-sent when the turn finishes. */
   copilotQueuedText: string | null;
+  /** Per-thread unsent composer drafts. */
+  copilotDrafts: Record<string, string>;
+  /** Realtime websocket state, exposed so stream gaps do not feel like dead air. */
+  copilotRealtimeState: CopilotRealtimeState;
 
   toggleCopilot: () => void;
   setCopilotOpen: (open: boolean) => void;
@@ -138,15 +165,15 @@ export interface CopilotSlice {
   dropCopilotLocalMessage: (id: string) => void;
   /** After the send resolves: bind the thread + session and enter the streaming state. */
   beginCopilotTurn: (threadId: string, sessionId: string) => void;
-  appendCopilotToken: (sessionId: string, delta: string) => void;
-  setCopilotTool: (sessionId: string, name: string, label: string) => void;
+  appendCopilotToken: (threadId: string, sessionId: string, delta: string) => void;
+  setCopilotTool: (threadId: string, sessionId: string, name: string, label: string) => void;
   /** A tool finished — mark its trail entry with the outcome. */
-  finishCopilotTool: (sessionId: string, name: string, ok: boolean) => void;
+  finishCopilotTool: (threadId: string, sessionId: string, name: string, ok: boolean) => void;
   /** The model entered a thinking block (cleared by the next token/tool/message). */
-  setCopilotThinking: (sessionId: string) => void;
-  finishCopilotMessage: (sessionId: string, message: CopilotMessageView) => void;
-  endCopilotTurn: (sessionId: string) => void;
-  setCopilotError: (sessionId: string, message: string, code?: string) => void;
+  setCopilotThinking: (threadId: string, sessionId: string) => void;
+  finishCopilotMessage: (threadId: string, sessionId: string, message: CopilotMessageView) => void;
+  endCopilotTurn: (threadId: string, sessionId: string) => void;
+  setCopilotError: (threadId: string, sessionId: string, message: string, code?: string) => void;
   /** User hit stop: keep whatever streamed so far as a message and end the turn. */
   stopCopilotTurn: () => void;
   addCopilotProposal: (proposal: {
@@ -171,6 +198,9 @@ export interface CopilotSlice {
    */
   reconcileCopilotThread: (threadId: string, messages: CopilotMessageView[]) => void;
   noteCopilotWsReconnect: () => void;
+  setCopilotRealtimeState: (state: CopilotRealtimeState) => void;
+  setCopilotDraft: (threadId: string | null, text: string) => void;
+  copilotDraftFor: (threadId: string | null) => string;
   /** Queue (or replace) one message to auto-send when the running turn finishes. */
   queueCopilotText: (text: string | null) => void;
   /** Take the queued message (clearing it) — used by the auto-send effect. */
@@ -196,13 +226,15 @@ export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice
   copilotLastEventAt: null,
   copilotWsReconnects: 0,
   copilotQueuedText: null,
+  copilotDrafts: {},
+  copilotRealtimeState: "connecting",
 
   toggleCopilot: () => set((state) => ({ copilotOpen: !state.copilotOpen })),
   setCopilotOpen: (open) => set({ copilotOpen: open }),
   setCopilotThreads: (threads) => set({ copilotThreads: threads }),
 
   openCopilotThread: (threadId, messages) =>
-    set((state) => {
+    set(() => {
       persistThreadId(threadId);
       return {
         activeThreadId: threadId,
@@ -216,33 +248,27 @@ export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice
         copilotError: null,
         copilotErrorCode: null,
         copilotQueuedText: null,
-        // Proposals survive thread switches (the server-side hold does too), but any
-        // unresolved proposal for THIS thread from a session we no longer track can't
-        // be settled by events anymore — expire it rather than show a dead button.
-        copilotProposals: state.copilotProposals.map((p) =>
-          p.threadId === threadId &&
-          p.sessionId !== state.copilotSessionId &&
-          (p.status === "pending" || p.status === "approving" || p.status === "rejecting")
-            ? { ...p, status: "expired" as const, message: "That approval expired." }
-            : p,
-        ),
       };
     }),
 
   newCopilotThread: () => {
     persistThreadId(null);
-    set({
-      activeThreadId: null,
-      copilotMessages: [],
-      copilotStreaming: "",
-      copilotStatus: "idle",
-      copilotActiveTool: null,
-      copilotToolTrail: [],
-      copilotThinking: false,
-      copilotSessionId: null,
-      copilotError: null,
-      copilotErrorCode: null,
-      copilotQueuedText: null,
+    set((state) => {
+      const { [newThreadDraftKey]: _, ...drafts } = state.copilotDrafts;
+      return {
+        activeThreadId: null,
+        copilotMessages: [],
+        copilotStreaming: "",
+        copilotStatus: "idle",
+        copilotActiveTool: null,
+        copilotToolTrail: [],
+        copilotThinking: false,
+        copilotSessionId: null,
+        copilotError: null,
+        copilotErrorCode: null,
+        copilotQueuedText: null,
+        copilotDrafts: drafts,
+      };
     });
   },
 
@@ -264,22 +290,32 @@ export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice
 
   beginCopilotTurn: (threadId, sessionId) => {
     persistThreadId(threadId);
-    set({
-      activeThreadId: threadId,
-      copilotSessionId: sessionId,
-      copilotStatus: "streaming",
-      copilotStreaming: "",
-      copilotActiveTool: null,
-      copilotToolTrail: [],
-      copilotThinking: false,
-      copilotLastEventAt: Date.now(),
+    set((state) => {
+      if (state.copilotSessionId === sessionId) {
+        return {
+          activeThreadId: threadId,
+          copilotStatus: "streaming" as CopilotStatus,
+          copilotLastEventAt: state.copilotLastEventAt ?? Date.now(),
+        };
+      }
+      return {
+        activeThreadId: threadId,
+        copilotSessionId: sessionId,
+        copilotStatus: "streaming" as CopilotStatus,
+        copilotStreaming: "",
+        copilotActiveTool: null,
+        copilotToolTrail: [],
+        copilotThinking: false,
+        copilotLastEventAt: Date.now(),
+      };
     });
   },
 
-  appendCopilotToken: (sessionId, delta) =>
+  appendCopilotToken: (threadId, sessionId, delta) =>
     set((state) => {
-      if (state.copilotSessionId !== sessionId) return {};
+      if (!acceptsTurnEvent(state, threadId, sessionId)) return {};
       return {
+        ...bindEarlyTurn(state, threadId, sessionId),
         copilotStreaming: state.copilotStreaming + delta,
         copilotActiveTool: null,
         copilotThinking: false,
@@ -287,10 +323,11 @@ export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice
       };
     }),
 
-  setCopilotTool: (sessionId, name, label) =>
+  setCopilotTool: (threadId, sessionId, name, label) =>
     set((state) => {
-      if (state.copilotSessionId !== sessionId) return {};
+      if (!acceptsTurnEvent(state, threadId, sessionId)) return {};
       return {
+        ...bindEarlyTurn(state, threadId, sessionId),
         copilotActiveTool: label,
         copilotThinking: false,
         copilotToolTrail: [
@@ -301,9 +338,9 @@ export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice
       };
     }),
 
-  finishCopilotTool: (sessionId, name, ok) =>
+  finishCopilotTool: (threadId, sessionId, name, ok) =>
     set((state) => {
-      if (state.copilotSessionId !== sessionId) return {};
+      if (!acceptsTurnEvent(state, threadId, sessionId)) return {};
       // Mark the OLDEST unresolved run of this tool (results come back in order).
       let marked = false;
       const trail = state.copilotToolTrail.map((t) => {
@@ -315,23 +352,28 @@ export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice
       });
       const stillRunning = trail.some((t) => t.status === "running");
       return {
+        ...bindEarlyTurn(state, threadId, sessionId),
         copilotToolTrail: trail,
         copilotActiveTool: stillRunning ? state.copilotActiveTool : null,
         copilotLastEventAt: Date.now(),
       };
     }),
 
-  setCopilotThinking: (sessionId) =>
-    set((state) =>
-      state.copilotSessionId === sessionId
-        ? { copilotThinking: true, copilotLastEventAt: Date.now() }
-        : {},
-    ),
-
-  finishCopilotMessage: (sessionId, message) =>
+  setCopilotThinking: (threadId, sessionId) =>
     set((state) => {
-      if (state.copilotSessionId !== sessionId) return {};
+      if (!acceptsTurnEvent(state, threadId, sessionId)) return {};
       return {
+        ...bindEarlyTurn(state, threadId, sessionId),
+        copilotThinking: true,
+        copilotLastEventAt: Date.now(),
+      };
+    }),
+
+  finishCopilotMessage: (threadId, sessionId, message) =>
+    set((state) => {
+      if (!acceptsTurnEvent(state, threadId, sessionId)) return {};
+      return {
+        ...bindEarlyTurn(state, threadId, sessionId),
         copilotMessages: [...state.copilotMessages, message],
         copilotStreaming: "",
         copilotActiveTool: null,
@@ -340,10 +382,11 @@ export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice
       };
     }),
 
-  endCopilotTurn: (sessionId) =>
+  endCopilotTurn: (threadId, sessionId) =>
     set((state) => {
-      if (state.copilotSessionId !== sessionId) return {};
+      if (!acceptsTurnEvent(state, threadId, sessionId)) return {};
       return {
+        ...bindEarlyTurn(state, threadId, sessionId),
         copilotStatus: "idle" as CopilotStatus,
         copilotSessionId: null,
         copilotActiveTool: null,
@@ -352,10 +395,11 @@ export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice
       };
     }),
 
-  setCopilotError: (sessionId, message, code) =>
+  setCopilotError: (threadId, sessionId, message, code) =>
     set((state) => {
-      if (state.copilotSessionId !== sessionId) return {};
+      if (!acceptsTurnEvent(state, threadId, sessionId)) return {};
       return {
+        ...bindEarlyTurn(state, threadId, sessionId),
         copilotError: message,
         copilotErrorCode: code ?? null,
         copilotStatus: "idle" as CopilotStatus,
@@ -391,8 +435,9 @@ export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice
     set((state) => {
       // Same gate as every other live event: only the in-flight turn may add proposals
       // (a second window streams its own turn; it must not grow cards here).
-      if (state.copilotSessionId !== proposal.sessionId) return {};
+      if (!acceptsTurnEvent(state, proposal.threadId, proposal.sessionId)) return {};
       return {
+        ...bindEarlyTurn(state, proposal.threadId, proposal.sessionId),
         copilotProposals: [...state.copilotProposals, { ...proposal, status: "pending" as const }],
         copilotLastEventAt: Date.now(),
       };
@@ -444,6 +489,20 @@ export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice
 
   noteCopilotWsReconnect: () =>
     set((state) => ({ copilotWsReconnects: state.copilotWsReconnects + 1 })),
+
+  setCopilotRealtimeState: (next) => set({ copilotRealtimeState: next }),
+
+  setCopilotDraft: (threadId, text) =>
+    set((state) => {
+      const key = draftKey(threadId);
+      if (text === "") {
+        const { [key]: _, ...rest } = state.copilotDrafts;
+        return { copilotDrafts: rest };
+      }
+      return { copilotDrafts: { ...state.copilotDrafts, [key]: text } };
+    }),
+
+  copilotDraftFor: (threadId) => get().copilotDrafts[draftKey(threadId)] ?? "",
 
   queueCopilotText: (text) => set({ copilotQueuedText: text }),
 

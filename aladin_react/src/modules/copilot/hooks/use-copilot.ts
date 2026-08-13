@@ -47,6 +47,8 @@ export function useCopilot() {
   const errorCode = useAppStore((s) => s.copilotErrorCode);
   const proposals = useAppStore((s) => s.copilotProposals);
   const wsReconnects = useAppStore((s) => s.copilotWsReconnects);
+  const draftText = useAppStore((s) => s.copilotDraftFor(s.activeThreadId));
+  const realtimeState = useAppStore((s) => s.copilotRealtimeState);
 
   const loadThreads = useCallback(async () => {
     try {
@@ -216,6 +218,11 @@ export function useCopilot() {
 
   const newThread = useCallback(() => useAppStore.getState().newCopilotThread(), []);
   const setOpen = useCallback((next: boolean) => useAppStore.getState().setCopilotOpen(next), []);
+  const setDraftText = useCallback(
+    (text: string) =>
+      useAppStore.getState().setCopilotDraft(useAppStore.getState().activeThreadId, text),
+    [],
+  );
 
   return {
     open,
@@ -241,5 +248,8 @@ export function useCopilot() {
     newThread,
     fetchHealthWarning,
     queuedText,
+    draftText,
+    setDraftText,
+    realtimeState,
   };
 }

@@ -1,4 +1,5 @@
 import type { ApiClient } from "@/shared/api/client";
+import type { ArtifactKind } from "@/shared/api/models";
 import type {
   CopilotCitation,
   CopilotMessageMeta,
@@ -12,6 +13,7 @@ export interface CopilotSurface {
   id?: string;
   symbol?: string;
   label?: string;
+  artifactKind?: ArtifactKind;
 }
 
 export interface CopilotSendRequest {
