@@ -71,20 +71,35 @@ Aladin owns all rendering, permissions, and actions.
 The current surface works, but it exposes too much transport detail and too
 little product intent.
 
-Observed rough edges:
+Resolved in the current branch:
 
-- turn state is global instead of per thread
-- approvals can become stale after thread switches
-- early realtime events can arrive before the UI knows the new session id
-- queued follow-ups are a single global string, not tied to a thread or surface
-- activity is reduced to terse text like `write_file x2`
-- completed turn metadata renders raw tool names
-- the composer says "this item" instead of the actual artifact/shard/page title
-- the composer sizing jumps while typing/focusing and feels cramped
-- thread management is only a dropdown, with no search, pinning, rename,
-  archive, status, or surface grouping
-- websocket recovery happens silently
-- markdown is plain prose plus citations, not a native Aladin UI surface
+- turn events, pending approvals, and queued follow-ups are scoped to the active
+  thread/session and current surface
+- early realtime events can bind to the active turn before the new session id is
+  known
+- live activity renders as grouped timeline chips with bounded input/result
+  summaries, and completed turns use readable tool labels
+- the composer has stable sizing, per-thread drafts, surface-aware copy, and
+  explicit queued follow-up UI
+- the thread menu supports search, new chat, rename, archive, pin/unpin,
+  approval/running badges, empty states, and relative saved times
+- reconnect, error recovery, health warning, latest transcript, empty state,
+  proposal, and assistant citation/digest surfaces have focused render tests
+- markdown can render native `aladin-*` rich directives for artifacts, entities,
+  tickers, activity, actions, approvals, diffs, shard previews, and recoverable
+  errors
+
+Remaining rough edges:
+
+- thread management still needs richer surface grouping, not just per-row
+  surface/status hints
+- backend final answers should intentionally emit rich directives in more common
+  workflows, especially build failures, approvals, shard previews, and recovery
+  paths
+- broader dock-level integration tests should cover scroll pinning, empty-state
+  transitions, thread switches during streaming, and approval recovery together
+- visual QA should verify the polished composer and rich blocks at mobile and
+  dock widths, not only through component tests
 
 ## Target Experience
 
