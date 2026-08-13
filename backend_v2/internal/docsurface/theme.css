@@ -74,7 +74,19 @@
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-ring: var(--sidebar-ring);
 
-    /* Radius — Aladin chips + the existing scale */
+    /* Type — six steps. Line-height rides with the step, so a size change cannot
+       silently change rhythm. An arbitrary text-[13.5px] is a bug, not a preference. */
+    --text-meta: 10px;      --text-meta--line-height: 1.4;
+    --text-small: 12px;     --text-small--line-height: 1.5;
+    --text-body: 13px;      --text-body--line-height: 1.55;
+    --text-lead: 15px;      --text-lead--line-height: 1.7;
+    --text-title: 22px;     --text-title--line-height: 1.25;
+    --text-display: 30px;   --text-display--line-height: 1.15;
+
+    /* Radius — follows container size, not taste. chip/card/modal were already
+       right, just under-used; tap/control name the two steps below them. */
+    --radius-tap: 5px;      /* hit boxes <= 20px: close x, small badges */
+    --radius-control: 9px;  /* buttons, rail cells, inputs, tree rows */
     --radius-chip: 7px;
     --radius-card: 12px;
     --radius-modal: 14px;
@@ -83,6 +95,11 @@
     --radius-lg: var(--radius);
     --radius-xl: calc(var(--radius) * 1.4);
     --radius-2xl: calc(var(--radius) * 1.8);
+
+    /* Reading measure for the work pane. `max-w-workspace-max` was in use in four
+       files with NO token behind it, so it silently resolved to nothing and those
+       surfaces were full-bleed. 72ch matches the editor measure. */
+    --container-workspace-max: 72ch;
 
     /* Shadows */
     --shadow-panel: -24px 0 60px rgba(0, 0, 0, 0.5);

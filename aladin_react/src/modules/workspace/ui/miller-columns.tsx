@@ -299,7 +299,7 @@ function LeafPreview({
         <button
           type="button"
           onClick={onOpen}
-          className="flex w-full items-center justify-center gap-1.5 rounded-[9px] bg-amber py-[9px] text-[13px] font-semibold text-[#0f0f12] transition-opacity hover:opacity-90"
+          className="flex w-full items-center justify-center gap-1.5 rounded-[9px] bg-amber py-[9px] text-[13px] font-semibold text-primary-foreground transition-opacity hover:opacity-90"
         >
           Open in editor
           <ArrowRight className="h-4 w-4" strokeWidth={2} />

@@ -27,7 +27,7 @@ export function AuthUI({ mode }: { mode: "login" | "register" }) {
         <section className="flex min-h-[320px] flex-col justify-between overflow-hidden border-b border-line bg-panel px-10 py-12 sm:px-14 sm:py-16 lg:min-h-full lg:border-b-0 lg:border-r">
           <div className="space-y-10">
             <div className="flex items-center gap-2.5">
-              <div className="grid size-7 place-items-center rounded-[9px] bg-amber font-display text-[12px] font-bold text-[#0f0f12]">
+              <div className="grid size-7 place-items-center rounded-[9px] bg-amber font-display text-[12px] font-bold text-primary-foreground">
                 A
               </div>
               <span className="text-[13px] font-semibold tracking-[-0.01em] text-ink">Aladin</span>

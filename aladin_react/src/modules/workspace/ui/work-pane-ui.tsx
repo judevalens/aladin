@@ -9,7 +9,7 @@ import { GraphSidePaneUI } from "@/modules/graph/ui/graph-side-pane-ui";
 import { ResearchPaneUI } from "@/modules/research/ui/research-pane-ui";
 import { FileArtifactPaneUI } from "@/modules/documents/ui/document-viewer-ui";
 import { useWorkPane, type WorkPaneCrumb } from "@/modules/workspace/hooks/use-workspace-state";
-import { cn } from "@/shared/lib/utils";
+import { cn } from "@/lib/utils";
 
 export function WorkPaneUI() {
   const {

@@ -113,7 +113,7 @@ export function WorkspaceShellUI() {
             <button
               type="button"
               onClick={() => setCommandOpen(true)}
-              className="grid size-8 place-items-center rounded-[9px] bg-amber font-display text-sm font-bold text-[#0f0f12]"
+              className="grid size-8 place-items-center rounded-[9px] bg-amber font-display text-sm font-bold text-primary-foreground"
               aria-label="Open command palette"
             >
               A

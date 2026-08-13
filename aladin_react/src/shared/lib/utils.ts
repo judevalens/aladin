@@ -1,9 +1,6 @@
-import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
-
-export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
+// NOTE: `cn` used to live here too, duplicating @/lib/utils — 12 files imported it from
+// here and 38 from there. Consolidated on @/lib/utils (UI_ARCHITECTURE §5 rule 3). This file
+// keeps the formatters, which are genuinely shared and have no duplicate.
 
 export function formatHumanDate(value?: string | null) {
   if (!value) return "never";

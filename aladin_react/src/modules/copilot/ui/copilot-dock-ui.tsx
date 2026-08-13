@@ -368,7 +368,7 @@ export function CopilotDockUI() {
                     "grid size-8 place-items-center rounded-chip transition-all",
                     busy
                       ? "border border-line bg-raise text-ink-2 hover:border-amber-line hover:text-amber"
-                      : "bg-amber text-[#0f0f12] disabled:opacity-30",
+                      : "bg-amber text-primary-foreground disabled:opacity-30",
                   )}
                 >
                   <ArrowUp className="size-4" strokeWidth={2.25} />
@@ -482,7 +482,7 @@ function ProposalCard({
           type="button"
           disabled={inFlight}
           onClick={onApprove}
-          className="flex-1 rounded-chip bg-amber py-1.5 text-[12px] font-semibold text-[#0f0f12] transition-opacity disabled:opacity-50"
+          className="flex-1 rounded-chip bg-amber py-1.5 text-[12px] font-semibold text-primary-foreground transition-opacity disabled:opacity-50"
         >
           Approve
         </button>

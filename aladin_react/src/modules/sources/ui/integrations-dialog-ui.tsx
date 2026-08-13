@@ -17,7 +17,7 @@ import {
   useIntegrationsDialogState,
   IntegrationsState,
 } from "@/modules/sources/hooks/use-integrations-dialog-state";
-import { cn } from "@/shared/lib/utils";
+import { cn } from "@/lib/utils";
 import {
   IntegrationTokenRow,
   Pill,

@@ -177,7 +177,7 @@ export function TickerDetail({
         <button
           type="button"
           onClick={onTrade}
-          className="flex-1 rounded-card bg-amber py-2.5 text-[13px] font-semibold text-[#0f0f12] transition-opacity hover:opacity-90"
+          className="flex-1 rounded-card bg-amber py-2.5 text-[13px] font-semibold text-primary-foreground transition-opacity hover:opacity-90"
         >
           Trade
         </button>

@@ -26,7 +26,7 @@ const RESEARCH_SLOT_ICONS: Record<ResearchView, LucideIcon> = {
 import { useBrowserPane } from "@/modules/workspace/hooks/use-workspace-state";
 import { useAppStore } from "@/app/state/store";
 import { PropertyFilterDialogUI } from "@/modules/artifacts/ui/property-filter-dialog-ui";
-import { cn } from "@/shared/lib/utils";
+import { cn } from "@/lib/utils";
 
 const MAX_INLINE = 2; // depths 0,1 expand inline; depth >= 2 drills into the Miller popup
 
