@@ -115,6 +115,7 @@ type fakeCopilotStore struct {
 	owners      map[string]string
 	titles      map[string]string
 	archived    map[string]bool
+	pinned      map[string]bool
 	msgs        map[string][]CopilotMessage
 	sdkSessions map[string]string
 	touches     int
@@ -125,6 +126,7 @@ func newFakeStore() *fakeCopilotStore {
 		owners:      map[string]string{},
 		titles:      map[string]string{},
 		archived:    map[string]bool{},
+		pinned:      map[string]bool{},
 		msgs:        map[string][]CopilotMessage{},
 		sdkSessions: map[string]string{},
 	}
@@ -152,7 +154,7 @@ func (s *fakeCopilotStore) GetThread(_ context.Context, userID, threadID string)
 	if s.owners[threadID] != userID || s.archived[threadID] {
 		return CopilotThread{}, false, nil
 	}
-	return CopilotThread{ID: threadID, Title: s.titles[threadID], SDKSessionID: s.sdkSessions[threadID]}, true, nil
+	return CopilotThread{ID: threadID, Title: s.titles[threadID], SDKSessionID: s.sdkSessions[threadID], Pinned: s.pinned[threadID]}, true, nil
 }
 func (s *fakeCopilotStore) RenameThread(_ context.Context, userID, threadID, title string) (CopilotThread, bool, error) {
 	s.mu.Lock()
@@ -161,7 +163,7 @@ func (s *fakeCopilotStore) RenameThread(_ context.Context, userID, threadID, tit
 		return CopilotThread{}, false, nil
 	}
 	s.titles[threadID] = title
-	return CopilotThread{ID: threadID, Title: title, SDKSessionID: s.sdkSessions[threadID]}, true, nil
+	return CopilotThread{ID: threadID, Title: title, SDKSessionID: s.sdkSessions[threadID], Pinned: s.pinned[threadID]}, true, nil
 }
 func (s *fakeCopilotStore) ArchiveThread(_ context.Context, userID, threadID string) (bool, error) {
 	s.mu.Lock()
@@ -171,6 +173,15 @@ func (s *fakeCopilotStore) ArchiveThread(_ context.Context, userID, threadID str
 	}
 	s.archived[threadID] = true
 	return true, nil
+}
+func (s *fakeCopilotStore) SetThreadPinned(_ context.Context, userID, threadID string, pinned bool) (CopilotThread, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.owners[threadID] != userID || s.archived[threadID] {
+		return CopilotThread{}, false, nil
+	}
+	s.pinned[threadID] = pinned
+	return CopilotThread{ID: threadID, Title: s.titles[threadID], SDKSessionID: s.sdkSessions[threadID], Pinned: pinned}, true, nil
 }
 func (s *fakeCopilotStore) SetThreadSDKSession(_ context.Context, threadID, sessionID string) error {
 	s.mu.Lock()
@@ -347,6 +358,20 @@ func TestCopilotThreadManagementRenamesAndArchives(t *testing.T) {
 	if renamed.Title != "New title" {
 		t.Fatalf("renamed title = %q, want trimmed title", renamed.Title)
 	}
+	pinned, err := svc.SetThreadPinned(context.Background(), userID, threadID, true)
+	if err != nil {
+		t.Fatalf("pin: %v", err)
+	}
+	if !pinned.Pinned {
+		t.Fatal("thread should be pinned")
+	}
+	unpinned, err := svc.SetThreadPinned(context.Background(), userID, threadID, false)
+	if err != nil {
+		t.Fatalf("unpin: %v", err)
+	}
+	if unpinned.Pinned {
+		t.Fatal("thread should be unpinned")
+	}
 	if _, err := svc.RenameThread(context.Background(), userID, threadID, "  "); err == nil {
 		t.Fatal("blank rename should fail")
 	}
@@ -359,6 +384,9 @@ func TestCopilotThreadManagementRenamesAndArchives(t *testing.T) {
 	}
 	if _, err := svc.RenameThread(context.Background(), userID, threadID, "After archive"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("archived thread rename err = %v, want ErrNotFound", err)
+	}
+	if _, err := svc.SetThreadPinned(context.Background(), userID, threadID, true); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("archived thread pin err = %v, want ErrNotFound", err)
 	}
 }
 

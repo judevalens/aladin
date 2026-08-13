@@ -17,6 +17,7 @@ func (s *Server) registerCopilotRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/copilot/threads/{id}", s.handleCopilotThread)
 	mux.HandleFunc("PATCH /api/copilot/threads/{id}", s.handleCopilotRenameThread)
 	mux.HandleFunc("DELETE /api/copilot/threads/{id}", s.handleCopilotArchiveThread)
+	mux.HandleFunc("POST /api/copilot/threads/{id}/pin", s.handleCopilotPinThread)
 	mux.HandleFunc("GET /api/copilot/status", s.handleCopilotStatus)
 }
 
@@ -137,6 +138,23 @@ func (s *Server) handleCopilotArchiveThread(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// POST /api/copilot/threads/{id}/pin {pinned} — pin or unpin one owned thread.
+func (s *Server) handleCopilotPinThread(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Pinned bool `json:"pinned"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeDecodeError(w, r, err)
+		return
+	}
+	thread, err := s.deps.Copilot().SetThreadPinned(r.Context(), principalUserID(r), r.PathValue("id"), req.Pinned)
+	if err != nil {
+		s.writeCopilotError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, thread)
 }
 
 // copilotBearer extracts the caller's raw credential so the copilot-agent sidecar can

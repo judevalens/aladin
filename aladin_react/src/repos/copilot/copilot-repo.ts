@@ -53,6 +53,7 @@ export interface CopilotRepo {
   getThread(threadId: string): Promise<CopilotThreadDetail>;
   renameThread(threadId: string, title: string): Promise<CopilotThreadView>;
   archiveThread(threadId: string): Promise<void>;
+  setThreadPinned(threadId: string, pinned: boolean): Promise<CopilotThreadView>;
   /** Preflight health: is the sidecar up and its MCP tool server reachable? */
   getStatus(): Promise<CopilotStatus>;
 }
@@ -132,5 +133,11 @@ export function createCopilotRepo(client: ApiClient): CopilotRepo {
           method: "DELETE",
         })
         .then(() => undefined),
+
+    setThreadPinned: (threadId, pinned) =>
+      client.fetch<CopilotThreadView>(`/api/copilot/threads/${encodeURIComponent(threadId)}/pin`, {
+        method: "POST",
+        body: JSON.stringify({ pinned }),
+      }),
   };
 }

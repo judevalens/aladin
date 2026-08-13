@@ -105,6 +105,16 @@ func TestCopilotStoreRoundTrip(t *testing.T) {
 	if _, ok, err := store.GetThread(ctx, otherUser, threadID); err != nil || ok {
 		t.Fatalf("non-owner GetThread should be not-found: ok=%v err=%v", ok, err)
 	}
+	pinned, ok, err := store.SetThreadPinned(ctx, userID, threadID, true)
+	if err != nil || !ok {
+		t.Fatalf("pin thread: ok=%v err=%v", ok, err)
+	}
+	if !pinned.Pinned {
+		t.Fatalf("pinned thread = %+v, want pinned", pinned)
+	}
+	if _, ok, err := store.SetThreadPinned(ctx, otherUser, threadID, false); err != nil || ok {
+		t.Fatalf("non-owner pin should be not-found: ok=%v err=%v", ok, err)
+	}
 
 	threads, err := store.ListThreads(ctx, userID)
 	if err != nil {
@@ -112,11 +122,23 @@ func TestCopilotStoreRoundTrip(t *testing.T) {
 	}
 	found := false
 	for _, th := range threads {
-		if th.ID == threadID && th.Title == "how does NVDA look?" {
+		if th.ID == threadID && th.Title == "how does NVDA look?" && th.Pinned {
 			found = true
 		}
 	}
 	if !found {
 		t.Fatalf("thread not in ListThreads: %+v", threads)
+	}
+	if ok, err := store.ArchiveThread(ctx, userID, threadID); err != nil || !ok {
+		t.Fatalf("archive thread: ok=%v err=%v", ok, err)
+	}
+	threads, err = store.ListThreads(ctx, userID)
+	if err != nil {
+		t.Fatalf("list after archive: %v", err)
+	}
+	for _, th := range threads {
+		if th.ID == threadID {
+			t.Fatalf("archived thread should be hidden from ListThreads: %+v", threads)
+		}
 	}
 }

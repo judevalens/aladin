@@ -240,6 +240,34 @@ describe("copilot thread management", () => {
     expect(store.getState().activeThreadId).toBeNull();
     expect(store.getState().copilotMessages).toEqual([]);
   });
+
+  it("keeps pinned threads ahead of normal recency", () => {
+    const store = makeStore();
+    store.getState().setCopilotThreads([
+      { id: "old-pinned", title: "Pinned", updatedAt: "2026-01-01T00:00:00Z", pinned: true },
+      { id: "new-normal", title: "Recent", updatedAt: "2026-01-03T00:00:00Z" },
+      { id: "old-normal", title: "Old", updatedAt: "2026-01-02T00:00:00Z" },
+    ]);
+
+    expect(store.getState().copilotThreads.map((t) => t.id)).toEqual([
+      "old-pinned",
+      "new-normal",
+      "old-normal",
+    ]);
+
+    store.getState().updateCopilotThreadLocal({
+      id: "new-normal",
+      title: "Recent",
+      updatedAt: "2026-01-03T00:00:00Z",
+      pinned: true,
+    });
+
+    expect(store.getState().copilotThreads.map((t) => t.id)).toEqual([
+      "new-normal",
+      "old-pinned",
+      "old-normal",
+    ]);
+  });
 });
 
 describe("turnDigest", () => {

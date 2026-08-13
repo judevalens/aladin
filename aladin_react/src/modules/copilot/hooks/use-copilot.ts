@@ -147,6 +147,26 @@ export function useCopilot() {
     [repos.copilot, loadThreads],
   );
 
+  const setThreadPinned = useCallback(
+    async (threadId: string, pinned: boolean) => {
+      try {
+        const thread = await repos.copilot.setThreadPinned(threadId, pinned);
+        useAppStore.getState().updateCopilotThreadLocal(thread);
+        void loadThreads();
+        return true;
+      } catch {
+        useAppStore.setState({
+          copilotError: pinned
+            ? "Couldn't pin that thread — try again."
+            : "Couldn't unpin that thread — try again.",
+          copilotErrorCode: null,
+        });
+        return false;
+      }
+    },
+    [repos.copilot, loadThreads],
+  );
+
   const stop = useCallback(() => {
     const sessionId = useAppStore.getState().copilotSessionId;
     if (sessionId) {
@@ -285,6 +305,7 @@ export function useCopilot() {
     openThread,
     renameThread,
     archiveThread,
+    setThreadPinned,
     newThread,
     fetchHealthWarning,
     queuedText,

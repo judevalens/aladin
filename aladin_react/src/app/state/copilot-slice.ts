@@ -30,6 +30,7 @@ export interface CopilotThreadView {
   id: string;
   title: string;
   updatedAt: string;
+  pinned?: boolean;
 }
 
 export type CopilotStatus = "idle" | "sending" | "streaming";
@@ -118,6 +119,18 @@ function draftKey(threadId: string | null): string {
   return threadId ?? newThreadDraftKey;
 }
 
+function orderCopilotThreads(threads: CopilotThreadView[]): CopilotThreadView[] {
+  return [...threads].sort((a, b) => {
+    if (Boolean(a.pinned) !== Boolean(b.pinned)) return a.pinned ? -1 : 1;
+    return threadTime(b) - threadTime(a);
+  });
+}
+
+function threadTime(thread: CopilotThreadView): number {
+  const ts = Date.parse(thread.updatedAt);
+  return Number.isFinite(ts) ? ts : 0;
+}
+
 export interface CopilotSlice {
   copilotOpen: boolean;
   copilotThreads: CopilotThreadView[];
@@ -155,6 +168,7 @@ export interface CopilotSlice {
   toggleCopilot: () => void;
   setCopilotOpen: (open: boolean) => void;
   setCopilotThreads: (threads: CopilotThreadView[]) => void;
+  updateCopilotThreadLocal: (thread: CopilotThreadView) => void;
   renameCopilotThreadLocal: (thread: CopilotThreadView) => void;
   archiveCopilotThreadLocal: (threadId: string) => void;
   /** Switch to a persisted thread and hydrate its messages. */
@@ -233,11 +247,14 @@ export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice
 
   toggleCopilot: () => set((state) => ({ copilotOpen: !state.copilotOpen })),
   setCopilotOpen: (open) => set({ copilotOpen: open }),
-  setCopilotThreads: (threads) => set({ copilotThreads: threads }),
-  renameCopilotThreadLocal: (thread) =>
+  setCopilotThreads: (threads) => set({ copilotThreads: orderCopilotThreads(threads) }),
+  updateCopilotThreadLocal: (thread) =>
     set((state) => ({
-      copilotThreads: state.copilotThreads.map((t) => (t.id === thread.id ? thread : t)),
+      copilotThreads: orderCopilotThreads(
+        state.copilotThreads.map((t) => (t.id === thread.id ? thread : t)),
+      ),
     })),
+  renameCopilotThreadLocal: (thread) => get().updateCopilotThreadLocal(thread),
   archiveCopilotThreadLocal: (threadId) =>
     set((state) => {
       const nextThreads = state.copilotThreads.filter((t) => t.id !== threadId);

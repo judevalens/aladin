@@ -6,6 +6,7 @@ import {
   ChevronDown,
   MessageSquare,
   Pencil,
+  Pin,
   Plus,
   Search,
   Sparkles,
@@ -15,7 +16,7 @@ import {
 import { Icon } from "@/components/ui/icon";
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
 import type { CopilotSurface } from "@/repos/copilot/copilot-repo";
-import type { CopilotProposal, CopilotToolRun } from "@/app/state/copilot-slice";
+import type { CopilotProposal, CopilotThreadView, CopilotToolRun } from "@/app/state/copilot-slice";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -68,6 +69,7 @@ export function CopilotDockUI() {
     openThread,
     renameThread,
     archiveThread,
+    setThreadPinned,
     newThread,
     fetchHealthWarning,
     queuedText,
@@ -227,6 +229,7 @@ export function CopilotDockUI() {
                 onOpenThread={openThread}
                 onRenameThread={renameThread}
                 onArchiveThread={archiveThread}
+                onSetThreadPinned={setThreadPinned}
               />
             </DropdownMenuContent>
           </DropdownMenu>
@@ -465,8 +468,9 @@ function ThreadMenuItems({
   onOpenThread,
   onRenameThread,
   onArchiveThread,
+  onSetThreadPinned,
 }: {
-  threads: { id: string; title: string; updatedAt: string }[];
+  threads: CopilotThreadView[];
   query: string;
   activeThreadId: string | null;
   proposals: CopilotProposal[];
@@ -474,6 +478,7 @@ function ThreadMenuItems({
   onOpenThread: (threadId: string) => void;
   onRenameThread: (threadId: string, title: string) => Promise<boolean>;
   onArchiveThread: (threadId: string) => Promise<boolean>;
+  onSetThreadPinned: (threadId: string, pinned: boolean) => Promise<boolean>;
 }) {
   const q = query.trim().toLowerCase();
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -577,12 +582,28 @@ function ThreadMenuItems({
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-small text-ink">{thread.title || "Untitled"}</span>
                   <span className="mt-0.5 flex items-center gap-1.5 font-mono text-meta text-ink-4">
+                    {thread.pinned ? <StatusPill tone="ink" label="pinned" /> : null}
                     {running ? <StatusPill tone="amber" label="running" /> : null}
                     {pendingApprovals > 0 ? <StatusPill tone="against" label="approval" /> : null}
-                    {!running && pendingApprovals === 0 ? <span>{formatThreadTime(thread.updatedAt)}</span> : null}
+                    {!thread.pinned && !running && pendingApprovals === 0 ? <span>{formatThreadTime(thread.updatedAt)}</span> : null}
                   </span>
                 </span>
                 <span className="flex shrink-0 items-center gap-0.5">
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      void onSetThreadPinned(thread.id, !thread.pinned);
+                    }}
+                    className={cn(
+                      "grid size-6 place-items-center rounded-tap hover:bg-field",
+                      thread.pinned ? "text-amber" : "text-ink-4 hover:text-ink",
+                    )}
+                    aria-label={thread.pinned ? "Unpin thread" : "Pin thread"}
+                  >
+                    <Icon as={Pin} size="inline" mark className={cn(thread.pinned && "fill-current")} />
+                  </button>
                   <button
                     type="button"
                     onClick={startRename}
@@ -613,12 +634,14 @@ function ThreadMenuItems({
   );
 }
 
-function StatusPill({ tone, label }: { tone: "amber" | "against"; label: string }) {
+function StatusPill({ tone, label }: { tone: "amber" | "against" | "ink"; label: string }) {
   return (
     <span
       className={cn(
         "rounded-chip px-1.5 py-0.5",
-        tone === "amber" ? "bg-amber-soft text-amber" : "bg-against/10 text-against",
+        tone === "amber" && "bg-amber-soft text-amber",
+        tone === "against" && "bg-against/10 text-against",
+        tone === "ink" && "bg-field text-ink-3",
       )}
     >
       {label}
