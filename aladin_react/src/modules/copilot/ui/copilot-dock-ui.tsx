@@ -272,29 +272,11 @@ export function CopilotDockUI() {
           className="relative min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-4"
         >
           {messages.length === 0 && !streaming ? (
-            <div className="mt-6 flex flex-col items-center gap-3 px-4 text-center">
-              {/* Empty-state illustration, not chrome — deliberately off the <Icon>
-                  scale, so §5 rule 9's grep flags it on purpose. */}
-              <Sparkles className="size-5 text-ink-4" strokeWidth={1.5} />
-              <p className="text-body text-ink-3">
-                Ask about your research — grounded in your Aladin data.
-              </p>
-              {surfaceLabel ? (
-                <p className="font-mono text-meta text-ink-4">Looking at {surfaceLabel}</p>
-              ) : null}
-              <div className="mt-1 flex flex-col items-stretch gap-1.5">
-                {suggestionsFor(surface).map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => void send(s)}
-                    className="rounded-chip border border-line px-3 py-1.5 text-left text-small text-ink-2 transition-colors hover:border-amber-line hover:text-ink"
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <EmptyTranscriptState
+              surface={surface}
+              surfaceLabel={surfaceLabel}
+              onPrompt={(prompt) => void send(prompt)}
+            />
           ) : null}
 
           {messages.map((m) => (
@@ -489,6 +471,40 @@ export function LatestTranscriptButton({
       >
         ↓ latest
       </button>
+    </div>
+  );
+}
+
+export function EmptyTranscriptState({
+  surface,
+  surfaceLabel,
+  onPrompt,
+}: {
+  surface: CopilotSurface;
+  surfaceLabel: string | null;
+  onPrompt: (prompt: string) => void;
+}) {
+  return (
+    <div className="mt-6 flex flex-col items-center gap-3 px-4 text-center">
+      {/* Empty-state illustration, not chrome — deliberately off the <Icon>
+          scale, so §5 rule 9's grep flags it on purpose. */}
+      <Sparkles className="size-5 text-ink-4" strokeWidth={1.5} />
+      <p className="text-body text-ink-3">Ask about your research — grounded in your Aladin data.</p>
+      {surfaceLabel ? (
+        <p className="font-mono text-meta text-ink-4">Looking at {surfaceLabel}</p>
+      ) : null}
+      <div className="mt-1 flex flex-col items-stretch gap-1.5">
+        {suggestionsFor(surface).map((s) => (
+          <button
+            key={s}
+            type="button"
+            onClick={() => onPrompt(s)}
+            className="rounded-chip border border-line px-3 py-1.5 text-left text-small text-ink-2 transition-colors hover:border-amber-line hover:text-ink"
+          >
+            {s}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

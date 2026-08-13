@@ -60,7 +60,8 @@ Aladin owns all rendering, permissions, and actions.
   exact error display and max-turn continue recovery; queued-follow-up banner
   tests cover visibility and clearing; health warning banner tests cover
   preflight warning visibility and dismissal; latest transcript button tests
-  cover hidden, visible, and repin click behavior.
+  cover hidden, visible, and repin click behavior; empty transcript tests cover
+  grounded first-run copy, surface labels, and suggestion actions.
 - The backend system prompt now advertises the supported rich directive contract
   and safety rules so final answers can use native blocks intentionally.
 
