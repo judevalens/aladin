@@ -18,8 +18,8 @@ Aladin owns all rendering, permissions, and actions.
 
 - Phase 1 is partially implemented: turn events are thread/session scoped, early
   realtime events can bind the active turn, pending approvals survive thread
-  switches, reconnect state is visible, and watchdog reconciliation remains in
-  place.
+  switches, queued follow-ups are scoped to their target thread/surface,
+  reconnect state is visible, and watchdog reconciliation remains in place.
 - Phase 2 is implemented: the composer has stable autogrow sizing, no focus-only
   helper row, fixed send/stop controls, queued follow-up visibility, and
   per-thread drafts.
@@ -51,7 +51,7 @@ Aladin owns all rendering, permissions, and actions.
 - Phase 9 is started: rich directive parser tests now have render-level coverage
   for native block rendering, validated actions, and malformed fallback behavior;
   live activity timeline tests cover grouped tool runs, expandable summaries, and
-  overflow counts.
+  overflow counts; queued follow-up tests cover scoped thread/surface delivery.
 - The backend system prompt now advertises the supported rich directive contract
   and safety rules so final answers can use native blocks intentionally.
 

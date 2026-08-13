@@ -33,6 +33,7 @@ export function turnLooksStuck(input: {
 export function useCopilot() {
   const { repos } = useAppComposition();
   const surface = useCurrentSurface();
+  const surfaceQueueKey = copilotSurfaceQueueKey(surface);
 
   const open = useAppStore((s) => s.copilotOpen);
   const threads = useAppStore((s) => s.copilotThreads);
@@ -253,13 +254,24 @@ export function useCopilot() {
     }
   }, [wsReconnects, reconcileActiveThread]);
 
-  // Queue-of-one: a message typed during a turn auto-sends when the turn finishes.
-  const queuedText = useAppStore((s) => s.copilotQueuedText);
+  const queueFollowup = useCallback(
+    (text: string | null) => {
+      useAppStore.getState().queueCopilotText(
+        text,
+        text === null ? undefined : { threadId: useAppStore.getState().activeThreadId, surfaceKey: surfaceQueueKey },
+      );
+    },
+    [surfaceQueueKey],
+  );
+
+  // Queue-of-one: a message typed during a turn auto-sends when the scoped turn finishes.
+  const queuedText = useAppStore((s) => s.copilotQueuedTextFor(s.activeThreadId, surfaceQueueKey));
   useEffect(() => {
     if (status !== "idle" || queuedText === null) return;
-    const text = useAppStore.getState().takeCopilotQueuedText();
+    const state = useAppStore.getState();
+    const text = state.takeCopilotQueuedText(state.activeThreadId, surfaceQueueKey);
     if (text) void send(text);
-  }, [status, queuedText, send]);
+  }, [status, queuedText, send, surfaceQueueKey]);
 
   /** Preflight health → a user-facing warning line, or null when all is well/unknown. */
   const fetchHealthWarning = useCallback(async (): Promise<string | null> => {
@@ -309,8 +321,27 @@ export function useCopilot() {
     newThread,
     fetchHealthWarning,
     queuedText,
+    queueFollowup,
     draftText,
     setDraftText,
     realtimeState,
   };
+}
+
+export function copilotSurfaceQueueKey(surface: ReturnType<typeof useCurrentSurface>): string | null {
+  if (!surface) return null;
+  switch (surface.kind) {
+    case "ticker":
+      return surface.symbol ? `ticker:${surface.symbol.toUpperCase()}` : "ticker";
+    case "entity":
+      return surface.id ? `entity:${surface.id}` : "entity";
+    case "artifact":
+    case "page":
+    case "shard":
+      return surface.id ? `artifact:${surface.id}` : surface.kind;
+    case "markets":
+      return "markets";
+    default:
+      return surface.kind || null;
+  }
 }

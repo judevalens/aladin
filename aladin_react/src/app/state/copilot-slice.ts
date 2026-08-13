@@ -45,6 +45,11 @@ export interface CopilotToolRun {
   resultSummary?: string;
 }
 
+export interface CopilotQueuedMessageScope {
+  threadId: string | null;
+  surfaceKey: string | null;
+}
+
 const maxToolTrail = 40;
 
 /**
@@ -160,8 +165,10 @@ export interface CopilotSlice {
   copilotLastEventAt: number | null;
   /** Nonce bumped on every WS reconnect — triggers a thread reconcile while streaming. */
   copilotWsReconnects: number;
-  /** One message queued while a turn runs — auto-sent when the turn finishes. */
+  /** One message queued while a turn runs — auto-sent when its thread/surface is active again. */
   copilotQueuedText: string | null;
+  copilotQueuedThreadId: string | null;
+  copilotQueuedSurfaceKey: string | null;
   /** Per-thread unsent composer drafts. */
   copilotDrafts: Record<string, string>;
   /** Realtime websocket state, exposed so stream gaps do not feel like dead air. */
@@ -219,10 +226,12 @@ export interface CopilotSlice {
   setCopilotRealtimeState: (state: CopilotRealtimeState) => void;
   setCopilotDraft: (threadId: string | null, text: string) => void;
   copilotDraftFor: (threadId: string | null) => string;
-  /** Queue (or replace) one message to auto-send when the running turn finishes. */
-  queueCopilotText: (text: string | null) => void;
-  /** Take the queued message (clearing it) — used by the auto-send effect. */
-  takeCopilotQueuedText: () => string | null;
+  /** Queue (or replace) one message to auto-send when the scoped running turn finishes. */
+  queueCopilotText: (text: string | null, scope?: CopilotQueuedMessageScope) => void;
+  /** Visible queued text for the currently active thread/surface. */
+  copilotQueuedTextFor: (threadId: string | null, surfaceKey: string | null) => string | null;
+  /** Take the queued message for the active thread/surface (clearing it). */
+  takeCopilotQueuedText: (threadId: string | null, surfaceKey: string | null) => string | null;
   /** The thread id persisted from the previous app run (for reload rehydrate). */
   persistedCopilotThreadId: () => string | null;
 }
@@ -244,6 +253,8 @@ export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice
   copilotLastEventAt: null,
   copilotWsReconnects: 0,
   copilotQueuedText: null,
+  copilotQueuedThreadId: null,
+  copilotQueuedSurfaceKey: null,
   copilotDrafts: {},
   copilotRealtimeState: "connecting",
 
@@ -276,7 +287,9 @@ export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice
         copilotSessionId: null,
         copilotError: null,
         copilotErrorCode: null,
-        copilotQueuedText: null,
+        copilotQueuedText: state.copilotQueuedThreadId === threadId ? null : state.copilotQueuedText,
+        copilotQueuedThreadId: state.copilotQueuedThreadId === threadId ? null : state.copilotQueuedThreadId,
+        copilotQueuedSurfaceKey: state.copilotQueuedThreadId === threadId ? null : state.copilotQueuedSurfaceKey,
       };
     }),
 
@@ -294,7 +307,6 @@ export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice
         copilotSessionId: null,
         copilotError: null,
         copilotErrorCode: null,
-        copilotQueuedText: null,
       };
     }),
 
@@ -313,7 +325,9 @@ export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice
         copilotSessionId: null,
         copilotError: null,
         copilotErrorCode: null,
-        copilotQueuedText: null,
+        copilotQueuedText: state.copilotQueuedThreadId === null ? null : state.copilotQueuedText,
+        copilotQueuedThreadId: state.copilotQueuedThreadId === null ? null : state.copilotQueuedThreadId,
+        copilotQueuedSurfaceKey: state.copilotQueuedThreadId === null ? null : state.copilotQueuedSurfaceKey,
         copilotDrafts: drafts,
       };
     });
@@ -338,11 +352,18 @@ export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice
   beginCopilotTurn: (threadId, sessionId) => {
     persistThreadId(threadId);
     set((state) => {
+      const bindQueuedNewThread =
+        state.copilotQueuedText !== null && state.copilotQueuedThreadId === null
+          ? {
+              copilotQueuedThreadId: threadId,
+            }
+          : {};
       if (state.copilotSessionId === sessionId) {
         return {
           activeThreadId: threadId,
           copilotStatus: "streaming" as CopilotStatus,
           copilotLastEventAt: state.copilotLastEventAt ?? Date.now(),
+          ...bindQueuedNewThread,
         };
       }
       return {
@@ -354,6 +375,7 @@ export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice
         copilotToolTrail: [],
         copilotThinking: false,
         copilotLastEventAt: Date.now(),
+        ...bindQueuedNewThread,
       };
     });
   },
@@ -551,11 +573,40 @@ export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice
 
   copilotDraftFor: (threadId) => get().copilotDrafts[draftKey(threadId)] ?? "",
 
-  queueCopilotText: (text) => set({ copilotQueuedText: text }),
+  queueCopilotText: (text, scope) =>
+    set(() => {
+      if (text === null) {
+        return {
+          copilotQueuedText: null,
+          copilotQueuedThreadId: null,
+          copilotQueuedSurfaceKey: null,
+        };
+      }
+      return {
+        copilotQueuedText: text,
+        copilotQueuedThreadId: scope?.threadId ?? null,
+        copilotQueuedSurfaceKey: scope?.surfaceKey ?? null,
+      };
+    }),
 
-  takeCopilotQueuedText: () => {
-    const text = get().copilotQueuedText;
-    if (text !== null) set({ copilotQueuedText: null });
+  copilotQueuedTextFor: (threadId, surfaceKey) => {
+    const state = get();
+    if (state.copilotQueuedText === null) return null;
+    if (state.copilotQueuedThreadId !== threadId) return null;
+    if (state.copilotQueuedSurfaceKey !== surfaceKey) return null;
+    return state.copilotQueuedText;
+  },
+
+  takeCopilotQueuedText: (threadId, surfaceKey) => {
+    const state = get();
+    const text = state.copilotQueuedTextFor(threadId, surfaceKey);
+    if (text !== null) {
+      set({
+        copilotQueuedText: null,
+        copilotQueuedThreadId: null,
+        copilotQueuedSurfaceKey: null,
+      });
+    }
     return text;
   },
 

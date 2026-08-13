@@ -70,6 +70,7 @@ export function CopilotDockUI() {
     proposals,
     send,
     stop,
+    queueFollowup,
     approveProposal,
     rejectProposal,
     loadThreads,
@@ -153,7 +154,7 @@ export function CopilotDockUI() {
     const text = draftText;
     if (busy) {
       // Queue-of-one while a turn runs — sends automatically when it finishes.
-      useAppStore.getState().queueCopilotText(text);
+      queueFollowup(text);
       setDraftText("");
       return;
     }
@@ -171,7 +172,7 @@ export function CopilotDockUI() {
     const prompt = text.trim();
     if (!prompt) return;
     if (busy) {
-      useAppStore.getState().queueCopilotText(prompt);
+      queueFollowup(prompt);
       return;
     }
     void send(prompt);
@@ -373,7 +374,7 @@ export function CopilotDockUI() {
               </p>
               <button
                 type="button"
-                onClick={() => useAppStore.getState().queueCopilotText(null)}
+                onClick={() => queueFollowup(null)}
                 aria-label="Remove queued message"
                 className="text-ink-4 hover:text-ink"
               >

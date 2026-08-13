@@ -184,16 +184,37 @@ describe("turnLooksStuck", () => {
 });
 
 describe("queue-of-one", () => {
-  it("takes the queued text exactly once", () => {
+  it("takes the queued text exactly once for the matching thread and surface", () => {
     const store = makeStore();
-    store.getState().queueCopilotText("follow-up");
-    expect(store.getState().takeCopilotQueuedText()).toBe("follow-up");
-    expect(store.getState().takeCopilotQueuedText()).toBeNull();
+    store.getState().queueCopilotText("follow-up", { threadId: "t1", surfaceKey: "artifact:a1" });
+    expect(store.getState().takeCopilotQueuedText("t2", "artifact:a1")).toBeNull();
+    expect(store.getState().takeCopilotQueuedText("t1", "ticker:NVDA")).toBeNull();
+    expect(store.getState().takeCopilotQueuedText("t1", "artifact:a1")).toBe("follow-up");
+    expect(store.getState().takeCopilotQueuedText("t1", "artifact:a1")).toBeNull();
   });
 
-  it("clears the queue when the conversation changes", () => {
+  it("preserves a queued follow-up across unrelated thread switches", () => {
     const store = makeStore();
-    store.getState().queueCopilotText("follow-up");
+    store.getState().queueCopilotText("follow-up", { threadId: "t1", surfaceKey: "artifact:a1" });
+    store.getState().openCopilotThread("t2", []);
+    expect(store.getState().copilotQueuedTextFor("t2", "artifact:a1")).toBeNull();
+    store.getState().openCopilotThread("t1", []);
+    expect(store.getState().copilotQueuedTextFor("t1", "artifact:a1")).toBe("follow-up");
+  });
+
+  it("binds a queued new-thread follow-up once the server returns the real thread id", () => {
+    const store = makeStore();
+    store.getState().appendCopilotUserMessage("make a shard");
+    store.getState().queueCopilotText("then publish it", { threadId: null, surfaceKey: "markets" });
+    store.getState().beginCopilotTurn("server-thread", "s1");
+
+    expect(store.getState().copilotQueuedTextFor(null, "markets")).toBeNull();
+    expect(store.getState().copilotQueuedTextFor("server-thread", "markets")).toBe("then publish it");
+  });
+
+  it("clears a queued new-chat follow-up when starting a different new chat", () => {
+    const store = makeStore();
+    store.getState().queueCopilotText("follow-up", { threadId: null, surfaceKey: "markets" });
     store.getState().newCopilotThread();
     expect(store.getState().copilotQueuedText).toBeNull();
   });
