@@ -106,6 +106,19 @@ describe("copilot proposal lifecycle", () => {
     expect(s.copilotStreaming).toBe("early ");
     expect(s.copilotToolTrail[0]?.label).toBe("Searching your workspace");
   });
+
+  it("stores tool input and result summaries on the activity trail", () => {
+    const store = makeStore();
+    startTurn(store);
+    store.getState().setCopilotTool("t1", "s1", "search", "Searching your workspace", "query: nvda");
+    store.getState().finishCopilotTool("t1", "s1", "search", true, "3 results");
+
+    expect(store.getState().copilotToolTrail[0]).toMatchObject({
+      inputSummary: "query: nvda",
+      resultSummary: "3 results",
+      status: "ok",
+    });
+  });
 });
 
 describe("copilot reconcile (watchdog / reconnect recovery)", () => {

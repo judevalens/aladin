@@ -27,8 +27,9 @@ Aladin owns all rendering, permissions, and actions.
   new-thread action, active/running/approval states, relative saved times,
   persisted rename, soft archive, and pin/unpin ordering. Richer surface
   grouping remains.
-- Phase 4 has a first cut: live tool chips are now a compact activity timeline,
-  and completed-turn footers use readable tool labels.
+- Phase 4 has a stronger first cut: live tool chips are now a compact activity
+  timeline, completed-turn footers use readable tool labels, and tool events can
+  carry bounded/redacted input and result summaries for expandable detail rows.
 - Phase 5 is implemented as a local parser: `aladin-artifact`,
   `aladin-entity`, `aladin-ticker`, `aladin-activity`, and `aladin-actions`
   render native UI; unknown or malformed directives degrade to inert markdown

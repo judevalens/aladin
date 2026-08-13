@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
@@ -387,6 +388,25 @@ func TestCopilotThreadManagementRenamesAndArchives(t *testing.T) {
 	}
 	if _, err := svc.SetThreadPinned(context.Background(), userID, threadID, true); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("archived thread pin err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestCopilotToolSummariesAreBoundedAndRedacted(t *testing.T) {
+	input := json.RawMessage(`{"query":"nvda","bearer":"secret-token","nested":{"password":"pw"}}`)
+	got := toolInputSummary("search", input)
+	if got != "query: nvda" {
+		t.Fatalf("primary summary = %q, want query only", got)
+	}
+	generic := toolInputSummary("unknown_tool", json.RawMessage(`{"token":"secret-token","path":"src/index.tsx"}`))
+	if strings.Contains(generic, "secret-token") {
+		t.Fatalf("summary leaked a token: %q", generic)
+	}
+	if !strings.Contains(generic, "[redacted]") || !strings.Contains(generic, "src/index.tsx") {
+		t.Fatalf("generic summary did not preserve safe context/redaction: %q", generic)
+	}
+	result := toolResultSummary(strings.Repeat("x", maxToolSummaryChars+20), false)
+	if len(result) <= maxToolSummaryChars || !strings.HasSuffix(result, "…") {
+		t.Fatalf("result summary was not capped: len=%d %q", len(result), result)
 	}
 }
 

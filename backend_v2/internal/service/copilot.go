@@ -199,7 +199,8 @@ const (
 	historyFallbackTurns = 12
 	historyFallbackChars = 6000
 	// maxActivityItems caps the per-turn tool digest persisted in message meta.
-	maxActivityItems = 40
+	maxActivityItems    = 40
+	maxToolSummaryChars = 180
 )
 
 // runningTurn is a live agent turn's cancel handle, kept so the owner can stop it and
@@ -551,7 +552,7 @@ func (s *defaultCopilotService) runAgent(ctx context.Context, release func(), pr
 		case "tool_start":
 			s.publish(userID, threadID, "tool", copilotToolPayload{
 				SessionID: sessionID, ThreadID: threadID,
-				Name: ev.Name, Label: toolLabel(ev.Name),
+				Name: ev.Name, Label: toolLabel(ev.Name), InputSummary: toolInputSummary(ev.Name, ev.Input),
 			})
 		case "thinking":
 			s.publish(userID, threadID, "thinking", copilotThinkingPayload{sessionID, threadID})
@@ -564,6 +565,7 @@ func (s *defaultCopilotService) runAgent(ctx context.Context, release func(), pr
 			}
 			s.publish(userID, threadID, "tool_done", copilotToolDonePayload{
 				SessionID: sessionID, ThreadID: threadID, Name: ev.Name, OK: !ev.IsError,
+				ResultSummary: toolResultSummary(ev.Content, ev.IsError),
 			})
 			if ev.ApprovalID != "" {
 				// The approved gated tool ran — settle the dock's approval card.
@@ -667,16 +669,18 @@ type copilotTokenPayload struct {
 	Delta     string `json:"delta"`
 }
 type copilotToolPayload struct {
-	SessionID string `json:"sessionId"`
-	ThreadID  string `json:"threadId"`
-	Name      string `json:"name"`
-	Label     string `json:"label"`
+	SessionID    string `json:"sessionId"`
+	ThreadID     string `json:"threadId"`
+	Name         string `json:"name"`
+	Label        string `json:"label"`
+	InputSummary string `json:"inputSummary,omitempty"`
 }
 type copilotToolDonePayload struct {
-	SessionID string `json:"sessionId"`
-	ThreadID  string `json:"threadId"`
-	Name      string `json:"name"`
-	OK        bool   `json:"ok"`
+	SessionID     string `json:"sessionId"`
+	ThreadID      string `json:"threadId"`
+	Name          string `json:"name"`
+	OK            bool   `json:"ok"`
+	ResultSummary string `json:"resultSummary,omitempty"`
 }
 type copilotThinkingPayload struct {
 	SessionID string `json:"sessionId"`
@@ -764,6 +768,123 @@ func firstLineOf(s, fallback string) string {
 	}
 	if len(s) > 200 {
 		s = s[:200] + "…"
+	}
+	return s
+}
+
+func toolInputSummary(tool string, input json.RawMessage) string {
+	if len(input) == 0 || string(input) == "null" {
+		return ""
+	}
+	var parsed any
+	if err := json.Unmarshal(input, &parsed); err != nil {
+		return capSummary(string(input))
+	}
+	sanitized := redactToolInput(parsed)
+	if m, ok := sanitized.(map[string]any); ok {
+		for _, key := range primaryToolInputKeys(tool) {
+			if value, ok := m[key]; ok {
+				if s := compactValue(value); s != "" {
+					return key + ": " + capSummary(s)
+				}
+			}
+		}
+	}
+	payload, err := json.Marshal(sanitized)
+	if err != nil {
+		return ""
+	}
+	return capSummary(string(payload))
+}
+
+func toolResultSummary(content string, isError bool) string {
+	if strings.TrimSpace(content) == "" {
+		if isError {
+			return "failed"
+		}
+		return ""
+	}
+	fallback := "done"
+	if isError {
+		fallback = "failed"
+	}
+	return capSummary(firstLineOf(content, fallback))
+}
+
+func primaryToolInputKeys(tool string) []string {
+	switch tool {
+	case "search", "search_pages", "get_news":
+		return []string{"query", "symbol"}
+	case "get_quote", "get_bars", "create_alert", "add_to_watchlist":
+		return []string{"symbol", "listName"}
+	case "get_artifact", "get_page", "read_document", "search_document":
+		return []string{"artifact_id", "artifactId", "page_id", "pageId", "query"}
+	case "read_file", "write_file", "edit_file", "delete_file":
+		return []string{"path", "page_id", "pageId"}
+	case "create_app", "publish_app", "build_app", "preview_open", "preview_snapshot":
+		return []string{"page_id", "pageId", "title"}
+	default:
+		return nil
+	}
+}
+
+func redactToolInput(v any) any {
+	switch x := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(x))
+		for k, v := range x {
+			if isSensitiveKey(k) {
+				out[k] = "[redacted]"
+			} else {
+				out[k] = redactToolInput(v)
+			}
+		}
+		return out
+	case []any:
+		out := make([]any, 0, min(len(x), 6))
+		for i, v := range x {
+			if i >= 6 {
+				out = append(out, "…")
+				break
+			}
+			out = append(out, redactToolInput(v))
+		}
+		return out
+	default:
+		return x
+	}
+}
+
+func isSensitiveKey(key string) bool {
+	key = strings.ToLower(key)
+	return strings.Contains(key, "token") ||
+		strings.Contains(key, "secret") ||
+		strings.Contains(key, "password") ||
+		strings.Contains(key, "bearer") ||
+		strings.Contains(key, "credential")
+}
+
+func compactValue(v any) string {
+	switch x := v.(type) {
+	case string:
+		return strings.TrimSpace(x)
+	case float64:
+		return fmt.Sprintf("%g", x)
+	case bool:
+		return fmt.Sprintf("%t", x)
+	default:
+		payload, err := json.Marshal(x)
+		if err != nil {
+			return ""
+		}
+		return string(payload)
+	}
+}
+
+func capSummary(s string) string {
+	s = strings.Join(strings.Fields(strings.TrimSpace(s)), " ")
+	if len(s) > maxToolSummaryChars {
+		return s[:maxToolSummaryChars] + "…"
 	}
 	return s
 }

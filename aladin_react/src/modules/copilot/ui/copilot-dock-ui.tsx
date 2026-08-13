@@ -728,15 +728,29 @@ function formatThreadTime(raw: string): string {
  * with a count; the most recent few rows stay visible while the turn runs.
  */
 function ActivityTimeline({ trail }: { trail: CopilotToolRun[] }) {
-  const groups: { label: string; count: number; status: CopilotToolRun["status"] }[] = [];
+  const groups: {
+    label: string;
+    count: number;
+    status: CopilotToolRun["status"];
+    inputSummary?: string;
+    resultSummary?: string;
+  }[] = [];
   for (const run of trail) {
     const last = groups[groups.length - 1];
     if (last && last.label === run.label) {
       last.count += 1;
       // A group's status is its worst/latest interesting state.
       last.status = run.status === "running" ? "running" : run.status === "error" ? "error" : last.status;
+      last.inputSummary = run.inputSummary ?? last.inputSummary;
+      last.resultSummary = run.resultSummary ?? last.resultSummary;
     } else {
-      groups.push({ label: run.label, count: 1, status: run.status });
+      groups.push({
+        label: run.label,
+        count: 1,
+        status: run.status,
+        inputSummary: run.inputSummary,
+        resultSummary: run.resultSummary,
+      });
     }
   }
   const visible = groups.slice(-6);
@@ -749,20 +763,34 @@ function ActivityTimeline({ trail }: { trail: CopilotToolRun[] }) {
         ) : null}
       </div>
       <div className="space-y-1">
-        {visible.map((g, i) => (
-          <div key={`${g.label}-${i}`} className="flex items-center gap-2 text-small text-ink-2">
-            <span
-              className={cn(
-                "size-1.5 shrink-0 rounded-full",
-                g.status === "running" && "animate-pulse bg-amber",
-                g.status === "ok" && "bg-for",
-                g.status === "error" && "bg-against",
-              )}
-            />
-            <span className="min-w-0 flex-1 truncate">{g.label}</span>
-            {g.count > 1 ? <span className="font-mono text-meta text-ink-4">x{g.count}</span> : null}
-          </div>
-        ))}
+        {visible.map((g, i) => {
+          const hasDetails = Boolean(g.inputSummary || g.resultSummary);
+          const row = (
+            <div className="flex items-center gap-2 text-small text-ink-2">
+              <span
+                className={cn(
+                  "size-1.5 shrink-0 rounded-full",
+                  g.status === "running" && "animate-pulse bg-amber",
+                  g.status === "ok" && "bg-for",
+                  g.status === "error" && "bg-against",
+                )}
+              />
+              <span className="min-w-0 flex-1 truncate">{g.label}</span>
+              {g.count > 1 ? <span className="font-mono text-meta text-ink-4">x{g.count}</span> : null}
+            </div>
+          );
+          return hasDetails ? (
+            <details key={`${g.label}-${i}`} className="rounded-tap open:bg-raise/40">
+              <summary className="cursor-default list-none">{row}</summary>
+              <div className="mt-1 space-y-0.5 border-l border-line pl-3 font-mono text-meta text-ink-4">
+                {g.inputSummary ? <p className="truncate">in: {g.inputSummary}</p> : null}
+                {g.resultSummary ? <p className="truncate">out: {g.resultSummary}</p> : null}
+              </div>
+            </details>
+          ) : (
+            <div key={`${g.label}-${i}`}>{row}</div>
+          );
+        })}
       </div>
     </div>
   );

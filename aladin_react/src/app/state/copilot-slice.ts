@@ -41,6 +41,8 @@ export interface CopilotToolRun {
   name: string;
   label: string;
   status: "running" | "ok" | "error";
+  inputSummary?: string;
+  resultSummary?: string;
 }
 
 const maxToolTrail = 40;
@@ -182,9 +184,9 @@ export interface CopilotSlice {
   /** After the send resolves: bind the thread + session and enter the streaming state. */
   beginCopilotTurn: (threadId: string, sessionId: string) => void;
   appendCopilotToken: (threadId: string, sessionId: string, delta: string) => void;
-  setCopilotTool: (threadId: string, sessionId: string, name: string, label: string) => void;
+  setCopilotTool: (threadId: string, sessionId: string, name: string, label: string, inputSummary?: string) => void;
   /** A tool finished — mark its trail entry with the outcome. */
-  finishCopilotTool: (threadId: string, sessionId: string, name: string, ok: boolean) => void;
+  finishCopilotTool: (threadId: string, sessionId: string, name: string, ok: boolean, resultSummary?: string) => void;
   /** The model entered a thinking block (cleared by the next token/tool/message). */
   setCopilotThinking: (threadId: string, sessionId: string) => void;
   finishCopilotMessage: (threadId: string, sessionId: string, message: CopilotMessageView) => void;
@@ -368,7 +370,7 @@ export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice
       };
     }),
 
-  setCopilotTool: (threadId, sessionId, name, label) =>
+  setCopilotTool: (threadId, sessionId, name, label, inputSummary) =>
     set((state) => {
       if (!acceptsTurnEvent(state, threadId, sessionId)) return {};
       return {
@@ -377,13 +379,13 @@ export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice
         copilotThinking: false,
         copilotToolTrail: [
           ...state.copilotToolTrail.slice(-maxToolTrail + 1),
-          { name, label, status: "running" as const },
+          { name, label, inputSummary, status: "running" as const },
         ],
         copilotLastEventAt: Date.now(),
       };
     }),
 
-  finishCopilotTool: (threadId, sessionId, name, ok) =>
+  finishCopilotTool: (threadId, sessionId, name, ok, resultSummary) =>
     set((state) => {
       if (!acceptsTurnEvent(state, threadId, sessionId)) return {};
       // Mark the OLDEST unresolved run of this tool (results come back in order).
@@ -391,7 +393,7 @@ export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice
       const trail = state.copilotToolTrail.map((t) => {
         if (!marked && t.name === name && t.status === "running") {
           marked = true;
-          return { ...t, status: ok ? ("ok" as const) : ("error" as const) };
+          return { ...t, resultSummary, status: ok ? ("ok" as const) : ("error" as const) };
         }
         return t;
       });
