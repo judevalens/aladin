@@ -797,7 +797,7 @@ export function ActivityTimeline({ trail }: { trail: CopilotToolRun[] }) {
   );
 }
 
-function ProposalCard({
+export function ProposalCard({
   proposal,
   onApprove,
   onReject,

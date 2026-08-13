@@ -53,7 +53,8 @@ Aladin owns all rendering, permissions, and actions.
   live activity timeline tests cover grouped tool runs, expandable summaries, and
   overflow counts; queued follow-up tests cover scoped thread/surface delivery;
   thread switcher tests cover search, empty states, approval/running/pinned
-  badges, and row actions.
+  badges, and row actions; proposal-card tests cover pending, in-flight, and
+  settled approval states.
 - The backend system prompt now advertises the supported rich directive contract
   and safety rules so final answers can use native blocks intentionally.
 
