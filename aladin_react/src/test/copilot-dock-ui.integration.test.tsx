@@ -79,12 +79,12 @@ describe("CopilotDockUI integration", () => {
   it("renders the model switcher and changes the selected model", () => {
     const setSelectedModel = vi.fn();
     mockedCopilot.current = makeCopilotState({
-      activeModel: "opus5",
-      defaultModel: "opus5",
+      activeModel: "opus",
+      defaultModel: "opus",
       setSelectedModel,
       modelOptions: [
-        { id: "opus5", label: "Opus 5", description: "Deep work." },
-        { id: "sonnet5", label: "Sonnet 5", description: "Fast work." },
+        { id: "opus", label: "Opus 5", description: "Deep work." },
+        { id: "sonnet", label: "Sonnet 5", description: "Fast work." },
       ],
     });
 
@@ -93,7 +93,7 @@ describe("CopilotDockUI integration", () => {
     fireEvent.pointerDown(screen.getByRole("button", { name: "Copilot model" }));
     fireEvent.click(screen.getByText("Sonnet 5"));
 
-    expect(setSelectedModel).toHaveBeenCalledWith("sonnet5");
+    expect(setSelectedModel).toHaveBeenCalledWith("sonnet");
   });
 });
 
@@ -125,9 +125,9 @@ function makeCopilotState(overrides: Partial<CopilotHookState> = {}): CopilotHoo
     setThreadPinned: vi.fn(async () => true),
     newThread: vi.fn(),
     fetchHealthWarning: vi.fn(async () => null),
-    modelOptions: [{ id: "opus5", label: "Opus 5", description: "Deep work." }],
-    activeModel: "opus5",
-    defaultModel: "opus5",
+    modelOptions: [{ id: "opus", label: "Opus 5", description: "Deep work." }],
+    activeModel: "opus",
+    defaultModel: "opus",
     setSelectedModel: vi.fn(),
     queuedText: null,
     draftText: "",

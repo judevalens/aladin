@@ -193,7 +193,7 @@ type CopilotDeps struct {
 
 const (
 	copilotResourceKind = "copilot"
-	defaultCopilotModel = "opus5"
+	defaultCopilotModel = "opus"
 	// Authoring a shard/page is multi-step (create → write → build → fix → build → preview),
 	// so the loop needs real headroom; a Q&A answers in 1–3 and stops on its own. A
 	// comprehensive multi-section shard blew through 24, so this is sized for deep authoring;
@@ -216,17 +216,17 @@ const (
 
 var copilotModelCatalog = []CopilotModelOption{
 	{
-		ID:          "opus5",
+		ID:          "opus",
 		Label:       "Opus 5",
 		Description: "Best reasoning for shard authoring and hard workspace tasks.",
 	},
 	{
-		ID:          "sonnet5",
+		ID:          "sonnet",
 		Label:       "Sonnet 5",
 		Description: "Fast everyday coding and research assistant work.",
 	},
 	{
-		ID:          "fable5",
+		ID:          "fable",
 		Label:       "Fable 5",
 		Description: "Quick lightweight answers when speed matters most.",
 	},

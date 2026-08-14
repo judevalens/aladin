@@ -338,7 +338,7 @@ func TestCopilotSendPassesSelectedModel(t *testing.T) {
 		Principal: Principal{UserID: userID},
 		Bearer:    "tok",
 		Text:      "use sonnet",
-		Model:     "sonnet5",
+		Model:     "sonnet",
 	})
 	if err != nil {
 		t.Fatalf("send: %v", err)
@@ -348,8 +348,8 @@ func TestCopilotSendPassesSelectedModel(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("timed out waiting for copilot turn to start")
 	}
-	if got := agent.request().Model; got != "sonnet5" {
-		t.Fatalf("turn request model = %q, want sonnet5", got)
+	if got := agent.request().Model; got != "sonnet" {
+		t.Fatalf("turn request model = %q, want sonnet", got)
 	}
 }
 
@@ -369,15 +369,18 @@ func TestCopilotSendRejectsUnsupportedModel(t *testing.T) {
 }
 
 func TestCopilotStatusReportsModelCatalog(t *testing.T) {
-	svc := NewCopilotService(CopilotDeps{Store: newFakeStore(), Agent: &fakeAgent{}, Model: "sonnet5"})
+	svc := NewCopilotService(CopilotDeps{Store: newFakeStore(), Agent: &fakeAgent{}, Model: "sonnet"})
 
 	status := svc.Status(context.Background())
 
-	if status.DefaultModel != "sonnet5" {
-		t.Fatalf("default model = %q, want sonnet5", status.DefaultModel)
+	if status.DefaultModel != "sonnet" {
+		t.Fatalf("default model = %q, want sonnet", status.DefaultModel)
 	}
 	if len(status.Models) < 2 {
 		t.Fatalf("expected model options, got %+v", status.Models)
+	}
+	if status.Models[0].ID != "opus" || status.Models[0].Label != "Opus 5" {
+		t.Fatalf("model catalog should expose SDK ids with friendly labels, got %+v", status.Models[0])
 	}
 }
 

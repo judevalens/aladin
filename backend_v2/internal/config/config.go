@@ -152,7 +152,7 @@ func LoadCopilotAgent() CopilotAgentConfig {
 	return CopilotAgentConfig{
 		URL:          url,
 		SharedSecret: optional("COPILOT_AGENT_SHARED_SECRET", "local-dev-agent-secret"),
-		Model:        optional("COPILOT_MODEL", "opus5"),
+		Model:        optional("COPILOT_MODEL", "opus"),
 	}
 }
 
