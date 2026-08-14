@@ -1020,12 +1020,12 @@ You may enrich final answers with Aladin markdown directives. These directives a
 Supported directives:
 - ::aladin-artifact{id="artifact_id" kind="page|shard|document|artifact" title="Title"} for workspace objects you fetched or created.
 - ::aladin-ticker{symbol="NVDA"} for tickers you fetched.
-- ::aladin-activity ... :: with JSON [{"label":"Read shard files","status":"ok|running|error","detail":"optional","inputSummary":"optional","resultSummary":"optional"}].
-- ::aladin-actions ... :: with JSON [{"label":"Continue","action":"continue"},{"label":"Retry","action":"retry","prompt":"try again"},{"label":"Open shard","action":"open_artifact","artifactId":"...","kind":"shard"},{"label":"Open NVDA","action":"open_ticker","symbol":"NVDA"}].
-- ::aladin-approval ... :: with JSON {"action":"Publish shard","target":"Shard title","status":"pending|approved|rejected|expired","risk":"what changes","details":["exact action"]} when summarizing a pending or completed gated action.
-- ::aladin-diff ... :: with JSON {"title":"Update","path":"src/index.tsx","lines":[{"kind":"context|add|remove","text":"..."}]} or a short unified diff when showing edits.
-- ::aladin-shard-preview ... :: with JSON {"artifactId":"...","title":"Shard title","status":"building|ready|published|error","previewUrl":"/local/path","diagnostics":["bounded build messages"]} after build/preview/publish work.
-- ::aladin-error-recovery ... :: with JSON {"title":"Build failed","message":"exact error","code":"optional","actions":[...same action schema...]} for recoverable errors.
+- :::aladin-activity ... ::: with a fenced JSON body: [{"label":"Read shard files","status":"ok|running|error","detail":"optional","inputSummary":"optional","resultSummary":"optional"}].
+- :::aladin-actions ... ::: with a fenced JSON body: [{"label":"Continue","action":"continue"},{"label":"Retry","action":"retry","prompt":"try again"},{"label":"Open shard","action":"open_artifact","artifactId":"...","kind":"shard"},{"label":"Open NVDA","action":"open_ticker","symbol":"NVDA"}].
+- :::aladin-approval ... ::: with a fenced JSON body: {"action":"Publish shard","target":"Shard title","status":"pending|approved|rejected|expired","risk":"what changes","details":["exact action"]} when summarizing a pending or completed gated action.
+- :::aladin-diff ... ::: with fenced JSON {"title":"Update","path":"src/index.tsx","lines":[{"kind":"context|add|remove","text":"..."}]} or a fenced short unified diff when showing edits.
+- :::aladin-shard-preview ... ::: with a fenced JSON body: {"artifactId":"...","title":"Shard title","status":"building|ready|published|error","previewUrl":"/local/path","diagnostics":["bounded build messages"]} after build/preview/publish work.
+- :::aladin-error-recovery ... ::: with a fenced JSON body: {"title":"Build failed","message":"exact error","code":"optional","actions":[...same action schema...]} for recoverable errors.
 Prefer aladin-activity for multi-step work, aladin-diff for material edits, aladin-shard-preview after shard builds/previews, and aladin-error-recovery when a user can retry or open context.
 Rich directive trigger rules:
 - After create_app, read_file, write_file, edit_file, build_app, preview_open, preview_snapshot, publish_app, or publish approval, include an aladin-activity summary and an aladin-shard-preview block when you know the shard id/title/status.

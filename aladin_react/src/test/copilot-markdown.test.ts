@@ -1,98 +1,32 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  normalizeLegacyDirectives,
   parseActionItems,
   parseActivityItems,
   parseApprovalBlock,
-  parseCopilotMarkdown,
   parseDiffBlock,
   parseErrorRecoveryBlock,
   parseShardPreviewBlock,
 } from "@/modules/copilot/ui/copilot-markdown";
 
-describe("parseCopilotMarkdown", () => {
-  it("splits markdown around leaf directives", () => {
+describe("normalizeLegacyDirectives", () => {
+  it("keeps standard leaf directives and upgrades legacy containers", () => {
     expect(
-      parseCopilotMarkdown(
-        'Before\n\n::aladin-artifact{id="p1" kind="page" title="NVDA thesis"}\n\nAfter',
+      normalizeLegacyDirectives(
+        '::aladin-artifact{id="p1" kind="page" title="NVDA thesis"}\n\n::aladin-activity\n[]\n::',
       ),
-    ).toEqual([
-      { kind: "markdown", text: "Before\n" },
-      {
-        kind: "directive",
-        name: "aladin-artifact",
-        attrs: { id: "p1", kind: "page", title: "NVDA thesis" },
-        body: "",
-      },
-      { kind: "markdown", text: "\nAfter" },
-    ]);
+    ).toBe('::aladin-artifact{id="p1" kind="page" title="NVDA thesis"}\n\n:::aladin-activity\n```\n[]\n```\n:::');
   });
 
-  it("accepts punctuation immediately after leaf directives", () => {
+  it("converts embedded legacy leaf directives to standard text directives", () => {
     expect(
-      parseCopilotMarkdown(
-        '::aladin-artifact{id="artifact-e5eb2565-2dee-44a2-b759-902adbd6e167" kind="shard" title="Day Trading Playbook"}:',
+      normalizeLegacyDirectives(
+        'also ::aladin-artifact{id="artifact-e5eb2565-2dee-44a2-b759-902adbd6e167" kind="shard" title="Day Trading Playbook"}: still works',
       ),
-    ).toEqual([
-      {
-        kind: "directive",
-        name: "aladin-artifact",
-        attrs: {
-          id: "artifact-e5eb2565-2dee-44a2-b759-902adbd6e167",
-          kind: "shard",
-          title: "Day Trading Playbook",
-        },
-        body: "",
-      },
-      { kind: "markdown", text: ":" },
-    ]);
-  });
-
-  it("extracts leaf directives embedded in markdown text", () => {
-    expect(
-      parseCopilotMarkdown(
-        'also ::aladin-artifact{id="artifact-e5eb2565-2dee-44a2-b759-902adbd6e167" kind="shard" title="Day Trading Playbook"}: still not working',
-      ),
-    ).toEqual([
-      { kind: "markdown", text: "also " },
-      {
-        kind: "directive",
-        name: "aladin-artifact",
-        attrs: {
-          id: "artifact-e5eb2565-2dee-44a2-b759-902adbd6e167",
-          kind: "shard",
-          title: "Day Trading Playbook",
-        },
-        body: "",
-      },
-      { kind: "markdown", text: ": still not working" },
-    ]);
-  });
-
-  it("parses closed container directives and leaves unclosed ones as markdown", () => {
-    expect(parseCopilotMarkdown('::aladin-activity\n[{"label":"Searched","status":"ok"}]\n::')).toEqual([
-      {
-        kind: "directive",
-        name: "aladin-activity",
-        attrs: {},
-        body: '[{"label":"Searched","status":"ok"}]',
-      },
-    ]);
-
-    expect(parseCopilotMarkdown("::aladin-activity\n[")).toEqual([
-      { kind: "markdown", text: "::aladin-activity\n[" },
-    ]);
-  });
-
-  it("keeps action directives as native directive segments", () => {
-    expect(parseCopilotMarkdown('::aladin-actions\n[{"label":"Compare","prompt":"Compare this"}]\n::')).toEqual([
-      {
-        kind: "directive",
-        name: "aladin-actions",
-        attrs: {},
-        body: '[{"label":"Compare","prompt":"Compare this"}]',
-      },
-    ]);
+    ).toBe(
+      'also :aladin-artifact{id="artifact-e5eb2565-2dee-44a2-b759-902adbd6e167" kind="shard" title="Day Trading Playbook"}: still works',
+    );
   });
 });
 

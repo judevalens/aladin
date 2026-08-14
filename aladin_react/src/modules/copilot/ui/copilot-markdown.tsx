@@ -15,16 +15,20 @@ import {
   UserRound,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { memo } from "react";
+import { memo, type ReactNode } from "react";
 import Markdown from "react-markdown";
+import remarkDirective from "remark-directive";
 import remarkGfm from "remark-gfm";
 import { Icon } from "@/components/ui/icon";
 import { useCitationNav } from "@/modules/copilot/hooks/use-citation-nav";
 import { cn } from "@/lib/utils";
 
-type MarkdownSegment =
-  | { kind: "markdown"; text: string }
-  | { kind: "directive"; name: string; attrs: Record<string, string>; body: string };
+type DirectiveSegment = { kind: "directive"; name: string; attrs: Record<string, string>; body: string };
+type AladinDirectiveProps = {
+  directiveName?: unknown;
+  directiveAttrs?: unknown;
+  directiveBody?: unknown;
+};
 
 /**
  * Renders assistant markdown with Aladin tokens. react-markdown does not render raw HTML by
@@ -38,31 +42,46 @@ export const CopilotMarkdown = memo(function CopilotMarkdown({
   onPrompt?: (prompt: string) => void;
 }) {
   const navCitation = useCitationNav();
-  const segments = parseCopilotMarkdown(text);
   return (
     <div className="text-body leading-relaxed text-ink-2">
-      {segments.map((segment, index) =>
-        segment.kind === "markdown" ? (
-          <MarkdownText key={index} text={segment.text} />
-        ) : (
+      <MarkdownText
+        text={normalizeLegacyDirectives(text)}
+        onDirective={(segment) => (
           <DirectiveBlock
-            key={index}
             segment={segment}
             onNavigate={(kind, id, title) => navCitation({ kind, id, title })}
             onPrompt={onPrompt}
           />
-        ),
-      )}
+        )}
+      />
     </div>
   );
 });
 
-function MarkdownText({ text }: { text: string }) {
+function MarkdownText({
+  text,
+  onDirective,
+}: {
+  text: string;
+  onDirective?: (segment: DirectiveSegment) => ReactNode;
+}) {
   if (!text.trim()) return null;
   return (
     <Markdown
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={onDirective ? [remarkGfm, remarkDirective, remarkAladinDirectives] : [remarkGfm]}
       components={{
+        ...{
+          // remarkAladinDirectives maps directive AST nodes into this synthetic tag.
+          "aladin-directive": ({ directiveName, directiveAttrs, directiveBody }: AladinDirectiveProps) =>
+            onDirective ? (
+              onDirective({
+                kind: "directive",
+                name: String(directiveName ?? ""),
+                attrs: parseDirectiveProperties(String(directiveAttrs ?? "{}")),
+                body: String(directiveBody ?? ""),
+              })
+            ) : null,
+        },
         p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
         strong: ({ children }) => <strong className="font-semibold text-ink">{children}</strong>,
         em: ({ children }) => <em className="italic">{children}</em>,
@@ -117,7 +136,7 @@ function DirectiveBlock({
   onNavigate,
   onPrompt,
 }: {
-  segment: Extract<MarkdownSegment, { kind: "directive" }>;
+  segment: DirectiveSegment;
   onNavigate: (kind: string, id: string, title: string) => void;
   onPrompt?: (prompt: string) => void;
 }) {
@@ -417,77 +436,93 @@ function DirectiveBlock({
   }
 }
 
-export function parseCopilotMarkdown(text: string): MarkdownSegment[] {
-  const lines = text.split(/\r?\n/);
-  const segments: MarkdownSegment[] = [];
-  let markdown: string[] = [];
-  const flushMarkdown = () => {
-    if (markdown.length === 0) return;
-    segments.push({ kind: "markdown", text: markdown.join("\n") });
-    markdown = [];
-  };
-
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i];
-    const container = /^::(aladin-[a-z0-9-]+)\s*$/.exec(line.trim());
-    if (container) {
-      const body: string[] = [];
-      let closed = false;
-      for (let j = i + 1; j < lines.length; j += 1) {
-        if (lines[j].trim() === "::") {
-          i = j;
-          closed = true;
-          break;
-        }
-        body.push(lines[j]);
-      }
-      if (closed) {
-        flushMarkdown();
-        segments.push({ kind: "directive", name: container[1], attrs: {}, body: body.join("\n") });
-      } else {
-        markdown.push(line, ...body);
-        i = lines.length;
-      }
-      continue;
-    }
-    const leaf = /::(aladin-[a-z0-9-]+)(\{[^}]*\})/g;
-    let cursor = 0;
-    let foundLeaf = false;
-    for (const match of line.matchAll(leaf)) {
-      foundLeaf = true;
-      const before = line.slice(cursor, match.index);
-      if (before) markdown.push(before);
-      flushMarkdown();
-      segments.push({ kind: "directive", name: match[1], attrs: parseDirectiveAttrs(match[2]), body: "" });
-      cursor = match.index + match[0].length;
-    }
-    if (foundLeaf) {
-      const after = line.slice(cursor);
-      if (after) markdown.push(after);
-      continue;
-    }
-    markdown.push(line);
-  }
-  flushMarkdown();
-  return segments;
-}
-
-function parseDirectiveAttrs(raw: string): Record<string, string> {
-  const attrs: Record<string, string> = {};
-  const body = raw.slice(1, -1);
-  const re = /([a-zA-Z][\w-]*)=(?:"([^"]*)"|'([^']*)'|([^\s}]+))/g;
-  for (const match of body.matchAll(re)) {
-    attrs[match[1]] = match[2] ?? match[3] ?? match[4] ?? "";
-  }
-  return attrs;
-}
-
-function directiveFallback(segment: Extract<MarkdownSegment, { kind: "directive" }>): string {
+function directiveFallback(segment: DirectiveSegment): string {
   const attrs = Object.entries(segment.attrs)
     .map(([k, v]) => `${k}="${v}"`)
     .join(" ");
   if (segment.body) return `::${segment.name}\n${segment.body}\n::`;
   return `::${segment.name}${attrs ? `{${attrs}}` : ""}`;
+}
+
+function remarkAladinDirectives() {
+  return (tree: unknown) => {
+    visitDirectiveNodes(tree);
+  };
+}
+
+function visitDirectiveNodes(node: unknown) {
+  if (!node || typeof node !== "object") return;
+  const item = node as {
+    type?: string;
+    name?: string;
+    attributes?: Record<string, unknown>;
+    children?: unknown[];
+    data?: Record<string, unknown>;
+  };
+  const directive =
+    item.type === "textDirective" ||
+    item.type === "leafDirective" ||
+    item.type === "containerDirective";
+  if (directive && item.name?.startsWith("aladin-")) {
+    item.data = {
+      ...(item.data ?? {}),
+      hName: "aladin-directive",
+      hProperties: {
+        directiveName: item.name,
+        directiveAttrs: JSON.stringify(item.attributes ?? {}),
+        directiveBody: item.type === "containerDirective" ? directiveBodyText(item.children ?? []) : "",
+      },
+    };
+    return;
+  }
+  for (const child of item.children ?? []) visitDirectiveNodes(child);
+}
+
+function directiveBodyText(children: unknown[]): string {
+  return children.map((child) => mdastText(child)).filter(Boolean).join("\n").trim();
+}
+
+function mdastText(node: unknown): string {
+  if (!node || typeof node !== "object") return "";
+  const item = node as { type?: string; value?: unknown; children?: unknown[] };
+  if (typeof item.value === "string") return item.value;
+  return (item.children ?? []).map((child) => mdastText(child)).join("");
+}
+
+function parseDirectiveProperties(raw: string): Record<string, string> {
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.entries(parsed)
+        .filter(([, value]) => typeof value === "string")
+        .map(([key, value]) => [key, value as string]),
+    );
+  } catch {
+    return {};
+  }
+}
+
+export function normalizeLegacyDirectives(text: string): string {
+  const normalized: string[] = [];
+  const lines = text.split(/\r?\n/);
+  let legacyContainer = false;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (/^::aladin-[a-z0-9-]+\s*$/.test(trimmed)) {
+      normalized.push(line.replace("::", ":::"));
+      normalized.push("```");
+      legacyContainer = true;
+      continue;
+    }
+    if (legacyContainer && trimmed === "::") {
+      normalized.push("```");
+      normalized.push(line.replace("::", ":::"));
+      legacyContainer = false;
+      continue;
+    }
+    normalized.push(line.replace(/(\s)::(aladin-[a-z0-9-]+)(\{[^}\n]*\})/g, "$1:$2$3"));
+  }
+  return normalized.join("\n");
 }
 
 export type ActivityItem = {

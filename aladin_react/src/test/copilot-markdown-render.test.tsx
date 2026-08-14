@@ -15,10 +15,10 @@ describe("CopilotMarkdown rich directives", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText("also")).toBeTruthy();
+    expect(screen.getByText(/also/)).toBeTruthy();
     expect(screen.getByRole("button", { name: /Day Trading Playbook/ })).toBeTruthy();
     expect(screen.getByText("shard")).toBeTruthy();
-    expect(screen.getByText(": still works")).toBeTruthy();
+    expect(screen.getByText(/: still works/)).toBeTruthy();
   });
 
   it("renders native recovery and shard preview blocks with validated actions", () => {
