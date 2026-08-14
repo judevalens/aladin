@@ -1,0 +1,19 @@
+-- Durable sync bookkeeping. One row per key; today only the pull cursor.
+--
+-- The cursor is a uint64 log horizon stored as TEXT: it can exceed what a signed 64-bit
+-- integer column represents faithfully, and it is only ever compared and echoed back.
+
+CREATE TABLE sync_state (
+    key   TEXT NOT NULL PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+getValue:
+SELECT value FROM sync_state WHERE key = :key;
+
+putValue:
+INSERT INTO sync_state(key, value) VALUES (:key, :value)
+ON CONFLICT(key) DO UPDATE SET value = excluded.value;
+
+deleteAll:
+DELETE FROM sync_state;

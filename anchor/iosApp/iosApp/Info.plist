@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+    <dict>
+        <key>CADisableMinimumFrameDurationOnPhone</key>
+        <true/>
+        <!-- The dev backend is plain HTTP on the LAN. NSAllowsLocalNetworking permits
+             cleartext to private-range addresses only; ATS stays on everywhere else. -->
+        <key>NSAppTransportSecurity</key>
+        <dict>
+            <key>NSAllowsLocalNetworking</key>
+            <true/>
+        </dict>
+        <!-- iOS 14+ gates any connection to a local-network address behind this prompt;
+             without the key the request fails with no visible reason. -->
+        <key>NSLocalNetworkUsageDescription</key>
+        <string>Aladin connects to your Mac on this network to load your workspace.</string>
+    </dict>
+</plist>

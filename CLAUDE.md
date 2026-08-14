@@ -33,6 +33,12 @@ aladin_react/
 backend_v2/
   cmd/{api,worker,mcp}    entrypoints (api :8000, mcp :8090)
   internal/               api → service → repo layering; db/migrations/*.sql (goose)
+anchor/                   iPad companion — Kotlin Multiplatform (Compose + Circuit +
+                          Ktor + SQLDelight + Koin), iOS-first. shared/ holds all logic:
+                          domain/ (pure rules) · services/{sync,data,design,network} ·
+                          features/<screen>/. Its syncer MIRRORS the Rust client's
+                          (aladin_react/src-tauri/src/sync/) — same frames, same seq
+                          guard, same cursor rules, no bridge.
 services/blocknote/       collab sidecar (converter :3500, collab :3501)
 services/copilot-agent/   copilot agent sidecar (Claude Agent SDK, :3550)
 design/                   UI_ARCHITECTURE.md (frontend onboarding map: shell, tokens,
@@ -59,6 +65,25 @@ npm run tauri:dev                                  # full desktop app
 
 The real dev stack (`make db-up`, `make backend`) exists but is the user's; don't
 start/stop it for routine verification — use the sandbox.
+
+## iPad companion (`anchor/`)
+
+```bash
+cd anchor
+./gradlew :shared:testAndroidHostTest            # shared unit tests (domain + sync rules)
+./gradlew :shared:compileKotlinIosSimulatorArm64 # iOS compile check
+# iOS app: build from anchor/iosApp with xcodebuild, or open iosApp.xcodeproj in Xcode.
+```
+
+The base URL is a constant in `shared/src/iosMain/.../network/HttpClient.ios.kt`: a device
+cannot use `localhost` (that is the iPad), so it points at the dev Mac's LAN address.
+Update it when the Mac's IP changes. Device builds also need `NSAllowsLocalNetworking` +
+`NSLocalNetworkUsageDescription` (already in `iosApp/iosApp/Info.plist`).
+
+**The layering is the point** (see `~/.claude/plans/aladin-ipad-shell-architecture.md`):
+`domain/` imports nothing — no Compose, no SQLDelight, no Ktor — so the design's rules
+(purpose → sections, open-items behaviour) are unit-testable; features read tokens from
+`services/design` and never hardcode a colour or radius.
 
 ## Test / typecheck / lint
 

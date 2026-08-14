@@ -1,0 +1,37 @@
+-- Starter local schema for Anchor (journal capture client).
+-- This will evolve to mirror the backend's artifact/page model; for now it is a
+-- minimal offline-first entry table with sync bookkeeping.
+
+CREATE TABLE entry (
+    id         TEXT    NOT NULL PRIMARY KEY,
+    title      TEXT,
+    body       TEXT    NOT NULL DEFAULT '',
+    createdAt  INTEGER NOT NULL,
+    updatedAt  INTEGER NOT NULL,
+    -- null until the row has been pushed to the backend
+    syncedAt   INTEGER,
+    -- 1 = has local changes not yet pushed
+    dirty      INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE INDEX entry_updatedAt ON entry(updatedAt);
+CREATE INDEX entry_dirty ON entry(dirty);
+
+selectAll:
+SELECT * FROM entry ORDER BY updatedAt DESC;
+
+selectById:
+SELECT * FROM entry WHERE id = ?;
+
+selectDirty:
+SELECT * FROM entry WHERE dirty = 1 ORDER BY updatedAt ASC;
+
+upsert:
+INSERT OR REPLACE INTO entry(id, title, body, createdAt, updatedAt, syncedAt, dirty)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+markSynced:
+UPDATE entry SET syncedAt = ?, dirty = 0 WHERE id = ?;
+
+deleteById:
+DELETE FROM entry WHERE id = ?;
