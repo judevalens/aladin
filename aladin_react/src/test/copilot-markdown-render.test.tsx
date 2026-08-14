@@ -9,14 +9,16 @@ describe("CopilotMarkdown rich directives", () => {
       <MemoryRouter>
         <CopilotMarkdown
           text={
-            '::aladin-artifact{id="artifact-e5eb2565-2dee-44a2-b759-902adbd6e167" kind="shard" title="Day Trading Playbook"}:'
+            'also ::aladin-artifact{id="artifact-e5eb2565-2dee-44a2-b759-902adbd6e167" kind="shard" title="Day Trading Playbook"}: still works'
           }
         />
       </MemoryRouter>,
     );
 
+    expect(screen.getByText("also")).toBeTruthy();
     expect(screen.getByRole("button", { name: /Day Trading Playbook/ })).toBeTruthy();
     expect(screen.getByText("shard")).toBeTruthy();
+    expect(screen.getByText(": still works")).toBeTruthy();
   });
 
   it("renders native recovery and shard preview blocks with validated actions", () => {

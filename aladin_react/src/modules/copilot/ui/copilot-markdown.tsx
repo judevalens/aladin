@@ -429,13 +429,6 @@ export function parseCopilotMarkdown(text: string): MarkdownSegment[] {
 
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
-    const leaf = /^::(aladin-[a-z0-9-]+)(\{[^}]*\})([.:,;!?])?\s*$/.exec(line.trim());
-    if (leaf) {
-      flushMarkdown();
-      segments.push({ kind: "directive", name: leaf[1], attrs: parseDirectiveAttrs(leaf[2]), body: "" });
-      if (leaf[3]) markdown.push(leaf[3]);
-      continue;
-    }
     const container = /^::(aladin-[a-z0-9-]+)\s*$/.exec(line.trim());
     if (container) {
       const body: string[] = [];
@@ -455,6 +448,22 @@ export function parseCopilotMarkdown(text: string): MarkdownSegment[] {
         markdown.push(line, ...body);
         i = lines.length;
       }
+      continue;
+    }
+    const leaf = /::(aladin-[a-z0-9-]+)(\{[^}]*\})/g;
+    let cursor = 0;
+    let foundLeaf = false;
+    for (const match of line.matchAll(leaf)) {
+      foundLeaf = true;
+      const before = line.slice(cursor, match.index);
+      if (before) markdown.push(before);
+      flushMarkdown();
+      segments.push({ kind: "directive", name: match[1], attrs: parseDirectiveAttrs(match[2]), body: "" });
+      cursor = match.index + match[0].length;
+    }
+    if (foundLeaf) {
+      const after = line.slice(cursor);
+      if (after) markdown.push(after);
       continue;
     }
     markdown.push(line);

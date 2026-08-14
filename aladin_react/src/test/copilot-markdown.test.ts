@@ -48,6 +48,27 @@ describe("parseCopilotMarkdown", () => {
     ]);
   });
 
+  it("extracts leaf directives embedded in markdown text", () => {
+    expect(
+      parseCopilotMarkdown(
+        'also ::aladin-artifact{id="artifact-e5eb2565-2dee-44a2-b759-902adbd6e167" kind="shard" title="Day Trading Playbook"}: still not working',
+      ),
+    ).toEqual([
+      { kind: "markdown", text: "also " },
+      {
+        kind: "directive",
+        name: "aladin-artifact",
+        attrs: {
+          id: "artifact-e5eb2565-2dee-44a2-b759-902adbd6e167",
+          kind: "shard",
+          title: "Day Trading Playbook",
+        },
+        body: "",
+      },
+      { kind: "markdown", text: ": still not working" },
+    ]);
+  });
+
   it("parses closed container directives and leaves unclosed ones as markdown", () => {
     expect(parseCopilotMarkdown('::aladin-activity\n[{"label":"Searched","status":"ok"}]\n::')).toEqual([
       {
