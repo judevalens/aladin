@@ -73,6 +73,14 @@ export interface CopilotProposal {
 const localStorageKey = "aladin.copilot.activeThreadId";
 const modelStorageKey = "aladin.copilot.model";
 const newThreadDraftKey = "__new__";
+const legacyModelIds: Record<string, string> = {
+  opus: "claude-opus-5",
+  opus5: "claude-opus-5",
+  sonnet: "claude-sonnet-5",
+  sonnet5: "claude-sonnet-5",
+  fable: "claude-fable-5",
+  fable5: "claude-fable-5",
+};
 
 function readPersistedThreadId(): string | null {
   try {
@@ -93,10 +101,16 @@ function persistThreadId(threadId: string | null) {
 
 function readPersistedModel(): string | null {
   try {
-    return window.localStorage.getItem(modelStorageKey);
+    return normalizeCopilotModelId(window.localStorage.getItem(modelStorageKey));
   } catch {
     return null;
   }
+}
+
+function normalizeCopilotModelId(model: string | null | undefined): string | null {
+  const trimmed = model?.trim();
+  if (!trimmed) return null;
+  return legacyModelIds[trimmed] ?? trimmed;
 }
 
 function persistModel(model: string | null) {
@@ -585,7 +599,7 @@ export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice
   setCopilotRealtimeState: (next) => set({ copilotRealtimeState: next }),
 
   setCopilotModel: (model) => {
-    const next = model?.trim() || null;
+    const next = normalizeCopilotModelId(model);
     persistModel(next);
     set({ copilotModel: next });
   },

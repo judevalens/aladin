@@ -193,7 +193,7 @@ type CopilotDeps struct {
 
 const (
 	copilotResourceKind = "copilot"
-	defaultCopilotModel = "opus"
+	defaultCopilotModel = "claude-opus-5"
 	// Authoring a shard/page is multi-step (create → write → build → fix → build → preview),
 	// so the loop needs real headroom; a Q&A answers in 1–3 and stops on its own. A
 	// comprehensive multi-section shard blew through 24, so this is sized for deep authoring;
@@ -216,20 +216,29 @@ const (
 
 var copilotModelCatalog = []CopilotModelOption{
 	{
-		ID:          "opus",
+		ID:          "claude-opus-5",
 		Label:       "Opus 5",
 		Description: "Best reasoning for shard authoring and hard workspace tasks.",
 	},
 	{
-		ID:          "sonnet",
+		ID:          "claude-sonnet-5",
 		Label:       "Sonnet 5",
 		Description: "Fast everyday coding and research assistant work.",
 	},
 	{
-		ID:          "fable",
+		ID:          "claude-fable-5",
 		Label:       "Fable 5",
 		Description: "Quick lightweight answers when speed matters most.",
 	},
+}
+
+var legacyCopilotModelIDs = map[string]string{
+	"opus":    "claude-opus-5",
+	"opus5":   "claude-opus-5",
+	"sonnet":  "claude-sonnet-5",
+	"sonnet5": "claude-sonnet-5",
+	"fable":   "claude-fable-5",
+	"fable5":  "claude-fable-5",
 }
 
 // runningTurn is a live agent turn's cancel handle, kept so the owner can stop it and
@@ -300,6 +309,9 @@ func (s *defaultCopilotService) normalizeModel(model string) (string, bool) {
 	model = strings.TrimSpace(model)
 	if model == "" {
 		return s.defaultModel(), true
+	}
+	if normalized, ok := legacyCopilotModelIDs[model]; ok {
+		model = normalized
 	}
 	for _, option := range s.modelOptions() {
 		if model == option.ID {

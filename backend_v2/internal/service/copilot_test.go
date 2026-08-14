@@ -338,7 +338,7 @@ func TestCopilotSendPassesSelectedModel(t *testing.T) {
 		Principal: Principal{UserID: userID},
 		Bearer:    "tok",
 		Text:      "use sonnet",
-		Model:     "sonnet",
+		Model:     "claude-sonnet-5",
 	})
 	if err != nil {
 		t.Fatalf("send: %v", err)
@@ -348,8 +348,32 @@ func TestCopilotSendPassesSelectedModel(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("timed out waiting for copilot turn to start")
 	}
-	if got := agent.request().Model; got != "sonnet" {
-		t.Fatalf("turn request model = %q, want sonnet", got)
+	if got := agent.request().Model; got != "claude-sonnet-5" {
+		t.Fatalf("turn request model = %q, want claude-sonnet-5", got)
+	}
+}
+
+func TestCopilotSendNormalizesLegacyModelID(t *testing.T) {
+	const userID = "11111111-1111-1111-1111-111111111111"
+	agent := &fakeAgent{events: []copilotagent.Event{{Type: "done"}}, started: make(chan struct{})}
+	svc := NewCopilotService(CopilotDeps{Store: newFakeStore(), Agent: agent})
+
+	_, err := svc.SendMessage(context.Background(), CopilotSendInput{
+		Principal: Principal{UserID: userID},
+		Bearer:    "tok",
+		Text:      "legacy model",
+		Model:     "opus5",
+	})
+	if err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	select {
+	case <-agent.started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for copilot turn to start")
+	}
+	if got := agent.request().Model; got != "claude-opus-5" {
+		t.Fatalf("turn request model = %q, want claude-opus-5", got)
 	}
 }
 
@@ -369,18 +393,18 @@ func TestCopilotSendRejectsUnsupportedModel(t *testing.T) {
 }
 
 func TestCopilotStatusReportsModelCatalog(t *testing.T) {
-	svc := NewCopilotService(CopilotDeps{Store: newFakeStore(), Agent: &fakeAgent{}, Model: "sonnet"})
+	svc := NewCopilotService(CopilotDeps{Store: newFakeStore(), Agent: &fakeAgent{}, Model: "claude-sonnet-5"})
 
 	status := svc.Status(context.Background())
 
-	if status.DefaultModel != "sonnet" {
-		t.Fatalf("default model = %q, want sonnet", status.DefaultModel)
+	if status.DefaultModel != "claude-sonnet-5" {
+		t.Fatalf("default model = %q, want claude-sonnet-5", status.DefaultModel)
 	}
 	if len(status.Models) < 2 {
 		t.Fatalf("expected model options, got %+v", status.Models)
 	}
-	if status.Models[0].ID != "opus" || status.Models[0].Label != "Opus 5" {
-		t.Fatalf("model catalog should expose SDK ids with friendly labels, got %+v", status.Models[0])
+	if status.Models[0].ID != "claude-opus-5" || status.Models[0].Label != "Opus 5" {
+		t.Fatalf("model catalog should expose API ids with friendly labels, got %+v", status.Models[0])
 	}
 }
 

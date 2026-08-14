@@ -21,6 +21,14 @@ const proposal = (over: Partial<Parameters<CopilotSlice["addCopilotProposal"]>[0
 });
 
 describe("copilot proposal lifecycle", () => {
+  it("normalizes legacy persisted model ids to SDK-safe aliases", () => {
+    const store = makeStore();
+    store.getState().setCopilotModel("opus5");
+    expect(store.getState().copilotModel).toBe("claude-opus-5");
+    store.getState().setCopilotModel("sonnet5");
+    expect(store.getState().copilotModel).toBe("claude-sonnet-5");
+  });
+
   it("adds proposals only for the in-flight session (second-window gate)", () => {
     const store = makeStore();
     startTurn(store);
