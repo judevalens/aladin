@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { Icon } from "@/components/ui/icon";
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
-import type { CopilotModelOption, CopilotSurface } from "@/repos/copilot/copilot-repo";
+import type { CopilotEffortOption, CopilotModelOption, CopilotSurface } from "@/repos/copilot/copilot-repo";
 import type { CopilotProposal, CopilotThreadView, CopilotToolRun } from "@/app/state/copilot-slice";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ARTIFACT_ICONS } from "@/modules/workspace/ui/kind-icons";
@@ -84,6 +84,10 @@ export function CopilotDockUI() {
     activeModel,
     defaultModel,
     setSelectedModel,
+    effortOptions,
+    activeEffort,
+    defaultEffort,
+    setSelectedEffort,
     queuedText,
     draftText,
     setDraftText,
@@ -352,6 +356,12 @@ export function CopilotDockUI() {
                 defaultModel={defaultModel}
                 onSelect={setSelectedModel}
               />
+              <EffortSwitcher
+                efforts={effortOptions}
+                activeEffort={activeEffort}
+                defaultEffort={defaultEffort}
+                onSelect={setSelectedEffort}
+              />
               <div className="flex shrink-0 items-center gap-1">
                 {busy ? (
                   <button
@@ -385,6 +395,61 @@ export function CopilotDockUI() {
         </div>
       </aside>
     </div>
+  );
+}
+
+function EffortSwitcher({
+  efforts,
+  activeEffort,
+  defaultEffort,
+  onSelect,
+}: {
+  efforts: CopilotEffortOption[];
+  activeEffort: string | null;
+  defaultEffort: string | null;
+  onSelect: (effort: string) => void;
+}) {
+  const active = efforts.find((effort) => effort.id === activeEffort);
+  const label = active?.label ?? activeEffort ?? "Effort";
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="flex max-w-[76px] items-center gap-1 rounded-chip px-1.5 py-0.5 font-mono text-meta text-ink-3 hover:bg-raise hover:text-ink"
+          aria-label="Copilot effort"
+          title={active?.description ?? active?.id ?? "Copilot effort"}
+        >
+          <span className="min-w-0 truncate">{label}</span>
+          <Icon as={ChevronDown} size="inline" mark />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-72">
+        <DropdownMenuLabel>Effort</DropdownMenuLabel>
+        {efforts.length === 0 ? (
+          <DropdownMenuItem disabled>Backend default</DropdownMenuItem>
+        ) : (
+          efforts.map((effort) => (
+            <DropdownMenuItem key={effort.id} onSelect={() => onSelect(effort.id)} className="items-start gap-2">
+              <span className="mt-0.5 grid size-4 shrink-0 place-items-center text-amber">
+                {effort.id === activeEffort ? <Icon as={Check} size="inline" mark /> : null}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-1.5 text-small text-ink">
+                  {effort.label}
+                  {effort.id === defaultEffort ? (
+                    <span className="font-mono text-meta text-ink-4">default</span>
+                  ) : null}
+                </span>
+                {effort.description ? (
+                  <span className="mt-0.5 block text-meta leading-snug text-ink-4">{effort.description}</span>
+                ) : null}
+              </span>
+            </DropdownMenuItem>
+          ))
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

@@ -20,6 +20,7 @@ export interface CopilotSendRequest {
   threadId?: string;
   text: string;
   model?: string;
+  effort?: string;
   surface?: CopilotSurface;
 }
 
@@ -65,9 +66,17 @@ export interface CopilotStatus {
   mcp: boolean;
   defaultModel?: string;
   models?: CopilotModelOption[] | null;
+  defaultEffort?: string;
+  efforts?: CopilotEffortOption[] | null;
 }
 
 export interface CopilotModelOption {
+  id: string;
+  label: string;
+  description?: string;
+}
+
+export interface CopilotEffortOption {
   id: string;
   label: string;
   description?: string;
@@ -92,6 +101,7 @@ export function createCopilotRepo(client: ApiClient): CopilotRepo {
           threadId: req.threadId,
           text: req.text,
           model: req.model,
+          effort: req.effort,
           surface: req.surface,
         }),
       }),

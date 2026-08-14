@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAppComposition } from "@/app/composition/app-composition";
 import { useAppStore } from "@/app/state/store";
 import { useCurrentSurface } from "@/modules/copilot/hooks/use-current-surface";
-import type { CopilotModelOption } from "@/repos/copilot/copilot-repo";
+import type { CopilotEffortOption, CopilotModelOption } from "@/repos/copilot/copilot-repo";
 
 /**
  * How long the in-flight turn may go without a single live event before the watchdog
@@ -52,13 +52,21 @@ export function useCopilot() {
   const draftText = useAppStore((s) => s.copilotDraftFor(s.activeThreadId));
   const realtimeState = useAppStore((s) => s.copilotRealtimeState);
   const selectedModel = useAppStore((s) => s.copilotModel);
+  const selectedEffort = useAppStore((s) => s.copilotEffort);
   const [modelOptions, setModelOptions] = useState<CopilotModelOption[]>([]);
   const [defaultModel, setDefaultModel] = useState<string | null>(null);
+  const [effortOptions, setEffortOptions] = useState<CopilotEffortOption[]>([]);
+  const [defaultEffort, setDefaultEffort] = useState<string | null>(null);
   const validModelIds = useMemo(() => new Set(modelOptions.map((model) => model.id)), [modelOptions]);
+  const validEffortIds = useMemo(() => new Set(effortOptions.map((effort) => effort.id)), [effortOptions]);
   const activeModel =
     selectedModel && (modelOptions.length === 0 || validModelIds.has(selectedModel))
       ? selectedModel
       : defaultModel ?? modelOptions[0]?.id ?? null;
+  const activeEffort =
+    selectedEffort && (effortOptions.length === 0 || validEffortIds.has(selectedEffort))
+      ? selectedEffort
+      : defaultEffort ?? effortOptions[0]?.id ?? null;
 
   const loadThreads = useCallback(async () => {
     try {
@@ -80,9 +88,10 @@ export function useCopilot() {
       const store = useAppStore.getState();
       const threadId = store.activeThreadId ?? undefined;
       const model = activeModel ?? undefined;
+      const effort = activeEffort ?? undefined;
       const localId = store.appendCopilotUserMessage(text);
       try {
-        const result = await repos.copilot.sendMessage({ threadId, text, model, surface });
+        const result = await repos.copilot.sendMessage({ threadId, text, model, effort, surface });
         useAppStore.getState().beginCopilotTurn(result.threadId, result.sessionId);
         void loadThreads();
         return null;
@@ -94,7 +103,7 @@ export function useCopilot() {
         return text;
       }
     },
-    [repos.copilot, surface, activeModel, loadThreads],
+    [repos.copilot, surface, activeModel, activeEffort, loadThreads],
   );
 
   const reconcileActiveThread = useCallback(async () => {
@@ -289,11 +298,19 @@ export function useCopilot() {
       const s = await repos.copilot.getStatus();
       const models = (s.models ?? []).filter((model) => model.id && model.label);
       const nextDefault = s.defaultModel ?? models[0]?.id ?? null;
+      const efforts = (s.efforts ?? []).filter((effort) => effort.id && effort.label);
+      const nextDefaultEffort = s.defaultEffort ?? efforts[0]?.id ?? null;
       setModelOptions(models);
       setDefaultModel(nextDefault);
+      setEffortOptions(efforts);
+      setDefaultEffort(nextDefaultEffort);
       const currentModel = useAppStore.getState().copilotModel;
       if (currentModel && models.length > 0 && !models.some((model) => model.id === currentModel)) {
         useAppStore.getState().setCopilotModel(nextDefault ?? models[0]?.id ?? null);
+      }
+      const currentEffort = useAppStore.getState().copilotEffort;
+      if (currentEffort && efforts.length > 0 && !efforts.some((effort) => effort.id === currentEffort)) {
+        useAppStore.getState().setCopilotEffort(nextDefaultEffort ?? efforts[0]?.id ?? null);
       }
       if (!s.configured) return "The copilot is not configured on this backend.";
       if (!s.sidecar) return "The copilot agent is unreachable — answers will fail.";
@@ -312,6 +329,13 @@ export function useCopilot() {
       useAppStore.getState().setCopilotModel(next ?? null);
     },
     [validModelIds, defaultModel],
+  );
+  const setSelectedEffort = useCallback(
+    (effort: string) => {
+      const next = validEffortIds.size === 0 || validEffortIds.has(effort) ? effort : defaultEffort;
+      useAppStore.getState().setCopilotEffort(next ?? null);
+    },
+    [validEffortIds, defaultEffort],
   );
   const setDraftText = useCallback(
     (text: string) =>
@@ -349,6 +373,10 @@ export function useCopilot() {
     activeModel,
     defaultModel,
     setSelectedModel,
+    effortOptions,
+    activeEffort,
+    defaultEffort,
+    setSelectedEffort,
     queuedText,
     queueFollowup,
     draftText,

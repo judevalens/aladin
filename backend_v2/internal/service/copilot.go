@@ -47,15 +47,24 @@ type CopilotService interface {
 
 // CopilotStatusReport is the dock's preflight view of the copilot's health.
 type CopilotStatusReport struct {
-	Configured   bool                 `json:"configured"`
-	Sidecar      bool                 `json:"sidecar"`
-	MCP          bool                 `json:"mcp"`
-	DefaultModel string               `json:"defaultModel,omitempty"`
-	Models       []CopilotModelOption `json:"models,omitempty"`
+	Configured    bool                  `json:"configured"`
+	Sidecar       bool                  `json:"sidecar"`
+	MCP           bool                  `json:"mcp"`
+	DefaultModel  string                `json:"defaultModel,omitempty"`
+	Models        []CopilotModelOption  `json:"models,omitempty"`
+	DefaultEffort string                `json:"defaultEffort,omitempty"`
+	Efforts       []CopilotEffortOption `json:"efforts,omitempty"`
 }
 
 // CopilotModelOption is one model the dock may select for the next turn.
 type CopilotModelOption struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+}
+
+// CopilotEffortOption is one reasoning-effort level the dock may select for the next turn.
+type CopilotEffortOption struct {
 	ID          string `json:"id"`
 	Label       string `json:"label"`
 	Description string `json:"description,omitempty"`
@@ -84,6 +93,7 @@ type CopilotSendInput struct {
 	ThreadID string // "" ⇒ start a new thread
 	Text     string
 	Model    string
+	Effort   string
 	Surface  CopilotSurface
 }
 
@@ -184,6 +194,8 @@ type CopilotDeps struct {
 	Realtime RealtimeEventService
 	// Model pins the sidecar's model per turn ("" ⇒ the sidecar's own default).
 	Model string
+	// Effort guides adaptive thinking depth per turn ("" ⇒ high, matching Claude Code default).
+	Effort string
 	// Surface-context preloading (all optional/nil-safe).
 	Snapshots QuoteSnapshotSource
 	Artifacts ArtifactService
@@ -192,8 +204,9 @@ type CopilotDeps struct {
 }
 
 const (
-	copilotResourceKind = "copilot"
-	defaultCopilotModel = "claude-opus-5"
+	copilotResourceKind  = "copilot"
+	defaultCopilotModel  = "claude-opus-5"
+	defaultCopilotEffort = "high"
 	// Authoring a shard/page is multi-step (create → write → build → fix → build → preview),
 	// so the loop needs real headroom; a Q&A answers in 1–3 and stops on its own. A
 	// comprehensive multi-section shard blew through 24, so this is sized for deep authoring;
@@ -239,6 +252,14 @@ var legacyCopilotModelIDs = map[string]string{
 	"sonnet5": "claude-sonnet-5",
 	"fable":   "claude-fable-5",
 	"fable5":  "claude-fable-5",
+}
+
+var copilotEffortCatalog = []CopilotEffortOption{
+	{ID: "low", Label: "Low", Description: "Fastest responses with minimal thinking."},
+	{ID: "medium", Label: "Medium", Description: "Balanced reasoning for routine work."},
+	{ID: "high", Label: "High", Description: "Deep reasoning; Claude Code default."},
+	{ID: "xhigh", Label: "X-High", Description: "Deeper reasoning for harder agentic tasks."},
+	{ID: "max", Label: "Max", Description: "Maximum effort for the hardest long-running tasks."},
 }
 
 // runningTurn is a live agent turn's cancel handle, kept so the owner can stop it and
@@ -287,6 +308,15 @@ func (s *defaultCopilotService) defaultModel() string {
 	return defaultCopilotModel
 }
 
+func (s *defaultCopilotService) defaultEffort() string {
+	if effort := strings.TrimSpace(s.Effort); effort != "" {
+		if normalized, ok := normalizeCopilotEffort(effort); ok {
+			return normalized
+		}
+	}
+	return defaultCopilotEffort
+}
+
 func (s *defaultCopilotService) modelOptions() []CopilotModelOption {
 	configured := s.defaultModel()
 	options := make([]CopilotModelOption, 0, len(copilotModelCatalog)+1)
@@ -321,11 +351,34 @@ func (s *defaultCopilotService) normalizeModel(model string) (string, bool) {
 	return "", false
 }
 
+func normalizeCopilotEffort(effort string) (string, bool) {
+	effort = strings.ToLower(strings.TrimSpace(effort))
+	if effort == "x-high" || effort == "extra-high" {
+		effort = "xhigh"
+	}
+	for _, option := range copilotEffortCatalog {
+		if effort == option.ID {
+			return effort, true
+		}
+	}
+	return "", false
+}
+
+func (s *defaultCopilotService) normalizeEffort(effort string) (string, bool) {
+	effort = strings.TrimSpace(effort)
+	if effort == "" {
+		return s.defaultEffort(), true
+	}
+	return normalizeCopilotEffort(effort)
+}
+
 func (s *defaultCopilotService) Status(ctx context.Context) CopilotStatusReport {
 	base := CopilotStatusReport{
-		Configured:   s.Agent != nil,
-		DefaultModel: s.defaultModel(),
-		Models:       s.modelOptions(),
+		Configured:    s.Agent != nil,
+		DefaultModel:  s.defaultModel(),
+		Models:        s.modelOptions(),
+		DefaultEffort: s.defaultEffort(),
+		Efforts:       copilotEffortCatalog,
 	}
 	if s.Agent == nil {
 		return base
@@ -444,6 +497,10 @@ func (s *defaultCopilotService) SendMessage(ctx context.Context, in CopilotSendI
 	if !ok {
 		return CopilotSendResult{}, BadRequest("unsupported copilot model")
 	}
+	effort, ok := s.normalizeEffort(in.Effort)
+	if !ok {
+		return CopilotSendResult{}, BadRequest("unsupported copilot effort")
+	}
 
 	threadID := strings.TrimSpace(in.ThreadID)
 	if threadID == "" {
@@ -495,7 +552,7 @@ func (s *defaultCopilotService) SendMessage(ctx context.Context, in CopilotSendI
 	// Fire-and-forget turn, panic-contained: a malformed NDJSON event from the sidecar must not
 	// crash the api process. runAgent defers release(), so the hold-open slot is freed even on panic.
 	safego.Go("copilot.turn", func() {
-		s.runAgent(turnCtx, release, in.Principal, in.Bearer, threadID, sessionID, model, in.Surface)
+		s.runAgent(turnCtx, release, in.Principal, in.Bearer, threadID, sessionID, model, effort, in.Surface)
 	})
 	return CopilotSendResult{ThreadID: threadID, SessionID: sessionID}, nil
 }
@@ -576,7 +633,7 @@ func (s *defaultCopilotService) SetThreadPinned(ctx context.Context, userID, thr
 // and the SDK session id. The ctx (principal + hard timeout) and its registration in
 // s.running are created by SendMessage under the per-thread guard; release deregisters
 // and cancels on exit.
-func (s *defaultCopilotService) runAgent(ctx context.Context, release func(), principal Principal, bearer, threadID, sessionID, model string, surface CopilotSurface) {
+func (s *defaultCopilotService) runAgent(ctx context.Context, release func(), principal Principal, bearer, threadID, sessionID, model, effort string, surface CopilotSurface) {
 	defer release()
 	userID := principal.UserID
 
@@ -618,6 +675,7 @@ func (s *defaultCopilotService) runAgent(ctx context.Context, release func(), pr
 		Prompt:          prompt,
 		HistoryFallback: historyFallback(history),
 		Model:           model,
+		Effort:          effort,
 		GatedTools:      gatedToolNames(),
 		MaxTurns:        maxCopilotTurns,
 	})

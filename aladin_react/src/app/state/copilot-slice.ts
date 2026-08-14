@@ -72,6 +72,7 @@ export interface CopilotProposal {
 
 const localStorageKey = "aladin.copilot.activeThreadId";
 const modelStorageKey = "aladin.copilot.model";
+const effortStorageKey = "aladin.copilot.effort";
 const newThreadDraftKey = "__new__";
 const legacyModelIds: Record<string, string> = {
   opus: "claude-opus-5",
@@ -117,6 +118,30 @@ function persistModel(model: string | null) {
   try {
     if (model) window.localStorage.setItem(modelStorageKey, model);
     else window.localStorage.removeItem(modelStorageKey);
+  } catch {
+    // storage unavailable — the backend default still applies
+  }
+}
+
+function readPersistedEffort(): string | null {
+  try {
+    return normalizeCopilotEffortId(window.localStorage.getItem(effortStorageKey));
+  } catch {
+    return null;
+  }
+}
+
+function normalizeCopilotEffortId(effort: string | null | undefined): string | null {
+  const trimmed = effort?.trim().toLowerCase();
+  if (!trimmed) return null;
+  if (trimmed === "x-high" || trimmed === "extra-high") return "xhigh";
+  return trimmed;
+}
+
+function persistEffort(effort: string | null) {
+  try {
+    if (effort) window.localStorage.setItem(effortStorageKey, effort);
+    else window.localStorage.removeItem(effortStorageKey);
   } catch {
     // storage unavailable — the backend default still applies
   }
@@ -207,6 +232,8 @@ export interface CopilotSlice {
   copilotRealtimeState: CopilotRealtimeState;
   /** Selected model id for the next Copilot turn. */
   copilotModel: string | null;
+  /** Selected reasoning-effort id for the next Copilot turn. */
+  copilotEffort: string | null;
 
   toggleCopilot: () => void;
   setCopilotOpen: (open: boolean) => void;
@@ -259,6 +286,7 @@ export interface CopilotSlice {
   noteCopilotWsReconnect: () => void;
   setCopilotRealtimeState: (state: CopilotRealtimeState) => void;
   setCopilotModel: (model: string | null) => void;
+  setCopilotEffort: (effort: string | null) => void;
   setCopilotDraft: (threadId: string | null, text: string) => void;
   copilotDraftFor: (threadId: string | null) => string;
   /** Queue (or replace) one message to auto-send when the scoped running turn finishes. */
@@ -270,6 +298,7 @@ export interface CopilotSlice {
   /** The thread id persisted from the previous app run (for reload rehydrate). */
   persistedCopilotThreadId: () => string | null;
   persistedCopilotModel: () => string | null;
+  persistedCopilotEffort: () => string | null;
 }
 
 export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice> = (set, get) => ({
@@ -294,6 +323,7 @@ export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice
   copilotDrafts: {},
   copilotRealtimeState: "connecting",
   copilotModel: readPersistedModel(),
+  copilotEffort: readPersistedEffort(),
 
   toggleCopilot: () => set((state) => ({ copilotOpen: !state.copilotOpen })),
   setCopilotOpen: (open) => set({ copilotOpen: open }),
@@ -604,6 +634,12 @@ export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice
     set({ copilotModel: next });
   },
 
+  setCopilotEffort: (effort) => {
+    const next = normalizeCopilotEffortId(effort);
+    persistEffort(next);
+    set({ copilotEffort: next });
+  },
+
   setCopilotDraft: (threadId, text) =>
     set((state) => {
       const key = draftKey(threadId);
@@ -655,4 +691,5 @@ export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice
 
   persistedCopilotThreadId: () => readPersistedThreadId(),
   persistedCopilotModel: () => readPersistedModel(),
+  persistedCopilotEffort: () => readPersistedEffort(),
 });

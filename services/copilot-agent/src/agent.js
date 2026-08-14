@@ -87,6 +87,7 @@ async function runQuery({ queryFn, body, turn, writeEvent, resume, approvalTimeo
     options: {
       systemPrompt: body.systemPrompt,
       model: body.model || config.model,
+      effort: body.effort || config.effort,
       maxTurns: body.maxTurns || config.maxTurns,
       resume,
       includePartialMessages: true,

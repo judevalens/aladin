@@ -78,13 +78,21 @@ describe("CopilotDockUI integration", () => {
 
   it("renders the model switcher and changes the selected model", () => {
     const setSelectedModel = vi.fn();
+    const setSelectedEffort = vi.fn();
     mockedCopilot.current = makeCopilotState({
       activeModel: "claude-opus-5",
       defaultModel: "claude-opus-5",
       setSelectedModel,
+      activeEffort: "high",
+      defaultEffort: "high",
+      setSelectedEffort,
       modelOptions: [
         { id: "claude-opus-5", label: "Opus 5", description: "Deep work." },
         { id: "claude-sonnet-5", label: "Sonnet 5", description: "Fast work." },
+      ],
+      effortOptions: [
+        { id: "high", label: "High", description: "Deep reasoning." },
+        { id: "max", label: "Max", description: "Maximum effort." },
       ],
     });
 
@@ -94,6 +102,11 @@ describe("CopilotDockUI integration", () => {
     fireEvent.click(screen.getByText("Sonnet 5"));
 
     expect(setSelectedModel).toHaveBeenCalledWith("claude-sonnet-5");
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Copilot effort" }));
+    fireEvent.click(screen.getByText("Max"));
+
+    expect(setSelectedEffort).toHaveBeenCalledWith("max");
   });
 });
 
@@ -129,6 +142,10 @@ function makeCopilotState(overrides: Partial<CopilotHookState> = {}): CopilotHoo
     activeModel: "claude-opus-5",
     defaultModel: "claude-opus-5",
     setSelectedModel: vi.fn(),
+    effortOptions: [{ id: "high", label: "High", description: "Deep reasoning." }],
+    activeEffort: "high",
+    defaultEffort: "high",
+    setSelectedEffort: vi.fn(),
     queuedText: null,
     draftText: "",
     setDraftText: vi.fn(),
@@ -168,6 +185,10 @@ type CopilotHookState = {
   activeModel: string | null;
   defaultModel: string | null;
   setSelectedModel: (model: string) => void;
+  effortOptions: { id: string; label: string; description?: string }[];
+  activeEffort: string | null;
+  defaultEffort: string | null;
+  setSelectedEffort: (effort: string) => void;
   queuedText: string | null;
   draftText: string;
   setDraftText: (text: string) => void;

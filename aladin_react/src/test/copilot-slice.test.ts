@@ -29,6 +29,14 @@ describe("copilot proposal lifecycle", () => {
     expect(store.getState().copilotModel).toBe("claude-sonnet-5");
   });
 
+  it("normalizes selected effort ids", () => {
+    const store = makeStore();
+    store.getState().setCopilotEffort("x-high");
+    expect(store.getState().copilotEffort).toBe("xhigh");
+    store.getState().setCopilotEffort("MAX");
+    expect(store.getState().copilotEffort).toBe("max");
+  });
+
   it("adds proposals only for the in-flight session (second-window gate)", () => {
     const store = makeStore();
     startTurn(store);

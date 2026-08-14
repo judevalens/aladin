@@ -353,6 +353,30 @@ func TestCopilotSendPassesSelectedModel(t *testing.T) {
 	}
 }
 
+func TestCopilotSendPassesSelectedEffort(t *testing.T) {
+	const userID = "11111111-1111-1111-1111-111111111111"
+	agent := &fakeAgent{events: []copilotagent.Event{{Type: "done"}}, started: make(chan struct{})}
+	svc := NewCopilotService(CopilotDeps{Store: newFakeStore(), Agent: agent})
+
+	_, err := svc.SendMessage(context.Background(), CopilotSendInput{
+		Principal: Principal{UserID: userID},
+		Bearer:    "tok",
+		Text:      "use max effort",
+		Effort:    "max",
+	})
+	if err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	select {
+	case <-agent.started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for copilot turn to start")
+	}
+	if got := agent.request().Effort; got != "max" {
+		t.Fatalf("turn request effort = %q, want max", got)
+	}
+}
+
 func TestCopilotSendNormalizesLegacyModelID(t *testing.T) {
 	const userID = "11111111-1111-1111-1111-111111111111"
 	agent := &fakeAgent{events: []copilotagent.Event{{Type: "done"}}, started: make(chan struct{})}
@@ -392,6 +416,21 @@ func TestCopilotSendRejectsUnsupportedModel(t *testing.T) {
 	}
 }
 
+func TestCopilotSendRejectsUnsupportedEffort(t *testing.T) {
+	const userID = "11111111-1111-1111-1111-111111111111"
+	svc := NewCopilotService(CopilotDeps{Store: newFakeStore(), Agent: &fakeAgent{}})
+
+	_, err := svc.SendMessage(context.Background(), CopilotSendInput{
+		Principal: Principal{UserID: userID},
+		Bearer:    "tok",
+		Text:      "bad effort",
+		Effort:    "heroic",
+	})
+	if err == nil || !strings.Contains(err.Error(), "unsupported copilot effort") {
+		t.Fatalf("err = %v, want unsupported effort", err)
+	}
+}
+
 func TestCopilotStatusReportsModelCatalog(t *testing.T) {
 	svc := NewCopilotService(CopilotDeps{Store: newFakeStore(), Agent: &fakeAgent{}, Model: "claude-sonnet-5"})
 
@@ -400,8 +439,14 @@ func TestCopilotStatusReportsModelCatalog(t *testing.T) {
 	if status.DefaultModel != "claude-sonnet-5" {
 		t.Fatalf("default model = %q, want claude-sonnet-5", status.DefaultModel)
 	}
+	if status.DefaultEffort != "high" {
+		t.Fatalf("default effort = %q, want high", status.DefaultEffort)
+	}
 	if len(status.Models) < 2 {
 		t.Fatalf("expected model options, got %+v", status.Models)
+	}
+	if len(status.Efforts) != 5 {
+		t.Fatalf("expected effort options, got %+v", status.Efforts)
 	}
 	if status.Models[0].ID != "claude-opus-5" || status.Models[0].Label != "Opus 5" {
 		t.Fatalf("model catalog should expose API ids with friendly labels, got %+v", status.Models[0])

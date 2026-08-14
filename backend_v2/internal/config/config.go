@@ -142,6 +142,7 @@ type CopilotAgentConfig struct {
 	URL          string
 	SharedSecret string
 	Model        string
+	Effort       string
 }
 
 func LoadCopilotAgent() CopilotAgentConfig {
@@ -153,6 +154,7 @@ func LoadCopilotAgent() CopilotAgentConfig {
 		URL:          url,
 		SharedSecret: optional("COPILOT_AGENT_SHARED_SECRET", "local-dev-agent-secret"),
 		Model:        optional("COPILOT_MODEL", "claude-opus-5"),
+		Effort:       optional("COPILOT_EFFORT", "high"),
 	}
 }
 
