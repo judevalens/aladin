@@ -29,6 +29,9 @@ type CopilotService interface {
 	SendMessage(ctx context.Context, in CopilotSendInput) (CopilotSendResult, error)
 	ListThreads(ctx context.Context, userID string) ([]CopilotThread, error)
 	GetThread(ctx context.Context, userID, threadID string) (CopilotThreadDetail, error)
+	RenameThread(ctx context.Context, userID, threadID, title string) (CopilotThread, error)
+	ArchiveThread(ctx context.Context, userID, threadID string) error
+	SetThreadPinned(ctx context.Context, userID, threadID string, pinned bool) (CopilotThread, error)
 	// Cancel stops an in-flight turn (halting the work + cost), scoped to its owner.
 	Cancel(ctx context.Context, userID, sessionID string) error
 	// ApproveAction releases a gated tool call held open in the sidecar; RejectAction
@@ -44,9 +47,27 @@ type CopilotService interface {
 
 // CopilotStatusReport is the dock's preflight view of the copilot's health.
 type CopilotStatusReport struct {
-	Configured bool `json:"configured"`
-	Sidecar    bool `json:"sidecar"`
-	MCP        bool `json:"mcp"`
+	Configured    bool                  `json:"configured"`
+	Sidecar       bool                  `json:"sidecar"`
+	MCP           bool                  `json:"mcp"`
+	DefaultModel  string                `json:"defaultModel,omitempty"`
+	Models        []CopilotModelOption  `json:"models,omitempty"`
+	DefaultEffort string                `json:"defaultEffort,omitempty"`
+	Efforts       []CopilotEffortOption `json:"efforts,omitempty"`
+}
+
+// CopilotModelOption is one model the dock may select for the next turn.
+type CopilotModelOption struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+}
+
+// CopilotEffortOption is one reasoning-effort level the dock may select for the next turn.
+type CopilotEffortOption struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
 }
 
 // gatedToolNames are tools whose effects are hard to reverse — the sidecar's canUseTool
@@ -71,6 +92,8 @@ type CopilotSendInput struct {
 	Bearer   string
 	ThreadID string // "" ⇒ start a new thread
 	Text     string
+	Model    string
+	Effort   string
 	Surface  CopilotSurface
 }
 
@@ -90,6 +113,7 @@ type CopilotThread struct {
 	ID        string `json:"id"`
 	Title     string `json:"title"`
 	UpdatedAt string `json:"updatedAt"`
+	Pinned    bool   `json:"pinned"`
 	// SDKSessionID is the Claude Agent SDK session resumed on each turn (empty for
 	// fresh/legacy threads). Server-internal — never serialized to the client.
 	SDKSessionID string `json:"-"`
@@ -142,6 +166,9 @@ type CopilotStore interface {
 	ListThreads(ctx context.Context, userID string) ([]CopilotThread, error)
 	// GetThread returns the thread iff it belongs to userID (found=false otherwise).
 	GetThread(ctx context.Context, userID, threadID string) (CopilotThread, bool, error)
+	RenameThread(ctx context.Context, userID, threadID, title string) (CopilotThread, bool, error)
+	ArchiveThread(ctx context.Context, userID, threadID string) (bool, error)
+	SetThreadPinned(ctx context.Context, userID, threadID string, pinned bool) (CopilotThread, bool, error)
 	// SetThreadSDKSession stamps the Claude Agent SDK session id to resume next turn.
 	SetThreadSDKSession(ctx context.Context, threadID, sessionID string) error
 	AppendMessage(ctx context.Context, m StoredCopilotMessage) error
@@ -167,6 +194,8 @@ type CopilotDeps struct {
 	Realtime RealtimeEventService
 	// Model pins the sidecar's model per turn ("" ⇒ the sidecar's own default).
 	Model string
+	// Effort guides adaptive thinking depth per turn ("" ⇒ high, matching Claude Code default).
+	Effort string
 	// Surface-context preloading (all optional/nil-safe).
 	Snapshots QuoteSnapshotSource
 	Artifacts ArtifactService
@@ -175,7 +204,9 @@ type CopilotDeps struct {
 }
 
 const (
-	copilotResourceKind = "copilot"
+	copilotResourceKind  = "copilot"
+	defaultCopilotModel  = "claude-opus-5"
+	defaultCopilotEffort = "high"
 	// Authoring a shard/page is multi-step (create → write → build → fix → build → preview),
 	// so the loop needs real headroom; a Q&A answers in 1–3 and stops on its own. A
 	// comprehensive multi-section shard blew through 24, so this is sized for deep authoring;
@@ -192,8 +223,44 @@ const (
 	historyFallbackTurns = 12
 	historyFallbackChars = 6000
 	// maxActivityItems caps the per-turn tool digest persisted in message meta.
-	maxActivityItems = 40
+	maxActivityItems    = 40
+	maxToolSummaryChars = 180
 )
+
+var copilotModelCatalog = []CopilotModelOption{
+	{
+		ID:          "claude-opus-5",
+		Label:       "Opus 5",
+		Description: "Best reasoning for shard authoring and hard workspace tasks.",
+	},
+	{
+		ID:          "claude-sonnet-5",
+		Label:       "Sonnet 5",
+		Description: "Fast everyday coding and research assistant work.",
+	},
+	{
+		ID:          "claude-fable-5",
+		Label:       "Fable 5",
+		Description: "Quick lightweight answers when speed matters most.",
+	},
+}
+
+var legacyCopilotModelIDs = map[string]string{
+	"opus":    "claude-opus-5",
+	"opus5":   "claude-opus-5",
+	"sonnet":  "claude-sonnet-5",
+	"sonnet5": "claude-sonnet-5",
+	"fable":   "claude-fable-5",
+	"fable5":  "claude-fable-5",
+}
+
+var copilotEffortCatalog = []CopilotEffortOption{
+	{ID: "low", Label: "Low", Description: "Fastest responses with minimal thinking."},
+	{ID: "medium", Label: "Medium", Description: "Balanced reasoning for routine work."},
+	{ID: "high", Label: "High", Description: "Deep reasoning; Claude Code default."},
+	{ID: "xhigh", Label: "X-High", Description: "Deeper reasoning for harder agentic tasks."},
+	{ID: "max", Label: "Max", Description: "Maximum effort for the hardest long-running tasks."},
+}
 
 // runningTurn is a live agent turn's cancel handle, kept so the owner can stop it and
 // so SendMessage can refuse a second concurrent turn on the same thread.
@@ -234,15 +301,95 @@ func NewCopilotService(deps CopilotDeps) CopilotService {
 
 func (s *defaultCopilotService) Configured() bool { return s.Agent != nil }
 
+func (s *defaultCopilotService) defaultModel() string {
+	if model := strings.TrimSpace(s.Model); model != "" {
+		return model
+	}
+	return defaultCopilotModel
+}
+
+func (s *defaultCopilotService) defaultEffort() string {
+	if effort := strings.TrimSpace(s.Effort); effort != "" {
+		if normalized, ok := normalizeCopilotEffort(effort); ok {
+			return normalized
+		}
+	}
+	return defaultCopilotEffort
+}
+
+func (s *defaultCopilotService) modelOptions() []CopilotModelOption {
+	configured := s.defaultModel()
+	options := make([]CopilotModelOption, 0, len(copilotModelCatalog)+1)
+	seen := map[string]bool{}
+	for _, option := range copilotModelCatalog {
+		options = append(options, option)
+		seen[option.ID] = true
+	}
+	if !seen[configured] {
+		options = append([]CopilotModelOption{{
+			ID:          configured,
+			Label:       configured,
+			Description: "Configured backend default.",
+		}}, options...)
+	}
+	return options
+}
+
+func (s *defaultCopilotService) normalizeModel(model string) (string, bool) {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return s.defaultModel(), true
+	}
+	if normalized, ok := legacyCopilotModelIDs[model]; ok {
+		model = normalized
+	}
+	for _, option := range s.modelOptions() {
+		if model == option.ID {
+			return model, true
+		}
+	}
+	return "", false
+}
+
+func normalizeCopilotEffort(effort string) (string, bool) {
+	effort = strings.ToLower(strings.TrimSpace(effort))
+	if effort == "x-high" || effort == "extra-high" {
+		effort = "xhigh"
+	}
+	for _, option := range copilotEffortCatalog {
+		if effort == option.ID {
+			return effort, true
+		}
+	}
+	return "", false
+}
+
+func (s *defaultCopilotService) normalizeEffort(effort string) (string, bool) {
+	effort = strings.TrimSpace(effort)
+	if effort == "" {
+		return s.defaultEffort(), true
+	}
+	return normalizeCopilotEffort(effort)
+}
+
 func (s *defaultCopilotService) Status(ctx context.Context) CopilotStatusReport {
+	base := CopilotStatusReport{
+		Configured:    s.Agent != nil,
+		DefaultModel:  s.defaultModel(),
+		Models:        s.modelOptions(),
+		DefaultEffort: s.defaultEffort(),
+		Efforts:       copilotEffortCatalog,
+	}
 	if s.Agent == nil {
-		return CopilotStatusReport{}
+		return base
 	}
 	h, err := s.Agent.Healthz(ctx)
 	if err != nil {
-		return CopilotStatusReport{Configured: true}
+		return base
 	}
-	return CopilotStatusReport{Configured: true, Sidecar: h.OK, MCP: h.MCP}
+	base.Sidecar = h.OK
+	base.MCP = h.MCP
+	return base
 }
 
 // Cancel stops the in-flight turn for sessionID if it belongs to userID. Idempotent:
@@ -346,6 +493,14 @@ func (s *defaultCopilotService) SendMessage(ctx context.Context, in CopilotSendI
 	if strings.TrimSpace(in.Bearer) == "" {
 		return CopilotSendResult{}, ErrUnauthenticated
 	}
+	model, ok := s.normalizeModel(in.Model)
+	if !ok {
+		return CopilotSendResult{}, BadRequest("unsupported copilot model")
+	}
+	effort, ok := s.normalizeEffort(in.Effort)
+	if !ok {
+		return CopilotSendResult{}, BadRequest("unsupported copilot effort")
+	}
 
 	threadID := strings.TrimSpace(in.ThreadID)
 	if threadID == "" {
@@ -397,7 +552,7 @@ func (s *defaultCopilotService) SendMessage(ctx context.Context, in CopilotSendI
 	// Fire-and-forget turn, panic-contained: a malformed NDJSON event from the sidecar must not
 	// crash the api process. runAgent defers release(), so the hold-open slot is freed even on panic.
 	safego.Go("copilot.turn", func() {
-		s.runAgent(turnCtx, release, in.Principal, in.Bearer, threadID, sessionID, in.Surface)
+		s.runAgent(turnCtx, release, in.Principal, in.Bearer, threadID, sessionID, model, effort, in.Surface)
 	})
 	return CopilotSendResult{ThreadID: threadID, SessionID: sessionID}, nil
 }
@@ -424,12 +579,61 @@ func (s *defaultCopilotService) GetThread(ctx context.Context, userID, threadID 
 	return CopilotThreadDetail{Thread: thread, Messages: messages}, nil
 }
 
+func (s *defaultCopilotService) RenameThread(ctx context.Context, userID, threadID, title string) (CopilotThread, error) {
+	if strings.TrimSpace(userID) == "" {
+		return CopilotThread{}, ErrUnauthenticated
+	}
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return CopilotThread{}, BadRequest("title is required")
+	}
+	if len(title) > 120 {
+		title = title[:120]
+	}
+	thread, ok, err := s.Store.RenameThread(ctx, userID, threadID, title)
+	if err != nil {
+		return CopilotThread{}, err
+	}
+	if !ok {
+		return CopilotThread{}, ErrNotFound
+	}
+	return thread, nil
+}
+
+func (s *defaultCopilotService) ArchiveThread(ctx context.Context, userID, threadID string) error {
+	if strings.TrimSpace(userID) == "" {
+		return ErrUnauthenticated
+	}
+	ok, err := s.Store.ArchiveThread(ctx, userID, threadID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (s *defaultCopilotService) SetThreadPinned(ctx context.Context, userID, threadID string, pinned bool) (CopilotThread, error) {
+	if strings.TrimSpace(userID) == "" {
+		return CopilotThread{}, ErrUnauthenticated
+	}
+	thread, ok, err := s.Store.SetThreadPinned(ctx, userID, threadID, pinned)
+	if err != nil {
+		return CopilotThread{}, err
+	}
+	if !ok {
+		return CopilotThread{}, ErrNotFound
+	}
+	return thread, nil
+}
+
 // runAgent drives ONE turn through the sidecar, in its own goroutine: start the turn,
 // translate its NDJSON events onto the realtime hub, persist the final assistant turn
 // and the SDK session id. The ctx (principal + hard timeout) and its registration in
 // s.running are created by SendMessage under the per-thread guard; release deregisters
 // and cancels on exit.
-func (s *defaultCopilotService) runAgent(ctx context.Context, release func(), principal Principal, bearer, threadID, sessionID string, surface CopilotSurface) {
+func (s *defaultCopilotService) runAgent(ctx context.Context, release func(), principal Principal, bearer, threadID, sessionID, model, effort string, surface CopilotSurface) {
 	defer release()
 	userID := principal.UserID
 
@@ -470,7 +674,8 @@ func (s *defaultCopilotService) runAgent(ctx context.Context, release func(), pr
 		SystemPrompt:    sysPrompt,
 		Prompt:          prompt,
 		HistoryFallback: historyFallback(history),
-		Model:           s.Model,
+		Model:           model,
+		Effort:          effort,
 		GatedTools:      gatedToolNames(),
 		MaxTurns:        maxCopilotTurns,
 	})
@@ -495,7 +700,7 @@ func (s *defaultCopilotService) runAgent(ctx context.Context, release func(), pr
 		case "tool_start":
 			s.publish(userID, threadID, "tool", copilotToolPayload{
 				SessionID: sessionID, ThreadID: threadID,
-				Name: ev.Name, Label: toolLabel(ev.Name),
+				Name: ev.Name, Label: toolLabel(ev.Name), InputSummary: toolInputSummary(ev.Name, ev.Input),
 			})
 		case "thinking":
 			s.publish(userID, threadID, "thinking", copilotThinkingPayload{sessionID, threadID})
@@ -508,6 +713,7 @@ func (s *defaultCopilotService) runAgent(ctx context.Context, release func(), pr
 			}
 			s.publish(userID, threadID, "tool_done", copilotToolDonePayload{
 				SessionID: sessionID, ThreadID: threadID, Name: ev.Name, OK: !ev.IsError,
+				ResultSummary: toolResultSummary(ev.Content, ev.IsError),
 			})
 			if ev.ApprovalID != "" {
 				// The approved gated tool ran — settle the dock's approval card.
@@ -611,16 +817,18 @@ type copilotTokenPayload struct {
 	Delta     string `json:"delta"`
 }
 type copilotToolPayload struct {
-	SessionID string `json:"sessionId"`
-	ThreadID  string `json:"threadId"`
-	Name      string `json:"name"`
-	Label     string `json:"label"`
+	SessionID    string `json:"sessionId"`
+	ThreadID     string `json:"threadId"`
+	Name         string `json:"name"`
+	Label        string `json:"label"`
+	InputSummary string `json:"inputSummary,omitempty"`
 }
 type copilotToolDonePayload struct {
-	SessionID string `json:"sessionId"`
-	ThreadID  string `json:"threadId"`
-	Name      string `json:"name"`
-	OK        bool   `json:"ok"`
+	SessionID     string `json:"sessionId"`
+	ThreadID      string `json:"threadId"`
+	Name          string `json:"name"`
+	OK            bool   `json:"ok"`
+	ResultSummary string `json:"resultSummary,omitempty"`
 }
 type copilotThinkingPayload struct {
 	SessionID string `json:"sessionId"`
@@ -708,6 +916,123 @@ func firstLineOf(s, fallback string) string {
 	}
 	if len(s) > 200 {
 		s = s[:200] + "…"
+	}
+	return s
+}
+
+func toolInputSummary(tool string, input json.RawMessage) string {
+	if len(input) == 0 || string(input) == "null" {
+		return ""
+	}
+	var parsed any
+	if err := json.Unmarshal(input, &parsed); err != nil {
+		return capSummary(string(input))
+	}
+	sanitized := redactToolInput(parsed)
+	if m, ok := sanitized.(map[string]any); ok {
+		for _, key := range primaryToolInputKeys(tool) {
+			if value, ok := m[key]; ok {
+				if s := compactValue(value); s != "" {
+					return key + ": " + capSummary(s)
+				}
+			}
+		}
+	}
+	payload, err := json.Marshal(sanitized)
+	if err != nil {
+		return ""
+	}
+	return capSummary(string(payload))
+}
+
+func toolResultSummary(content string, isError bool) string {
+	if strings.TrimSpace(content) == "" {
+		if isError {
+			return "failed"
+		}
+		return ""
+	}
+	fallback := "done"
+	if isError {
+		fallback = "failed"
+	}
+	return capSummary(firstLineOf(content, fallback))
+}
+
+func primaryToolInputKeys(tool string) []string {
+	switch tool {
+	case "search", "search_pages", "get_news":
+		return []string{"query", "symbol"}
+	case "get_quote", "get_bars", "create_alert", "add_to_watchlist":
+		return []string{"symbol", "listName"}
+	case "get_artifact", "get_page", "read_document", "search_document":
+		return []string{"artifact_id", "artifactId", "page_id", "pageId", "query"}
+	case "read_file", "write_file", "edit_file", "delete_file":
+		return []string{"path", "page_id", "pageId"}
+	case "create_app", "publish_app", "build_app", "preview_open", "preview_snapshot":
+		return []string{"page_id", "pageId", "title"}
+	default:
+		return nil
+	}
+}
+
+func redactToolInput(v any) any {
+	switch x := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(x))
+		for k, v := range x {
+			if isSensitiveKey(k) {
+				out[k] = "[redacted]"
+			} else {
+				out[k] = redactToolInput(v)
+			}
+		}
+		return out
+	case []any:
+		out := make([]any, 0, min(len(x), 6))
+		for i, v := range x {
+			if i >= 6 {
+				out = append(out, "…")
+				break
+			}
+			out = append(out, redactToolInput(v))
+		}
+		return out
+	default:
+		return x
+	}
+}
+
+func isSensitiveKey(key string) bool {
+	key = strings.ToLower(key)
+	return strings.Contains(key, "token") ||
+		strings.Contains(key, "secret") ||
+		strings.Contains(key, "password") ||
+		strings.Contains(key, "bearer") ||
+		strings.Contains(key, "credential")
+}
+
+func compactValue(v any) string {
+	switch x := v.(type) {
+	case string:
+		return strings.TrimSpace(x)
+	case float64:
+		return fmt.Sprintf("%g", x)
+	case bool:
+		return fmt.Sprintf("%t", x)
+	default:
+		payload, err := json.Marshal(x)
+		if err != nil {
+			return ""
+		}
+		return string(payload)
+	}
+}
+
+func capSummary(s string) string {
+	s = strings.Join(strings.Fields(strings.TrimSpace(s)), " ")
+	if len(s) > maxToolSummaryChars {
+		return s[:maxToolSummaryChars] + "…"
 	}
 	return s
 }
@@ -837,7 +1162,24 @@ Market intelligence tools: get_news (explain WHY a stock moved — a catalyst vs
 You can also set PRICE ALERTS: create_alert (symbol, direction "above"/"below", threshold) — it's recurring and self-re-arms (fires on a genuine cross with momentum, then waits for a real pullback before it can fire again, so no jitter spam). Creating one asks the user to approve first. When it fires, the user gets a notification. list_alerts and delete_alert manage them. If the price is already past the threshold at creation, the alert is still set but won't fire until it pulls back and crosses again — tell the user that.
 Prefer specific, concise answers. When you reference an entity, artifact, or ticker, use the tool that fetches it so the app can cite it.
 If the tools return nothing relevant, say so plainly rather than guessing.
-If a tool returns an error, tell the user the EXACT error message verbatim and what you were trying to do — never vaguely say "a technical issue" or claim the action is impossible. The capability exists; a specific error means something is misconfigured (e.g. a service is down) and the exact text helps fix it.`)
+If a tool returns an error, tell the user the EXACT error message verbatim and what you were trying to do — never vaguely say "a technical issue" or claim the action is impossible. The capability exists; a specific error means something is misconfigured (e.g. a service is down) and the exact text helps fix it.
+
+You may enrich final answers with Aladin markdown directives. These directives are declarative data only: never put HTML, JavaScript, CSS, external URLs, or secrets in them. Keep ordinary prose readable before/after the block, and use a directive only when it helps the user inspect or act on workspace state.
+Supported directives:
+- ::aladin-artifact{id="artifact_id" kind="page|shard|document|artifact" title="Title"} for workspace objects you fetched or created.
+- ::aladin-ticker{symbol="NVDA"} for tickers you fetched.
+- :::aladin-activity ... ::: with a fenced JSON body: [{"label":"Read shard files","status":"ok|running|error","detail":"optional","inputSummary":"optional","resultSummary":"optional"}].
+- :::aladin-actions ... ::: with a fenced JSON body: [{"label":"Continue","action":"continue"},{"label":"Retry","action":"retry","prompt":"try again"},{"label":"Open shard","action":"open_artifact","artifactId":"...","kind":"shard"},{"label":"Open NVDA","action":"open_ticker","symbol":"NVDA"}].
+- :::aladin-approval ... ::: with a fenced JSON body: {"action":"Publish shard","target":"Shard title","status":"pending|approved|rejected|expired","risk":"what changes","details":["exact action"]} when summarizing a pending or completed gated action.
+- :::aladin-diff ... ::: with fenced JSON {"title":"Update","path":"src/index.tsx","lines":[{"kind":"context|add|remove","text":"..."}]} or a fenced short unified diff when showing edits.
+- :::aladin-shard-preview ... ::: with a fenced JSON body: {"artifactId":"...","title":"Shard title","status":"building|ready|published|error","previewUrl":"/local/path","diagnostics":["bounded build messages"]} after build/preview/publish work.
+- :::aladin-error-recovery ... ::: with a fenced JSON body: {"title":"Build failed","message":"exact error","code":"optional","actions":[...same action schema...]} for recoverable errors.
+Prefer aladin-activity for multi-step work, aladin-diff for material edits, aladin-shard-preview after shard builds/previews, and aladin-error-recovery when a user can retry or open context.
+Rich directive trigger rules:
+- After create_app, read_file, write_file, edit_file, build_app, preview_open, preview_snapshot, publish_app, or publish approval, include an aladin-activity summary and an aladin-shard-preview block when you know the shard id/title/status.
+- After update_page, insert_blocks, update_block, delete_block, write_file, or edit_file, include aladin-diff for the most important bounded change.
+- When a gated action is pending, approved, rejected, expired, or failed, include aladin-approval with exact action/target/risk/status details.
+- When build, preview, publish, or edit work fails but the user can retry or inspect context, include aladin-error-recovery with the exact error text and a retry/continue/open action.`)
 	if hint := surfaceHint(surface); hint != "" {
 		b.WriteString("\n\n")
 		b.WriteString(hint)

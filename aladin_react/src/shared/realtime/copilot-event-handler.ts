@@ -23,27 +23,34 @@ export function createCopilotEventHandler() {
 
     const sessionId = payload && typeof payload.sessionId === "string" ? payload.sessionId : "";
     if (!sessionId) return;
+    const threadId = payload && typeof payload.threadId === "string" ? payload.threadId : "";
 
     switch (event.type) {
       case "copilot.token": {
         const delta = typeof payload?.delta === "string" ? payload.delta : "";
-        if (delta) store.appendCopilotToken(sessionId, delta);
+        if (delta) store.appendCopilotToken(threadId, sessionId, delta);
         return;
       }
       case "copilot.tool": {
         const name = typeof payload?.name === "string" ? payload.name : "";
         const label =
           typeof payload?.label === "string" && payload.label ? payload.label : name;
-        if (label) store.setCopilotTool(sessionId, name || label, label);
+        const inputSummary =
+          typeof payload?.inputSummary === "string" ? payload.inputSummary : undefined;
+        if (label) store.setCopilotTool(threadId, sessionId, name || label, label, inputSummary);
         return;
       }
       case "copilot.tool_done": {
         const name = typeof payload?.name === "string" ? payload.name : "";
-        if (name) store.finishCopilotTool(sessionId, name, payload?.ok === true);
+        const resultSummary =
+          typeof payload?.resultSummary === "string" ? payload.resultSummary : undefined;
+        if (name) {
+          store.finishCopilotTool(threadId, sessionId, name, payload?.ok === true, resultSummary);
+        }
         return;
       }
       case "copilot.thinking":
-        store.setCopilotThinking(sessionId);
+        store.setCopilotThinking(threadId, sessionId);
         return;
       case "copilot.message": {
         const id = typeof payload?.messageId === "string" ? payload.messageId : `srv-${Date.now()}`;
@@ -55,24 +62,23 @@ export function createCopilotEventHandler() {
           payload?.meta && typeof payload.meta === "object"
             ? (payload.meta as CopilotMessageMeta)
             : undefined;
-        store.finishCopilotMessage(sessionId, { id, role: "assistant", content, citations, meta });
+        store.finishCopilotMessage(threadId, sessionId, { id, role: "assistant", content, citations, meta });
         return;
       }
       case "copilot.proposed_action": {
         const actionId = typeof payload?.actionId === "string" ? payload.actionId : "";
-        const threadId = typeof payload?.threadId === "string" ? payload.threadId : "";
         const tool = typeof payload?.tool === "string" ? payload.tool : "";
         const summary = typeof payload?.summary === "string" ? payload.summary : tool;
         if (actionId) store.addCopilotProposal({ actionId, threadId, sessionId, tool, summary });
         return;
       }
       case "copilot.done":
-        store.endCopilotTurn(sessionId);
+        store.endCopilotTurn(threadId, sessionId);
         return;
       case "copilot.error": {
         const message = typeof payload?.message === "string" ? payload.message : "The assistant hit an error.";
         const code = typeof payload?.code === "string" ? payload.code : undefined;
-        store.setCopilotError(sessionId, message, code);
+        store.setCopilotError(threadId, sessionId, message, code);
         return;
       }
     }

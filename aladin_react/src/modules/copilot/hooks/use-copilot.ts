@@ -1,7 +1,8 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAppComposition } from "@/app/composition/app-composition";
 import { useAppStore } from "@/app/state/store";
 import { useCurrentSurface } from "@/modules/copilot/hooks/use-current-surface";
+import type { CopilotEffortOption, CopilotModelOption } from "@/repos/copilot/copilot-repo";
 
 /**
  * How long the in-flight turn may go without a single live event before the watchdog
@@ -33,6 +34,7 @@ export function turnLooksStuck(input: {
 export function useCopilot() {
   const { repos } = useAppComposition();
   const surface = useCurrentSurface();
+  const surfaceQueueKey = copilotSurfaceQueueKey(surface);
 
   const open = useAppStore((s) => s.copilotOpen);
   const threads = useAppStore((s) => s.copilotThreads);
@@ -47,6 +49,24 @@ export function useCopilot() {
   const errorCode = useAppStore((s) => s.copilotErrorCode);
   const proposals = useAppStore((s) => s.copilotProposals);
   const wsReconnects = useAppStore((s) => s.copilotWsReconnects);
+  const draftText = useAppStore((s) => s.copilotDraftFor(s.activeThreadId));
+  const realtimeState = useAppStore((s) => s.copilotRealtimeState);
+  const selectedModel = useAppStore((s) => s.copilotModel);
+  const selectedEffort = useAppStore((s) => s.copilotEffort);
+  const [modelOptions, setModelOptions] = useState<CopilotModelOption[]>([]);
+  const [defaultModel, setDefaultModel] = useState<string | null>(null);
+  const [effortOptions, setEffortOptions] = useState<CopilotEffortOption[]>([]);
+  const [defaultEffort, setDefaultEffort] = useState<string | null>(null);
+  const validModelIds = useMemo(() => new Set(modelOptions.map((model) => model.id)), [modelOptions]);
+  const validEffortIds = useMemo(() => new Set(effortOptions.map((effort) => effort.id)), [effortOptions]);
+  const activeModel =
+    selectedModel && (modelOptions.length === 0 || validModelIds.has(selectedModel))
+      ? selectedModel
+      : defaultModel ?? modelOptions[0]?.id ?? null;
+  const activeEffort =
+    selectedEffort && (effortOptions.length === 0 || validEffortIds.has(selectedEffort))
+      ? selectedEffort
+      : defaultEffort ?? effortOptions[0]?.id ?? null;
 
   const loadThreads = useCallback(async () => {
     try {
@@ -67,9 +87,11 @@ export function useCopilot() {
       if (!text) return null;
       const store = useAppStore.getState();
       const threadId = store.activeThreadId ?? undefined;
+      const model = activeModel ?? undefined;
+      const effort = activeEffort ?? undefined;
       const localId = store.appendCopilotUserMessage(text);
       try {
-        const result = await repos.copilot.sendMessage({ threadId, text, surface });
+        const result = await repos.copilot.sendMessage({ threadId, text, model, effort, surface });
         useAppStore.getState().beginCopilotTurn(result.threadId, result.sessionId);
         void loadThreads();
         return null;
@@ -81,7 +103,7 @@ export function useCopilot() {
         return text;
       }
     },
-    [repos.copilot, surface, loadThreads],
+    [repos.copilot, surface, activeModel, activeEffort, loadThreads],
   );
 
   const reconcileActiveThread = useCallback(async () => {
@@ -105,6 +127,64 @@ export function useCopilot() {
       }
     },
     [repos.copilot],
+  );
+
+  const renameThread = useCallback(
+    async (threadId: string, title: string) => {
+      const trimmed = title.trim();
+      if (!trimmed) return false;
+      try {
+        const thread = await repos.copilot.renameThread(threadId, trimmed);
+        useAppStore.getState().renameCopilotThreadLocal(thread);
+        void loadThreads();
+        return true;
+      } catch {
+        useAppStore.setState({
+          copilotError: "Couldn't rename that thread — try again.",
+          copilotErrorCode: null,
+        });
+        return false;
+      }
+    },
+    [repos.copilot, loadThreads],
+  );
+
+  const archiveThread = useCallback(
+    async (threadId: string) => {
+      try {
+        await repos.copilot.archiveThread(threadId);
+        useAppStore.getState().archiveCopilotThreadLocal(threadId);
+        void loadThreads();
+        return true;
+      } catch {
+        useAppStore.setState({
+          copilotError: "Couldn't archive that thread — try again.",
+          copilotErrorCode: null,
+        });
+        return false;
+      }
+    },
+    [repos.copilot, loadThreads],
+  );
+
+  const setThreadPinned = useCallback(
+    async (threadId: string, pinned: boolean) => {
+      try {
+        const thread = await repos.copilot.setThreadPinned(threadId, pinned);
+        useAppStore.getState().updateCopilotThreadLocal(thread);
+        void loadThreads();
+        return true;
+      } catch {
+        useAppStore.setState({
+          copilotError: pinned
+            ? "Couldn't pin that thread — try again."
+            : "Couldn't unpin that thread — try again.",
+          copilotErrorCode: null,
+        });
+        return false;
+      }
+    },
+    [repos.copilot, loadThreads],
   );
 
   const stop = useCallback(() => {
@@ -193,18 +273,45 @@ export function useCopilot() {
     }
   }, [wsReconnects, reconcileActiveThread]);
 
-  // Queue-of-one: a message typed during a turn auto-sends when the turn finishes.
-  const queuedText = useAppStore((s) => s.copilotQueuedText);
+  const queueFollowup = useCallback(
+    (text: string | null) => {
+      useAppStore.getState().queueCopilotText(
+        text,
+        text === null ? undefined : { threadId: useAppStore.getState().activeThreadId, surfaceKey: surfaceQueueKey },
+      );
+    },
+    [surfaceQueueKey],
+  );
+
+  // Queue-of-one: a message typed during a turn auto-sends when the scoped turn finishes.
+  const queuedText = useAppStore((s) => s.copilotQueuedTextFor(s.activeThreadId, surfaceQueueKey));
   useEffect(() => {
     if (status !== "idle" || queuedText === null) return;
-    const text = useAppStore.getState().takeCopilotQueuedText();
+    const state = useAppStore.getState();
+    const text = state.takeCopilotQueuedText(state.activeThreadId, surfaceQueueKey);
     if (text) void send(text);
-  }, [status, queuedText, send]);
+  }, [status, queuedText, send, surfaceQueueKey]);
 
   /** Preflight health → a user-facing warning line, or null when all is well/unknown. */
   const fetchHealthWarning = useCallback(async (): Promise<string | null> => {
     try {
       const s = await repos.copilot.getStatus();
+      const models = (s.models ?? []).filter((model) => model.id && model.label);
+      const nextDefault = s.defaultModel ?? models[0]?.id ?? null;
+      const efforts = (s.efforts ?? []).filter((effort) => effort.id && effort.label);
+      const nextDefaultEffort = s.defaultEffort ?? efforts[0]?.id ?? null;
+      setModelOptions(models);
+      setDefaultModel(nextDefault);
+      setEffortOptions(efforts);
+      setDefaultEffort(nextDefaultEffort);
+      const currentModel = useAppStore.getState().copilotModel;
+      if (currentModel && models.length > 0 && !models.some((model) => model.id === currentModel)) {
+        useAppStore.getState().setCopilotModel(nextDefault ?? models[0]?.id ?? null);
+      }
+      const currentEffort = useAppStore.getState().copilotEffort;
+      if (currentEffort && efforts.length > 0 && !efforts.some((effort) => effort.id === currentEffort)) {
+        useAppStore.getState().setCopilotEffort(nextDefaultEffort ?? efforts[0]?.id ?? null);
+      }
       if (!s.configured) return "The copilot is not configured on this backend.";
       if (!s.sidecar) return "The copilot agent is unreachable — answers will fail.";
       if (!s.mcp) return "The copilot's tool server is unreachable — answers may fail. Is `make mcp` running?";
@@ -216,6 +323,25 @@ export function useCopilot() {
 
   const newThread = useCallback(() => useAppStore.getState().newCopilotThread(), []);
   const setOpen = useCallback((next: boolean) => useAppStore.getState().setCopilotOpen(next), []);
+  const setSelectedModel = useCallback(
+    (model: string) => {
+      const next = validModelIds.size === 0 || validModelIds.has(model) ? model : defaultModel;
+      useAppStore.getState().setCopilotModel(next ?? null);
+    },
+    [validModelIds, defaultModel],
+  );
+  const setSelectedEffort = useCallback(
+    (effort: string) => {
+      const next = validEffortIds.size === 0 || validEffortIds.has(effort) ? effort : defaultEffort;
+      useAppStore.getState().setCopilotEffort(next ?? null);
+    },
+    [validEffortIds, defaultEffort],
+  );
+  const setDraftText = useCallback(
+    (text: string) =>
+      useAppStore.getState().setCopilotDraft(useAppStore.getState().activeThreadId, text),
+    [],
+  );
 
   return {
     open,
@@ -238,8 +364,41 @@ export function useCopilot() {
     rejectProposal,
     loadThreads,
     openThread,
+    renameThread,
+    archiveThread,
+    setThreadPinned,
     newThread,
     fetchHealthWarning,
+    modelOptions,
+    activeModel,
+    defaultModel,
+    setSelectedModel,
+    effortOptions,
+    activeEffort,
+    defaultEffort,
+    setSelectedEffort,
     queuedText,
+    queueFollowup,
+    draftText,
+    setDraftText,
+    realtimeState,
   };
+}
+
+export function copilotSurfaceQueueKey(surface: ReturnType<typeof useCurrentSurface>): string | null {
+  if (!surface) return null;
+  switch (surface.kind) {
+    case "ticker":
+      return surface.symbol ? `ticker:${surface.symbol.toUpperCase()}` : "ticker";
+    case "entity":
+      return surface.id ? `entity:${surface.id}` : "entity";
+    case "artifact":
+    case "page":
+    case "shard":
+      return surface.id ? `artifact:${surface.id}` : surface.kind;
+    case "markets":
+      return "markets";
+    default:
+      return surface.kind || null;
+  }
 }

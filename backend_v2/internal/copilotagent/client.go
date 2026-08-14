@@ -33,6 +33,7 @@ type TurnRequest struct {
 	Prompt          string   `json:"prompt"`
 	HistoryFallback string   `json:"historyFallback,omitempty"`
 	Model           string   `json:"model,omitempty"`
+	Effort          string   `json:"effort,omitempty"`
 	GatedTools      []string `json:"gatedTools,omitempty"`
 	MaxTurns        int      `json:"maxTurns,omitempty"`
 }

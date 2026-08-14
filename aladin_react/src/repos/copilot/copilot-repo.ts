@@ -1,4 +1,5 @@
 import type { ApiClient } from "@/shared/api/client";
+import type { ArtifactKind } from "@/shared/api/models";
 import type {
   CopilotCitation,
   CopilotMessageMeta,
@@ -12,11 +13,14 @@ export interface CopilotSurface {
   id?: string;
   symbol?: string;
   label?: string;
+  artifactKind?: ArtifactKind;
 }
 
 export interface CopilotSendRequest {
   threadId?: string;
   text: string;
+  model?: string;
+  effort?: string;
   surface?: CopilotSurface;
 }
 
@@ -49,6 +53,9 @@ export interface CopilotRepo {
   rejectAction(actionId: string): Promise<void>;
   listThreads(): Promise<CopilotThreadView[]>;
   getThread(threadId: string): Promise<CopilotThreadDetail>;
+  renameThread(threadId: string, title: string): Promise<CopilotThreadView>;
+  archiveThread(threadId: string): Promise<void>;
+  setThreadPinned(threadId: string, pinned: boolean): Promise<CopilotThreadView>;
   /** Preflight health: is the sidecar up and its MCP tool server reachable? */
   getStatus(): Promise<CopilotStatus>;
 }
@@ -57,6 +64,22 @@ export interface CopilotStatus {
   configured: boolean;
   sidecar: boolean;
   mcp: boolean;
+  defaultModel?: string;
+  models?: CopilotModelOption[] | null;
+  defaultEffort?: string;
+  efforts?: CopilotEffortOption[] | null;
+}
+
+export interface CopilotModelOption {
+  id: string;
+  label: string;
+  description?: string;
+}
+
+export interface CopilotEffortOption {
+  id: string;
+  label: string;
+  description?: string;
 }
 
 function toMessageView(m: CopilotMessageWire): CopilotMessageView {
@@ -77,6 +100,8 @@ export function createCopilotRepo(client: ApiClient): CopilotRepo {
         body: JSON.stringify({
           threadId: req.threadId,
           text: req.text,
+          model: req.model,
+          effort: req.effort,
           surface: req.surface,
         }),
       }),
@@ -115,5 +140,24 @@ export function createCopilotRepo(client: ApiClient): CopilotRepo {
           thread: res.thread,
           messages: (res.messages ?? []).map(toMessageView),
         })),
+
+    renameThread: (threadId, title) =>
+      client.fetch<CopilotThreadView>(`/api/copilot/threads/${encodeURIComponent(threadId)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ title }),
+      }),
+
+    archiveThread: (threadId) =>
+      client
+        .fetch<{ ok: boolean }>(`/api/copilot/threads/${encodeURIComponent(threadId)}`, {
+          method: "DELETE",
+        })
+        .then(() => undefined),
+
+    setThreadPinned: (threadId, pinned) =>
+      client.fetch<CopilotThreadView>(`/api/copilot/threads/${encodeURIComponent(threadId)}/pin`, {
+        method: "POST",
+        body: JSON.stringify({ pinned }),
+      }),
   };
 }

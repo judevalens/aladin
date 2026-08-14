@@ -14,7 +14,7 @@ PROD_COMPOSE := docker compose -p aladin-prod --env-file backend_v2/.env.prod -f
 PROD_PROFILES ?= api,worker,mcp,collab,copilot
 # Env keys the copilot-agent Node sidecar needs from backend_v2/.env (it does
 # not load .env itself, unlike the Go binaries' godotenv).
-COPILOT_AGENT_ENV_KEYS = --key ANTHROPIC_API_KEY --key COPILOT_MODEL --key COPILOT_AGENT_SHARED_SECRET --key ALADIN_MCP_URL --key COPILOT_AUTH
+COPILOT_AGENT_ENV_KEYS = --key ANTHROPIC_API_KEY --key COPILOT_MODEL --key COPILOT_EFFORT --key COPILOT_AGENT_SHARED_SECRET --key ALADIN_MCP_URL --key COPILOT_AUTH
 
 # Doc Surface page file store (users/{userId}/pages/{pageId}/...). The API
 # process SERVES built dist from here; the MCP process WRITES files + BUILDS into

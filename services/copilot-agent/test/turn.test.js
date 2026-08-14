@@ -59,7 +59,7 @@ async function run(body, queryFn) {
 
 test("happy path: session → message → exactly one trailing done", async () => {
   const q = fakeQuery([init, okResult]);
-  const events = await run({ ...baseBody, turnId: "t-happy" }, q);
+  const events = await run({ ...baseBody, turnId: "t-happy", model: "claude-opus-5", effort: "xhigh" }, q);
 
   assert.deepEqual(
     events.map((e) => e.type),
@@ -74,6 +74,8 @@ test("happy path: session → message → exactly one trailing done", async () =
   assert.deepEqual(opts.tools, []);
   assert.equal(opts.mcpServers.aladin.headers.Authorization, "Bearer tok");
   assert.equal(opts.systemPrompt, "You are the copilot.");
+  assert.equal(opts.model, "claude-opus-5");
+  assert.equal(opts.effort, "xhigh");
   assert.equal(typeof opts.canUseTool, "function");
 });
 

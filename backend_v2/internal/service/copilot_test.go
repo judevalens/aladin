@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
@@ -113,19 +114,30 @@ func (a *fakeAgent) resolveCalls() []resolveCall {
 type fakeCopilotStore struct {
 	mu          sync.Mutex
 	owners      map[string]string
+	titles      map[string]string
+	archived    map[string]bool
+	pinned      map[string]bool
 	msgs        map[string][]CopilotMessage
 	sdkSessions map[string]string
 	touches     int
 }
 
 func newFakeStore() *fakeCopilotStore {
-	return &fakeCopilotStore{owners: map[string]string{}, msgs: map[string][]CopilotMessage{}, sdkSessions: map[string]string{}}
+	return &fakeCopilotStore{
+		owners:      map[string]string{},
+		titles:      map[string]string{},
+		archived:    map[string]bool{},
+		pinned:      map[string]bool{},
+		msgs:        map[string][]CopilotMessage{},
+		sdkSessions: map[string]string{},
+	}
 }
 
-func (s *fakeCopilotStore) CreateThread(_ context.Context, id, userID, _ string) error {
+func (s *fakeCopilotStore) CreateThread(_ context.Context, id, userID, title string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.owners[id] = userID
+	s.titles[id] = title
 	return nil
 }
 func (s *fakeCopilotStore) TouchThread(_ context.Context, _ string) error {
@@ -140,10 +152,37 @@ func (s *fakeCopilotStore) ListThreads(_ context.Context, _ string) ([]CopilotTh
 func (s *fakeCopilotStore) GetThread(_ context.Context, userID, threadID string) (CopilotThread, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.owners[threadID] != userID {
+	if s.owners[threadID] != userID || s.archived[threadID] {
 		return CopilotThread{}, false, nil
 	}
-	return CopilotThread{ID: threadID, SDKSessionID: s.sdkSessions[threadID]}, true, nil
+	return CopilotThread{ID: threadID, Title: s.titles[threadID], SDKSessionID: s.sdkSessions[threadID], Pinned: s.pinned[threadID]}, true, nil
+}
+func (s *fakeCopilotStore) RenameThread(_ context.Context, userID, threadID, title string) (CopilotThread, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.owners[threadID] != userID || s.archived[threadID] {
+		return CopilotThread{}, false, nil
+	}
+	s.titles[threadID] = title
+	return CopilotThread{ID: threadID, Title: title, SDKSessionID: s.sdkSessions[threadID], Pinned: s.pinned[threadID]}, true, nil
+}
+func (s *fakeCopilotStore) ArchiveThread(_ context.Context, userID, threadID string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.owners[threadID] != userID || s.archived[threadID] {
+		return false, nil
+	}
+	s.archived[threadID] = true
+	return true, nil
+}
+func (s *fakeCopilotStore) SetThreadPinned(_ context.Context, userID, threadID string, pinned bool) (CopilotThread, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.owners[threadID] != userID || s.archived[threadID] {
+		return CopilotThread{}, false, nil
+	}
+	s.pinned[threadID] = pinned
+	return CopilotThread{ID: threadID, Title: s.titles[threadID], SDKSessionID: s.sdkSessions[threadID], Pinned: pinned}, true, nil
 }
 func (s *fakeCopilotStore) SetThreadSDKSession(_ context.Context, threadID, sessionID string) error {
 	s.mu.Lock()
@@ -290,6 +329,130 @@ loop:
 	}
 }
 
+func TestCopilotSendPassesSelectedModel(t *testing.T) {
+	const userID = "11111111-1111-1111-1111-111111111111"
+	agent := &fakeAgent{events: []copilotagent.Event{{Type: "done"}}, started: make(chan struct{})}
+	svc := NewCopilotService(CopilotDeps{Store: newFakeStore(), Agent: agent})
+
+	_, err := svc.SendMessage(context.Background(), CopilotSendInput{
+		Principal: Principal{UserID: userID},
+		Bearer:    "tok",
+		Text:      "use sonnet",
+		Model:     "claude-sonnet-5",
+	})
+	if err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	select {
+	case <-agent.started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for copilot turn to start")
+	}
+	if got := agent.request().Model; got != "claude-sonnet-5" {
+		t.Fatalf("turn request model = %q, want claude-sonnet-5", got)
+	}
+}
+
+func TestCopilotSendPassesSelectedEffort(t *testing.T) {
+	const userID = "11111111-1111-1111-1111-111111111111"
+	agent := &fakeAgent{events: []copilotagent.Event{{Type: "done"}}, started: make(chan struct{})}
+	svc := NewCopilotService(CopilotDeps{Store: newFakeStore(), Agent: agent})
+
+	_, err := svc.SendMessage(context.Background(), CopilotSendInput{
+		Principal: Principal{UserID: userID},
+		Bearer:    "tok",
+		Text:      "use max effort",
+		Effort:    "max",
+	})
+	if err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	select {
+	case <-agent.started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for copilot turn to start")
+	}
+	if got := agent.request().Effort; got != "max" {
+		t.Fatalf("turn request effort = %q, want max", got)
+	}
+}
+
+func TestCopilotSendNormalizesLegacyModelID(t *testing.T) {
+	const userID = "11111111-1111-1111-1111-111111111111"
+	agent := &fakeAgent{events: []copilotagent.Event{{Type: "done"}}, started: make(chan struct{})}
+	svc := NewCopilotService(CopilotDeps{Store: newFakeStore(), Agent: agent})
+
+	_, err := svc.SendMessage(context.Background(), CopilotSendInput{
+		Principal: Principal{UserID: userID},
+		Bearer:    "tok",
+		Text:      "legacy model",
+		Model:     "opus5",
+	})
+	if err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	select {
+	case <-agent.started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for copilot turn to start")
+	}
+	if got := agent.request().Model; got != "claude-opus-5" {
+		t.Fatalf("turn request model = %q, want claude-opus-5", got)
+	}
+}
+
+func TestCopilotSendRejectsUnsupportedModel(t *testing.T) {
+	const userID = "11111111-1111-1111-1111-111111111111"
+	svc := NewCopilotService(CopilotDeps{Store: newFakeStore(), Agent: &fakeAgent{}})
+
+	_, err := svc.SendMessage(context.Background(), CopilotSendInput{
+		Principal: Principal{UserID: userID},
+		Bearer:    "tok",
+		Text:      "bad model",
+		Model:     "claude-typo",
+	})
+	if err == nil || !strings.Contains(err.Error(), "unsupported copilot model") {
+		t.Fatalf("err = %v, want unsupported model", err)
+	}
+}
+
+func TestCopilotSendRejectsUnsupportedEffort(t *testing.T) {
+	const userID = "11111111-1111-1111-1111-111111111111"
+	svc := NewCopilotService(CopilotDeps{Store: newFakeStore(), Agent: &fakeAgent{}})
+
+	_, err := svc.SendMessage(context.Background(), CopilotSendInput{
+		Principal: Principal{UserID: userID},
+		Bearer:    "tok",
+		Text:      "bad effort",
+		Effort:    "heroic",
+	})
+	if err == nil || !strings.Contains(err.Error(), "unsupported copilot effort") {
+		t.Fatalf("err = %v, want unsupported effort", err)
+	}
+}
+
+func TestCopilotStatusReportsModelCatalog(t *testing.T) {
+	svc := NewCopilotService(CopilotDeps{Store: newFakeStore(), Agent: &fakeAgent{}, Model: "claude-sonnet-5"})
+
+	status := svc.Status(context.Background())
+
+	if status.DefaultModel != "claude-sonnet-5" {
+		t.Fatalf("default model = %q, want claude-sonnet-5", status.DefaultModel)
+	}
+	if status.DefaultEffort != "high" {
+		t.Fatalf("default effort = %q, want high", status.DefaultEffort)
+	}
+	if len(status.Models) < 2 {
+		t.Fatalf("expected model options, got %+v", status.Models)
+	}
+	if len(status.Efforts) != 5 {
+		t.Fatalf("expected effort options, got %+v", status.Efforts)
+	}
+	if status.Models[0].ID != "claude-opus-5" || status.Models[0].Label != "Opus 5" {
+		t.Fatalf("model catalog should expose API ids with friendly labels, got %+v", status.Models[0])
+	}
+}
+
 // TestCopilotSendRequiresBearer — the sidecar's MCP calls are scoped by the forwarded
 // bearer, so a send without one is rejected before any turn starts.
 func TestCopilotSendRequiresBearer(t *testing.T) {
@@ -299,6 +462,97 @@ func TestCopilotSendRequiresBearer(t *testing.T) {
 	_, err := svc.SendMessage(context.Background(), CopilotSendInput{Principal: Principal{UserID: "u1"}, Text: "hi"})
 	if err == nil {
 		t.Fatal("expected an error when no bearer is forwarded")
+	}
+}
+
+func TestCopilotThreadManagementRenamesAndArchives(t *testing.T) {
+	store := newFakeStore()
+	const userID = "u1"
+	const threadID = "t1"
+	if err := store.CreateThread(context.Background(), threadID, userID, "Old title"); err != nil {
+		t.Fatalf("seed thread: %v", err)
+	}
+	svc := NewCopilotService(CopilotDeps{
+		Store: store, Agent: &fakeAgent{}, Realtime: NewInMemoryRealtimeEventService(NewSubscriptionKeyResolver()),
+	})
+
+	renamed, err := svc.RenameThread(context.Background(), userID, threadID, "  New title  ")
+	if err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	if renamed.Title != "New title" {
+		t.Fatalf("renamed title = %q, want trimmed title", renamed.Title)
+	}
+	pinned, err := svc.SetThreadPinned(context.Background(), userID, threadID, true)
+	if err != nil {
+		t.Fatalf("pin: %v", err)
+	}
+	if !pinned.Pinned {
+		t.Fatal("thread should be pinned")
+	}
+	unpinned, err := svc.SetThreadPinned(context.Background(), userID, threadID, false)
+	if err != nil {
+		t.Fatalf("unpin: %v", err)
+	}
+	if unpinned.Pinned {
+		t.Fatal("thread should be unpinned")
+	}
+	if _, err := svc.RenameThread(context.Background(), userID, threadID, "  "); err == nil {
+		t.Fatal("blank rename should fail")
+	}
+	if _, err := svc.RenameThread(context.Background(), "other", threadID, "Nope"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("non-owner rename err = %v, want ErrNotFound", err)
+	}
+
+	if err := svc.ArchiveThread(context.Background(), userID, threadID); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+	if _, err := svc.RenameThread(context.Background(), userID, threadID, "After archive"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("archived thread rename err = %v, want ErrNotFound", err)
+	}
+	if _, err := svc.SetThreadPinned(context.Background(), userID, threadID, true); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("archived thread pin err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestCopilotToolSummariesAreBoundedAndRedacted(t *testing.T) {
+	input := json.RawMessage(`{"query":"nvda","bearer":"secret-token","nested":{"password":"pw"}}`)
+	got := toolInputSummary("search", input)
+	if got != "query: nvda" {
+		t.Fatalf("primary summary = %q, want query only", got)
+	}
+	generic := toolInputSummary("unknown_tool", json.RawMessage(`{"token":"secret-token","path":"src/index.tsx"}`))
+	if strings.Contains(generic, "secret-token") {
+		t.Fatalf("summary leaked a token: %q", generic)
+	}
+	if !strings.Contains(generic, "[redacted]") || !strings.Contains(generic, "src/index.tsx") {
+		t.Fatalf("generic summary did not preserve safe context/redaction: %q", generic)
+	}
+	result := toolResultSummary(strings.Repeat("x", maxToolSummaryChars+20), false)
+	if len(result) <= maxToolSummaryChars || !strings.HasSuffix(result, "…") {
+		t.Fatalf("result summary was not capped: len=%d %q", len(result), result)
+	}
+}
+
+func TestCopilotSystemPromptAdvertisesRichDirectives(t *testing.T) {
+	prompt := (&defaultCopilotService{}).systemPrompt(CopilotSurface{})
+	for _, want := range []string{
+		"::aladin-artifact",
+		"::aladin-activity",
+		"::aladin-actions",
+		"::aladin-approval",
+		"::aladin-diff",
+		"::aladin-shard-preview",
+		"::aladin-error-recovery",
+		"never put HTML, JavaScript, CSS, external URLs, or secrets",
+		"Rich directive trigger rules",
+		"After create_app, read_file, write_file, edit_file, build_app",
+		"When a gated action is pending, approved, rejected, expired, or failed",
+		"include aladin-error-recovery with the exact error text",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("system prompt missing %q", want)
+		}
 	}
 }
 
