@@ -429,10 +429,11 @@ export function parseCopilotMarkdown(text: string): MarkdownSegment[] {
 
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
-    const leaf = /^::(aladin-[a-z0-9-]+)(\{[^}]*\})\s*$/.exec(line.trim());
+    const leaf = /^::(aladin-[a-z0-9-]+)(\{[^}]*\})([.:,;!?])?\s*$/.exec(line.trim());
     if (leaf) {
       flushMarkdown();
       segments.push({ kind: "directive", name: leaf[1], attrs: parseDirectiveAttrs(leaf[2]), body: "" });
+      if (leaf[3]) markdown.push(leaf[3]);
       continue;
     }
     const container = /^::(aladin-[a-z0-9-]+)\s*$/.exec(line.trim());

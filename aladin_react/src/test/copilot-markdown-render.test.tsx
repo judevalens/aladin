@@ -4,6 +4,21 @@ import { describe, expect, it, vi } from "vitest";
 import { CopilotMarkdown } from "@/modules/copilot/ui/copilot-markdown";
 
 describe("CopilotMarkdown rich directives", () => {
+  it("renders artifact leaf directives with trailing punctuation", () => {
+    render(
+      <MemoryRouter>
+        <CopilotMarkdown
+          text={
+            '::aladin-artifact{id="artifact-e5eb2565-2dee-44a2-b759-902adbd6e167" kind="shard" title="Day Trading Playbook"}:'
+          }
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole("button", { name: /Day Trading Playbook/ })).toBeTruthy();
+    expect(screen.getByText("shard")).toBeTruthy();
+  });
+
   it("renders native recovery and shard preview blocks with validated actions", () => {
     const onPrompt = vi.fn();
     render(

@@ -28,6 +28,26 @@ describe("parseCopilotMarkdown", () => {
     ]);
   });
 
+  it("accepts punctuation immediately after leaf directives", () => {
+    expect(
+      parseCopilotMarkdown(
+        '::aladin-artifact{id="artifact-e5eb2565-2dee-44a2-b759-902adbd6e167" kind="shard" title="Day Trading Playbook"}:',
+      ),
+    ).toEqual([
+      {
+        kind: "directive",
+        name: "aladin-artifact",
+        attrs: {
+          id: "artifact-e5eb2565-2dee-44a2-b759-902adbd6e167",
+          kind: "shard",
+          title: "Day Trading Playbook",
+        },
+        body: "",
+      },
+      { kind: "markdown", text: ":" },
+    ]);
+  });
+
   it("parses closed container directives and leaves unclosed ones as markdown", () => {
     expect(parseCopilotMarkdown('::aladin-activity\n[{"label":"Searched","status":"ok"}]\n::')).toEqual([
       {
