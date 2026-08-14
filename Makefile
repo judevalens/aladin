@@ -151,7 +151,7 @@ ops-reset-stuck-cycles: ## Close stale active/running cycles; optional AGE=30m
 	python3 scripts/ops/aladin_ops.py reset-stuck-cycles --age $(or $(AGE),30m)
 
 # --- PROD stack ---------------------------------------------------------------
-.PHONY: prod-env prod-check-env prod-build prod-up prod-down prod-restart prod-ps prod-logs prod-psql prod-backup prod-backup-install prod-backup-status prod-restore-drill prod-run prod-run-stop prod-run-status prod-update prod-doctor prod-help prod-nuke prod-release prod-release-list prod-release-clean prod-release-version prod-app prod-app-clear prod-app-uninstall
+.PHONY: prod-env prod-check-env prod-build prod-up prod-down prod-restart prod-ps prod-logs prod-psql prod-backup prod-backup-install prod-backup-status prod-restore-drill prod-run prod-run-stop prod-run-status prod-update prod-doctor prod-help prod-nuke prod-release prod-release-list prod-release-clean prod-release-version prod-app prod-app-deps prod-app-clear prod-app-uninstall
 
 PROD_BACKUP_INSTALL_DIR := $(HOME)/Library/Application Support/aladin
 
@@ -258,6 +258,7 @@ prod-help: ## Explain the prod commands: what to run, what each one touches, in 
 	  '    prod-update  ->  api, worker, mcp, blocknote, copilot-agent  (Go + node, from a git archive)' \
 	  '    prod-app     ->  the Tauri client — the ONLY way frontend code ships' \
 	  '    Neither builds the other. A frontend-only change needs prod-app, not prod-update.' \
+	    '    prod-app runs npm ci first when package-lock.json is newer than node_modules.' \
 	  '' \
 	  '\033[1m  Migrations\033[0m' \
 	  '    The api applies pending goose migrations ON BOOT. One-way — there is no down step.' \
@@ -301,7 +302,15 @@ prod-release-version: ## Show the VERSION stamp of the current release
 	@cat "$(HOME)/Library/Application Support/aladin/current/VERSION" 2>/dev/null \
 		|| echo ">> no current release — run 'make prod-release'"
 
-prod-app: ## Build the desktop app pointed at prod + install it to /Applications (identifier com.aladin.app)
+prod-app-deps:
+	@cd aladin_react && if [ ! -d node_modules ] || [ package-lock.json -nt node_modules/.package-lock.json ]; then \
+		echo ">> deps are stale (package-lock.json is newer than the installed tree) — npm ci"; \
+		npm ci; \
+	else \
+		echo ">> deps up to date"; \
+	fi
+
+prod-app: prod-app-deps ## Build the desktop app pointed at prod + install it to /Applications (identifier com.aladin.app)
 	cd aladin_react && VITE_DESKTOP_API_BASE_URL=http://localhost:8080 VITE_COLLAB_WS_URL=ws://localhost:3511 \
 		npm run tauri:build -- --bundles app \
 		--config '{"identifier":"com.aladin.app","productName":"Aladin"}'
