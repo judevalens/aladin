@@ -42,6 +42,7 @@ func (s *Server) handleCopilotReject(w http.ResponseWriter, r *http.Request) {
 type copilotMessageRequest struct {
 	ThreadID string                     `json:"threadId"`
 	Text     string                     `json:"text"`
+	Model    string                     `json:"model"`
 	Surface  coreservice.CopilotSurface `json:"surface"`
 }
 
@@ -64,6 +65,7 @@ func (s *Server) handleCopilotMessage(w http.ResponseWriter, r *http.Request) {
 		Bearer:    copilotBearer(r),
 		ThreadID:  req.ThreadID,
 		Text:      req.Text,
+		Model:     req.Model,
 		Surface:   req.Surface,
 	})
 	if err != nil {

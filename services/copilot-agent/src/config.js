@@ -29,7 +29,7 @@ export const config = {
 
   // Model + loop bounds. COPILOT_MODEL mirrors the Go-side default so either
   // process can pin it.
-  model: process.env.COPILOT_MODEL ?? "claude-opus-4-7",
+  model: process.env.COPILOT_MODEL ?? "opus5",
   // Fallback only — the Go API passes maxTurns per turn (keep in sync with
   // maxCopilotTurns in internal/service/copilot.go). Sized for deep shard
   // authoring; hitting it is recoverable ("continue" resumes the session).

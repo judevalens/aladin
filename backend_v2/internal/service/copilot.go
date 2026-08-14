@@ -47,9 +47,18 @@ type CopilotService interface {
 
 // CopilotStatusReport is the dock's preflight view of the copilot's health.
 type CopilotStatusReport struct {
-	Configured bool `json:"configured"`
-	Sidecar    bool `json:"sidecar"`
-	MCP        bool `json:"mcp"`
+	Configured   bool                 `json:"configured"`
+	Sidecar      bool                 `json:"sidecar"`
+	MCP          bool                 `json:"mcp"`
+	DefaultModel string               `json:"defaultModel,omitempty"`
+	Models       []CopilotModelOption `json:"models,omitempty"`
+}
+
+// CopilotModelOption is one model the dock may select for the next turn.
+type CopilotModelOption struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
 }
 
 // gatedToolNames are tools whose effects are hard to reverse — the sidecar's canUseTool
@@ -74,6 +83,7 @@ type CopilotSendInput struct {
 	Bearer   string
 	ThreadID string // "" ⇒ start a new thread
 	Text     string
+	Model    string
 	Surface  CopilotSurface
 }
 
@@ -183,6 +193,7 @@ type CopilotDeps struct {
 
 const (
 	copilotResourceKind = "copilot"
+	defaultCopilotModel = "opus5"
 	// Authoring a shard/page is multi-step (create → write → build → fix → build → preview),
 	// so the loop needs real headroom; a Q&A answers in 1–3 and stops on its own. A
 	// comprehensive multi-section shard blew through 24, so this is sized for deep authoring;
@@ -202,6 +213,24 @@ const (
 	maxActivityItems    = 40
 	maxToolSummaryChars = 180
 )
+
+var copilotModelCatalog = []CopilotModelOption{
+	{
+		ID:          "opus5",
+		Label:       "Opus 5",
+		Description: "Best reasoning for shard authoring and hard workspace tasks.",
+	},
+	{
+		ID:          "sonnet5",
+		Label:       "Sonnet 5",
+		Description: "Fast everyday coding and research assistant work.",
+	},
+	{
+		ID:          "fable5",
+		Label:       "Fable 5",
+		Description: "Quick lightweight answers when speed matters most.",
+	},
+}
 
 // runningTurn is a live agent turn's cancel handle, kept so the owner can stop it and
 // so SendMessage can refuse a second concurrent turn on the same thread.
@@ -242,15 +271,60 @@ func NewCopilotService(deps CopilotDeps) CopilotService {
 
 func (s *defaultCopilotService) Configured() bool { return s.Agent != nil }
 
+func (s *defaultCopilotService) defaultModel() string {
+	if model := strings.TrimSpace(s.Model); model != "" {
+		return model
+	}
+	return defaultCopilotModel
+}
+
+func (s *defaultCopilotService) modelOptions() []CopilotModelOption {
+	configured := s.defaultModel()
+	options := make([]CopilotModelOption, 0, len(copilotModelCatalog)+1)
+	seen := map[string]bool{}
+	for _, option := range copilotModelCatalog {
+		options = append(options, option)
+		seen[option.ID] = true
+	}
+	if !seen[configured] {
+		options = append([]CopilotModelOption{{
+			ID:          configured,
+			Label:       configured,
+			Description: "Configured backend default.",
+		}}, options...)
+	}
+	return options
+}
+
+func (s *defaultCopilotService) normalizeModel(model string) (string, bool) {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return s.defaultModel(), true
+	}
+	for _, option := range s.modelOptions() {
+		if model == option.ID {
+			return model, true
+		}
+	}
+	return "", false
+}
+
 func (s *defaultCopilotService) Status(ctx context.Context) CopilotStatusReport {
+	base := CopilotStatusReport{
+		Configured:   s.Agent != nil,
+		DefaultModel: s.defaultModel(),
+		Models:       s.modelOptions(),
+	}
 	if s.Agent == nil {
-		return CopilotStatusReport{}
+		return base
 	}
 	h, err := s.Agent.Healthz(ctx)
 	if err != nil {
-		return CopilotStatusReport{Configured: true}
+		return base
 	}
-	return CopilotStatusReport{Configured: true, Sidecar: h.OK, MCP: h.MCP}
+	base.Sidecar = h.OK
+	base.MCP = h.MCP
+	return base
 }
 
 // Cancel stops the in-flight turn for sessionID if it belongs to userID. Idempotent:
@@ -354,6 +428,10 @@ func (s *defaultCopilotService) SendMessage(ctx context.Context, in CopilotSendI
 	if strings.TrimSpace(in.Bearer) == "" {
 		return CopilotSendResult{}, ErrUnauthenticated
 	}
+	model, ok := s.normalizeModel(in.Model)
+	if !ok {
+		return CopilotSendResult{}, BadRequest("unsupported copilot model")
+	}
 
 	threadID := strings.TrimSpace(in.ThreadID)
 	if threadID == "" {
@@ -405,7 +483,7 @@ func (s *defaultCopilotService) SendMessage(ctx context.Context, in CopilotSendI
 	// Fire-and-forget turn, panic-contained: a malformed NDJSON event from the sidecar must not
 	// crash the api process. runAgent defers release(), so the hold-open slot is freed even on panic.
 	safego.Go("copilot.turn", func() {
-		s.runAgent(turnCtx, release, in.Principal, in.Bearer, threadID, sessionID, in.Surface)
+		s.runAgent(turnCtx, release, in.Principal, in.Bearer, threadID, sessionID, model, in.Surface)
 	})
 	return CopilotSendResult{ThreadID: threadID, SessionID: sessionID}, nil
 }
@@ -486,7 +564,7 @@ func (s *defaultCopilotService) SetThreadPinned(ctx context.Context, userID, thr
 // and the SDK session id. The ctx (principal + hard timeout) and its registration in
 // s.running are created by SendMessage under the per-thread guard; release deregisters
 // and cancels on exit.
-func (s *defaultCopilotService) runAgent(ctx context.Context, release func(), principal Principal, bearer, threadID, sessionID string, surface CopilotSurface) {
+func (s *defaultCopilotService) runAgent(ctx context.Context, release func(), principal Principal, bearer, threadID, sessionID, model string, surface CopilotSurface) {
 	defer release()
 	userID := principal.UserID
 
@@ -527,7 +605,7 @@ func (s *defaultCopilotService) runAgent(ctx context.Context, release func(), pr
 		SystemPrompt:    sysPrompt,
 		Prompt:          prompt,
 		HistoryFallback: historyFallback(history),
-		Model:           s.Model,
+		Model:           model,
 		GatedTools:      gatedToolNames(),
 		MaxTurns:        maxCopilotTurns,
 	})

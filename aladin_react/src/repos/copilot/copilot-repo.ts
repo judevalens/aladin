@@ -19,6 +19,7 @@ export interface CopilotSurface {
 export interface CopilotSendRequest {
   threadId?: string;
   text: string;
+  model?: string;
   surface?: CopilotSurface;
 }
 
@@ -62,6 +63,14 @@ export interface CopilotStatus {
   configured: boolean;
   sidecar: boolean;
   mcp: boolean;
+  defaultModel?: string;
+  models?: CopilotModelOption[] | null;
+}
+
+export interface CopilotModelOption {
+  id: string;
+  label: string;
+  description?: string;
 }
 
 function toMessageView(m: CopilotMessageWire): CopilotMessageView {
@@ -82,6 +91,7 @@ export function createCopilotRepo(client: ApiClient): CopilotRepo {
         body: JSON.stringify({
           threadId: req.threadId,
           text: req.text,
+          model: req.model,
           surface: req.surface,
         }),
       }),

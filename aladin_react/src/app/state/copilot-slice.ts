@@ -71,6 +71,7 @@ export interface CopilotProposal {
 }
 
 const localStorageKey = "aladin.copilot.activeThreadId";
+const modelStorageKey = "aladin.copilot.model";
 const newThreadDraftKey = "__new__";
 
 function readPersistedThreadId(): string | null {
@@ -87,6 +88,23 @@ function persistThreadId(threadId: string | null) {
     else window.localStorage.removeItem(localStorageKey);
   } catch {
     // storage unavailable — rehydrate is best-effort
+  }
+}
+
+function readPersistedModel(): string | null {
+  try {
+    return window.localStorage.getItem(modelStorageKey);
+  } catch {
+    return null;
+  }
+}
+
+function persistModel(model: string | null) {
+  try {
+    if (model) window.localStorage.setItem(modelStorageKey, model);
+    else window.localStorage.removeItem(modelStorageKey);
+  } catch {
+    // storage unavailable — the backend default still applies
   }
 }
 
@@ -173,6 +191,8 @@ export interface CopilotSlice {
   copilotDrafts: Record<string, string>;
   /** Realtime websocket state, exposed so stream gaps do not feel like dead air. */
   copilotRealtimeState: CopilotRealtimeState;
+  /** Selected model id for the next Copilot turn. */
+  copilotModel: string | null;
 
   toggleCopilot: () => void;
   setCopilotOpen: (open: boolean) => void;
@@ -224,6 +244,7 @@ export interface CopilotSlice {
   reconcileCopilotThread: (threadId: string, messages: CopilotMessageView[]) => void;
   noteCopilotWsReconnect: () => void;
   setCopilotRealtimeState: (state: CopilotRealtimeState) => void;
+  setCopilotModel: (model: string | null) => void;
   setCopilotDraft: (threadId: string | null, text: string) => void;
   copilotDraftFor: (threadId: string | null) => string;
   /** Queue (or replace) one message to auto-send when the scoped running turn finishes. */
@@ -234,6 +255,7 @@ export interface CopilotSlice {
   takeCopilotQueuedText: (threadId: string | null, surfaceKey: string | null) => string | null;
   /** The thread id persisted from the previous app run (for reload rehydrate). */
   persistedCopilotThreadId: () => string | null;
+  persistedCopilotModel: () => string | null;
 }
 
 export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice> = (set, get) => ({
@@ -257,6 +279,7 @@ export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice
   copilotQueuedSurfaceKey: null,
   copilotDrafts: {},
   copilotRealtimeState: "connecting",
+  copilotModel: readPersistedModel(),
 
   toggleCopilot: () => set((state) => ({ copilotOpen: !state.copilotOpen })),
   setCopilotOpen: (open) => set({ copilotOpen: open }),
@@ -561,6 +584,12 @@ export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice
 
   setCopilotRealtimeState: (next) => set({ copilotRealtimeState: next }),
 
+  setCopilotModel: (model) => {
+    const next = model?.trim() || null;
+    persistModel(next);
+    set({ copilotModel: next });
+  },
+
   setCopilotDraft: (threadId, text) =>
     set((state) => {
       const key = draftKey(threadId);
@@ -611,4 +640,5 @@ export const createCopilotSlice: StateCreator<CopilotSlice, [], [], CopilotSlice
   },
 
   persistedCopilotThreadId: () => readPersistedThreadId(),
+  persistedCopilotModel: () => readPersistedModel(),
 });

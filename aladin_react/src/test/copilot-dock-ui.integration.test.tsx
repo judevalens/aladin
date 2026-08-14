@@ -75,6 +75,26 @@ describe("CopilotDockUI integration", () => {
     expect(screen.queryByRole("button", { name: /latest/i })).toBeNull();
     expect(transcript.scrollTop).toBe(1000);
   });
+
+  it("renders the model switcher and changes the selected model", () => {
+    const setSelectedModel = vi.fn();
+    mockedCopilot.current = makeCopilotState({
+      activeModel: "opus5",
+      defaultModel: "opus5",
+      setSelectedModel,
+      modelOptions: [
+        { id: "opus5", label: "Opus 5", description: "Deep work." },
+        { id: "sonnet5", label: "Sonnet 5", description: "Fast work." },
+      ],
+    });
+
+    render(<CopilotDockUI />);
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Copilot model" }));
+    fireEvent.click(screen.getByText("Sonnet 5"));
+
+    expect(setSelectedModel).toHaveBeenCalledWith("sonnet5");
+  });
 });
 
 function makeCopilotState(overrides: Partial<CopilotHookState> = {}): CopilotHookState {
@@ -105,6 +125,10 @@ function makeCopilotState(overrides: Partial<CopilotHookState> = {}): CopilotHoo
     setThreadPinned: vi.fn(async () => true),
     newThread: vi.fn(),
     fetchHealthWarning: vi.fn(async () => null),
+    modelOptions: [{ id: "opus5", label: "Opus 5", description: "Deep work." }],
+    activeModel: "opus5",
+    defaultModel: "opus5",
+    setSelectedModel: vi.fn(),
     queuedText: null,
     draftText: "",
     setDraftText: vi.fn(),
@@ -140,6 +164,10 @@ type CopilotHookState = {
   setThreadPinned: (threadId: string, pinned: boolean) => Promise<boolean>;
   newThread: () => void;
   fetchHealthWarning: () => Promise<string | null>;
+  modelOptions: { id: string; label: string; description?: string }[];
+  activeModel: string | null;
+  defaultModel: string | null;
+  setSelectedModel: (model: string) => void;
   queuedText: string | null;
   draftText: string;
   setDraftText: (text: string) => void;

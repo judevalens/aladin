@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { Icon } from "@/components/ui/icon";
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
-import type { CopilotSurface } from "@/repos/copilot/copilot-repo";
+import type { CopilotModelOption, CopilotSurface } from "@/repos/copilot/copilot-repo";
 import type { CopilotProposal, CopilotThreadView, CopilotToolRun } from "@/app/state/copilot-slice";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ARTIFACT_ICONS } from "@/modules/workspace/ui/kind-icons";
@@ -80,6 +80,10 @@ export function CopilotDockUI() {
     setThreadPinned,
     newThread,
     fetchHealthWarning,
+    modelOptions,
+    activeModel,
+    defaultModel,
+    setSelectedModel,
     queuedText,
     draftText,
     setDraftText,
@@ -197,10 +201,10 @@ export function CopilotDockUI() {
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="ml-1 flex items-center gap-1 rounded-chip px-1.5 py-0.5 font-mono text-meta text-ink-3 hover:bg-raise hover:text-ink"
+                className="ml-1 flex max-w-[118px] items-center gap-1 rounded-chip px-1.5 py-0.5 font-mono text-meta text-ink-3 hover:bg-raise hover:text-ink"
                 aria-label="Threads"
               >
-                {activeThread(threads, activeThreadId) ?? "New chat"}
+                <span className="min-w-0 truncate">{activeThread(threads, activeThreadId) ?? "New chat"}</span>
                 <Icon as={ChevronDown} size="inline" mark />
               </button>
             </DropdownMenuTrigger>
@@ -321,7 +325,7 @@ export function CopilotDockUI() {
           <RealtimeStatusBanner state={realtimeState} />
           <div className="group rounded-card border border-line bg-field transition-colors focus-within:border-amber-line">
             {surfaceScope ? <ScopeChip scope={surfaceScope} onNewThread={newThread} /> : null}
-            <div className="flex items-end gap-2 px-3 py-2.5">
+            <div className="px-3 pt-2.5">
               <textarea
                 ref={inputRef}
                 value={draftText}
@@ -338,7 +342,15 @@ export function CopilotDockUI() {
                 rows={2}
                 aria-label="Message Copilot"
                 placeholder={composerPlaceholder(busy, surfaceLabel)}
-                className="min-h-[44px] flex-1 resize-none bg-transparent py-0.5 text-body leading-relaxed text-ink outline-none placeholder:text-ink-4"
+                className="min-h-[44px] w-full resize-none bg-transparent py-0.5 text-body leading-relaxed text-ink outline-none placeholder:text-ink-4"
+              />
+            </div>
+            <div className="flex items-center justify-end gap-1.5 px-2.5 pb-2 pt-1">
+              <ModelSwitcher
+                models={modelOptions}
+                activeModel={activeModel}
+                defaultModel={defaultModel}
+                onSelect={setSelectedModel}
               />
               <div className="flex shrink-0 items-center gap-1">
                 {busy ? (
@@ -373,6 +385,65 @@ export function CopilotDockUI() {
         </div>
       </aside>
     </div>
+  );
+}
+
+function ModelSwitcher({
+  models,
+  activeModel,
+  defaultModel,
+  onSelect,
+}: {
+  models: CopilotModelOption[];
+  activeModel: string | null;
+  defaultModel: string | null;
+  onSelect: (model: string) => void;
+}) {
+  const active = models.find((model) => model.id === activeModel);
+  const label = active?.label ?? activeModel ?? "Model";
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="flex max-w-[92px] items-center gap-1 rounded-chip px-1.5 py-0.5 font-mono text-meta text-ink-3 hover:bg-raise hover:text-ink"
+          aria-label="Copilot model"
+          title={active?.description ?? active?.id ?? "Copilot model"}
+        >
+          <span className="min-w-0 truncate">{label}</span>
+          <Icon as={ChevronDown} size="inline" mark />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-72">
+        <DropdownMenuLabel>Model</DropdownMenuLabel>
+        {models.length === 0 ? (
+          <DropdownMenuItem disabled>Backend default</DropdownMenuItem>
+        ) : (
+          models.map((model) => (
+            <DropdownMenuItem
+              key={model.id}
+              onSelect={() => onSelect(model.id)}
+              className="items-start gap-2"
+            >
+              <span className="mt-0.5 grid size-4 shrink-0 place-items-center text-amber">
+                {model.id === activeModel ? <Icon as={Check} size="inline" mark /> : null}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-1.5 text-small text-ink">
+                  {model.label}
+                  {model.id === defaultModel ? (
+                    <span className="font-mono text-meta text-ink-4">default</span>
+                  ) : null}
+                </span>
+                {model.description ? (
+                  <span className="mt-0.5 block text-meta leading-snug text-ink-4">{model.description}</span>
+                ) : null}
+              </span>
+            </DropdownMenuItem>
+          ))
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

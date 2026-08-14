@@ -329,6 +329,58 @@ loop:
 	}
 }
 
+func TestCopilotSendPassesSelectedModel(t *testing.T) {
+	const userID = "11111111-1111-1111-1111-111111111111"
+	agent := &fakeAgent{events: []copilotagent.Event{{Type: "done"}}, started: make(chan struct{})}
+	svc := NewCopilotService(CopilotDeps{Store: newFakeStore(), Agent: agent})
+
+	_, err := svc.SendMessage(context.Background(), CopilotSendInput{
+		Principal: Principal{UserID: userID},
+		Bearer:    "tok",
+		Text:      "use sonnet",
+		Model:     "sonnet5",
+	})
+	if err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	select {
+	case <-agent.started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for copilot turn to start")
+	}
+	if got := agent.request().Model; got != "sonnet5" {
+		t.Fatalf("turn request model = %q, want sonnet5", got)
+	}
+}
+
+func TestCopilotSendRejectsUnsupportedModel(t *testing.T) {
+	const userID = "11111111-1111-1111-1111-111111111111"
+	svc := NewCopilotService(CopilotDeps{Store: newFakeStore(), Agent: &fakeAgent{}})
+
+	_, err := svc.SendMessage(context.Background(), CopilotSendInput{
+		Principal: Principal{UserID: userID},
+		Bearer:    "tok",
+		Text:      "bad model",
+		Model:     "claude-typo",
+	})
+	if err == nil || !strings.Contains(err.Error(), "unsupported copilot model") {
+		t.Fatalf("err = %v, want unsupported model", err)
+	}
+}
+
+func TestCopilotStatusReportsModelCatalog(t *testing.T) {
+	svc := NewCopilotService(CopilotDeps{Store: newFakeStore(), Agent: &fakeAgent{}, Model: "sonnet5"})
+
+	status := svc.Status(context.Background())
+
+	if status.DefaultModel != "sonnet5" {
+		t.Fatalf("default model = %q, want sonnet5", status.DefaultModel)
+	}
+	if len(status.Models) < 2 {
+		t.Fatalf("expected model options, got %+v", status.Models)
+	}
+}
+
 // TestCopilotSendRequiresBearer — the sidecar's MCP calls are scoped by the forwarded
 // bearer, so a send without one is rejected before any turn starts.
 func TestCopilotSendRequiresBearer(t *testing.T) {
