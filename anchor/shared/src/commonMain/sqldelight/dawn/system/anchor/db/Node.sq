@@ -1,0 +1,65 @@
+-- The workspace tree cache: folders, research folders and artifacts in one table, because
+-- the server routes all three tree kinds through one handler and they share a light shape.
+--
+-- `seq` is the per-entity version and the staleness guard. `is_deleted` is a tombstone
+-- rather than a row removal: a delete must survive a late, lower-seq upsert, which a
+-- missing row could not do.
+
+CREATE TABLE node (
+    id            TEXT    NOT NULL PRIMARY KEY,
+    kind          TEXT    NOT NULL,
+    parent_id     TEXT,
+    position      INTEGER NOT NULL DEFAULT 0,
+    title         TEXT    NOT NULL DEFAULT '',
+    artifact_type TEXT,
+    summary       TEXT,
+    seq           INTEGER NOT NULL DEFAULT 0,
+    is_deleted    INTEGER NOT NULL DEFAULT 0,
+    updated_at    INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX node_parent ON node(parent_id);
+CREATE INDEX node_live ON node(is_deleted);
+
+selectLive:
+SELECT * FROM node WHERE is_deleted = 0 ORDER BY position ASC, title ASC;
+
+selectChildren:
+SELECT * FROM node
+WHERE is_deleted = 0 AND parent_id IS :parentId
+ORDER BY position ASC, title ASC;
+
+selectById:
+SELECT * FROM node WHERE id = :id;
+
+storedSeq:
+SELECT seq FROM node WHERE id = :id;
+
+upsert:
+INSERT INTO node(id, kind, parent_id, position, title, artifact_type, summary, seq, is_deleted, updated_at)
+VALUES (:id, :kind, :parentId, :position, :title, :artifactType, :summary, :seq, 0, :updatedAt)
+ON CONFLICT(id) DO UPDATE SET
+    kind = excluded.kind,
+    parent_id = excluded.parent_id,
+    position = excluded.position,
+    title = excluded.title,
+    artifact_type = excluded.artifact_type,
+    summary = excluded.summary,
+    seq = excluded.seq,
+    is_deleted = 0,
+    updated_at = excluded.updated_at;
+
+softDelete:
+INSERT INTO node(id, kind, position, seq, is_deleted, updated_at)
+VALUES (:id, :kind, 0, :seq, 1, :updatedAt)
+ON CONFLICT(id) DO UPDATE SET
+    seq = excluded.seq,
+    is_deleted = 1,
+    updated_at = excluded.updated_at;
+
+-- Snapshot REPLACE: anything the authoritative snapshot omitted is stale cache garbage.
+retainOnly:
+DELETE FROM node WHERE id NOT IN :ids;
+
+deleteAll:
+DELETE FROM node;
