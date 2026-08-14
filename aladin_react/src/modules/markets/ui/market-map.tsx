@@ -68,7 +68,7 @@ export function MarketMap({
       {sectors.map((s) => (
         <span
           key={s.data.name}
-          className="pointer-events-none absolute z-10 truncate font-mono text-[9px] uppercase tracking-[0.5px] text-ink/60"
+          className="pointer-events-none absolute z-10 truncate font-mono text-meta uppercase tracking-[0.5px] text-ink/60"
           style={{ left: `${(s.x / VW) * 100}%`, top: `${(s.y / VH) * 100}%`, maxWidth: `${(s.w / VW) * 100}%`, padding: "3px 5px" }}
         >
           {s.data.name}
@@ -89,7 +89,7 @@ export function MarketMap({
             onClick={() => onSelect(q.symbol)}
             title={`${q.symbol} ${fmtPct(q.changePct)}`}
             className={cn(
-              "absolute overflow-hidden rounded-[5px] transition-all",
+              "absolute overflow-hidden rounded-tap transition-all",
               isSel && "z-20 ring-2 ring-inset ring-ink",
             )}
             style={{
@@ -101,8 +101,8 @@ export function MarketMap({
           >
             <span aria-hidden className={cn("absolute inset-0", up ? "bg-for" : "bg-against")} style={{ opacity: intensity }} />
             <span className="relative flex h-full w-full flex-col items-center justify-center overflow-hidden px-0.5 text-center leading-tight">
-              {showSym && <span className="max-w-full truncate font-display text-[12px] font-semibold text-ink">{q.symbol}</span>}
-              {showPct && <span className="max-w-full truncate font-mono text-[9px] text-ink-2">{fmtPct(q.changePct)}</span>}
+              {showSym && <span className="max-w-full truncate font-display text-small font-semibold text-ink">{q.symbol}</span>}
+              {showPct && <span className="max-w-full truncate font-mono text-meta text-ink-2">{fmtPct(q.changePct)}</span>}
             </span>
           </button>
         );

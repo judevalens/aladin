@@ -1,4 +1,6 @@
 import { Building2, Fingerprint, HelpCircle, Link2, Plus, Quote, SlidersHorizontal, Waypoints } from "lucide-react";
+import { Eyebrow } from "@/components/ui/eyebrow";
+import { Icon } from "@/components/ui/icon";
 import { useMemo } from "react";
 
 import { cn } from "@/lib/utils";
@@ -77,9 +79,9 @@ function RelSignal({
   onDismiss: () => void;
 }) {
   return (
-    <div className="mb-5 flex items-center gap-3 rounded-[11px] border border-amber-line bg-amber-soft px-[15px] py-[11px]">
-      <Link2 size={16} strokeWidth={1.9} className="shrink-0 text-amber" />
-      <div className="flex-1 text-[13px]">
+    <div className="mb-5 flex items-center gap-3 rounded-control border border-amber-line bg-amber-soft px-4 py-2.5">
+      <Icon as={Link2} className="shrink-0 text-amber" />
+      <div className="flex-1 text-body">
         <span className="font-medium text-ink">New connection formed · </span>
         <span className="text-ink-2">your watcher wired </span>
         <span className="font-display font-semibold text-ink">{edge.to}</span>
@@ -88,14 +90,14 @@ function RelSignal({
       <button
         type="button"
         onClick={onKeep}
-        className="shrink-0 cursor-pointer rounded-chip bg-amber px-[11px] py-1.5 text-[11.5px] font-semibold text-primary-foreground transition hover:brightness-[1.08]"
+        className="shrink-0 cursor-pointer rounded-chip bg-amber px-2.5 py-1.5 text-small font-semibold text-primary-foreground transition hover:brightness-[1.08]"
       >
         Keep edge
       </button>
       <button
         type="button"
         onClick={onDismiss}
-        className="shrink-0 cursor-pointer rounded-chip border border-line bg-transparent px-[10px] py-1.5 text-[11.5px] font-semibold text-ink-2 transition hover:brightness-[1.08]"
+        className="shrink-0 cursor-pointer rounded-chip border border-line bg-transparent px-2.5 py-1.5 text-small font-semibold text-ink-2 transition hover:brightness-[1.08]"
       >
         Dismiss
       </button>
@@ -125,44 +127,44 @@ function EdgeRow({ edge, onOpen }: { edge: Edge; onOpen?: (entityId: string) => 
           : undefined
       }
       className={cn(
-        "flex gap-3 rounded-[10px] border border-line-2 bg-card px-[13px] py-[11px] transition-colors hover:border-amber-line",
+        "flex gap-3 rounded-control border border-line-2 bg-card px-3 py-2.5 transition-colors hover:border-amber-line",
         navigable && "cursor-pointer",
       )}
     >
       <span
         className={cn(
-          "grid size-[26px] shrink-0 place-items-center rounded-chip border font-mono text-[13px]",
+          "grid size-[26px] shrink-0 place-items-center rounded-chip border font-mono text-body",
           tone.glyphChip,
         )}
       >
         {m.glyph}
       </span>
       <div className="min-w-0 flex-1">
-        <div className="mb-[3px] flex flex-wrap items-baseline gap-2">
+        <div className="mb-1 flex flex-wrap items-baseline gap-2">
           <span
             className={cn(
-              "font-mono text-[9.5px] font-bold uppercase tracking-[0.4px]",
+              "font-mono text-meta font-bold uppercase tracking-[0.4px]",
               tone.text,
             )}
           >
             {m.label}
           </span>
-          <span className="font-display text-[14px] font-semibold tracking-[-0.2px] text-ink">
+          <span className="font-display text-lead font-semibold tracking-[-0.2px] text-ink">
             {edge.to}
           </span>
-          <span className="font-mono text-[9px] text-ink-4">{edge.kind}</span>
+          <span className="font-mono text-meta text-ink-4">{edge.kind}</span>
           <span className="flex-1" />
           <span
             title={mine ? "you drew this edge" : "a watcher found this"}
             className={cn(
-              "rounded-[4px] border px-[5px] py-px font-mono text-[8.5px] font-bold tracking-[0.4px]",
+              "rounded-tap border px-1 py-px font-mono text-meta font-bold tracking-[0.4px]",
               mine ? "border-amber-line text-amber" : "border-line text-echo",
             )}
           >
             {mine ? "YOURS" : "FOUND"}
           </span>
         </div>
-        <div className="text-[12px] leading-[1.5] text-pretty text-ink-2">{edge.why}</div>
+        <div className="text-small leading-[1.5] text-pretty text-ink-2">{edge.why}</div>
       </div>
     </div>
   );
@@ -172,38 +174,38 @@ function EdgeRow({ edge, onOpen }: { edge: Edge; onOpen?: (entityId: string) => 
 function CtxRow({ item }: { item: ContextItem }) {
   const m = CTX_META[item.type];
   const tone = TONE[m.tone];
-  const Icon = CTX_ICON[m.icon];
+  const Glyph = CTX_ICON[m.icon];
   return (
-    <div className="flex gap-[11px] border-t border-line-2 py-[11px]">
+    <div className="flex gap-2.5 border-t border-line-2 py-2.5">
       <span
         className={cn(
-          "mt-px grid size-[22px] shrink-0 place-items-center rounded-sm",
+          "mt-px grid size-[22px] shrink-0 place-items-center rounded-tap",
           tone.ctxChip,
         )}
       >
-        <Icon size={12} strokeWidth={1.9} />
+        <Icon as={Glyph} size="inline" />
       </span>
       <div className="min-w-0 flex-1">
         <div
           className={cn(
-            "text-[13px] leading-[1.55] text-pretty",
+            "text-body leading-[1.55] text-pretty",
             item.type === "note" ? "text-ink" : "text-ink-2",
-            item.type === "quote" && "border-l-2 border-line pl-[10px]",
+            item.type === "quote" && "border-l-2 border-line pl-2.5",
           )}
         >
           {item.body}
         </div>
-        <div className="mt-[5px] flex items-center gap-[7px]">
+        <div className="mt-1 flex items-center gap-2">
           <span
             className={cn(
-              "font-mono text-[8.5px] font-bold uppercase tracking-[0.4px]",
+              "font-mono text-meta font-bold uppercase tracking-[0.4px]",
               tone.text,
             )}
           >
             {m.label}
           </span>
           {item.platform && <PlatChip p={item.platform} size={14} />}
-          <span className="font-mono text-[9.5px] text-ink-4">
+          <span className="font-mono text-meta text-ink-4">
             {item.who} · {item.time}
           </span>
         </div>
@@ -227,12 +229,12 @@ function SectionHeader({
   className?: string;
 }) {
   return (
-    <div className={cn("flex items-center gap-[9px]", className)}>
+    <div className={cn("flex items-center gap-2", className)}>
       {icon}
-      <span className="font-display text-[15px] font-semibold text-ink">{title}</span>
-      <span className="font-mono text-[10px] text-ink-4">{hint}</span>
+      <span className="font-display text-lead font-semibold text-ink">{title}</span>
+      <span className="font-mono text-meta text-ink-4">{hint}</span>
       <span className="h-px flex-1 bg-line-2" />
-      <span className="font-mono text-[10px] text-ink-4">{count}</span>
+      <span className="font-mono text-meta text-ink-4">{count}</span>
     </div>
   );
 }
@@ -256,17 +258,17 @@ function DataPointCell({ point }: { point: DataPoint }) {
     );
   } else if (point.type === "select" && point.value) {
     value = (
-      <span className="inline-flex rounded-chip border border-line px-[7px] py-[1px] text-[11px] text-ink">
+      <span className="inline-flex rounded-chip border border-line px-2 py-px text-meta text-ink">
         {point.value}
       </span>
     );
   }
   return (
     <div className="flex items-baseline gap-2">
-      <span className="w-[108px] shrink-0 font-mono text-[10.5px] uppercase tracking-[0.4px] text-ink-4">
+      <Eyebrow as="span" className="w-[108px] shrink-0 text-ink-4">
         {label}
-      </span>
-      <span className="min-w-0 text-[12.5px] text-ink-2">{value}</span>
+      </Eyebrow>
+      <span className="min-w-0 text-small text-ink-2">{value}</span>
     </div>
   );
 }
@@ -275,20 +277,20 @@ function DataPointCell({ point }: { point: DataPoint }) {
 function CompanyFactsBlock({ company }: { company: CompanyFacts }) {
   const chips = [company.sector, company.industry, company.country].filter(Boolean) as string[];
   return (
-    <div className="mb-[10px] flex flex-col gap-[9px]">
+    <div className="mb-2.5 flex flex-col gap-2">
       {chips.length > 0 && (
-        <div className="flex flex-wrap gap-[6px]">
+        <div className="flex flex-wrap gap-1.5">
           {chips.map((c) => (
             <span
               key={c}
-              className="inline-flex rounded-chip border border-line bg-card px-[8px] py-[2px] text-[11px] text-ink-2"
+              className="inline-flex rounded-chip border border-line bg-card px-2 py-0.5 text-meta text-ink-2"
             >
               {c}
             </span>
           ))}
         </div>
       )}
-      <div className="flex flex-wrap gap-x-6 gap-y-1 font-mono text-[11px] text-ink-3">
+      <div className="flex flex-wrap gap-x-6 gap-y-1 font-mono text-meta text-ink-3">
         {company.employees ? <span>{company.employees.toLocaleString()} employees</span> : null}
         {company.foundedYear ? <span>founded {company.foundedYear}</span> : null}
         {company.website ? (
@@ -304,12 +306,12 @@ function CompanyFactsBlock({ company }: { company: CompanyFacts }) {
 // ── hard cross-system identity keys (CIK/LEI/…) ──
 function ExternalIdRow({ ids }: { ids: ExternalId[] }) {
   return (
-    <div className="mt-[10px] flex flex-wrap items-center gap-[6px]">
-      <Fingerprint size={12} strokeWidth={1.7} className="shrink-0 text-ink-4" />
+    <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+      <Icon as={Fingerprint} size="inline" className="shrink-0 text-ink-4" />
       {ids.map((x) => (
         <span
           key={`${x.system}-${x.value}`}
-          className="inline-flex items-center gap-[5px] rounded-chip border border-line px-[7px] py-[1px] font-mono text-[10.5px] text-ink-3"
+          className="inline-flex items-center gap-1 rounded-chip border border-line px-2 py-px font-mono text-meta text-ink-3"
         >
           <span className="uppercase text-ink-4">{x.system}</span>
           <span className="text-ink-2">{x.value}</span>
@@ -370,19 +372,19 @@ export function EntityContextView({
       className={cn(
         "h-full overflow-y-auto bg-panel font-sans",
         "[&::-webkit-scrollbar]:w-[9px] [&::-webkit-scrollbar-track]:bg-transparent",
-        "[&::-webkit-scrollbar-thumb]:rounded-[6px] [&::-webkit-scrollbar-thumb]:bg-line",
+        "[&::-webkit-scrollbar-thumb]:rounded-tap [&::-webkit-scrollbar-thumb]:bg-line",
       )}
     >
-      <div className="mx-auto max-w-[820px] px-[30px] pt-[30px] pb-[60px]">
+      <div className="mx-auto max-w-[820px] px-8 pt-8 pb-15">
         {/* meta line (provenance header) */}
-        <div className="mb-3 flex items-center gap-[9px] font-mono text-[10.5px] text-ink-3">
+        <div className="mb-3 flex items-center gap-2 font-mono text-meta text-ink-3">
           <span aria-hidden className="size-[5px] shrink-0 rounded-full border border-echo" />
           <span className="uppercase tracking-[0.6px]">{entity.kind}</span>
           <span className="text-ink-4">·</span>
           <span>{entity.since}</span>
           <span className="flex-1" />
           {entity.watchers.length > 0 && (
-            <span className="inline-flex gap-[3px]">
+            <span className="inline-flex gap-1">
               {entity.watchers.map((p) => (
                 <PlatChip key={p} p={p} size={15} />
               ))}
@@ -391,28 +393,28 @@ export function EntityContextView({
         </div>
 
         {/* title + gist */}
-        <h1 className="mb-[10px] font-display text-[30px] font-semibold tracking-[-0.6px] text-ink">
+        <h1 className="mb-2.5 font-display text-display font-semibold tracking-[-0.6px] text-ink">
           {entity.name}
         </h1>
         {entity.gist ? (
-          <p className="mb-[26px] max-w-[620px] text-[15px] leading-[1.55] text-pretty text-ink-2">
+          <p className="mb-6 max-w-[620px] text-lead leading-[1.55] text-pretty text-ink-2">
             {entity.gist}
           </p>
         ) : (
-          <div className="mb-[26px]" />
+          <div className="mb-6" />
         )}
 
         {/* DETAILS — what this entity IS (company facts · typed data points · hard ids),
             before "how it relates". Type-driven: company widget by kind, cells by type. */}
         {(company || dataPoints.length > 0 || externalIds.length > 0) && (
-          <div className="mb-[26px]">
+          <div className="mb-6">
             <SectionHeader
-              className="mb-[13px]"
+              className="mb-3"
               icon={
                 company ? (
-                  <Building2 size={16} strokeWidth={1.7} className="shrink-0 text-ink-2" />
+                  <Icon as={Building2} className="shrink-0 text-ink-2" />
                 ) : (
-                  <SlidersHorizontal size={16} strokeWidth={1.7} className="shrink-0 text-ink-2" />
+                  <Icon as={SlidersHorizontal} className="shrink-0 text-ink-2" />
                 )
               }
               title="Details"
@@ -421,7 +423,7 @@ export function EntityContextView({
             />
             {company && <CompanyFactsBlock company={company} />}
             {dataPoints.length > 0 && (
-              <div className="flex flex-col gap-[7px] border-t border-line-2 pt-[11px]">
+              <div className="flex flex-col gap-2 border-t border-line-2 pt-2.5">
                 {dataPoints.map((p, i) => (
                   <DataPointCell key={`${p.name}-${i}`} point={p} />
                 ))}
@@ -445,14 +447,14 @@ export function EntityContextView({
 
         {/* RELATIONSHIPS — the lead */}
         <SectionHeader
-          className="mb-[13px]"
-          icon={<Waypoints size={16} strokeWidth={1.7} className="shrink-0 text-amber" />}
+          className="mb-3"
+          icon={<Icon as={Waypoints} className="shrink-0 text-amber" />}
           title="How it relates"
           hint="the understanding lives here"
           count={`${edges.length} edges`}
         />
         {edges.length === 0 ? (
-          <p className="mb-4 text-[12px] leading-[1.5] text-ink-3">
+          <p className="mb-4 text-small leading-[1.5] text-ink-3">
             No connections yet — draw the first one below.
           </p>
         ) : (
@@ -461,7 +463,7 @@ export function EntityContextView({
               <div key={group.rel} className="flex flex-col gap-2">
                 <div
                   className={cn(
-                    "font-mono text-[9.5px] font-bold uppercase tracking-[0.4px]",
+                    "font-mono text-meta font-bold uppercase tracking-[0.4px]",
                     TONE[relMeta(group.rel).tone].text,
                   )}
                 >
@@ -478,9 +480,9 @@ export function EntityContextView({
           <button
             type="button"
             onClick={onDrawConnection}
-            className="mb-[34px] flex w-full cursor-pointer items-center justify-center gap-2 rounded-[10px] border border-dashed border-line bg-transparent p-[10px] text-[12px] font-semibold text-ink-3 transition-colors hover:border-amber-line"
+            className="mb-8 flex w-full cursor-pointer items-center justify-center gap-2 rounded-control border border-dashed border-line bg-transparent p-2.5 text-small font-semibold text-ink-3 transition-colors hover:border-amber-line"
           >
-            <Link2 size={14} strokeWidth={1.9} className="shrink-0" />
+            <Icon as={Link2} size="inline" className="shrink-0" />
             Draw a connection…
           </button>
         )}
@@ -488,13 +490,13 @@ export function EntityContextView({
         {/* CONTEXT — the accreted material, underneath */}
         <SectionHeader
           className="mb-1.5"
-          icon={<Quote size={16} strokeWidth={1.7} className="shrink-0 text-ink-2" />}
+          icon={<Icon as={Quote} className="shrink-0 text-ink-2" />}
           title="Context"
           hint="real material · nothing summarized"
           count={`${context.length}`}
         />
         {context.length === 0 ? (
-          <p className="border-t border-line-2 pt-[11px] text-[12px] leading-[1.5] text-ink-3">
+          <p className="border-t border-line-2 pt-2.5 text-small leading-[1.5] text-ink-3">
             Nothing captured yet — quotes, notes, and questions will accrete here.
           </p>
         ) : (

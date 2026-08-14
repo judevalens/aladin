@@ -99,17 +99,53 @@ Leaves always open in the work pane; only inline folders toggle. If you change t
 preserve this — flattening it to "expand everything inline" is the obvious-looking change and
 it breaks at depth 4.
 
+### The tab strip grouping invariant
+
+Tabs belonging to one research folder must stay **contiguous**. Membership is *derived* from
+the tab's `contextId` — never stored, never managed — so grouping is purely an ordering
+concern, computed in `use-workspace-state.ts` (~line 383): research tabs cluster by
+`contextId` in first-seen order, loose artifact tabs sort after all groups, and the last tab
+of a group gets a heavier right divider (`border-r-2 border-r-line-2`). There is no per-group
+colour — this app has one accent.
+
+The strip is a **status display, not a navigation surface**: `scrollbar-hidden` is deliberate,
+and there is intentionally no overflow chevron. Anything that needs to *navigate* to a tab
+belongs in a separate surface.
+
+The full rules live in `RESEARCH_SURFACE_PRD.md` **§12** — the `§12` comments in
+`work-pane-ui.tsx` and `use-workspace-state.ts` point there, *not* at a section of this file.
+
 ### The kind switch (how a thing gets rendered)
 
-`work-pane-ui.tsx` maps kind → viewer:
+`TabPane` in `work-pane-ui.tsx` maps kind → viewer:
 
 | `artifact.kind` | viewer |
 |---|---|
 | `note` | `PageEditorUI` (BlockNote + Yjs collab) |
-| `app` | `DocSurfaceKeepAlive` — a **Shard**: agent-authored React in a sandboxed iframe |
+| `app` | `DocSurfaceUI` — a **Shard**: agent-authored React in a sandboxed iframe |
 | `file` | `FileArtifactPaneUI` → the document viewer for ingested PDFs (pages, outline), download card otherwise |
 | `link`, `voice` | their own artifact panes |
 | *(tab kind)* `research` | `ResearchPaneUI` — a synthetic tab, not an artifact |
+
+### Tabs are PERSISTENT — panes are kept mounted (get this right)
+
+`TabPane` renders **once per open tab**, not once for the active one. Inactive panes stay
+mounted and are hidden with CSS (`absolute inset-0` + `hidden`, plus `aria-hidden`/`inert` so
+focus can't land inside an invisible editor). Switching tabs must not cost the user their
+scroll position, editor selection, PDF page, or a shard's runtime state.
+
+The mounted set is an **LRU keep-alive window**, `hooks/use-keep-alive.ts`, and it is
+**kind-aware**: a note editor holds a Yjs document and a Hocuspocus socket and a shard holds a
+live iframe, so heavy panes are capped (`HEAVY_KEEP_ALIVE`) well below cheap ones
+(`LIGHT_KEEP_ALIVE`). Twenty open tabs must not mean twenty documents syncing in the
+background. A pane evicted from the window still works — it re-mounts, losing view state, when
+revisited.
+
+A pane mounts only once its tab has been **active at least once**. That is deliberate twice
+over: an unvisited tab costs nothing, and nothing ever mounts into a `display:none` box, where
+anything measuring its own width would come up zero.
+
+If you add an artifact kind, add a branch to `TabPane` and decide whether it is heavy.
 
 ## 4. Where code lives
 
@@ -125,7 +161,8 @@ src/
     hooks/               that feature's hooks
   shared/                api types, realtime, flow helpers (Loadable/observables)
   repos/                 data access (Tauri `invoke` or HTTP)
-  index.css              DESIGN TOKENS (Tailwind v4 inline @theme)
+  theme.css              DESIGN TOKENS — the @theme inline block. THIS is the token file.
+  index.css              the 7 non-default [data-theme] blocks + base layer
 ```
 
 18 modules: `artifacts auth copilot doc-surface documents entities graph insights markets
@@ -137,25 +174,52 @@ stock shadcn — never ship the default shadcn look.
 
 ## 5. Styling rules (a change violating these will be rejected)
 
-1. **Never hardcode a colour.** No hex, no `rgb()`. Use the tokens in `src/index.css`:
+1. **Never hardcode a colour.** No hex, no `rgb()`. Use the tokens in **`src/theme.css`**
+   (the `@theme inline` block; `src/index.css` holds the per-theme overrides):
    - surfaces `bg-rail bg-panel bg-bg bg-chrome bg-field bg-card bg-raise bg-explorer`
    - ink ramp `text-ink text-ink-2 text-ink-3 text-ink-4`
    - accent + lines `bg-amber bg-amber-soft border-amber-line border-line border-line-2`
    - semantic `text-for` (supports) `text-against` (counters) `text-catalyst` `text-echo`
    - fonts `font-display` (Space Grotesk) `font-mono` (JetBrains Mono) `font-sans`
    - radii `rounded-chip/card/modal`; shadows `shadow-panel/modal/toast`
-2. **Two themes**, Dark (default) and Soft, driven by `data-theme` on `<html>`
-   (`app/state/theme-slice.ts`). Tokens handle it — if you use tokens you get both for free.
-   **One component tree**, never two builds and never a per-theme branch.
-3. **Compose classes with `cn()` from `@/lib/utils`.** Note there is a duplicate `cn()` at
-   `shared/lib/utils.ts`; prefer `@/lib/utils` and don't add a third.
+2. **Eight themes**, not two: `dark` (default) · `soft` · `cool` · `contrast` · `linear` ·
+   `apple-dark` · `apple-light` · `light`. Driven by `data-theme` on `<html>`
+   (`app/state/theme-slice.ts`); `dark` lives in `theme.css`, the other seven override in
+   `index.css`. **One component tree**, never two builds and never a per-theme branch.
+   Verify in `light` and `linear` before merge — those two flip the accent *and* its
+   foreground, so they catch hardcoded on-accent text that `dark` hides.
+3. **Compose classes with `cn()` from `@/lib/utils`** — the only one. It used to be
+   duplicated in `shared/lib/utils.ts` (38 importers vs 12); that copy is gone, and the file
+   now holds only the date/string formatters. Don't add a second.
 4. **Amber is the only accent — spend it.** It marks the one thing that needs attention on a
    surface. Two amber elements competing means neither reads.
 5. **Avoid the clichés this app deliberately rejects**: no gradients, no emoji, no
    rounded-corner-plus-left-accent card. Calm and minimal.
 6. **`whitespace-nowrap shrink-0` on header meta rows.** Leaving whitespace at its default
    wrapped them; this bit once already.
-7. **Don't invent metrics.** No progress rings, mastery scores, or zeroed stat tiles for data
+7. **Never hardcode a size.** Type is one of six steps — `text-meta` (10) `text-small` (12)
+   `text-body` (13) `text-lead` (15) `text-title` (22) `text-display` (30). Line-height rides
+   with the step. An arbitrary `text-[13.5px]` is a bug, not a preference.
+8. **Radius follows container size, not taste** — `rounded-tap` (5, hit boxes ≤20px) ·
+   `rounded-chip` (7) · `rounded-control` (9, buttons/rail cells/inputs/tree rows) ·
+   `rounded-card` (12) · `rounded-modal` (14).
+9. **Icons go through `<Icon>`** (`components/ui/icon.tsx`): `size="inline|default|rail"` and
+   `mark` for chevrons/checks/×. Never set `strokeWidth` or a raw pixel size at a call site —
+   that freedom produced 13 stroke weights across 62 files. **One carve-out:** an
+   *illustration* (an empty-state or preview-card glyph at 20px+) is not chrome and may stay
+   raw — but it must carry a comment saying so, because the grep below will flag it. Two exist
+   today: `miller-columns.tsx` (26px preview) and `copilot-dock-ui.tsx` (20px empty state).
+10. **Section labels go through `<Eyebrow>`** (`components/ui/eyebrow.tsx`) — `tone="loud"`
+   for the one that needs attention, `as="span" | "label" | "h2" | …` when the layout needs
+   that element. The old `.eyebrow` class is **deleted**; there is no other eyebrow.
+11. **`font-display` (Space Grotesk) is for NAMES, not labels.** Below `text-lead` it belongs
+   only on things that identify something — entity names, ticker symbols, document titles, the
+   amber monogram — where it aids scanning. Section headings and pane labels under 15px use
+   system sans; at `text-lead` and above, display font as usual. (Owner's call, 2026-08-12:
+   Space Grotesk at 13px in a dense list read as a different app from the shell.)
+12. **Spacing is the 4px step scale.** Arbitrary px is *layout* only (pane widths, the 38px
+   rail cell), and layout is rare.
+13. **Don't invent metrics.** No progress rings, mastery scores, or zeroed stat tiles for data
    that doesn't exist. An empty state names what belongs there in one sentence. Silence is the
    correct rendering of "fine". (`RESEARCH_SURFACE_PRD.md` §2 is explicit.)
 
@@ -230,7 +294,25 @@ treat it as authoritative.
 cd aladin_react
 node_modules/.bin/tsc --noEmit -p tsconfig.app.json   # NOT bare `npx tsc`
 npm test
+make check-tokens                                     # from repo root, if you touched theme.css
 ```
+
+**Then grep your diff** — a rule with a check attached is the only kind that survives. Run
+these against the changed files, not the whole tree:
+
+```bash
+# rule 1  colour — the `| grep -v` is required: rgb(var(--token)) is the legitimate form
+grep -nE '#[0-9a-fA-F]{3,8}|rgba?\(' <files> | grep -vE 'rgba?\(var\(--'
+grep -nE 'text-\[[0-9.]+(px|rem)\]' <files>           # rule 7  type
+grep -nE 'rounded-\[[0-9]+px\]|rounded-(sm|md|lg)\b' <files>   # rule 8  radius
+# rule 9  icons — capitalized tag only: <line>/<path>/<circle> in an SVG are not icons
+grep -nE '<[A-Z][A-Za-z0-9]*(\s+[^<>]*)?(strokeWidth=|size=\{[0-9]+\})' <files>
+grep -nE 'font-display' <files> | grep -E 'text-(meta|small|body)'   # rule 11 names-only
+grep -nE '\b(p|px|py|m|mb|mt|gap)-\[[0-9]+px\]' <files>        # rule 12 spacing
+```
+
+The tree is not clean on rules 7–11 yet — the migration is staged (see the design-system
+handoff). These greps are for *your diff*, so new code stops adding to the pile.
 
 Then **look at it** — `npm run dev` and open the surface (a `/spike/*` route if it needs no
 auth), in both themes. Grep your diff for `#` hex literals and `rgb(`. If you added a

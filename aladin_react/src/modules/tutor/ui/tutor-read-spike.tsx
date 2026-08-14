@@ -1,4 +1,6 @@
 import { Boxes, Layers, ListChecks, Quote, X } from "lucide-react";
+import { Eyebrow } from "@/components/ui/eyebrow";
+import { Icon } from "@/components/ui/icon";
 import { useMemo, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
@@ -123,7 +125,7 @@ export function TutorReadSpike() {
     <div className="flex h-screen flex-col overflow-hidden bg-bg text-ink">
       {/* the only permanent chrome: where you are, and how far in */}
       <header className="flex shrink-0 items-center gap-4 px-6 py-3">
-        <span className="truncate font-display text-sm text-ink">{SOURCE.title}</span>
+        <span className="truncate font-display text-body text-ink">{SOURCE.title}</span>
         <button
           type="button"
           onClick={() => setPlanOpen((v) => !v)}
@@ -141,11 +143,11 @@ export function TutorReadSpike() {
               />
             ))}
           </span>
-          <span className="font-mono text-[10px] text-ink-4 group-hover:text-ink-3">
+          <span className="font-mono text-meta text-ink-4 group-hover:text-ink-3">
             {done}/{PLAN.length} · Collars and spreads
           </span>
         </button>
-        <span className="ml-auto shrink-0 font-mono text-[10px] text-ink-4">p. 94 / {SOURCE.pages}</span>
+        <span className="ml-auto shrink-0 font-mono text-meta text-ink-4">p. 94 / {SOURCE.pages}</span>
       </header>
 
       {planOpen ? <PlanSheet onClose={() => setPlanOpen(false)} /> : null}
@@ -153,18 +155,18 @@ export function TutorReadSpike() {
       {/* the document — full measure, nothing beside it */}
       <div ref={scroller} className="relative min-h-0 flex-1 overflow-auto" onMouseUp={onMouseUp}>
         <article className="mx-auto max-w-[64ch] px-6 pb-32 pt-8">
-          <p className="mb-8 font-mono text-[10px] uppercase tracking-wider text-ink-4">§4.2 Collars</p>
+          <Eyebrow as="p" className="mb-8 text-ink-4">§4.2 Collars</Eyebrow>
 
           {BLOCKS.map((b) => (
             <div key={b.id}>
               {b.kind === "prose" ? (
-                <p data-block={b.id} className="mb-6 text-[15px] leading-[1.75] text-ink-2 selection:bg-amber-soft">
+                <p data-block={b.id} className="mb-6 text-lead leading-[1.75] text-ink-2 selection:bg-amber-soft">
                   {b.text}
                 </p>
               ) : (
                 <div data-block={b.id} className="mb-6 flex items-baseline justify-between gap-4">
-                  <code className="font-mono text-[15px] text-ink selection:bg-amber-soft">{b.text}</code>
-                  <span className="shrink-0 font-mono text-[10px] text-ink-4">{b.cite}</span>
+                  <code className="font-mono text-lead text-ink selection:bg-amber-soft">{b.text}</code>
+                  <span className="shrink-0 font-mono text-meta text-ink-4">{b.cite}</span>
                 </div>
               )}
 
@@ -180,7 +182,7 @@ export function TutorReadSpike() {
             </div>
           ))}
 
-          <p className="mt-16 text-center font-mono text-[10px] text-ink-4">
+          <p className="mt-16 text-center font-mono text-meta text-ink-4">
             select any passage to ask about it
           </p>
         </article>
@@ -197,7 +199,7 @@ export function TutorReadSpike() {
                   key={a.id}
                   type="button"
                   onClick={() => act(a.id)}
-                  className="flex items-center gap-1 rounded-chip px-2 py-1 text-[11px] text-ink-2 transition-colors hover:bg-card hover:text-ink"
+                  className="flex items-center gap-1 rounded-chip px-2 py-1 text-meta text-ink-2 transition-colors hover:bg-card hover:text-ink"
                 >
                   <a.icon className="size-3" />
                   {a.label}
@@ -216,11 +218,11 @@ function InlineBlock({ inline, onClose }: { inline: Inline; onClose: () => void 
   return (
     <div className="mb-6 border-l-2 border-amber-line pl-4">
       <div className="mb-1.5 flex items-start gap-2">
-        <p className="min-w-0 flex-1 truncate font-mono text-[10px] text-ink-4">
+        <p className="min-w-0 flex-1 truncate font-mono text-meta text-ink-4">
           “{inline.selection}”
         </p>
         <button type="button" onClick={onClose} className="shrink-0 text-ink-4 hover:text-ink">
-          <X className="size-3" />
+          <Icon as={X} size="inline" mark />
         </button>
       </div>
       {inline.kind === "answer" ? <AnswerBody /> : inline.kind === "quiz" ? <QuizBody /> : <PayoffBody />}
@@ -233,15 +235,15 @@ function AnswerBody() {
   // which is the right weight for "the source already says this."
   return (
     <div>
-      <p className="text-[13px] leading-relaxed text-ink-2">
+      <p className="text-body leading-relaxed text-ink-2">
         Bounded by both strikes, so the worst case is the width minus what you paid.
       </p>
       <button
         type="button"
         className="mt-1.5 flex items-baseline gap-2 text-left transition-colors hover:text-ink"
       >
-        <code className="font-mono text-[11px] text-ink-3">Lₘₐₓ = K₂ − K₁ − C</code>
-        <span className="font-mono text-[10px] text-ink-4">eq. 4.8 · p. 94 →</span>
+        <code className="font-mono text-meta text-ink-3">Lₘₐₓ = K₂ − K₁ − C</code>
+        <span className="font-mono text-meta text-ink-4">eq. 4.8 · p. 94 →</span>
       </button>
     </div>
   );
@@ -256,7 +258,7 @@ function QuizBody() {
   ];
   return (
     <div>
-      <p className="text-[13px] leading-relaxed text-ink-2">
+      <p className="text-body leading-relaxed text-ink-2">
         A collar on stock bought at S₀. What is the <span className="text-ink">maximum loss</span>?
       </p>
       <div className="mt-2 space-y-1">
@@ -268,7 +270,7 @@ function QuizBody() {
               type="button"
               onClick={() => setPicked(idx)}
               className={cn(
-                "block w-full rounded-chip px-2 py-1 text-left font-mono text-[12px] transition-colors",
+                "block w-full rounded-chip px-2 py-1 text-left font-mono text-small transition-colors",
                 state === "idle" && "text-ink-3 hover:bg-raise",
                 state === "ok" && "bg-amber-soft text-ink",
                 state === "bad" && "text-against line-through",
@@ -280,7 +282,7 @@ function QuizBody() {
         })}
       </div>
       {picked !== null ? (
-        <p className="mt-1.5 font-mono text-[10px] text-ink-4">
+        <p className="mt-1.5 font-mono text-meta text-ink-4">
           {options[picked].ok ? "right" : "not quite"} — the put sets the floor · eq. 4.8, p. 94
         </p>
       ) : null}
@@ -330,12 +332,12 @@ function PayoffBody() {
       <div className="mt-1 flex items-center gap-4">
         <Mini label="K₁" value={k1} min={70} max={99} onChange={setK1} />
         <Mini label="K₂" value={k2} min={101} max={135} onChange={setK2} />
-        <span className="ml-auto shrink-0 font-mono text-[10px] text-ink-4">
+        <span className="ml-auto shrink-0 font-mono text-meta text-ink-4">
           <span className="text-for">+{(k2 - s0 - c).toFixed(0)}</span> /{" "}
           <span className="text-against">{(k1 - s0 - c).toFixed(0)}</span>
         </span>
       </div>
-      <p className="mt-1.5 font-mono text-[10px] text-ink-4">from eq. 4.7 · pp. 88–104</p>
+      <p className="mt-1.5 font-mono text-meta text-ink-4">from eq. 4.7 · pp. 88–104</p>
     </div>
   );
 }
@@ -355,7 +357,7 @@ function Mini({
 }) {
   return (
     <label className="flex items-center gap-1.5">
-      <span className="font-mono text-[10px] text-ink-4">{label}</span>
+      <span className="font-mono text-meta text-ink-4">{label}</span>
       <input
         type="range"
         min={min}
@@ -364,7 +366,7 @@ function Mini({
         onChange={(e) => onChange(Number(e.target.value))}
         className="h-1 w-20 accent-amber"
       />
-      <span className="w-6 font-mono text-[10px] text-ink-3">{value}</span>
+      <span className="w-6 font-mono text-meta text-ink-3">{value}</span>
     </label>
   );
 }
@@ -375,10 +377,10 @@ function PlanSheet({ onClose }: { onClose: () => void }) {
     <div className="absolute inset-x-0 top-12 z-20 mx-auto max-w-[64ch] px-6">
       <div className="rounded-card bg-raise p-4 shadow-modal">
         <div className="mb-3 flex items-baseline gap-2">
-          <span className="font-display text-xs uppercase tracking-wider text-ink-3">Your plan</span>
-          <span className="text-[11px] text-ink-4">edit freely — this outlives every aid</span>
+          <span className="text-small uppercase tracking-wider text-ink-3">Your plan</span>
+          <span className="text-meta text-ink-4">edit freely — this outlives every aid</span>
           <button type="button" onClick={onClose} className="ml-auto text-ink-4 hover:text-ink">
-            <X className="size-3.5" />
+            <Icon as={X} size="inline" mark />
           </button>
         </div>
         {PLAN.map((p) => (
@@ -389,19 +391,19 @@ function PlanSheet({ onClose }: { onClose: () => void }) {
               p.current ? "border-amber" : "border-transparent",
             )}
           >
-            <span className={cn("text-[13px]", p.done ? "text-ink-4 line-through" : "text-ink")}>{p.title}</span>
-            <span className="font-mono text-[10px] text-ink-4">{p.span}</span>
+            <span className={cn("text-body", p.done ? "text-ink-4 line-through" : "text-ink")}>{p.title}</span>
+            <span className="font-mono text-meta text-ink-4">{p.span}</span>
             <span className="ml-auto flex shrink-0 gap-2 opacity-0 transition-opacity group-hover:opacity-100">
-              <button type="button" className="font-mono text-[10px] text-ink-4 hover:text-ink">
+              <button type="button" className="font-mono text-meta text-ink-4 hover:text-ink">
                 split
               </button>
-              <button type="button" className="font-mono text-[10px] text-ink-4 hover:text-against">
+              <button type="button" className="font-mono text-meta text-ink-4 hover:text-against">
                 drop
               </button>
             </span>
           </div>
         ))}
-        <button type="button" className="mt-2 pl-3 font-mono text-[10px] text-ink-4 hover:text-ink-2">
+        <button type="button" className="mt-2 pl-3 font-mono text-meta text-ink-4 hover:text-ink-2">
           + add an item
         </button>
       </div>

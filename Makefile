@@ -14,7 +14,7 @@ PROD_COMPOSE := docker compose -p aladin-prod --env-file backend_v2/.env.prod -f
 PROD_PROFILES ?= api,worker,mcp,collab,copilot
 # Env keys the copilot-agent Node sidecar needs from backend_v2/.env (it does
 # not load .env itself, unlike the Go binaries' godotenv).
-COPILOT_AGENT_ENV_KEYS = --key ANTHROPIC_API_KEY --key COPILOT_MODEL --key COPILOT_AGENT_SHARED_SECRET --key ALADIN_MCP_URL --key COPILOT_AUTH
+COPILOT_AGENT_ENV_KEYS = --key ANTHROPIC_API_KEY --key COPILOT_MODEL --key COPILOT_EFFORT --key COPILOT_AGENT_SHARED_SECRET --key ALADIN_MCP_URL --key COPILOT_AUTH
 
 # Doc Surface page file store (users/{userId}/pages/{pageId}/...). The API
 # process SERVES built dist from here; the MCP process WRITES files + BUILDS into
@@ -151,7 +151,7 @@ ops-reset-stuck-cycles: ## Close stale active/running cycles; optional AGE=30m
 	python3 scripts/ops/aladin_ops.py reset-stuck-cycles --age $(or $(AGE),30m)
 
 # --- PROD stack ---------------------------------------------------------------
-.PHONY: prod-env prod-check-env prod-build prod-up prod-down prod-restart prod-ps prod-logs prod-psql prod-backup prod-backup-install prod-backup-status prod-restore-drill prod-run prod-run-stop prod-run-status prod-update prod-doctor prod-nuke prod-release prod-release-list prod-release-clean prod-release-version prod-app prod-app-clear prod-app-uninstall
+.PHONY: prod-env prod-check-env prod-build prod-up prod-down prod-restart prod-ps prod-logs prod-psql prod-backup prod-backup-install prod-backup-status prod-restore-drill prod-run prod-run-stop prod-run-status prod-update prod-doctor prod-help prod-nuke prod-release prod-release-list prod-release-clean prod-release-version prod-app prod-app-deps prod-app-clear prod-app-uninstall
 
 PROD_BACKUP_INSTALL_DIR := $(HOME)/Library/Application Support/aladin
 
@@ -244,6 +244,57 @@ prod-update: ## THE DEPLOY: build a release (REF=main), back up + drill, activat
 prod-doctor: ## Diagnose the whole prod stack: data tier, processes, health, backups, disk
 	@bash scripts/ops/prod_doctor.sh
 
+prod-help: ## Explain the prod commands: what to run, what each one touches, in what order
+	@printf '%b\n' \
+	  '' \
+	  '\033[1mPROD\033[0m — the app tier runs \033[1mnatively\033[0m; the data tier runs in Docker.' \
+	  '' \
+	  '\033[1m  Daily\033[0m' \
+	  '    make prod-doctor          diagnose it all: data tier, processes, health, backups, disk' \
+	  '    make prod-update          THE DEPLOY (backend): build -> back up + drill -> activate -> verify' \
+	  '    make prod-app             build + install the DESKTOP APP to /Applications' \
+	  '' \
+	  '\033[1m  Those two are separate on purpose\033[0m' \
+	  '    prod-update  ->  api, worker, mcp, blocknote, copilot-agent  (Go + node, from a git archive)' \
+	  '    prod-app     ->  the Tauri client — the ONLY way frontend code ships' \
+	  '    Neither builds the other. A frontend-only change needs prod-app, not prod-update.' \
+	    '    prod-app runs npm ci first when package-lock.json is newer than node_modules.' \
+	  '' \
+	  '\033[1m  Migrations\033[0m' \
+	  '    The api applies pending goose migrations ON BOOT. One-way — there is no down step.' \
+	  '    That is why prod-update backs up and PROVES the dump restores before it activates,' \
+	  '    and refuses to migrate if either fails.   override: SKIP_DRILL=1 · SKIP_BACKUP=1' \
+	  '    prod-doctor reports the schema version the database is currently at.' \
+	  '' \
+	  '\033[1m  Data safety\033[0m' \
+	  '    make prod-backup          one-off dump + file archive, verified as a pair and retained' \
+	  '    make prod-restore-drill   prove the newest dump restores, into a throwaway DB' \
+	  '    make prod-backup-install  install/refresh the nightly 03:00 LaunchAgent' \
+	  '    make prod-backup-status   agent state + what is on disk' \
+	  '' \
+	  '\033[1m  Releases\033[0m   ~/Library/Application Support/aladin/releases/<stamp>-<sha>' \
+	  '    make prod-release         build one from a ref            REF=main · NO_SWITCH=1' \
+	  '    make prod-release-list    list them, and which is `current`' \
+	  '    make prod-run-status      which release each live process came from (flags stale ones)' \
+	  '    make prod-release-clean   prune old ones                  KEEP=3 · DRY_RUN=1' \
+	  '' \
+	  '\033[1m  Processes\033[0m' \
+	  '    make prod-run             start the current release, killing older-release processes first' \
+	  '    make prod-run-stop        stop every process from any release' \
+	  '' \
+	  '\033[1m  Data tier\033[0m   Docker: postgres :5455, redis — the native release connects over those ports' \
+	  '    make prod-ps              container status' \
+	  '    make prod-psql            psql on the prod database' \
+	  '    make prod-logs            container logs        SERVICE=api|worker|mcp|blocknote' \
+	  '' \
+	  '\033[1m  Destructive\033[0m' \
+	  '    make prod-down ARGS=-v    DROPS THE PROD VOLUMES' \
+	  '    make prod-nuke            remove the local install; keeps ~/aladin-backups + .env.prod  DRY_RUN=1' \
+	  '    make prod-app-uninstall   remove the app AND its local state (backend untouched)' \
+	  '' \
+	  '  make help  lists every target, prod and otherwise.' \
+	  ''
+
 prod-release-clean: ## Prune old releases (KEEP=3; DRY_RUN=1 to preview). Never removes `current` or one with a live process
 	KEEP=$(or $(KEEP),3) bash scripts/ops/clean_prod_releases.sh
 
@@ -251,7 +302,15 @@ prod-release-version: ## Show the VERSION stamp of the current release
 	@cat "$(HOME)/Library/Application Support/aladin/current/VERSION" 2>/dev/null \
 		|| echo ">> no current release — run 'make prod-release'"
 
-prod-app: ## Build the desktop app pointed at prod + install it to /Applications (identifier com.aladin.app)
+prod-app-deps:
+	@cd aladin_react && if [ ! -d node_modules ] || [ package-lock.json -nt node_modules/.package-lock.json ]; then \
+		echo ">> deps are stale (package-lock.json is newer than the installed tree) — npm ci"; \
+		npm ci; \
+	else \
+		echo ">> deps up to date"; \
+	fi
+
+prod-app: prod-app-deps ## Build the desktop app pointed at prod + install it to /Applications (identifier com.aladin.app)
 	cd aladin_react && VITE_DESKTOP_API_BASE_URL=http://localhost:8080 VITE_COLLAB_WS_URL=ws://localhost:3511 \
 		npm run tauri:build -- --bundles app \
 		--config '{"identifier":"com.aladin.app","productName":"Aladin"}'

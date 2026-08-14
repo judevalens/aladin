@@ -1,4 +1,5 @@
 import { Trash2 } from "lucide-react";
+import { Eyebrow } from "@/components/ui/eyebrow";
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,11 +17,11 @@ export function MetricCard({
 }) {
   return (
     <div className="bg-card px-5 py-4">
-      <div className="eyebrow">{label}</div>
-      <div className="mt-2 font-display text-[1.5rem] font-semibold leading-tight tracking-[-0.02em] text-ink tabular-nums">
+      <Eyebrow>{label}</Eyebrow>
+      <div className="mt-2 font-display text-title font-semibold leading-tight tracking-[-0.02em] text-ink tabular-nums">
         {value}
       </div>
-      <div className="mt-1 text-[12px] leading-[1.45] text-ink-3">
+      <div className="mt-1 text-small leading-[1.45] text-ink-3">
         {description}
       </div>
     </div>
@@ -29,7 +30,7 @@ export function MetricCard({
 
 export function Pill({ children }: { children: ReactNode }) {
   return (
-    <div className="inline-flex items-center rounded-full border border-line bg-field px-2 py-0.5 text-[11px] text-ink-2">
+    <div className="inline-flex items-center rounded-full border border-line bg-field px-2 py-0.5 text-meta text-ink-2">
       {children}
     </div>
   );
@@ -54,10 +55,10 @@ export function IntegrationTokenRow({
             </div>
             <Badge>{token.status}</Badge>
           </div>
-          <div className="text-sm leading-7 text-ink-2">
+          <div className="text-body leading-7 text-ink-2">
             {token.scopes.join(", ") || "No scopes"}
           </div>
-          <div className="text-sm leading-7 text-ink-3">
+          <div className="text-body leading-7 text-ink-3">
             Created {formatHumanDate(token.createdAt)} · Last used{" "}
             {formatHumanDate(token.lastUsedAt)} · Expires{" "}
             {formatHumanDate(token.expiresAt)}
@@ -81,8 +82,8 @@ export function IntegrationTokenRow({
 export function FactCard({ label, value }: { label: string; value: string }) {
   return (
     <div className="border-t border-line p-4">
-      <div className="eyebrow">{label}</div>
-      <div className="mt-2 text-sm leading-7 text-ink-2">{value}</div>
+      <Eyebrow>{label}</Eyebrow>
+      <div className="mt-2 text-body leading-7 text-ink-2">{value}</div>
     </div>
   );
 }

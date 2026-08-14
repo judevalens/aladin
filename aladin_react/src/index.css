@@ -10,6 +10,11 @@
 /* Per-theme [data-theme] override blocks + the dark-family @custom-variant moved
    into theme.css so shards inherit every theme (make tokens ships them). */
 
+.document-outline-scroll [data-radix-scroll-area-viewport] > div {
+    display: block !important;
+}
+
+
 @layer base {
     * {
         @apply border-border outline-ring/50;
@@ -125,6 +130,3 @@
 }
 
 /* Small mono section label used across feature surfaces. */
-.eyebrow {
-    @apply font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-3;
-}

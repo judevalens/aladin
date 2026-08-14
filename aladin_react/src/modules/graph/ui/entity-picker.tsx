@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Icon } from "@/components/ui/icon";
 import { Plus, Search } from "lucide-react";
 
 import { useAppComposition } from "@/app/composition/app-composition";
@@ -73,7 +74,7 @@ export function EntityPicker({
   return (
     <div className="rounded-card border border-line bg-raise p-2 shadow-panel">
       <div className="flex items-center gap-2 rounded-chip border border-line bg-field px-2 py-1.5">
-        <Search className="size-3.5 shrink-0 text-ink-4" />
+        <Icon as={Search} size="inline" mark className="shrink-0 text-ink-4" />
         <input
           ref={inputRef}
           value={query}
@@ -83,7 +84,7 @@ export function EntityPicker({
           }}
           placeholder="search or create an entity…"
           spellCheck={false}
-          className="w-full bg-transparent text-[12.5px] text-ink outline-none placeholder:text-ink-4"
+          className="w-full bg-transparent text-small text-ink outline-none placeholder:text-ink-4"
         />
       </div>
 
@@ -96,10 +97,10 @@ export function EntityPicker({
                 onClick={() => onPick(h.id)}
                 className="flex w-full items-center gap-2 rounded-chip px-2 py-1.5 text-left transition-colors hover:bg-[rgb(var(--hover))]"
               >
-                <span className="font-mono text-[10px] uppercase text-ink-4">{h.kind || "entity"}</span>
-                <span className="truncate text-[13px] text-ink">{h.name}</span>
+                <span className="font-mono text-meta uppercase text-ink-4">{h.kind || "entity"}</span>
+                <span className="truncate text-body text-ink">{h.name}</span>
                 {h.scope === "tenant" ? (
-                  <span className="ml-auto font-mono text-[10px] text-ink-4">yours</span>
+                  <span className="ml-auto font-mono text-meta text-ink-4">yours</span>
                 ) : null}
               </button>
             </li>
@@ -112,17 +113,17 @@ export function EntityPicker({
                 disabled={busy}
                 className="flex w-full items-center gap-2 rounded-chip px-2 py-1.5 text-left transition-colors hover:bg-[rgb(var(--hover))] disabled:opacity-50"
               >
-                <Plus className="size-3.5 text-amber" />
-                <span className="text-[13px] text-ink-2">
+                <Icon as={Plus} size="inline" mark className="text-amber" />
+                <span className="text-body text-ink-2">
                   Create <span className="text-ink">“{query.trim()}”</span>
                 </span>
               </button>
             </li>
           ) : null}
-          {loading ? <li className="px-2 py-1.5 text-[12px] text-ink-4">Searching…</li> : null}
+          {loading ? <li className="px-2 py-1.5 text-small text-ink-4">Searching…</li> : null}
         </ul>
       ) : (
-        <p className="mt-2 px-1 text-[12px] text-ink-4">Type to search entities.</p>
+        <p className="mt-2 px-1 text-small text-ink-4">Type to search entities.</p>
       )}
     </div>
   );

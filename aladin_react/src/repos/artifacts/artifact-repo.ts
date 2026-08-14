@@ -77,6 +77,12 @@ export interface ArtifactRepo {
   ): Promise<Artifact>;
   createArtifact(input: UserArtifactCreateRequest): Promise<Artifact>;
   renameArtifact(artifactId: string, title: string): Promise<Artifact>;
+  /**
+   * Deletes an artifact. Server-authoritative: the Rust command calls the API first and only
+   * then applies the returned seq to the local replica, so a failed delete leaves nothing
+   * half-removed and the tree updates off the sync frame rather than a local guess.
+   */
+  deleteArtifact(artifactId: string): Promise<void>;
   uploadVoiceArtifact(draft: VoiceCaptureDraft): Promise<Artifact>;
   uploadFileArtifact(input: FileUploadInput): Promise<Artifact>;
   getResourceBlob(artifactId: string): Promise<Blob>;
@@ -128,6 +134,14 @@ export function createArtifactRepo(
       });
       return fromArtifactRow(client, row);
     },
+    async deleteArtifact(artifactId) {
+      await artifacts.deleteById({
+        id: artifactId,
+        updatedAt: Date.now(),
+        mutationId: crypto.randomUUID(),
+      });
+    },
+
     async renameArtifact(artifactId, title) {
       const row = await artifacts.rename({
         id: artifactId,

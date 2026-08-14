@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Icon } from "@/components/ui/icon";
 import { Star } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -55,17 +56,17 @@ export function QuoteTable({
             type="button"
             onClick={() => setTab(t)}
             className={cn(
-              "rounded-chip px-2 py-1 text-[13px] transition-colors",
+              "rounded-chip px-2 py-1 text-body transition-colors",
               t === tab ? "bg-raise font-semibold text-ink" : "text-ink-3 hover:text-ink",
             )}
           >
             {t === "Watchlist" ? watchlistName : t}
           </button>
         ))}
-        <span className="ml-auto font-mono text-[11px] text-ink-4">{rows.length} symbols</span>
+        <span className="ml-auto font-mono text-meta text-ink-4">{rows.length} symbols</span>
       </div>
 
-      <div className="grid grid-cols-[1.6fr_1fr_1fr_0.9fr_0.9fr_0.8fr_28px] gap-2 border-b border-line-2 px-2 py-1.5 font-mono text-[10px] uppercase tracking-[0.4px] text-ink-4">
+      <div className="grid grid-cols-[1.6fr_1fr_1fr_0.9fr_0.9fr_0.8fr_28px] gap-2 border-b border-line-2 px-2 py-1.5 font-mono text-meta uppercase tracking-[0.4px] text-ink-4">
         <span>Symbol</span>
         <span className="text-right">Last</span>
         <span className="text-right">Chg</span>
@@ -77,7 +78,7 @@ export function QuoteTable({
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {rows.length === 0 ? (
-          <p className="px-2 py-8 text-center text-[13px] text-ink-4">Nothing here yet.</p>
+          <p className="px-2 py-8 text-center text-body text-ink-4">Nothing here yet.</p>
         ) : (
           rows.map((q) => {
             const up = q.change >= 0;
@@ -94,16 +95,16 @@ export function QuoteTable({
                 )}
               >
                 <span className="flex flex-col">
-                  <span className="font-display text-[13px] font-semibold text-ink">{q.symbol}</span>
-                  <span className="truncate text-[11px] text-ink-4">{q.name}</span>
+                  <span className="font-display text-body font-semibold text-ink">{q.symbol}</span>
+                  <span className="truncate text-meta text-ink-4">{q.name}</span>
                 </span>
-                <span className="text-right font-mono text-[13px] text-ink">{fmtPrice(q.last)}</span>
-                <span className={cn("text-right font-mono text-[12px]", up ? "text-for" : "text-against")}>
+                <span className="text-right font-mono text-body text-ink">{fmtPrice(q.last)}</span>
+                <span className={cn("text-right font-mono text-small", up ? "text-for" : "text-against")}>
                   {fmtSigned(q.change)}
                 </span>
                 <span
                   className={cn(
-                    "justify-self-end rounded-chip px-1.5 py-0.5 text-right font-mono text-[12px]",
+                    "justify-self-end rounded-chip px-1.5 py-0.5 text-right font-mono text-small",
                     up ? "bg-for/15 text-for" : "bg-against/15 text-against",
                   )}
                 >
@@ -112,7 +113,7 @@ export function QuoteTable({
                 <span className="flex justify-center">
                   <Sparkline series={q.spark} up={up} />
                 </span>
-                <span className="text-right font-mono text-[12px] text-ink-3">{fmtVol(q.volume)}</span>
+                <span className="text-right font-mono text-small text-ink-3">{fmtVol(q.volume)}</span>
                 <AddToListMenu symbol={q.symbol}>
                   <span
                     role="button"
@@ -121,7 +122,7 @@ export function QuoteTable({
                     onClick={(e) => e.stopPropagation()}
                     className="grid size-6 place-items-center rounded text-ink-4 hover:text-amber"
                   >
-                    <Star className={cn("size-4", isWatched && "fill-amber text-amber")} strokeWidth={1.75} />
+                    <Icon as={Star} className={cn(isWatched && "fill-amber text-amber")} />
                   </span>
                 </AddToListMenu>
               </button>

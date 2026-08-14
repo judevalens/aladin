@@ -1,4 +1,5 @@
 import { History } from "lucide-react";
+import { Icon } from "@/components/ui/icon";
 import { useState } from "react";
 import { useAppComposition } from "@/app/composition/app-composition";
 import { useAppStore } from "@/app/state/store";
@@ -40,7 +41,7 @@ export function PageEditorUI({ pageId }: { pageId: string }) {
   const user = authState.status === "data" ? authState.value.user : null;
   if (!user) {
     return (
-      <div className="px-7 py-6 text-sm text-ink-2">Loading page…</div>
+      <div className="px-7 py-6 text-body text-ink-2">Loading page…</div>
     );
   }
 
@@ -52,14 +53,23 @@ export function PageEditorUI({ pageId }: { pageId: string }) {
         <button
           onClick={() => setHistoryOpen((v) => !v)}
           title="Edit history"
-          className="flex items-center gap-1.5 rounded-md border border-line bg-field/90 px-2.5 py-1 text-xs font-medium text-ink-2 backdrop-blur-sm hover:bg-raise hover:text-ink"
+          className="flex items-center gap-1.5 rounded-control border border-line bg-field/90 px-2.5 py-1 text-small font-medium text-ink-2 backdrop-blur-sm hover:bg-raise hover:text-ink"
         >
-          <History className="h-3.5 w-3.5" />
+          <Icon as={History} size="inline" mark />
           History
         </button>
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">
-        <div className="mx-auto flex h-full w-full max-w-workspace-max flex-col">
+        {/* 90% of the pane, centred — a PROPORTION, not a fixed reading measure. A fixed cap
+            was tried and reverted twice: BlockNote already carries `padding-inline: 54px` for
+            its drag-handle gutter, so a cap stacks on top of that and pinches the text twice
+            (a 720px cap left a 548px column). A percentage keeps the breathing room
+            proportional at any pane width instead.
+
+            Below ~800px of pane the 10% starts competing with BlockNote's fixed 108px of
+            gutter; if that gets tight with both docks open, this wants a min-width rather
+            than a smaller percentage. */}
+        <div className="mx-auto flex h-full w-[90%] flex-col">
           <BlockNotePageEditorDriver
             key={pageId}
             pageId={pageId}

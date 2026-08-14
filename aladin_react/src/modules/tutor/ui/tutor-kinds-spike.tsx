@@ -1,4 +1,6 @@
 import { useRef, useState } from "react";
+import { Eyebrow } from "@/components/ui/eyebrow";
+import { Icon } from "@/components/ui/icon";
 import { Boxes, GripVertical, Paperclip, Plus, StickyNote, Table2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -53,7 +55,7 @@ export function TutorKindsSpike() {
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-bg text-ink">
       {/* the folder, as a breadcrumb — it groups, it is not a destination */}
-      <div className="flex shrink-0 items-center gap-1.5 px-4 pt-2 font-mono text-[10px] text-ink-4">
+      <div className="flex shrink-0 items-center gap-1.5 px-4 pt-2 font-mono text-meta text-ink-4">
         <span>Pairs trading</span>
         <span>/</span>
         <span className="text-ink-3">Cointegration &amp; stationarity</span>
@@ -61,7 +63,7 @@ export function TutorKindsSpike() {
             the research it unblocks — same tree, same shell, no special surface either. */}
         <span className="ml-3 text-ink-4">backs</span>
         <span className="text-ink-4">▸ mean-reversion v2</span>
-        <span className="rounded-chip bg-field px-1 text-[9px] uppercase tracking-wider">research</span>
+        <span className="rounded-chip bg-field px-1 text-meta uppercase tracking-wider">research</span>
       </div>
 
       <div className="flex shrink-0 items-center gap-1 border-b border-line px-2">
@@ -71,13 +73,13 @@ export function TutorKindsSpike() {
             type="button"
             onClick={() => setTab(t.id)}
             className={cn(
-              "-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs transition-colors",
+              "-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-small transition-colors",
               tab === t.id ? "border-amber text-ink" : "border-transparent text-ink-3 hover:text-ink-2",
             )}
           >
             <t.icon className="size-3.5" />
             {t.label}
-            <span className="font-mono text-[10px] text-ink-4">{t.hint}</span>
+            <span className="font-mono text-meta text-ink-4">{t.hint}</span>
           </button>
         ))}
       </div>
@@ -98,7 +100,7 @@ export function TutorKindsSpike() {
 function SourceStub() {
   return (
     <div className="flex h-full items-center justify-center">
-      <p className="max-w-[40ch] text-center text-[12px] leading-relaxed text-ink-4">
+      <p className="max-w-[40ch] text-center text-small leading-relaxed text-ink-4">
         The source opens in the shipped document viewer. Not re-rendered here — that was the
         mistake in the first two attempts.
       </p>
@@ -185,7 +187,7 @@ function CanvasKind() {
         backgroundImage:
           "radial-gradient(circle, color-mix(in oklab, currentColor 12%, transparent) 1px, transparent 1px)",
         backgroundSize: "22px 22px",
-        color: "var(--color-ink-4, #555)",
+        color: "var(--color-ink-4)",
       }}
     >
       {cards.map((c) => (
@@ -201,16 +203,16 @@ function CanvasKind() {
             onMouseDown={(e) => onDown(e, c)}
             className="flex cursor-grab items-center gap-1 px-2 py-1 active:cursor-grabbing"
           >
-            <GripVertical className="size-3 text-ink-4" />
-            <span className="font-mono text-[9px] uppercase tracking-wider text-ink-4">{c.kind}</span>
+            <Icon as={GripVertical} size="inline" mark className="text-ink-4" />
+            <Eyebrow as="span" className="text-ink-4">{c.kind}</Eyebrow>
             {c.cite ? (
-              <span className="ml-auto font-mono text-[9px] text-ink-4">{c.cite}</span>
+              <span className="ml-auto font-mono text-meta text-ink-4">{c.cite}</span>
             ) : null}
           </div>
           <p
             className={cn(
               "px-2.5 pb-2.5 leading-relaxed text-ink-2",
-              c.kind === "formula" ? "font-mono text-[13px] text-ink" : "text-[12px]",
+              c.kind === "formula" ? "font-mono text-body text-ink" : "text-small",
             )}
           >
             {c.body}
@@ -220,9 +222,9 @@ function CanvasKind() {
 
       <button
         type="button"
-        className="absolute bottom-4 right-4 flex items-center gap-1.5 rounded-chip bg-raise px-2.5 py-1.5 text-[11px] text-ink-2 shadow-modal transition-colors hover:text-ink"
+        className="absolute bottom-4 right-4 flex items-center gap-1.5 rounded-chip bg-raise px-2.5 py-1.5 text-meta text-ink-2 shadow-modal transition-colors hover:text-ink"
       >
-        <Plus className="size-3" /> note
+        <Icon as={Plus} size="inline" mark /> note
       </button>
     </div>
   );
@@ -251,10 +253,10 @@ function StudyKind() {
   return (
     <div className="h-full overflow-auto">
       <div className="mx-auto w-full max-w-[62rem] px-8 py-7">
-        <h1 className="font-display text-[20px] text-ink">This week</h1>
-        <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.5px] text-ink-4">
+        <h1 className="font-display text-title text-ink">This week</h1>
+        <Eyebrow as="p" className="mt-1 text-ink-4">
           8 × 25 min · what mean-reversion v2 needs you to actually understand
-        </p>
+        </Eyebrow>
 
         <div className="-mx-2 mt-5">
           {blocks.map((b) => (
@@ -271,14 +273,14 @@ function StudyKind() {
                 )}
                 aria-label={b.done ? "done" : "not done"}
               />
-              <span className="w-24 shrink-0 font-mono text-[10px] text-ink-4">{b.when}</span>
+              <span className="w-24 shrink-0 font-mono text-meta text-ink-4">{b.when}</span>
               <span className="min-w-0 flex-1">
-                <span className={cn("block text-[13px]", b.done ? "text-ink-4 line-through" : "text-ink")}>
+                <span className={cn("block text-body", b.done ? "text-ink-4 line-through" : "text-ink")}>
                   {b.task}
                 </span>
-                <span className="mt-0.5 block text-[11px] text-ink-3">{b.topic}</span>
+                <span className="mt-0.5 block text-meta text-ink-3">{b.topic}</span>
               </span>
-              <span className="shrink-0 font-mono text-[10px] text-ink-4">{b.span}</span>
+              <span className="shrink-0 font-mono text-meta text-ink-4">{b.span}</span>
             </div>
           ))}
         </div>

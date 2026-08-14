@@ -175,6 +175,7 @@ export function createAppComposition() {
     // lost. Bumping the reconnect nonce lets consumers (the copilot dock) reconcile
     // against the server's durable state instead of waiting on events that never come.
     onConnectionChange: (state) => {
+      useAppStore.getState().setCopilotRealtimeState(state);
       if (state === "open" && wasDisconnected) {
         useAppStore.getState().noteCopilotWsReconnect();
         // No replay cursor: frames during the gap are gone, so every live shard

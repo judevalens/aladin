@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Icon } from "@/components/ui/icon";
 import { Check, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -90,7 +91,7 @@ export function WatchlistManagerDialog({
                 <div
                   key={l.id}
                   className={cn(
-                    "group/row flex items-center gap-2 rounded-chip px-2 py-1.5 text-[13px] transition-colors",
+                    "group/row flex items-center gap-2 rounded-chip px-2 py-1.5 text-body transition-colors",
                     l.id === selectedId ? "bg-raise text-ink" : "text-ink-2 hover:bg-card",
                   )}
                 >
@@ -107,7 +108,7 @@ export function WatchlistManagerDialog({
                           setRenaming(null);
                         } else if (e.key === "Escape") setRenaming(null);
                       }}
-                      className="h-6 px-1.5 py-0 text-[13px]"
+                      className="h-6 px-1.5 py-0 text-body"
                     />
                   ) : confirmDelete === l.id ? (
                     <>
@@ -121,7 +122,7 @@ export function WatchlistManagerDialog({
                         }}
                         className="grid size-5 place-items-center rounded text-against hover:bg-against/10"
                       >
-                        <Check className="size-3.5" strokeWidth={2} />
+                        <Icon as={Check} size="inline" mark />
                       </button>
                       <button
                         type="button"
@@ -129,7 +130,7 @@ export function WatchlistManagerDialog({
                         onClick={() => setConfirmDelete(null)}
                         className="grid size-5 place-items-center rounded text-ink-4 hover:text-ink"
                       >
-                        <X className="size-3.5" strokeWidth={2} />
+                        <Icon as={X} size="inline" mark />
                       </button>
                     </>
                   ) : (
@@ -140,7 +141,7 @@ export function WatchlistManagerDialog({
                         className="flex min-w-0 flex-1 items-center gap-2 text-left"
                       >
                         <span className="flex-1 truncate font-display font-semibold">{l.name}</span>
-                        <span className="font-mono text-[11px] text-ink-4">{l.itemCount}</span>
+                        <span className="font-mono text-meta text-ink-4">{l.itemCount}</span>
                       </button>
                       <span className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover/row:opacity-100">
                         <button
@@ -152,7 +153,7 @@ export function WatchlistManagerDialog({
                           }}
                           className="grid size-5 place-items-center rounded text-ink-4 hover:text-ink"
                         >
-                          <Pencil className="size-3" strokeWidth={1.75} />
+                          <Icon as={Pencil} size="inline" />
                         </button>
                         <button
                           type="button"
@@ -160,7 +161,7 @@ export function WatchlistManagerDialog({
                           onClick={() => setConfirmDelete(l.id)}
                           className="grid size-5 place-items-center rounded text-ink-4 hover:text-against"
                         >
-                          <Trash2 className="size-3" strokeWidth={1.75} />
+                          <Icon as={Trash2} size="inline" />
                         </button>
                       </span>
                     </>
@@ -176,7 +177,7 @@ export function WatchlistManagerDialog({
                 onKeyDown={(e) => {
                   if (e.key === "Enter") void createList();
                 }}
-                className="h-7 text-[13px]"
+                className="h-7 text-body"
               />
               <button
                 type="button"
@@ -185,7 +186,7 @@ export function WatchlistManagerDialog({
                 disabled={!newName.trim()}
                 className="grid size-7 shrink-0 place-items-center rounded-card bg-amber text-bg disabled:opacity-40"
               >
-                <Plus className="size-4" strokeWidth={2.5} />
+                <Icon as={Plus} mark />
               </button>
             </div>
           </div>
@@ -196,12 +197,12 @@ export function WatchlistManagerDialog({
               <>
                 <div className="shrink-0 border-b border-line p-3">
                   <div className="relative">
-                    <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-4" strokeWidth={1.75} />
+                    <Icon as={Search} size="inline" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-4" />
                     <Input
                       placeholder={`Add a ticker to ${selected.name}…`}
                       value={query}
                       onChange={(e) => setQuery(e.target.value)}
-                      className="h-8 pl-8 text-[13px]"
+                      className="h-8 pl-8 text-body"
                     />
                   </div>
                   {hits.length > 0 && (
@@ -217,14 +218,14 @@ export function WatchlistManagerDialog({
                               await addItem(selected.id, h.id);
                               setQuery("");
                             }}
-                            className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[13px] transition-colors hover:bg-raise disabled:opacity-50"
+                            className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-body transition-colors hover:bg-raise disabled:opacity-50"
                           >
                             <span className="font-display font-semibold text-ink">{h.symbol}</span>
-                            <span className="flex-1 truncate text-[12px] text-ink-4">{h.name}</span>
+                            <span className="flex-1 truncate text-small text-ink-4">{h.name}</span>
                             {added ? (
-                              <span className="text-[11px] text-ink-4">added</span>
+                              <span className="text-meta text-ink-4">added</span>
                             ) : (
-                              <Plus className="size-3.5 text-amber" strokeWidth={2} />
+                              <Icon as={Plus} size="inline" mark className="text-amber" />
                             )}
                           </button>
                         );
@@ -234,7 +235,7 @@ export function WatchlistManagerDialog({
                 </div>
                 <div className="min-h-0 flex-1 overflow-y-auto p-2">
                   {selected.items.length === 0 ? (
-                    <p className="px-2 py-8 text-center text-[13px] text-ink-4">
+                    <p className="px-2 py-8 text-center text-body text-ink-4">
                       No tickers yet — search above to add.
                     </p>
                   ) : (
@@ -243,15 +244,15 @@ export function WatchlistManagerDialog({
                         key={it.instrumentId}
                         className="group/item flex items-center gap-2 rounded-chip px-2 py-2 hover:bg-card"
                       >
-                        <span className="font-display text-[13px] font-semibold text-ink">{it.symbol}</span>
-                        <span className="flex-1 truncate text-[12px] text-ink-4">{it.name}</span>
+                        <span className="font-display text-body font-semibold text-ink">{it.symbol}</span>
+                        <span className="flex-1 truncate text-small text-ink-4">{it.name}</span>
                         <button
                           type="button"
                           aria-label={`Remove ${it.symbol}`}
                           onClick={() => removeItem(selected.id, it.instrumentId)}
                           className="grid size-6 place-items-center rounded text-ink-4 opacity-0 transition-opacity hover:text-against group-hover/item:opacity-100"
                         >
-                          <X className="size-4" strokeWidth={1.75} />
+                          <Icon as={X} />
                         </button>
                       </div>
                     ))
@@ -264,14 +265,14 @@ export function WatchlistManagerDialog({
                       setActive(selected.id);
                       onOpenChange(false);
                     }}
-                    className="text-[12px] text-amber hover:underline"
+                    className="text-small text-amber hover:underline"
                   >
                     Show “{selected.name}” on the map →
                   </button>
                 </div>
               </>
             ) : (
-              <div className="grid flex-1 place-items-center text-[13px] text-ink-4">
+              <div className="grid flex-1 place-items-center text-body text-ink-4">
                 Create a list to get started.
               </div>
             )}

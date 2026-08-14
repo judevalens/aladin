@@ -1,6 +1,6 @@
 import { Search } from "lucide-react";
 import type { HTMLAttributes, PropsWithChildren } from "react";
-import { cn } from "@/shared/lib/utils";
+import { cn } from "@/lib/utils";
 
 export function AladinShellPane({ className, children }: PropsWithChildren<{ className?: string }>) {
   return (

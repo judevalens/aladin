@@ -85,6 +85,9 @@ export interface BrowserPaneState {
   onCreateFolderHere: (folderId: string) => void;
   onCreateResearchHere: (folderId: string) => void;
   onCreateNoteHere: (folderId: string) => void;
+  /** Deletes a folder or research folder. Server-authoritative; the tree updates off the frame. */
+  onDeleteFolder: (folderId: string) => Promise<void>;
+  onDeleteArtifact: (artifactId: string) => Promise<void>;
 }
 
 export interface WorkPaneCrumb {
@@ -103,6 +106,16 @@ export interface WorkPaneTab {
   tab: WorkTab;
   /** Set on artifact tabs once the artifact has loaded. */
   artifact?: Artifact;
+  /**
+   * The pieces `label` is built from. The strip renders `label` and ignores these; the tab
+   * switcher needs them apart, because it puts the research folder in a group header and the
+   * view name in the row. Splitting `label` back up on " · " would break on a folder title
+   * that contains one — so the derivation hands over both forms rather than one to re-parse.
+   */
+  groupTitle?: string;
+  viewLabel?: string;
+  /** The folder an artifact tab lives in — disambiguates two same-named notes. */
+  parentFolderTitle?: string | null;
 }
 
 export interface WorkPaneState {
@@ -320,7 +333,30 @@ export function useBrowserPane(): BrowserPaneState {
           openArtifact(artifact.id);
         });
     },
+    // Delete THEN close: a tab closed before a failed request would look like the delete
+    // worked. The tree itself needs no help — the server tombstones the node and the sync
+    // frame removes it from the local replica, which is what the tree reads.
+    onDeleteFolder: async (folderId: string) => {
+      await services.workspace.deleteFolder(folderId);
+      closeTabsForContext(folderId);
+    },
+    onDeleteArtifact: async (artifactId: string) => {
+      await services.workspace.deleteArtifact(artifactId);
+      useAppStore.getState().closeTab(artifactId);
+    },
   };
+}
+
+/**
+ * Closes every research view tab belonging to a deleted folder. Their keys are
+ * `research:<contextId>:<view>`, so membership is derived rather than tracked — the same rule
+ * the tab strip's grouping uses.
+ */
+function closeTabsForContext(contextId: string) {
+  const store = useAppStore.getState();
+  store.workspace.openTabs
+    .filter((tab) => tab.kind === "research" && tab.contextId === contextId)
+    .forEach((tab) => store.closeTab(tabKey(tab)));
 }
 
 export function useWorkPane(): WorkPaneState {
@@ -392,13 +428,19 @@ export function useWorkPane(): WorkPaneState {
           label: artifact?.title ?? "Untitled",
           tab,
           artifact,
+          parentFolderTitle: artifact?.folderId
+            ? findFolderTitle(tree, artifact.folderId)
+            : null,
         };
       }
       const title = findFolderTitle(tree, tab.contextId) ?? "Research";
+      const viewLabel = RESEARCH_VIEW_LABEL[tab.view];
       return {
         key: tabKey(tab),
-        label: `${title} · ${RESEARCH_VIEW_LABEL[tab.view]}`,
+        label: `${title} · ${viewLabel}`,
         tab,
+        groupTitle: title,
+        viewLabel,
       };
     });
 

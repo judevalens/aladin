@@ -1,0 +1,11 @@
+TEAM_ID=
+
+PRODUCT_NAME=anchor
+PRODUCT_BUNDLE_IDENTIFIER=dawn.system.anchor.anchor$(TEAM_ID)
+
+CURRENT_PROJECT_VERSION=1
+MARKETING_VERSION=1.0
+
+// SQLDelight's iOS driver (co.touchlab:sqliter) calls the system SQLite, so the app must
+// link libsqlite3 — without this the link fails with undefined _sqlite3_* symbols.
+OTHER_LDFLAGS = $(inherited) -lsqlite3

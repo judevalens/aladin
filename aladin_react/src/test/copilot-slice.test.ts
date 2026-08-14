@@ -21,6 +21,22 @@ const proposal = (over: Partial<Parameters<CopilotSlice["addCopilotProposal"]>[0
 });
 
 describe("copilot proposal lifecycle", () => {
+  it("normalizes legacy persisted model ids to SDK-safe aliases", () => {
+    const store = makeStore();
+    store.getState().setCopilotModel("opus5");
+    expect(store.getState().copilotModel).toBe("claude-opus-5");
+    store.getState().setCopilotModel("sonnet5");
+    expect(store.getState().copilotModel).toBe("claude-sonnet-5");
+  });
+
+  it("normalizes selected effort ids", () => {
+    const store = makeStore();
+    store.getState().setCopilotEffort("x-high");
+    expect(store.getState().copilotEffort).toBe("xhigh");
+    store.getState().setCopilotEffort("MAX");
+    expect(store.getState().copilotEffort).toBe("max");
+  });
+
   it("adds proposals only for the in-flight session (second-window gate)", () => {
     const store = makeStore();
     startTurn(store);
@@ -34,7 +50,7 @@ describe("copilot proposal lifecycle", () => {
     const store = makeStore();
     startTurn(store);
     store.getState().addCopilotProposal(proposal());
-    store.getState().endCopilotTurn("s1");
+    store.getState().endCopilotTurn("t1", "s1");
     expect(store.getState().copilotProposals[0]?.status).toBe("expired");
   });
 
@@ -42,7 +58,7 @@ describe("copilot proposal lifecycle", () => {
     const store = makeStore();
     startTurn(store);
     store.getState().addCopilotProposal(proposal());
-    store.getState().setCopilotError("s1", "boom");
+    store.getState().setCopilotError("t1", "s1", "boom");
     expect(store.getState().copilotProposals[0]?.status).toBe("expired");
 
     const store2 = makeStore();
@@ -58,7 +74,7 @@ describe("copilot proposal lifecycle", () => {
     startTurn(store);
     store.getState().addCopilotProposal(proposal());
     store.getState().resolveCopilotProposal("a1", true, "Done.");
-    store.getState().endCopilotTurn("s1");
+    store.getState().endCopilotTurn("t1", "s1");
     expect(store.getState().copilotProposals[0]?.status).toBe("approved");
   });
 
@@ -83,14 +99,41 @@ describe("copilot proposal lifecycle", () => {
     expect(p?.message).toContain("try again");
   });
 
-  it("expires stale unresolved proposals for a thread when it is reopened", () => {
+  it("keeps unresolved proposals actionable when a thread is reopened", () => {
     const store = makeStore();
     startTurn(store);
     store.getState().addCopilotProposal(proposal());
-    // Simulate switching away (session gate lost) then reopening the thread.
+    // Simulate switching away (session gate lost) then reopening the thread: the
+    // server-side approval hold can still be alive, so the dock must not kill the card.
     store.getState().openCopilotThread("t2", []);
     store.getState().openCopilotThread("t1", []);
-    expect(store.getState().copilotProposals[0]?.status).toBe("expired");
+    expect(store.getState().copilotProposals[0]?.status).toBe("pending");
+  });
+
+  it("binds early stream events that arrive before the send response resolves", () => {
+    const store = makeStore();
+    store.getState().appendCopilotUserMessage("hello");
+    store.getState().appendCopilotToken("t-new", "s-new", "early ");
+    store.getState().setCopilotTool("t-new", "s-new", "search", "Searching your workspace");
+    const s = store.getState();
+    expect(s.activeThreadId).toBe("t-new");
+    expect(s.copilotSessionId).toBe("s-new");
+    expect(s.copilotStatus).toBe("streaming");
+    expect(s.copilotStreaming).toBe("early ");
+    expect(s.copilotToolTrail[0]?.label).toBe("Searching your workspace");
+  });
+
+  it("stores tool input and result summaries on the activity trail", () => {
+    const store = makeStore();
+    startTurn(store);
+    store.getState().setCopilotTool("t1", "s1", "search", "Searching your workspace", "query: nvda");
+    store.getState().finishCopilotTool("t1", "s1", "search", true, "3 results");
+
+    expect(store.getState().copilotToolTrail[0]).toMatchObject({
+      inputSummary: "query: nvda",
+      resultSummary: "3 results",
+      status: "ok",
+    });
   });
 });
 
@@ -99,7 +142,7 @@ describe("copilot reconcile (watchdog / reconnect recovery)", () => {
     const store = makeStore();
     startTurn(store);
     store.getState().addCopilotProposal(proposal());
-    store.getState().appendCopilotToken("s1", "partial…");
+    store.getState().appendCopilotToken("t1", "s1", "partial…");
     store.getState().reconcileCopilotThread("t1", [
       { id: "u1", role: "user", content: "hi", citations: [] },
       { id: "srv-9", role: "assistant", content: "final answer", citations: [] },
@@ -115,7 +158,7 @@ describe("copilot reconcile (watchdog / reconnect recovery)", () => {
   it("leaves a genuinely-running turn alone", () => {
     const store = makeStore();
     startTurn(store);
-    store.getState().appendCopilotToken("s1", "partial…");
+    store.getState().appendCopilotToken("t1", "s1", "partial…");
     store.getState().reconcileCopilotThread("t1", [
       { id: "u1", role: "user", content: "hi", citations: [] },
     ]);
@@ -157,18 +200,123 @@ describe("turnLooksStuck", () => {
 });
 
 describe("queue-of-one", () => {
-  it("takes the queued text exactly once", () => {
+  it("takes the queued text exactly once for the matching thread and surface", () => {
     const store = makeStore();
-    store.getState().queueCopilotText("follow-up");
-    expect(store.getState().takeCopilotQueuedText()).toBe("follow-up");
-    expect(store.getState().takeCopilotQueuedText()).toBeNull();
+    store.getState().queueCopilotText("follow-up", { threadId: "t1", surfaceKey: "artifact:a1" });
+    expect(store.getState().takeCopilotQueuedText("t2", "artifact:a1")).toBeNull();
+    expect(store.getState().takeCopilotQueuedText("t1", "ticker:NVDA")).toBeNull();
+    expect(store.getState().takeCopilotQueuedText("t1", "artifact:a1")).toBe("follow-up");
+    expect(store.getState().takeCopilotQueuedText("t1", "artifact:a1")).toBeNull();
   });
 
-  it("clears the queue when the conversation changes", () => {
+  it("preserves a queued follow-up across unrelated thread switches", () => {
     const store = makeStore();
-    store.getState().queueCopilotText("follow-up");
+    store.getState().queueCopilotText("follow-up", { threadId: "t1", surfaceKey: "artifact:a1" });
+    store.getState().openCopilotThread("t2", []);
+    expect(store.getState().copilotQueuedTextFor("t2", "artifact:a1")).toBeNull();
+    store.getState().openCopilotThread("t1", []);
+    expect(store.getState().copilotQueuedTextFor("t1", "artifact:a1")).toBe("follow-up");
+  });
+
+  it("binds a queued new-thread follow-up once the server returns the real thread id", () => {
+    const store = makeStore();
+    store.getState().appendCopilotUserMessage("make a shard");
+    store.getState().queueCopilotText("then publish it", { threadId: null, surfaceKey: "markets" });
+    store.getState().beginCopilotTurn("server-thread", "s1");
+
+    expect(store.getState().copilotQueuedTextFor(null, "markets")).toBeNull();
+    expect(store.getState().copilotQueuedTextFor("server-thread", "markets")).toBe("then publish it");
+  });
+
+  it("clears a queued new-chat follow-up when starting a different new chat", () => {
+    const store = makeStore();
+    store.getState().queueCopilotText("follow-up", { threadId: null, surfaceKey: "markets" });
     store.getState().newCopilotThread();
     expect(store.getState().copilotQueuedText).toBeNull();
+  });
+});
+
+describe("copilot drafts", () => {
+  it("keeps unsent composer text per thread", () => {
+    const store = makeStore();
+    store.getState().openCopilotThread("t1", []);
+    store.getState().setCopilotDraft("t1", "draft one");
+    store.getState().openCopilotThread("t2", []);
+    store.getState().setCopilotDraft("t2", "draft two");
+
+    expect(store.getState().copilotDraftFor("t1")).toBe("draft one");
+    expect(store.getState().copilotDraftFor("t2")).toBe("draft two");
+  });
+
+  it("starts an explicit new thread with a blank draft", () => {
+    const store = makeStore();
+    store.getState().setCopilotDraft(null, "new thread draft");
+    store.getState().newCopilotThread();
+
+    expect(store.getState().copilotDraftFor(null)).toBe("");
+  });
+});
+
+describe("copilot thread management", () => {
+  it("renames a thread in the local switcher list", () => {
+    const store = makeStore();
+    store.getState().setCopilotThreads([
+      { id: "t1", title: "Old", updatedAt: "2026-01-01T00:00:00Z" },
+      { id: "t2", title: "Other", updatedAt: "2026-01-02T00:00:00Z" },
+    ]);
+
+    store.getState().renameCopilotThreadLocal({
+      id: "t1",
+      title: "New",
+      updatedAt: "2026-01-03T00:00:00Z",
+    });
+
+    expect(store.getState().copilotThreads.map((t) => t.title)).toEqual(["New", "Other"]);
+  });
+
+  it("archives the active thread locally and returns to a fresh chat", () => {
+    const store = makeStore();
+    store.getState().setCopilotThreads([
+      { id: "t1", title: "Active", updatedAt: "2026-01-01T00:00:00Z" },
+      { id: "t2", title: "Other", updatedAt: "2026-01-02T00:00:00Z" },
+    ]);
+    store.getState().openCopilotThread("t1", [
+      { id: "m1", role: "user", content: "hello", citations: [] },
+    ]);
+
+    store.getState().archiveCopilotThreadLocal("t1");
+
+    expect(store.getState().copilotThreads.map((t) => t.id)).toEqual(["t2"]);
+    expect(store.getState().activeThreadId).toBeNull();
+    expect(store.getState().copilotMessages).toEqual([]);
+  });
+
+  it("keeps pinned threads ahead of normal recency", () => {
+    const store = makeStore();
+    store.getState().setCopilotThreads([
+      { id: "old-pinned", title: "Pinned", updatedAt: "2026-01-01T00:00:00Z", pinned: true },
+      { id: "new-normal", title: "Recent", updatedAt: "2026-01-03T00:00:00Z" },
+      { id: "old-normal", title: "Old", updatedAt: "2026-01-02T00:00:00Z" },
+    ]);
+
+    expect(store.getState().copilotThreads.map((t) => t.id)).toEqual([
+      "old-pinned",
+      "new-normal",
+      "old-normal",
+    ]);
+
+    store.getState().updateCopilotThreadLocal({
+      id: "new-normal",
+      title: "Recent",
+      updatedAt: "2026-01-03T00:00:00Z",
+      pinned: true,
+    });
+
+    expect(store.getState().copilotThreads.map((t) => t.id)).toEqual([
+      "new-normal",
+      "old-pinned",
+      "old-normal",
+    ]);
   });
 });
 
@@ -186,7 +334,7 @@ describe("turnDigest", () => {
           { name: "build_app", ok: true },
         ],
       }),
-    ).toBe("search · write_file ×2 ✗ · build_app — $0.14 · 23 steps");
+    ).toBe("searched workspace · wrote shard code ×2 ✗ · built shard — $0.14 · 23 steps");
     expect(turnDigest(undefined)).toBe("");
   });
 });

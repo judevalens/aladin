@@ -114,5 +114,5 @@ app.post("/turn/:turnId/approvals/:approvalId", (req, res) => {
 });
 
 app.listen(config.port, () => {
-  console.log(`[copilot-agent] listening on :${config.port} (mcp: ${config.mcpUrl}, model: ${config.model})`);
+  console.log(`[copilot-agent] listening on :${config.port} (mcp: ${config.mcpUrl}, model: ${config.model}, effort: ${config.effort})`);
 });

@@ -1,4 +1,6 @@
 import { Globe } from "lucide-react";
+import { Eyebrow } from "@/components/ui/eyebrow";
+import { Icon } from "@/components/ui/icon";
 
 import { useAppStore } from "@/app/state/store";
 import type { EntityListItem } from "@/modules/entities/entity-list-types";
@@ -72,7 +74,7 @@ export function EntitiesIndexSpike() {
   const theme = useAppStore((s) => s.theme);
   return (
     <div className="flex h-screen flex-col bg-bg text-ink">
-      <div className="flex items-center gap-3 border-b border-line bg-chrome px-4 py-2 text-xs text-ink-3">
+      <div className="flex items-center gap-3 border-b border-line bg-chrome px-4 py-2 text-small text-ink-3">
         <span className="font-mono">/spike/entities-index</span>
         <span className="text-ink-4">·</span>
         <span>theme: {theme}</span>
@@ -88,19 +90,19 @@ export function EntitiesIndexSpike() {
         <div className="flex h-full w-full flex-col overflow-hidden">
           <div className="border-b border-line px-5 pt-4 pb-3">
             <div className="flex items-center gap-3">
-              <Globe size={15} strokeWidth={1.8} className="text-ink-3" />
-              <span className="eyebrow">Entities</span>
-              <span className="font-mono text-[10px] text-ink-4">{MOCK.length} shown</span>
+              <Icon as={Globe} className="text-ink-3" />
+              <Eyebrow as="span">Entities</Eyebrow>
+              <span className="font-mono text-meta text-ink-4">{MOCK.length} shown</span>
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-1.5">
-              <span className="rounded-chip bg-[rgb(var(--sel))] px-2.5 py-1 text-[12px] text-ink">
-                All <span className="font-mono text-[10px] text-ink-4">140</span>
+              <span className="rounded-chip bg-[rgb(var(--sel))] px-2.5 py-1 text-small text-ink">
+                All <span className="font-mono text-meta text-ink-4">140</span>
               </span>
-              <span className="rounded-chip px-2.5 py-1 text-[12px] text-ink-3">
-                Pending <span className="font-mono text-[10px] text-amber">9</span>
+              <span className="rounded-chip px-2.5 py-1 text-small text-ink-3">
+                Pending <span className="font-mono text-meta text-amber">9</span>
               </span>
-              <span className="rounded-chip px-2.5 py-1 text-[12px] text-ink-3">
-                Unresolved <span className="font-mono text-[10px] text-ink-4">23</span>
+              <span className="rounded-chip px-2.5 py-1 text-small text-ink-3">
+                Unresolved <span className="font-mono text-meta text-ink-4">23</span>
               </span>
             </div>
           </div>

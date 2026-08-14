@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { Eyebrow } from "@/components/ui/eyebrow";
 import {
   Dialog,
   DialogBody,
@@ -31,13 +32,13 @@ export function AddSourceDialog(props: AddSourceDialogProps) {
         </DialogHeader>
         <DialogBody className="space-y-5 pb-4">
           <div className="space-y-2">
-            <label className="eyebrow">Provider</label>
-            <div className="rounded-md border border-line bg-field px-4 py-3 text-sm text-ink">
+            <Eyebrow as="label">Provider</Eyebrow>
+            <div className="rounded-control border border-line bg-field px-4 py-3 text-body text-ink">
               Bluesky search
             </div>
           </div>
           <div className="space-y-2">
-            <label className="eyebrow">Query</label>
+            <Eyebrow as="label">Query</Eyebrow>
             <Input
               value={state.streamQuery}
               onChange={(event) => state.onStreamQueryChange(event.target.value)}
@@ -46,7 +47,7 @@ export function AddSourceDialog(props: AddSourceDialogProps) {
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <label className="eyebrow">Display title</label>
+              <Eyebrow as="label">Display title</Eyebrow>
               <Input
                 value={state.streamTitle}
                 onChange={(event) => state.onStreamTitleChange(event.target.value)}
@@ -54,7 +55,7 @@ export function AddSourceDialog(props: AddSourceDialogProps) {
               />
             </div>
             <div className="space-y-2">
-              <label className="eyebrow">Limit</label>
+              <Eyebrow as="label">Limit</Eyebrow>
               <Input
                 value={state.streamLimit}
                 onChange={(event) => state.onStreamLimitChange(event.target.value)}
@@ -62,7 +63,7 @@ export function AddSourceDialog(props: AddSourceDialogProps) {
             </div>
           </div>
           {state.streamErrorMessage ? (
-            <div className="rounded-md border border-against/40 bg-against/10 px-4 py-3 text-sm leading-6 text-against">
+            <div className="rounded-control border border-against/40 bg-against/10 px-4 py-3 text-body leading-6 text-against">
               {state.streamErrorMessage}
             </div>
           ) : null}

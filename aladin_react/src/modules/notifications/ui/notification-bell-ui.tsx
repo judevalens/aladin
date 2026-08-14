@@ -1,4 +1,5 @@
 import { Bell, Check, X } from "lucide-react";
+import { Icon } from "@/components/ui/icon";
 import { useEffect } from "react";
 import {
   DropdownMenu,
@@ -35,13 +36,13 @@ export function NotificationBell() {
               type="button"
               aria-label="Notifications"
               className={cn(
-                "relative grid size-[38px] place-items-center rounded-[9px] transition-colors",
+                "relative grid size-[38px] place-items-center rounded-control transition-colors",
                 open ? "bg-[rgb(var(--sel))] text-ink" : "text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink",
               )}
             >
-              <Bell className="size-[18px]" strokeWidth={1.7} />
+              <Icon as={Bell} size="rail" />
               {unread > 0 ? (
-                <span className="absolute right-1 top-1 grid min-w-3.5 place-items-center rounded-full bg-amber px-1 text-[9px] font-semibold leading-[14px] text-[#0f0f12]">
+                <span className="absolute right-1 top-1 grid min-w-3.5 place-items-center rounded-full bg-amber px-1 text-meta font-semibold leading-[14px] text-primary-foreground">
                   {unread > 9 ? "9+" : unread}
                 </span>
               ) : null}
@@ -53,12 +54,12 @@ export function NotificationBell() {
 
       <DropdownMenuContent align="start" side="right" className="w-80 p-0">
         <div className="flex items-center justify-between border-b border-line px-3 py-2">
-          <span className="font-display text-sm font-semibold text-ink">Notifications</span>
-          {unread > 0 ? <span className="font-mono text-[10px] text-ink-4">{unread} unread</span> : null}
+          <span className="text-body font-semibold text-ink">Notifications</span>
+          {unread > 0 ? <span className="font-mono text-meta text-ink-4">{unread} unread</span> : null}
         </div>
         <div className="max-h-96 overflow-y-auto">
           {notifications.length === 0 ? (
-            <p className="px-3 py-6 text-center text-[12px] text-ink-4">Nothing yet.</p>
+            <p className="px-3 py-6 text-center text-small text-ink-4">Nothing yet.</p>
           ) : (
             notifications.map((n) => (
               <button
@@ -73,11 +74,11 @@ export function NotificationBell() {
                 {!n.read ? (
                   <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-amber" />
                 ) : (
-                  <Check className="mt-1 size-3 shrink-0 text-ink-4" strokeWidth={2.4} />
+                  <Icon as={Check} size="inline" mark className="mt-1 shrink-0 text-ink-4" />
                 )}
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[12px] font-medium text-ink">{n.title}</p>
-                  {n.body ? <p className="truncate text-[11px] text-ink-3">{n.body}</p> : null}
+                  <p className="truncate text-small font-medium text-ink">{n.title}</p>
+                  {n.body ? <p className="truncate text-meta text-ink-3">{n.body}</p> : null}
                 </div>
               </button>
             ))
@@ -107,7 +108,7 @@ export function NotificationToast() {
   return (
     <div className="pointer-events-none fixed bottom-4 right-4 z-50">
       <div className="pointer-events-auto flex w-80 items-start gap-2.5 rounded-card border border-amber-line bg-panel p-3 shadow-toast">
-        <Bell className="mt-0.5 size-4 shrink-0 text-amber" strokeWidth={1.9} />
+        <Icon as={Bell} className="mt-0.5 shrink-0 text-amber" />
         <button
           type="button"
           onClick={() => {
@@ -117,8 +118,8 @@ export function NotificationToast() {
           }}
           className="min-w-0 flex-1 text-left"
         >
-          <p className="truncate text-[13px] font-semibold text-ink">{toast.title}</p>
-          {toast.body ? <p className="truncate text-[11px] text-ink-3">{toast.body}</p> : null}
+          <p className="truncate text-body font-semibold text-ink">{toast.title}</p>
+          {toast.body ? <p className="truncate text-meta text-ink-3">{toast.body}</p> : null}
         </button>
         <button
           type="button"
@@ -126,7 +127,7 @@ export function NotificationToast() {
           aria-label="Dismiss"
           className="text-ink-4 hover:text-ink"
         >
-          <X className="size-3.5" strokeWidth={2} />
+          <Icon as={X} size="inline" mark />
         </button>
       </div>
     </div>

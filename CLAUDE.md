@@ -28,10 +28,17 @@ aladin_react/
   src/app/state/          Zustand slices (session, workspace)
   src/shared/             API types, realtime, shared libs
   src/lib/utils.ts        the cn() helper used by components/ui  ← import from "@/lib/utils"
-  src/index.css           design tokens (Tailwind v4; Aladin Dark/Soft via data-theme)
+  src/theme.css           DESIGN TOKENS — the Tailwind v4 `@theme inline` block
+  src/index.css           the 7 non-default [data-theme] blocks + base layer
 backend_v2/
   cmd/{api,worker,mcp}    entrypoints (api :8000, mcp :8090)
   internal/               api → service → repo layering; db/migrations/*.sql (goose)
+anchor/                   iPad companion — Kotlin Multiplatform (Compose + Circuit +
+                          Ktor + SQLDelight + Koin), iOS-first. shared/ holds all logic:
+                          domain/ (pure rules) · services/{sync,data,design,network} ·
+                          features/<screen>/. Its syncer MIRRORS the Rust client's
+                          (aladin_react/src-tauri/src/sync/) — same frames, same seq
+                          guard, same cursor rules, no bridge.
 services/blocknote/       collab sidecar (converter :3500, collab :3501)
 services/copilot-agent/   copilot agent sidecar (Claude Agent SDK, :3550)
 design/                   UI_ARCHITECTURE.md (frontend onboarding map: shell, tokens,
@@ -58,6 +65,25 @@ npm run tauri:dev                                  # full desktop app
 
 The real dev stack (`make db-up`, `make backend`) exists but is the user's; don't
 start/stop it for routine verification — use the sandbox.
+
+## iPad companion (`anchor/`)
+
+```bash
+cd anchor
+./gradlew :shared:testAndroidHostTest            # shared unit tests (domain + sync rules)
+./gradlew :shared:compileKotlinIosSimulatorArm64 # iOS compile check
+# iOS app: build from anchor/iosApp with xcodebuild, or open iosApp.xcodeproj in Xcode.
+```
+
+The base URL is a constant in `shared/src/iosMain/.../network/HttpClient.ios.kt`: a device
+cannot use `localhost` (that is the iPad), so it points at the dev Mac's LAN address.
+Update it when the Mac's IP changes. Device builds also need `NSAllowsLocalNetworking` +
+`NSLocalNetworkUsageDescription` (already in `iosApp/iosApp/Info.plist`).
+
+**The layering is the point** (see `~/.claude/plans/aladin-ipad-shell-architecture.md`):
+`domain/` imports nothing — no Compose, no SQLDelight, no Ktor — so the design's rules
+(purpose → sections, open-items behaviour) are unit-testable; features read tokens from
+`services/design` and never hardcode a colour or radius.
 
 ## Test / typecheck / lint
 
@@ -86,16 +112,21 @@ Go integration tests are behind `-tags=integration` and need the sidecar up; pla
 
 ## Design tokens — the rule that matters
 
-The app ships a **dark-minimal IDE** look in two themes — **Dark** (default) + **Soft** —
-driven by `data-theme` on `<html>` (see `src/app/state/theme-slice.ts`). Tokens live in
-`aladin_react/src/index.css` (Tailwind v4 inline `@theme`). **Never hardcode hex/rgb in
-components** — use the Aladin tokens:
+The app ships a **dark-minimal IDE** look in **eight** themes — `dark` (default) · `soft` ·
+`cool` · `contrast` · `linear` · `apple-dark` · `apple-light` · `light` — driven by
+`data-theme` on `<html>` (see `src/app/state/theme-slice.ts`). Tokens live in
+`aladin_react/src/theme.css` (Tailwind v4 inline `@theme`); the seven non-default themes
+override them in `src/index.css`. **Never hardcode hex/rgb in components** — use the Aladin
+tokens:
 - surfaces: `bg-rail`/`bg-panel`/`bg-bg`/`bg-chrome`/`bg-field`/`bg-card`/`bg-raise`/`bg-explorer`
 - ink ramp: `text-ink` / `text-ink-2` / `text-ink-3` / `text-ink-4`
 - accent + lines: `bg-amber`, `bg-amber-soft`, `border-amber-line`, `border-line`, `border-line-2`
 - semantic hues: `text-for` (supports), `text-against` (counters), `text-catalyst`, `text-echo`
 - fonts: `font-display` (Space Grotesk) · `font-mono` (JetBrains Mono) · `font-sans` (system)
-- radii `rounded-chip/card/modal`; shadows `shadow-panel/modal/toast`
+- type steps: `text-meta`(10) `text-small`(12) `text-body`(13) `text-lead`(15) `text-title`(22) `text-display`(30)
+- radii `rounded-tap/chip/control/card/modal` (5/7/9/12/14); shadows `shadow-panel/modal/toast`
+- icons ONLY via `<Icon as={Glyph} size="inline|default|rail" mark? />` from `@/components/ui/icon`;
+  section labels via `<Eyebrow>` — never a raw `strokeWidth` or px size at a call site
 shadcn's own tokens (`bg-background`, `text-foreground`, `border-border`, …) are mapped
 onto these, so restyled primitives inherit the theme.
 

@@ -1,4 +1,6 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { Eyebrow } from "@/components/ui/eyebrow";
+import { Icon } from "@/components/ui/icon";
 import { X } from "lucide-react";
 
 import { useAppStore } from "@/app/state/store";
@@ -14,10 +16,10 @@ function TickerModalBody({ symbol, onClose }: { symbol: string; onClose: () => v
   return (
     <div className="flex h-[min(760px,88vh)] flex-col overflow-hidden">
       <div className="flex items-center justify-between border-b border-line px-4 py-2">
-        <span className="font-mono text-[11px] uppercase tracking-[0.5px] text-ink-4">Ticker</span>
+        <Eyebrow as="span" className="text-ink-4">Ticker</Eyebrow>
         <DialogPrimitive.Close asChild>
           <button type="button" aria-label="Close" className="grid size-7 place-items-center rounded text-ink-4 hover:text-ink">
-            <X className="size-4" strokeWidth={1.9} />
+            <Icon as={X} />
           </button>
         </DialogPrimitive.Close>
       </div>
@@ -40,7 +42,7 @@ export function TickerModal() {
   return (
     <DialogPrimitive.Root open={open} onOpenChange={(o) => !o && closeTicker()}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-[rgba(6,6,8,0.5)] backdrop-blur-[2px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-scrim backdrop-blur-[2px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
         <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-50 w-[min(560px,calc(100vw-64px))] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-modal border border-line bg-panel shadow-modal animate-pop">
           <DialogPrimitive.Title className="sr-only">Ticker detail</DialogPrimitive.Title>
           {symbol && <TickerModalBody symbol={symbol} onClose={closeTicker} />}

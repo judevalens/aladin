@@ -1,4 +1,5 @@
 import { diffWords } from "diff";
+import { Icon } from "@/components/ui/icon";
 import { ChevronDown, ChevronRight, RefreshCcw, Sparkles, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAppComposition } from "@/app/composition/app-composition";
@@ -47,14 +48,14 @@ function DiffView({ pageId, entryId }: { pageId: string; entryId: string }) {
   }, [repos, pageId, entryId]);
 
   if (!diff) {
-    return <div className="px-3 py-2 text-xs text-ink-4">Loading diff…</div>;
+    return <div className="px-3 py-2 text-small text-ink-4">Loading diff…</div>;
   }
   if (!diff.before && !diff.after) {
-    return <div className="px-3 py-2 text-xs text-ink-4">No snapshot for this edit yet.</div>;
+    return <div className="px-3 py-2 text-small text-ink-4">No snapshot for this edit yet.</div>;
   }
   const parts = diffWords(diff.before, diff.after);
   return (
-    <pre className="mx-1 mb-1 max-h-64 overflow-auto whitespace-pre-wrap rounded-md border border-line bg-field p-2 text-[11px] leading-5 text-ink-2">
+    <pre className="mx-1 mb-1 max-h-64 overflow-auto whitespace-pre-wrap rounded-control border border-line bg-field p-2 text-meta leading-5 text-ink-2">
       {parts.map((p, i) => (
         <span
           key={i}
@@ -78,24 +79,24 @@ function HistoryRow({ entry, expanded }: { entry: PageEditEntry; expanded: boole
   return (
     <div className="flex items-start gap-2 px-2 py-2">
       <div className="mt-1.5 text-ink-4">
-        {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+        {expanded ? <Icon as={ChevronDown} size="inline" mark /> : <Icon as={ChevronRight} size="inline" mark />}
       </div>
       <div
-        className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
+        className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-meta font-semibold text-white"
         style={{ backgroundColor: colorFor(entry.editorName) }}
       >
-        {isAgent ? <Sparkles className="h-3.5 w-3.5" /> : initials(entry.editorName)}
+        {isAgent ? <Icon as={Sparkles} size="inline" mark /> : initials(entry.editorName)}
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <span className="truncate text-sm text-ink">{entry.editorName}</span>
+          <span className="truncate text-body text-ink">{entry.editorName}</span>
           {isAgent ? (
-            <span className="rounded-full bg-echo/15 px-1.5 py-px text-[10px] font-medium text-echo">
+            <span className="rounded-full bg-echo/15 px-1.5 py-px text-meta font-medium text-echo">
               agent
             </span>
           ) : null}
         </div>
-        <div className="text-xs text-ink-3">
+        <div className="text-small text-ink-3">
           edited · {relTime(entry.occurredAt)}
           {entry.edits > 1 ? ` · ${entry.edits} changes` : ""}
         </div>
@@ -117,21 +118,21 @@ export function PageHistoryPanel({
   return (
     <div className="absolute right-0 top-0 z-20 flex h-full w-80 flex-col border-l border-line bg-panel shadow-panel">
       <div className="flex items-center justify-between border-b border-line px-4 py-3">
-        <div className="text-sm font-medium text-ink">History</div>
+        <div className="text-body font-medium text-ink">History</div>
         <div className="flex items-center gap-1">
           <button onClick={refetch} title="Refresh" className="rounded p-1 text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink">
-            <RefreshCcw className="h-4 w-4" />
+            <Icon as={RefreshCcw} mark />
           </button>
           <button onClick={onClose} title="Close" className="rounded p-1 text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink">
-            <X className="h-4 w-4" />
+            <Icon as={X} mark />
           </button>
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto py-1">
         {loading ? (
-          <div className="px-4 py-4 text-sm text-ink-4">Loading…</div>
+          <div className="px-4 py-4 text-body text-ink-4">Loading…</div>
         ) : entries.length === 0 ? (
-          <div className="px-4 py-4 text-sm text-ink-4">No edits recorded yet.</div>
+          <div className="px-4 py-4 text-body text-ink-4">No edits recorded yet.</div>
         ) : (
           entries.map((e) => {
             const open = expandedId === e.id;

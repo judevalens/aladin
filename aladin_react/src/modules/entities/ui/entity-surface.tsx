@@ -8,13 +8,13 @@ import { MergeReviewUI } from "@/modules/entities/ui/merge-review-ui";
 // Calm skeleton for the surface's lists — no decorative spinners (PRD §5).
 function EntitySurfaceSkeleton() {
   return (
-    <div className="mx-auto max-w-[820px] px-[30px] pt-[30px] pb-[60px]">
+    <div className="mx-auto max-w-[820px] px-8 pt-8 pb-15">
       <div className="mb-3 h-3 w-64 animate-pulse rounded bg-line" />
-      <div className="mb-[10px] h-8 w-96 animate-pulse rounded bg-line" />
-      <div className="mb-[26px] h-4 w-[520px] animate-pulse rounded bg-line-2" />
+      <div className="mb-2.5 h-8 w-96 animate-pulse rounded bg-line" />
+      <div className="mb-6 h-4 w-[520px] animate-pulse rounded bg-line-2" />
       <div className="flex flex-col gap-2">
         {[0, 1, 2].map((i) => (
-          <div key={i} className="h-[62px] animate-pulse rounded-[10px] bg-card" />
+          <div key={i} className="h-[62px] animate-pulse rounded-control bg-card" />
         ))}
       </div>
     </div>
@@ -44,8 +44,8 @@ export function EntitySurface({
 
   if (error || !entity) {
     return (
-      <div className="mx-auto max-w-[820px] px-[30px] pt-[30px]">
-        <p className="text-[13px] text-ink-2">{error ?? "That entity could not be found."}</p>
+      <div className="mx-auto max-w-[820px] px-8 pt-8">
+        <p className="text-body text-ink-2">{error ?? "That entity could not be found."}</p>
       </div>
     );
   }

@@ -1,4 +1,6 @@
 import { Check, Copy, Link2, RefreshCcw, ShieldCheck } from "lucide-react";
+import { Eyebrow } from "@/components/ui/eyebrow";
+import { Icon } from "@/components/ui/icon";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,7 +19,7 @@ import {
   useIntegrationsDialogState,
   IntegrationsState,
 } from "@/modules/sources/hooks/use-integrations-dialog-state";
-import { cn } from "@/shared/lib/utils";
+import { cn } from "@/lib/utils";
 import {
   IntegrationTokenRow,
   Pill,
@@ -85,12 +87,12 @@ function AgentAccessTabs({ state }: { state: IntegrationsState }) {
     }
   };
   return (
-    <div className="grid h-full min-h-0 gap-0 overflow-hidden rounded-lg border border-line bg-card lg:grid-cols-[1.1fr_0.9fr]">
+    <div className="grid h-full min-h-0 gap-0 overflow-hidden rounded-control border border-line bg-card lg:grid-cols-[1.1fr_0.9fr]">
       <div className="flex min-h-0 flex-col border-b border-line bg-card lg:border-b-0 lg:border-r">
         <div className="border-b border-line px-5 py-5">
           <div className="space-y-1">
-            <div className="eyebrow">Agent tokens</div>
-            <p className="text-sm leading-7 text-ink-3">
+            <Eyebrow>Agent tokens</Eyebrow>
+            <p className="text-body leading-7 text-ink-3">
               Bearer tokens for local MCP clients and agents.
             </p>
           </div>
@@ -98,7 +100,7 @@ function AgentAccessTabs({ state }: { state: IntegrationsState }) {
         <ScrollArea className="h-0 min-h-0 flex-1">
           <div className="space-y-0 px-5 py-5">
             {state.tokens.length === 0 ? (
-              <div className="rounded-md border border-dashed border-line bg-card p-4 text-sm leading-7 text-ink-3">
+              <div className="rounded-control border border-dashed border-line bg-card p-4 text-body leading-7 text-ink-3">
                 No agent tokens yet.
               </div>
             ) : (
@@ -116,29 +118,29 @@ function AgentAccessTabs({ state }: { state: IntegrationsState }) {
       </div>
       <div className="flex min-h-0 flex-col bg-card p-5">
         <div className="space-y-2">
-          <div className="eyebrow">MCP setup</div>
-          <h3 className="text-[1.8rem] font-semibold leading-[1.05] tracking-[-0.04em] text-ink">
+          <Eyebrow>MCP setup</Eyebrow>
+          <h3 className="text-display font-semibold leading-[1.05] tracking-[-0.04em] text-ink">
             Local agent access
           </h3>
-          <p className="text-sm leading-7 text-ink-2">
+          <p className="text-body leading-7 text-ink-2">
             Create and manage bearer tokens for local MCP clients and agents.
           </p>
         </div>
         <div className="border-t border-line pt-4">
-          <div className="eyebrow">Endpoint</div>
-          <div className="mt-2 font-mono text-sm text-ink-2">
+          <Eyebrow>Endpoint</Eyebrow>
+          <div className="mt-2 font-mono text-body text-ink-2">
             http://localhost:8090/mcp
           </div>
         </div>
         <div className="border-t border-line pt-4">
-          <div className="eyebrow">Recommended scopes</div>
+          <Eyebrow>Recommended scopes</Eyebrow>
           <div className="mt-3 flex flex-wrap gap-2">
             <Pill>artifacts:read</Pill>
             <Pill>artifacts:write</Pill>
           </div>
         </div>
         <div className="space-y-2">
-          <label className="eyebrow">Token name</label>
+          <Eyebrow as="label">Token name</Eyebrow>
           <Input
             value={state.tokenName}
             onChange={(event) => state.onTokenNameChange(event.target.value)}
@@ -149,27 +151,27 @@ function AgentAccessTabs({ state }: { state: IntegrationsState }) {
             state.createTokenPending || state.tokenName.trim().length === 0
           }
         >
-          <ShieldCheck className="h-4 w-4" />
+          <Icon as={ShieldCheck} mark />
           {state.createTokenPending ? "Creating…" : "Create MCP token"}
           </Button>
         </div>
         {state.createdToken ? (
           <div className="border-t border-line pt-4">
             <div className="flex items-center justify-between gap-2">
-              <div className="eyebrow">One-time token reveal</div>
+              <Eyebrow>One-time token reveal</Eyebrow>
               <Button variant="outline" size="sm" onClick={onCopy}>
                 {copied ? (
-                  <Check className="h-4 w-4" />
+                  <Icon as={Check} mark />
                 ) : (
-                  <Copy className="h-4 w-4" />
+                  <Icon as={Copy} mark />
                 )}
                 {copied ? "Copied" : "Copy"}
               </Button>
             </div>
-            <div className="mt-2 text-sm leading-7 text-ink-2">
+            <div className="mt-2 text-body leading-7 text-ink-2">
               Copy this now. It will not be shown again.
             </div>
-            <pre className="mt-3 overflow-auto rounded-md border border-line bg-field p-3 font-mono text-xs text-ink-2">
+            <pre className="mt-3 overflow-auto rounded-control border border-line bg-field p-3 font-mono text-small text-ink-2">
               {state.createdToken}
             </pre>
           </div>
@@ -181,11 +183,11 @@ function AgentAccessTabs({ state }: { state: IntegrationsState }) {
 
 function IntegrationTabs({ state }: { state: IntegrationsState }) {
   return (
-    <div className="flex h-full min-h-0 flex-col rounded-lg border border-line bg-card">
+    <div className="flex h-full min-h-0 flex-col rounded-control border border-line bg-card">
       <div className="border-b border-line px-5 py-5">
         <div className="space-y-1">
-          <div className="eyebrow">Available now</div>
-          <p className="text-sm leading-7 text-ink-3">
+          <Eyebrow>Available now</Eyebrow>
+          <p className="text-body leading-7 text-ink-3">
             Configured providers you can connect or manage.
           </p>
         </div>
@@ -197,7 +199,7 @@ function IntegrationTabs({ state }: { state: IntegrationsState }) {
               <button
                 key={provider.provider}
                 className={cn(
-                  "flex aspect-square min-h-[176px] min-w-0 flex-col overflow-hidden rounded-md border p-4 text-left transition-colors",
+                  "flex aspect-square min-h-[176px] min-w-0 flex-col overflow-hidden rounded-control border p-4 text-left transition-colors",
                   provider.provider === state.selectedProvider?.provider
                     ? "border-[rgb(var(--sel))] bg-[rgb(var(--sel))] text-ink"
                     : provider.available || provider.connected
@@ -209,10 +211,10 @@ function IntegrationTabs({ state }: { state: IntegrationsState }) {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1 space-y-1 overflow-hidden">
-                    <h3 className="truncate text-base font-semibold tracking-[-0.02em]">
+                    <h3 className="truncate text-lead font-semibold tracking-[-0.02em]">
                       {provider.label}
                     </h3>
-                    <p className="line-clamp-4 overflow-hidden text-sm leading-6 opacity-80">
+                    <p className="line-clamp-4 overflow-hidden text-body leading-6 opacity-80">
                       {provider.description || "Provider connection."}
                     </p>
                   </div>
@@ -230,7 +232,7 @@ function IntegrationTabs({ state }: { state: IntegrationsState }) {
                         : "Later"}
                   </Badge>
                 </div>
-                <div className="mt-auto truncate pt-4 text-xs opacity-70">
+                <div className="mt-auto truncate pt-4 text-small opacity-70">
                   {provider.category || provider.backend}
                 </div>
               </button>
@@ -241,11 +243,11 @@ function IntegrationTabs({ state }: { state: IntegrationsState }) {
           {state.selectedProvider ? (
             <div className="flex h-full flex-col gap-5">
               <div className="space-y-2">
-                <div className="eyebrow">Provider detail</div>
-                <h3 className="text-[1.8rem] font-semibold leading-[1.05] tracking-[-0.04em] text-ink">
+                <Eyebrow>Provider detail</Eyebrow>
+                <h3 className="text-display font-semibold leading-[1.05] tracking-[-0.04em] text-ink">
                   {state.selectedProvider.label}
                 </h3>
-                <p className="text-sm leading-7 text-ink-2">
+                <p className="text-body leading-7 text-ink-2">
                   {state.selectedProvider.connected
                     ? "This account is already connected."
                     : state.selectedProvider.available
@@ -264,8 +266,8 @@ function IntegrationTabs({ state }: { state: IntegrationsState }) {
 
               {state.selectedProvider.grantedScopes.length > 0 ? (
                 <div className="border-t border-line pt-4">
-                  <div className="eyebrow">Granted scopes</div>
-                  <p className="mt-2 text-sm leading-7 text-ink-2">
+                  <Eyebrow>Granted scopes</Eyebrow>
+                  <p className="mt-2 text-body leading-7 text-ink-2">
                     {state.selectedProvider.grantedScopes.join(", ")}
                   </p>
                 </div>
@@ -297,7 +299,7 @@ function IntegrationTabs({ state }: { state: IntegrationsState }) {
                       }
                       disabled={state.connectPending || state.syncPending}
                     >
-                      <Link2 className="h-4 w-4" />
+                      <Icon as={Link2} mark />
                       Connect with Nango
                     </Button>
                     <Button
@@ -305,7 +307,7 @@ function IntegrationTabs({ state }: { state: IntegrationsState }) {
                       onClick={state.onSyncProviders}
                       disabled={state.connectPending || state.syncPending}
                     >
-                      <RefreshCcw className="h-4 w-4" />
+                      <Icon as={RefreshCcw} mark />
                       Check connection
                     </Button>
                   </>
@@ -313,7 +315,7 @@ function IntegrationTabs({ state }: { state: IntegrationsState }) {
               </div>
             </div>
           ) : (
-            <p className="text-sm leading-7 text-ink-3">
+            <p className="text-body leading-7 text-ink-3">
               No provider catalog available.
             </p>
           )}

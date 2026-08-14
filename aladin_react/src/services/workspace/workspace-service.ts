@@ -43,6 +43,14 @@ export class WorkspaceService {
     return this.workspaceRepo.renameResearch(nodeId, title);
   }
 
+  async deleteFolder(folderId: string) {
+    return this.workspaceRepo.deleteFolder(folderId);
+  }
+
+  async deleteArtifact(artifactId: string) {
+    return this.artifactRepo.deleteArtifact(artifactId);
+  }
+
   refreshTree() {
     return this.sync.refreshTree();
   }

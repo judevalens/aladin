@@ -15,6 +15,8 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { Eyebrow } from "@/components/ui/eyebrow";
+import { Icon } from "@/components/ui/icon";
 import { useMemo, useState } from "react";
 
 import { cn } from "@/lib/utils";
@@ -180,8 +182,8 @@ function SpikeBar({ scenario, onPick }: { scenario: Scenario; onPick: (s: Scenar
   const active = SCENARIOS.find((s) => s.id === scenario);
   return (
     <div className="flex shrink-0 items-center gap-3 border-b border-line bg-chrome px-4 py-2">
-      <span className="flex items-center gap-1.5 font-display text-xs uppercase tracking-wider text-ink-3">
-        <GraduationCap className="size-3.5" /> Tutor spike
+      <span className="flex items-center gap-1.5 text-small uppercase tracking-wider text-ink-3">
+        <Icon as={GraduationCap} size="inline" mark /> Tutor spike
       </span>
       <div className="flex items-center gap-1">
         {SCENARIOS.map((s) => (
@@ -190,7 +192,7 @@ function SpikeBar({ scenario, onPick }: { scenario: Scenario; onPick: (s: Scenar
             type="button"
             onClick={() => onPick(s.id)}
             className={cn(
-              "rounded-chip px-2.5 py-1 text-xs transition-colors",
+              "rounded-chip px-2.5 py-1 text-small transition-colors",
               scenario === s.id
                 ? "bg-amber-soft text-ink border border-amber-line"
                 : "text-ink-3 hover:bg-raise hover:text-ink-2 border border-transparent",
@@ -200,8 +202,8 @@ function SpikeBar({ scenario, onPick }: { scenario: Scenario; onPick: (s: Scenar
           </button>
         ))}
       </div>
-      <span className="truncate text-xs text-ink-4">{active?.blurb}</span>
-      <span className="ml-auto shrink-0 font-mono text-[10px] text-ink-4">
+      <span className="truncate text-small text-ink-4">{active?.blurb}</span>
+      <span className="ml-auto shrink-0 font-mono text-meta text-ink-4">
         {SOURCE.pages}p · {SOURCE.regions} regions · {SOURCE.formulas} formulas
       </span>
     </div>
@@ -241,11 +243,11 @@ function PlanPane({
     <aside className="flex w-[340px] shrink-0 flex-col border-r border-line bg-panel">
       <div className="border-b border-line px-4 py-3">
         <div className="flex items-center gap-2">
-          <FileText className="size-3.5 shrink-0 text-ink-3" />
-          <span className="truncate font-display text-sm text-ink">{SOURCE.title}</span>
+          <Icon as={FileText} size="inline" mark className="shrink-0 text-ink-3" />
+          <span className="truncate font-display text-body text-ink">{SOURCE.title}</span>
         </div>
-        <p className="mt-1 truncate font-mono text-[10px] text-ink-4">{SOURCE.filename}</p>
-        <p className="mt-2 text-xs leading-relaxed text-ink-3">
+        <p className="mt-1 truncate font-mono text-meta text-ink-4">{SOURCE.filename}</p>
+        <p className="mt-2 text-small leading-relaxed text-ink-3">
           <span className="text-ink-4">Goal · </span>
           be able to price and risk-manage a collar, and read the greeks as derivatives
         </p>
@@ -253,8 +255,8 @@ function PlanPane({
 
       {proposing ? (
         <div className="border-b border-amber-line bg-amber-soft px-4 py-2.5">
-          <p className="flex items-start gap-1.5 text-xs leading-relaxed text-ink-2">
-            <Sparkles className="mt-0.5 size-3 shrink-0 text-amber" />
+          <p className="flex items-start gap-1.5 text-small leading-relaxed text-ink-2">
+            <Icon as={Sparkles} size="inline" mark className="mt-0.5 shrink-0 text-amber" />
             <span>
               I read the outline and drafted 4 items. <span className="text-ink-4">Edit freely — drop what you know, split what's too big.</span>
             </span>
@@ -262,7 +264,7 @@ function PlanPane({
           <button
             type="button"
             onClick={onAccept}
-            className="mt-2 rounded-chip border border-amber-line bg-amber px-2 py-1 text-[11px] font-semibold text-bg"
+            className="mt-2 rounded-chip border border-amber-line bg-amber px-2 py-1 text-meta font-semibold text-bg"
           >
             Looks right — start here
           </button>
@@ -283,9 +285,9 @@ function PlanPane({
         ))}
         <button
           type="button"
-          className="mt-2 flex w-full items-center gap-1.5 px-3 py-1 text-xs text-ink-4 transition-colors hover:text-ink-2"
+          className="mt-2 flex w-full items-center gap-1.5 px-3 py-1 text-small text-ink-4 transition-colors hover:text-ink-2"
         >
-          <Plus className="size-3" /> Add an item
+          <Icon as={Plus} size="inline" mark /> Add an item
         </button>
       </div>
 
@@ -320,16 +322,16 @@ function PlanRow({
         <div className="flex items-start gap-2">
           <span
             className={cn(
-              "mt-px flex size-4 shrink-0 items-center justify-center rounded-chip font-mono text-[9px]",
+              "mt-px flex size-4 shrink-0 items-center justify-center rounded-chip font-mono text-meta",
               item.status === "learned" ? "bg-amber text-bg" : "bg-field text-ink-4",
             )}
           >
-            {item.status === "learned" ? <Check className="size-2.5" /> : idx}
+            {item.status === "learned" ? <Icon as={Check} size="inline" mark /> : idx}
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block text-xs font-medium leading-snug text-ink">{item.title}</span>
-            <span className="mt-0.5 block text-[11px] leading-snug text-ink-3">{item.objective}</span>
-            <span className="mt-1 flex items-center gap-1.5 font-mono text-[10px] text-ink-4">
+            <span className="block text-small font-medium leading-snug text-ink">{item.title}</span>
+            <span className="mt-0.5 block text-meta leading-snug text-ink-3">{item.objective}</span>
+            <span className="mt-1 flex items-center gap-1.5 font-mono text-meta text-ink-4">
               {item.span}
               <span className={cn(big && "text-against")}>· {item.pages}p</span>
             </span>
@@ -342,16 +344,16 @@ function PlanRow({
         <button
           type="button"
           onClick={onSplit}
-          className="mt-1.5 flex items-center gap-1 rounded-chip border border-line-2 px-1.5 py-0.5 text-[10px] text-ink-3 hover:text-ink"
+          className="mt-1.5 flex items-center gap-1 rounded-chip border border-line-2 px-1.5 py-0.5 text-meta text-ink-3 hover:text-ink"
         >
-          <Scissors className="size-2.5" /> 46 pages is a lot — split it
+          <Icon as={Scissors} size="inline" mark /> 46 pages is a lot — split it
         </button>
       ) : null}
 
       {item.aids.length ? (
         <div className="mt-1.5 flex flex-wrap gap-1">
           {item.aids.map((a) => (
-            <span key={a.kind} className="rounded-chip bg-field px-1.5 py-0.5 font-mono text-[10px] text-ink-3">
+            <span key={a.kind} className="rounded-chip bg-field px-1.5 py-0.5 font-mono text-meta text-ink-3">
               {a.label}
             </span>
           ))}
@@ -359,8 +361,8 @@ function PlanRow({
       ) : null}
 
       <div className="mt-1.5 flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100">
-        <button type="button" onClick={onDrop} className="flex items-center gap-1 text-[10px] text-ink-4 hover:text-against">
-          <Trash2 className="size-2.5" /> I know this
+        <button type="button" onClick={onDrop} className="flex items-center gap-1 text-meta text-ink-4 hover:text-against">
+          <Icon as={Trash2} size="inline" mark /> I know this
         </button>
       </div>
     </div>
@@ -390,7 +392,7 @@ function ReaderTabs({
 function TabButton({
   active,
   onClick,
-  icon: Icon,
+  icon: Glyph,
   label,
   hint,
   closable,
@@ -407,14 +409,14 @@ function TabButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs transition-colors",
+        "-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-small transition-colors",
         active ? "border-amber text-ink" : "border-transparent text-ink-3 hover:text-ink-2",
       )}
     >
-      <Icon className="size-3.5" />
+      <Icon as={Glyph} size="inline" mark />
       {label}
-      {hint ? <span className="font-mono text-[10px] text-ink-4">{hint}</span> : null}
-      {closable ? <X className="size-3 text-ink-4 hover:text-ink" /> : null}
+      {hint ? <span className="font-mono text-meta text-ink-4">{hint}</span> : null}
+      {closable ? <Icon as={X} size="inline" mark className="text-ink-4 hover:text-ink" /> : null}
     </button>
   );
 }
@@ -422,9 +424,9 @@ function TabButton({
 function ReaderPane() {
   return (
     <div className="mx-auto max-w-[68ch] px-8 py-8">
-      <p className="font-mono text-[10px] uppercase tracking-wider text-ink-4">
+      <Eyebrow as="p" className="text-ink-4">
         {PAGE.section} · page {PAGE.n} of {SOURCE.pages}
-      </p>
+      </Eyebrow>
       <div className="mt-5 space-y-4">
         {PAGE.blocks.map((b, i) =>
           b.kind === "formula" ? (
@@ -434,15 +436,15 @@ function ReaderPane() {
                   underneath on hover: subscripts are lost, which is exactly why an aid that
                   MANIPULATES a formula needs vision-to-LaTeX (D-J) and the reader never does. */}
               <div className="flex items-baseline justify-between gap-3">
-                <code className="font-mono text-sm text-ink">{b.text}</code>
-                <span className="shrink-0 font-mono text-[10px] text-ink-4">{b.cite}</span>
+                <code className="font-mono text-body text-ink">{b.text}</code>
+                <span className="shrink-0 font-mono text-meta text-ink-4">{b.cite}</span>
               </div>
-              <code className="mt-1 block truncate font-mono text-[10px] text-ink-4 opacity-0 transition-opacity group-hover/f:opacity-100">
+              <code className="mt-1 block truncate font-mono text-meta text-ink-4 opacity-0 transition-opacity group-hover/f:opacity-100">
                 agent reads · {b.extracted}
               </code>
             </div>
           ) : (
-            <p key={i} className="text-sm leading-relaxed text-ink-2">
+            <p key={i} className="text-body leading-relaxed text-ink-2">
               {b.text}
             </p>
           ),
@@ -460,7 +462,7 @@ function AskPane({ scenario, onBuild }: { scenario: Scenario; onBuild: () => voi
   return (
     <aside className="flex w-[380px] shrink-0 flex-col border-l border-line bg-panel">
       <div className="border-b border-line px-4 py-2.5">
-        <span className="font-display text-xs uppercase tracking-wider text-ink-3">Ask</span>
+        <span className="text-small uppercase tracking-wider text-ink-3">Ask</span>
       </div>
 
       <div className="min-h-0 flex-1 space-y-3 overflow-auto p-4">
@@ -469,12 +471,12 @@ function AskPane({ scenario, onBuild }: { scenario: Scenario; onBuild: () => voi
           you="why is the collar's max loss K2 − K1 − C?"
           answer={
             <>
-              <p className="text-xs leading-relaxed text-ink-2">
+              <p className="text-small leading-relaxed text-ink-2">
                 It falls out of eq. 4.8 — the payoff is bounded by both strikes, so the worst
                 case is the width minus what you paid.
               </p>
               <Pointer page={94} label="§4.2 · eq. 4.8" quote="L_max = K_2 - K_1 - C" />
-              <p className="mt-2 text-[10px] leading-relaxed text-ink-4">
+              <p className="mt-2 text-meta leading-relaxed text-ink-4">
                 Pointing, not restating — a citation you can verify, and it cannot invent the
                 material.
               </p>
@@ -487,13 +489,13 @@ function AskPane({ scenario, onBuild }: { scenario: Scenario; onBuild: () => voi
             you="build a visualizer for the collar payoff"
             answer={
               <>
-                <p className="text-xs leading-relaxed text-ink-2">
+                <p className="text-small leading-relaxed text-ink-2">
                   Built from eq. 4.7, retrieved from pp. 88–104 — not from what I know about
                   collars.
                 </p>
-                <div className="mt-2 flex items-center gap-1.5 rounded-chip border border-amber-line bg-amber-soft px-2 py-1 text-[11px] text-ink">
-                  <Boxes className="size-3 text-amber" /> Collar payoff
-                  <span className="font-mono text-[10px] text-ink-3">· open in a tab</span>
+                <div className="mt-2 flex items-center gap-1.5 rounded-chip border border-amber-line bg-amber-soft px-2 py-1 text-meta text-ink">
+                  <Icon as={Boxes} size="inline" mark className="text-amber" /> Collar payoff
+                  <span className="font-mono text-meta text-ink-3">· open in a tab</span>
                 </div>
               </>
             }
@@ -509,16 +511,16 @@ function AskPane({ scenario, onBuild }: { scenario: Scenario; onBuild: () => voi
         </div>
 
         {scope === "item" ? (
-          <p className="mb-2 truncate font-mono text-[10px] text-ink-4">Collars and spreads · pp. 88–104</p>
+          <p className="mb-2 truncate font-mono text-meta text-ink-4">Collars and spreads · pp. 88–104</p>
         ) : (
           <div className="mb-2">
             <input
               value={concept}
               onChange={(e) => setConcept(e.target.value)}
-              className="w-full rounded-chip border border-line bg-field px-2 py-1 font-mono text-[11px] text-ink placeholder:text-ink-4 focus:border-amber-line focus:outline-none"
+              className="w-full rounded-chip border border-line bg-field px-2 py-1 font-mono text-meta text-ink placeholder:text-ink-4 focus:border-amber-line focus:outline-none"
               placeholder="partial derivatives"
             />
-            <p className="mt-1 text-[10px] leading-relaxed text-ink-4">
+            <p className="mt-1 text-meta leading-relaxed text-ink-4">
               Not a page range — <span className="text-ink-3">search_document</span> finds every
               region touching it, across the whole source.
             </p>
@@ -534,11 +536,11 @@ function AskPane({ scenario, onBuild }: { scenario: Scenario; onBuild: () => voi
               className="flex items-center gap-1.5 rounded-chip px-2 py-1.5 text-left transition-colors hover:bg-raise"
             >
               <c.icon className="size-3 shrink-0 text-ink-4" />
-              <span className="truncate text-[11px] text-ink-2">{c.label}</span>
+              <span className="truncate text-meta text-ink-2">{c.label}</span>
             </button>
           ))}
         </div>
-        <p className="mt-2 text-[10px] leading-relaxed text-ink-4">
+        <p className="mt-2 text-meta leading-relaxed text-ink-4">
           You choose what gets built. Nothing is authored automatically.
         </p>
       </div>
@@ -552,7 +554,7 @@ function ScopeTab({ active, onClick, label }: { active: boolean; onClick: () => 
       type="button"
       onClick={onClick}
       className={cn(
-        "flex-1 rounded-chip px-2 py-1 text-[11px] transition-colors",
+        "flex-1 rounded-chip px-2 py-1 text-meta transition-colors",
         active ? "bg-raise text-ink" : "text-ink-4 hover:text-ink-2",
       )}
     >
@@ -564,8 +566,8 @@ function ScopeTab({ active, onClick, label }: { active: boolean; onClick: () => 
 function Exchange({ you, answer }: { you: string; answer: React.ReactNode }) {
   return (
     <div>
-      <p className="mb-1.5 flex items-start gap-1.5 text-xs text-ink-3">
-        <ChevronRight className="mt-0.5 size-3 shrink-0 text-ink-4" />
+      <p className="mb-1.5 flex items-start gap-1.5 text-small text-ink-3">
+        <Icon as={ChevronRight} size="inline" mark className="mt-0.5 shrink-0 text-ink-4" />
         {you}
       </p>
       <div className="pl-4">{answer}</div>
@@ -579,8 +581,8 @@ function Pointer({ page, label, quote }: { page: number; label: string; quote: s
       type="button"
       className="mt-2 flex w-full items-baseline gap-2 border-l-2 border-amber-line pl-2 text-left transition-colors hover:border-amber"
     >
-      <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-ink">{quote}</code>
-      <span className="shrink-0 font-mono text-[10px] text-ink-4">{label} · p.{page} →</span>
+      <code className="min-w-0 flex-1 truncate font-mono text-meta text-ink">{quote}</code>
+      <span className="shrink-0 font-mono text-meta text-ink-4">{label} · p.{page} →</span>
     </button>
   );
 }
@@ -618,10 +620,10 @@ function VisualizerAid() {
   return (
     <div className="mx-auto max-w-[68ch] px-8 py-8">
       <div className="flex items-baseline gap-2">
-        <h2 className="font-display text-base text-ink">Collar payoff</h2>
-        <span className="font-mono text-[10px] text-ink-4">built from eq. 4.7 · pp. 88–104</span>
+        <h2 className="font-display text-lead text-ink">Collar payoff</h2>
+        <span className="font-mono text-meta text-ink-4">built from eq. 4.7 · pp. 88–104</span>
       </div>
-      <p className="mt-1 text-xs text-ink-3">
+      <p className="mt-1 text-small text-ink-3">
         Drag the strikes. This is the thing the paper cannot do — the formula is static on
         p. 94.
       </p>
@@ -676,7 +678,7 @@ function VisualizerAid() {
         </div>
       </div>
 
-      <p className="mt-4 text-[10px] leading-relaxed text-ink-4">
+      <p className="mt-4 text-meta leading-relaxed text-ink-4">
         Grounded in the source — payoff, strikes and premium all from retrieved text.
       </p>
     </div>
@@ -698,7 +700,7 @@ function Slider({
 }) {
   return (
     <label className="flex items-center gap-3">
-      <span className="w-16 shrink-0 font-mono text-[11px] text-ink-3">{label}</span>
+      <span className="w-16 shrink-0 font-mono text-meta text-ink-3">{label}</span>
       <input
         type="range"
         min={min}
@@ -707,7 +709,7 @@ function Slider({
         onChange={(e) => onChange(Number(e.target.value))}
         className="h-1 flex-1 accent-amber"
       />
-      <span className="w-8 shrink-0 text-right font-mono text-[11px] text-ink">{value}</span>
+      <span className="w-8 shrink-0 text-right font-mono text-meta text-ink">{value}</span>
     </label>
   );
 }
@@ -715,9 +717,9 @@ function Slider({
 function Stat({ label, value, tone, note }: { label: string; value: string; tone: string; note: string }) {
   return (
     <div>
-      <p className="font-mono text-[10px] uppercase tracking-wider text-ink-4">{label}</p>
-      <p className={cn("font-display text-lg", tone)}>{value}</p>
-      <p className="font-mono text-[10px] text-ink-4">{note}</p>
+      <Eyebrow as="p" className="text-ink-4">{label}</Eyebrow>
+      <p className={cn("font-display text-lead", tone)}>{value}</p>
+      <p className="font-mono text-meta text-ink-4">{note}</p>
     </div>
   );
 }

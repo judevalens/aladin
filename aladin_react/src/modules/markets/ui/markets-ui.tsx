@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { Eyebrow } from "@/components/ui/eyebrow";
+import { Icon } from "@/components/ui/icon";
 import { Bell, Check, ChevronDown, ListChecks, Pause, Search, Sun } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -50,9 +52,9 @@ function IndexPill({ label, value, changePct }: { label: string; value: number; 
   const up = changePct >= 0;
   return (
     <div className="flex items-baseline gap-2 whitespace-nowrap border-r border-line px-4">
-      <span className="font-mono text-[11px] uppercase tracking-[0.4px] text-ink-4">{label}</span>
-      <span className="font-mono text-[13px] text-ink">{value.toLocaleString()}</span>
-      <span className={cn("font-mono text-[11px]", up ? "text-for" : "text-against")}>
+      <Eyebrow as="span" className="text-ink-4">{label}</Eyebrow>
+      <span className="font-mono text-body text-ink">{value.toLocaleString()}</span>
+      <span className={cn("font-mono text-meta", up ? "text-for" : "text-against")}>
         {up ? "▲" : "▼"} {fmtPct(changePct)}
       </span>
     </div>
@@ -102,41 +104,41 @@ export function MarketsUI() {
     <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-bg">
       {/* top bar */}
       <header className="flex shrink-0 items-center gap-3 border-b border-line px-5 py-3">
-        <h1 className="font-display text-lg font-semibold text-ink">Markets</h1>
-        <span className="text-[13px] text-ink-4">US Equities &amp; ETFs</span>
+        <h1 className="font-display text-lead font-semibold text-ink">Markets</h1>
+        <span className="text-body text-ink-4">US Equities &amp; ETFs</span>
         <span className="mx-1 h-4 w-px bg-line" />
         <button
           type="button"
           onClick={() => setManagerOpen(true)}
-          className="flex items-center gap-1.5 rounded-card border border-line bg-field px-2.5 py-1.5 text-[13px] text-ink-2 transition-colors hover:border-line-2"
+          className="flex items-center gap-1.5 rounded-card border border-line bg-field px-2.5 py-1.5 text-body text-ink-2 transition-colors hover:border-line-2"
         >
-          <ListChecks className="size-3.5 text-ink-4" strokeWidth={1.75} />
+          <Icon as={ListChecks} size="inline" className="text-ink-4" />
           Watchlists
         </button>
         <div className="ml-auto flex items-center gap-2">
           <button
             type="button"
             onClick={() => useAppStore.getState().setCommandPaletteOpen(true)}
-            className="flex w-[240px] items-center gap-2 rounded-card border border-line bg-field px-3 py-1.5 text-left text-[13px] text-ink-4 transition-colors hover:border-line-2"
+            className="flex w-[240px] items-center gap-2 rounded-card border border-line bg-field px-3 py-1.5 text-left text-body text-ink-4 transition-colors hover:border-line-2"
           >
-            <Search className="size-3.5" strokeWidth={1.75} />
+            <Icon as={Search} size="inline" />
             Search symbol…
-            <span className="ml-auto font-mono text-[11px] text-ink-4">/</span>
+            <span className="ml-auto font-mono text-meta text-ink-4">/</span>
           </button>
           <button type="button" className="grid size-8 place-items-center rounded-card text-ink-3 hover:text-ink" aria-label="Notifications">
-            <Bell className="size-[17px]" strokeWidth={1.7} />
+            <Icon as={Bell} />
           </button>
           <button type="button" className="grid size-8 place-items-center rounded-card text-ink-3 hover:text-ink" aria-label="Theme">
-            <Sun className="size-[17px]" strokeWidth={1.7} />
+            <Icon as={Sun} />
           </button>
         </div>
       </header>
 
       {/* index strip */}
-      <div className="flex shrink-0 items-center border-b border-line bg-chrome/40 pr-4 text-[13px]">
+      <div className="flex shrink-0 items-center border-b border-line bg-chrome/40 pr-4 text-body">
         <div className="flex items-center gap-2 whitespace-nowrap border-r border-line px-4 py-2.5">
           <span className="size-1.5 rounded-full bg-for" />
-          <span className="font-mono text-[11px] uppercase tracking-[0.5px] text-ink-3">Mkt Open</span>
+          <Eyebrow as="span" className="text-ink-3">Mkt Open</Eyebrow>
         </div>
         <div className="scrollbar-hidden flex min-w-0 flex-1 items-center overflow-x-auto overflow-y-hidden py-2.5">
           {INDICES.map((idx) => (
@@ -144,10 +146,10 @@ export function MarketsUI() {
           ))}
         </div>
         <div className="flex items-center gap-2 whitespace-nowrap pl-4">
-          <span className="flex items-center gap-1.5 rounded-chip border border-line px-2 py-1 font-mono text-[11px] text-ink-3">
-            <Pause className="size-3" strokeWidth={2} /> LIVE
+          <span className="flex items-center gap-1.5 rounded-chip border border-line px-2 py-1 font-mono text-meta text-ink-3">
+            <Icon as={Pause} size="inline" mark /> LIVE
           </span>
-          <span className="font-mono text-[11px] text-ink-4">09:26:13 ET</span>
+          <span className="font-mono text-meta text-ink-4">09:26:13 ET</span>
         </div>
       </div>
 
@@ -157,15 +159,15 @@ export function MarketsUI() {
           {/* market map */}
           <div className="shrink-0">
             <div className="mb-3 flex items-center gap-3">
-              <h2 className="font-display text-[15px] font-semibold text-ink">Market Map</h2>
+              <h2 className="font-display text-lead font-semibold text-ink">Market Map</h2>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    className="flex items-center gap-1.5 rounded-chip border border-line px-2 py-0.5 font-mono text-[11px] text-ink-2 transition-colors hover:border-line-2"
+                    className="flex items-center gap-1.5 rounded-chip border border-line px-2 py-0.5 font-mono text-meta text-ink-2 transition-colors hover:border-line-2"
                   >
                     {datasetLabel} · {mapQuotes.length}
-                    <ChevronDown className="size-3 text-ink-4" strokeWidth={2} />
+                    <Icon as={ChevronDown} size="inline" mark className="text-ink-4" />
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-48">
@@ -183,9 +185,9 @@ export function MarketsUI() {
                         >
                           <span className="truncate">{l.name}</span>
                           {mapView === "watchlist" && l.id === activeId ? (
-                            <Check className="size-3.5 text-amber" strokeWidth={2} />
+                            <Icon as={Check} size="inline" mark className="text-amber" />
                           ) : (
-                            <span className="font-mono text-[11px] text-ink-4">{l.itemCount}</span>
+                            <span className="font-mono text-meta text-ink-4">{l.itemCount}</span>
                           )}
                         </DropdownMenuItem>
                       ))}
@@ -195,18 +197,18 @@ export function MarketsUI() {
                   {MARKET_LENSES.map((d) => (
                     <DropdownMenuItem key={d.key} onClick={() => setMapView(d.key)} className="justify-between">
                       {d.label}
-                      {d.key === mapView && <Check className="size-3.5 text-amber" strokeWidth={2} />}
+                      {d.key === mapView && <Icon as={Check} size="inline" mark className="text-amber" />}
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuContent>
               </DropdownMenu>
-              <span className="text-[11px] text-ink-4">sized by cap · colored by day change</span>
-              <span className="ml-auto flex items-center gap-3 font-mono text-[11px]">
+              <span className="text-meta text-ink-4">sized by cap · colored by day change</span>
+              <span className="ml-auto flex items-center gap-3 font-mono text-meta">
                 <span className="flex items-center gap-1 text-ink-4">
-                  <span className="size-2 rounded-[2px] bg-for" /> {advancers} adv
+                  <span className="size-2 rounded-tap bg-for" /> {advancers} adv
                 </span>
                 <span className="flex items-center gap-1 text-ink-4">
-                  <span className="size-2 rounded-[2px] bg-against" /> {decliners} dec
+                  <span className="size-2 rounded-tap bg-against" /> {decliners} dec
                 </span>
               </span>
             </div>

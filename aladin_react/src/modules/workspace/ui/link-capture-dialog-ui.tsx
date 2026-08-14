@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Eyebrow } from "@/components/ui/eyebrow";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -66,7 +67,7 @@ export function LinkCaptureDialogUI({
         </DialogHeader>
         <DialogBody className="space-y-4 pb-4">
           <div className="space-y-2">
-            <label className="eyebrow">URL</label>
+            <Eyebrow as="label">URL</Eyebrow>
             <Input
               autoFocus
               placeholder="https://…"
@@ -84,9 +85,9 @@ export function LinkCaptureDialogUI({
             />
           </div>
           <div className="space-y-2">
-            <label className="eyebrow">
+            <Eyebrow as="label">
               Title <span className="text-ink-4">(optional)</span>
-            </label>
+            </Eyebrow>
             <Input
               placeholder="Defaults to the link"
               value={title}

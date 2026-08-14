@@ -1,4 +1,5 @@
 import { Link2 } from "lucide-react";
+import { Icon } from "@/components/ui/icon";
 import { useState } from "react";
 
 import { cn } from "@/lib/utils";
@@ -45,32 +46,32 @@ function MergeRow({
   return (
     <div className="border-t border-line-2 py-3">
       <div className="flex items-baseline gap-2">
-        <span className="font-display text-[14px] font-semibold text-ink">
+        <span className="font-display text-lead font-semibold text-ink">
           {merge.otherName}
         </span>
-        <span className="font-mono text-[9px] text-ink-4">{merge.otherKind}</span>
+        <span className="font-mono text-meta text-ink-4">{merge.otherKind}</span>
         <span className="flex-1" />
-        <span className="font-mono text-[10px] text-ink-3">
+        <span className="font-mono text-meta text-ink-3">
           {Math.round(merge.confidence * 100)}%
         </span>
       </div>
 
-      <div className="mt-1 font-mono text-[9.5px] text-ink-4">{merge.why}</div>
-      <div className={cn("mt-0.5 font-mono text-[9.5px]", meta.className)}>{meta.label}</div>
+      <div className="mt-1 font-mono text-meta text-ink-4">{merge.why}</div>
+      <div className={cn("mt-0.5 font-mono text-meta", meta.className)}>{meta.label}</div>
       {merge.reason ? (
-        <p className="mt-1 text-[11.5px] leading-[1.45] text-pretty text-ink-3">
+        <p className="mt-1 text-small leading-[1.45] text-pretty text-ink-3">
           “{merge.reason}”
         </p>
       ) : null}
 
-      {error ? <p className="mt-1.5 text-[11px] text-against">{error}</p> : null}
+      {error ? <p className="mt-1.5 text-meta text-against">{error}</p> : null}
 
       <div className="mt-2 flex items-center gap-2">
         <button
           type="button"
           disabled={busy !== null}
           onClick={() => run("accept", onAccept)}
-          className="cursor-pointer rounded-chip bg-amber px-2.5 py-1 text-[11px] font-semibold text-primary-foreground transition hover:brightness-[1.08] disabled:opacity-40"
+          className="cursor-pointer rounded-chip bg-amber px-2.5 py-1 text-meta font-semibold text-primary-foreground transition hover:brightness-[1.08] disabled:opacity-40"
         >
           {busy === "accept" ? "Merging…" : "Same thing"}
         </button>
@@ -78,7 +79,7 @@ function MergeRow({
           type="button"
           disabled={busy !== null}
           onClick={() => run("reject", onReject)}
-          className="cursor-pointer rounded-chip border border-line px-2.5 py-1 text-[11px] font-semibold text-ink-2 transition hover:brightness-[1.08] disabled:opacity-40"
+          className="cursor-pointer rounded-chip border border-line px-2.5 py-1 text-meta font-semibold text-ink-2 transition hover:brightness-[1.08] disabled:opacity-40"
         >
           {busy === "reject" ? "Saving…" : "Keep separate"}
         </button>
@@ -101,16 +102,16 @@ export function MergeReviewUI({
   if (merges.length === 0) return null;
 
   return (
-    <div className="mb-[34px] rounded-[10px] border border-line-2 bg-card p-[13px]">
+    <div className="mb-8 rounded-control border border-line-2 bg-card p-3">
       <div className="flex items-center gap-2">
-        <Link2 size={14} strokeWidth={1.9} className="shrink-0 text-ink-3" />
-        <span className="font-display text-[13px] font-semibold text-ink">
+        <Icon as={Link2} size="inline" className="shrink-0 text-ink-3" />
+        <span className="text-body font-semibold text-ink">
           Same, or just similar?
         </span>
         <span className="flex-1" />
-        <span className="font-mono text-[10px] text-ink-4">{merges.length}</span>
+        <span className="font-mono text-meta text-ink-4">{merges.length}</span>
       </div>
-      <p className="mt-1 text-[11.5px] leading-[1.45] text-ink-3">
+      <p className="mt-1 text-small leading-[1.45] text-ink-3">
         Identity is graded — synonyms fold into one entity, a different thing stays its
         own. Merges are reversible.
       </p>

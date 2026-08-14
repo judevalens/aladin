@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { Eyebrow } from "@/components/ui/eyebrow";
+import { Icon } from "@/components/ui/icon";
 import { Boxes, FileText, Paperclip, type LucideIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -160,8 +162,8 @@ function NotebookOverview() {
   return (
     <div className="mx-auto w-full max-w-[62rem] px-8 py-7">
       <header className="mb-7">
-        <h1 className="font-display text-[24px] leading-tight text-ink">{NOTEBOOK.title}</h1>
-        <div className="mt-2 flex flex-wrap items-center gap-x-4 font-mono text-[10.5px] uppercase tracking-[0.5px] text-ink-4">
+        <h1 className="font-display text-title leading-tight text-ink">{NOTEBOOK.title}</h1>
+        <div className="mt-2 flex flex-wrap items-center gap-x-4 font-mono text-meta uppercase tracking-[0.5px] text-ink-4">
           <span>1 source</span>
           <span>{TOPICS.length} topics</span>
           {/* Deliberately NOT amber: the row below carries the actionable detail ("missed
@@ -196,7 +198,7 @@ function Goal() {
         onChange={(e) => setDraft(e.target.value)}
         rows={3}
         placeholder="What do you want to be able to do afterwards — and what keeps losing you?"
-        className="w-full resize-none bg-transparent font-display text-[15px] leading-relaxed text-ink outline-none placeholder:text-ink-4"
+        className="w-full resize-none bg-transparent font-display text-lead leading-relaxed text-ink outline-none placeholder:text-ink-4"
       />
     </section>
   );
@@ -220,16 +222,16 @@ function Material() {
             <m.icon className="mt-0.5 size-3.5 shrink-0 text-ink-4" />
             <span
               className={cn(
-                "min-w-0 flex-1 truncate text-[13px]",
+                "min-w-0 flex-1 truncate text-body",
                 m.primary ? "text-ink" : "text-ink-2",
               )}
             >
               {m.title}
             </span>
             {m.ingest ? (
-              <span className="shrink-0 font-mono text-[10px] text-amber">{m.ingest}</span>
+              <span className="shrink-0 font-mono text-meta text-amber">{m.ingest}</span>
             ) : null}
-            <span className="shrink-0 font-mono text-[10px] text-ink-4">{m.kindLabel}</span>
+            <span className="shrink-0 font-mono text-meta text-ink-4">{m.kindLabel}</span>
           </button>
         ))}
       </div>
@@ -262,16 +264,16 @@ function Learning() {
             <div key={t.id} className="rounded-card px-2 py-2 transition-colors hover:bg-raise">
               <div className="flex items-baseline gap-3">
                 <button type="button" className="min-w-0 flex-1 text-left">
-                  <span className="block text-[13px] text-ink">{t.title}</span>
-                  <span className="mt-0.5 block text-[12px] leading-snug text-ink-3">
+                  <span className="block text-body text-ink">{t.title}</span>
+                  <span className="mt-0.5 block text-small leading-snug text-ink-3">
                     {t.objective}
                   </span>
                 </button>
                 <TopicState state={t.state} />
-                <span className="shrink-0 font-mono text-[10px] text-ink-4">{t.span}</span>
+                <span className="shrink-0 font-mono text-meta text-ink-4">{t.span}</span>
                 <button
                   type="button"
-                  className="shrink-0 rounded-chip px-1.5 py-0.5 font-mono text-[10px] text-ink-4 transition-colors hover:bg-card hover:text-ink"
+                  className="shrink-0 rounded-chip px-1.5 py-0.5 font-mono text-meta text-ink-4 transition-colors hover:bg-card hover:text-ink"
                 >
                   quiz me
                 </button>
@@ -279,11 +281,11 @@ function Learning() {
               {t.aid ? (
                 <button
                   type="button"
-                  className="ml-4 mt-1 flex items-baseline gap-2 text-left text-[12px] text-ink-2 hover:text-ink"
+                  className="ml-4 mt-1 flex items-baseline gap-2 text-left text-small text-ink-2 hover:text-ink"
                 >
-                  <Boxes className="size-3 shrink-0 text-ink-4" />
+                  <Icon as={Boxes} size="inline" mark className="shrink-0 text-ink-4" />
                   {t.aid.title}
-                  <span className="font-mono text-[10px] text-ink-4">{t.aid.kindLabel}</span>
+                  <span className="font-mono text-meta text-ink-4">{t.aid.kindLabel}</span>
                 </button>
               ) : null}
             </div>
@@ -293,9 +295,9 @@ function Learning() {
 
       {SUGGESTED.length ? (
         <div className="mt-4">
-          <p className="mb-1.5 font-mono text-[10px] uppercase tracking-[0.5px] text-ink-4">
+          <Eyebrow as="p" className="mb-1.5 text-ink-4">
             the tutor suggests
-          </p>
+          </Eyebrow>
           <div className="-mx-2">
             {SUGGESTED.map((sg) => (
               <div
@@ -303,13 +305,13 @@ function Learning() {
                 className="flex items-baseline gap-3 rounded-card px-2 py-1.5 transition-colors hover:bg-raise"
               >
                 <span className="min-w-0 flex-1">
-                  <span className="text-[13px] text-ink-2">{sg.title}</span>
-                  <span className="ml-2 text-[12px] text-ink-4">{sg.why}</span>
+                  <span className="text-body text-ink-2">{sg.title}</span>
+                  <span className="ml-2 text-small text-ink-4">{sg.why}</span>
                 </span>
-                <span className="shrink-0 font-mono text-[10px] text-ink-4">{sg.span}</span>
+                <span className="shrink-0 font-mono text-meta text-ink-4">{sg.span}</span>
                 <button
                   type="button"
-                  className="shrink-0 rounded-chip px-1.5 py-0.5 font-mono text-[10px] text-ink-4 transition-colors hover:bg-card hover:text-ink"
+                  className="shrink-0 rounded-chip px-1.5 py-0.5 font-mono text-meta text-ink-4 transition-colors hover:bg-card hover:text-ink"
                 >
                   add
                 </button>
@@ -329,15 +331,15 @@ function Learning() {
 function TopicState({ state }: { state: Topic["state"] }) {
   if (state.kind === "untouched") return null;
   if (state.kind === "reading")
-    return <span className="shrink-0 font-mono text-[10px] text-ink-4">reading</span>;
+    return <span className="shrink-0 font-mono text-meta text-ink-4">reading</span>;
   if (state.kind === "checked")
     return (
-      <span className="shrink-0 font-mono text-[10px] text-ink-4">
+      <span className="shrink-0 font-mono text-meta text-ink-4">
         {state.got}/{state.of}
       </span>
     );
   return (
-    <span className="shrink-0 truncate font-mono text-[10px] text-amber" title={state.missed}>
+    <span className="shrink-0 truncate font-mono text-meta text-amber" title={state.missed}>
       missed {state.missed}
     </span>
   );
@@ -362,7 +364,7 @@ function AskTheTutor() {
           <button
             key={a.id}
             type="button"
-            className="rounded-chip px-2 py-1 text-[12px] text-ink-2 transition-colors hover:bg-raise hover:text-ink"
+            className="rounded-chip px-2 py-1 text-small text-ink-2 transition-colors hover:bg-raise hover:text-ink"
           >
             {a.label}
           </button>
@@ -374,15 +376,15 @@ function AskTheTutor() {
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <h2 className="mb-2 font-mono text-[10.5px] uppercase tracking-[0.5px] text-ink-4">
+    <Eyebrow as="h2" className="mb-2 text-ink-4">
       {children}
-    </h2>
+    </Eyebrow>
   );
 }
 
 function Empty({ children }: { children: React.ReactNode }) {
   return (
-    <p className="rounded-card border border-dashed border-line-2 px-3 py-3 text-[12px] leading-relaxed text-ink-4">
+    <p className="rounded-card border border-dashed border-line-2 px-3 py-3 text-small leading-relaxed text-ink-4">
       {children}
     </p>
   );

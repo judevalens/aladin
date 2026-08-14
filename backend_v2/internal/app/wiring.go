@@ -478,6 +478,7 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		Agent:     agentClient,
 		Realtime:  realtime,
 		Model:     caCfg.Model,
+		Effort:    caCfg.Effort,
 		Snapshots: snapshotSource,
 		Artifacts: artifactsSvc,
 		Entities:  entityContextSvc,

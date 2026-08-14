@@ -1,5 +1,7 @@
-import { useMemo, useRef, useState } from "react";
-import { FileWarning, Loader2, Minus, Plus, ScanLine } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Eyebrow } from "@/components/ui/eyebrow";
+import { Icon } from "@/components/ui/icon";
+import { FileWarning, Loader2, Minus, PanelLeft, Plus, ScanLine } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -7,7 +9,7 @@ import { useArtifactResource } from "@/modules/artifacts/hooks/use-artifact-reso
 import { useDocument, useDocumentOutline } from "@/modules/documents/hooks/use-document";
 import type { OutlineEntry } from "@/modules/documents/hooks/use-document";
 import { PdfView } from "@/modules/documents/ui/pdf-view";
-import type { DocumentPage, DocumentStatus, IngestedDocument } from "@/repos/documents/document-repo";
+import type { DocumentStatus, IngestedDocument } from "@/repos/documents/document-repo";
 import type { Artifact } from "@/shared/api/models";
 
 /**
@@ -21,13 +23,13 @@ import type { Artifact } from "@/shared/api/models";
  * machines (search, retrieval, citation). A human should be handed the page, which renders
  * all of it correctly and for free.
  *
- * Text remains available as a mode, because copying clean prose is a real thing to want.
- * It is not the default, and its cost is only paid when asked for — `withText` stays false
- * until you switch, so opening a book no longer pulls a book.
+ * There was a Page/Text segmented toggle in the header. It was removed: it read as chrome
+ * bolted onto the title bar, and the extracted-text view it revealed is a machine artifact —
+ * tables and equations do not survive the flattening. `useDocument` keeps its `withText`
+ * parameter (other callers pass false too), so bringing a text view back is a UI change only.
  */
 export function DocumentViewerUI({ artifact }: { artifact: Artifact }) {
-  const [wantsText, setWantsText] = useState(false);
-  const { document, loading, error } = useDocument(artifact.id, wantsText);
+  const { document, loading, error } = useDocument(artifact.id, false);
   const { url, loading: resourceLoading } = useArtifactResource(artifact);
 
   // Authored structure beats inferred structure (§5), so the recovered tree is a FALLBACK.
@@ -56,8 +58,6 @@ export function DocumentViewerUI({ artifact }: { artifact: Artifact }) {
       outlineRecovered={authored.length === 0 && outline.length > 0}
       url={url}
       resourceLoading={resourceLoading}
-      pages={document.pages}
-      onWantsText={setWantsText}
     />
   );
 }
@@ -70,9 +70,6 @@ export interface DocumentReaderProps {
   outlineRecovered: boolean;
   url: string | null;
   resourceLoading: boolean;
-  pages?: DocumentPage[];
-  /** Text is fetched lazily, so the reader tells its owner when it's actually wanted. */
-  onWantsText?: (wanted: boolean) => void;
 }
 
 /**
@@ -87,19 +84,11 @@ export function DocumentReader({
   outlineRecovered,
   url,
   resourceLoading,
-  pages,
-  onWantsText,
 }: DocumentReaderProps) {
-  const [mode, setMode] = useState<"page" | "text">("page");
+  const [outlineOpen, setOutlineOpen] = useState(true);
   const [zoom, setZoom] = useState(1);
   const [targetPage, setTargetPage] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const pagesRef = useRef<HTMLDivElement | null>(null);
-
-  const switchTo = (next: "page" | "text") => {
-    setMode(next);
-    onWantsText?.(next === "text");
-  };
 
   // The outline entry you're inside: the last one that started at or before this page.
   // Without it the sidebar is a list of links; with it, it's a position.
@@ -111,12 +100,9 @@ export function DocumentReader({
     return found;
   }, [outline, currentPage]);
 
+  const hasOutline = outline.length > 0;
+
   const jumpTo = (page: number) => {
-    if (mode === "text") {
-      pagesRef.current?.querySelector(`[data-page="${page}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
-      setCurrentPage(page);
-      return;
-    }
     setTargetPage(page);
     setCurrentPage(page);
   };
@@ -126,22 +112,38 @@ export function DocumentReader({
     // third background between two surfaces and made the left gutter wider than the right;
     // the breathing room belongs to the stage, symmetrically, on the stage's own colour.
     <div className="flex h-full min-h-0">
-      {outline.length > 0 ? (
-        <nav className="flex w-64 shrink-0 flex-col border-r border-line bg-panel">
-          <div className="flex items-center gap-2 px-4 py-2.5">
-            <h2 className="font-mono text-[10px] uppercase tracking-[0.7px] text-ink-4">Contents</h2>
-            <span className="font-mono text-[10px] tabular-nums text-ink-4">{outline.length}</span>
+      {hasOutline && outlineOpen ? (
+        // min-h-0 is what makes the list scroll rather than push the nav taller than the
+        // reader: without it this flex child floors at its content height.
+        <nav className="flex h-full min-h-0 w-64 shrink-0 flex-col border-r border-line bg-panel">
+          <div className="flex shrink-0 items-center gap-2 px-4 py-2.5">
+            <Eyebrow as="h2" className="text-ink-4">Contents</Eyebrow>
+            <span className="font-mono text-meta tabular-nums text-ink-4">{outline.length}</span>
             {outlineRecovered ? (
               <span
                 title="This file carries no outline of its own — segmentation recovered one."
-                className="ml-auto rounded-chip bg-[rgb(var(--amber-soft))] px-1.5 py-px font-mono text-[9px] uppercase tracking-[0.5px] text-amber"
+                className="ml-auto rounded-chip bg-[rgb(var(--amber-soft))] px-1.5 py-px font-mono text-meta uppercase tracking-[0.5px] text-amber"
               >
                 Recovered
               </span>
             ) : null}
           </div>
-          <ScrollArea className="min-h-0 flex-1">
-            <ul className="px-2 pb-3">
+          {/* `type="auto"` because Radix defaults to "hover": with the default there is no
+              scrollbar element in the DOM at all until the pointer is already inside, so a
+              46-entry outline looked like it simply didn't scroll.
+
+              The `document-outline-scroll` CSS rule is the other half. Radix gives its viewport a child with
+              an inline `display: table`, which sizes to CONTENT — 490px inside a 255px pane
+              here. `truncate` never engages against a table box, so long titles ran under the
+              border and took the page numbers off screen with them. */}
+          <ScrollArea
+            type="auto"
+            className="document-outline-scroll min-h-0 flex-1"
+          >
+            {/* A 1.5px gap so consecutive highlighted rows read as separate targets — with
+                the rows flush, the active row's amber block merged into its neighbour's
+                hover block and the two looked like one taller row. */}
+            <ul className="space-y-0.5 px-2 pb-3">
               {outline.map((entry, index) => {
                 const active = index === activeIndex;
                 return (
@@ -151,7 +153,7 @@ export function DocumentReader({
                       onClick={() => jumpTo(entry.page)}
                       style={{ paddingLeft: 8 + Math.max(0, entry.depth) * 11 }}
                       className={cn(
-                        "group flex w-full items-baseline gap-2 rounded-md py-[5px] pr-2 text-left text-[12.5px] leading-snug transition-colors",
+                        "group flex w-full items-baseline gap-2 rounded-control py-1 pr-2 text-left text-small leading-snug transition-colors",
                         active
                           ? "bg-[rgb(var(--amber-soft))] text-amber"
                           : "text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink-2",
@@ -160,7 +162,7 @@ export function DocumentReader({
                       <span className="min-w-0 flex-1 truncate">{entry.title}</span>
                       <span
                         className={cn(
-                          "shrink-0 font-mono text-[10px] tabular-nums",
+                          "shrink-0 font-mono text-meta tabular-nums",
                           active ? "text-amber" : "text-ink-4",
                         )}
                       >
@@ -176,108 +178,59 @@ export function DocumentReader({
       ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col bg-rail">
-        <header className="flex h-10 shrink-0 items-center gap-3 border-b border-line bg-panel pl-4 pr-3">
-          <h1 className="min-w-0 flex-1 truncate font-display text-[13px] text-ink" title={title}>
+        <header className="flex h-10 shrink-0 items-center gap-3 border-b border-line bg-panel pl-2 pr-3">
+          {/* One control, always in the same place, rather than a chevron inside the panel
+              plus a second button to bring it back once the panel is gone. */}
+          {hasOutline ? (
+            <IconButton
+              label={outlineOpen ? "Hide contents" : `Show contents (${outline.length})`}
+              onClick={() => setOutlineOpen((open) => !open)}
+              active={outlineOpen}
+            >
+              <Icon as={PanelLeft} size="inline" />
+            </IconButton>
+          ) : null}
+          <h1 className="min-w-0 flex-1 truncate font-display text-body text-ink" title={title}>
             {title}
           </h1>
 
-          <span className="shrink-0 whitespace-nowrap font-mono text-[10.5px] tabular-nums text-ink-4">
-            {mode === "page" ? `${currentPage} / ${pageCount}` : `${pageCount} pp`}
+          <span className="shrink-0 whitespace-nowrap font-mono text-meta tabular-nums text-ink-4">
+            {currentPage} / {pageCount}
           </span>
 
-          {mode === "page" ? (
-            <div className="flex shrink-0 items-center gap-0.5">
-              <IconButton label="Zoom out" onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.15).toFixed(2)))}>
-                <Minus className="size-3" strokeWidth={2} />
-              </IconButton>
-              <span className="w-9 text-center font-mono text-[10.5px] tabular-nums text-ink-4">
-                {Math.round(zoom * 100)}%
-              </span>
-              <IconButton label="Zoom in" onClick={() => setZoom((z) => Math.min(2.5, +(z + 0.15).toFixed(2)))}>
-                <Plus className="size-3" strokeWidth={2} />
-              </IconButton>
-            </div>
-          ) : null}
-
-          <div className="flex shrink-0 items-center gap-px rounded-chip bg-field p-[3px]">
-            <ModeButton active={mode === "page"} onClick={() => switchTo("page")}>
-              Page
-            </ModeButton>
-            <ModeButton active={mode === "text"} onClick={() => switchTo("text")}>
-              Text
-            </ModeButton>
+          <div className="flex shrink-0 items-center gap-0.5">
+            <IconButton label="Zoom out" onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.15).toFixed(2)))}>
+              <Icon as={Minus} size="inline" mark />
+            </IconButton>
+            <span className="w-9 text-center font-mono text-meta tabular-nums text-ink-4">
+              {Math.round(zoom * 100)}%
+            </span>
+            <IconButton label="Zoom in" onClick={() => setZoom((z) => Math.min(2.5, +(z + 0.15).toFixed(2)))}>
+              <Icon as={Plus} size="inline" mark />
+            </IconButton>
           </div>
         </header>
 
-        {mode === "page" ? (
-          url ? (
-            <PdfView
-              url={url}
-              targetPage={targetPage}
-              onVisiblePageChange={setCurrentPage}
-              zoom={zoom}
-              className="min-h-0 flex-1"
-            />
-          ) : resourceLoading ? (
-            <Notice icon={Loader2} title="Loading…" body="Fetching the file." spin />
-          ) : (
-            <Notice
-              icon={FileWarning}
-              title="Couldn't load the file"
-              body="The document was read, but its bytes couldn't be fetched. Text mode still works."
-              tone="against"
-            />
-          )
+        {url ? (
+          <PdfView
+            url={url}
+            targetPage={targetPage}
+            onVisiblePageChange={setCurrentPage}
+            zoom={zoom}
+            className="min-h-0 flex-1"
+          />
+        ) : resourceLoading ? (
+          <Notice icon={Loader2} title="Loading…" body="Fetching the file." spin />
         ) : (
-          <ScrollArea className="min-h-0 flex-1">
-            <div ref={pagesRef} className="mx-auto w-full max-w-[52rem] px-8 py-7">
-              {/* §13f: this mode is honest about what it is. Tables and equations do not
-                  survive the flattening, so it is for copying prose, not for reading a
-                  paper — Page mode is for that. */}
-              <p className="mb-6 border-l-2 border-line-2 pl-3 text-[12px] leading-relaxed text-ink-4">
-                Extracted text — what the machine layer reads. Tables, figures and equations don&apos;t
-                survive this view; switch to Page for those.
-              </p>
-              {(pages ?? []).map((page) => (
-                <section key={page.page} data-page={page.page} className="scroll-mt-6 pb-7">
-                  <div className="mb-2 select-none font-mono text-[10px] uppercase tracking-wide text-ink-4">
-                    p{page.page}
-                  </div>
-                  {page.text ? (
-                    <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed text-ink-2">{page.text}</p>
-                  ) : (
-                    <p className="text-[13px] italic text-ink-4">No text on this page.</p>
-                  )}
-                </section>
-              ))}
-            </div>
-          </ScrollArea>
+          <Notice
+            icon={FileWarning}
+            title="Couldn't load the file"
+            body="The document was read, but its bytes couldn't be fetched."
+            tone="against"
+          />
         )}
       </div>
     </div>
-  );
-}
-
-function ModeButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "rounded-chip px-2 py-[3px] font-mono text-[10px] uppercase tracking-[0.5px] transition-colors",
-        active ? "bg-raise text-ink" : "text-ink-4 hover:text-ink-2",
-      )}
-    >
-      {children}
-    </button>
   );
 }
 
@@ -285,18 +238,25 @@ function IconButton({
   label,
   onClick,
   children,
+  /** A toggle rather than an action — reads as pressed, and announces as one. */
+  active,
 }: {
   label: string;
   onClick: () => void;
   children: React.ReactNode;
+  active?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-label={label}
+      aria-pressed={active}
       title={label}
-      className="flex size-6 items-center justify-center rounded-md text-ink-4 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink-2"
+      className={cn(
+        "flex size-6 items-center justify-center rounded-control transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink-2",
+        active ? "text-ink-2" : "text-ink-4",
+      )}
     >
       {children}
     </button>
@@ -335,7 +295,9 @@ function StatusNotice({ document }: { document: IngestedDocument }) {
 }
 
 function Notice({
-  icon: Icon,
+  // `Glyph`, not `Icon` — this file imports the <Icon> primitive, and a prop named `Icon`
+  // would shadow it inside this component only, which is the worst kind of trap.
+  icon: Glyph,
   title,
   body,
   spin = false,
@@ -350,12 +312,14 @@ function Notice({
   return (
     <div className="flex h-full items-center justify-center p-8">
       <div className="max-w-md text-center">
-        <Icon
+        {/* Empty-state illustration at 24px — deliberately off the <Icon> scale (§5 rule 9's
+            carve-out), so its raw strokeWidth is intentional. */}
+        <Glyph
           className={cn("mx-auto mb-3 size-6", tone === "against" ? "text-against" : "text-ink-4", spin && "animate-spin")}
           strokeWidth={1.5}
         />
-        <p className="font-display text-[15px] text-ink">{title}</p>
-        <p className="mt-1.5 text-[13px] leading-relaxed text-ink-4">{body}</p>
+        <p className="font-display text-lead text-ink">{title}</p>
+        <p className="mt-1.5 text-body leading-relaxed text-ink-4">{body}</p>
       </div>
     </div>
   );
@@ -390,7 +354,7 @@ export function FileArtifactPaneUI({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {unread ? (
-        <p className="border-b border-line bg-panel px-6 py-2 text-[12.5px] text-ink-4">
+        <p className="border-b border-line bg-panel px-6 py-2 text-small text-ink-4">
           Not read yet — no text or outline has been extracted. Extraction runs in the
           background worker; if this doesn&apos;t change, the worker isn&apos;t running.
         </p>
@@ -411,7 +375,7 @@ function StatusLine({ document }: { document: IngestedDocument }) {
   return (
     <p
       className={cn(
-        "px-6 py-2 text-[12.5px]",
+        "px-6 py-2 text-small",
         document.status === "failed" ? "text-against" : working ? "text-ink-4" : "text-amber",
       )}
     >

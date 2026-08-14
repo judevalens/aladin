@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronRight, Code2, Columns3, FileJson, FileText, FlaskConical, Folder, History, Layout, LayoutDashboard, Link2, Mic, Paperclip, Plus, ScanSearch, Search, SlidersHorizontal } from "lucide-react";
-import type { ArtifactKind } from "@/shared/api/models";
-import type { LucideIcon } from "lucide-react";
+import { Eyebrow } from "@/components/ui/eyebrow";
+import { Icon } from "@/components/ui/icon";
+import { ChevronRight, Columns3, FileText, FlaskConical, Folder, Plus, Search, SlidersHorizontal } from "lucide-react";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -16,30 +16,18 @@ import type { ResearchView } from "@/modules/workspace/domain";
 
 // Structural-slot icons (§5). Muted: the slots are chrome, the captured material is the
 // content, and only the research folder itself carries the accent.
-const RESEARCH_SLOT_ICONS: Record<ResearchView, LucideIcon> = {
-  overview: LayoutDashboard,
-  manifest: FileJson,
-  runs: History,
-  code: Code2,
-  inspect: ScanSearch,
-};
+import { ARTIFACT_ICONS, RESEARCH_SLOT_ICONS } from "@/modules/workspace/ui/kind-icons";
 import { useBrowserPane } from "@/modules/workspace/hooks/use-workspace-state";
 import { useAppStore } from "@/app/state/store";
 import { PropertyFilterDialogUI } from "@/modules/artifacts/ui/property-filter-dialog-ui";
-import { cn } from "@/shared/lib/utils";
+import { DeleteConfirmDialog, type DeleteTarget } from "@/modules/workspace/ui/delete-confirm-dialog";
+import { cn } from "@/lib/utils";
 
 const MAX_INLINE = 2; // depths 0,1 expand inline; depth >= 2 drills into the Miller popup
 
-const ARTIFACT_ICONS: Record<ArtifactKind, LucideIcon> = {
-  note: FileText,
-  link: Link2,
-  voice: Mic,
-  file: Paperclip,
-  app: Layout,
-};
-
 export function BrowserPaneUI() {
   const [propertyFilterOpen, setPropertyFilterOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const {
     loading,
     errorMessage,
@@ -56,6 +44,8 @@ export function BrowserPaneUI() {
     onStartRenameResearch,
     onStartRenameArtifact,
     onCreateFolderHere,
+    onDeleteFolder,
+    onDeleteArtifact,
     onCreateResearchHere,
     onCreateNoteHere,
   } = useBrowserPane();
@@ -81,7 +71,7 @@ export function BrowserPaneUI() {
   if (loading) {
     return (
       <section className="flex w-[274px] shrink-0 flex-col overflow-hidden border-r border-line bg-explorer">
-        <div className="p-5 text-sm text-ink-2">Loading browser tree…</div>
+        <div className="p-5 text-body text-ink-2">Loading browser tree…</div>
       </section>
     );
   }
@@ -89,7 +79,7 @@ export function BrowserPaneUI() {
   if (errorMessage) {
     return (
       <section className="flex w-[274px] shrink-0 flex-col overflow-hidden border-r border-line bg-explorer p-4">
-        <AladinPanel className="rounded-md border border-against/40 bg-against/10 p-4 text-sm text-against">{errorMessage}</AladinPanel>
+        <AladinPanel className="rounded-control border border-against/40 bg-against/10 p-4 text-body text-against">{errorMessage}</AladinPanel>
       </section>
     );
   }
@@ -98,34 +88,34 @@ export function BrowserPaneUI() {
     <section className="flex w-[274px] shrink-0 flex-col overflow-hidden border-r border-line bg-explorer">
       {/* Header */}
       <div className="flex items-center gap-2 px-3 pt-[13px] pb-[11px]">
-        <span className="font-mono text-[11px] font-bold uppercase tracking-[1px] text-ink-3">Workspace</span>
+        <Eyebrow>Workspace</Eyebrow>
         <div className="ml-auto flex items-center gap-0.5">
           <button
             type="button"
             onClick={() => openCommandPalette(true)}
-            className="grid h-6 w-6 place-items-center rounded-md text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
+            className="grid h-6 w-6 place-items-center rounded-control text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
             aria-label="Add item"
             title="Add item"
           >
-            <Plus className="h-4 w-4" strokeWidth={1.75} />
+            <Icon as={Plus} />
           </button>
           <button
             type="button"
             onClick={(event) => openMiller(null, event.currentTarget.getBoundingClientRect())}
-            className="grid h-6 w-6 place-items-center rounded-md text-ink-2 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
+            className="grid h-6 w-6 place-items-center rounded-control text-ink-2 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
             aria-label="Browse in columns"
             title="Browse in columns"
           >
-            <Columns3 className="h-4 w-4" strokeWidth={1.75} />
+            <Icon as={Columns3} />
           </button>
           <button
             type="button"
             onClick={() => setPropertyFilterOpen(true)}
-            className="grid h-6 w-6 place-items-center rounded-md text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
+            className="grid h-6 w-6 place-items-center rounded-control text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
             aria-label="Filter by property"
             title="Filter by property"
           >
-            <SlidersHorizontal className="h-4 w-4" strokeWidth={1.75} />
+            <Icon as={SlidersHorizontal} />
           </button>
         </div>
       </div>
@@ -135,11 +125,11 @@ export function BrowserPaneUI() {
         <button
           type="button"
           onClick={() => openCommandPalette(true)}
-          className="flex w-full items-center gap-2 rounded-lg border border-line bg-field px-2.5 py-1.5 text-left transition-colors hover:border-ink-4"
+          className="flex w-full items-center gap-2 rounded-control border border-line bg-field px-2.5 py-1.5 text-left transition-colors hover:border-ink-4"
         >
-          <Search className="h-3.5 w-3.5 shrink-0 text-ink-3" strokeWidth={1.75} />
-          <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-ink-3">search or ask</span>
-          <kbd className="rounded border border-line px-1 font-mono text-[10px] text-ink-4">⌘K</kbd>
+          <Icon as={Search} size="inline" className="shrink-0 text-ink-3" />
+          <span className="min-w-0 flex-1 truncate font-mono text-small text-ink-3">search or ask</span>
+          <kbd className="rounded-tap border border-line px-1 font-mono text-meta text-ink-4">⌘K</kbd>
         </button>
       </div>
 
@@ -158,6 +148,7 @@ export function BrowserPaneUI() {
             onToggleFolder={onToggleFolder}
             onOpenResearch={onOpenResearchView}
             onOpenArtifact={onOpenArtifact}
+            onRequestDelete={setDeleteTarget}
             onStartRenameFolder={onStartRenameFolder}
             onStartRenameResearch={onStartRenameResearch}
             onStartRenameArtifact={onStartRenameArtifact}
@@ -168,7 +159,7 @@ export function BrowserPaneUI() {
           />
         ))}
         {rows.length === 0 ? (
-          <div className="px-3 py-10 text-center text-[12px] text-ink-4">Nothing here yet.</div>
+          <div className="px-3 py-10 text-center text-small text-ink-4">Nothing here yet.</div>
         ) : null}
       </div>
 
@@ -182,9 +173,14 @@ export function BrowserPaneUI() {
       ) : null}
       {/* Mounted only while open: the hook reaches for app composition + fetches facets, so
           keeping it unmounted avoids that work (and lets the pane render without providers). */}
-      {propertyFilterOpen && (
-        <PropertyFilterDialogUI open onOpenChange={setPropertyFilterOpen} />
-      )}
+      {propertyFilterOpen && <PropertyFilterDialogUI open onOpenChange={setPropertyFilterOpen} />}
+      <DeleteConfirmDialog
+        target={deleteTarget}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={(target) =>
+          target.kind === "artifact" ? onDeleteArtifact(target.id) : onDeleteFolder(target.id)
+        }
+      />
     </section>
   );
 }
@@ -196,6 +192,7 @@ function BrowserPaneRow({
   onToggleFolder,
   onOpenResearch,
   onOpenArtifact,
+  onRequestDelete,
   onStartRenameFolder,
   onStartRenameResearch,
   onStartRenameArtifact,
@@ -210,6 +207,7 @@ function BrowserPaneRow({
   onToggleFolder: (folderId: string) => void;
   onOpenResearch: (contextId: string, view: ResearchView) => void;
   onOpenArtifact: (artifactId: string) => void;
+  onRequestDelete: (target: DeleteTarget) => void;
   onStartRenameFolder: (folderId: string, title: string) => void;
   onStartRenameResearch: (nodeId: string, title: string) => void;
   onStartRenameArtifact: (artifactId: string, title: string) => void;
@@ -272,13 +270,13 @@ function BrowserPaneRow({
           onClick={handleClick}
           style={{ paddingLeft: 10 + row.depth * 15 }}
           className={cn(
-            "relative flex h-7 w-full items-center gap-[7px] rounded-md pr-2.5 text-left transition-colors",
+            "relative flex h-7 w-full items-center gap-[7px] rounded-control pr-2.5 text-left transition-colors",
             isActive
               ? "bg-[rgb(var(--sel))] text-ink"
               : cn("hover:bg-[rgb(var(--hover))]", isContainer ? "text-ink" : "text-ink-2"),
           )}
         >
-          {isActive ? <span className="absolute left-0 top-[5px] bottom-[5px] w-0.5 rounded bg-amber" /> : null}
+          {isActive ? <span className="absolute left-0 top-[5px] bottom-[5px] w-0.5 rounded-tap bg-amber" /> : null}
           {/* Vertical guide lines — one per ancestor depth; consecutive rows make them continuous. */}
           {Array.from({ length: row.depth }, (_, ancestorDepth) => (
             <span
@@ -290,32 +288,21 @@ function BrowserPaneRow({
           ))}
           {/* Chevron / spacer (14px) */}
           {isExpandableFolder ? (
-            <ChevronRight
-              className={cn("h-3.5 w-3.5 shrink-0 text-ink-3 transition-transform duration-100", isExpanded && "rotate-90")}
-              strokeWidth={2}
-            />
+            <Icon as={ChevronRight} size="inline" mark className={cn("shrink-0 text-ink-3 transition-transform duration-100", isExpanded && "rotate-90")} />
           ) : (
             <span className="h-3.5 w-3.5 shrink-0" />
           )}
           {/* Type icon (16px) */}
-          <TypeIcon
-            className={cn(
-              "h-4 w-4 shrink-0",
-              isResearch ? "text-amber" : isContainer ? "text-ink-2" : "text-ink-3",
-              isSlot && "text-ink-4",
-            )}
-            strokeWidth={1.75}
-          />
+          <Icon as={TypeIcon} className={cn(" shrink-0", isResearch ? "text-amber" : isContainer ? "text-ink-2" : "text-ink-3", isSlot && "text-ink-4", )} />
           <span
-            className={cn(
-              "min-w-0 flex-1 truncate text-[13px]",
+            className={cn("min-w-0 flex-1 truncate text-body",
               isActive ? "font-semibold" : isContainer ? "font-medium" : "font-normal",
             )}
           >
             {row.title}
           </span>
           {isContainer ? (
-            <span className="flex shrink-0 items-center gap-1 font-mono text-[10.5px] text-ink-4">
+            <span className="flex shrink-0 items-center gap-1 font-mono text-meta text-ink-4">
               {showRunDot ? (
                 <span
                   className="size-1.5 rounded-full bg-amber"
@@ -324,7 +311,7 @@ function BrowserPaneRow({
                 />
               ) : null}
               {row.childCount ?? 0}
-              {isDrillFolder ? <ChevronRight className="h-3.5 w-3.5" strokeWidth={2} /> : null}
+              {isDrillFolder ? <Icon as={ChevronRight} size="inline" mark /> : null}
             </span>
           ) : null}
         </button>
@@ -333,7 +320,7 @@ function BrowserPaneRow({
         {isSlot ? null : isContainer && row.folderId ? (
           <>
             <ContextMenuItem onSelect={() => onOpenMiller(row.folderId!, rect())}>
-              <Columns3 className="h-[15px] w-[15px] text-amber" strokeWidth={1.75} />
+              <Icon as={Columns3} className="text-amber" />
               <span className="font-medium">Browse in columns</span>
             </ContextMenuItem>
             <ContextMenuSeparator />
@@ -362,6 +349,19 @@ function BrowserPaneRow({
             >
               Rename
             </ContextMenuItem>
+            <ContextMenuItem
+              className="text-against data-[highlighted]:text-against"
+              onSelect={() =>
+                onRequestDelete({
+                  kind: isResearch ? "research" : "folder",
+                  id: row.folderId!,
+                  title: row.title,
+                  childCount: row.childCount,
+                })
+              }
+            >
+              Delete
+            </ContextMenuItem>
           </>
         ) : null}
         {row.kind === "artifact" && row.artifactId ? (
@@ -372,11 +372,17 @@ function BrowserPaneRow({
             <ContextMenuItem
               onSelect={() => onOpenMiller(row.ancestorFolderIds.at(-1) ?? null, rect(), row.artifactId)}
             >
-              <Columns3 className="h-[15px] w-[15px] text-ink-3" strokeWidth={1.75} />
+              <Icon as={Columns3} className="text-ink-3" />
               Reveal in columns
             </ContextMenuItem>
             <ContextMenuSeparator />
             <ContextMenuItem onSelect={() => onStartRenameArtifact(row.artifactId!, row.title)}>Rename</ContextMenuItem>
+            <ContextMenuItem
+              className="text-against data-[highlighted]:text-against"
+              onSelect={() => onRequestDelete({ kind: "artifact", id: row.artifactId!, title: row.title })}
+            >
+              Delete
+            </ContextMenuItem>
           </>
         ) : null}
       </ContextMenuContent>

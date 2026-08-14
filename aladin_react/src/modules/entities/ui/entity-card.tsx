@@ -1,4 +1,5 @@
 import { Activity, Globe, Hash, Link2, MapPin, Layers } from "lucide-react";
+import { Icon } from "@/components/ui/icon";
 
 import { cn } from "@/lib/utils";
 import type { EntityListItem } from "@/modules/entities/entity-list-types";
@@ -43,29 +44,31 @@ export function EntityGlyph({
   size?: number;
 }) {
   const base = cn(
-    "grid shrink-0 place-items-center rounded-[9px] border bg-field",
+    "grid shrink-0 place-items-center rounded-control border bg-field",
     unresolved ? "border-amber-line text-amber/80" : "border-line-2 text-ink-3",
   );
   const style = { width: size, height: size };
   if (kind === "org" || kind === "person") {
     return (
-      <span style={style} className={cn(base, "font-mono text-[10px] font-semibold")}>
+      <span style={style} className={cn(base, "font-mono text-meta font-semibold")}>
         {entityInitials(name)}
       </span>
     );
   }
-  const Icon = kind === "location" ? MapPin : kind === "other" ? Hash : kind === "concept" ? Globe : Layers;
+  const Glyph = kind === "location" ? MapPin : kind === "other" ? Hash : kind === "concept" ? Globe : Layers;
   return (
     <span style={style} className={base}>
-      <Icon size={Math.round(size / 2)} strokeWidth={1.7} />
+      {/* The one genuinely dynamic glyph: EntityGlyph scales with its container, so its
+          size is computed and cannot be one of the three named steps. */}
+      <Glyph size={Math.round(size / 2)} strokeWidth={1.7} />
     </span>
   );
 }
 
-function FootStat({ icon: Icon, value, label }: { icon: typeof Link2; value: number; label: string }) {
+function FootStat({ icon: Glyph, value, label }: { icon: typeof Link2; value: number; label: string }) {
   return (
     <span className="flex items-center gap-1">
-      <Icon size={11} strokeWidth={1.7} className="text-ink-4" />
+      <Icon as={Glyph} size="inline" className="text-ink-4" />
       <span className="text-ink-3">{value}</span>
       <span>{label}</span>
     </span>
@@ -80,16 +83,16 @@ export function EntityCard({ item, onOpen }: { item: EntityListItem; onOpen: () 
     <button
       type="button"
       onClick={onOpen}
-      className="group mb-[14px] flex w-full break-inside-avoid flex-col rounded-[14px] border border-line-2 bg-card p-[15px] text-left transition-colors hover:border-ink-4 hover:bg-raise"
+      className="group mb-3.5 flex w-full break-inside-avoid flex-col rounded-modal border border-line-2 bg-card p-4 text-left transition-colors hover:border-ink-4 hover:bg-raise"
     >
       {/* header: glyph · name/sub · attention */}
       <div className="flex items-start gap-2.5">
         <EntityGlyph kind={item.kind} name={item.name} unresolved={unresolved} />
         <div className="min-w-0 flex-1">
-          <div className="truncate font-display text-[15px] font-semibold tracking-[-0.2px] text-ink">
+          <div className="truncate font-display text-lead font-semibold tracking-[-0.2px] text-ink">
             {item.name}
           </div>
-          <div className="mt-0.5 truncate font-mono text-[10px] text-ink-4">
+          <div className="mt-0.5 truncate font-mono text-meta text-ink-4">
             {item.kind}
             {ago ? ` · updated ${ago}` : ""}
           </div>
@@ -97,16 +100,16 @@ export function EntityCard({ item, onOpen }: { item: EntityListItem; onOpen: () 
         {item.attention > 0 && (
           <span
             title={`${item.attention} open ${item.attention === 1 ? "question" : "questions"}`}
-            className="flex shrink-0 items-center gap-1 rounded-[10px] bg-amber-soft px-1.5 py-0.5 font-mono text-[10px] font-semibold text-amber"
+            className="flex shrink-0 items-center gap-1 rounded-control bg-amber-soft px-1.5 py-0.5 font-mono text-meta font-semibold text-amber"
           >
-            <Activity size={11} strokeWidth={2} />
+            <Icon as={Activity} size="inline" mark />
             {item.attention}
           </span>
         )}
       </div>
 
       {item.gist ? (
-        <p className="mt-2.5 line-clamp-3 text-[12.5px] leading-[1.5] text-pretty text-ink-2">
+        <p className="mt-2.5 line-clamp-3 text-small leading-[1.5] text-pretty text-ink-2">
           {item.gist}
         </p>
       ) : null}
@@ -116,7 +119,7 @@ export function EntityCard({ item, onOpen }: { item: EntityListItem; onOpen: () 
           {item.aliases.slice(0, 5).map((a) => (
             <span
               key={a}
-              className="rounded-[6px] border border-line-2 bg-bg px-2 py-[3px] font-mono text-[10.5px] text-ink-3"
+              className="rounded-tap border border-line-2 bg-bg px-2 py-1 font-mono text-meta text-ink-3"
             >
               {a}
             </span>
@@ -124,7 +127,7 @@ export function EntityCard({ item, onOpen }: { item: EntityListItem; onOpen: () 
         </div>
       )}
 
-      <div className="mt-3.5 flex items-center gap-3.5 border-t border-line-2 pt-3 font-mono text-[11px] text-ink-4">
+      <div className="mt-3.5 flex items-center gap-3.5 border-t border-line-2 pt-3 font-mono text-meta text-ink-4">
         <FootStat icon={Link2} value={item.links} label={item.links === 1 ? "link" : "links"} />
         <FootStat icon={Layers} value={item.sources} label={item.sources === 1 ? "src" : "sources"} />
       </div>
