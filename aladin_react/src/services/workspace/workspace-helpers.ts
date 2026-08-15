@@ -14,6 +14,7 @@ import {
 
 export function resolveWorkspaceDestination(pathname: string) {
   if (pathname.startsWith("/markets") || pathname.startsWith("/ticker/")) return "markets";
+  if (pathname.startsWith("/home")) return "folders";
   if (pathname.startsWith("/folders")) return "folders";
   if (pathname.startsWith("/sources")) return "sources";
   if (pathname.startsWith("/insights")) return "insights";
@@ -21,7 +22,7 @@ export function resolveWorkspaceDestination(pathname: string) {
   // "/entities") belong to the Entities destination.
   if (pathname.startsWith("/entities") || pathname.startsWith("/entity/")) return "entities";
   if (pathname.startsWith("/graph")) return "graph";
-  return "home";
+  return "folders";
 }
 
 export function createFolderCommand(tree: BrowserTreeNode[], folderId: string | null) {

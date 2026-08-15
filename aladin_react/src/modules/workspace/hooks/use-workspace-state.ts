@@ -38,7 +38,6 @@ import type {
 import { useObservableState } from "@/shared/flow/use-observable-state";
 
 export type WorkspaceDestination =
-  | "home"
   | "markets"
   | "folders"
   | "sources"

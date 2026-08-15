@@ -1,4 +1,16 @@
-import { CandlestickChart, Check, Command, Contrast, Folder, GitGraph, Globe, Home, Lightbulb, LogOut, Network, Plus, Sparkles, SquareTerminal } from "lucide-react";
+import {
+  CandlestickChart,
+  Check,
+  Command,
+  Contrast,
+  Folder,
+  Globe,
+  LogOut,
+  Network,
+  Plus,
+  Sparkles,
+  SquareTerminal,
+} from "lucide-react";
 import { Icon } from "@/components/ui/icon";
 import { useEffect } from "react";
 import { Outlet } from "react-router-dom";
@@ -27,13 +39,10 @@ import { THEMES } from "@/app/state/theme-slice";
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { key: "home", label: "Home", icon: Home, path: "/home" },
   { key: "markets", label: "Markets", icon: CandlestickChart, path: "/markets" },
-  { key: "folders", label: "Folders", icon: Folder, path: "/folders" },
-  { key: "insights", label: "Insights", icon: Lightbulb, path: "/insights" },
+  { key: "folders", label: "Research", icon: Folder, path: "/home" },
   { key: "entities", label: "Entities", icon: Globe, path: "/entities" },
   { key: "sources", label: "Sources", icon: Network, path: "/sources" },
-  { key: "graph", label: "Graph", icon: GitGraph, path: "/graph" },
 ] as const;
 
 export function WorkspaceShellUI() {
