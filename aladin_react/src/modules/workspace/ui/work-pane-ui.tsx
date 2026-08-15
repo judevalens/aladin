@@ -3,6 +3,7 @@ import { Icon } from "@/components/ui/icon";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { PlaceholderPane } from "@/components/ui/aladin";
+import { useArtifact } from "@/modules/artifacts/hooks/use-artifact";
 import { FileArtifactUI, LinkArtifactUI, VoiceArtifactUI } from "@/modules/artifacts/ui/artifact-ui";
 import { PageEditorUI } from "@/modules/pages/ui/page-editor-ui";
 import { DocSurfaceUI } from "@/modules/doc-surface/ui/doc-surface-ui";
@@ -181,7 +182,19 @@ function TabPane({ entry, hidden }: { entry: WorkPaneTab; hidden: boolean }) {
   if (entry.tab.kind === "research") {
     return <ResearchPaneUI contextId={entry.tab.contextId} view={entry.tab.view} />;
   }
-  const artifact = entry.artifact;
+  return <ArtifactTabPane artifactId={entry.tab.artifactId} hidden={hidden} />;
+}
+
+/**
+ * Reads its OWN artifact rather than being handed one from the strip's projection.
+ *
+ * That projection is rebuilt whenever the set of open tabs changes, which used to mean a pane's
+ * data could vanish for a frame because a DIFFERENT tab closed — and a pane that loses its
+ * artifact for a frame is a pane that unmounts: pdf.js document destroyed, Yjs socket dropped,
+ * shard iframe rebuilt. A pane's data should depend on its own id and nothing else.
+ */
+function ArtifactTabPane({ artifactId, hidden }: { artifactId: string; hidden: boolean }) {
+  const artifact = useArtifact(artifactId);
   if (!artifact) {
     // The tab is open but its artifact hasn't arrived from the replica yet.
     return <PlaceholderPane title="Loading…" body="" className="h-full" />;

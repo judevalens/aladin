@@ -105,6 +105,12 @@ export function PdfView({ url, targetPage, onVisiblePageChange, zoom = 1, classN
       if (!node) return;
       const observer = new IntersectionObserver(
         (entries) => {
+          // A hidden pane — a background tab is `display: none` (see work-pane-ui) — reports
+          // every page as non-intersecting. Acting on that drops the whole visible set, which
+          // cancels the renders and gives back the bitmaps we already paid for; coming back to
+          // the tab then re-rasterises from a dark placeholder, which is the flash on tab
+          // switch. A pane with no layout box has nothing to say about visibility, so ignore it.
+          if (!scrollRef.current?.clientWidth) return;
           for (const entry of entries) {
             setVisible((current) => {
               const has = current.has(page);

@@ -1,8 +1,11 @@
-import { render, screen } from "@testing-library/react";
+import { render as renderWithin, screen } from "@testing-library/react";
 import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { AppCompositionContext } from "@/app/composition/app-composition";
+import type { AppComposition } from "@/app/composition/create-app-composition";
 import type { WorkPaneTab } from "@/modules/workspace/hooks/use-workspace-state";
+import { KeyedStream } from "@/shared/flow/keyed-stream";
 
 // Regression for "tabs get unmounted when we switch to another tab". The work pane was a switch
 // on the ACTIVE artifact, so leaving a tab destroyed its pane and everything the user had built
@@ -68,7 +71,30 @@ vi.mock("@/modules/workspace/hooks/use-workspace-state", () => ({
   }),
 }));
 
+// A pane now reads its OWN artifact (see ArtifactTabPane), so these renders need the read
+// model. Values are pushed in up front — the syncer's frames do exactly that — so `observe`
+// replays synchronously and a pane renders in the frame it mounts, which is what lets these
+// assertions stay synchronous.
+const artifacts = new KeyedStream<string, { id: string; kind: string; title: string }>(
+  (artifact) => artifact.id,
+  async (id) => ({ id, kind: "note", title: id }),
+);
+for (const id of ["a1", "a2", "a3"]) artifacts.push({ id, kind: "note", title: id });
+
+const composition = {
+  services: { workspace: { artifactById: (id: string) => artifacts.observe(id) } },
+} as unknown as AppComposition;
+
+function wrapper({ children }: { children: React.ReactNode }) {
+  return (
+    <AppCompositionContext.Provider value={composition}>{children}</AppCompositionContext.Provider>
+  );
+}
+
 const { WorkPaneUI } = await import("@/modules/workspace/ui/work-pane-ui");
+
+/** Every test in here renders the pane inside the composition provider. */
+const render = (ui: React.ReactElement) => renderWithin(ui, { wrapper });
 
 describe("work pane tab persistence", () => {
   beforeEach(() => {

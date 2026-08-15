@@ -1,66 +1,125 @@
-import {
-  catchError,
-  defer,
-  filter,
-  from,
-  ignoreElements,
-  map,
-  merge,
-  of,
-  Subject,
-  takeUntil,
-  tap,
-  type Observable,
-} from "rxjs";
+import { defer, finalize, ReplaySubject, type Observable } from "rxjs";
 import { err, ok, toError, type Result } from "./result";
 
 /**
- * Keyed event stream with per-subscription snapshot.
+ * Keyed read model: one stream per key that HOLDS ITS CURRENT VALUE.
  *
- * - `observe(key)` fetches the current value via `fetch(key)` and pushes it
- *   into the shared subject. All matching subscribers — including the caller
- *   and anyone already listening on the same key — receive it via the live
- *   channel. The snapshot pipeline itself emits only on error.
- * - `push(value)` broadcasts an update to all matching subscribers.
- * - Errors from the snapshot fetch are emitted as `err` Results to the
- *   triggering subscriber only; the live channel never errors, so other
- *   subscribers are unaffected and everyone recovers on the next successful
- *   push.
+ * `observe(key)` is "give me what you have, then every update": a subscriber gets the retained
+ * value synchronously on subscribe and never sees a gap. The first subscriber for a key triggers
+ * `fetch(key)`; later ones ride the value already held. `push(value)` — the syncer's frames —
+ * replaces it.
  *
- * Per-key caching lives in the repo, not here — this stream only coordinates
- * fan-out, not storage. Concurrent `observe(key)` calls for the same key will
- * each call `fetch`; in-flight dedup is the repo's responsibility if needed.
+ * **Why retention, and not just fan-out.** This used to be a plain `Subject` with a
+ * fetch-per-subscription: the observable was a recipe, not a value, so every resubscribe went
+ * back to "nothing yet" until a promise landed. That made SUBSCRIPTION LIFETIME the real state
+ * container, and lifetime is decided by incidental things — a React memo dep, a component
+ * remounting, an unrelated tab closing. Closing one work-pane tab rebuilt the whole artifact
+ * cache stream, which reported every open artifact as missing for one frame and tore down the
+ * panes reading them: a PDF's pdf.js document destroyed and re-fetched, a note's Yjs socket
+ * reconnected, a shard's iframe rebuilt. Holding the value makes resubscribing free, so callers
+ * are free to subscribe per consumer instead of hoarding one shared subscription.
+ *
+ * **Eviction.** Retention is bounded: keys with no subscribers are dropped least-recently-used
+ * first, past `retainedKeys`. Live subscribers are never evicted. Eviction is by USE rather than
+ * by a timer so it stays deterministic — and it deliberately does NOT drop a key the moment its
+ * last subscriber leaves, because a teardown-then-resubscribe inside one React commit is exactly
+ * the case this class exists to survive.
+ *
+ * A failed `fetch` is emitted as an `err` Result and leaves the key unresolved, so the next
+ * subscriber retries rather than inheriting the failure forever.
  */
 export class KeyedStream<K, T> {
-  private readonly subject = new Subject<T>();
-  private readonly observables = new Map<K, Observable<Result<T>>>();
+  /** Insertion order IS the LRU order: `touch` re-inserts. */
+  private readonly entries = new Map<K, Entry<T>>();
 
   constructor(
     private readonly keyOf: (value: T) => K,
     private readonly fetch: (key: K) => Promise<T>,
+    private readonly retainedKeys = 64,
   ) {}
 
   observe(key: K): Observable<Result<T>> {
-    let cached = this.observables.get(key);
-    if (cached) return cached;
-    cached = defer(() => {
-      const live = this.subject.pipe(
-        filter((value) => this.keyOf(value) === key),
-        map((value) => ok(value)),
-      );
-      const snapshot = from(this.fetch(key)).pipe(
-        tap((value) => this.subject.next(value)),
-        ignoreElements(),
-        catchError((error) => of(err<T>(toError(error)))),
-        takeUntil(live),
-      );
-      return merge(snapshot, live);
-    });
-    this.observables.set(key, cached);
-    return cached;
+    return this.entry(key).observable;
   }
 
   push(value: T) {
-    this.subject.next(value);
+    const key = this.keyOf(value);
+    const entry = this.entry(key);
+    entry.resolved = true;
+    entry.subject.next(ok(value));
+    this.evict();
   }
+
+  /**
+   * One entry per key, created once — the observable's IDENTITY is stable, which is what lets
+   * `useObservableState` memoise on it and what makes two consumers of the same key share a
+   * single fetch.
+   */
+  private entry(key: K): Entry<T> {
+    const existing = this.entries.get(key);
+    if (existing) {
+      this.touch(key, existing);
+      return existing;
+    }
+    const entry: Entry<T> = {
+      subject: new ReplaySubject<Result<T>>(1),
+      subscribers: 0,
+      resolved: false,
+      loading: null,
+      observable: defer(() => {
+        entry.subscribers += 1;
+        this.touch(key, entry);
+        if (!entry.resolved && !entry.loading) void this.load(key, entry);
+        return entry.subject.asObservable().pipe(
+          finalize(() => {
+            entry.subscribers -= 1;
+            this.evict();
+          }),
+        );
+      }),
+    };
+    this.entries.set(key, entry);
+    this.evict();
+    return entry;
+  }
+
+  private load(key: K, entry: Entry<T>) {
+    entry.loading = this.fetch(key)
+      .then((value) => {
+        entry.resolved = true;
+        entry.subject.next(ok(value));
+      })
+      .catch((error: unknown) => {
+        entry.subject.next(err<T>(toError(error)));
+      })
+      .finally(() => {
+        entry.loading = null;
+      });
+    return entry.loading;
+  }
+
+  private touch(key: K, entry: Entry<T>) {
+    this.entries.delete(key);
+    this.entries.set(key, entry);
+  }
+
+  /** Drops unobserved keys, oldest first, until the retained set is back within its cap. */
+  private evict() {
+    if (this.entries.size <= this.retainedKeys) return;
+    for (const [key, entry] of this.entries) {
+      if (this.entries.size <= this.retainedKeys) return;
+      if (entry.subscribers > 0) continue;
+      entry.subject.complete();
+      this.entries.delete(key);
+    }
+  }
+}
+
+interface Entry<T> {
+  subject: ReplaySubject<Result<T>>;
+  observable: Observable<Result<T>>;
+  subscribers: number;
+  /** A value has been held at least once — a later subscriber must not re-fetch. */
+  resolved: boolean;
+  loading: Promise<void> | null;
 }
