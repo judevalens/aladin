@@ -14,7 +14,8 @@
     "test:watch": "vitest",
     "e2e": "playwright test",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "build:embed": "vite build --config vite.embed.config.ts && mkdir -p ../anchor/shared/src/commonMain/composeResources/files && cp dist-embed/embed.html ../anchor/shared/src/commonMain/composeResources/files/page-editor.html"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
@@ -80,6 +81,7 @@
     "tailwindcss-animate": "^1.0.7",
     "typescript": "^6.0.3",
     "vite": "^8.0.13",
+    "vite-plugin-singlefile": "^2.3.3",
     "vitest": "^4.1.6"
   }
 }

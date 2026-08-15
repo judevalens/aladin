@@ -13,6 +13,7 @@ import { SourcesRoute } from "@/modules/sources/sources-route";
 import { InsightsUI } from "@/modules/insights/ui/insights-ui";
 import { SandboxSpike } from "@/modules/doc-surface/spike/sandbox-spike";
 import { EditorPreview } from "@/modules/pages/editor/editor-preview";
+import { PageEditorEmbed } from "@/modules/pages/editor/page-editor-embed";
 import { EntityContextSpike } from "@/modules/entities/ui/entity-context-spike";
 import { EntityContextRoute } from "@/modules/entities/ui/entity-context-route";
 import { EntitiesIndexUI } from "@/modules/entities/ui/entities-index-ui";
@@ -68,6 +69,14 @@ export const router = createBrowserRouter([
     // the block editor's look-and-feel outside the login wall.
     path: "/spike/editor",
     element: <EditorPreview />,
+  },
+  {
+    // The real editor, mounted for a native host to embed in a web view — this is
+    // the iPad companion's note editor. Outside the auth shell on purpose: a web
+    // view has no session, and the editor authenticates to collab with a token the
+    // host injects as window.__ALADIN_EMBED__ (never a query param).
+    path: "/embed/page/:id",
+    element: <PageEditorEmbed />,
   },
   {
     // Dev-only Tutor spike — the learning-copilot surface on mock data (design/TUTOR_PRD.md
