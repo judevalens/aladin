@@ -120,10 +120,10 @@ export function PageHistoryPanel({
       <div className="flex items-center justify-between border-b border-line px-4 py-3">
         <div className="text-body font-medium text-ink">History</div>
         <div className="flex items-center gap-1">
-          <button onClick={refetch} title="Refresh" className="rounded p-1 text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink">
+          <button onClick={refetch} title="Refresh" className="rounded p-1 text-ink-3 hover:bg-hover hover:text-ink">
             <Icon as={RefreshCcw} mark />
           </button>
-          <button onClick={onClose} title="Close" className="rounded p-1 text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink">
+          <button onClick={onClose} title="Close" className="rounded p-1 text-ink-3 hover:bg-hover hover:text-ink">
             <Icon as={X} mark />
           </button>
         </div>
@@ -140,7 +140,7 @@ export function PageHistoryPanel({
               <div key={e.id} className="border-b border-line last:border-b-0">
                 <button
                   onClick={() => setExpandedId(open ? null : e.id)}
-                  className="w-full rounded text-left hover:bg-[rgb(var(--hover))]"
+                  className="w-full rounded text-left hover:bg-hover"
                 >
                   <HistoryRow entry={e} expanded={open} />
                 </button>

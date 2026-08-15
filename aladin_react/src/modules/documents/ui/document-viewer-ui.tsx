@@ -122,7 +122,7 @@ export function DocumentReader({
             {outlineRecovered ? (
               <span
                 title="This file carries no outline of its own — segmentation recovered one."
-                className="ml-auto rounded-chip bg-[rgb(var(--amber-soft))] px-1.5 py-px font-mono text-meta uppercase tracking-[0.5px] text-amber"
+                className="ml-auto rounded-chip bg-amber-soft px-1.5 py-px font-mono text-meta uppercase tracking-[0.5px] text-amber"
               >
                 Recovered
               </span>
@@ -155,8 +155,8 @@ export function DocumentReader({
                       className={cn(
                         "group flex w-full items-baseline gap-2 rounded-control py-1 pr-2 text-left text-small leading-snug transition-colors",
                         active
-                          ? "bg-[rgb(var(--amber-soft))] text-amber"
-                          : "text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink-2",
+                          ? "bg-amber-soft text-amber"
+                          : "text-ink-3 hover:bg-hover hover:text-ink-2",
                       )}
                     >
                       <span className="min-w-0 flex-1 truncate">{entry.title}</span>
@@ -254,7 +254,7 @@ function IconButton({
       aria-pressed={active}
       title={label}
       className={cn(
-        "flex size-6 items-center justify-center rounded-control transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink-2",
+        "flex size-6 items-center justify-center rounded-control transition-colors hover:bg-hover hover:text-ink-2",
         active ? "text-ink-2" : "text-ink-4",
       )}
     >

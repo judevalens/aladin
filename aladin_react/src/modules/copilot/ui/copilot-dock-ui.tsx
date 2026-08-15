@@ -257,7 +257,7 @@ export function CopilotDockUI() {
               onClick={newThread}
               aria-label="New chat"
               title="New chat"
-              className="grid size-6 place-items-center rounded-tap text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink"
+              className="grid size-6 place-items-center rounded-tap text-ink-3 hover:bg-hover hover:text-ink"
             >
               <Icon as={Plus} />
             </button>
@@ -266,7 +266,7 @@ export function CopilotDockUI() {
               onClick={() => setOpen(false)}
               aria-label="Close copilot"
               title="Close"
-              className="grid size-6 place-items-center rounded-tap text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink"
+              className="grid size-6 place-items-center rounded-tap text-ink-3 hover:bg-hover hover:text-ink"
             >
               <Icon as={X} />
             </button>

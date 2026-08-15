@@ -41,6 +41,8 @@
     --color-amber-line: rgb(var(--amber-line));
     --color-line: rgb(var(--line));
     --color-line-2: rgb(var(--line-2));
+    --color-hover: rgb(var(--hover));
+    --color-sel: rgb(var(--sel));
     --color-for: var(--for);
     --color-against: var(--against);
     --color-catalyst: var(--catalyst);

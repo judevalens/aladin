@@ -201,7 +201,7 @@ function IntegrationTabs({ state }: { state: IntegrationsState }) {
                 className={cn(
                   "flex aspect-square min-h-[176px] min-w-0 flex-col overflow-hidden rounded-control border p-4 text-left transition-colors",
                   provider.provider === state.selectedProvider?.provider
-                    ? "border-[rgb(var(--sel))] bg-[rgb(var(--sel))] text-ink"
+                    ? "border-sel bg-sel text-ink"
                     : provider.available || provider.connected
                       ? "border-line bg-card text-ink hover:bg-raise"
                       : "border-line bg-card text-ink-4",

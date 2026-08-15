@@ -70,7 +70,7 @@ function InsightCard({
             <button
               type="button"
               onClick={onDismiss}
-              className="flex items-center gap-1 rounded-chip border border-line px-2.5 py-1 text-small text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
+              className="flex items-center gap-1 rounded-chip border border-line px-2.5 py-1 text-small text-ink-3 transition-colors hover:bg-hover hover:text-ink"
             >
               <Icon as={X} size="inline" mark /> Dismiss
             </button>
@@ -106,8 +106,8 @@ export function InsightsUI() {
               className={cn(
                 "rounded-chip px-2.5 py-1 text-small transition-colors",
                 status === tab.key
-                  ? "bg-[rgb(var(--sel))] text-ink"
-                  : "text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink",
+                  ? "bg-sel text-ink"
+                  : "text-ink-3 hover:bg-hover hover:text-ink",
               )}
             >
               {tab.label}

@@ -92,8 +92,8 @@ function EntityList({
           aria-label="Add entity"
           onClick={() => setPicking((open) => !open)}
           className={cn(
-            "flex size-5 items-center justify-center rounded text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink",
-            picking && "bg-[rgb(var(--sel))] text-ink",
+            "flex size-5 items-center justify-center rounded text-ink-3 transition-colors hover:bg-hover hover:text-ink",
+            picking && "bg-sel text-ink",
           )}
         >
           <Icon as={Plus} size="inline" mark />
@@ -125,7 +125,7 @@ function EntityList({
                   type="button"
                   aria-label={`Open ${e.name}`}
                   onClick={() => onOpenEntity(e.id)}
-                  className="flex items-center gap-2 rounded-chip px-2.5 py-1 text-left transition-colors hover:bg-[rgb(var(--hover))]"
+                  className="flex items-center gap-2 rounded-chip px-2.5 py-1 text-left transition-colors hover:bg-hover"
                 >
                   <span className={cn("font-mono text-meta uppercase", kindHue(e.kind))}>
                     {e.kind || "entity"}
@@ -141,7 +141,7 @@ function EntityList({
                     aria-label={`Remove ${e.name}`}
                     onClick={() => detach(e.id)}
                     disabled={pendingId === e.id}
-                    className="mr-1.5 flex size-4 items-center justify-center rounded text-ink-4 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
+                    className="mr-1.5 flex size-4 items-center justify-center rounded text-ink-4 transition-colors hover:bg-hover hover:text-ink"
                   >
                     <Icon as={X} size="inline" mark />
                   </button>
@@ -250,7 +250,7 @@ export function GraphSidePaneUI({
           type="button"
           aria-label="Close graph pane"
           onClick={onClose}
-          className="ml-auto flex size-6 items-center justify-center rounded text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
+          className="ml-auto flex size-6 items-center justify-center rounded text-ink-3 transition-colors hover:bg-hover hover:text-ink"
         >
           <Icon as={X} mark />
         </button>

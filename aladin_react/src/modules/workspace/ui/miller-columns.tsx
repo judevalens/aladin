@@ -129,7 +129,7 @@ export function MillerColumns({
           <button
             type="button"
             onClick={onClose}
-            className="grid h-6 w-6 shrink-0 place-items-center rounded-tap text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
+            className="grid h-6 w-6 shrink-0 place-items-center rounded-tap text-ink-3 transition-colors hover:bg-hover hover:text-ink"
             aria-label="Close columns"
           >
             <Icon as={X} mark />
@@ -240,7 +240,7 @@ function MillerRow({
       onDoubleClick={() => !isFolder && onOpenLeaf()}
       className={cn(
         "relative flex h-[30px] items-center gap-2.5 rounded-chip px-[9px] pl-[11px] text-left transition-colors",
-        selected ? "bg-amber-soft text-ink" : "text-ink-2 hover:bg-[rgb(var(--hover))] hover:text-ink",
+        selected ? "bg-amber-soft text-ink" : "text-ink-2 hover:bg-hover hover:text-ink",
       )}
     >
       {selected ? <span className="absolute left-0 top-[5px] bottom-[5px] w-0.5 rounded-tap bg-amber" /> : null}

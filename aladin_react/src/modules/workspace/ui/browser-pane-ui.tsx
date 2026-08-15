@@ -93,7 +93,7 @@ export function BrowserPaneUI() {
           <button
             type="button"
             onClick={() => openCommandPalette(true)}
-            className="grid h-6 w-6 place-items-center rounded-control text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
+            className="grid h-6 w-6 place-items-center rounded-control text-ink-3 transition-colors hover:bg-hover hover:text-ink"
             aria-label="Add item"
             title="Add item"
           >
@@ -102,7 +102,7 @@ export function BrowserPaneUI() {
           <button
             type="button"
             onClick={(event) => openMiller(null, event.currentTarget.getBoundingClientRect())}
-            className="grid h-6 w-6 place-items-center rounded-control text-ink-2 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
+            className="grid h-6 w-6 place-items-center rounded-control text-ink-2 transition-colors hover:bg-hover hover:text-ink"
             aria-label="Browse in columns"
             title="Browse in columns"
           >
@@ -111,7 +111,7 @@ export function BrowserPaneUI() {
           <button
             type="button"
             onClick={() => setPropertyFilterOpen(true)}
-            className="grid h-6 w-6 place-items-center rounded-control text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
+            className="grid h-6 w-6 place-items-center rounded-control text-ink-3 transition-colors hover:bg-hover hover:text-ink"
             aria-label="Filter by property"
             title="Filter by property"
           >
@@ -272,8 +272,8 @@ function BrowserPaneRow({
           className={cn(
             "relative flex h-7 w-full items-center gap-[7px] rounded-control pr-2.5 text-left transition-colors",
             isActive
-              ? "bg-[rgb(var(--sel))] text-ink"
-              : cn("hover:bg-[rgb(var(--hover))]", isContainer ? "text-ink" : "text-ink-2"),
+              ? "bg-sel text-ink"
+              : cn("hover:bg-hover", isContainer ? "text-ink" : "text-ink-2"),
           )}
         >
           {isActive ? <span className="absolute left-0 top-[5px] bottom-[5px] w-0.5 rounded-tap bg-amber" /> : null}
@@ -282,7 +282,7 @@ function BrowserPaneRow({
             <span
               key={ancestorDepth}
               aria-hidden="true"
-              className="pointer-events-none absolute top-0 bottom-0 w-px bg-[rgb(var(--line-2))]"
+              className="pointer-events-none absolute top-0 bottom-0 w-px bg-line-2"
               style={{ left: 10 + ancestorDepth * 15 + 6 }}
             />
           ))}

@@ -76,7 +76,7 @@ function ViewToggle({ view, onView }: { view: EntityView; onView: (v: EntityView
       onClick={() => onView(v)}
       className={cn(
         "flex items-center justify-center rounded-chip px-2 py-1 transition-colors",
-        view === v ? "bg-[rgb(var(--sel))] text-ink" : "text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink",
+        view === v ? "bg-sel text-ink" : "text-ink-3 hover:bg-hover hover:text-ink",
       )}
     >
       <Icon as={Glyph} size="inline" />

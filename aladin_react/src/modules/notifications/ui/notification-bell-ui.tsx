@@ -37,7 +37,7 @@ export function NotificationBell() {
               aria-label="Notifications"
               className={cn(
                 "relative grid size-[38px] place-items-center rounded-control transition-colors",
-                open ? "bg-[rgb(var(--sel))] text-ink" : "text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink",
+                open ? "bg-sel text-ink" : "text-ink-3 hover:bg-hover hover:text-ink",
               )}
             >
               <Icon as={Bell} size="rail" />

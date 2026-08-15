@@ -175,7 +175,7 @@ function Row({
       onClick={onClick}
       className={cn(
         "relative flex h-8 w-full items-center gap-2 rounded-control px-3 text-left transition-colors",
-        highlighted ? "bg-[rgb(var(--sel))] text-ink" : "text-ink-2 hover:bg-[rgb(var(--hover))]",
+        highlighted ? "bg-sel text-ink" : "text-ink-2 hover:bg-hover",
       )}
     >
       {/* The same left amber bar the tree uses for its active row — one visual language for

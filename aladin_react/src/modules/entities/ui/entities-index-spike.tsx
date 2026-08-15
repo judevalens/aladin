@@ -95,7 +95,7 @@ export function EntitiesIndexSpike() {
               <span className="font-mono text-meta text-ink-4">{MOCK.length} shown</span>
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-1.5">
-              <span className="rounded-chip bg-[rgb(var(--sel))] px-2.5 py-1 text-small text-ink">
+              <span className="rounded-chip bg-sel px-2.5 py-1 text-small text-ink">
                 All <span className="font-mono text-meta text-ink-4">140</span>
               </span>
               <span className="rounded-chip px-2.5 py-1 text-small text-ink-3">

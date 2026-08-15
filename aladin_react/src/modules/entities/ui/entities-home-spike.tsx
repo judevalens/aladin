@@ -262,7 +262,7 @@ export function EntitiesHomeSpike() {
         <div className="flex items-center gap-3 border-b border-line px-5 py-3">
           <Icon as={Globe} className="text-ink-3" />
           <Eyebrow as="span">Research map</Eyebrow>
-          <span className="rounded-chip bg-[rgb(var(--sel))] px-2.5 py-1 text-small text-ink">Map</span>
+          <span className="rounded-chip bg-sel px-2.5 py-1 text-small text-ink">Map</span>
           <span className="rounded-chip px-2.5 py-1 text-small text-ink-3">Inbox</span>
           <span className="rounded-chip px-2.5 py-1 text-small text-ink-3">Browse</span>
           <span className="ml-auto font-mono text-meta text-ink-4">

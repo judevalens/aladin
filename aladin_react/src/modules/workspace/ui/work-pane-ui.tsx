@@ -113,7 +113,7 @@ export function WorkPaneUI() {
                 ) : null}
                 <span className="max-w-[200px] truncate">{entry.label}</span>
                 <span
-                  className="ml-1 flex h-4 w-4 items-center justify-center rounded-tap text-ink-4 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
+                  className="ml-1 flex h-4 w-4 items-center justify-center rounded-tap text-ink-4 transition-colors hover:bg-hover hover:text-ink"
                   onClick={(event) => {
                     event.stopPropagation();
                     onCloseTab(entry.key);
@@ -259,7 +259,7 @@ function WorkPaneStatusBar({
             <button
               type="button"
               onClick={() => onJumpToFolder(crumb.id)}
-              className="max-w-[14ch] truncate rounded-tap px-1 py-0.5 hover:bg-[rgb(var(--hover))] hover:text-ink"
+              className="max-w-[14ch] truncate rounded-tap px-1 py-0.5 hover:bg-hover hover:text-ink"
               title={crumb.title}
             >
               {crumb.title}
@@ -319,8 +319,8 @@ function StatusUtilityIcon({
       onClick={onClick}
       className={cn("flex h-6 w-6 items-center justify-center rounded-tap transition-colors",
         isActive
-          ? "bg-[rgb(var(--sel))] text-ink"
-          : "text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink",
+          ? "bg-sel text-ink"
+          : "text-ink-3 hover:bg-hover hover:text-ink",
       )}
     >
       {children}

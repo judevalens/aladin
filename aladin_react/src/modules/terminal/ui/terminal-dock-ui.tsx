@@ -96,7 +96,7 @@ export function TerminalDockUI() {
                 <button
                   type="button"
                   aria-label={`Close ${session.title}`}
-                  className="grid size-4 place-items-center rounded-tap text-ink-4 hover:bg-[rgb(var(--hover))] hover:text-ink"
+                  className="grid size-4 place-items-center rounded-tap text-ink-4 hover:bg-hover hover:text-ink"
                   onClick={() => removeSession(session.id)}
                 >
                   <Icon as={X} size="inline" mark />
@@ -110,7 +110,7 @@ export function TerminalDockUI() {
           aria-label="New terminal"
           title="New terminal"
           onClick={createSession}
-          className="grid size-6 shrink-0 place-items-center rounded-tap text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink"
+          className="grid size-6 shrink-0 place-items-center rounded-tap text-ink-3 hover:bg-hover hover:text-ink"
         >
           <Icon as={Plus} />
         </button>
@@ -119,7 +119,7 @@ export function TerminalDockUI() {
           aria-label="Hide terminal"
           title="Hide terminal"
           onClick={() => setOpen(false)}
-          className="grid size-6 shrink-0 place-items-center rounded-tap text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink"
+          className="grid size-6 shrink-0 place-items-center rounded-tap text-ink-3 hover:bg-hover hover:text-ink"
         >
           <Icon as={X} />
         </button>

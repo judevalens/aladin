@@ -149,7 +149,7 @@ export function WorkspaceShellUI() {
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
-                      className="mt-1 grid size-[38px] place-items-center rounded-control text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
+                      className="mt-1 grid size-[38px] place-items-center rounded-control text-ink-3 transition-colors hover:bg-hover hover:text-ink"
                       aria-label="Capture"
                     >
                       <Icon as={Plus} size="rail" className="text-amber" />
@@ -183,8 +183,8 @@ export function WorkspaceShellUI() {
                         className={cn(
                           "relative grid size-[38px] place-items-center rounded-control transition-colors",
                           active
-                            ? "bg-[rgb(var(--sel))] text-ink"
-                            : "text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink",
+                            ? "bg-sel text-ink"
+                            : "text-ink-3 hover:bg-hover hover:text-ink",
                         )}
                         aria-label={item.label}
                         aria-current={active ? "page" : undefined}
@@ -207,8 +207,8 @@ export function WorkspaceShellUI() {
                     className={cn(
                       "grid size-[38px] place-items-center rounded-control transition-colors",
                       terminalOpen
-                        ? "bg-[rgb(var(--sel))] text-ink"
-                        : "text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink",
+                        ? "bg-sel text-ink"
+                        : "text-ink-3 hover:bg-hover hover:text-ink",
                     )}
                     aria-label="Toggle terminal"
                     aria-pressed={terminalOpen}
@@ -227,8 +227,8 @@ export function WorkspaceShellUI() {
                     className={cn(
                       "grid size-[38px] place-items-center rounded-control transition-colors",
                       copilotOpen
-                        ? "bg-[rgb(var(--sel))] text-ink"
-                        : "text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink",
+                        ? "bg-sel text-ink"
+                        : "text-ink-3 hover:bg-hover hover:text-ink",
                     )}
                     aria-label="Toggle copilot"
                     aria-pressed={copilotOpen}
@@ -247,7 +247,7 @@ export function WorkspaceShellUI() {
                     <DropdownMenuTrigger asChild>
                       <button
                         type="button"
-                        className="grid size-[38px] place-items-center rounded-control text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink aria-expanded:bg-[rgb(var(--sel))] aria-expanded:text-ink"
+                        className="grid size-[38px] place-items-center rounded-control text-ink-3 transition-colors hover:bg-hover hover:text-ink aria-expanded:bg-sel aria-expanded:text-ink"
                         aria-label="Theme"
                       >
                         <Icon as={Contrast} />
@@ -305,7 +305,7 @@ export function WorkspaceShellUI() {
                   <button
                     type="button"
                     onClick={() => setCommandOpen(true)}
-                    className="grid size-[38px] place-items-center rounded-control text-ink-3 transition-colors hover:bg-[rgb(var(--hover))] hover:text-ink"
+                    className="grid size-[38px] place-items-center rounded-control text-ink-3 transition-colors hover:bg-hover hover:text-ink"
                     aria-label="Command palette"
                   >
                     <Icon as={Command} />

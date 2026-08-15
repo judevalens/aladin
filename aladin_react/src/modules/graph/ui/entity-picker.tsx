@@ -95,7 +95,7 @@ export function EntityPicker({
               <button
                 type="button"
                 onClick={() => onPick(h.id)}
-                className="flex w-full items-center gap-2 rounded-chip px-2 py-1.5 text-left transition-colors hover:bg-[rgb(var(--hover))]"
+                className="flex w-full items-center gap-2 rounded-chip px-2 py-1.5 text-left transition-colors hover:bg-hover"
               >
                 <span className="font-mono text-meta uppercase text-ink-4">{h.kind || "entity"}</span>
                 <span className="truncate text-body text-ink">{h.name}</span>
@@ -111,7 +111,7 @@ export function EntityPicker({
                 type="button"
                 onClick={createAndPick}
                 disabled={busy}
-                className="flex w-full items-center gap-2 rounded-chip px-2 py-1.5 text-left transition-colors hover:bg-[rgb(var(--hover))] disabled:opacity-50"
+                className="flex w-full items-center gap-2 rounded-chip px-2 py-1.5 text-left transition-colors hover:bg-hover disabled:opacity-50"
               >
                 <Icon as={Plus} size="inline" mark className="text-amber" />
                 <span className="text-body text-ink-2">

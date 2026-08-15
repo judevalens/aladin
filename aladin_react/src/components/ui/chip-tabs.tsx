@@ -26,8 +26,8 @@ export function ChipTabs<T extends string>({
           className={cn(
             "rounded-chip px-2.5 py-1 text-[12px] transition-colors",
             active === tab.key
-              ? "bg-[rgb(var(--sel))] text-ink"
-              : "text-ink-3 hover:bg-[rgb(var(--hover))] hover:text-ink",
+              ? "bg-sel text-ink"
+              : "text-ink-3 hover:bg-hover hover:text-ink",
           )}
         >
           {tab.label}
