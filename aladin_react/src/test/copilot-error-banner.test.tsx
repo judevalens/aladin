@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { CopilotErrorBanner } from "@/modules/copilot/ui/copilot-dock-ui";
+import { CopilotErrorBanner } from "@/modules/copilot/ui/copilot-banners";
 
 describe("CopilotErrorBanner", () => {
   it("stays hidden without an error", () => {

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { QueuedFollowupBanner } from "@/modules/copilot/ui/copilot-dock-ui";
+import { QueuedFollowupBanner } from "@/modules/copilot/ui/copilot-banners";
 
 describe("QueuedFollowupBanner", () => {
   it("stays hidden without queued text", () => {

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { HealthWarningBanner } from "@/modules/copilot/ui/copilot-dock-ui";
+import { HealthWarningBanner } from "@/modules/copilot/ui/copilot-banners";
 
 describe("HealthWarningBanner", () => {
   it("stays hidden without a warning", () => {

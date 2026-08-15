@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { EmptyTranscriptState } from "@/modules/copilot/ui/copilot-dock-ui";
+import { EmptyTranscriptState } from "@/modules/copilot/ui/copilot-banners";
 
 describe("EmptyTranscriptState", () => {
   it("shows grounded empty-state copy and the current surface label", () => {

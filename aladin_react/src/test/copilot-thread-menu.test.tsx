@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { CopilotProposal, CopilotThreadView } from "@/app/state/copilot-slice";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { ThreadMenuItems, threadMenuSections } from "@/modules/copilot/ui/copilot-dock-ui";
+import { ThreadMenuItems, threadMenuSections } from "@/modules/copilot/ui/copilot-thread-menu";
 
 describe("ThreadMenuItems", () => {
   it("renders running, pinned, and approval-needed state", () => {

@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { ActivityTimeline } from "@/modules/copilot/ui/copilot-dock-ui";
+import { ActivityTimeline } from "@/modules/copilot/ui/copilot-transcript";
 import type { CopilotToolRun } from "@/app/state/copilot-slice";
 
 describe("ActivityTimeline", () => {

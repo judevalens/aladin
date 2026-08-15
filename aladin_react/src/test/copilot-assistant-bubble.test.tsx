@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { AssistantBubble } from "@/modules/copilot/ui/copilot-dock-ui";
+import { AssistantBubble } from "@/modules/copilot/ui/copilot-transcript";
 
 const navCitation = vi.fn();
 

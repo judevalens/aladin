@@ -322,7 +322,7 @@ describe("copilot thread management", () => {
 
 describe("turnDigest", () => {
   it("collapses consecutive tools and appends cost + steps", async () => {
-    const { turnDigest } = await import("@/modules/copilot/ui/copilot-dock-ui");
+    const { turnDigest } = await import("@/modules/copilot/ui/copilot-transcript");
     expect(
       turnDigest({
         numTurns: 23,

@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { RealtimeStatusBanner } from "@/modules/copilot/ui/copilot-dock-ui";
+import { RealtimeStatusBanner } from "@/modules/copilot/ui/copilot-banners";
 
 describe("RealtimeStatusBanner", () => {
   it("stays hidden when the realtime stream is open", () => {

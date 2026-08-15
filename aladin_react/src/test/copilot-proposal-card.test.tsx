@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { CopilotProposal } from "@/app/state/copilot-slice";
-import { ProposalCard } from "@/modules/copilot/ui/copilot-dock-ui";
+import { ProposalCard } from "@/modules/copilot/ui/copilot-transcript";
 
 describe("ProposalCard", () => {
   it("renders a pending approval with actionable approve and reject buttons", () => {

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { LatestTranscriptButton } from "@/modules/copilot/ui/copilot-dock-ui";
+import { LatestTranscriptButton } from "@/modules/copilot/ui/copilot-banners";
 
 describe("LatestTranscriptButton", () => {
   it("stays hidden when the transcript is pinned or idle", () => {

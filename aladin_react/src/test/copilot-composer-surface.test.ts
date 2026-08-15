@@ -5,7 +5,7 @@ import {
   scopeForSurface,
   suggestionsFor,
   surfaceKindLabel,
-} from "@/modules/copilot/ui/copilot-dock-ui";
+} from "@/modules/copilot/ui/copilot-surface";
 
 describe("copilot composer surface helpers", () => {
   it("uses concrete surface names in the composer placeholder", () => {
