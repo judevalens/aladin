@@ -1,12 +1,14 @@
 package dawn.system.anchor.features.shell.ui
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 
 /**
@@ -14,8 +16,8 @@ import androidx.compose.ui.unit.IntOffset
  *
  * All pages are the **same size and the same place** — full viewport, at the origin — and the
  * only thing that distinguishes them is a layout offset. The current page has an offset of
- * zero; everything else is pushed [PARKING_DISTANCE_PX] away per step and is simply not
- * somewhere you can look.
+ * zero; everything else is pushed two window-widths away per step and is simply not somewhere
+ * you can look.
  *
  * ### Why off-screen rather than hidden
  *
@@ -68,7 +70,17 @@ internal fun <T> DocumentPager(
     modifier: Modifier = Modifier,
     page: @Composable (T) -> Unit,
 ) {
-    Box(modifier.clipToBounds()) {
+    BoxWithConstraints(modifier.clipToBounds()) {
+        // The window's own width. Parking is DERIVED from it rather than guessed: the pages
+        // are as wide as the window, so one window of travel already clears it and two leaves
+        // a full window of gap.
+        //
+        // The fallback matters. Constraints can be unbounded or not yet known, and a zero
+        // width would park every page at zero — all of them stacked, all of them visible at
+        // once. A page has to be somewhere, and "somewhere" must never accidentally be here.
+        val windowPx = with(LocalDensity.current) { maxWidth.roundToPx() }
+        val park = if (windowPx in 1..MAX_SANE_WINDOW_PX) windowPx * 2 else FALLBACK_PARK_PX
+
         pages.forEachIndexed { index, item ->
             // Stable keys, so removing a page makes Compose MOVE the remaining nodes rather
             // than re-map them positionally. Without this, closing one page hands its
@@ -78,7 +90,7 @@ internal fun <T> DocumentPager(
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .offset { IntOffset(x = distance * PARKING_DISTANCE_PX, y = 0) },
+                        .offset { IntOffset(x = distance * park, y = 0) },
                 ) { page(item) }
             }
         }
@@ -86,21 +98,11 @@ internal fun <T> DocumentPager(
 }
 
 /**
- * How far a non-current page is parked, in pixels.
- *
- * **Deliberately far larger than any viewport**, rather than exactly one page width.
- *
- * The first version placed page *i+1* at exactly the content pane's right edge and trusted
- * `clipToBounds` to hide it. That put every neighbour on the one coordinate where being off by
- * a fraction of a point is visible, and it made correctness depend on Compose's draw-time clip
- * reaching the interop views — which is a different mechanism from the `InteropWrappingView`'s
- * own `clipsToBounds`. Neighbours showed up beside the current page, cropped.
- *
- * Parking them thousands of points away removes the dependency instead of tuning it: an
- * off-screen page is off-screen whether or not the clip is exact. The page stays composed,
- * laid out and rendered — it is simply somewhere you cannot look.
- *
- * The cost is that a slide transition is no longer free, since the pages are no longer a
- * contiguous filmstrip. Document switching is a jump in this design, so nothing is lost.
+ * Above this, the measurement is not a window — it is an unbounded constraint reported as a
+ * number. Multiplying it would overflow rather than park anything.
  */
-private const val PARKING_DISTANCE_PX = 20_000
+private const val MAX_SANE_WINDOW_PX = 100_000
+
+/** Used only when the window has not been measured yet, or reports nonsense. */
+private const val FALLBACK_PARK_PX = 20_000
+
