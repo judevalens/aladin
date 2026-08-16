@@ -8,25 +8,27 @@ import androidx.compose.runtime.remember
 import dawn.system.anchor.domain.Presence
 import dawn.system.anchor.domain.WorkspaceNode
 import dawn.system.anchor.services.data.NodeStore
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 
 /**
- * Reading one node inside a composition.
+ * Reading nodes inside a composition.
  *
- * Both helpers wrap the subscription in `key(id)`, and that is **load-bearing rather than
- * tidy**. `collectAsState` is `produceState`, whose backing
+ * Every helper here wraps its subscription in `key(...)`, and that is **load-bearing rather
+ * than tidy**. `collectAsState` is `produceState`, whose backing
  * `remember { mutableStateOf(initialValue) }` has *no keys* (`ProduceState.kt:140`): when the
  * flow changes, the effect restarts but the State keeps the previous flow's value, so
  * `initial` applies exactly once, at first composition.
  *
- * That is what shipped as "no folder can ever be entered". At section level there is no
+ * That is what shipped as "no folder can ever be entered". At section level there was no
  * folder, so the read was a genuine "absent"; drilling in swapped the flow but not the State,
  * and the absent read was attributed to the folder just entered. The correction rule saw
  * [Presence.Gone] and stepped back out, settling into the state that reproduces it.
  *
- * `key` gives the whole group a new identity, so the reset is real. Anything that reads a
- * node against a changing id must go through here.
+ * `key` gives the whole group a new identity, so the reset is real. Anything reading a node
+ * against a changing id must come through here.
  */
 
 /** The row, or null while unread *or* once it is gone. Display cannot tell, and should not. */
@@ -50,4 +52,39 @@ internal fun NodeStore.presenceOf(id: String?): Presence = key(id) {
             .map { row -> if (row == null) Presence.Gone else Presence.There }
     }.collectAsState(initial = Presence.Unknown)
     presence
+}
+
+/**
+ * Presence for a whole set, in the shape [dawn.system.anchor.domain.Nav.corrected] takes.
+ *
+ * Answers [Presence.Unknown] for anything outside [ids], so a correction rule can only act on
+ * something deliberately watched. `combine` withholds its first emission until *every* stream
+ * has produced one, which leaves the whole set Unknown while any member is unread —
+ * conservative in the only direction that is safe, since Unknown moves nothing.
+ */
+@Composable
+internal fun NodeStore.presenceOf(ids: List<String>): (String) -> Presence = key(ids) {
+    val empty: Flow<List<WorkspaceNode?>> = flowOf(emptyList())
+    val rows: List<WorkspaceNode?>? by remember {
+        if (ids.isEmpty()) empty else combine(ids.map { node(it) }) { it.toList() }
+    }.collectAsState(initial = null)
+
+    val read = rows
+    remember(ids, read) { presenceLookup(ids, read) }
+}
+
+/** Pure, so the composable above stays a subscription and nothing else. */
+private fun presenceLookup(
+    ids: List<String>,
+    rows: List<WorkspaceNode?>?,
+): (String) -> Presence {
+    if (rows == null) return { Presence.Unknown }
+    val watched: Map<String, WorkspaceNode?> = ids.zip(rows).toMap()
+    return { id ->
+        when {
+            !watched.containsKey(id) -> Presence.Unknown
+            watched.getValue(id) == null -> Presence.Gone
+            else -> Presence.There
+        }
+    }
 }
