@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import com.slack.circuit.runtime.CircuitUiState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import dawn.system.anchor.domain.Destination
 import dawn.system.anchor.domain.PathLevel
@@ -61,14 +62,10 @@ class NavigationStateProducer(private val nodes: NodeStore) {
             }
         }.collectAsState(initial = emptyList())
 
-        // Two single-row subscriptions rather than two searches through a list.
-        val displayedState by remember(nav.currentId) {
-            nav.currentId?.let(nodes::node) ?: flowOf(NodeState.Missing)
-        }.collectAsState(initial = NodeState.Loading)
-
-        val folderState by remember(nav.folderId) {
-            nav.folderId?.let(nodes::node) ?: flowOf(NodeState.Missing)
-        }.collectAsState(initial = NodeState.Loading)
+        // Two single-row subscriptions rather than two searches through a list. Each is keyed
+        // on the id it reads, which is load-bearing rather than tidy — see [readOf].
+        val displayedState = nodes.readOf(nav.currentId)
+        val folderState = nodes.readOf(nav.folderId)
 
         // The drill path's own rows — every label the navigation draws reads from these.
         // Deliberately NOT used to decide whether a folder still exists: a retained stream starts
@@ -148,6 +145,26 @@ class NavigationStateProducer(private val nodes: NodeStore) {
             displayedState = displayedState,
         )
     }
+}
+
+/**
+ * One node's read, for exactly [id].
+ *
+ * The `key` is not optional, and not tidiness. `collectAsState` is `produceState`, whose
+ * backing `remember { mutableStateOf(initial) }` has **no keys** — so when the flow changes
+ * the state keeps the *previous* flow's value and `initial` never applies again. Combined
+ * with the `?: flowOf(Missing)` branch below, that meant a genuine `Missing` read at section
+ * level (where [SidebarNav.folderId] is null) survived into the frame after a drill and was
+ * attributed to the folder just entered: [dawn.system.anchor.domain.corrected] saw
+ * [dawn.system.anchor.domain.Presence.Gone] and called `back()`, reverting every drill.
+ *
+ * `key` gives the whole group a new identity, so the reset to [NodeState.Loading] is real.
+ */
+@Composable
+private fun NodeStore.readOf(id: String?): NodeState = key(id) {
+    val state by remember { id?.let { node(it) } ?: flowOf(NodeState.Missing) }
+        .collectAsState(initial = NodeState.Loading)
+    state
 }
 
 /** The search field narrows on title — the only text a row reliably shows. */

@@ -1,5 +1,8 @@
 package dawn.system.anchor.shell
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import app.cash.turbine.ReceiveTurbine
 import com.slack.circuit.test.presenterTestOf
 import dawn.system.anchor.domain.Destination
@@ -95,6 +98,50 @@ class NavigationProducerTest {
                 "a folder that exists must never report Missing, got ${first.folderState}",
             )
             awaitUntil { it.folderState is NodeState.Present }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    /**
+     * The drill-reverting bug, at its source.
+     *
+     * `collectAsState` is `produceState`, whose backing `remember { mutableStateOf(initial) }`
+     * has no keys — so a changed flow keeps the *previous* flow's value and `initial` never
+     * applies again. At section level `folderId` is null and the producer's `?: flowOf(Missing)`
+     * branch emits a **genuine** Missing; without a `key`, that read survived into the frame
+     * after a drill and was attributed to the folder just entered. `corrected()` then saw
+     * `Gone` and called `back()`, so no folder could ever be entered.
+     *
+     * Frames are matched on [NavigationSlice.searchPlaceholder] because it is derived from the
+     * level alone — unlike the title, it does not wait on a store read to become meaningful.
+     */
+    @Test
+    fun `drilling in does not inherit the section level's read`() = runTest {
+        val nodes = FakeNodeStore(listOf(folder("f1"), folder("f2", parentId = "f1")))
+        val navigation = NavigationStateProducer(nodes)
+        var nav by mutableStateOf(SidebarNav().openSection(Destination.Folders))
+
+        presenterTestOf({ navigation(nav, query = "") }) {
+            nodes.settle()
+            // At section level there is no folder, so Missing here is correct and expected.
+            awaitUntil { it.folderState is NodeState.Missing }
+
+            nav = insideF2
+
+            var resolved = false
+            repeat(10) {
+                if (resolved) return@repeat
+                val frame = awaitItem()
+                // Ignore any trailing frame still describing the section level.
+                if (frame.searchPlaceholder != "Search this folder") return@repeat
+                assertTrue(
+                    frame.folderState !is NodeState.Missing,
+                    "a drilled folder that exists must never read Missing — that is the " +
+                        "section level's answer leaking across the key change",
+                )
+                if (frame.folderState is NodeState.Present) resolved = true
+            }
+            assertTrue(resolved, "the drilled folder never resolved to Present")
             cancelAndIgnoreRemainingEvents()
         }
     }

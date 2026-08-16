@@ -299,20 +299,12 @@ class ShellPresenter(
         // distinct from "gone" — the distinction that reverted every drill when it was
         // missing. Tested exhaustively in NavCorrectionTest.
         LaunchedEffect(nav, openItems, navSlice.folderState, navSlice.displayedState) {
-            println(
-                "ANCHORDBG sel=${nav.selectedId} cur=${nav.currentId} drill=${nav.drill} " +
-                    "folderState=${navSlice.folderState} dispState=${navSlice.displayedState} " +
-                    "open=${openItems.items.map { it.nodeId }}"
-            )
             val corrected = nav.corrected(
                 folder = navSlice.folderState.presence(),
                 displayed = navSlice.displayedState.presence(),
                 isOpen = { id -> openItems.items.any { it.nodeId == id } },
             )
-            if (corrected != nav) {
-                println("ANCHORDBG CORRECTING ${nav.selectedId} -> ${corrected.selectedId}")
-                nav = corrected
-            }
+            if (corrected != nav) nav = corrected
         }
 
         // What is open, as pages, tabs and web panes.
