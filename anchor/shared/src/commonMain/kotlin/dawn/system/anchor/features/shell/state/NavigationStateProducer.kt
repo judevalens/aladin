@@ -6,6 +6,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import dawn.system.anchor.domain.ArtifactKind
 import dawn.system.anchor.domain.Destination
 import dawn.system.anchor.domain.PathLevel
 import dawn.system.anchor.domain.Presence
@@ -58,7 +59,7 @@ class NavigationStateProducer(private val nodes: NodeStore) {
         val rows by remember(nav.destination) {
             when (nav.destination) {
                 Destination.Folders -> nodes.children(null)
-                Destination.Sources -> nodes.byArtifactType(FILE_ARTIFACT)
+                Destination.Sources -> nodes.byArtifactType(ArtifactKind.File.wire)
                 else -> flowOf(emptyList())
             }
         }.collectAsState(initial = emptyList())
@@ -157,5 +158,4 @@ class NavigationStateProducer(private val nodes: NodeStore) {
 private fun WorkspaceNode.matches(query: String): Boolean =
     query.isBlank() || title.contains(query.trim(), ignoreCase = true)
 
-private const val FILE_ARTIFACT = "file"
 private const val UNTITLED = "Untitled"

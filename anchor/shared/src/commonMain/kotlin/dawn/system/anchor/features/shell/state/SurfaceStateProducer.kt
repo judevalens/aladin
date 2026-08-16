@@ -6,6 +6,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import dawn.system.anchor.domain.Destination
+import dawn.system.anchor.domain.ArtifactKind
+import dawn.system.anchor.domain.artifactKind
 import dawn.system.anchor.domain.OpenItems
 import dawn.system.anchor.domain.SurfaceSlot
 import dawn.system.anchor.domain.WorkspaceNode
@@ -74,9 +76,9 @@ class SurfaceStateProducer(
         // shows is settled inside the page, not by the pager.
         val webPanes = remember(openNodes) {
             openNodes.mapNotNull { node ->
-                when (node.artifactType) {
-                    PAGE_ARTIFACT -> WebPane.Kind.Page
-                    APP_ARTIFACT -> WebPane.Kind.Shard
+                when (node.artifactKind) {
+                    ArtifactKind.Page -> WebPane.Kind.Page
+                    ArtifactKind.App -> WebPane.Kind.Shard
                     else -> null
                 }?.let { kind -> WebPane(node.id, kind, node.title.ifBlank { UNTITLED }) }
             }
@@ -139,10 +141,10 @@ private fun surfaceFor(
     documents: DocumentStore,
 ) = ShellScreen.ArtifactSurface(
     node = node,
-    kind = when (node.artifactType) {
-        FILE_ARTIFACT -> ShellScreen.ArtifactSurface.Kind.Document
-        VOICE_ARTIFACT -> ShellScreen.ArtifactSurface.Kind.Voice
-        LINK_ARTIFACT -> ShellScreen.ArtifactSurface.Kind.Link
+    kind = when (node.artifactKind) {
+        ArtifactKind.File -> ShellScreen.ArtifactSurface.Kind.Document
+        ArtifactKind.Voice -> ShellScreen.ArtifactSurface.Kind.Voice
+        ArtifactKind.Link -> ShellScreen.ArtifactSurface.Kind.Link
         else -> ShellScreen.ArtifactSurface.Kind.Other
     },
     resources = resources,
@@ -158,9 +160,4 @@ private fun ownerLabel(
     ?.title?.takeIf { it.isNotBlank() }
     ?: destination.title
 
-private const val PAGE_ARTIFACT = "page"
-private const val APP_ARTIFACT = "app"
-private const val FILE_ARTIFACT = "file"
-private const val VOICE_ARTIFACT = "voice"
-private const val LINK_ARTIFACT = "link"
 private const val UNTITLED = "Untitled"

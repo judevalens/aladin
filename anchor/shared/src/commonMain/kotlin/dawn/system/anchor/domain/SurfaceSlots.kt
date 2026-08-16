@@ -84,6 +84,6 @@ enum class SurfaceKind { Web, Artifact, Detail }
  */
 fun WorkspaceNode.surfaceKind(): SurfaceKind = when {
     kind != NodeKind.Artifact -> SurfaceKind.Detail
-    artifactType == "page" || artifactType == "app" -> SurfaceKind.Web
+    artifactKind?.isWebBacked == true -> SurfaceKind.Web
     else -> SurfaceKind.Artifact
 }
