@@ -35,14 +35,22 @@ enum class ResearchView(val wire: String) {
  */
 sealed interface TabKey {
 
+    /**
+     * The tree row behind this — an artifact for one, the research folder for the other.
+     * What the store is asked about, and therefore what "gone" is decided on.
+     */
+    val nodeId: String
+
     /** The string form the desktop uses. Load-bearing; do not "tidy". */
     fun asString(): String
 
     data class Artifact(val artifactId: String) : TabKey {
+        override val nodeId: String get() = artifactId
         override fun asString(): String = artifactId
     }
 
     data class Research(val contextId: String, val view: ResearchView) : TabKey {
+        override val nodeId: String get() = contextId
         override fun asString(): String = "$RESEARCH_PREFIX$contextId:${view.wire}"
     }
 
@@ -256,6 +264,46 @@ data class Nav(
         val remaining = open.toMutableList()
         val ordered = mru.filter(remaining::remove)
         return ordered + remaining
+    }
+
+    // ── correction ───────────────────────────────────────────────────────────
+
+    /**
+     * This position, corrected for what the tree says is gone.
+     *
+     * **Applied on read, never written back.** The previous shell ran its correction in a
+     * `LaunchedEffect` that assigned to the very value the effect was keyed on — a loop
+     * running against store reads that lag the position they describe by a frame, and the
+     * reason a drill could revert itself. Here it is a pure function of a value and a
+     * question, so applying it every frame costs nothing and converges by construction. It
+     * also *un-corrects* on its own when a row comes back — which a write-back can never do,
+     * having destroyed the original.
+     *
+     * [presenceOf] answers per **id**, and only [Presence.Gone] moves anything. An id nobody
+     * has read answers [Presence.Unknown] and is left alone: conflating "not read yet" with
+     * "deleted" is what shipped twice.
+     *
+     * Only [here] is corrected, not every entry. Rendering only ever asks about the position
+     * you are standing on, and a stale folder further back in the trail is corrected when you
+     * step onto it.
+     *
+     * The one rule for callers: **events must start from the corrected value**, so the
+     * correction settles into storage the moment the user acts rather than drifting.
+     */
+    fun corrected(presenceOf: (String) -> Presence): Nav {
+        fun gone(id: String?): Boolean = id != null && presenceOf(id) == Presence.Gone
+
+        // A document the workspace destroyed stops being open — the same path as closing it,
+        // so the trail is pruned and the landing is picked by one rule rather than two.
+        val settled = open.filter { gone(it.nodeId) }.fold(this) { nav, key -> nav.closeDoc(key) }
+
+        val entry = settled.here
+        val fixed = entry.copy(
+            folderId = entry.folderId?.takeUnless(::gone),
+            // An item is also dropped when its folder went: it cannot still be in there.
+            itemId = entry.itemId?.takeUnless { gone(it) || gone(entry.folderId) },
+        )
+        return if (fixed == entry) settled else settled.replaceHere(fixed)
     }
 
     private fun replaceHere(entry: Entry): Nav =

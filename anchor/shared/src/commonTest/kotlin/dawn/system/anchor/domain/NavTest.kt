@@ -225,6 +225,60 @@ class NavTest {
         )
     }
 
+    // ── correction ───────────────────────────────────────────────────────────
+
+    private fun goneOnly(vararg ids: String): (String) -> Presence =
+        { id -> if (id in ids) Presence.Gone else Presence.There }
+
+    /** The bug that shipped twice: an unread row is not a deleted one. */
+    @Test
+    fun `an unread id moves nothing`() {
+        val nav = Nav().goToBrowser("f1", "i1").openDoc(doc("a"))
+        assertEquals(nav, nav.corrected { Presence.Unknown })
+    }
+
+    @Test
+    fun `correction is idempotent, so applying it every frame is free`() {
+        val nav = Nav().goToBrowser("f1", "i1").openDoc(doc("a"))
+        val once = nav.corrected(goneOnly("f1"))
+        assertEquals(once, once.corrected(goneOnly("f1")))
+    }
+
+    @Test
+    fun `a deleted folder stops being the selection, and takes its item with it`() {
+        val nav = Nav().goToBrowser("f1", "i1").corrected(goneOnly("f1"))
+        assertNull(nav.here.folderId)
+        assertNull(nav.here.itemId, "an item cannot still be inside a folder that is gone")
+    }
+
+    @Test
+    fun `a deleted item leaves the folder alone`() {
+        val nav = Nav().goToBrowser("f1", "i1").corrected(goneOnly("i1"))
+        assertEquals("f1", nav.here.folderId)
+        assertNull(nav.here.itemId)
+    }
+
+    @Test
+    fun `a deleted document stops being open and is pruned from the trail`() {
+        val nav = Nav().openDoc(doc("a")).openDoc(doc("b")).corrected(goneOnly("b"))
+        assertEquals(listOf(doc("a")), nav.open)
+        assertTrue(nav.entries.none { it.surface == Surface.Doc(doc("b")) })
+        assertEquals(Surface.Doc(doc("a")), surfaceOf(nav))
+    }
+
+    /**
+     * The property a write-back correction cannot have: the sync snapshot window transiently
+     * removes rows, and the position must come back on its own when they return.
+     */
+    @Test
+    fun `a row that comes back un-corrects, because nothing was destroyed`() {
+        val nav = Nav().goToBrowser("f1", "i1")
+        val duringSnapshot = nav.corrected(goneOnly("f1"))
+        assertNull(duringSnapshot.here.folderId)
+        // The raw value was never written to, so the next frame is simply right again.
+        assertEquals("f1", nav.corrected { Presence.There }.here.folderId)
+    }
+
     @Test
     fun `back walks the trail while recency walks the open set, and they disagree`() {
         val nav = Nav()
