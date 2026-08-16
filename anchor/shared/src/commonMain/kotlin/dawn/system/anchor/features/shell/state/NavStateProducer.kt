@@ -14,10 +14,10 @@ import dawn.system.anchor.services.data.NodeStore
 /** Something the user did to move. Nothing here is a command the shell issues to itself. */
 sealed interface NavEvent {
     data class GoTo(val destination: Destination) : NavEvent
-    data class GoToBrowser(val folderId: String?, val itemId: String?) : NavEvent
+    data class GoToBrowser(val path: List<String>, val itemId: String?) : NavEvent
     data class OpenDoc(val key: TabKey) : NavEvent
     data class CloseDoc(val key: TabKey) : NavEvent
-    data class SelectFolder(val folderId: String) : NavEvent
+    data class SelectFolder(val column: Int, val folderId: String) : NavEvent
     data class SelectItem(val itemId: String) : NavEvent
     data object Back : NavEvent
     data object Forward : NavEvent
@@ -59,7 +59,7 @@ class NavStateProducer(private val nodes: NodeStore) {
         // Browser ids of the position being rendered. Watching more would cost queries for
         // rows nothing decides on; watching less would let a deletion go unnoticed.
         val watched = remember(raw) {
-            (raw.open.map { it.nodeId } + listOfNotNull(raw.here.folderId, raw.here.itemId))
+            (raw.open.map { it.nodeId } + raw.here.path + listOfNotNull(raw.here.itemId))
                 .distinct()
         }
         val nav = raw.corrected(nodes.presenceOf(watched))
@@ -67,10 +67,10 @@ class NavStateProducer(private val nodes: NodeStore) {
         return NavSlice(nav) { event ->
             raw = when (event) {
                 is NavEvent.GoTo -> nav.goTo(event.destination)
-                is NavEvent.GoToBrowser -> nav.goToBrowser(event.folderId, event.itemId)
+                is NavEvent.GoToBrowser -> nav.goToBrowser(event.path, event.itemId)
                 is NavEvent.OpenDoc -> nav.openDoc(event.key)
                 is NavEvent.CloseDoc -> nav.closeDoc(event.key)
-                is NavEvent.SelectFolder -> nav.selectFolder(event.folderId)
+                is NavEvent.SelectFolder -> nav.selectFolder(event.column, event.folderId)
                 is NavEvent.SelectItem -> nav.selectItem(event.itemId)
                 NavEvent.Back -> nav.step(-1)
                 NavEvent.Forward -> nav.step(1)

@@ -73,6 +73,30 @@ internal fun NodeStore.presenceOf(ids: List<String>): (String) -> Presence = key
     remember(ids, read) { presenceLookup(ids, read) }
 }
 
+/**
+ * The Miller path that lands you *on* [nodeId] — its ancestor folders, root-most first.
+ *
+ * Walks up one read per level. The loop is a fixed [MAX_TREE_DEPTH] iterations rather than
+ * "until the root", because a composable's call structure has to be stable across frames; the
+ * unused levels read null and cost nothing beyond a map lookup on an already-shared stream.
+ *
+ * Bounded deliberately: a cycle in `parentId` — which the tree should never contain but a bad
+ * frame could — would otherwise spin forever inside composition.
+ */
+@Composable
+internal fun NodeStore.ancestorPathOf(nodeId: String?): List<String> {
+    val chain = ArrayList<String>(MAX_TREE_DEPTH)
+    var cursor = nodeId
+    repeat(MAX_TREE_DEPTH) {
+        val parent = nodeOf(cursor)?.parentId
+        if (parent != null && parent !in chain) chain.add(parent)
+        cursor = parent
+    }
+    return chain.reversed()
+}
+
+private const val MAX_TREE_DEPTH = 8
+
 /** Pure, so the composable above stays a subscription and nothing else. */
 private fun presenceLookup(
     ids: List<String>,

@@ -1,6 +1,9 @@
 package dawn.system.anchor.features.shell.state
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import dawn.system.anchor.domain.ArtifactKind
 import dawn.system.anchor.domain.Destination
 import dawn.system.anchor.domain.ItemState
@@ -9,6 +12,7 @@ import dawn.system.anchor.domain.Surface
 import dawn.system.anchor.domain.TabKey
 import dawn.system.anchor.domain.artifactKind
 import dawn.system.anchor.services.data.NodeStore
+import dawn.system.anchor.services.data.each
 
 private const val UNTITLED = "Untitled"
 
@@ -63,9 +67,12 @@ fun NodeStore.openRowsFor(nav: Nav): List<OpenRow> =
  * Ids in, labels resolved: a rename reaches the crumb, the Open row and the Browser columns
  * together because none of them holds a copy.
  *
- * **Exactly one crumb is ever tappable** — `Browser`, and only while viewing a document. The
- * prototype wires no others (`:632-637`), despite the README describing ancestors as
- * tappable; the prototype is the deliverable.
+ * On the Browser the crumbs are the **columns**, and each is tappable: tapping one truncates
+ * the path back to it, which is the same move as re-picking that folder in its own column.
+ * From a document only `Browser` is tappable, and it jumps to that document in its own folder.
+ *
+ * (The prototype leaves the Browser crumbs inert, because its fixture is one level deep and
+ * there is nothing to truncate back to. With real Miller depth they have to work.)
  *
  * Note where a document's crumb reads its folder from: **the node**, not [Nav.Entry.folderId].
  * The entry's ids are the Browser surface's column selection, a different thing — which is why
@@ -77,11 +84,17 @@ fun NodeStore.crumbsFor(nav: Nav): List<Crumb> {
     return when (val surface = here.surface) {
         is Surface.Dest ->
             if (surface.destination == Destination.Browser) {
-                val folder = nodeOf(here.folderId)
+                // One crumb per column, so the trail of folders you descended is legible
+                // without counting columns. Tapping one truncates back to it — the same
+                // move as picking that folder again in its own column.
+                val path by remember(here.path) { each(here.path) }.collectAsState(emptyList())
                 val item = nodeOf(here.itemId)
                 buildList {
-                    add(Crumb(Destination.Browser.title, null))
-                    folder?.let { add(Crumb(it.title.orUntitled(), null)) }
+                    add(Crumb(Destination.Browser.title, NavEvent.GoToBrowser(emptyList(), null)))
+                    here.path.forEachIndexed { depth, id ->
+                        val title = path.firstOrNull { it.id == id }?.title.orUntitled()
+                        add(Crumb(title, NavEvent.GoToBrowser(here.path.take(depth + 1), null)))
+                    }
                     item?.let { add(Crumb(it.title.orUntitled(), null)) }
                 }
             } else {
@@ -91,11 +104,14 @@ fun NodeStore.crumbsFor(nav: Nav): List<Crumb> {
         is Surface.Doc -> {
             val doc = nodeOf(surface.key.nodeId)
             val folder = nodeOf(doc?.parentId)
+            // The full Miller path, so the crumb lands you on the document in its own
+            // folder with every column above it — not at the root.
+            val ancestors = ancestorPathOf(doc?.parentId)
             buildList {
                 add(
                     Crumb(
                         label = Destination.Browser.title,
-                        target = doc?.let { NavEvent.GoToBrowser(it.parentId, it.id) },
+                        target = doc?.let { NavEvent.GoToBrowser(ancestors + listOfNotNull(it.parentId), it.id) },
                     ),
                 )
                 folder?.let { add(Crumb(it.title.orUntitled(), null)) }

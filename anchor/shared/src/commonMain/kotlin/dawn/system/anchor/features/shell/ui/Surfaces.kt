@@ -53,7 +53,7 @@ internal fun SurfaceHost(state: ShellScreen.State, modifier: Modifier = Modifier
         when (val surface = state.nav.nav.here.surface) {
             is Surface.Dest -> when (surface.destination) {
                 Destination.Home -> Placeholder("Home", "Continue, insights and today's activity.")
-                Destination.Browser -> Placeholder("Browser", "Folders, items, detail — three columns.")
+                Destination.Browser -> BrowserSurface(state.browser, state.nav.handle)
                 Destination.Markets -> Placeholder("Markets", "Index strip, watchlist and positions.")
                 Destination.Graph -> Placeholder("Graph", "The entity canvas.")
             }

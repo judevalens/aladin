@@ -56,7 +56,7 @@ class NavProducerTest {
         val nodes = FakeNodeStore(listOf(folder("f1")))
         presenterTestOf({ NavStateProducer(nodes)() }) {
             // Deliberately do NOT settle: nothing has been read.
-            awaitItem().handle(NavEvent.GoToBrowser("f1", null))
+            awaitItem().handle(NavEvent.GoToBrowser(listOf("f1"), null))
 
             val browsing = awaitUntil { it.nav.here.folderId != null }
             assertEquals("f1", browsing.nav.here.folderId)
@@ -68,7 +68,7 @@ class NavProducerTest {
     fun `a deleted folder stops being the selection`() = runTest {
         val nodes = FakeNodeStore(listOf(folder("f1")))
         presenterTestOf({ NavStateProducer(nodes)() }) {
-            awaitItem().handle(NavEvent.GoToBrowser("f1", null))
+            awaitItem().handle(NavEvent.GoToBrowser(listOf("f1"), null))
             nodes.settle()
             awaitUntil { it.nav.here.folderId == "f1" }
 
@@ -88,7 +88,7 @@ class NavProducerTest {
     fun `a row that comes back restores the position on its own`() = runTest {
         val nodes = FakeNodeStore(listOf(folder("f1")))
         presenterTestOf({ NavStateProducer(nodes)() }) {
-            awaitItem().handle(NavEvent.GoToBrowser("f1", null))
+            awaitItem().handle(NavEvent.GoToBrowser(listOf("f1"), null))
             nodes.settle()
             awaitUntil { it.nav.here.folderId == "f1" }
 

@@ -90,16 +90,23 @@ sealed interface Surface {
 /**
  * One position in the history trail.
  *
- * Three fields, exactly as the prototype records them (`{sel, bcol, bitem}`, :562). The two
- * ids are the **Browser surface's** column selection — what its columns should show when you
- * land on it — and deliberately *not* a document's own context. A document's folder is read
- * from the node, which is why truncating a trail entry never makes a breadcrumb wrong.
+ * [path] and [itemId] are the **Browser surface's** column selection — what its columns show
+ * when you land there — and deliberately *not* a document's own context. A document's folder
+ * is read from the node, which is why truncating a trail entry never makes a breadcrumb wrong.
+ *
+ * [path] is a **Miller path**: folder ids, root-most first, one per column beyond the root
+ * list. Column *i* renders the children of `path[i - 1]`, so the browser is exactly
+ * `path.size + 1` columns wide and goes as deep as the tree does — it scrolls horizontally
+ * rather than nesting. That answers the handoff's open question about depth.
  */
 data class Entry(
     val surface: Surface,
-    val folderId: String? = null,
+    val path: List<String> = emptyList(),
     val itemId: String? = null,
-)
+) {
+    /** The folder whose contents the deepest column shows. Null at the root list. */
+    val folderId: String? get() = path.lastOrNull()
+}
 
 /**
  * Where you have been, and what is open. The whole navigation model.
@@ -175,23 +182,31 @@ data class Nav(
         push(here.copy(surface = Surface.Dest(destination)))
 
     /**
-     * The breadcrumb's `Browser` jump: go to the columns **with a folder and item selected**.
-     * This is what makes the crumb meaningful from a document.
+     * The breadcrumb's `Browser` jump: go to the columns **with a path and item selected**.
+     * This is what makes the crumb meaningful from a document — it lands you on the document
+     * in its own folder, columns and all, rather than at the root.
      */
-    fun goToBrowser(folderId: String?, itemId: String?): Nav =
-        push(Entry(Surface.Dest(Destination.Browser), folderId, itemId))
+    fun goToBrowser(path: List<String>, itemId: String?): Nav =
+        push(Entry(Surface.Dest(Destination.Browser), path, itemId))
 
     // ── the Browser's columns ────────────────────────────────────────────────
 
     /**
-     * Column 1. **Not a history entry** — browsing columns is not navigating, and the
-     * prototype agrees (`:623` sets state directly rather than pushing). Selecting a folder
-     * clears the item, because the old item does not live in the new folder.
+     * Picks a folder in column [column], where 0 is the root list.
+     *
+     * **Truncate, then append** — the defining Miller move. Choosing a different folder in a
+     * column you had already descended past discards every column to its right, because those
+     * columns described a path you are no longer on. That is not a special case to handle; it
+     * is what the columns *mean*.
+     *
+     * **Not a history entry.** Browsing columns is not navigating, and the prototype agrees
+     * (`:623` sets its state directly rather than pushing) — otherwise every click in the
+     * columns would need a Back press to undo.
      */
-    fun selectFolder(folderId: String): Nav =
-        replaceHere(here.copy(folderId = folderId, itemId = null))
+    fun selectFolder(column: Int, folderId: String): Nav =
+        replaceHere(here.copy(path = here.path.take(column) + folderId, itemId = null))
 
-    /** Column 2. Also not a history entry. */
+    /** Selecting a leaf. Also not a history entry — single-tap previews, it does not open. */
     fun selectItem(itemId: String): Nav = replaceHere(here.copy(itemId = itemId))
 
     // ── the open set ─────────────────────────────────────────────────────────
@@ -310,10 +325,14 @@ data class Nav(
         val settled = open.filter { gone(it.nodeId) }.fold(this) { nav, key -> nav.closeDoc(key) }
 
         val entry = settled.here
+        // A deleted folder takes every column to its right with it — those columns described
+        // its descendants, which are unreachable now. One pass, so a whole deleted branch
+        // unwinds at once rather than one rung per frame.
+        val keptPath = entry.path.takeWhile { !gone(it) }
         val fixed = entry.copy(
-            folderId = entry.folderId?.takeUnless(::gone),
-            // An item is also dropped when its folder went: it cannot still be in there.
-            itemId = entry.itemId?.takeUnless { gone(it) || gone(entry.folderId) },
+            path = keptPath,
+            // The item goes too when its folder did: it cannot still be in there.
+            itemId = entry.itemId?.takeUnless { gone(it) || keptPath.size != entry.path.size },
         )
         return if (fixed == entry) settled else settled.replaceHere(fixed)
     }

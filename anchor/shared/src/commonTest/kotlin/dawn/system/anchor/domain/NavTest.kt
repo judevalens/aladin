@@ -59,7 +59,7 @@ class NavTest {
 
     @Test
     fun `back restores the whole entry, columns included`() {
-        val nav = Nav().goToBrowser("f1", "i1").goToBrowser("f2", "i2")
+        val nav = Nav().goToBrowser(listOf("f1"), "i1").goToBrowser(listOf("f2"), "i2")
         val back = nav.step(-1)
         assertEquals("f1", back.here.folderId)
         assertEquals("i1", back.here.itemId)
@@ -102,8 +102,8 @@ class NavTest {
 
     @Test
     fun `selecting a column is not navigation, so it adds no history`() {
-        val nav = Nav().goToBrowser("f1", null)
-        val after = nav.selectFolder("f2").selectItem("i9")
+        val nav = Nav().goToBrowser(listOf("f1"), null)
+        val after = nav.selectFolder(0, "f2").selectItem("i9")
         assertEquals(nav.entries.size, after.entries.size)
         assertEquals("f2", after.here.folderId)
         assertEquals("i9", after.here.itemId)
@@ -111,7 +111,48 @@ class NavTest {
 
     @Test
     fun `choosing a different folder drops the item, which does not live there`() {
-        val nav = Nav().goToBrowser("f1", "i1").selectFolder("f2")
+        val nav = Nav().goToBrowser(listOf("f1"), "i1").selectFolder(0, "f2")
+        assertNull(nav.here.itemId)
+    }
+
+    /** The defining Miller move: the columns to the right described a path you left. */
+    @Test
+    fun `picking in a shallower column discards every column to its right`() {
+        val nav = Nav()
+            .selectFolder(0, "a")
+            .selectFolder(1, "b")
+            .selectFolder(2, "c")
+        assertEquals(listOf("a", "b", "c"), nav.here.path)
+
+        val sideways = nav.selectFolder(1, "b2")
+        assertEquals(
+            listOf("a", "b2"),
+            sideways.here.path,
+            "c described a child of b, and you are no longer in b",
+        )
+    }
+
+    @Test
+    fun `descending appends a column, so the browser is as deep as the tree`() {
+        var nav = Nav()
+        repeat(6) { depth -> nav = nav.selectFolder(depth, "f$depth") }
+        assertEquals(List(6) { "f$it" }, nav.here.path)
+    }
+
+    @Test
+    fun `re-picking the folder you are already in changes nothing`() {
+        val nav = Nav().selectFolder(0, "a").selectFolder(1, "b")
+        assertEquals(nav, nav.selectFolder(1, "b"))
+    }
+
+    @Test
+    fun `a deleted folder takes every column to its right with it`() {
+        val nav = Nav()
+            .selectFolder(0, "a").selectFolder(1, "b").selectFolder(2, "c")
+            .selectItem("i1")
+            .corrected(goneOnly("b"))
+
+        assertEquals(listOf("a"), nav.here.path, "b's descendants are unreachable")
         assertNull(nav.here.itemId)
     }
 
@@ -134,7 +175,7 @@ class NavTest {
 
     @Test
     fun `opening a document keeps the browser selection, so the crumb still jumps`() {
-        val nav = Nav().goToBrowser("f1", "i1").openDoc(doc("a"))
+        val nav = Nav().goToBrowser(listOf("f1"), "i1").openDoc(doc("a"))
         assertEquals("f1", nav.here.folderId)
         assertEquals("i1", nav.here.itemId)
     }
@@ -233,27 +274,27 @@ class NavTest {
     /** The bug that shipped twice: an unread row is not a deleted one. */
     @Test
     fun `an unread id moves nothing`() {
-        val nav = Nav().goToBrowser("f1", "i1").openDoc(doc("a"))
+        val nav = Nav().goToBrowser(listOf("f1"), "i1").openDoc(doc("a"))
         assertEquals(nav, nav.corrected { Presence.Unknown })
     }
 
     @Test
     fun `correction is idempotent, so applying it every frame is free`() {
-        val nav = Nav().goToBrowser("f1", "i1").openDoc(doc("a"))
+        val nav = Nav().goToBrowser(listOf("f1"), "i1").openDoc(doc("a"))
         val once = nav.corrected(goneOnly("f1"))
         assertEquals(once, once.corrected(goneOnly("f1")))
     }
 
     @Test
     fun `a deleted folder stops being the selection, and takes its item with it`() {
-        val nav = Nav().goToBrowser("f1", "i1").corrected(goneOnly("f1"))
+        val nav = Nav().goToBrowser(listOf("f1"), "i1").corrected(goneOnly("f1"))
         assertNull(nav.here.folderId)
         assertNull(nav.here.itemId, "an item cannot still be inside a folder that is gone")
     }
 
     @Test
     fun `a deleted item leaves the folder alone`() {
-        val nav = Nav().goToBrowser("f1", "i1").corrected(goneOnly("i1"))
+        val nav = Nav().goToBrowser(listOf("f1"), "i1").corrected(goneOnly("i1"))
         assertEquals("f1", nav.here.folderId)
         assertNull(nav.here.itemId)
     }
@@ -272,7 +313,7 @@ class NavTest {
      */
     @Test
     fun `a row that comes back un-corrects, because nothing was destroyed`() {
-        val nav = Nav().goToBrowser("f1", "i1")
+        val nav = Nav().goToBrowser(listOf("f1"), "i1")
         val duringSnapshot = nav.corrected(goneOnly("f1"))
         assertNull(duringSnapshot.here.folderId)
         // The raw value was never written to, so the next frame is simply right again.

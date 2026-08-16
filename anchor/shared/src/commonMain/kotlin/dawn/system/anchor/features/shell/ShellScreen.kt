@@ -8,7 +8,10 @@ import com.slack.circuit.runtime.CircuitUiState
 import com.slack.circuit.runtime.presenter.Presenter
 import com.slack.circuit.runtime.screen.Screen
 import com.slack.circuit.runtime.ui.ui
+import dawn.system.anchor.domain.BrowserFilter
 import dawn.system.anchor.domain.Destination
+import dawn.system.anchor.features.shell.state.BrowserSlice
+import dawn.system.anchor.features.shell.state.BrowserStateProducer
 import dawn.system.anchor.features.shell.state.ChromeSlice
 import dawn.system.anchor.features.shell.state.Crumb
 import dawn.system.anchor.features.shell.state.NavSlice
@@ -52,6 +55,8 @@ data object ShellScreen : Screen {
         val open: List<OpenRow>,
         /** The whole sense of place. */
         val crumbs: List<Crumb>,
+        /** The Miller columns, when Browser is the surface. */
+        val browser: BrowserSlice,
         val destinations: List<Destination>,
         val sync: SyncStatus,
         val signedInAs: String?,
@@ -61,6 +66,7 @@ data object ShellScreen : Screen {
 
 class ShellPresenter(
     private val navigation: NavStateProducer,
+    private val browser: BrowserStateProducer,
     private val nodes: NodeStore,
     private val session: SessionManager,
     private val sync: SyncRunner,
@@ -80,6 +86,7 @@ class ShellPresenter(
             chrome = chrome,
             open = nodes.openRowsFor(nav.nav),
             crumbs = nodes.crumbsFor(nav.nav),
+            browser = browser(nav.nav.here, BrowserFilter()),
             destinations = Destination.entries,
             sync = syncStatus,
             signedInAs = (user as? AuthState.LoggedIn)?.user?.email,
@@ -95,10 +102,11 @@ class ShellPresenter(
 
 val shellModule: Module = module {
     single { NavStateProducer(get()) }
+    single { BrowserStateProducer(get()) }
 
     bindScreen(
         ShellScreen::class,
-        presenter = { _, _ -> ShellPresenter(get(), get(), get(), get()) },
+        presenter = { _, _ -> ShellPresenter(get(), get(), get(), get(), get()) },
         uiFactory = { ui<ShellScreen.State> { state, modifier -> ShellUi(state, modifier) } },
     )
 }
