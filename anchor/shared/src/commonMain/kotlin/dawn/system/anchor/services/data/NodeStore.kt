@@ -10,11 +10,11 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -31,27 +31,6 @@ import kotlinx.serialization.json.jsonPrimitive
  * engine then owns nothing but dispatch, and a store can be tested for staleness
  * behaviour without any sync machinery.
  */
-/**
- * What the store knows about one node.
- *
- * Three states, because two is not enough: a nullable node conflates **not read yet** with
- * **not there**, and code that acts on absence then acts on every first frame. That mistake
- * cost two regressions — a prune that reverted every drill the moment it happened — so the
- * ambiguity is removed at the source rather than guarded at each call site.
- */
-sealed interface NodeState {
-    /** No read has completed. Decide nothing on this. */
-    data object Loading : NodeState
-
-    /** Read, and the row is not there — deleted here or on another device. */
-    data object Missing : NodeState
-
-    data class Present(val value: WorkspaceNode) : NodeState
-
-    /** The node, or null while loading or once it is gone. */
-    val node: WorkspaceNode? get() = (this as? Present)?.value
-}
-
 /** One entity from a frame, in the store's own vocabulary rather than the sync wire's. */
 data class NodeChange(
     val kind: String,
@@ -77,10 +56,14 @@ interface NodeStore {
      *    still warm and replay what they hold. Rebuilding a combined subscription would
      *    otherwise re-query every open row every time the set changed by one.
      *
-     * Emits [NodeState], not a nullable node, so "still loading" and "deleted" can never be
-     * mistaken for each other.
+     * Emits the row, or **null once it is read and gone**. It deliberately does *not* model
+     * "still loading": that is a property of a subscription, not of a node, and naming it
+     * here forced an initial value the store cannot actually observe. A collector that has
+     * not received anything yet simply has not — and the domain already owns the vocabulary
+     * for that distinction in [dawn.system.anchor.domain.Presence], where the rule that
+     * needs it lives.
      */
-    fun node(id: String): StateFlow<NodeState>
+    fun node(id: String): Flow<WorkspaceNode?>
 
     fun children(parentId: String?): Flow<List<WorkspaceNode>>
 
@@ -129,17 +112,22 @@ internal class SqlDelightNodeStore(
      *
      * Confined to the main thread, which is where composition asks for them.
      */
-    private val streams = mutableMapOf<String, StateFlow<NodeState>>()
+    private val streams = mutableMapOf<String, Flow<WorkspaceNode?>>()
 
     private val queries get() = db.nodeQueries
 
     override fun liveNodes(): Flow<List<WorkspaceNode>> =
         queries.selectLive().asFlow().mapToList(writer).map { rows -> rows.map(::toDomain) }
 
-    override fun node(id: String): StateFlow<NodeState> = streams.getOrPut(id) {
+    override fun node(id: String): Flow<WorkspaceNode?> = streams.getOrPut(id) {
         queries.selectLiveById(id).asFlow().mapToOneOrNull(writer)
-            .map { row -> row?.let { NodeState.Present(toDomain(it)) } ?: NodeState.Missing }
-            .stateIn(scope, SharingStarted.WhileSubscribed(RETENTION_MILLIS), NodeState.Loading)
+            .map { row -> row?.let(::toDomain) }
+            // SQLDelight notifies at TABLE granularity, so every write to `node` re-runs
+            // every registered query — including all N of these. `stateIn` used to absorb
+            // that for free, because StateFlow conflates by equality; `shareIn` does not, so
+            // without this one write would wake every open row with an identical value.
+            .distinctUntilChanged()
+            .shareIn(scope, SharingStarted.WhileSubscribed(RETENTION_MILLIS), replay = 1)
     }
 
     override fun children(parentId: String?): Flow<List<WorkspaceNode>> =
@@ -233,7 +221,7 @@ internal class SqlDelightNodeStore(
  */
 fun NodeStore.each(ids: List<String>): Flow<List<WorkspaceNode>> =
     if (ids.isEmpty()) flowOf(emptyList())
-    else combine(ids.map(::node)) { states -> states.mapNotNull { it.node } }
+    else combine(ids.map(::node)) { rows -> rows.filterNotNull() }
 
 /** The same, for each folder's contents: one subscription per folder, flattened. */
 fun NodeStore.eachChildren(parentIds: List<String>): Flow<List<WorkspaceNode>> =

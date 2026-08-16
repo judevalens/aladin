@@ -8,10 +8,9 @@ import com.slack.circuit.test.presenterTestOf
 import dawn.system.anchor.domain.Destination
 import dawn.system.anchor.domain.SidebarNav
 import dawn.system.anchor.features.shell.state.NavigationStateProducer
-import dawn.system.anchor.services.data.NodeState
+import dawn.system.anchor.domain.Presence
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 
@@ -86,7 +85,7 @@ class NavigationProducerTest {
      * "deleted" tells the shell to climb out of the folder you just entered.
      */
     @Test
-    fun `an unread folder is Loading, never Missing`() = runTest {
+    fun `an unread folder is Unknown, never Gone`() = runTest {
         val nodes = FakeNodeStore(listOf(folder("f1"), folder("f2", parentId = "f1")))
         val navigation = NavigationStateProducer(nodes)
 
@@ -94,10 +93,10 @@ class NavigationProducerTest {
             val first = awaitItem()
             nodes.settle()
             assertTrue(
-                first.folderState !is NodeState.Missing,
-                "a folder that exists must never report Missing, got ${first.folderState}",
+                first.folderPresence != Presence.Gone,
+                "a folder that exists must never report Gone, got ${first.folderPresence}",
             )
-            awaitUntil { it.folderState is NodeState.Present }
+            awaitUntil { it.folderPresence == Presence.There }
             cancelAndIgnoreRemainingEvents()
         }
     }
@@ -124,7 +123,7 @@ class NavigationProducerTest {
         presenterTestOf({ navigation(nav, query = "") }) {
             nodes.settle()
             // At section level there is no folder, so Missing here is correct and expected.
-            awaitUntil { it.folderState is NodeState.Missing }
+            awaitUntil { it.folderPresence == Presence.Gone }
 
             nav = insideF2
 
@@ -135,11 +134,11 @@ class NavigationProducerTest {
                 // Ignore any trailing frame still describing the section level.
                 if (frame.searchPlaceholder != "Search this folder") return@repeat
                 assertTrue(
-                    frame.folderState !is NodeState.Missing,
-                    "a drilled folder that exists must never read Missing — that is the " +
+                    frame.folderPresence != Presence.Gone,
+                    "a drilled folder that exists must never read Gone — that is the " +
                         "section level's answer leaking across the key change",
                 )
-                if (frame.folderState is NodeState.Present) resolved = true
+                if (frame.folderPresence == Presence.There) resolved = true
             }
             assertTrue(resolved, "the drilled folder never resolved to Present")
             cancelAndIgnoreRemainingEvents()
@@ -147,17 +146,17 @@ class NavigationProducerTest {
     }
 
     @Test
-    fun `a deleted folder reports Missing, which is what pops the sidebar`() = runTest {
+    fun `a deleted folder reports Gone, which is what pops the sidebar`() = runTest {
         val nodes = FakeNodeStore(listOf(folder("f1"), folder("f2", parentId = "f1")))
         val navigation = NavigationStateProducer(nodes)
 
         presenterTestOf({ navigation(insideF2, query = "") }) {
             nodes.settle()
-            awaitUntil { it.folderState is NodeState.Present }
+            awaitUntil { it.folderPresence == Presence.There }
 
             nodes.remove("f2")
 
-            assertIs<NodeState.Missing>(awaitUntil { it.folderState is NodeState.Missing }.folderState)
+            assertEquals(Presence.Gone, awaitUntil { it.folderPresence == Presence.Gone }.folderPresence)
             cancelAndIgnoreRemainingEvents()
         }
     }

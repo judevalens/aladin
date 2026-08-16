@@ -8,14 +8,15 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import dawn.system.anchor.domain.Destination
 import dawn.system.anchor.domain.PathLevel
+import dawn.system.anchor.domain.Presence
 import dawn.system.anchor.domain.SidebarNav
 import dawn.system.anchor.domain.WorkspaceNode
 import dawn.system.anchor.features.shell.ShellScreen
-import dawn.system.anchor.services.data.NodeState
 import dawn.system.anchor.services.data.NodeStore
 import dawn.system.anchor.services.data.each
 import dawn.system.anchor.services.data.eachChildren
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 
 /** Everything the sidebar and the column browser draw, for one [SidebarNav]. */
 data class NavigationSlice(
@@ -29,10 +30,10 @@ data class NavigationSlice(
     val backLabel: String?,
     val pathLevels: List<PathLevel>,
     val columns: List<ShellScreen.BrowseColumn>,
-    /** `Missing` means the folder you are inside was deleted — see the note below. */
-    val folderState: NodeState,
+    /** [Presence.Gone] means the folder you are inside was deleted — see the note below. */
+    val folderPresence: Presence,
     /** The same, for whatever the detail is showing. */
-    val displayedState: NodeState,
+    val displayedPresence: Presence,
 ) : CircuitUiState
 
 /**
@@ -44,10 +45,10 @@ data class NavigationSlice(
  * sidebar heading, Back's label, the path popover and the browser's column headers together,
  * because none of them is holding a copy.
  *
- * The one subtlety worth keeping in mind is [NodeState]: a stream has not read anything when
- * it is first asked, so "no node" and "deleted" have to stay distinguishable. Deciding
- * anything on the difference belongs to the caller, which is why both states are returned
- * rather than flattened to nulls here.
+ * The one subtlety worth keeping in mind is that a stream has read nothing when it is first
+ * asked, so "no node" and "deleted" have to stay distinguishable. Display does not care and
+ * takes the nullable row; the correction rule does, and takes [Presence] — where
+ * [Presence.Unknown] is simply the absence of an emission.
  */
 class NavigationStateProducer(private val nodes: NodeStore) {
 
@@ -62,10 +63,15 @@ class NavigationStateProducer(private val nodes: NodeStore) {
             }
         }.collectAsState(initial = emptyList())
 
-        // Two single-row subscriptions rather than two searches through a list. Each is keyed
-        // on the id it reads, which is load-bearing rather than tidy — see [readOf].
-        val displayedState = nodes.readOf(nav.currentId)
-        val folderState = nodes.readOf(nav.folderId)
+        // Single-row subscriptions rather than searches through a list. Each is keyed on the
+        // id it reads, which is load-bearing rather than tidy — see [presenceOf]. The node and
+        // its presence are two reads of the *same* shared stream, so this is two queries, not
+        // four: display wants the row, and only the correction rule needs to tell "not read
+        // yet" from "gone".
+        val displayed = nodes.nodeOf(nav.currentId)
+        val displayedPresence = nodes.presenceOf(nav.currentId)
+        val folder = nodes.nodeOf(nav.folderId)
+        val folderPresence = nodes.presenceOf(nav.folderId)
 
         // The drill path's own rows — every label the navigation draws reads from these.
         // Deliberately NOT used to decide whether a folder still exists: a retained stream starts
@@ -117,8 +123,8 @@ class NavigationStateProducer(private val nodes: NodeStore) {
         return NavigationSlice(
             rows = visibleRows,
             contents = contents,
-            displayed = displayedState.node,
-            folder = folderState.node,
+            displayed = displayed,
+            folder = folder,
             title = when (nav.level) {
                 SidebarNav.Level.Root -> SidebarNav.ROOT_TITLE
                 SidebarNav.Level.Section -> sectionTitle.orEmpty()
@@ -141,30 +147,10 @@ class NavigationStateProducer(private val nodes: NodeStore) {
                 purposeOf = { id -> pathNodes?.firstOrNull { it.id == id }?.kind?.wire ?: "folder" },
             ),
             columns = columns,
-            folderState = folderState,
-            displayedState = displayedState,
+            folderPresence = folderPresence,
+            displayedPresence = displayedPresence,
         )
     }
-}
-
-/**
- * One node's read, for exactly [id].
- *
- * The `key` is not optional, and not tidiness. `collectAsState` is `produceState`, whose
- * backing `remember { mutableStateOf(initial) }` has **no keys** — so when the flow changes
- * the state keeps the *previous* flow's value and `initial` never applies again. Combined
- * with the `?: flowOf(Missing)` branch below, that meant a genuine `Missing` read at section
- * level (where [SidebarNav.folderId] is null) survived into the frame after a drill and was
- * attributed to the folder just entered: [dawn.system.anchor.domain.corrected] saw
- * [dawn.system.anchor.domain.Presence.Gone] and called `back()`, reverting every drill.
- *
- * `key` gives the whole group a new identity, so the reset to [NodeState.Loading] is real.
- */
-@Composable
-private fun NodeStore.readOf(id: String?): NodeState = key(id) {
-    val state by remember { id?.let { node(it) } ?: flowOf(NodeState.Missing) }
-        .collectAsState(initial = NodeState.Loading)
-    state
 }
 
 /** The search field narrows on title — the only text a row reliably shows. */

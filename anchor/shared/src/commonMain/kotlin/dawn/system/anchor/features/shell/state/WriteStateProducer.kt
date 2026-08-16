@@ -2,7 +2,6 @@ package dawn.system.anchor.features.shell.state
 
 import androidx.compose.runtime.Composable
 import com.slack.circuit.runtime.CircuitUiState
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -10,10 +9,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import dawn.system.anchor.domain.WorkspaceNode
 import dawn.system.anchor.features.shell.ShellScreen
-import dawn.system.anchor.services.data.NodeState
 import dawn.system.anchor.services.data.NodeStore
 import dawn.system.anchor.services.data.WorkspaceWriter
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 
 /** Create, rename and delete, plus the sheets that drive them. */
@@ -64,24 +61,18 @@ class WriteStateProducer(
         var pendingDeleteId by remember { mutableStateOf<String?>(null) }
         var writeError by remember { mutableStateOf<String?>(null) }
 
-        val actionsFor by remember(actionsForId) {
-            actionsForId?.let(nodes::node) ?: flowOf(NodeState.Missing)
-        }.collectAsState(initial = NodeState.Loading)
-
-        val pendingDelete by remember(pendingDeleteId) {
-            pendingDeleteId?.let(nodes::node) ?: flowOf(NodeState.Missing)
-        }.collectAsState(initial = NodeState.Loading)
-
-        val renameTarget by remember(draft?.nodeId) {
-            draft?.nodeId?.let(nodes::node) ?: flowOf(NodeState.Missing)
-        }.collectAsState(initial = NodeState.Loading)
+        // Ids are held; the rows are resolved every frame, so a rename reaches the sheet that
+        // is renaming it. Keyed reads — see [nodeOf]; these had the same carry-over bug.
+        val actionsFor = nodes.nodeOf(actionsForId)
+        val pendingDelete = nodes.nodeOf(pendingDeleteId)
+        val renameTarget = nodes.nodeOf(draft?.nodeId)
 
         return WriteSlice(
-            actionsFor = actionsFor.node,
+            actionsFor = actionsFor,
             rename = draft?.let { input ->
-                renameTarget.node?.let { ShellScreen.RenameDraft(it, input.title, input.saving) }
+                renameTarget?.let { ShellScreen.RenameDraft(it, input.title, input.saving) }
             },
-            pendingDelete = pendingDelete.node,
+            pendingDelete = pendingDelete,
             writeError = writeError,
         ) { event ->
             when (event) {
@@ -89,7 +80,7 @@ class WriteStateProducer(
                 ShellScreen.Event.Write.ActionsDismissed -> actionsForId = null
 
                 ShellScreen.Event.Write.RenameStarted -> {
-                    draft = actionsFor.node?.let { RenameInput(it.id, it.title) }
+                    draft = actionsFor?.let { RenameInput(it.id, it.title) }
                     actionsForId = null
                 }
 
@@ -101,7 +92,7 @@ class WriteStateProducer(
 
                 ShellScreen.Event.Write.RenameCommitted -> {
                     val input = draft
-                    val node = renameTarget.node
+                    val node = renameTarget
                     val title = input?.title?.trim()
                     if (input == null || node == null || title.isNullOrEmpty() || title == node.title) {
                         draft = null
@@ -125,7 +116,7 @@ class WriteStateProducer(
                 ShellScreen.Event.Write.DeleteCancelled -> pendingDeleteId = null
 
                 ShellScreen.Event.Write.DeleteConfirmed -> {
-                    pendingDelete.node?.let { target ->
+                    pendingDelete?.let { target ->
                         pendingDeleteId = null
                         scope.launch {
                             runCatching { writer.delete(target) }

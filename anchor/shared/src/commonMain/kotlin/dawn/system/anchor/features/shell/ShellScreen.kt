@@ -36,7 +36,6 @@ import dawn.system.anchor.domain.sectionsFor
 import dawn.system.anchor.services.auth.SessionManager
 import dawn.system.anchor.services.data.ArtifactResourceStore
 import dawn.system.anchor.services.data.DocumentStore
-import dawn.system.anchor.services.data.NodeState
 import dawn.system.anchor.services.data.NodeStore
 import dawn.system.anchor.services.data.eachChildren
 import dawn.system.anchor.services.data.each
@@ -298,10 +297,10 @@ class ShellPresenter(
         // One rule, not three effects racing each other. `Presence` keeps "not read yet"
         // distinct from "gone" — the distinction that reverted every drill when it was
         // missing. Tested exhaustively in NavCorrectionTest.
-        LaunchedEffect(nav, openItems, navSlice.folderState, navSlice.displayedState) {
+        LaunchedEffect(nav, openItems, navSlice.folderPresence, navSlice.displayedPresence) {
             val corrected = nav.corrected(
-                folder = navSlice.folderState.presence(),
-                displayed = navSlice.displayedState.presence(),
+                folder = navSlice.folderPresence,
+                displayed = navSlice.displayedPresence,
                 isOpen = { id -> openItems.items.any { it.nodeId == id } },
             )
             if (corrected != nav) nav = corrected
@@ -479,13 +478,6 @@ class ShellPresenter(
         const val APP_ARTIFACT = "app"
         const val UNTITLED = "Untitled"
     }
-}
-
-/** The store's read, in the vocabulary the navigation rule speaks. */
-private fun NodeState.presence(): Presence = when (this) {
-    NodeState.Loading -> Presence.Unknown
-    NodeState.Missing -> Presence.Gone
-    is NodeState.Present -> Presence.There
 }
 
 /**

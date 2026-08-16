@@ -2,7 +2,6 @@ package dawn.system.anchor.sync
 
 import dawn.system.anchor.domain.WorkspaceNode
 import dawn.system.anchor.services.data.NodeChange
-import dawn.system.anchor.services.data.NodeState
 import dawn.system.anchor.services.data.NodeStore
 import dawn.system.anchor.services.data.SyncStateStore
 import dawn.system.anchor.services.sync.Frame
@@ -37,7 +36,7 @@ class SyncPullerTest {
         private val seqs = mutableMapOf<String, Long>()
 
         override fun liveNodes(): Flow<List<WorkspaceNode>> = flowOf(emptyList())
-        override fun node(id: String): StateFlow<NodeState> = MutableStateFlow(NodeState.Loading)
+        override fun node(id: String): Flow<WorkspaceNode?> = flowOf(null)
         override fun children(parentId: String?): Flow<List<WorkspaceNode>> = flowOf(emptyList())
         override fun byArtifactType(artifactType: String): Flow<List<WorkspaceNode>> = flowOf(emptyList())
         override suspend fun byId(id: String): WorkspaceNode? = null
