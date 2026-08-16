@@ -81,6 +81,7 @@ class WebSurfaceHostTest {
             token = "t",
             collabWsUrl = "ws://10.0.0.2:3501",
             userName = "Jude",
+            apiBaseUrl = "http://10.0.0.2:8000",
         )
 
         // The stub must exist before the bundle's own scripts run, or a sync arriving
@@ -91,12 +92,30 @@ class WebSurfaceHostTest {
         assertTrue(!bootstrap.contains("pageId"), bootstrap)
     }
 
+    /**
+     * The API origin is read once, when the view is built — long before the first shard is
+     * opened. Omitting it fails at the worst moment: notes work, and only a shard reveals
+     * that the page has nothing to serve itself from.
+     */
+    @Test
+    fun `the bootstrap carries the api origin a shard needs`() {
+        val bootstrap = embedBootstrap(
+            token = "t",
+            collabWsUrl = "ws://10.0.0.2:3501",
+            userName = "Jude",
+            apiBaseUrl = "http://10.0.0.2:8000",
+        )
+
+        assertTrue(bootstrap.contains("""apiBaseUrl:"http://10.0.0.2:8000""""), bootstrap)
+    }
+
     @Test
     fun `a token with a quote cannot break out of its literal`() {
         val bootstrap = embedBootstrap(
             token = """a"b\c""",
             collabWsUrl = "ws://x",
             userName = "u",
+            apiBaseUrl = "http://x",
         )
 
         assertTrue(bootstrap.contains("""token:"a\"b\\c""""), bootstrap)

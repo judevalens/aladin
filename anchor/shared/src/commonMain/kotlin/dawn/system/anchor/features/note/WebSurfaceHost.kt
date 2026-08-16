@@ -78,6 +78,12 @@ data class WebSurfaceHost(val handle: WebHostHandle, val restarts: Int)
 data class EditorSession(
     val token: String,
     val collabWsUrl: String,
+    /**
+     * The API origin. Only shards need it — a note is served entirely by the collab
+     * socket — but it is read once at view creation, so it has to be here before the
+     * first shard opens rather than when one does.
+     */
+    val apiBaseUrl: String,
     /** The name on the collaboration cursor; null falls back to a generic device name. */
     val userName: String?,
 )
@@ -127,6 +133,7 @@ fun rememberWebSurfaceHost(session: EditorSession?, enabled: Boolean): WebSurfac
             token = editor.token,
             collabWsUrl = editor.collabWsUrl,
             userName = editor.userName ?: DEFAULT_USER_NAME,
+            apiBaseUrl = editor.apiBaseUrl,
         ),
         onMessage = { /* `ready` only, today; the page queues its own backlog. */ },
         onContentProcessTerminated = { restarts++ },
@@ -203,9 +210,11 @@ internal fun embedBootstrap(
     token: String,
     collabWsUrl: String,
     userName: String,
+    apiBaseUrl: String,
 ): String = "window.__ALADIN_EMBED__={" +
     "token:${jsString(token)}," +
     "collabWsUrl:${jsString(collabWsUrl)}," +
+    "apiBaseUrl:${jsString(apiBaseUrl)}," +
     "user:{name:${jsString(userName)},color:${jsString(colorForUser(userName))}}" +
     "};" +
     // The stub queues whatever arrives before React mounts, then the app drains it. Without

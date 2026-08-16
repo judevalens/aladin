@@ -1,6 +1,7 @@
 import { useParams } from "react-router-dom";
 
 import { BlockNotePageEditorDriver } from "@/modules/pages/editor/page-editor-driver";
+import "@/embed/embed-config";
 
 /**
  * The page editor, mounted standalone for a **native host** to embed in a web view.
@@ -18,18 +19,6 @@ import { BlockNotePageEditorDriver } from "@/modules/pages/editor/page-editor-dr
  * The route deliberately sits outside the auth shell: there is no session cookie in a web
  * view, and the editor authenticates to the collab server with the injected token alone.
  */
-export interface EmbedConfig {
-  token: string;
-  /** Hocuspocus, e.g. `ws://192.168.1.109:3501` — the device cannot use localhost. */
-  collabWsUrl: string;
-  user: { name: string; color: string };
-}
-
-declare global {
-  interface Window {
-    __ALADIN_EMBED__?: EmbedConfig;
-  }
-}
 
 export function PageEditorEmbed() {
   const { id } = useParams<{ id: string }>();
