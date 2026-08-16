@@ -14,6 +14,8 @@ import dawn.system.anchor.features.shell.state.BrowserSlice
 import dawn.system.anchor.features.shell.state.BrowserStateProducer
 import dawn.system.anchor.features.shell.state.ChromeSlice
 import dawn.system.anchor.features.shell.state.Crumb
+import dawn.system.anchor.features.shell.state.DocumentSlice
+import dawn.system.anchor.features.shell.state.DocumentStateProducer
 import dawn.system.anchor.features.shell.state.NavSlice
 import dawn.system.anchor.features.shell.state.NavStateProducer
 import dawn.system.anchor.features.shell.state.OpenRow
@@ -57,6 +59,8 @@ data object ShellScreen : Screen {
         val crumbs: List<Crumb>,
         /** The Miller columns, when Browser is the surface. */
         val browser: BrowserSlice,
+        /** The open document, and every PDF the pool may keep resident. */
+        val documents: DocumentSlice,
         val destinations: List<Destination>,
         val sync: SyncStatus,
         val signedInAs: String?,
@@ -67,6 +71,7 @@ data object ShellScreen : Screen {
 class ShellPresenter(
     private val navigation: NavStateProducer,
     private val browser: BrowserStateProducer,
+    private val documents: DocumentStateProducer,
     private val nodes: NodeStore,
     private val session: SessionManager,
     private val sync: SyncRunner,
@@ -87,6 +92,7 @@ class ShellPresenter(
             open = nodes.openRowsFor(nav.nav),
             crumbs = nodes.crumbsFor(nav.nav),
             browser = browser(nav.nav.here, BrowserFilter()),
+            documents = documents(nav.nav),
             destinations = Destination.entries,
             sync = syncStatus,
             signedInAs = (user as? AuthState.LoggedIn)?.user?.email,
@@ -103,10 +109,11 @@ class ShellPresenter(
 val shellModule: Module = module {
     single { NavStateProducer(get()) }
     single { BrowserStateProducer(get()) }
+    single { DocumentStateProducer(get(), get()) }
 
     bindScreen(
         ShellScreen::class,
-        presenter = { _, _ -> ShellPresenter(get(), get(), get(), get(), get()) },
+        presenter = { _, _ -> ShellPresenter(get(), get(), get(), get(), get(), get()) },
         uiFactory = { ui<ShellScreen.State> { state, modifier -> ShellUi(state, modifier) } },
     )
 }

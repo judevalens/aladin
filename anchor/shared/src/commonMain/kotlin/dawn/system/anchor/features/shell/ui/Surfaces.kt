@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -24,6 +25,10 @@ import dawn.system.anchor.domain.Surface
 import dawn.system.anchor.features.shell.ShellScreen
 import dawn.system.anchor.features.shell.state.ChromeEvent
 import dawn.system.anchor.features.shell.state.NavEvent
+import dawn.system.anchor.features.shell.state.OpenDocument
+import dawn.system.anchor.services.platform.PdfHost
+import dawn.system.anchor.services.platform.PdfSurface
+import dawn.system.anchor.services.platform.rememberPdfHost
 import dawn.system.anchor.services.design.AnchorShape
 import dawn.system.anchor.services.design.AnchorTheme
 import dawn.system.anchor.services.design.CloseIcon
@@ -49,6 +54,17 @@ import dawn.system.anchor.services.design.destinationIcon
 internal fun SurfaceHost(state: ShellScreen.State, modifier: Modifier = Modifier) {
     val c = AnchorTheme.colors
 
+    // The pool lives HERE, above the swap — not inside the surface that shows a document.
+    // A PDFView built inside its own surface dies every time you switch away, and coming
+    // back re-parses the file and re-renders it. That is the reload this exists to prevent.
+    val pdfs = rememberPdfHost()
+
+    // Closing a document is what releases its view. Navigating away is not — which is the
+    // whole point of the pool, and why this reads the open set rather than the surface.
+    LaunchedEffect(state.documents.residentPdfs) {
+        pdfs.retain(state.documents.residentPdfs)
+    }
+
     Box(modifier.background(c.bg)) {
         when (val surface = state.nav.nav.here.surface) {
             is Surface.Dest -> when (surface.destination) {
@@ -58,11 +74,37 @@ internal fun SurfaceHost(state: ShellScreen.State, modifier: Modifier = Modifier
                 Destination.Graph -> Placeholder("Graph", "The entity canvas.")
             }
 
-            is Surface.Doc -> Placeholder(
-                title = state.crumbs.lastOrNull()?.label ?: "Document",
-                body = "The reader, the note editor and the artifact surfaces mount here.",
-            )
+            is Surface.Doc -> DocumentSurface(state.documents.active, pdfs)
         }
+    }
+}
+
+/** One open document. The kind decides the surface; the pool decides whether it rebuilds. */
+@Composable
+private fun DocumentSurface(document: OpenDocument?, pdfs: PdfHost) {
+    when (document) {
+        null -> Placeholder("Nothing open", "Pick something in the Browser.")
+
+        is OpenDocument.Pdf ->
+            if (document.filePath == null) {
+                // A genuine first open. Anything already fetched paints on frame one, because
+                // the resource store answers from its cache synchronously.
+                Placeholder(document.title, "Fetching…")
+            } else {
+                PdfSurface(
+                    host = pdfs,
+                    artifactId = document.key.nodeId,
+                    filePath = document.filePath,
+                    page = 0,
+                    onPageChanged = {},
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+
+        is OpenDocument.Unsupported -> Placeholder(
+            title = document.title,
+            body = "The ${document.kind?.wire ?: "artifact"} surface mounts here.",
+        )
     }
 }
 
