@@ -12,6 +12,8 @@ import dawn.system.anchor.services.sync.SyncPuller
 import dawn.system.anchor.services.sync.SyncPullResult
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
@@ -36,7 +38,8 @@ class SyncPullerTest {
         private val seqs = mutableMapOf<String, Long>()
 
         override fun liveNodes(): Flow<List<WorkspaceNode>> = flowOf(emptyList())
-        override fun node(id: String): Flow<WorkspaceNode?> = flowOf(null)
+        override fun node(id: String): SharedFlow<WorkspaceNode?> =
+            MutableSharedFlow<WorkspaceNode?>(replay = 1).apply { tryEmit(null) }
         override fun children(parentId: String?): Flow<List<WorkspaceNode>> = flowOf(emptyList())
         override fun byArtifactType(artifactType: String): Flow<List<WorkspaceNode>> = flowOf(emptyList())
         override suspend fun byId(id: String): WorkspaceNode? = null

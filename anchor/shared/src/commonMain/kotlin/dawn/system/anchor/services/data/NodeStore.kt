@@ -9,6 +9,7 @@ import dawn.system.anchor.domain.WorkspaceNode
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -63,7 +64,7 @@ interface NodeStore {
      * for that distinction in [dawn.system.anchor.domain.Presence], where the rule that
      * needs it lives.
      */
-    fun node(id: String): Flow<WorkspaceNode?>
+    fun node(id: String): SharedFlow<WorkspaceNode?>
 
     fun children(parentId: String?): Flow<List<WorkspaceNode>>
 
@@ -112,14 +113,14 @@ internal class SqlDelightNodeStore(
      *
      * Confined to the main thread, which is where composition asks for them.
      */
-    private val streams = mutableMapOf<String, Flow<WorkspaceNode?>>()
+    private val streams = mutableMapOf<String, SharedFlow<WorkspaceNode?>>()
 
     private val queries get() = db.nodeQueries
 
     override fun liveNodes(): Flow<List<WorkspaceNode>> =
         queries.selectLive().asFlow().mapToList(writer).map { rows -> rows.map(::toDomain) }
 
-    override fun node(id: String): Flow<WorkspaceNode?> = streams.getOrPut(id) {
+    override fun node(id: String): SharedFlow<WorkspaceNode?> = streams.getOrPut(id) {
         queries.selectLiveById(id).asFlow().mapToOneOrNull(writer)
             .map { row -> row?.let(::toDomain) }
             // SQLDelight notifies at TABLE granularity, so every write to `node` re-runs

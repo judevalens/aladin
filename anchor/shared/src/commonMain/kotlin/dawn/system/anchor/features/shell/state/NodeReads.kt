@@ -31,10 +31,29 @@ import kotlinx.coroutines.flow.map
  * against a changing id must come through here.
  */
 
-/** The row, or null while unread *or* once it is gone. Display cannot tell, and should not. */
+/**
+ * The row, or null while unread *or* once it is gone. Display cannot tell, and should not.
+ *
+ * **Seeded from the stream's replay cache**, which is the other half of the `key` above and
+ * just as load-bearing. `key` correctly gives each id a fresh group, so `collectAsState` starts
+ * at its `initial` — and a null initial is indistinguishable from "there is no such row". For
+ * one frame after every switch the title read "Untitled", the kind read null, and the shell
+ * concluded the open document was not a PDF and covered the reader with a placeholder.
+ *
+ * The value was already in hand the whole time: the stream is shared with `replay = 1`, so a
+ * document read even once has its row sitting in `replayCache`. Reading that synchronously is
+ * what makes a switch paint the right thing on its first frame rather than its second.
+ *
+ * A genuinely unread id still seeds null, which is correct — that one is not a flicker.
+ */
 @Composable
 internal fun NodeStore.nodeOf(id: String?): WorkspaceNode? = key(id) {
-    val row by remember { id?.let { node(it) } ?: flowOf(null) }.collectAsState(initial = null)
+    // No early return: a `return@key` out of a composable lambda breaks the compiler plugin's
+    // group bookkeeping and produces a ClassFormatError at runtime rather than a build error.
+    val stream = remember { id?.let { node(it) } }
+    val seed = remember(stream) { stream?.replayCache?.firstOrNull() }
+    val flow = remember(stream) { stream ?: flowOf(null) }
+    val row by flow.collectAsState(initial = seed)
     row
 }
 
@@ -47,10 +66,22 @@ internal fun NodeStore.nodeOf(id: String?): WorkspaceNode? = key(id) {
  */
 @Composable
 internal fun NodeStore.presenceOf(id: String?): Presence = key(id) {
-    val presence by remember {
-        (id?.let { node(it) } ?: flowOf(null))
-            .map { row -> if (row == null) Presence.Gone else Presence.There }
-    }.collectAsState(initial = Presence.Unknown)
+    val stream = remember { id?.let { node(it) } }
+    // Same replay-cache seed as [nodeOf]: an id already read answers on the first frame rather
+    // than passing back through Unknown on its way to the truth it already holds.
+    val seed = remember(stream) {
+        when {
+            stream == null -> Presence.Gone
+            stream.replayCache.isEmpty() -> Presence.Unknown
+            stream.replayCache.first() == null -> Presence.Gone
+            else -> Presence.There
+        }
+    }
+    val flow = remember(stream) {
+        stream?.map { row -> if (row == null) Presence.Gone else Presence.There }
+            ?: flowOf(Presence.Gone)
+    }
+    val presence by flow.collectAsState(initial = seed)
     presence
 }
 

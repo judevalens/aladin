@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.JsonObject
 
@@ -53,7 +54,7 @@ class FakeNodeStore(initial: List<WorkspaceNode> = emptyList()) : NodeStore {
      * when it is first asked. Emitting a value here — of any kind — would hide every bug that
      * only appears during that first window, which is most of them.
      */
-    override fun node(id: String): Flow<WorkspaceNode?> = streams.getOrPut(id) {
+    override fun node(id: String): SharedFlow<WorkspaceNode?> = streams.getOrPut(id) {
         MutableSharedFlow<WorkspaceNode?>(
             replay = 1,
             extraBufferCapacity = 1,
