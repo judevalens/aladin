@@ -14,10 +14,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dawn.system.anchor.domain.Destination
@@ -27,9 +28,7 @@ import dawn.system.anchor.features.shell.state.ChromeEvent
 import dawn.system.anchor.features.shell.state.Fetch
 import dawn.system.anchor.features.shell.state.NavEvent
 import dawn.system.anchor.features.shell.state.OpenDocument
-import dawn.system.anchor.services.platform.PdfHost
-import dawn.system.anchor.services.platform.PdfSurface
-import dawn.system.anchor.services.platform.rememberPdfHost
+import dawn.system.anchor.services.platform.PdfViewer
 import dawn.system.anchor.services.design.AnchorShape
 import dawn.system.anchor.services.design.AnchorTheme
 import dawn.system.anchor.services.design.CloseIcon
@@ -54,35 +53,50 @@ import dawn.system.anchor.services.design.destinationIcon
 @Composable
 internal fun SurfaceHost(state: ShellScreen.State, modifier: Modifier = Modifier) {
     val c = AnchorTheme.colors
-
-    // The pool lives HERE, above the swap — not inside the surface that shows a document.
-    // A PDFView built inside its own surface dies every time you switch away, and coming
-    // back re-parses the file and re-renders it. That is the reload this exists to prevent.
-    val pdfs = rememberPdfHost()
-
-    // Closing a document is what releases its view. Navigating away is not — which is the
-    // whole point of the pool, and why this reads the open set rather than the surface.
-    LaunchedEffect(state.documents.residentPdfs) {
-        pdfs.retain(state.documents.residentPdfs)
-    }
+    val surface = state.nav.nav.here.surface
+    val readingPdf = state.documents.active is OpenDocument.Pdf
 
     Box(modifier.background(c.bg)) {
-        when (val surface = state.nav.nav.here.surface) {
-            is Surface.Dest -> when (surface.destination) {
-                Destination.Home -> Placeholder("Home", "Continue, insights and today's activity.")
-                Destination.Browser -> BrowserSurface(state.browser, state.nav.handle)
-                Destination.Markets -> Placeholder("Markets", "Index strip, watchlist and positions.")
-                Destination.Graph -> Placeholder("Graph", "The entity canvas.")
+        // EVERY open PDF, composed unconditionally and never wrapped in a visibility test.
+        // Compose keeps a viewer alive because it is still in the tree — that is the whole
+        // mechanism, and `if (active) …` would quietly turn it back into a teardown.
+        state.documents.pdfs.forEach { pdf ->
+            key(pdf.key.asString()) {
+                val bytes = pdf.bytes
+                if (bytes is Fetch.Ready) {
+                    PdfViewer(
+                        filePath = bytes.path,
+                        page = 0,
+                        onPageChanged = {},
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .zIndex(if (readingPdf && pdf.active) 1f else 0f),
+                    )
+                }
             }
+        }
 
-            is Surface.Doc -> DocumentSurface(state.documents.active, pdfs)
+        // Everything else draws over them, on its own opaque ground.
+        if (!readingPdf) {
+            Box(Modifier.fillMaxSize().background(c.bg).zIndex(2f)) {
+                when (surface) {
+                    is Surface.Dest -> when (surface.destination) {
+                        Destination.Home -> Placeholder("Home", "Continue, insights and today's activity.")
+                        Destination.Browser -> BrowserSurface(state.browser, state.nav.handle)
+                        Destination.Markets -> Placeholder("Markets", "Index strip, watchlist and positions.")
+                        Destination.Graph -> Placeholder("Graph", "The entity canvas.")
+                    }
+
+                    is Surface.Doc -> NonPdfDocument(state.documents.active)
+                }
+            }
         }
     }
 }
 
-/** One open document. The kind decides the surface; the pool decides whether it rebuilds. */
+/** An open document that is not a PDF — or one whose bytes have not landed. */
 @Composable
-private fun DocumentSurface(document: OpenDocument?, pdfs: PdfHost) {
+private fun NonPdfDocument(document: OpenDocument?) {
     when (document) {
         null -> Placeholder("Nothing open", "Pick something in the Browser.")
 
@@ -90,19 +104,10 @@ private fun DocumentSurface(document: OpenDocument?, pdfs: PdfHost) {
             // A genuine first open. Anything fetched before paints on frame one, because the
             // resource store answers from its cache synchronously.
             Fetch.Pending -> Placeholder(document.title, "Fetching…")
-
-            // Said out loud rather than left spinning. A failure that looks like a slow
+            // Said out loud rather than left spinning: a failure that looks like a slow
             // success is a surface that waits forever.
             is Fetch.Failed -> Placeholder(document.title, "Couldn't open it — ${bytes.reason}.")
-
-            is Fetch.Ready -> PdfSurface(
-                host = pdfs,
-                artifactId = document.key.nodeId,
-                filePath = bytes.path,
-                page = 0,
-                onPageChanged = {},
-                modifier = Modifier.fillMaxSize(),
-            )
+            is Fetch.Ready -> Unit // drawn by its own viewer, underneath
         }
 
         is OpenDocument.Unsupported -> Placeholder(

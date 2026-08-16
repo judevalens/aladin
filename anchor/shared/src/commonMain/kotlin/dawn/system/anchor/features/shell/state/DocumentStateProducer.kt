@@ -3,7 +3,7 @@ package dawn.system.anchor.features.shell.state
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.slack.circuit.runtime.CircuitUiState
@@ -47,14 +47,22 @@ sealed interface OpenDocument {
     ) : OpenDocument
 }
 
+/** One open PDF, and whether it is the one being read. */
+data class OpenPdf(
+    val key: TabKey,
+    val title: String,
+    val bytes: Fetch,
+    val active: Boolean,
+)
+
 data class DocumentSlice(
     /** The document being shown, or null on a destination. */
     val active: OpenDocument?,
     /**
-     * Every open PDF, so the pool knows what may stay resident. Closing one is what removes
-     * it — navigating away is not, which is the whole point.
+     * **Every** open PDF, not just the visible one — each stays composed so none is ever
+     * rebuilt. Closing is what removes one; navigating away is not, which is the whole point.
      */
-    val residentPdfs: List<String>,
+    val pdfs: List<OpenPdf>,
 ) : CircuitUiState
 
 /**
@@ -72,43 +80,58 @@ class DocumentStateProducer(
 
     @Composable
     operator fun invoke(nav: Nav): DocumentSlice {
-        // Every open PDF's id — what the pool is allowed to keep alive.
-        val residentPdfs = nav.open.mapNotNull { key ->
-            nodes.nodeOf(key.nodeId)?.takeIf { it.artifactKind == ArtifactKind.File }?.id
-        }
-
         val activeKey = nav.activeDoc
-        val node = nodes.nodeOf(activeKey?.nodeId)
 
-        // Seeded from the cache, which answers synchronously — a document opened before paints
-        // on frame one instead of flashing. Only a genuine first open is Pending.
-        var bytes: Fetch by remember(activeKey) {
-            mutableStateOf(
-                activeKey?.nodeId?.let(resources::cached)
-                    ?.let { Fetch.Ready(it.path) }
-                    ?: Fetch.Pending,
+        // One entry per open PDF, fetched independently. Every open document is resolved, not
+        // just the visible one, because every one of them stays composed — a document you
+        // switch to must already have its bytes, or "switching" is a download.
+        val fetches = remember { mutableStateMapOf<String, Fetch>() }
+
+        val pdfs = nav.open.mapNotNull { key ->
+            val node = nodes.nodeOf(key.nodeId) ?: return@mapNotNull null
+            if (node.artifactKind != ArtifactKind.File) return@mapNotNull null
+
+            // Seeded from the cache, which answers synchronously, so anything fetched before
+            // paints on frame one. Only a genuine first open is ever Pending.
+            val seeded = fetches[node.id]
+                ?: resources.cached(node.id)?.let { Fetch.Ready(it.path) }
+                ?: Fetch.Pending
+
+            LaunchedEffect(node.id) {
+                if (fetches[node.id] !is Fetch.Ready && resources.cached(node.id) == null) {
+                    fetches[node.id] = runCatching { resources.resource(node.id) }.fold(
+                        onSuccess = { Fetch.Ready(it.path) },
+                        // The server's own words where there are any. "Couldn't open it"
+                        // alone leaves nothing to act on, and silence leaves a spinner.
+                        onFailure = {
+                            Fetch.Failed(
+                                it.message?.takeIf(String::isNotBlank)
+                                    ?: "couldn't reach the workspace",
+                            )
+                        },
+                    )
+                }
+            }
+
+            OpenPdf(
+                key = key,
+                title = node.title.takeIf { it.isNotBlank() } ?: "Untitled",
+                bytes = seeded,
+                active = key == activeKey,
             )
         }
-        LaunchedEffect(activeKey, node?.artifactKind) {
-            if (bytes is Fetch.Pending && node?.artifactKind == ArtifactKind.File) {
-                bytes = runCatching { resources.resource(node.id) }.fold(
-                    onSuccess = { Fetch.Ready(it.path) },
-                    // The server's own words where there are any. "Couldn't open it" alone
-                    // leaves nothing to act on, and silence leaves a spinner forever.
-                    onFailure = { Fetch.Failed(it.message?.takeIf(String::isNotBlank) ?: "couldn't reach the workspace") },
-                )
-            }
-        }
 
+        val node = nodes.nodeOf(activeKey?.nodeId)
         return DocumentSlice(
             active = activeKey?.let { key ->
                 val title = node?.title?.takeIf { it.isNotBlank() } ?: "Untitled"
                 when (node?.artifactKind) {
-                    ArtifactKind.File -> OpenDocument.Pdf(key, title, bytes)
+                    ArtifactKind.File ->
+                        OpenDocument.Pdf(key, title, pdfs.firstOrNull { it.key == key }?.bytes ?: Fetch.Pending)
                     else -> OpenDocument.Unsupported(key, title, node?.artifactKind)
                 }
             },
-            residentPdfs = residentPdfs,
+            pdfs = pdfs,
         )
     }
 }
