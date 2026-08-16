@@ -1,6 +1,6 @@
 # Aladin Engineering Roadmap
 
-Strategic anchor: [Aladin Product Vision](../docs/ALADIN_PRODUCT_VISION.md).
+Strategic anchor: [Aladin Product Vision](../docs/archive/ALADIN_PRODUCT_VISION.md).
 
 ## Status legend
 - ✅ Done

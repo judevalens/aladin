@@ -1,5 +1,10 @@
 # Remaining PRD Features — Backend/Frontend Audit & Plan
 
+> **Historical / parked (2026-08-14):** This audit belongs to the older Home,
+> Signals, Graph, and Ask-my-graph roadmap. Those surfaces are not the active
+> product direction. Use [`../../CURRENT_PRODUCT.md`](../../CURRENT_PRODUCT.md) for the
+> current cleanup baseline.
+
 Audit of what each not-yet-built PRD surface needs, grounded in `backend_v2` + the React
 app on the `redesign/ide-foundation` branch. Effort tiers: **S** ≤1d · **M** a few days ·
 **L** 1–2 wk · **XL** 3 wk+. "Verified" = confirmed in code (file paths given);
@@ -79,7 +84,7 @@ denormalize on record ingest (bump the owning artifact's node + ancestors); incl
   rails) — currently `/home` renders the folder view.
 
 ## 6. Graph read view  (L)  — scaffolded but NOT populated
-**Corrected (see `PIPELINE_AUDIT.md`):** the Neo4j promoter (`internal/graph/promoter.go`,
+**Corrected (see [`PIPELINE_AUDIT.md`](PIPELINE_AUDIT.md)):** the Neo4j promoter (`internal/graph/promoter.go`,
 `:Record/:Entity/:Topic` + `MENTIONS`/`TAGGED_WITH`) lives in the pipeline **`graph`
 worker — which is in the DEAD branch and never runs.** So **Neo4j is currently empty** and
 `GET /api/graph` / `/api/graph-explore/full` are stubs (`handleEmptyGraph`).

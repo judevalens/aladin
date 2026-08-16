@@ -1,5 +1,11 @@
 # Ingestion Pipeline — Audit & Streamlining Plan
 
+> **Historical / stale audit (2026-08-14):** This audit predates the current live
+> pipeline wiring. The worker now routes enrichment into tenant matching and entity
+> resolution, then embedding, with optional low-confidence search and optional Neo4j
+> projection. Keep this file as history for why the old dead branch was cleaned up;
+> do not use its "dead branch" claims as current truth.
+
 Audit of `backend_v2/internal/pipeline` (+ `internal/sync` ingestion). Goal: **simplicity
 (kill dead code), extensibility (clean path for the PRD's new stages), reliability**.
 Grounded in code; file paths given. Verify any change against the sandbox: `make test-go`.
@@ -50,7 +56,7 @@ nothing downstream of it runs:
 | `orch.Add(FirstPass/Search/Embed/Graph)` | `cmd/worker/main.go` |
 
 **Consequences:** Neo4j graph is **not populated**, and records are **not embedded**, by
-the live pipeline. (Corrects the Graph claim in `REMAINING_FEATURES_AUDIT.md §6`.)
+the live pipeline. (Corrects the Graph claim in [`REMAINING_FEATURES_AUDIT.md`](REMAINING_FEATURES_AUDIT.md) §6.)
 
 ---
 
@@ -109,7 +115,7 @@ Document/confirm the "add a decider" path for Signals rationale; design the KG/g
 as a *new live stage* rather than reviving the dead `graph` worker as-is.
 
 > Note on embeddings/graph: pruning **removes dormant scaffolding** for embeddings + Neo4j.
-> That capability isn't running today anyway; the KG track (`REMAINING_FEATURES_AUDIT.md
+> That capability isn't running today anyway; the KG track ([`REMAINING_FEATURES_AUDIT.md`](REMAINING_FEATURES_AUDIT.md)
 > §6–7`) should design a graph/embed stage into the live flow deliberately, not inherit the
 > dead one. If you'd rather **not** lose the scaffolding, choose "Consolidate" instead of
 > "Prune" (revive embed+graph into the live flow after `global_first_pass`).

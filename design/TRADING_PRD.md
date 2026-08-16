@@ -1,7 +1,12 @@
 # Aladin — Trading Product Plan
 
+> **Current product north star (2026-08-14):** This is the active product direction.
+> Some implementation-baseline statements below were written before the newer market,
+> instrument, watchlist, and bars work landed; verify current code before treating
+> "current reality" inventory as exact.
+
 > **Status:** living plan, not a locked spec (2026-07-15). Supersedes `PRD.md` as the
-> product north star. `PRD.md` and `DATA_MODEL.md` remain accurate about the *substrate*
+> product north star. `PRD.md` and `archive/DATA_MODEL.md` remain accurate about the *substrate*
 > (entity/claim layer, ingestion) and stale about the *product* — read them as history.
 > Companion docs: `UI_ARCHITECTURE.md` (frontend map, tokens/conventions),
 > `backend_v2/PIPELINE.md` (ingestion, authoritative).
@@ -284,7 +289,7 @@ but there is nothing to journal until there are trades.
 - `PRD.md` §2 ("The wedge: trading first") — the original plan already said this. The
   build drifted into the substrate; this doc is the correction. §9's parked item #3
   ("the outcome loop … trading's P&L is ground truth") is now T4.
-- `DATA_MODEL.md` — the entity-spine plan. Largely moot: it was solving *"connect the
+- `archive/DATA_MODEL.md` — the entity-spine plan. Largely moot: it was solving *"connect the
   authored and discovered worlds"* for a generic KG. This plan doesn't need that bridge.
 - `internal/sync/syncer.go:40` — the interface a market-data source implements.
 - `cmd/worker/main.go:252-254` — where it registers.

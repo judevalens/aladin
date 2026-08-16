@@ -61,15 +61,16 @@ One shell wraps every authenticated surface —
 ```
 ┌──────┬────────────────────────┬──────────────────────────────┬──────────────┐
 │ rail │  browser pane          │  work pane                   │ copilot dock │
-│ 7    │  336px (sm: 368px)     │  flex-1, tabbed              │  (right)     │
+│ 4    │  336px (sm: 368px)     │  flex-1, tabbed              │  (right)     │
 │ icons│  the tree / a surface  │  switches on artifact.kind   │              │
 │      │                        ├──────────────────────────────┤              │
 │      │                        │  terminal dock (bottom)      │              │
 └──────┴────────────────────────┴──────────────────────────────┴──────────────┘
 ```
 
-- **Rail** — 7 destinations, defined as a literal array at the top of the shell file:
-  Home · Markets · Folders · Insights · Entities · Sources · Graph.
+- **Rail** — 4 active destinations, defined as a literal array at the top of the shell
+  file: Markets · Research · Entities · Sources. Parked surfaces such as Insights and
+  Graph may still have direct routes, but they are not primary navigation.
 - **Browser pane** — `browser-pane-ui.tsx`. The folder/artifact tree, governed by **the
   drill rule** below.
 - **Miller popup** — `miller-columns.tsx`, `460` tall by up to `864` wide (`COLUMN_WIDTH * 4`
@@ -256,8 +257,9 @@ treat it as authoritative.
   property-filter dialog on open. Regression test:
   `src/test/property-filter-store.test.tsx`. Hoist constants to module scope.
 - **`/home` and `/folders` render the same component.** The Home briefing dashboard the old
-  PRD describes does not exist. Don't assume a route's name reflects a distinct surface.
-- **`/graph` is a placeholder.** The rail entry exists; the destination says so.
+  PRD describes does not exist. The active rail labels this destination as Research.
+- **`/graph` is a placeholder.** It remains directly routable for parked graph exploration,
+  but it is no longer a primary rail destination.
 - **`modules/pipeline` is not mounted anywhere.** A complete vertical slice, imported by
   nothing. Don't take its presence as evidence it's live.
 - **Tests live in `src/test/`**, not colocated — the vitest `include` is

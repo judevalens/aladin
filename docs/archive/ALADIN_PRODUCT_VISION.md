@@ -1,6 +1,12 @@
 # Aladin Product Vision
 
-**Status:** Living strategy doc  
+> **Historical / parked (2026-08-14):** This captures the older graph-grounded broad
+> AI workspace thesis. The current product direction is the trading research
+> workspace in [`../../CURRENT_PRODUCT.md`](../../CURRENT_PRODUCT.md) and
+> [`../../design/TRADING_PRD.md`](../../design/TRADING_PRD.md). Treat this as strategic
+> history unless it is explicitly revived.
+
+**Status:** Historical strategy doc  
 **Audience:** Me, future me, anyone I bring into this  
 **Purpose:** Capture what Aladin is, structurally and strategically, distinct from any individual feature spec.
 

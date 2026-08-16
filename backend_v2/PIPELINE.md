@@ -1,12 +1,19 @@
 # Aladin Ingestion & Enrichment Pipeline
 
+> **Needs refresh (2026-08-14):** This overview is still useful, but parts of the
+> pipeline description are stale. Current worker code routes `global_first_pass` into
+> `tenant_match` and `resolve_entities`, then `embed`, with optional
+> `resolve_low_confidence` and optional `graph_project` when configured. Treat claims
+> that embeddings/graph are wholly dead as historical until this document is fully
+> refreshed against `cmd/worker/main.go` and `internal/pipeline/handler.go`.
+
 > **Authoritative architecture overview** for how external content flows into Aladin,
 > gets enriched, matched to users, and turned into insights.
 > Last verified against the code on **2026-06-10**.
 >
 > This supersedes the older `PIPELINE_PLAN.md` (a v2 design sketch). It links the two
-> living references — [`GLOBAL_SOURCE_ITEM_PIPELINE.md`](./GLOBAL_SOURCE_ITEM_PIPELINE.md)
-> (data model + correctness rules) and [`PIPELINE_AUDIT.md`](./PIPELINE_AUDIT.md)
+> living references — [`GLOBAL_SOURCE_ITEM_PIPELINE.md`](../docs/GLOBAL_SOURCE_ITEM_PIPELINE.md)
+> (data model + correctness rules) and [`PIPELINE_AUDIT.md`](../docs/archive/PIPELINE_AUDIT.md)
 > (dead-code audit + remediation plan) — and [`DEV_OPS_HARNESS.md`](./DEV_OPS_HARNESS.md)
 > (ops commands) and [`NANGO_PROVIDER_CONNECTIONS.md`](./NANGO_PROVIDER_CONNECTIONS.md).
 
@@ -33,7 +40,7 @@ provider stream  →  sync queue  →  records (status=captured)
 > `embed`, `graph`) and their queues are **wired but never triggered** in the live flow —
 > no task is ever routed to them. That means **embeddings and the Neo4j graph are not
 > currently populated by ingestion.** See [§8](#8-the-dead-branch-firstpass--search--embed--graph)
-> and `PIPELINE_AUDIT.md`. The doc marks dead paths with a 💀 and dashed arrows.
+> and `../docs/archive/PIPELINE_AUDIT.md`. The doc marks dead paths with a 💀 and dashed arrows.
 
 ---
 
@@ -397,7 +404,7 @@ enqueued**, so:
   is also optional and unset in most envs).
 - `records.status` never reaches `in_graph`.
 
-This is intentional scaffolding from an earlier design. `PIPELINE_AUDIT.md` lays out the
+This is intentional scaffolding from an earlier design. `../docs/archive/PIPELINE_AUDIT.md` lays out the
 remediation: **Phase A** prune the dead scaffold, **Phase B** add a terminal-failure record
 status (so "stuck records" are queryable), **Phase C** design graph/embedding back into the
 live flow deliberately rather than reviving the inherited path.
@@ -480,7 +487,7 @@ unset), `WORKER_CONCURRENCY` (default 16), `LOG_LEVEL`. Worker logs JSON to
 
 ## 12. Known gaps & follow-ups
 
-1. **Dead Search/Embed/Graph branch** — no embeddings or graph today (`PIPELINE_AUDIT.md`).
+1. **Dead Search/Embed/Graph branch** — no embeddings or graph today (`../docs/archive/PIPELINE_AUDIT.md`).
 2. **Provider connections (Nango) are not wired to ingestion** — OAuth works, but no
    records are produced from connected accounts yet.
 3. **Relevance is keyword-only** — `OpenAIRelevanceJudge` exists but is unwired; KG-overlap

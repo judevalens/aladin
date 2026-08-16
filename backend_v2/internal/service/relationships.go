@@ -9,7 +9,7 @@ import (
 // Relationship is a typed edge connecting two workspace/ingestion entities — the
 // additive "bridge" between the two worlds (artifacts ↔ records ↔ insights) that
 // does NOT unify their tables. Endpoints are (kind, id) pairs; kind is one of
-// "artifact" | "record" | "insight". See design/DATA_MODEL.md.
+// "artifact" | "record" | "insight". See design/archive/DATA_MODEL.md.
 type Relationship struct {
 	ID        string         `json:"id"`
 	UserID    string         `json:"-"`

@@ -42,7 +42,9 @@ anchor/                   iPad companion — Kotlin Multiplatform (Compose + Cir
 services/blocknote/       collab sidecar (converter :3500, collab :3501)
 services/copilot-agent/   copilot agent sidecar (Claude Agent SDK, :3550)
 design/                   UI_ARCHITECTURE.md (frontend onboarding map: shell, tokens,
-                          conventions, traps) + TRADING_PRD.md (north star) + screens/
+                          conventions, traps) + COMPOSE_ARCHITECTURE.md (the same for
+                          anchor: state producers, reactivity rules, interop traps)
+                          + TRADING_PRD.md (north star) + screens/
 ```
 
 > Note: a duplicate `cn()` exists at `src/shared/lib/utils.ts`. Components/ui use
@@ -79,6 +81,9 @@ The base URL is a constant in `shared/src/iosMain/.../network/HttpClient.ios.kt`
 cannot use `localhost` (that is the iPad), so it points at the dev Mac's LAN address.
 Update it when the Mac's IP changes. Device builds also need `NSAllowsLocalNetworking` +
 `NSLocalNetworkUsageDescription` (already in `iosApp/iosApp/Info.plist`).
+
+**Before any companion UI work read `design/COMPOSE_ARCHITECTURE.md`** — the state-producer
+pattern, the reactivity rules, and the platform-view traps that have actually bitten.
 
 **The layering is the point** (see `~/.claude/plans/aladin-ipad-shell-architecture.md`):
 `domain/` imports nothing — no Compose, no SQLDelight, no Ktor — so the design's rules

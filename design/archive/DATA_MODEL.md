@@ -1,10 +1,16 @@
 # Aladin Data Model — Master Plan
 
+> **Historical / substrate reference (2026-08-14):** This plan was written for the
+> graph-first knowledge-workspace framing. Some entity/relationship ideas remain
+> useful substrate, but the active product direction is the trading research
+> workspace in [`../../CURRENT_PRODUCT.md`](../../CURRENT_PRODUCT.md). Do not treat this
+> as the product roadmap.
+
 > **Status:** living plan, not a locked spec (2026-06-14). The goal is a data model
 > that *makes thinking easier* — the foundation the rest of Aladin compounds on.
 > Grounded in an audit of the current schema + pipeline (see "Current reality").
-> Companion docs: `SHARD_MODEL.md` (the shard projection model), `backend_v2/PIPELINE.md`
-> (ingestion, authoritative), `PIPELINE_AUDIT.md` (dead-code remediation).
+> Companion docs: `../SHARD_MODEL.md` (the shard projection model), `../../backend_v2/PIPELINE.md`
+> (ingestion, authoritative), `../../docs/archive/PIPELINE_AUDIT.md` (dead-code remediation).
 
 ---
 
@@ -104,7 +110,7 @@ A single **entity spine** the two worlds attach to, rather than two hierarchies:
 |---|---|---|
 | **D1** | **Unify** artifacts + records into one entity table, or keep them separate with a **relationship/bridge** layer? | **Bridge first** (lower risk): keep the tables, add a relationships table + cross-references; unify later only if the bridge proves the seams. |
 | **D2** | What is the canonical **entity spine** — the id space + contract everything joins on? | Define a thin entity registry (id, kind, owner, provenance, trust) that both artifacts and records register into. |
-| **D3** | **Graph + vector:** revive the dead `embed`/`graph` branches, or replace them (rebuild as projections of the entity layer)? | Defer until the bridge + insights exist; then **rebuild as projections** (Phase 4), per `PIPELINE_AUDIT.md` Phase C — don't resurrect dead scaffold blindly. |
+| **D3** | **Graph + vector:** revive the dead `embed`/`graph` branches, or replace them (rebuild as projections of the entity layer)? | Defer until the bridge + insights exist; then **rebuild as projections** (Phase 4), per `../../docs/archive/PIPELINE_AUDIT.md` Phase C — don't resurrect dead scaffold blindly. |
 | **D4** | **Provenance + trust** representation (per-entity lineage + tier). | Add provenance + trust columns to the entity spine from the start (cheap; expensive to retrofit). |
 | **D5** | **Curation** operations + their state model (promote/merge/dismiss/trust). | Design alongside the insights upgrade — curation is what makes generated insight trustworthy. |
 | **D6** | **Multi-tenancy:** stay single-user, or plan the model for teams/sharing now? | Decide *now* even if you don't build it — sharing boundaries are very expensive to retrofit. |
@@ -148,7 +154,7 @@ as the first and most valuable move.
 
 ## 7. Pointers
 - Current-state audit: this plan's §1 (full table catalog available on request).
-- `backend_v2/PIPELINE.md` — ingestion flow (authoritative); `PIPELINE_AUDIT.md` —
+- `../../backend_v2/PIPELINE.md` — ingestion flow (authoritative); `../../docs/archive/PIPELINE_AUDIT.md` —
   dead-code remediation (graph/embed/search); `GLOBAL_SOURCE_ITEM_PIPELINE.md` —
   ingestion data model + correctness.
 - `SHARD_MODEL.md` — the projection/shard model + the compounding loop that this data
