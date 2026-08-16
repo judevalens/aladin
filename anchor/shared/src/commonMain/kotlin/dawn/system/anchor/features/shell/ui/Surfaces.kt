@@ -28,6 +28,7 @@ import dawn.system.anchor.features.shell.state.ChromeEvent
 import dawn.system.anchor.features.shell.state.Fetch
 import dawn.system.anchor.features.shell.state.NavEvent
 import dawn.system.anchor.features.shell.state.OpenDocument
+import dawn.system.anchor.features.shell.state.OpenPdf
 import dawn.system.anchor.services.platform.PdfViewer
 import dawn.system.anchor.services.design.AnchorShape
 import dawn.system.anchor.services.design.AnchorTheme
@@ -60,18 +61,26 @@ internal fun SurfaceHost(state: ShellScreen.State, modifier: Modifier = Modifier
         // EVERY open PDF, composed unconditionally and never wrapped in a visibility test.
         // Compose keeps a viewer alive because it is still in the tree — that is the whole
         // mechanism, and `if (active) …` would quietly turn it back into a teardown.
-        state.documents.pdfs.forEach { pdf ->
-            key(pdf.key.asString()) {
-                val bytes = pdf.bytes
-                if (bytes is Fetch.Ready) {
-                    PdfViewer(
-                        filePath = bytes.path,
-                        page = 0,
-                        onPageChanged = {},
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .zIndex(if (readingPdf && pdf.active) 1f else 0f),
-                    )
+        //
+        // DERIVED, never stored: the index and the list have to change in the same
+        // composition or a close slides the reader by a column. See [DocumentPager].
+        val activeIndex = state.documents.pdfs.indexOfFirst { it.active }.coerceAtLeast(0)
+
+        if (DOCUMENT_RESIDENCY == Residency.Pager) {
+            DocumentPager(
+                pages = state.documents.pdfs,
+                activeIndex = activeIndex,
+                key = { it.key.asString() },
+                modifier = Modifier.fillMaxSize(),
+            ) { pdf ->
+                PdfPage(pdf)
+            }
+        } else {
+            state.documents.pdfs.forEach { pdf ->
+                key(pdf.key.asString()) {
+                    Box(Modifier.fillMaxSize().zIndex(if (readingPdf && pdf.active) 1f else 0f)) {
+                        PdfPage(pdf)
+                    }
                 }
             }
         }
@@ -91,6 +100,39 @@ internal fun SurfaceHost(state: ShellScreen.State, modifier: Modifier = Modifier
                 }
             }
         }
+    }
+}
+
+/**
+ * How open documents stay resident. Two implementations, kept side by side so they can be
+ * compared on a device — the difference is sub-100ms and not judgeable from a description.
+ */
+internal enum class Residency {
+    /** A row of viewport-wide columns; the non-current ones sit off-screen. */
+    Pager,
+
+    /** All viewers at the same coordinates; `zIndex` picks the front one. Known-good. */
+    Stack,
+}
+
+internal val DOCUMENT_RESIDENCY = Residency.Pager
+
+/** One page of the pager: a PDF once its bytes have landed, and what to say until they do. */
+@Composable
+private fun PdfPage(pdf: OpenPdf) {
+    when (val bytes = pdf.bytes) {
+        // A genuine first open. Anything fetched before paints on frame one, because the
+        // resource store answers from its cache synchronously.
+        Fetch.Pending -> Placeholder(pdf.title, "Fetching…")
+        // Said out loud rather than left spinning: a failure that looks like a slow success
+        // is a surface that waits forever.
+        is Fetch.Failed -> Placeholder(pdf.title, "Couldn't open it — ${bytes.reason}.")
+        is Fetch.Ready -> PdfViewer(
+            filePath = bytes.path,
+            page = 0,
+            onPageChanged = {},
+            modifier = Modifier.fillMaxSize(),
+        )
     }
 }
 
