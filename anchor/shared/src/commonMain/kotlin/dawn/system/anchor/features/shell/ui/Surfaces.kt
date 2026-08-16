@@ -24,6 +24,7 @@ import dawn.system.anchor.domain.Destination
 import dawn.system.anchor.domain.Surface
 import dawn.system.anchor.features.shell.ShellScreen
 import dawn.system.anchor.features.shell.state.ChromeEvent
+import dawn.system.anchor.features.shell.state.Fetch
 import dawn.system.anchor.features.shell.state.NavEvent
 import dawn.system.anchor.features.shell.state.OpenDocument
 import dawn.system.anchor.services.platform.PdfHost
@@ -85,21 +86,24 @@ private fun DocumentSurface(document: OpenDocument?, pdfs: PdfHost) {
     when (document) {
         null -> Placeholder("Nothing open", "Pick something in the Browser.")
 
-        is OpenDocument.Pdf ->
-            if (document.filePath == null) {
-                // A genuine first open. Anything already fetched paints on frame one, because
-                // the resource store answers from its cache synchronously.
-                Placeholder(document.title, "Fetching…")
-            } else {
-                PdfSurface(
-                    host = pdfs,
-                    artifactId = document.key.nodeId,
-                    filePath = document.filePath,
-                    page = 0,
-                    onPageChanged = {},
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
+        is OpenDocument.Pdf -> when (val bytes = document.bytes) {
+            // A genuine first open. Anything fetched before paints on frame one, because the
+            // resource store answers from its cache synchronously.
+            Fetch.Pending -> Placeholder(document.title, "Fetching…")
+
+            // Said out loud rather than left spinning. A failure that looks like a slow
+            // success is a surface that waits forever.
+            is Fetch.Failed -> Placeholder(document.title, "Couldn't open it — ${bytes.reason}.")
+
+            is Fetch.Ready -> PdfSurface(
+                host = pdfs,
+                artifactId = document.key.nodeId,
+                filePath = bytes.path,
+                page = 0,
+                onPageChanged = {},
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
 
         is OpenDocument.Unsupported -> Placeholder(
             title = document.title,

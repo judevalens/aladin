@@ -14,16 +14,29 @@ import dawn.system.anchor.domain.artifactKind
 import dawn.system.anchor.services.data.ArtifactResourceStore
 import dawn.system.anchor.services.data.NodeStore
 
+/**
+ * Where a file's bytes are.
+ *
+ * Three states, for the same reason the tree read has three: **a failure that looks like a
+ * slow success is a surface that waits forever.** A nullable path cannot tell "still
+ * downloading" from "the server said no", and the reader would sit on "Fetching…" either way.
+ */
+sealed interface Fetch {
+    data object Pending : Fetch
+    data class Ready(val path: String) : Fetch
+    data class Failed(val reason: String) : Fetch
+}
+
 /** What one open document needs to render. */
 sealed interface OpenDocument {
     val key: TabKey
     val title: String
 
-    /** A PDF, once its bytes are on disk. [filePath] is null while the download is in flight. */
+    /** A PDF, and whether its bytes have landed. */
     data class Pdf(
         override val key: TabKey,
         override val title: String,
-        val filePath: String?,
+        val bytes: Fetch,
     ) : OpenDocument
 
     /** Anything with no surface yet — a note, a shard, a voice memo, a link. */
@@ -67,12 +80,23 @@ class DocumentStateProducer(
         val activeKey = nav.activeDoc
         val node = nodes.nodeOf(activeKey?.nodeId)
 
-        var path by remember(activeKey) {
-            mutableStateOf(activeKey?.nodeId?.let(resources::cached)?.path)
+        // Seeded from the cache, which answers synchronously — a document opened before paints
+        // on frame one instead of flashing. Only a genuine first open is Pending.
+        var bytes: Fetch by remember(activeKey) {
+            mutableStateOf(
+                activeKey?.nodeId?.let(resources::cached)
+                    ?.let { Fetch.Ready(it.path) }
+                    ?: Fetch.Pending,
+            )
         }
         LaunchedEffect(activeKey, node?.artifactKind) {
-            if (path == null && node?.artifactKind == ArtifactKind.File) {
-                path = runCatching { resources.resource(node.id) }.getOrNull()?.path
+            if (bytes is Fetch.Pending && node?.artifactKind == ArtifactKind.File) {
+                bytes = runCatching { resources.resource(node.id) }.fold(
+                    onSuccess = { Fetch.Ready(it.path) },
+                    // The server's own words where there are any. "Couldn't open it" alone
+                    // leaves nothing to act on, and silence leaves a spinner forever.
+                    onFailure = { Fetch.Failed(it.message?.takeIf(String::isNotBlank) ?: "couldn't reach the workspace") },
+                )
             }
         }
 
@@ -80,7 +104,7 @@ class DocumentStateProducer(
             active = activeKey?.let { key ->
                 val title = node?.title?.takeIf { it.isNotBlank() } ?: "Untitled"
                 when (node?.artifactKind) {
-                    ArtifactKind.File -> OpenDocument.Pdf(key, title, path)
+                    ArtifactKind.File -> OpenDocument.Pdf(key, title, bytes)
                     else -> OpenDocument.Unsupported(key, title, node?.artifactKind)
                 }
             },
