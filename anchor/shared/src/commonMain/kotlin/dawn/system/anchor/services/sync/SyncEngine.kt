@@ -1,5 +1,6 @@
 package dawn.system.anchor.services.sync
 
+import dawn.system.anchor.services.data.NodeChange
 import dawn.system.anchor.services.data.NodeStore
 
 /**
@@ -15,13 +16,21 @@ import dawn.system.anchor.services.data.NodeStore
  */
 class SyncEngine(private val handlers: Map<String, EntityHandler>) {
 
-    /** Applies one frame's entities; returns how many actually changed something. */
+    /**
+     * Applies one frame's entities; returns how many actually changed something.
+     *
+     * Grouped by handler and handed over as a batch, so each store commits once per frame
+     * rather than once per row. A snapshot is a frame of thousands, and SQLDelight re-runs
+     * every live query on every commit — so the batching is what keeps first sync from
+     * re-reading the whole read model once per node.
+     */
     suspend fun applyFrame(frame: Frame): Int {
         var applied = 0
-        for (entity in frame.entities) {
-            val handler = handlers[entity.entityKind] ?: continue
-            if (handler.apply(entity)) applied++
-        }
+        frame.entities
+            .groupBy { handlers[it.entityKind] }
+            .forEach { (handler, entities) ->
+                if (handler != null) applied += handler.applyAll(entities)
+            }
         return applied
     }
 
@@ -44,16 +53,25 @@ class SyncEngine(private val handlers: Map<String, EntityHandler>) {
 }
 
 /** Applies one entity to whichever store owns its kind. */
+/**
+ * Applies entities of one kind. Batched rather than one-at-a-time so the store behind it can
+ * commit once per frame — see [NodeStore.applyAll].
+ */
 fun interface EntityHandler {
-    suspend fun apply(entity: FrameEntity): Boolean
+    /** Returns how many of [entities] actually changed something. */
+    suspend fun applyAll(entities: List<FrameEntity>): Int
 }
 
 internal class NodeEntityHandler(private val nodes: NodeStore) : EntityHandler {
-    override suspend fun apply(entity: FrameEntity): Boolean = nodes.apply(
-        kind = entity.entityKind,
-        id = entity.entityId,
-        seq = entity.seq,
-        op = entity.op,
-        data = entity.data,
+    override suspend fun applyAll(entities: List<FrameEntity>): Int = nodes.applyAll(
+        entities.map { entity ->
+            NodeChange(
+                kind = entity.entityKind,
+                id = entity.entityId,
+                seq = entity.seq,
+                op = entity.op,
+                data = entity.data,
+            )
+        },
     )
 }

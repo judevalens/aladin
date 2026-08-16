@@ -4,27 +4,48 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.unit.dp
 
 /**
- * Shell metrics from the iPad handoff. These are *structural* — the handoff says to match
- * the three-column structure and the touch minimums exactly, while paddings and radii may
- * be adapted. So the numbers that carry meaning live here, named.
+ * Shell metrics from the iPad handoff (PRD rev 2 — the no-rail shell). These are
+ * *structural*: the handoff says to match the column structure and the touch minimums
+ * exactly, while paddings and radii may be adapted. So the numbers that carry meaning live
+ * here, named, and a feature never picks one.
  */
 object AladinMetrics {
-    /** Column 1. Fixed, never collapses. */
-    val railWidth = 76.dp
-    /** Column 2. Collapses to zero; its content keeps this width so text doesn't reflow. */
-    val listWidth = 352.dp
-    /** Column 3's header. Flush with the pane — no bar, no border. */
+    /**
+     * The sidebar. Collapses to zero; its content keeps this width so text does not reflow
+     * mid-animation. Rev 2 has no rail — this column carries the whole navigation stack.
+     */
+    val sidebarWidth = 352.dp
+    /** The copilot's right overflow pane. Conditional; never collapses. */
+    val copilotPaneWidth = 452.dp
+    /**
+     * The detail header *below* the status bar. The design quotes 103 including a 31pt
+     * inset; the inset is a device fact, so only the remainder is a constant here.
+     */
     val detailHeaderHeight = 72.dp
 
-    /** Rail destination cell: icons only, so the cell itself must stay comfortably tappable. */
-    val railCell = 56.dp
-    /** Accessibility floor for every other control. */
+    /** Accessibility floor for every control. */
     val touchTarget = 44.dp
-    /** Minimum height of a list row. */
+    /** Small icon button — sidebar back, hide, hero controls. */
+    val smallControl = 38.dp
+    /** Root-menu section row: icon + label, one line. */
+    val rootRowHeight = 50.dp
+    /** Minimum height of a browser row (title + chip + meta). */
     val listRowMinHeight = 64.dp
+    /** Minimum height of a drill row (kind icon + title + meta + chevron). */
+    val drillRowMinHeight = 58.dp
+    /** The copilot hero expanded — a squarish card at the sidebar's foot. */
+    val heroFullHeight = 316.dp
+    /** The copilot hero collapsed — one segmented capsule. */
+    val heroMiniHeight = 54.dp
+    /** The path popover ("You are in"). */
+    val pathPopoverWidth = 326.dp
 
-    /** The collapse animation the handoff specifies. */
+    /** The sidebar collapse. */
     const val COLUMN_COLLAPSE_MILLIS = 220
+    /** The sidebar cross-fading between stack levels — a mark, not a narration. */
+    const val SIDEBAR_LEVEL_MILLIS = 140
+    /** The copilot hero folding between its card and its capsule. */
+    const val HERO_COLLAPSE_MILLIS = 260
 }
 
 val LocalAladinMetrics = staticCompositionLocalOf { AladinMetrics }

@@ -11,14 +11,16 @@ package dawn.system.anchor.domain
  * Pure list algebra, no UI: the switcher popover and the prev/next stepper are two views
  * of this one value, which is why both stay consistent for free.
  */
+/**
+ * **Identity only.** A title, an owner and a kind are all properties of the *node*, and the
+ * node lives in the store — so copying them in here would freeze them at the moment the item
+ * was opened, and a rename would never reach the switcher. Everything displayable is
+ * resolved from the tree at render time; this records what is open, nothing more.
+ */
 data class OpenItem(
     val key: String,
     val destination: Destination,
     val nodeId: String,
-    val title: String,
-    /** The folder that owns it, or the destination's name — the grouping heading. */
-    val owner: String,
-    val meta: String? = null,
 )
 
 data class OpenItems(
@@ -44,10 +46,14 @@ data class OpenItems(
                 activeKey = item.key,
             )
         }
-        val appended = items + item
-        // Cap at CAP, dropping the oldest — but never the one just opened.
-        val trimmed = if (appended.size <= CAP) appended else appended.drop(appended.size - CAP)
-        return copy(items = trimmed, activeKey = item.key)
+        // Unbounded on purpose. The handoff caps this at 8, dropping the oldest, but that
+        // conflates two different lifetimes: **open** is the user's statement of intent, and
+        // **resident** is whether a surface currently exists in memory. Only the second is a
+        // memory question, and KeepAlive already answers it — a surface you scroll away from
+        // loses its view and rebinds from its snapshot, the way a list recycler rebinds a
+        // row. Capping the list here instead would silently close things you had opened, to
+        // save memory that residency has already bounded.
+        return copy(items = items + item, activeKey = item.key)
     }
 
     /** Closes an item. If it was active, activity moves to its neighbour, never to nothing. */
@@ -74,11 +80,5 @@ data class OpenItems(
         return copy(activeKey = items[next].key)
     }
 
-    /** Grouped for the switcher, preserving first-seen owner order. */
-    fun grouped(): List<Pair<String, List<OpenItem>>> =
-        items.groupBy { it.owner }.entries.map { it.key to it.value }
 
-    companion object {
-        const val CAP = 8
-    }
 }

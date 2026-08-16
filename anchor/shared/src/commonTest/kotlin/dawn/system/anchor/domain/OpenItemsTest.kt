@@ -12,12 +12,10 @@ import kotlin.test.assertTrue
  */
 class OpenItemsTest {
 
-    private fun item(id: String, owner: String = "Folders") = OpenItem(
+    private fun item(id: String) = OpenItem(
         key = "folders:$id",
         destination = Destination.Folders,
         nodeId = id,
-        title = id,
-        owner = owner,
     )
 
     @Test
@@ -37,15 +35,21 @@ class OpenItemsTest {
         assertEquals("folders:a", items.activeKey)
     }
 
+    /**
+     * Opening things must never close other things. Memory is bounded by *residency*
+     * (KeepAlive), which drops a surface's view and rebinds it from its snapshot — the way
+     * a list recycler rebinds a row. Capping this list instead would discard the user's
+     * statement of intent to save memory that is already accounted for.
+     */
     @Test
-    fun cap_drops_the_oldest_and_never_the_newest() {
+    fun opening_many_never_closes_the_earlier_ones() {
         var items = OpenItems()
-        repeat(OpenItems.CAP + 3) { i -> items = items.register(item("n$i")) }
+        repeat(30) { i -> items = items.register(item("n$i")) }
 
-        assertEquals(OpenItems.CAP, items.size)
-        assertEquals("n${OpenItems.CAP + 2}", items.items.last().nodeId)
+        assertEquals(30, items.size)
+        assertTrue(items.items.any { it.nodeId == "n0" }, "the first must still be open")
         assertEquals(items.items.last().key, items.activeKey, "the newest stays active")
-        assertTrue(items.items.none { it.nodeId == "n0" }, "the oldest was dropped")
+        assertEquals(30, items.activeOrdinal, "the stepper counts the whole list")
     }
 
     @Test
@@ -80,16 +84,9 @@ class OpenItemsTest {
         assertEquals(OpenItems(), OpenItems().step(1))
     }
 
-    @Test
-    fun grouping_preserves_owner_order() {
-        val items = OpenItems()
-            .register(item("a", owner = "Semis cycle"))
-            .register(item("b", owner = "Option strategies"))
-            .register(item("c", owner = "Semis cycle"))
-
-        assertEquals(
-            listOf("Semis cycle" to 2, "Option strategies" to 1),
-            items.grouped().map { (owner, group) -> owner to group.size },
-        )
-    }
+    /**
+     * Grouping moved out of here on purpose. An owner is a property of the *node*, so it
+     * has to be read from the tree when the switcher renders — snapshotting it into the
+     * open list froze it, and renaming a folder left its tabs filed under the old name.
+     */
 }

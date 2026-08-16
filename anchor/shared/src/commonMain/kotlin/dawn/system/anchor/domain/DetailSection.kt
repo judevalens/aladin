@@ -16,7 +16,17 @@ sealed interface DetailSection {
     data class Topics(val label: String, val hint: String?, val items: List<TopicItem>) : DetailSection
 
     /** Rows with a typed glyph, title, meta, chevron. */
-    data class Contents(val label: String, val items: List<ContentRow>) : DetailSection
+    /**
+     * [nodes] carries the rows' own nodes rather than leaving the UI to look them up in
+     * whatever list happens to be on screen. A detail can be rendered for something that is
+     * not the current selection — a neighbouring page in the pager — and resolving a row
+     * against the *active* folder's contents would open the wrong thing.
+     */
+    data class Contents(
+        val label: String,
+        val items: List<ContentRow>,
+        val nodes: List<WorkspaceNode> = emptyList(),
+    ) : DetailSection
 
     /** One explanatory line under a list. */
     data class Note(val text: String) : DetailSection

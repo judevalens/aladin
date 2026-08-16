@@ -1,0 +1,7 @@
+-- v1 → v2: carry a link artifact's target.
+--
+-- `sourceUrl` is on the wire already (the Rust client stores it); the companion simply
+-- never read it, so a link artifact had nothing to open. This is a cache, so a failed
+-- migration would be survivable — but a crash on launch would not, hence the migration
+-- rather than a silent schema bump.
+ALTER TABLE node ADD COLUMN source_url TEXT;

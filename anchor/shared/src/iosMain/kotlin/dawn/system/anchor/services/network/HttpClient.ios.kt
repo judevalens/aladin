@@ -9,3 +9,9 @@ actual fun httpClientEngine(): HttpClientEngine = Darwin.create()
 // dev Mac's LAN address, which the simulator can reach too. Update it when the Mac's IP
 // changes (the backend listens on all interfaces, so nothing else needs to change).
 actual fun defaultBaseUrl(): String = "http://192.168.1.109:8000"
+
+// Same LAN address, different services: the Vite dev server serving the web app (the
+// companion embeds its /embed/page/:id route), and the Hocuspocus collab server.
+actual fun defaultWebBaseUrl(): String = "http://192.168.1.109:4173"
+
+actual fun defaultCollabWsUrl(): String = "ws://192.168.1.109:3501"
