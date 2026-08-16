@@ -14,11 +14,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.zIndex
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dawn.system.anchor.domain.Destination
@@ -28,7 +27,6 @@ import dawn.system.anchor.features.shell.state.ChromeEvent
 import dawn.system.anchor.features.shell.state.Fetch
 import dawn.system.anchor.features.shell.state.NavEvent
 import dawn.system.anchor.features.shell.state.OpenDocument
-import dawn.system.anchor.features.shell.state.OpenPdf
 import dawn.system.anchor.services.platform.PdfViewer
 import dawn.system.anchor.services.design.AnchorShape
 import dawn.system.anchor.services.design.AnchorTheme
@@ -54,94 +52,68 @@ import dawn.system.anchor.services.design.destinationIcon
 @Composable
 internal fun SurfaceHost(state: ShellScreen.State, modifier: Modifier = Modifier) {
     val c = AnchorTheme.colors
-    val surface = state.nav.nav.here.surface
-    val readingPdf = state.documents.active is OpenDocument.Pdf
+    val here = state.nav.nav.here.surface
 
-    Box(modifier.background(c.bg)) {
-        // EVERY open PDF, composed unconditionally and never wrapped in a visibility test.
-        // Compose keeps a viewer alive because it is still in the tree — that is the whole
-        // mechanism, and `if (active) …` would quietly turn it back into a teardown.
-        //
-        // DERIVED, never stored: the index and the list have to change in the same
-        // composition or a close slides the reader by a column. See [DocumentPager].
-        val activeIndex = state.documents.pdfs.indexOfFirst { it.active }.coerceAtLeast(0)
+    // Everything the shell can show, as one flat list of pages: the four destinations, then
+    // every open document. There is no longer a document layer and a destination layer with a
+    // condition deciding which draws — there are just pages, and one of them is current.
+    val pages = remember(state.destinations, state.documents.documents) {
+        state.destinations.map(ShellPage::Dest) + state.documents.documents.map(ShellPage::Doc)
+    }
 
-        if (DOCUMENT_RESIDENCY == Residency.Pager) {
-            DocumentPager(
-                pages = state.documents.pdfs,
-                activeIndex = activeIndex,
-                key = { it.key.asString() },
-                modifier = Modifier.fillMaxSize(),
-            ) { pdf ->
-                PdfPage(pdf)
+    // DERIVED, never stored. This is the pager's one contract: the current page sits at the
+    // origin by definition, and a stored index is the only way a reader ever sees movement.
+    val activeIndex = pages.indexOfFirst { it.matches(here) }.coerceAtLeast(0)
+
+    ResidentPager(
+        pages = pages,
+        activeIndex = activeIndex,
+        key = ShellPage::key,
+        modifier = modifier.background(c.bg),
+    ) { page ->
+        when (page) {
+            is ShellPage.Dest -> when (page.destination) {
+                Destination.Home -> Placeholder("Home", "Continue, insights and today's activity.")
+                Destination.Browser -> BrowserSurface(state.browser, state.nav.handle)
+                Destination.Markets -> Placeholder("Markets", "Index strip, watchlist and positions.")
+                Destination.Graph -> Placeholder("Graph", "The entity canvas.")
             }
-        } else {
-            state.documents.pdfs.forEach { pdf ->
-                key(pdf.key.asString()) {
-                    Box(Modifier.fillMaxSize().zIndex(if (readingPdf && pdf.active) 1f else 0f)) {
-                        PdfPage(pdf)
-                    }
-                }
-            }
-        }
 
-        // Everything else draws over them, on its own opaque ground.
-        if (!readingPdf) {
-            Box(Modifier.fillMaxSize().background(c.bg).zIndex(2f)) {
-                when (surface) {
-                    is Surface.Dest -> when (surface.destination) {
-                        Destination.Home -> Placeholder("Home", "Continue, insights and today's activity.")
-                        Destination.Browser -> BrowserSurface(state.browser, state.nav.handle)
-                        Destination.Markets -> Placeholder("Markets", "Index strip, watchlist and positions.")
-                        Destination.Graph -> Placeholder("Graph", "The entity canvas.")
-                    }
-
-                    is Surface.Doc -> NonPdfDocument(state.documents.active)
-                }
-            }
+            is ShellPage.Doc -> DocumentPage(page.document)
         }
     }
 }
 
 /**
- * How open documents stay resident. Two implementations, kept side by side so they can be
- * compared on a device — the difference is sub-100ms and not judgeable from a description.
+ * One page of the shell.
+ *
+ * Destinations are pages too, which is what makes the Browser keep its column scroll when you
+ * open a document and come back — previously that whole surface was torn down and rebuilt.
+ * They cost nothing extra to keep resident: their producers already run every frame in the
+ * presenter, so staying composed adds layout, not queries.
  */
-internal enum class Residency {
-    /** A row of viewport-wide columns; the non-current ones sit off-screen. */
-    Pager,
+private sealed interface ShellPage {
+    val key: String
 
-    /** All viewers at the same coordinates; `zIndex` picks the front one. Known-good. */
-    Stack,
-}
+    data class Dest(val destination: Destination) : ShellPage {
+        override val key: String get() = "dest:${destination.id}"
+    }
 
-internal val DOCUMENT_RESIDENCY = Residency.Pager
+    data class Doc(val document: OpenDocument) : ShellPage {
+        override val key: String get() = document.key.asString()
+    }
 
-/** One page of the pager: a PDF once its bytes have landed, and what to say until they do. */
-@Composable
-private fun PdfPage(pdf: OpenPdf) {
-    when (val bytes = pdf.bytes) {
-        // A genuine first open. Anything fetched before paints on frame one, because the
-        // resource store answers from its cache synchronously.
-        Fetch.Pending -> Placeholder(pdf.title, "Fetching…")
-        // Said out loud rather than left spinning: a failure that looks like a slow success
-        // is a surface that waits forever.
-        is Fetch.Failed -> Placeholder(pdf.title, "Couldn't open it — ${bytes.reason}.")
-        is Fetch.Ready -> PdfViewer(
-            filePath = bytes.path,
-            page = 0,
-            onPageChanged = {},
-            modifier = Modifier.fillMaxSize(),
-        )
+    fun matches(surface: Surface): Boolean = when {
+        this is Dest && surface is Surface.Dest -> destination == surface.destination
+        this is Doc && surface is Surface.Doc -> document.key == surface.key
+        else -> false
     }
 }
 
-/** An open document that is not a PDF — or one whose bytes have not landed. */
+/** One open document. The kind decides the surface; nothing here decides whether it exists. */
 @Composable
-private fun NonPdfDocument(document: OpenDocument?) {
+private fun DocumentPage(document: OpenDocument) {
     when (document) {
-        null -> Placeholder("Nothing open", "Pick something in the Browser.")
-
         is OpenDocument.Pdf -> when (val bytes = document.bytes) {
             // A genuine first open. Anything fetched before paints on frame one, because the
             // resource store answers from its cache synchronously.
@@ -149,7 +121,12 @@ private fun NonPdfDocument(document: OpenDocument?) {
             // Said out loud rather than left spinning: a failure that looks like a slow
             // success is a surface that waits forever.
             is Fetch.Failed -> Placeholder(document.title, "Couldn't open it — ${bytes.reason}.")
-            is Fetch.Ready -> Unit // drawn by its own viewer, underneath
+            is Fetch.Ready -> PdfViewer(
+                filePath = bytes.path,
+                page = 0,
+                onPageChanged = {},
+                modifier = Modifier.fillMaxSize(),
+            )
         }
 
         is OpenDocument.Unsupported -> Placeholder(

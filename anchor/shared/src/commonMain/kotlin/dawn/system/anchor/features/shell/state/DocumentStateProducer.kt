@@ -3,6 +3,7 @@ package dawn.system.anchor.features.shell.state
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -47,22 +48,15 @@ sealed interface OpenDocument {
     ) : OpenDocument
 }
 
-/** One open PDF, and whether it is the one being read. */
-data class OpenPdf(
-    val key: TabKey,
-    val title: String,
-    val bytes: Fetch,
-    val active: Boolean,
-)
-
 data class DocumentSlice(
-    /** The document being shown, or null on a destination. */
-    val active: OpenDocument?,
     /**
-     * **Every** open PDF, not just the visible one — each stays composed so none is ever
-     * rebuilt. Closing is what removes one; navigating away is not, which is the whole point.
+     * **Every** open document, not just the visible one — each becomes a page and stays
+     * composed, so none is ever rebuilt. Closing removes one; navigating away does not, which
+     * is the whole point.
      */
-    val pdfs: List<OpenPdf>,
+    val documents: List<OpenDocument>,
+    /** The one being shown, or null on a destination. */
+    val active: OpenDocument?,
 ) : CircuitUiState
 
 /**
@@ -80,58 +74,53 @@ class DocumentStateProducer(
 
     @Composable
     operator fun invoke(nav: Nav): DocumentSlice {
-        val activeKey = nav.activeDoc
-
-        // One entry per open PDF, fetched independently. Every open document is resolved, not
-        // just the visible one, because every one of them stays composed — a document you
-        // switch to must already have its bytes, or "switching" is a download.
+        // Fetches are keyed by artifact and outlive any one page, so switching away from a
+        // download does not abandon it.
         val fetches = remember { mutableStateMapOf<String, Fetch>() }
 
-        val pdfs = nav.open.mapNotNull { key ->
-            val node = nodes.nodeOf(key.nodeId) ?: return@mapNotNull null
-            if (node.artifactKind != ArtifactKind.File) return@mapNotNull null
+        // EVERY open document is resolved, not just the visible one, because every one of them
+        // becomes a page and stays composed. A document you switch to must already have its
+        // bytes, or "switching" is a download.
+        val documents = nav.open.map { tab ->
+            key(tab.asString()) {
+                val node = nodes.nodeOf(tab.nodeId)
+                val title = node?.title?.takeIf { it.isNotBlank() } ?: "Untitled"
 
-            // Seeded from the cache, which answers synchronously, so anything fetched before
-            // paints on frame one. Only a genuine first open is ever Pending.
-            val seeded = fetches[node.id]
-                ?: resources.cached(node.id)?.let { Fetch.Ready(it.path) }
-                ?: Fetch.Pending
+                if (node?.artifactKind != ArtifactKind.File) {
+                    OpenDocument.Unsupported(tab, title, node?.artifactKind)
+                } else {
+                    // Seeded from the cache, which answers synchronously, so anything fetched
+                    // before paints on frame one. Only a genuine first open is ever Pending.
+                    val seeded = fetches[node.id]
+                        ?: resources.cached(node.id)?.let { Fetch.Ready(it.path) }
+                        ?: Fetch.Pending
 
-            LaunchedEffect(node.id) {
-                if (fetches[node.id] !is Fetch.Ready && resources.cached(node.id) == null) {
-                    fetches[node.id] = runCatching { resources.resource(node.id) }.fold(
-                        onSuccess = { Fetch.Ready(it.path) },
-                        // The server's own words where there are any. "Couldn't open it"
-                        // alone leaves nothing to act on, and silence leaves a spinner.
-                        onFailure = {
-                            Fetch.Failed(
-                                it.message?.takeIf(String::isNotBlank)
-                                    ?: "couldn't reach the workspace",
+                    LaunchedEffect(node.id) {
+                        if (fetches[node.id] !is Fetch.Ready && resources.cached(node.id) == null) {
+                            fetches[node.id] = runCatching { resources.resource(node.id) }.fold(
+                                onSuccess = { Fetch.Ready(it.path) },
+                                // The server's own words where there are any. "Couldn't open
+                                // it" alone leaves nothing to act on, and silence leaves a
+                                // spinner that never resolves.
+                                onFailure = {
+                                    Fetch.Failed(
+                                        it.message?.takeIf(String::isNotBlank)
+                                            ?: "couldn't reach the workspace",
+                                    )
+                                },
                             )
-                        },
-                    )
+                        }
+                    }
+
+                    OpenDocument.Pdf(tab, title, seeded)
                 }
             }
-
-            OpenPdf(
-                key = key,
-                title = node.title.takeIf { it.isNotBlank() } ?: "Untitled",
-                bytes = seeded,
-                active = key == activeKey,
-            )
         }
 
-        val node = nodes.nodeOf(activeKey?.nodeId)
+        val activeKey = nav.activeDoc
         return DocumentSlice(
-            active = activeKey?.let { key ->
-                val title = node?.title?.takeIf { it.isNotBlank() } ?: "Untitled"
-                when (node?.artifactKind) {
-                    ArtifactKind.File ->
-                        OpenDocument.Pdf(key, title, pdfs.firstOrNull { it.key == key }?.bytes ?: Fetch.Pending)
-                    else -> OpenDocument.Unsupported(key, title, node?.artifactKind)
-                }
-            },
-            pdfs = pdfs,
+            documents = documents,
+            active = documents.firstOrNull { it.key == activeKey },
         )
     }
 }
