@@ -1,6 +1,18 @@
 package dawn.system.anchor.domain
 
 /**
+ * What the tree can say about one row.
+ *
+ * Three answers, because two are not enough: a nullable node conflates **not read yet** with
+ * **not there**, and anything that acts on absence then acts on every first frame. That
+ * mistake shipped twice as a prune that reverted every drill the moment it happened.
+ *
+ * [Unknown] is the answer for a row nobody has read — and it may move nothing. Only [Gone] is
+ * evidence of deletion.
+ */
+enum class Presence { Unknown, Gone, There }
+
+/**
  * The five views a research folder presents. Synthetic tabs, not artifacts — there is no
  * server object behind them (see `backend_v2/internal/api/research.go`, which exposes only
  * create/get/patch), so they exist purely as an addressing scheme.
@@ -167,7 +179,7 @@ data class Nav(
      * This is what makes the crumb meaningful from a document.
      */
     fun goToBrowser(folderId: String?, itemId: String?): Nav =
-        push(Entry(Surface.Dest(BROWSER), folderId, itemId))
+        push(Entry(Surface.Dest(Destination.Browser), folderId, itemId))
 
     // ── the Browser's columns ────────────────────────────────────────────────
 
@@ -310,8 +322,6 @@ data class Nav(
         copy(entries = entries.toMutableList().also { it[index] = entry })
 
     companion object {
-        /** "Browser" is the desktop's Folders destination, renamed by the iPad handoff. */
-        val BROWSER: Destination = Destination.Folders
 
         /**
          * A long session should not grow an unbounded trail. Invisible to the user — nobody

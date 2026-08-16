@@ -8,18 +8,36 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import dawn.system.anchor.domain.WorkspaceNode
-import dawn.system.anchor.features.shell.ShellScreen
 import dawn.system.anchor.services.data.NodeStore
 import dawn.system.anchor.services.data.WorkspaceWriter
 import kotlinx.coroutines.launch
 
-/** Create, rename and delete, plus the sheets that drive them. */
+/** Create, rename and delete — everything that changes the workspace. */
+sealed interface WriteEvent {
+    data class ActionsRequested(val node: WorkspaceNode) : WriteEvent
+    data object ActionsDismissed : WriteEvent
+    data object RenameStarted : WriteEvent
+    data class RenameEdited(val title: String) : WriteEvent
+    data object RenameCommitted : WriteEvent
+    data object RenameCancelled : WriteEvent
+    data object DeleteRequested : WriteEvent
+    data object DeleteConfirmed : WriteEvent
+    data object DeleteCancelled : WriteEvent
+    data object CreateFolder : WriteEvent
+    data object CreatePage : WriteEvent
+    data object WriteErrorDismissed : WriteEvent
+}
+
+/** An in-flight rename. The draft text is genuinely local; the node it renames is resolved. */
+data class RenameDraft(val node: WorkspaceNode, val title: String, val saving: Boolean = false)
+
+/** What the write sheets render from. */
 data class WriteSlice(
     val actionsFor: WorkspaceNode?,
-    val rename: ShellScreen.RenameDraft?,
+    val rename: RenameDraft?,
     val pendingDelete: WorkspaceNode?,
     val writeError: String?,
-    val handle: (ShellScreen.Event.Write) -> Unit,
+    val handle: (WriteEvent) -> Unit,
 ) : CircuitUiState
 
 /** What the user is typing, and which node it is for. */
@@ -70,27 +88,27 @@ class WriteStateProducer(
         return WriteSlice(
             actionsFor = actionsFor,
             rename = draft?.let { input ->
-                renameTarget?.let { ShellScreen.RenameDraft(it, input.title, input.saving) }
+                renameTarget?.let { RenameDraft(it, input.title, input.saving) }
             },
             pendingDelete = pendingDelete,
             writeError = writeError,
         ) { event ->
             when (event) {
-                is ShellScreen.Event.Write.ActionsRequested -> actionsForId = event.node.id
-                ShellScreen.Event.Write.ActionsDismissed -> actionsForId = null
+                is WriteEvent.ActionsRequested -> actionsForId = event.node.id
+                WriteEvent.ActionsDismissed -> actionsForId = null
 
-                ShellScreen.Event.Write.RenameStarted -> {
+                WriteEvent.RenameStarted -> {
                     draft = actionsFor?.let { RenameInput(it.id, it.title) }
                     actionsForId = null
                 }
 
-                is ShellScreen.Event.Write.RenameEdited -> {
+                is WriteEvent.RenameEdited -> {
                     draft = draft?.copy(title = event.title)
                 }
 
-                ShellScreen.Event.Write.RenameCancelled -> draft = null
+                WriteEvent.RenameCancelled -> draft = null
 
-                ShellScreen.Event.Write.RenameCommitted -> {
+                WriteEvent.RenameCommitted -> {
                     val input = draft
                     val node = renameTarget
                     val title = input?.title?.trim()
@@ -108,14 +126,14 @@ class WriteStateProducer(
                     }
                 }
 
-                ShellScreen.Event.Write.DeleteRequested -> {
+                WriteEvent.DeleteRequested -> {
                     pendingDeleteId = actionsForId
                     actionsForId = null
                 }
 
-                ShellScreen.Event.Write.DeleteCancelled -> pendingDeleteId = null
+                WriteEvent.DeleteCancelled -> pendingDeleteId = null
 
-                ShellScreen.Event.Write.DeleteConfirmed -> {
+                WriteEvent.DeleteConfirmed -> {
                     pendingDelete?.let { target ->
                         pendingDeleteId = null
                         scope.launch {
@@ -126,7 +144,7 @@ class WriteStateProducer(
                     }
                 }
 
-                ShellScreen.Event.Write.CreateFolder -> {
+                WriteEvent.CreateFolder -> {
                     onCreateChosen()
                     scope.launch {
                         runCatching { writer.createFolder(parentId, "New folder") }
@@ -139,7 +157,7 @@ class WriteStateProducer(
                     }
                 }
 
-                ShellScreen.Event.Write.CreatePage -> {
+                WriteEvent.CreatePage -> {
                     onCreateChosen()
                     scope.launch {
                         runCatching { writer.createPage(parentId, "Untitled page") }
@@ -148,7 +166,7 @@ class WriteStateProducer(
                     }
                 }
 
-                ShellScreen.Event.Write.WriteErrorDismissed -> writeError = null
+                WriteEvent.WriteErrorDismissed -> writeError = null
             }
         }
     }

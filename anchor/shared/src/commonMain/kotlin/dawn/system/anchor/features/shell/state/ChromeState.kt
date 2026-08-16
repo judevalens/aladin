@@ -6,85 +6,69 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.slack.circuit.runtime.CircuitUiState
-import dawn.system.anchor.features.shell.ShellScreen
+
+/** Panels and overlays the user toggles. Nothing outside the shell can tell they exist. */
+sealed interface ChromeEvent {
+    data object ToggleSidebar : ChromeEvent
+    data object ToggleCopilot : ChromeEvent
+    data object ToggleFilter : ChromeEvent
+    data object ToggleSwitcher : ChromeEvent
+}
 
 /**
- * What the shell is *showing* — panels, popovers, sheets — as opposed to what it is showing
- * them *about*.
+ * What the shell is *showing* — as opposed to what it is showing it *about*.
  *
- * A value, like every other slice: the producer below owns the mutable pieces and hands out
- * an immutable snapshot each frame, so nothing downstream can reach in and change it.
+ * A value, like every other slice: the producer owns the mutable pieces and hands out an
+ * immutable snapshot each frame, so nothing downstream can reach in and change it.
  *
- * [dismissOverlays] and [unpinHero] are commands rather than events because they are not
- * things the *user* does — they are what navigation asks of the chrome when you move. Keeping
- * them off the event hierarchy leaves that hierarchy meaning "something the user did".
+ * [dismissOverlays] is a command rather than an event, because it is not something the *user*
+ * does — it is what navigation asks of the chrome when you move somewhere. Keeping it off the
+ * event hierarchy leaves that hierarchy meaning "something the user did".
  */
 data class ChromeSlice(
     val sidebarOpen: Boolean,
-    val pathOpen: Boolean,
-    val switcherOpen: Boolean,
-    val browseOpen: Boolean,
-    val createOpen: Boolean,
     val copilotOpen: Boolean,
-    val heroExpanded: Boolean,
-    /** Everything that overlays the shell closes when you go somewhere. */
+    val filterOpen: Boolean,
+    val switcherOpen: Boolean,
     val dismissOverlays: () -> Unit,
-    /** Back at root the hero follows the level again rather than a stale pin. */
-    val unpinHero: () -> Unit,
-    val handle: (ShellScreen.Event.Chrome) -> Unit,
+    val handle: (ChromeEvent) -> Unit,
 ) : CircuitUiState
 
 /**
  * The shell's own chrome. No dependencies — none of this is in the store, and nothing outside
- * the shell can tell whether the path popover is open.
+ * the shell can tell whether the filter popover is open.
  *
- * The hero is the one with a rule rather than a toggle: full at root, mini once you are in a
- * list, unless you have pinned it either way.
+ * Four booleans, where the previous shell had seven. The rest went with the navigation stack:
+ * there is no path popover because place lives in the breadcrumb, and no column-browser
+ * overlay because the columns are a destination now.
  */
 @Composable
-fun rememberChromeState(isRoot: Boolean): ChromeSlice {
+fun rememberChromeState(): ChromeSlice {
     var sidebarOpen by remember { mutableStateOf(true) }
-    var pathOpen by remember { mutableStateOf(false) }
-    var switcherOpen by remember { mutableStateOf(false) }
-    var browseOpen by remember { mutableStateOf(false) }
-    var createOpen by remember { mutableStateOf(false) }
     var copilotOpen by remember { mutableStateOf(false) }
-    // Null means "follow the level" rather than a pin either way.
-    var heroPin by remember { mutableStateOf<Boolean?>(null) }
-
-    val heroExpanded = heroPin ?: isRoot
+    var filterOpen by remember { mutableStateOf(false) }
+    var switcherOpen by remember { mutableStateOf(false) }
 
     return ChromeSlice(
         sidebarOpen = sidebarOpen,
-        pathOpen = pathOpen,
-        switcherOpen = switcherOpen,
-        browseOpen = browseOpen,
-        createOpen = createOpen,
         copilotOpen = copilotOpen,
-        heroExpanded = heroExpanded,
+        filterOpen = filterOpen,
+        switcherOpen = switcherOpen,
+        // Overlays close when you go somewhere; the sidebar and Copilot are not overlays and
+        // deliberately survive — collapsing the sidebar is a statement about the whole shell,
+        // not about the surface you happen to be on.
         dismissOverlays = {
-            pathOpen = false
+            filterOpen = false
             switcherOpen = false
-            browseOpen = false
-            createOpen = false
         },
-        unpinHero = { heroPin = null },
     ) { event ->
-        // Exhaustive, with no `else`. That is what the nested event hierarchy buys: a new
-        // chrome event fails to compile here instead of silently routing nowhere.
+        // Exhaustive, with no `else`. That is what a sealed hierarchy buys: a new chrome event
+        // fails to compile here instead of silently routing nowhere.
         when (event) {
-            ShellScreen.Event.Chrome.ToggleSidebar -> sidebarOpen = !sidebarOpen
-            ShellScreen.Event.Chrome.TogglePath -> pathOpen = !pathOpen
-            ShellScreen.Event.Chrome.ToggleSwitcher -> switcherOpen = !switcherOpen
-            ShellScreen.Event.Chrome.ToggleCreate -> createOpen = !createOpen
-            ShellScreen.Event.Chrome.ToggleHero -> heroPin = !heroExpanded
-            ShellScreen.Event.Chrome.OpenCopilot -> copilotOpen = true
-            ShellScreen.Event.Chrome.CloseCopilot -> copilotOpen = false
-
-            ShellScreen.Event.Chrome.ToggleBrowse -> {
-                browseOpen = !browseOpen
-                pathOpen = false
-            }
+            ChromeEvent.ToggleSidebar -> sidebarOpen = !sidebarOpen
+            ChromeEvent.ToggleCopilot -> copilotOpen = !copilotOpen
+            ChromeEvent.ToggleFilter -> filterOpen = !filterOpen
+            ChromeEvent.ToggleSwitcher -> switcherOpen = !switcherOpen
         }
     }
 }

@@ -36,6 +36,8 @@ import compose.icons.feathericons.Mic
 import compose.icons.feathericons.Search
 import compose.icons.feathericons.Share2
 import compose.icons.feathericons.Star
+import compose.icons.feathericons.MoreHorizontal
+import compose.icons.feathericons.Sliders
 import compose.icons.feathericons.TrendingUp
 import compose.icons.feathericons.X
 import compose.icons.feathericons.Zap
@@ -64,17 +66,14 @@ private fun Glyph(icon: ImageVector, tint: Color, size: Dp, modifier: Modifier =
 
 // ── Sections (the sidebar's root menu) ───────────────────────────────────────
 
-/** The 7 desktop destinations, mirroring `resolveWorkspaceDestination()`. */
+/** The four iPad destinations. Each surface owns its own shape; only Browser is a tree. */
 @Composable
 fun destinationIcon(destination: Destination, tint: Color, size: Dp = 22.dp) {
     Glyph(
         icon = when (destination) {
             Destination.Home -> FeatherIcons.Home
+            Destination.Browser -> FeatherIcons.Columns
             Destination.Markets -> FeatherIcons.TrendingUp
-            Destination.Folders -> FeatherIcons.Folder
-            Destination.Sources -> FeatherIcons.FileText
-            Destination.Insights -> FeatherIcons.Zap
-            Destination.Entities -> FeatherIcons.Globe
             Destination.Graph -> FeatherIcons.Share2
         },
         tint = tint,
@@ -199,3 +198,15 @@ fun SidebarIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = DEFAULT_S
 @Composable
 fun BellIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = 18.dp) =
     Glyph(FeatherIcons.Bell, tint, size, modifier)
+
+/**
+ * The filter facets. Feather's `Sliders` — lucide's `sliders` in the handoff, same glyph.
+ */
+@Composable
+fun FilterIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = DEFAULT_SIZE) =
+    Glyph(FeatherIcons.Sliders, tint, size, modifier)
+
+/** Everything not in the breadcrumb lives behind this. */
+@Composable
+fun MoreIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = DEFAULT_SIZE) =
+    Glyph(FeatherIcons.MoreHorizontal, tint, size, modifier)
