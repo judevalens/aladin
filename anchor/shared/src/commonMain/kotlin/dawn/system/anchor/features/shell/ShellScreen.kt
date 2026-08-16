@@ -23,6 +23,7 @@ import dawn.system.anchor.features.shell.state.crumbsFor
 import dawn.system.anchor.features.shell.state.openRowsFor
 import dawn.system.anchor.features.shell.state.rememberChromeState
 import dawn.system.anchor.features.shell.ui.ShellUi
+import dawn.system.anchor.features.note.EditorSession
 import dawn.system.anchor.services.auth.AuthState
 import dawn.system.anchor.services.auth.SessionManager
 import dawn.system.anchor.services.data.NodeStore
@@ -30,6 +31,8 @@ import dawn.system.anchor.services.di.CommonParcelize
 import dawn.system.anchor.services.di.bindScreen
 import dawn.system.anchor.services.sync.SyncRunner
 import dawn.system.anchor.services.sync.SyncStatus
+import dawn.system.anchor.services.network.ApiConfig
+import dawn.system.anchor.services.network.TokenProvider
 import kotlinx.coroutines.launch
 import org.koin.core.module.Module
 import org.koin.dsl.module
@@ -59,8 +62,10 @@ data object ShellScreen : Screen {
         val crumbs: List<Crumb>,
         /** The Miller columns, when Browser is the surface. */
         val browser: BrowserSlice,
-        /** The open document, and every PDF the pool may keep resident. */
+        /** Every open document, each of which stays composed. */
         val documents: DocumentSlice,
+        /** What the embedded editor needs to join a document; null until signed in. */
+        val editor: EditorSession?,
         val destinations: List<Destination>,
         val sync: SyncStatus,
         val signedInAs: String?,
@@ -75,6 +80,8 @@ class ShellPresenter(
     private val nodes: NodeStore,
     private val session: SessionManager,
     private val sync: SyncRunner,
+    private val tokens: TokenProvider,
+    private val config: ApiConfig,
 ) : Presenter<ShellScreen.State> {
 
     @Composable
@@ -86,6 +93,16 @@ class ShellPresenter(
         val syncStatus by sync.status.collectAsState()
         val user by session.state.collectAsState()
 
+        // Services become values here, which is the whole reason this layer exists: the UI
+        // gets a token and a URL rather than a TokenProvider and an ApiConfig it could call.
+        // Re-read on every auth change, so signing in reaches an editor that was never built;
+        // a refresh mid-session does not, deliberately — see rememberWebSurfaceHost.
+        val editor = (user as? AuthState.LoggedIn)?.let { signedIn ->
+            tokens.currentToken()?.let { token ->
+                EditorSession(token, config.collabWsUrl, signedIn.user?.email)
+            }
+        }
+
         return ShellScreen.State(
             nav = nav,
             chrome = chrome,
@@ -93,6 +110,7 @@ class ShellPresenter(
             crumbs = nodes.crumbsFor(nav.nav),
             browser = browser(nav.nav.here, BrowserFilter()),
             documents = documents(nav.nav),
+            editor = editor,
             destinations = Destination.entries,
             sync = syncStatus,
             signedInAs = (user as? AuthState.LoggedIn)?.user?.email,
@@ -113,7 +131,7 @@ val shellModule: Module = module {
 
     bindScreen(
         ShellScreen::class,
-        presenter = { _, _ -> ShellPresenter(get(), get(), get(), get(), get(), get()) },
+        presenter = { _, _ -> ShellPresenter(get(), get(), get(), get(), get(), get(), get(), get()) },
         uiFactory = { ui<ShellScreen.State> { state, modifier -> ShellUi(state, modifier) } },
     )
 }

@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import dawn.system.anchor.domain.ArtifactKind
 import dawn.system.anchor.domain.Destination
 import dawn.system.anchor.domain.Surface
 import dawn.system.anchor.features.shell.ShellScreen
@@ -27,6 +28,9 @@ import dawn.system.anchor.features.shell.state.ChromeEvent
 import dawn.system.anchor.features.shell.state.Fetch
 import dawn.system.anchor.features.shell.state.NavEvent
 import dawn.system.anchor.features.shell.state.OpenDocument
+import dawn.system.anchor.features.note.WebPane
+import dawn.system.anchor.features.note.WebSurfacePage
+import dawn.system.anchor.features.note.rememberWebSurfaceHost
 import dawn.system.anchor.services.platform.PdfViewer
 import dawn.system.anchor.services.design.AnchorShape
 import dawn.system.anchor.services.design.AnchorTheme
@@ -45,20 +49,33 @@ import dawn.system.anchor.services.design.destinationIcon
  * failed by rendering all of them through one tree-shaped pane. Only [Destination.Browser] is
  * a tree, and that is where tree-ness is quarantined.
  *
- * The native hosts — the one `WKWebView`, and the pool of `PDFView`s — will be created *here*,
- * above the swap, rather than inside any surface. A surface that owns a live native view
- * destroys it every time you switch away, which is the reload this design exists to avoid.
+ * The one `WKWebView` is created *here*, above the pager, rather than inside the page that
+ * shows it. A surface that owns a live native view destroys it every time you switch away,
+ * which is the reload this design exists to avoid.
  */
 @Composable
 internal fun SurfaceHost(state: ShellScreen.State, modifier: Modifier = Modifier) {
     val c = AnchorTheme.colors
     val here = state.nav.nav.here.surface
 
-    // Everything the shell can show, as one flat list of pages: the four destinations, then
-    // every open document. There is no longer a document layer and a destination layer with a
-    // condition deciding which draws — there are just pages, and one of them is current.
+    // The web-backed documents share ONE page, because they share one WKWebView — a
+    // WebContent process is ~187 MB, so a view per note caps the companion at about two of
+    // them. This is the one place the pager's "a document is a page" rule bends, and it
+    // bends because the platform says so, not because the design does.
+    val webDocs = state.documents.documents.filterIsInstance<OpenDocument.Web>()
+
+    // Created ABOVE the pager and unconditionally, so the view can never share a lifetime
+    // with the slot showing it — the rule that survives a recycler landing later.
+    val webHost = rememberWebSurfaceHost(state.editor, enabled = webDocs.isNotEmpty())
+
+    // Everything the shell can show, as one flat list of pages: the four destinations, the
+    // editor if anything web-backed is open, then every document with a surface of its own.
+    // There is no document layer and no destination layer with a condition deciding which
+    // draws — there are just pages, and one of them is current.
     val pages = remember(state.destinations, state.documents.documents) {
-        state.destinations.map(ShellPage::Dest) + state.documents.documents.map(ShellPage::Doc)
+        state.destinations.map(ShellPage::Dest) +
+            listOfNotNull(webDocs.takeIf { it.isNotEmpty() }?.let(ShellPage::Web)) +
+            state.documents.documents.filterIsInstance<OpenDocument.Standalone>().map(ShellPage::Doc)
     }
 
     // DERIVED, never stored. This is the pager's one contract: the current page sits at the
@@ -79,10 +96,32 @@ internal fun SurfaceHost(state: ShellScreen.State, modifier: Modifier = Modifier
                 Destination.Graph -> Placeholder("Graph", "The entity canvas.")
             }
 
+            // Switching between two notes never moves the pager: they are the same page,
+            // and the editor is told which pane to show. Nothing native is touched.
+            is ShellPage.Web -> if (webHost == null) {
+                Placeholder(page.docs.first().title, "Starting the editor…")
+            } else {
+                WebSurfacePage(
+                    host = webHost,
+                    panes = page.docs.map(OpenDocument.Web::asPane),
+                    activeId = (state.documents.active as? OpenDocument.Web)?.key?.nodeId,
+                )
+            }
+
             is ShellPage.Doc -> DocumentPage(page.document)
         }
     }
 }
+
+/**
+ * The editor's vocabulary, which is not quite the server's: it renders `page` and `shard`,
+ * where the workspace stores `page` and `app`. One translation, at the boundary.
+ */
+private fun OpenDocument.Web.asPane(): WebPane = WebPane(
+    id = key.nodeId,
+    kind = if (kind == ArtifactKind.App) WebPane.Kind.Shard else WebPane.Kind.Page,
+    title = title,
+)
 
 /**
  * One page of the shell.
@@ -99,12 +138,23 @@ private sealed interface ShellPage {
         override val key: String get() = "dest:${destination.id}"
     }
 
-    data class Doc(val document: OpenDocument) : ShellPage {
+    data class Doc(val document: OpenDocument.Standalone) : ShellPage {
         override val key: String get() = document.key.asString()
+    }
+
+    /**
+     * Every web-backed document as ONE page, because they share one web view.
+     *
+     * The key is a constant for the same reason it is a page: opening a second note must
+     * not move the page already showing the first, and closing one must not renumber it.
+     */
+    data class Web(val docs: List<OpenDocument.Web>) : ShellPage {
+        override val key: String get() = "web"
     }
 
     fun matches(surface: Surface): Boolean = when {
         this is Dest && surface is Surface.Dest -> destination == surface.destination
+        this is Web && surface is Surface.Doc -> docs.any { it.key == surface.key }
         this is Doc && surface is Surface.Doc -> document.key == surface.key
         else -> false
     }
@@ -112,7 +162,7 @@ private sealed interface ShellPage {
 
 /** One open document. The kind decides the surface; nothing here decides whether it exists. */
 @Composable
-private fun DocumentPage(document: OpenDocument) {
+private fun DocumentPage(document: OpenDocument.Standalone) {
     when (document) {
         is OpenDocument.Pdf -> when (val bytes = document.bytes) {
             // A genuine first open. Anything fetched before paints on frame one, because the

@@ -33,19 +33,41 @@ sealed interface OpenDocument {
     val key: TabKey
     val title: String
 
+    /**
+     * A document that gets a surface to itself.
+     *
+     * The split is at the type level rather than checked at a call site, because the one
+     * exception — the web-backed documents, which share a single view — is easy to route
+     * wrong and impossible to notice: a note handed its own page renders a second editor.
+     */
+    sealed interface Standalone : OpenDocument
+
     /** A PDF, and whether its bytes have landed. */
     data class Pdf(
         override val key: TabKey,
         override val title: String,
         val bytes: Fetch,
+    ) : Standalone
+
+    /**
+     * A note or a shard — anything the embedded editor renders.
+     *
+     * Carries no content and no fetch, unlike [Pdf]: a note's text is not a file to
+     * download but a Y.Doc joined over the collab socket, so the only thing needed to
+     * render one is its id.
+     */
+    data class Web(
+        override val key: TabKey,
+        override val title: String,
+        val kind: ArtifactKind,
     ) : OpenDocument
 
-    /** Anything with no surface yet — a note, a shard, a voice memo, a link. */
+    /** Anything with no surface yet — a voice memo, a link. */
     data class Unsupported(
         override val key: TabKey,
         override val title: String,
         val kind: ArtifactKind?,
-    ) : OpenDocument
+    ) : Standalone
 }
 
 data class DocumentSlice(
@@ -85,34 +107,47 @@ class DocumentStateProducer(
             key(tab.asString()) {
                 val node = nodes.nodeOf(tab.nodeId)
                 val title = node?.title?.takeIf { it.isNotBlank() } ?: "Untitled"
+                val kind = node?.artifactKind
+                val id = node?.id
 
-                if (node?.artifactKind != ArtifactKind.File) {
-                    OpenDocument.Unsupported(tab, title, node?.artifactKind)
-                } else {
-                    // Seeded from the cache, which answers synchronously, so anything fetched
-                    // before paints on frame one. Only a genuine first open is ever Pending.
-                    val seeded = fetches[node.id]
-                        ?: resources.cached(node.id)?.let { Fetch.Ready(it.path) }
-                        ?: Fetch.Pending
+                if (kind == null || id == null) {
+                    // Not yet read, or not an artifact at all. Deliberately the same branch:
+                    // neither has a surface, and neither should start a fetch.
+                    OpenDocument.Unsupported(tab, title, kind)
+                } else when {
+                    // The kind decides, not the file: a note and a shard are both rendered
+                    // by the embedded editor, which is why they share one surface.
+                    kind.isWebBacked -> OpenDocument.Web(tab, title, kind)
 
-                    LaunchedEffect(node.id) {
-                        if (fetches[node.id] !is Fetch.Ready && resources.cached(node.id) == null) {
-                            fetches[node.id] = runCatching { resources.resource(node.id) }.fold(
-                                onSuccess = { Fetch.Ready(it.path) },
-                                // The server's own words where there are any. "Couldn't open
-                                // it" alone leaves nothing to act on, and silence leaves a
-                                // spinner that never resolves.
-                                onFailure = {
-                                    Fetch.Failed(
-                                        it.message?.takeIf(String::isNotBlank)
-                                            ?: "couldn't reach the workspace",
-                                    )
-                                },
-                            )
+                    kind == ArtifactKind.File -> {
+                        // Seeded from the cache, which answers synchronously, so anything
+                        // fetched before paints on frame one. Only a genuine first open is
+                        // ever Pending.
+                        val seeded = fetches[id]
+                            ?: resources.cached(id)?.let { Fetch.Ready(it.path) }
+                            ?: Fetch.Pending
+
+                        LaunchedEffect(id) {
+                            if (fetches[id] !is Fetch.Ready && resources.cached(id) == null) {
+                                fetches[id] = runCatching { resources.resource(id) }.fold(
+                                    onSuccess = { Fetch.Ready(it.path) },
+                                    // The server's own words where there are any. "Couldn't
+                                    // open it" alone leaves nothing to act on, and silence
+                                    // leaves a spinner that never resolves.
+                                    onFailure = {
+                                        Fetch.Failed(
+                                            it.message?.takeIf(String::isNotBlank)
+                                                ?: "couldn't reach the workspace",
+                                        )
+                                    },
+                                )
+                            }
                         }
+
+                        OpenDocument.Pdf(tab, title, seeded)
                     }
 
-                    OpenDocument.Pdf(tab, title, seeded)
+                    else -> OpenDocument.Unsupported(tab, title, kind)
                 }
             }
         }

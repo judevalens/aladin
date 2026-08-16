@@ -1,15 +1,10 @@
 package dawn.system.anchor.features.note
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -23,7 +18,6 @@ import androidx.compose.ui.unit.dp
 import anchor.shared.generated.resources.Res
 import dawn.system.anchor.services.design.AnchorTheme
 import dawn.system.anchor.services.design.MetaStyle
-import dawn.system.anchor.services.network.ApiConfig
 import androidx.compose.runtime.Stable
 import dawn.system.anchor.services.platform.WebHostHandle
 import dawn.system.anchor.services.platform.WebHostSurface
@@ -68,30 +62,48 @@ data class WebPane(val id: String, val kind: Kind, val title: String) {
  * server, no deployed web app. The only thing it needs on the network is the collab server,
  * which is inherent: a shared document is a network session, and a native editor would need
  * it too.
+ *
+ * The value itself is the live view, once there is a document to load.
  */
-/** The host, once it has a document to load. Null while the bundle is being unpacked. */
 @Stable
 data class WebSurfaceHost(val handle: WebHostHandle, val restarts: Int)
 
 /**
+ * What the editor needs before it can join a document.
+ *
+ * **Plain values, not the services they came from.** The presenter is where a `TokenProvider`
+ * becomes a token and an `ApiConfig` becomes a URL, so the shell state stays comparable and
+ * assertable, and the UI layer never holds a service it could call.
+ */
+data class EditorSession(
+    val token: String,
+    val collabWsUrl: String,
+    /** The name on the collaboration cursor; null falls back to a generic device name. */
+    val userName: String?,
+)
+
+/**
  * Creates the one web view, at a scope that outlives the pager.
  *
- * Everything here happens once per launch: unpack the bundle to disk (WKWebView needs a real
- * path, and Compose resources live inside the app bundle), then build the view. The result
- * is a handle the pager's web slot attaches — never owns.
+ * Two things happen here, both once: unpack the bundle to disk (WKWebView needs a real path,
+ * and Compose resources live inside the app bundle), then build the view. The result is a
+ * handle the shell's web page attaches — never owns.
+ *
+ * **[enabled] defers the cost to the first note rather than the first launch.** A WebContent
+ * process is ~187 MB, which someone who only ever reads PDFs should not pay. It is a latch,
+ * not a switch: `documentPath` is never cleared once set, so closing the last note does not
+ * tear the editor down and reopening one does not pay for it again.
  */
 @OptIn(ExperimentalResourceApi::class)
 @Composable
-fun rememberWebSurfaceHost(
-    token: String?,
-    userName: String?,
-    config: ApiConfig,
-): WebSurfaceHost? {
+fun rememberWebSurfaceHost(session: EditorSession?, enabled: Boolean): WebSurfaceHost? {
     var documentPath by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(Unit) {
-        documentPath = runCatching { unpackEditorDocument { Res.readBytes(EDITOR_RESOURCE) } }
-            .getOrNull()
+    LaunchedEffect(enabled) {
+        if (enabled && documentPath == null) {
+            documentPath = runCatching { unpackEditorDocument { Res.readBytes(EDITOR_RESOURCE) } }
+                .getOrNull()
+        }
     }
 
     // A dead web content process leaves a blank pane and nothing else; surface it. The
@@ -100,6 +112,9 @@ fun rememberWebSurfaceHost(
     var restarts by remember { mutableStateOf(0) }
 
     val path = documentPath ?: return null
+    // No session, no view: the editor authenticates to the collab server with the injected
+    // token alone, so building it without one would produce a pane that never syncs.
+    val editor = session ?: return null
 
     // The bootstrap is read once, when the view is built. A token refresh mid-session
     // therefore does not reach the collab connection — a real gap, but a far smaller one
@@ -109,9 +124,9 @@ fun rememberWebSurfaceHost(
         filePath = path,
         readAccessDirPath = editorDirPath(),
         bootstrapJs = embedBootstrap(
-            token = token.orEmpty(),
-            collabWsUrl = config.collabWsUrl,
-            userName = userName ?: DEFAULT_USER_NAME,
+            token = editor.token,
+            collabWsUrl = editor.collabWsUrl,
+            userName = editor.userName ?: DEFAULT_USER_NAME,
         ),
         onMessage = { /* `ready` only, today; the page queues its own backlog. */ },
         onContentProcessTerminated = { restarts++ },
@@ -249,18 +264,4 @@ internal fun colorForUser(seed: String): String {
         hash = (hash * 31 + ch.code) and 0x7fffffff
     }
     return "hsl(${hash % 360} 70% 60%)"
-}
-
-@Composable
-private fun NoteNotice(title: String, detail: String, modifier: Modifier = Modifier) {
-    val c = AnchorTheme.colors
-    Column(
-        modifier.fillMaxSize().background(c.bg).padding(horizontal = 32.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(title, style = MaterialTheme.typography.titleMedium, color = c.ink3)
-        Spacer(Modifier.height(6.dp))
-        Text(detail, style = MetaStyle, color = c.ink4)
-    }
 }
