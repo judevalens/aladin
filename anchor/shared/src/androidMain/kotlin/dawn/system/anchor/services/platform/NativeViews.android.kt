@@ -10,23 +10,22 @@ import androidx.compose.ui.Modifier
  */
 
 @Composable
-actual fun NativePdfReader(filePath: String, modifier: Modifier) {
-    Text("PDF reader is iOS-only for now", modifier)
-}
-
-@Composable
-actual fun NativeWebView(
+actual fun NativePdfReader(
     filePath: String,
-    readAccessDirPath: String,
+    page: Int,
+    zoom: Float,
+    onDocumentLoaded: (pageCount: Int) -> Unit,
+    onPageChanged: (page: Int) -> Unit,
     modifier: Modifier,
-    onContentProcessTerminated: () -> Unit,
 ) {
-    Text("Web view is iOS-only for now", modifier)
+    Text("PDF reader is iOS-only for now", modifier)
 }
 
 actual fun documentsDirPath(): String = ""
 
 actual fun fileExists(path: String): Boolean = java.io.File(path).exists()
+
+actual fun fileSizeBytes(path: String): Long = java.io.File(path).takeIf { it.exists() }?.length() ?: 0L
 
 actual fun writeBytes(path: String, bytes: ByteArray) {
     java.io.File(path).apply { parentFile?.mkdirs() }.writeBytes(bytes)
@@ -35,3 +34,5 @@ actual fun writeBytes(path: String, bytes: ByteArray) {
 actual fun writeText(path: String, text: String) {
     java.io.File(path).apply { parentFile?.mkdirs() }.writeText(text)
 }
+
+actual fun openExternalUrl(url: String): Boolean = false

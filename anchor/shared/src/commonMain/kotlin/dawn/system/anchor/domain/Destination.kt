@@ -1,26 +1,30 @@
 package dawn.system.anchor.domain
 
 /**
- * The workspace destinations, mirroring the desktop's `resolveWorkspaceDestination()`
- * (`aladin_react/src/services/workspace/workspace-helpers.ts`) exactly.
+ * The four places the sidebar can send you.
  *
- * The set is deliberately closed and deliberately identical to desktop: the iPad is a
- * companion to the same workspace, not a different product. Note what is absent —
- * there is no Tutor and no Learning destination. Tutor is what a *learning* folder opens
- * as ([[FolderPurpose]]), which is the handoff's load-bearing decision.
+ * Deliberately **four**, and deliberately not the desktop's set. The first iPad pass rendered
+ * every desktop destination through one tree-shaped pane, and the handoff names that as the
+ * failure: *"Markets is a dashboard, Graph is a canvas, Insights is a feed — none of them are
+ * trees, but all of them arrived inside a tree-shaped pane."*
+ *
+ * So each surface owns its own shape, and **tree-ness is quarantined in [Browser]** — which is
+ * the desktop's Folders destination, renamed for what it actually is.
+ *
+ * What is absent is as considered as what is here. Insights folds into [Home]. Sources and
+ * Entities stay addressable — an entity or a source still opens — but neither earns a
+ * permanent seat, and whether Entities eventually does is an open question for the owner
+ * rather than something to decide in code.
  */
 enum class Destination(val id: String, val title: String) {
     Home("home", "Home"),
+    Browser("browser", "Browser"),
     Markets("markets", "Markets"),
-    Folders("folders", "Folders"),
-    Sources("sources", "Sources"),
-    Insights("insights", "Insights"),
-    Entities("entities", "Entities"),
     Graph("graph", "Graph"),
     ;
 
     companion object {
-        val default = Folders
+        val default = Home
 
         fun fromId(id: String): Destination? = entries.firstOrNull { it.id == id }
     }

@@ -1,6 +1,7 @@
 package dawn.system.anchor.sync
 
 import dawn.system.anchor.domain.WorkspaceNode
+import dawn.system.anchor.services.data.NodeChange
 import dawn.system.anchor.services.data.NodeStore
 import dawn.system.anchor.services.data.SyncStateStore
 import dawn.system.anchor.services.sync.Frame
@@ -10,6 +11,10 @@ import dawn.system.anchor.services.sync.SyncEngine
 import dawn.system.anchor.services.sync.SyncPuller
 import dawn.system.anchor.services.sync.SyncPullResult
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
@@ -33,8 +38,14 @@ class SyncPullerTest {
         private val seqs = mutableMapOf<String, Long>()
 
         override fun liveNodes(): Flow<List<WorkspaceNode>> = flowOf(emptyList())
+        override fun node(id: String): SharedFlow<WorkspaceNode?> =
+            MutableSharedFlow<WorkspaceNode?>(replay = 1).apply { tryEmit(null) }
         override fun children(parentId: String?): Flow<List<WorkspaceNode>> = flowOf(emptyList())
+        override fun byArtifactType(artifactType: String): Flow<List<WorkspaceNode>> = flowOf(emptyList())
         override suspend fun byId(id: String): WorkspaceNode? = null
+
+        override suspend fun applyAll(changes: List<NodeChange>): Int =
+            changes.count { apply(it.kind, it.id, it.seq, it.op, it.data) }
 
         override suspend fun apply(
             kind: String,

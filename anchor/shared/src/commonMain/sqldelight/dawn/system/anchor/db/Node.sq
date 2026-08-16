@@ -12,6 +12,7 @@ CREATE TABLE node (
     position      INTEGER NOT NULL DEFAULT 0,
     title         TEXT    NOT NULL DEFAULT '',
     artifact_type TEXT,
+    source_url    TEXT,
     summary       TEXT,
     seq           INTEGER NOT NULL DEFAULT 0,
     is_deleted    INTEGER NOT NULL DEFAULT 0,
@@ -32,18 +33,41 @@ ORDER BY position ASC, title ASC;
 selectById:
 SELECT * FROM node WHERE id = :id;
 
+-- Per-key reads. SQLDelight turns any of these into a Flow that re-emits only when the rows
+-- it touches change, which is what a consumer actually wants: the sidebar heading should not
+-- recompute because an unrelated artifact synced. `id` is the primary key and `parent_id` is
+-- indexed, so each is a lookup rather than a scan over the replica.
+selectLiveById:
+SELECT * FROM node WHERE id = :id AND is_deleted = 0;
+
+selectLiveByIds:
+SELECT * FROM node WHERE is_deleted = 0 AND id IN :ids;
+
+-- Several folders' contents in one query — the column browser and the open folders' details
+-- both want this, and one query beats one subscription per column.
+selectChildrenOfMany:
+SELECT * FROM node
+WHERE is_deleted = 0 AND parent_id IN :parentIds
+ORDER BY position ASC, title ASC;
+
+selectByArtifactType:
+SELECT * FROM node
+WHERE is_deleted = 0 AND artifact_type = :artifactType
+ORDER BY position ASC, title ASC;
+
 storedSeq:
 SELECT seq FROM node WHERE id = :id;
 
 upsert:
-INSERT INTO node(id, kind, parent_id, position, title, artifact_type, summary, seq, is_deleted, updated_at)
-VALUES (:id, :kind, :parentId, :position, :title, :artifactType, :summary, :seq, 0, :updatedAt)
+INSERT INTO node(id, kind, parent_id, position, title, artifact_type, source_url, summary, seq, is_deleted, updated_at)
+VALUES (:id, :kind, :parentId, :position, :title, :artifactType, :sourceUrl, :summary, :seq, 0, :updatedAt)
 ON CONFLICT(id) DO UPDATE SET
     kind = excluded.kind,
     parent_id = excluded.parent_id,
     position = excluded.position,
     title = excluded.title,
     artifact_type = excluded.artifact_type,
+    source_url = excluded.source_url,
     summary = excluded.summary,
     seq = excluded.seq,
     is_deleted = 0,

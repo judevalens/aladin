@@ -20,14 +20,17 @@ import kotlinx.coroutines.launch
  * job, cancelled as a unit. There is deliberately **no push path**: writes proxy to the
  * server and come back as frames, so this class only ever pulls.
  *
- * Cadence mirrors the desktop client: a pull on start, then a recovery heartbeat that
- * bounds how stale the cursor can get in wall-clock time. The live socket is the fast path
- * and lands next; the heartbeat is what makes its absence merely slow rather than wrong.
+ * Cadence mirrors the desktop client, and the order matters: **the live socket is the
+ * mechanism**, and the pull is recovery. A frame reaches the store as soon as the server
+ * commits it; the periodic pull exists only to close the gap a dropped socket would leave,
+ * which is why its interval is long rather than tuned for latency. Treating the pull as the
+ * update path would make this a polling client, which the sync spine explicitly is not.
  */
 class SyncRunner(
     private val puller: SyncPuller,
     private val nodes: NodeStore,
     private val syncState: SyncStateStore,
+    private val live: SyncLive,
 ) {
     private var scope: CoroutineScope? = null
     private var job: Job? = null
@@ -39,6 +42,9 @@ class SyncRunner(
         if (job?.isActive == true) return
         val runScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         scope = runScope
+        // The fast path: frames applied as they are committed.
+        runScope.launch { runLive() }
+
         job = runScope.launch {
             while (true) {
                 runCatching { puller.pullAndApply() }
@@ -53,6 +59,30 @@ class SyncRunner(
                     }
                 delay(HEARTBEAT_MILLIS)
             }
+        }
+    }
+
+    /**
+     * Holds the socket open, reconnecting with backoff. A clean close is normal — a server
+     * restart, a network change — so it is retried rather than treated as failure.
+     *
+     * The connect-time pull is what makes a reconnect correct: the socket only carries what
+     * happens after it opens, so anything committed during the gap arrives by pull.
+     */
+    private suspend fun runLive() {
+        var backoff = LIVE_RETRY_MIN_MILLIS
+        while (true) {
+            val outcome = runCatching {
+                live.connect(
+                    onSubscribed = { puller.pullAndApply() },
+                    onApplied = { applied ->
+                        if (applied > 0) _status.value = SyncStatus.Synced(appliedLastTick = applied)
+                    },
+                )
+            }
+            if (outcome.exceptionOrNull() is CancellationException) throw outcome.exceptionOrNull()!!
+            backoff = if (outcome.isSuccess) LIVE_RETRY_MIN_MILLIS else (backoff * 2).coerceAtMost(LIVE_RETRY_MAX_MILLIS)
+            delay(backoff)
         }
     }
 
@@ -73,7 +103,13 @@ class SyncRunner(
     }
 
     private companion object {
-        const val HEARTBEAT_MILLIS = 20_000L
+        /**
+         * Recovery only. Long on purpose: the socket is what makes updates timely, and a
+         * short interval here would be polling wearing a different name.
+         */
+        const val HEARTBEAT_MILLIS = 60_000L
+        const val LIVE_RETRY_MIN_MILLIS = 1_000L
+        const val LIVE_RETRY_MAX_MILLIS = 30_000L
     }
 }
 

@@ -1,0 +1,5 @@
+-- The Sources section lists every artifact of one type, and `artifact_type` carried no
+-- index — so that list was a full scan of the node table, re-run on every write to it.
+-- Harmless at a hundred rows; at a few thousand it is the most expensive thing the read
+-- path does, and it runs during exactly the burst (first sync) when the table is busiest.
+CREATE INDEX node_artifact_type ON node(artifact_type);

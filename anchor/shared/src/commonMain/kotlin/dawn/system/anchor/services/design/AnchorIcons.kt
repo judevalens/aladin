@@ -1,203 +1,212 @@
 package dawn.system.anchor.services.design
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import compose.icons.FeatherIcons
+import compose.icons.feathericons.Bell
+import compose.icons.feathericons.ChevronsLeft
+import compose.icons.feathericons.ChevronsRight
+import compose.icons.feathericons.FilePlus
+import compose.icons.feathericons.FolderPlus
+import compose.icons.feathericons.Minus
+import compose.icons.feathericons.Plus
+import compose.icons.feathericons.Sidebar
+import compose.icons.feathericons.Trash2
+import compose.icons.feathericons.ChevronDown
+import compose.icons.feathericons.ChevronLeft
+import compose.icons.feathericons.ChevronRight
+import compose.icons.feathericons.ChevronUp
+import compose.icons.feathericons.Columns
+import compose.icons.feathericons.Edit3
+import compose.icons.feathericons.ExternalLink
+import compose.icons.feathericons.FileText
+import compose.icons.feathericons.Folder
+import compose.icons.feathericons.Globe
+import compose.icons.feathericons.Grid
+import compose.icons.feathericons.Home
+import compose.icons.feathericons.Layout
+import compose.icons.feathericons.Link
+import compose.icons.feathericons.Mic
+import compose.icons.feathericons.Search
+import compose.icons.feathericons.Share2
+import compose.icons.feathericons.Star
+import compose.icons.feathericons.MoreHorizontal
+import compose.icons.feathericons.Sliders
+import compose.icons.feathericons.TrendingUp
+import compose.icons.feathericons.X
+import compose.icons.feathericons.Zap
 import dawn.system.anchor.domain.Destination
 
 /**
- * Rail and chrome icons, drawn rather than bundled.
+ * Icons, by **role**.
  *
- * The handoff specifies 22px stroked glyphs at 1.75 weight and says to replace its inline
- * SVGs with the codebase's icon set. Until an icon dependency is chosen, these are drawn
- * to that weight — one place to swap, and no 2 MB icon font for eleven glyphs.
+ * The art comes from **Feather** (`compose-icons`) — the handoff asks for the codebase's
+ * Lucide set, and Lucide is a fork of Feather, so the two share their geometry and their
+ * 24×24 / round-cap drawing conventions. This file is the only place that knows which glyph
+ * stands for which role: a feature asks for "the icon for this artifact kind", never for a
+ * specific glyph, so re-pointing a role at a different icon is a one-line change here.
+ *
+ * Nothing is hand-drawn and nothing is vendored from another package's build output.
  */
-private const val STROKE_RATIO = 0.075f
+private val DEFAULT_SIZE = 20.dp
 
+/** The larger glyph a file card leads with. */
+val FileGlyphSize = 26.dp
+
+@Composable
+private fun Glyph(icon: ImageVector, tint: Color, size: Dp, modifier: Modifier = Modifier) {
+    Icon(imageVector = icon, contentDescription = null, tint = tint, modifier = modifier.size(size))
+}
+
+// ── Sections (the sidebar's root menu) ───────────────────────────────────────
+
+/** The four iPad destinations. Each surface owns its own shape; only Browser is a tree. */
 @Composable
 fun destinationIcon(destination: Destination, tint: Color, size: Dp = 22.dp) {
-    when (destination) {
-        Destination.Home -> HomeIcon(tint, size = size)
-        Destination.Markets -> MarketsIcon(tint, size = size)
-        Destination.Folders -> FolderIcon(tint, size = size)
-        Destination.Sources -> SourceIcon(tint, size = size)
-        Destination.Insights -> InsightIcon(tint, size = size)
-        Destination.Entities -> EntityIcon(tint, size = size)
-        Destination.Graph -> GraphIcon(tint, size = size)
-    }
+    Glyph(
+        icon = when (destination) {
+            Destination.Home -> FeatherIcons.Home
+            Destination.Browser -> FeatherIcons.Columns
+            Destination.Markets -> FeatherIcons.TrendingUp
+            Destination.Graph -> FeatherIcons.Share2
+        },
+        tint = tint,
+        size = size,
+    )
 }
 
-private fun DrawScope.strokeWidth(): Float = this.size.minDimension * STROKE_RATIO
+// ── Artifact kinds (browser rows) ────────────────────────────────────────────
+
+/**
+ * Icon per artifact kind (PRD rev 2 §Artifact icons) — what replaced the abstract dot.
+ * Tint is the caller's: a folder is amber because of what it *is*, and that role belongs to
+ * the surface drawing the row, not to the glyph.
+ */
+@Composable
+fun artifactKindIcon(artifactType: String?, isContainer: Boolean, tint: Color, size: Dp = 18.dp) {
+    Glyph(
+        icon = when {
+            isContainer -> FeatherIcons.Folder
+            artifactType == "app" -> FeatherIcons.Layout
+            artifactType == "page" || artifactType == "note" -> FeatherIcons.Edit3
+            artifactType == "voice" -> FeatherIcons.Mic
+            artifactType == "link" -> FeatherIcons.Link
+            else -> FeatherIcons.FileText
+        },
+        tint = tint,
+        size = size,
+    )
+}
+
+// ── Chrome ───────────────────────────────────────────────────────────────────
+
+enum class ChevronDirection { Left, Right, Up, Down }
+
+/**
+ * Chevron, pointing where the tap goes — Back, row disclosure, the sidebar title's
+ * path-popover caret and the hero's expand/collapse are one family, so they read as the
+ * same affordance rather than four different controls.
+ */
+@Composable
+fun ChevronIcon(
+    tint: Color,
+    modifier: Modifier = Modifier,
+    size: Dp = DEFAULT_SIZE,
+    direction: ChevronDirection = ChevronDirection.Right,
+) {
+    Glyph(
+        icon = when (direction) {
+            ChevronDirection.Left -> FeatherIcons.ChevronLeft
+            ChevronDirection.Right -> FeatherIcons.ChevronRight
+            ChevronDirection.Up -> FeatherIcons.ChevronUp
+            ChevronDirection.Down -> FeatherIcons.ChevronDown
+        },
+        tint = tint,
+        size = size,
+        modifier = modifier,
+    )
+}
+
+/** The sidebar's search field. */
+@Composable
+fun SearchIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = 17.dp) =
+    Glyph(FeatherIcons.Search, tint, size, modifier)
+
+/** Dismiss — an open-item row, the copilot pane, a cleared search. */
+@Composable
+fun CloseIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = 14.dp) =
+    Glyph(FeatherIcons.X, tint, size, modifier)
+
+/** The sidebar collapse toggle. */
+@Composable
+fun ColumnsIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = DEFAULT_SIZE) =
+    Glyph(FeatherIcons.Columns, tint, size, modifier)
+
+/** Open items — what replaced the desktop tab strip. */
+@Composable
+fun OpenItemsIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = 18.dp) =
+    Glyph(FeatherIcons.Grid, tint, size, modifier)
+
+/** The copilot. Feather has no sparkle; the star carries the same "assistant" reading. */
+@Composable
+fun SparkleIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = 19.dp) =
+    Glyph(FeatherIcons.Star, tint, size, modifier)
+
+/** Notifications, in the copilot hero's header row. */
+/** The "make something new" affordance — the sidebar's + and its menu. */
+@Composable
+fun PlusIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = DEFAULT_SIZE) =
+    Glyph(FeatherIcons.Plus, tint, size, modifier)
 
 @Composable
-fun HomeIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = 22.dp) {
-    Canvas(modifier.size(size)) {
-        val s = this.size.minDimension
-        val w = strokeWidth()
-        val roofY = s * 0.46f
-        drawLine(tint, Offset(s * 0.16f, roofY), Offset(s * 0.5f, s * 0.17f), w, StrokeCap.Round)
-        drawLine(tint, Offset(s * 0.5f, s * 0.17f), Offset(s * 0.84f, roofY), w, StrokeCap.Round)
-        drawRoundRect(
-            tint,
-            topLeft = Offset(s * 0.24f, roofY),
-            size = Size(s * 0.52f, s * 0.37f),
-            cornerRadius = CornerRadius(s * 0.07f),
-            style = Stroke(w),
-        )
-    }
-}
+fun MinusIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = DEFAULT_SIZE) =
+    Glyph(FeatherIcons.Minus, tint, size, modifier)
 
 @Composable
-fun MarketsIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = 22.dp) {
-    Canvas(modifier.size(size)) {
-        val s = this.size.minDimension
-        val w = strokeWidth()
-        // Two candles — the market glyph in the design's rail.
-        drawLine(tint, Offset(s * 0.34f, s * 0.18f), Offset(s * 0.34f, s * 0.82f), w, StrokeCap.Round)
-        drawRoundRect(
-            tint,
-            topLeft = Offset(s * 0.24f, s * 0.32f),
-            size = Size(s * 0.2f, s * 0.3f),
-            cornerRadius = CornerRadius(s * 0.05f),
-            style = Stroke(w),
-        )
-        drawLine(tint, Offset(s * 0.66f, s * 0.18f), Offset(s * 0.66f, s * 0.82f), w, StrokeCap.Round)
-        drawRoundRect(
-            tint,
-            topLeft = Offset(s * 0.56f, s * 0.46f),
-            size = Size(s * 0.2f, s * 0.26f),
-            cornerRadius = CornerRadius(s * 0.05f),
-            style = Stroke(w),
-        )
-    }
-}
+fun NewFolderIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = DEFAULT_SIZE) =
+    Glyph(FeatherIcons.FolderPlus, tint, size, modifier)
 
 @Composable
-fun FolderIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = 22.dp) {
-    Canvas(modifier.size(size)) {
-        val s = this.size.minDimension
-        val w = strokeWidth()
-        drawLine(tint, Offset(s * 0.16f, s * 0.32f), Offset(s * 0.44f, s * 0.32f), w, StrokeCap.Round)
-        drawLine(tint, Offset(s * 0.44f, s * 0.32f), Offset(s * 0.52f, s * 0.42f), w, StrokeCap.Round)
-        drawRoundRect(
-            tint,
-            topLeft = Offset(s * 0.16f, s * 0.32f),
-            size = Size(s * 0.68f, s * 0.42f),
-            cornerRadius = CornerRadius(s * 0.08f),
-            style = Stroke(w),
-        )
-    }
-}
+fun NewPageIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = DEFAULT_SIZE) =
+    Glyph(FeatherIcons.FilePlus, tint, size, modifier)
+
+/** Rename. Feather's pencil, the same glyph desktop uses for an editable title. */
+@Composable
+fun RenameIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = DEFAULT_SIZE) =
+    Glyph(FeatherIcons.Edit3, tint, size, modifier)
 
 @Composable
-fun SourceIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = 22.dp) {
-    Canvas(modifier.size(size)) {
-        val s = this.size.minDimension
-        val w = strokeWidth()
-        drawRoundRect(
-            tint,
-            topLeft = Offset(s * 0.24f, s * 0.16f),
-            size = Size(s * 0.52f, s * 0.68f),
-            cornerRadius = CornerRadius(s * 0.08f),
-            style = Stroke(w),
-        )
-        listOf(0.36f, 0.5f, 0.64f).forEach { f ->
-            drawLine(
-                tint,
-                Offset(s * 0.36f, s * f),
-                Offset(s * 0.64f, s * f),
-                w * 0.85f,
-                StrokeCap.Round,
-            )
-        }
-    }
-}
+fun DeleteIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = DEFAULT_SIZE) =
+    Glyph(FeatherIcons.Trash2, tint, size, modifier)
+
+/** Leaving the app: the system browser, a share sheet. */
+@Composable
+fun ExternalLinkIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = DEFAULT_SIZE) =
+    Glyph(FeatherIcons.ExternalLink, tint, size, modifier)
+
+/** The reader's contents-rail toggle. */
+@Composable
+fun SidebarIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = DEFAULT_SIZE) =
+    Glyph(FeatherIcons.Sidebar, tint, size, modifier)
 
 @Composable
-fun InsightIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = 22.dp) {
-    Canvas(modifier.size(size)) {
-        val s = this.size.minDimension
-        val w = strokeWidth()
-        drawCircle(tint, radius = s * 0.24f, center = Offset(s * 0.5f, s * 0.42f), style = Stroke(w))
-        drawLine(tint, Offset(s * 0.42f, s * 0.72f), Offset(s * 0.58f, s * 0.72f), w, StrokeCap.Round)
-        drawLine(tint, Offset(s * 0.44f, s * 0.83f), Offset(s * 0.56f, s * 0.83f), w, StrokeCap.Round)
-    }
-}
+fun BellIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = 18.dp) =
+    Glyph(FeatherIcons.Bell, tint, size, modifier)
 
+/**
+ * The filter facets. Feather's `Sliders` — lucide's `sliders` in the handoff, same glyph.
+ */
 @Composable
-fun EntityIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = 22.dp) {
-    Canvas(modifier.size(size)) {
-        val s = this.size.minDimension
-        val w = strokeWidth()
-        drawCircle(tint, radius = s * 0.15f, center = Offset(s * 0.5f, s * 0.34f), style = Stroke(w))
-        drawRoundRect(
-            tint,
-            topLeft = Offset(s * 0.26f, s * 0.56f),
-            size = Size(s * 0.48f, s * 0.26f),
-            cornerRadius = CornerRadius(s * 0.13f),
-            style = Stroke(w),
-        )
-    }
-}
+fun FilterIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = DEFAULT_SIZE) =
+    Glyph(FeatherIcons.Sliders, tint, size, modifier)
 
+/** Everything not in the breadcrumb lives behind this. */
 @Composable
-fun GraphIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = 22.dp) {
-    Canvas(modifier.size(size)) {
-        val s = this.size.minDimension
-        val w = strokeWidth()
-        val a = Offset(s * 0.26f, s * 0.7f)
-        val b = Offset(s * 0.52f, s * 0.28f)
-        val cpt = Offset(s * 0.76f, s * 0.62f)
-        drawLine(tint, a, b, w * 0.8f, StrokeCap.Round)
-        drawLine(tint, b, cpt, w * 0.8f, StrokeCap.Round)
-        listOf(a, b, cpt).forEach { drawCircle(tint, radius = s * 0.09f, center = it, style = Stroke(w)) }
-    }
-}
-
-/** Open items — the grid that replaces the desktop tab strip. */
-@Composable
-fun OpenItemsIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = 22.dp) {
-    Canvas(modifier.size(size)) {
-        val s = this.size.minDimension
-        val w = strokeWidth()
-        val cell = s * 0.3f
-        val gap = s * 0.1f
-        val start = (s - (cell * 2 + gap)) / 2f
-        listOf(0 to 0, 1 to 0, 0 to 1, 1 to 1).forEach { (col, row) ->
-            drawRoundRect(
-                tint,
-                topLeft = Offset(start + col * (cell + gap), start + row * (cell + gap)),
-                size = Size(cell, cell),
-                cornerRadius = CornerRadius(s * 0.06f),
-                style = Stroke(w * 0.9f),
-            )
-        }
-    }
-}
-
-/** The list-column collapse toggle. */
-@Composable
-fun ColumnsIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = 20.dp) {
-    Canvas(modifier.size(size)) {
-        val s = this.size.minDimension
-        val w = strokeWidth()
-        drawRoundRect(
-            tint,
-            topLeft = Offset(s * 0.16f, s * 0.22f),
-            size = Size(s * 0.68f, s * 0.56f),
-            cornerRadius = CornerRadius(s * 0.08f),
-            style = Stroke(w),
-        )
-        drawLine(tint, Offset(s * 0.42f, s * 0.22f), Offset(s * 0.42f, s * 0.78f), w * 0.9f)
-    }
-}
+fun MoreIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = DEFAULT_SIZE) =
+    Glyph(FeatherIcons.MoreHorizontal, tint, size, modifier)

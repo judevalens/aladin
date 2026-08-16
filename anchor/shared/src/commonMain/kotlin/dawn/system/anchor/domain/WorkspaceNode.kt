@@ -16,6 +16,8 @@ data class WorkspaceNode(
     val title: String,
     /** For [NodeKind.Artifact]: page | app | link | file | voice. Null otherwise. */
     val artifactType: String? = null,
+    /** A `link` artifact's target. Null for every other kind. */
+    val sourceUrl: String? = null,
     val summary: String? = null,
 ) {
     val isContainer: Boolean get() = kind != NodeKind.Artifact

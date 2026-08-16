@@ -47,6 +47,15 @@ data class AladinColors(
     // semantic
     val forColor: Color,
     val against: Color,
+    /** The backdrop a sheet or modal sits on. */
+    val scrim: Color,
+    /** Paper. Theme-CONSTANT by design: a printed page is not a UI surface, so it does
+     *  not follow the theme — the same rule desktop's PDF reader applies. */
+    val paper: Color = Color(0xFFF4F1EA),
+    val paperInk: Color = Color(0xFF26241F),
+    val paperInkStrong: Color = Color(0xFF1B1A17),
+    val paperMeta: Color = Color(0xFFA19B8E),
+    val paperLine: Color = Color(0x1A000000),
 ) {
     /** Ink for content sitting on an amber fill. */
     val onAccent: Color get() = onAmber
@@ -82,6 +91,7 @@ val AladinDark = AladinColors(
     learnLine = Color(0xFF8FB9E8).copy(alpha = 0.32f),
     forColor = Color(0xFF5CBA8F),
     against = Color(0xFFD8796B),
+    scrim = Color(0xFF060608).copy(alpha = 0.55f),
 )
 
 /**
@@ -114,4 +124,5 @@ val AladinLight = AladinColors(
     learnLine = Color(0xFF3E6FA3).copy(alpha = 0.32f),
     forColor = Color(0xFF2F7F5B),
     against = Color(0xFFB2483A),
+    scrim = Color(0xFF1A1A1E).copy(alpha = 0.35f),
 )

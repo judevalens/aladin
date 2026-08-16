@@ -15,17 +15,23 @@ package dawn.system.anchor.domain
 fun sectionsFor(
     node: WorkspaceNode,
     children: List<WorkspaceNode>,
+    /**
+     * False while the sidebar is drilled into this folder: the sidebar owns the contents
+     * list there, and repeating it in the detail pane would be the same list twice
+     * (PRD rev 2 §Folder drill).
+     */
+    includeContents: Boolean = true,
 ): List<DetailSection> = buildList {
     when (node.kind) {
         NodeKind.Research -> {
             add(researchStats(children))
-            addContents(children)
+            if (includeContents) addContents(children)
             add(DetailSection.Note("Slots (overview · manifest · runs · code) arrive with the research surface."))
         }
 
         NodeKind.Folder -> {
             if (children.isNotEmpty()) add(folderStats(children))
-            addContents(children)
+            if (includeContents) addContents(children)
             if (children.isEmpty()) add(DetailSection.Note("This folder is empty."))
         }
 
@@ -52,6 +58,7 @@ private fun MutableList<DetailSection>.addContents(children: List<WorkspaceNode>
                     artifactType = child.artifactType,
                 )
             },
+            nodes = children,
         ),
     )
 }

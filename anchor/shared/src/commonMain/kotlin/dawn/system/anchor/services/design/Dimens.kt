@@ -4,34 +4,90 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.unit.dp
 
 /**
- * Shell metrics from the iPad handoff. These are *structural* — the handoff says to match
- * the three-column structure and the touch minimums exactly, while paddings and radii may
- * be adapted. So the numbers that carry meaning live here, named.
+ * Shell metrics from the iPad navigation handoff.
+ *
+ * These are *structural*: the handoff fixes the column structure and the touch minimums
+ * exactly, while paddings and radii may be adapted. So the numbers that carry meaning live
+ * here, named, and a feature never picks one.
+ *
+ * The handoff expresses its sizes as a `[data-touch="ipad"]` layer overriding the desktop's
+ * scale, because the React app has a desktop baseline to override. **This app has none —
+ * these simply are its metrics.**
  */
 object AladinMetrics {
-    /** Column 1. Fixed, never collapses. */
-    val railWidth = 76.dp
-    /** Column 2. Collapses to zero; its content keeps this width so text doesn't reflow. */
-    val listWidth = 352.dp
-    /** Column 3's header. Flush with the pane — no bar, no border. */
-    val detailHeaderHeight = 72.dp
+    /** The sidebar. Collapses to zero; its content keeps this width so text does not reflow. */
+    val sidebarWidth = 300.dp
 
-    /** Rail destination cell: icons only, so the cell itself must stay comfortably tappable. */
-    val railCell = 56.dp
-    /** Accessibility floor for every other control. */
+    /** The copilot's right sidebar. Slides content narrower; never overlaps it. */
+    val copilotPaneWidth = 368.dp
+
+    /**
+     * The content toolbar, including its 34pt safe inset. Carries back/forward, the
+     * breadcrumb and the current document's meta.
+     */
+    val toolbarHeight = 82.dp
+    val toolbarSafeInset = 34.dp
+
+    /** The sidebar's own top inset — above the status bar rather than below it. */
+    val sidebarSafeInset = 42.dp
+
+    /** Accessibility floor. Nothing interactive is smaller, including a row's close control. */
     val touchTarget = 44.dp
-    /** Minimum height of a list row. */
-    val listRowMinHeight = 64.dp
 
-    /** The collapse animation the handoff specifies. */
-    const val COLUMN_COLLAPSE_MILLIS = 220
+    /** The sidebar's icon-row buttons: search, filter, hide. */
+    val iconButton = 42.dp
+
+    /** A destination row — the four the sidebar offers. */
+    val destinationRow = 48.dp
+
+    /** An Open-list row: status dot, title, close. */
+    val openRow = 44.dp
+
+    /** Browser columns: folders, then items. The third takes what is left. */
+    val browserFolderColumn = 318.dp
+    val browserItemColumn = 392.dp
+
+    /** Browser rows, and the detail column's action buttons. */
+    val browserRow = 48.dp
+    val detailAction = 46.dp
+
+    /** The floating dock shown while the sidebar is collapsed. */
+    val dockBottomInset = 20.dp
+    val dockCell = 48.dp
+
+    /** The Open expander popup. */
+    val openPopupWidth = 620.dp
+    val openPopupTop = 150.dp
+    val openPopupMaxHeight = 600.dp
+    val openPopupRow = 56.dp
+
+    /** The filter popover, anchored under the sidebar's icon row. */
+    val filterPopoverWidth = 288.dp
+    val filterRow = 40.dp
+    val filterCheckbox = 19.dp
+
+    /** The reader's measure — a column, not the full width. */
+    val readerMeasure = 680.dp
+
+    /**
+     * Surface padding. Grows while the dock is showing so nothing hides beneath it.
+     */
+    val surfacePaddingBottom = 34.dp
+    val surfacePaddingBottomWithDock = 112.dp
+
+    /** The sidebar and copilot collapse. */
+    const val COLUMN_COLLAPSE_MILLIS = 250
+    /** A surface arriving: fade up, eight points. */
+    const val SURFACE_IN_MILLIS = 220
+    /** Overlays and the dock: pop. */
+    const val POP_IN_MILLIS = 180
 }
 
 val LocalAladinMetrics = staticCompositionLocalOf { AladinMetrics }
 
 /**
  * Spacing scale. Steps rather than ad-hoc values, so density stays consistent across
- * surfaces built at different times.
+ * surfaces built at different times. The handoff's step is 4.
  */
 object AnchorSpace {
     val xxs = 4.dp
@@ -42,8 +98,10 @@ object AnchorSpace {
     val xl = 24.dp
     val xxl = 30.dp
 
-    /** Gutter for panel content (list column, detail pane). */
+    /** Gutter for panel content. */
     val gutter = 20.dp
+    /** A surface's own horizontal padding. */
+    val surfaceGutter = 34.dp
     /** Gap between stacked rows/cards. */
     val rowGap = 11.dp
 }

@@ -23,15 +23,18 @@ val Mono: FontFamily = FontFamily.Monospace
 val Serif: FontFamily = FontFamily.Serif
 
 val AnchorTypography = Typography(
-    // List-column title ("Folders") — 25/700, tight.
+    // Sidebar title ("Folders"). The handoff draws this at 25/700 in Space Grotesk, which
+    // is narrower than the platform sans standing in for it — at 25sp a folder name eats
+    // the row before the Back chevron and the count get their share. 21 keeps the
+    // hierarchy (still the largest thing on screen) at a width the sidebar actually has.
     headlineMedium = TextStyle(
         fontFamily = Display, fontWeight = FontWeight.Bold,
-        fontSize = 25.sp, lineHeight = 30.sp, letterSpacing = (-0.4).sp,
+        fontSize = 21.sp, lineHeight = 26.sp, letterSpacing = (-0.4).sp,
     ),
-    // Detail header title — 22/600.
+    // Detail header title — one step below the sidebar's, as in the handoff.
     headlineSmall = TextStyle(
         fontFamily = Display, fontWeight = FontWeight.SemiBold,
-        fontSize = 22.sp, lineHeight = 27.sp, letterSpacing = (-0.3).sp,
+        fontSize = 19.sp, lineHeight = 24.sp, letterSpacing = (-0.3).sp,
     ),
     // Stat card value — 23, tabular feel.
     titleLarge = TextStyle(
@@ -74,6 +77,18 @@ val MetaStyle = TextStyle(
 val SectionLabelStyle = TextStyle(
     fontFamily = Mono, fontWeight = FontWeight.Medium,
     fontSize = 10.5.sp, lineHeight = 14.sp, letterSpacing = 0.95.sp,
+)
+
+/**
+ * Source text — a captured excerpt, a quotation, a page's body.
+ *
+ * Serif on purpose: the handoff gives Georgia to everything that is *printed* rather than
+ * authored by the app, so the reader can tell a captured page from Aladin's own chrome
+ * without being told.
+ */
+val SourceTextStyle = TextStyle(
+    fontFamily = Serif, fontWeight = FontWeight.Normal,
+    fontSize = 17.sp, lineHeight = 29.75.sp,
 )
 
 /** Chips (purpose, kind): mono, uppercase, tiny. */

@@ -1,7 +1,15 @@
-import { StrictMode, useEffect, useState } from "react";
+import { StrictMode, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
+import type { EmbedConfig } from "@/embed/embed-config";
 import { createRoot } from "react-dom/client";
 
 import { BlockNotePageEditorDriver } from "@/modules/pages/editor/page-editor-driver";
+import { createApiClient } from "@/shared/api/client";
+import { createShardApi } from "@/shared/api/shard-api";
+import { createContentTokenStore } from "@/shared/runtime/content-token-store";
+import { createBridgeHost } from "@/modules/doc-surface/bridge/bridge-host";
+import { createShardDataHub } from "@/modules/doc-surface/bridge/shard-data-hub";
+import { createShardKVPort } from "@/modules/doc-surface/bridge/shard-kv-port";
 import "@/index.css";
 
 /**
@@ -34,12 +42,6 @@ import "@/index.css";
  * The host sets `window.__ALADIN_EMBED__` in a document-start script. A token in the URL
  * would leak into history, logs and referrers.
  */
-export interface EmbedConfig {
-  token: string;
-  /** Hocuspocus, e.g. `ws://192.168.1.109:3501` — a device cannot use localhost. */
-  collabWsUrl: string;
-  user: { name: string; color: string };
-}
 
 /**
  * One mounted surface. `kind` decides what renders; the host is deliberately not limited
@@ -50,8 +52,6 @@ export interface HostPane {
   /** Artifact id. Also the React key, so a pane keeps its state across reorders. */
   id: string;
   kind: "page" | "shard";
-  /** `shard` only: the sandboxed bundle URL, already carrying its content token. */
-  src?: string;
   title?: string;
 }
 
@@ -74,7 +74,6 @@ export interface AladinHost {
 
 declare global {
   interface Window {
-    __ALADIN_EMBED__?: EmbedConfig;
     __aladinHost?: AladinHost & { _queued?: HostState };
     webkit?: {
       messageHandlers?: Record<string, { postMessage: (body: unknown) => void }>;
@@ -135,34 +134,128 @@ function Pane({ pane, config }: { pane: HostPane; config: EmbedConfig }) {
     );
   }
 
-  // A shard is an agent-authored app, sandboxed to an opaque origin exactly as on desktop
-  // (`allow-scripts`, no `allow-same-origin`), so postMessage is its only way out.
-  //
-  // NOT YET WIRED: the `bridge/1` host — theme, shard_kv, the manifest-granted workspace
-  // plane. Desktop answers those from its repo layer, which does not exist in here. A
-  // shard that only paints will render; one that calls the kit will hang into its own 8s
-  // timeout, so the frame is deliberately not mounted until a src has been minted.
-  if (!pane.src) {
+  return <ShardPane pane={pane} config={config} />;
+}
+
+/**
+ * The three planes a shard talks to, assembled REST-only.
+ *
+ * Desktop reads shard state from its local replica and gets per-key liveness from the sync
+ * engine's change stream. There is no replica in here, so this is the assembly web-dev
+ * already uses: **REST reads, REST writes, no live stream**. A shard sees its own writes
+ * (they return the new revision) and the current state when it subscribes; what it does not
+ * see is another client changing a key underneath it until the frame reloads.
+ *
+ * Built once and shared by every shard pane — the hub keys its subscriptions by shard id,
+ * and one content token serves them all.
+ */
+function useShardPlanes(config: EmbedConfig) {
+  return useMemo(() => {
+    if (!config.apiBaseUrl) return null;
+    const client = createApiClient(
+      {
+        isDesktopApp: false,
+        apiBaseUrl: config.apiBaseUrl,
+        websocketBaseUrl: "",
+        collabWsBaseUrl: config.collabWsUrl,
+      },
+      { getToken: () => config.token },
+    );
+    const api = createShardApi(client);
+    return {
+      api,
+      kv: createShardKVPort(api, null),
+      hub: createShardDataHub(api),
+      contentTokens: createContentTokenStore(client),
+    };
+  }, [config]);
+}
+
+/**
+ * One shard, sandboxed to an opaque origin exactly as on desktop (`allow-scripts`, no
+ * `allow-same-origin`), so postMessage is its only way out — and `createBridgeHost` is what
+ * answers, verbatim, filtering on the source window because an opaque origin reports "null".
+ *
+ * **The token in the URL is a content token, never the session bearer.** A shard's own JS can
+ * read its document URL, so the bearer there would hand every shard the viewer's whole API.
+ * It is minted asynchronously; until it lands no frame is mounted, because one without it
+ * would only 401.
+ *
+ * Published channel only. Draft is the agent's sandbox and belongs to the surface where the
+ * agent is working; the companion shows the real thing.
+ */
+function ShardPane({ pane, config }: { pane: HostPane; config: EmbedConfig }) {
+  const planes = useShardPlanes(config);
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  const [contentToken, setContentToken] = useState<string | null>(
+    () => planes?.contentTokens.peek() ?? null,
+  );
+
+  useEffect(() => {
+    if (!planes || contentToken) return;
+    let alive = true;
+    void planes.contentTokens.get().then((t) => {
+      if (alive) setContentToken(t);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [planes, contentToken]);
+
+  // One host per pane, attached for as long as the pane exists — not for as long as it is
+  // visible. A hidden shard keeps answering, which is what lets it re-surface with its state
+  // rather than rebuilding it.
+  useEffect(() => {
+    if (!planes) return;
+    const host = createBridgeHost({
+      pageId: pane.id,
+      getWindow: () => frameRef.current?.contentWindow,
+      // Read at answer time from the document, so the host never holds a stale copy of
+      // something the shell owns.
+      getTheme: () => document.documentElement.dataset.theme ?? "dark",
+      kv: planes.kv,
+      api: planes.api,
+      hub: planes.hub,
+    });
+    host.attach();
+    return () => host.detach();
+  }, [pane.id, planes]);
+
+  const src = useMemo(() => {
+    if (!planes || !contentToken) return null;
+    const params = new URLSearchParams({ access_token: contentToken });
+    const theme = document.documentElement.dataset.theme;
+    // Stamped for a correct FIRST paint; later switches ride the bridge's theme push.
+    if (theme) params.set("theme", theme);
+    return `${config.apiBaseUrl}/content/${pane.id}/?${params.toString()}`;
+  }, [planes, contentToken, config.apiBaseUrl, pane.id]);
+
+  if (!planes) {
     return (
-      <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-8 text-center">
-        <p className="font-display text-body font-medium text-ink-2">
-          {pane.title ?? "Shard"}
-        </p>
-        <p className="font-mono text-small text-ink-4">
-          Shards need a content token and the bridge planes, which the companion does not
-          serve yet.
-        </p>
-      </div>
+      <ShardNotice title={pane.title}>
+        The host did not send an apiBaseUrl, so there is nothing to serve the shard from.
+      </ShardNotice>
     );
   }
+  if (!src) return <ShardNotice title={pane.title}>Minting a content token…</ShardNotice>;
 
   return (
     <iframe
+      ref={frameRef}
       title={pane.title ?? pane.id}
-      src={pane.src}
+      src={src}
       sandbox="allow-scripts"
       className="h-full w-full border-0 bg-bg"
     />
+  );
+}
+
+function ShardNotice({ title, children }: { title?: string; children: ReactNode }) {
+  return (
+    <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-8 text-center">
+      <p className="font-display text-body font-medium text-ink-2">{title ?? "Shard"}</p>
+      <p className="font-mono text-small text-ink-4">{children}</p>
+    </div>
   );
 }
 

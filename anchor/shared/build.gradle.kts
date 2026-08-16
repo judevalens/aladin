@@ -41,6 +41,11 @@ kotlin {
 			}
 			withHostTest {
 				  isIncludeAndroidResources = true
+				  // Compose's runtime calls android.util.Log and os.Trace, which the unit-test
+				  // android.jar stubs to THROW. Producer tests run a real composition, so
+				  // without this every one of them dies on a trace call rather than an
+				  // assertion.
+				  isReturnDefaultValues = true
 			}
 	  }
 
@@ -70,6 +75,7 @@ kotlin {
 				  implementation(libs.ktor.serialization.json)
 				  implementation(libs.ktor.client.logging)
 				  implementation(libs.ktor.client.auth)
+				  implementation(libs.ktor.client.websockets)
 
 				  // SQLDelight — local SQLite
 				  implementation(libs.sqldelight.runtime)
@@ -82,6 +88,10 @@ kotlin {
 
 				  // Koin — dependency injection
 				  implementation(libs.koin.core)
+
+				  // Feather — the handoff's icon set (Lucide is a fork of Feather), as a
+				  // real dependency rather than hand-drawn or vendored art.
+				  implementation(libs.composeIcons.feather)
 			}
 			iosMain.dependencies {
 				  implementation(libs.ktor.client.darwin)
@@ -90,6 +100,10 @@ kotlin {
 			commonTest.dependencies {
 				  implementation(libs.kotlin.test)
 				  implementation(libs.kotlinx.coroutines.test)
+				  // Molecule + Turbine, via Circuit's own test artifact — the state producers
+				  // are composables, so testing them means running a composition and reading
+				  // what it emits.
+				  implementation(libs.circuit.test)
 			}
 	  }
 }
