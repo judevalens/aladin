@@ -6,6 +6,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.slack.circuit.runtime.CircuitUiState
+import dawn.system.anchor.domain.ArtifactKind
+import dawn.system.anchor.domain.BrowserFilter
+import dawn.system.anchor.domain.FolderPurpose
+import dawn.system.anchor.domain.ItemSort
 
 /** Panels and overlays the user toggles. Nothing outside the shell can tell they exist. */
 sealed interface ChromeEvent {
@@ -24,6 +28,12 @@ sealed interface ChromeEvent {
     /** Long-press on the browser icon: a menu, never a direct action. */
     data object OpenBrowserMenu : ChromeEvent
     data object CloseBrowserMenu : ChromeEvent
+
+    /** The facets. One filter narrows the Browser and the Open list together. */
+    data class ToggleKind(val kind: ArtifactKind) : ChromeEvent
+    data class TogglePurpose(val purpose: FolderPurpose) : ChromeEvent
+    data class SortBy(val sort: ItemSort) : ChromeEvent
+    data object ClearFilter : ChromeEvent
 }
 
 /**
@@ -54,6 +64,12 @@ data class ChromeSlice(
      * the design has it persist across relaunches, which is still to build.
      */
     val browserPinned: Boolean,
+    /**
+     * What narrows the Browser **and** the Open list — the design's own words, "applies to
+     * Browser and Open". Chrome rather than navigation: it changes what you can see, never
+     * where you are.
+     */
+    val filter: BrowserFilter,
     val dismissOverlays: () -> Unit,
     val handle: (ChromeEvent) -> Unit,
 ) : CircuitUiState
@@ -75,6 +91,7 @@ fun rememberChromeState(): ChromeSlice {
     var browserOpen by remember { mutableStateOf(false) }
     var browserPinned by remember { mutableStateOf(false) }
     var browserMenuOpen by remember { mutableStateOf(false) }
+    var filter by remember { mutableStateOf(BrowserFilter()) }
 
     return ChromeSlice(
         sidebarOpen = sidebarOpen,
@@ -83,6 +100,7 @@ fun rememberChromeState(): ChromeSlice {
         switcherOpen = switcherOpen,
         browserOpen = browserOpen,
         browserMenuOpen = browserMenuOpen,
+        filter = filter,
         browserPinned = browserPinned,
         // Overlays close when you go somewhere; the sidebar and Copilot are not overlays and
         // deliberately survive — collapsing the sidebar is a statement about the whole shell,
@@ -112,6 +130,10 @@ fun rememberChromeState(): ChromeSlice {
                 browserOpen = false
             }
             ChromeEvent.CloseBrowserMenu -> browserMenuOpen = false
+            is ChromeEvent.ToggleKind -> filter = filter.toggle(event.kind)
+            is ChromeEvent.TogglePurpose -> filter = filter.toggle(event.purpose)
+            is ChromeEvent.SortBy -> filter = filter.sortedBy(event.sort)
+            ChromeEvent.ClearFilter -> filter = filter.cleared()
         }
     }
 }

@@ -87,6 +87,7 @@ fun ShellUi(state: ShellScreen.State, modifier: Modifier = Modifier) {
         BrowserDropdown(state)
         BrowserMenu(state)
         OpenDropdown(state)
+        FilterPopover(state)
         WriteSheets(state)
     }
 }

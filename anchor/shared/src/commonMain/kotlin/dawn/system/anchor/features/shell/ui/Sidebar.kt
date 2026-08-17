@@ -1,9 +1,11 @@
 package dawn.system.anchor.features.shell.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -62,6 +64,7 @@ internal fun Sidebar(state: ShellScreen.State, modifier: Modifier = Modifier) {
 
     Column(modifier.fillMaxHeight().background(c.panel)) {
         IconRow(state)
+        FilterPills(state)
         Destinations(state)
 
         Box(
@@ -113,12 +116,28 @@ private fun IconRow(state: ShellScreen.State) {
             ColumnsIcon(tint = if (browserLit) c.ink else c.ink3, size = 19.dp)
         }
 
-        val filtering = state.chrome.filterOpen
-        IconButton(
-            background = if (filtering) c.amberSoft else null,
-            onClick = { state.chrome.handle(ChromeEvent.ToggleFilter) },
-        ) {
-            FilterIcon(tint = if (filtering) c.amber else c.ink3, size = 19.dp)
+        // Lit by what is ACTIVE, not by whether the popover happens to be open — the badge
+        // has to say "you are looking at a narrowed list" even after the popover is dismissed.
+        val narrowing = state.chrome.filter.isNarrowing
+        Box {
+            IconButton(
+                background = if (narrowing) c.amberSoft else null,
+                onClick = { state.chrome.handle(ChromeEvent.ToggleFilter) },
+            ) {
+                FilterIcon(tint = if (narrowing) c.amber else c.ink3, size = 19.dp)
+            }
+            if (narrowing) {
+                Text(
+                    "${state.chrome.filter.activeCount}",
+                    style = SectionLabelStyle,
+                    color = c.onAmber,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .clip(AnchorShape.pill)
+                        .background(c.amber)
+                        .padding(horizontal = 5.dp, vertical = 1.dp),
+                )
+            }
         }
 
         Spacer(Modifier.weight(1f))
@@ -126,6 +145,59 @@ private fun IconRow(state: ShellScreen.State) {
         IconButton(onClick = { state.chrome.handle(ChromeEvent.ToggleSidebar) }) {
             SidebarIcon(tint = c.ink3, size = 19.dp)
         }
+    }
+}
+
+/**
+ * The active facets, as removable pills — the one place a narrowed list says so without being
+ * opened. Only rendered while filtering, so the zone costs nothing the rest of the time.
+ */
+@Composable
+private fun FilterPills(state: ShellScreen.State) {
+    val c = AnchorTheme.colors
+    val filter = state.chrome.filter
+    if (!filter.isNarrowing) return
+
+    FlowRow(
+        Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        filter.purposes.forEach { purpose ->
+            Pill(purpose.name) { state.chrome.handle(ChromeEvent.TogglePurpose(purpose)) }
+        }
+        filter.kinds.forEach { kind ->
+            Pill(kind.wire.uppercase()) { state.chrome.handle(ChromeEvent.ToggleKind(kind)) }
+        }
+        Text(
+            "Clear",
+            style = MaterialTheme.typography.bodyMedium,
+            color = c.ink3,
+            modifier = Modifier
+                .clip(AnchorShape.control)
+                .clickable { state.chrome.handle(ChromeEvent.ClearFilter) }
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+        )
+    }
+}
+
+@Composable
+private fun Pill(label: String, onRemove: () -> Unit) {
+    val c = AnchorTheme.colors
+
+    Row(
+        Modifier
+            .height(32.dp)
+            .clip(AnchorShape.chip)
+            .background(c.amberSoft)
+            .border(1.dp, c.amberLine, AnchorShape.chip)
+            .clickable(onClick = onRemove)
+            .padding(horizontal = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, style = SectionLabelStyle, color = c.amber)
+        CloseIcon(tint = c.amber, size = 12.dp)
     }
 }
 

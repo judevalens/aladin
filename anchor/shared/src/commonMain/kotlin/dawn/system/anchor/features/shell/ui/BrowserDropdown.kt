@@ -125,7 +125,9 @@ private fun Header(state: ShellScreen.State, pinned: Boolean) {
             style = MaterialTheme.typography.titleMedium,
             color = c.ink,
         )
-        Text("$rootCount FOLDERS", style = SectionLabelStyle, color = c.ink4)
+        // "shown", not "folders": under a filter the root column is mostly leaves, and the
+        // count is of what survived rather than of what the workspace contains.
+        Text("$rootCount SHOWN", style = SectionLabelStyle, color = c.ink4)
         Spacer(Modifier.weight(1f))
 
         // The discoverable path to a tab; long-press on the icon is the shortcut for people

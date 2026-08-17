@@ -124,9 +124,9 @@ class ShellPresenter(
         return ShellScreen.State(
             nav = nav,
             chrome = chrome,
-            open = nodes.openRowsFor(nav.nav),
+            open = nodes.openRowsFor(nav.nav, chrome.filter),
             crumbs = nodes.crumbsFor(nav.nav),
-            browser = browser(nav.nav.here, BrowserFilter()),
+            browser = browser(nav.nav.here, chrome.filter),
             documents = documents(nav.nav),
             editor = editor,
             write = write,

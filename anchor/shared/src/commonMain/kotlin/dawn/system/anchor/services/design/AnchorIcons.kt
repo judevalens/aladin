@@ -36,6 +36,7 @@ import compose.icons.feathericons.Mic
 import compose.icons.feathericons.Search
 import compose.icons.feathericons.Share2
 import compose.icons.feathericons.Star
+import compose.icons.feathericons.Check
 import compose.icons.feathericons.Maximize2
 import compose.icons.feathericons.MoreHorizontal
 import compose.icons.feathericons.Paperclip
@@ -229,3 +230,8 @@ fun PinIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = DEFAULT_SIZE)
 @Composable
 fun MaximizeIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = DEFAULT_SIZE) =
     Glyph(FeatherIcons.Maximize2, tint, size, modifier)
+
+/** A checked facet. */
+@Composable
+fun CheckIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = DEFAULT_SIZE) =
+    Glyph(FeatherIcons.Check, tint, size, modifier)

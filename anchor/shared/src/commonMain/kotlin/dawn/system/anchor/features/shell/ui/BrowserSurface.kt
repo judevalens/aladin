@@ -147,6 +147,10 @@ private fun ColumnRow(row: BrowserRow, onClick: () -> Unit) {
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
+        // A folder's live item count: how many matching things are under it, which is also
+        // what decided it is here at all.
+        row.count?.let { Text("$it", style = SectionLabelStyle, color = c.ink4) }
+
         // Only a purpose the server can actually vouch for gets a chip. `Learning` has no
         // representation server-side, so it never appears rather than being guessed at.
         row.purpose?.takeIf { it == FolderPurpose.Research }?.let {

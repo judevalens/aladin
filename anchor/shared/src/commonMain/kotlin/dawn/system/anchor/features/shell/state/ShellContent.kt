@@ -6,6 +6,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import dawn.system.anchor.domain.ArtifactKind
+import dawn.system.anchor.domain.BrowserFilter
 import dawn.system.anchor.domain.Destination
 import dawn.system.anchor.domain.ItemState
 import dawn.system.anchor.domain.Nav
@@ -70,11 +71,12 @@ data class Crumb(val label: String, val target: NavEvent?)
  * design labels "recent first" for exactly that reason; the sidebar list is the one place
  * stability matters more.
  *
- * The browser tab resolves without a node, because it names none — it is a place, not a row.
+ * The browser tab resolves without a node, because it names none — it is a place, not a row,
+ * and it is **exempt from the filter**: narrowing to PDFs must not hide the browser.
  */
 @Composable
-fun NodeStore.openRowsFor(nav: Nav): List<OpenRow> =
-    nav.open.map { tab ->
+fun NodeStore.openRowsFor(nav: Nav, filter: BrowserFilter = BrowserFilter()): List<OpenRow> =
+    nav.open.mapNotNull { tab ->
         // KEYED, and not optionally. Each row subscribes per id, and an unkeyed read carries
         // the previous row's value into the next when the list changes — the bug that made
         // every drill revert, in a different place.
@@ -104,7 +106,12 @@ fun NodeStore.openRowsFor(nav: Nav): List<OpenRow> =
                         kind = node?.artifactKind,
                         state = null,
                         active = tab.key == nav.activeDoc,
-                    )
+                    ).takeIf {
+                        // The browser tab above is exempt outright; a document is kept only
+                        // if it survives. Filtering by "PDFs" must not hide the browser, and
+                        // must not leave a note in a list that claims to show only PDFs.
+                        filter.matches(kind = node?.artifactKind, purpose = null, state = null)
+                    }
                 }
             }
         }
