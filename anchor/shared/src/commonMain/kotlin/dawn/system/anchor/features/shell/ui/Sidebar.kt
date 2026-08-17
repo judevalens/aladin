@@ -88,13 +88,23 @@ private fun IconRow(state: ShellScreen.State) {
         // is drawn and inert rather than wired to something that does not exist.
         IconButton(enabled = false) { SearchIcon(tint = c.ink3, size = 19.dp) }
 
-        // The browser's door: it opens the dropdown, never a destination. Lit while the
-        // dropdown is up or the browser is the surface you are on.
+        // The browser's door, and **only one browser is ever live**. Standing on the browser
+        // surface, the button just closes any overlay. With a tab open elsewhere it activates
+        // that tab rather than stacking a dropdown over it. Otherwise it opens the dropdown.
         val onBrowser = state.nav.nav.here.surface == Surface.Browser
         val browserLit = state.chrome.browserOpen || onBrowser
         IconButton(
             background = if (browserLit) c.sel else null,
-            onClick = { state.chrome.handle(ChromeEvent.ToggleBrowser) },
+            onClick = {
+                when {
+                    onBrowser -> state.chrome.handle(ChromeEvent.CloseBrowser)
+                    state.nav.nav.hasBrowserTab -> {
+                        state.chrome.handle(ChromeEvent.CloseBrowser)
+                        state.nav.handle(NavEvent.OpenBrowserTab)
+                    }
+                    else -> state.chrome.handle(ChromeEvent.ToggleBrowser)
+                }
+            },
         ) {
             ColumnsIcon(tint = if (browserLit) c.ink else c.ink3, size = 19.dp)
         }

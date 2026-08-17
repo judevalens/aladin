@@ -62,6 +62,10 @@ object AladinMetrics {
      * share it so the two read as siblings rather than as two unrelated panels.
      */
     val browserDropdownWidth = 1010.dp
+
+    /** Rail columns: three fit the dropdown's 1010pt exactly; the tab's are wider. */
+    val browserDropdownColumn = 336.dp
+    val browserTabColumn = 352.dp
     val browserDropdownHeight = 556.dp
     val overlayTop = 92.dp
 

@@ -100,7 +100,19 @@ internal fun SurfaceHost(state: ShellScreen.State, modifier: Modifier = Modifier
                 Destination.Graph -> Placeholder("Graph", "The entity canvas.")
             }
 
-            ShellPage.Browser -> BrowserSurface(state.browser, state.nav.handle)
+            // The browser as a full surface — the promoted tab, and the breadcrumb jump.
+            // Wider columns than the dropdown's, and its own footer.
+            ShellPage.Browser -> Column(Modifier.fillMaxSize()) {
+                Box(Modifier.fillMaxWidth().weight(1f)) {
+                    BrowserRail(
+                        slice = state.browser,
+                        columnWidth = AnchorTheme.metrics.browserTabColumn,
+                        onNav = state.nav.handle,
+                    )
+                }
+                HorizontalHairline()
+                BrowserFooter(state.browser, state.nav.handle)
+            }
 
             // Switching between two notes never moves the pager: they are the same page,
             // and the editor is told which pane to show. Nothing native is touched.

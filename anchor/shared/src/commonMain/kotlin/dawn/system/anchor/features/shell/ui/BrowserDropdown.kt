@@ -7,10 +7,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -18,14 +17,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import dawn.system.anchor.domain.Surface
 import dawn.system.anchor.features.shell.ShellScreen
 import dawn.system.anchor.features.shell.state.ChromeEvent
 import dawn.system.anchor.features.shell.state.NavEvent
-import dawn.system.anchor.domain.Surface
 import dawn.system.anchor.services.design.AnchorTheme
 import dawn.system.anchor.services.design.CloseIcon
 import dawn.system.anchor.services.design.ColumnsIcon
+import dawn.system.anchor.services.design.MaximizeIcon
 import dawn.system.anchor.services.design.PinIcon
+import dawn.system.anchor.services.design.SectionLabelStyle
 
 /**
  * The browser, over your content instead of instead of it.
@@ -34,8 +35,12 @@ import dawn.system.anchor.services.design.PinIcon
  * picking a resource is constant and mid-task, so it must not cost a context switch. The
  * document behind stays exactly where it was, and dismissing lands you back in it.
  *
- * Pinned, the catcher is not rendered at all — that is what makes "pin once, open several in
- * sequence" work, and it is why the pin is a real state rather than a convenience.
+ * **Pinned means "survives opening an item"** — pin once, then work through several documents
+ * in sequence without reopening. It deliberately does NOT mean "ignores a tap outside": the
+ * design suppressed the catcher entirely when pinned, so the content behind stayed
+ * interactive, but tap-outside-to-dismiss is the stronger convention and the owner's call.
+ * The cost is stated rather than hidden: a pinned dropdown now also swallows taps meant for
+ * the document behind it.
  */
 @Composable
 internal fun BoxScope.BrowserDropdown(state: ShellScreen.State) {
@@ -51,37 +56,63 @@ internal fun BoxScope.BrowserDropdown(state: ShellScreen.State) {
             OverlayAnchor.AboveDock(bottom = 96.dp)
         },
         onDismiss = { state.chrome.handle(ChromeEvent.CloseBrowser) },
-        // Pinned: no catcher, so the content behind stays interactive. This is the single
-        // most important difference from a modal, and the reason it is not one.
-        dismissOnOutsideTap = !pinned,
         borderColor = if (pinned) c.amberLine else c.line,
         elevation = if (pinned) 16.dp else 24.dp,
         modifier = Modifier.width(m.browserDropdownWidth).height(m.browserDropdownHeight),
     ) {
         Column(Modifier.fillMaxSize()) {
             Header(state, pinned)
+            HorizontalHairline()
             Box(Modifier.fillMaxWidth().weight(1f)) {
-                BrowserSurface(slice = state.browser, onNav = { event ->
+                BrowserRail(
+                    slice = state.browser,
+                    columnWidth = m.browserDropdownColumn,
+                    // Passed so reopening on an already-deep path scrolls to the deepest
+                    // columns rather than the shallowest.
+                    visible = state.chrome.browserOpen,
+                    onNav = { event ->
+                        state.nav.handle(event)
+                        // Opening an item dismisses — unless pinned, where picks land behind
+                        // it. The coupling lives here rather than in either producer, because
+                        // it is a fact about this overlay and not about navigation or chrome
+                        // on their own.
+                        if (event is NavEvent.OpenDoc && !pinned) {
+                            state.chrome.handle(ChromeEvent.CloseBrowser)
+                        }
+                    },
+                )
+            }
+            HorizontalHairline()
+            BrowserFooter(
+                slice = state.browser,
+                depthHint = depthHint(state.browser.columns.size),
+                onNav = { event ->
                     state.nav.handle(event)
-                    // Opening an item dismisses — unless pinned, where picks land behind it.
-                    // The coupling lives here rather than in either producer, because it is a
-                    // fact about this overlay and not about navigation or chrome on their own.
                     if (event is NavEvent.OpenDoc && !pinned) {
                         state.chrome.handle(ChromeEvent.CloseBrowser)
                     }
-                })
-            }
+                },
+            )
         }
     }
 }
 
 /**
- * Name, pin, dismiss. The item count, the "n filtered" chip and the maximize glyph that
- * promotes this to a tab land here too, once there is a tab to promote to.
+ * "depth 5 · scroll ⇢", and only once the rail is deeper than the three columns on screen.
+ *
+ * Without it, a rail scrolled to its end looks like a rail with nothing to its left — the one
+ * thing horizontal columns cannot show about themselves.
  */
+private fun depthHint(columns: Int): String? =
+    if (columns > VISIBLE_COLUMNS) "DEPTH $columns · SCROLL" else null
+
+private const val VISIBLE_COLUMNS = 3
+
+/** Name, count, promote, pin, dismiss. */
 @Composable
 private fun Header(state: ShellScreen.State, pinned: Boolean) {
     val c = AnchorTheme.colors
+    val rootCount = state.browser.columns.firstOrNull()?.rows?.size ?: 0
 
     Row(
         Modifier.fillMaxWidth().padding(start = 16.dp, end = 10.dp, top = 14.dp, bottom = 12.dp),
@@ -94,7 +125,20 @@ private fun Header(state: ShellScreen.State, pinned: Boolean) {
             style = MaterialTheme.typography.titleMedium,
             color = c.ink,
         )
+        Text("$rootCount FOLDERS", style = SectionLabelStyle, color = c.ink4)
         Spacer(Modifier.weight(1f))
+
+        // The discoverable path to a tab; long-press on the icon is the shortcut for people
+        // who already know. Promoting closes this, because only one browser is ever live.
+        IconButton(
+            size = 40.dp,
+            onClick = {
+                state.chrome.handle(ChromeEvent.CloseBrowser)
+                state.nav.handle(NavEvent.OpenBrowserTab)
+            },
+        ) {
+            MaximizeIcon(tint = c.ink3, size = 16.dp)
+        }
 
         // The pin is where the accent goes on this surface, and only when it is lit — the
         // design allows one amber element per surface and this spends it deliberately.

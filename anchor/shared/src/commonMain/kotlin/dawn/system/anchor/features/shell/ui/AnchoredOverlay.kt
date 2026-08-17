@@ -54,9 +54,10 @@ internal sealed interface OverlayAnchor {
  * scrim says "you have left your document to do something else"; this says "your document is
  * still there, and here is a thing over it".
  *
- * So there is **no scrim**. What there is, when [dismissOnOutsideTap], is a transparent
- * full-frame catcher — an invisible surface whose only job is to turn a tap anywhere else into
- * a dismissal. Pinned, it is not rendered at all, and the content behind stays live.
+ * So there is **no scrim**. What there is instead is a transparent full-frame catcher — an
+ * invisible surface whose only job is to turn a tap anywhere else into a dismissal. It is not
+ * dimming and it is not a barrier you have to acknowledge; it is the shape of "tap away to
+ * leave", which every overlay here honours.
  *
  * ### The catcher and native views
  *
@@ -79,7 +80,6 @@ internal fun BoxScope.AnchoredOverlay(
     anchor: OverlayAnchor,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
-    dismissOnOutsideTap: Boolean = true,
     borderColor: Color? = null,
     elevation: Dp = OVERLAY_SHADOW,
     shape: Shape = AnchorShape.popover,
@@ -87,7 +87,7 @@ internal fun BoxScope.AnchoredOverlay(
 ) {
     val c = AnchorTheme.colors
 
-    if (visible && dismissOnOutsideTap) {
+    if (visible) {
         // No ripple and no indication: this is not a control, it is the absence of one.
         val interaction = remember { MutableInteractionSource() }
         Box(
