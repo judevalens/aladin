@@ -14,7 +14,7 @@ import kotlinx.coroutines.launch
 
 /** Create, rename and delete — everything that changes the workspace. */
 sealed interface WriteEvent {
-    data class ActionsRequested(val node: WorkspaceNode) : WriteEvent
+    data class ActionsRequested(val nodeId: String) : WriteEvent
     data object ActionsDismissed : WriteEvent
     data object RenameStarted : WriteEvent
     data class RenameEdited(val title: String) : WriteEvent
@@ -94,7 +94,7 @@ class WriteStateProducer(
             writeError = writeError,
         ) { event ->
             when (event) {
-                is WriteEvent.ActionsRequested -> actionsForId = event.node.id
+                is WriteEvent.ActionsRequested -> actionsForId = event.nodeId
                 WriteEvent.ActionsDismissed -> actionsForId = null
 
                 WriteEvent.RenameStarted -> {

@@ -85,6 +85,8 @@ fun ShellUi(state: ShellScreen.State, modifier: Modifier = Modifier) {
         // Overlays hang HERE, at the shell's own box, never inside the pager: a parked page is
         // placed two window-widths away and would take its overlay with it.
         BrowserDropdown(state)
+        BrowserMenu(state)
+        WriteSheets(state)
     }
 }
 

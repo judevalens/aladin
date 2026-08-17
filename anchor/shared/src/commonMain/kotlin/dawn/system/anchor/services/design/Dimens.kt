@@ -69,6 +69,9 @@ object AladinMetrics {
     val browserDropdownHeight = 556.dp
     val overlayTop = 92.dp
 
+    /** The long-press menu on the browser icon. */
+    val contextMenuWidth = 268.dp
+
     /** The Open expander popup. */
     val openPopupWidth = 620.dp
     val openPopupTop = 150.dp

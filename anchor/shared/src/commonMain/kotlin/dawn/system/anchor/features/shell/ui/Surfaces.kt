@@ -111,7 +111,7 @@ internal fun SurfaceHost(state: ShellScreen.State, modifier: Modifier = Modifier
                     )
                 }
                 HorizontalHairline()
-                BrowserFooter(state.browser, state.nav.handle)
+                BrowserFooter(state.browser, state.nav.handle, onOrganize = state.write.handle)
             }
 
             // Switching between two notes never moves the pager: they are the same page,

@@ -34,6 +34,7 @@ import dawn.system.anchor.domain.FolderPurpose
 import dawn.system.anchor.features.shell.state.BrowserRow
 import dawn.system.anchor.features.shell.state.BrowserSlice
 import dawn.system.anchor.features.shell.state.NavEvent
+import dawn.system.anchor.features.shell.state.WriteEvent
 import dawn.system.anchor.services.design.AnchorShape
 import dawn.system.anchor.services.design.AnchorTheme
 import dawn.system.anchor.services.design.ChevronDirection
@@ -181,6 +182,8 @@ internal fun BrowserFooter(
     onNav: (NavEvent) -> Unit,
     modifier: Modifier = Modifier,
     depthHint: String? = null,
+    /** The organize actions. Absent in the dropdown, which is for picking, not triage. */
+    onOrganize: ((WriteEvent) -> Unit)? = null,
 ) {
     val c = AnchorTheme.colors
     val m = AnchorTheme.metrics
@@ -209,17 +212,56 @@ internal fun BrowserFooter(
         depthHint?.let { Text(it, style = SectionLabelStyle, color = c.amber) }
 
         detail?.openKey?.let { key ->
-            Row(
-                Modifier
-                    .height(m.touchTarget)
-                    .clip(AnchorShape.row)
-                    .background(c.amber)
-                    .clickable { onNav(NavEvent.OpenDoc(key)) }
-                    .padding(horizontal = 20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("Open", style = MaterialTheme.typography.titleMedium, color = c.onAmber)
+            FooterAction("Open", filled = true) { onNav(NavEvent.OpenDoc(key)) }
+        }
+
+        // Triage: the reason the tab exists at all. `Move…` is drawn and INERT — there is no
+        // move on the writer or on the API, and a button that pretended otherwise would be
+        // worse than one that plainly cannot be pressed. The prototype ships all three inert;
+        // these two work.
+        if (onOrganize != null && detail != null) {
+            FooterAction("Move…", enabled = false) {}
+            FooterAction("Rename") {
+                onOrganize(WriteEvent.ActionsRequested(detail.id))
+                onOrganize(WriteEvent.RenameStarted)
+            }
+            FooterAction("Delete", destructive = true) {
+                onOrganize(WriteEvent.ActionsRequested(detail.id))
+                onOrganize(WriteEvent.DeleteRequested)
             }
         }
+    }
+}
+
+@Composable
+private fun FooterAction(
+    label: String,
+    filled: Boolean = false,
+    destructive: Boolean = false,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    val c = AnchorTheme.colors
+    val m = AnchorTheme.metrics
+
+    Row(
+        Modifier
+            .height(m.touchTarget)
+            .clip(AnchorShape.row)
+            .then(if (filled) Modifier.background(c.amber) else Modifier)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = if (filled) 20.dp else 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.titleMedium,
+            color = when {
+                filled -> c.onAmber
+                destructive -> c.against
+                enabled -> c.ink2
+                else -> c.ink4
+            },
+        )
     }
 }

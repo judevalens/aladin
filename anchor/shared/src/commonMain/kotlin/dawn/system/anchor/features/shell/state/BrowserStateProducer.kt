@@ -36,6 +36,7 @@ data class BrowserColumn(val title: String, val rows: List<BrowserRow>)
 
 /** The third pane — what one selected item is, and what opening it would do. */
 data class BrowserDetail(
+    val id: String,
     val title: String,
     val kindLabel: String,
     val isContainer: Boolean,
@@ -118,6 +119,7 @@ class BrowserStateProducer(private val nodes: NodeStore) {
             columns = columns,
             detail = selected?.let { node ->
                 BrowserDetail(
+                    id = node.id,
                     title = node.title.orUntitled(),
                     kindLabel = node.kindLabel(),
                     isContainer = false,

@@ -2,6 +2,7 @@ package dawn.system.anchor.features.shell.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -105,6 +106,7 @@ private fun IconRow(state: ShellScreen.State) {
                     else -> state.chrome.handle(ChromeEvent.ToggleBrowser)
                 }
             },
+            onLongClick = { state.chrome.handle(ChromeEvent.OpenBrowserMenu) },
         ) {
             ColumnsIcon(tint = if (browserLit) c.ink else c.ink3, size = 19.dp)
         }
@@ -283,6 +285,12 @@ internal fun IconButton(
     background: androidx.compose.ui.graphics.Color? = null,
     enabled: Boolean = true,
     onClick: () -> Unit = {},
+    /**
+     * A long press, where one means something. `combinedClickable` also **suppresses the click
+     * that would otherwise follow** — the prototype needs a 480ms timer and a `_fired` flag to
+     * do that by hand in the DOM; here it is the platform's own gesture.
+     */
+    onLongClick: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     Box(
@@ -290,7 +298,13 @@ internal fun IconButton(
             .size(size)
             .clip(AnchorShape.field)
             .background(background ?: AnchorTheme.colors.panel.copy(alpha = 0f))
-            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier),
+            .then(
+                if (!enabled) {
+                    Modifier
+                } else {
+                    Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                },
+            ),
         contentAlignment = Alignment.Center,
         content = { content() },
     )

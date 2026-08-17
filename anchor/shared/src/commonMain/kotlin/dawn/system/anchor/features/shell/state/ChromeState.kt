@@ -18,8 +18,12 @@ sealed interface ChromeEvent {
     data object ToggleBrowser : ChromeEvent
     data object CloseBrowser : ChromeEvent
 
-    /** Pin: the dropdown stays through item opens, and stops catching taps behind it. */
+    /** Pin: the dropdown stays through item opens. */
     data object ToggleBrowserPinned : ChromeEvent
+
+    /** Long-press on the browser icon: a menu, never a direct action. */
+    data object OpenBrowserMenu : ChromeEvent
+    data object CloseBrowserMenu : ChromeEvent
 }
 
 /**
@@ -38,6 +42,12 @@ data class ChromeSlice(
     val filterOpen: Boolean,
     val switcherOpen: Boolean,
     val browserOpen: Boolean,
+    /**
+     * The long-press menu. **A menu rather than a direct promotion**, because a long press that
+     * did something immediately would be a gesture you can only learn by accidentally firing
+     * it — and this one teaches that a tab exists.
+     */
+    val browserMenuOpen: Boolean,
     /**
      * Pinned: the dropdown survives opening an item, and renders no click-catcher at all, so
      * the document behind stays interactive. A working preference rather than a transient —
@@ -64,6 +74,7 @@ fun rememberChromeState(): ChromeSlice {
     var switcherOpen by remember { mutableStateOf(false) }
     var browserOpen by remember { mutableStateOf(false) }
     var browserPinned by remember { mutableStateOf(false) }
+    var browserMenuOpen by remember { mutableStateOf(false) }
 
     return ChromeSlice(
         sidebarOpen = sidebarOpen,
@@ -71,6 +82,7 @@ fun rememberChromeState(): ChromeSlice {
         filterOpen = filterOpen,
         switcherOpen = switcherOpen,
         browserOpen = browserOpen,
+        browserMenuOpen = browserMenuOpen,
         browserPinned = browserPinned,
         // Overlays close when you go somewhere; the sidebar and Copilot are not overlays and
         // deliberately survive — collapsing the sidebar is a statement about the whole shell,
@@ -81,6 +93,7 @@ fun rememberChromeState(): ChromeSlice {
             // The pinned browser is the exception, and the whole point of pinning: picks land
             // behind it and it stays put.
             if (!browserPinned) browserOpen = false
+            browserMenuOpen = false
         },
     ) { event ->
         // Exhaustive, with no `else`. That is what a sealed hierarchy buys: a new chrome event
@@ -93,6 +106,12 @@ fun rememberChromeState(): ChromeSlice {
             ChromeEvent.ToggleBrowser -> browserOpen = !browserOpen
             ChromeEvent.CloseBrowser -> browserOpen = false
             ChromeEvent.ToggleBrowserPinned -> browserPinned = !browserPinned
+            ChromeEvent.OpenBrowserMenu -> {
+                browserMenuOpen = true
+                // Never both: the menu is a choice ABOUT the browser, not a thing beside it.
+                browserOpen = false
+            }
+            ChromeEvent.CloseBrowserMenu -> browserMenuOpen = false
         }
     }
 }
