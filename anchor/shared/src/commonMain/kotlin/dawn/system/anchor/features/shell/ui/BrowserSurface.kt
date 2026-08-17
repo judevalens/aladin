@@ -85,10 +85,9 @@ internal fun BrowserSurface(
                 } else {
                     LazyColumn(contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)) {
                         items(column.rows, key = { it.id }) { row ->
-                            ColumnRow(row) {
-                                if (row.isContainer) onNav(NavEvent.SelectFolder(depth, row.id))
-                                else onNav(NavEvent.SelectItem(row.id))
-                            }
+                            // One handler for folders and leaves alike: both truncate the
+                            // path to this column and append. It is the only "up" there is.
+                            ColumnRow(row) { onNav(NavEvent.Select(depth, row.id)) }
                         }
                     }
                 }

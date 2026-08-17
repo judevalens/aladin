@@ -74,24 +74,36 @@ class BrowserStateProducer(private val nodes: NodeStore) {
 
         val byParent = remember(deeper) { deeper.groupBy { it.parentId } }
 
-        val columns = remember(roots, byParent, pathRows, here, filter) {
+        // Only FOLDERS produce columns. A selected leaf is the last element of the same path
+        // and contributes none, which is what makes one array able to carry both (`:740-741`).
+        //
+        // An element whose row has not been read yet stops the walk rather than being assumed
+        // one way or the other: a missing column for a frame is recoverable, an empty column
+        // claiming a leaf has no children is a lie. Revisits are seeded from the replay cache,
+        // so this is only ever the genuine first read.
+        val folderPath = remember(here.path, pathRows) {
+            here.path.takeWhile { id -> pathRows.firstOrNull { it.id == id }?.isContainer == true }
+        }
+
+        val columns = remember(roots, byParent, pathRows, folderPath, here, filter) {
             buildList {
                 add(
                     column(
                         title = "Folders",
                         contents = roots,
-                        // Column i's selection is the id that column i + 1 descends into,
-                        // falling back to the leaf when this is the deepest column.
-                        selectedId = here.path.firstOrNull() ?: here.itemId,
+                        // Column i's selection is simply `path[i]` now that the leaf lives in
+                        // the same array — no fallback, because there is no second field to
+                        // fall back to.
+                        selectedId = here.path.firstOrNull(),
                         filter = filter,
                     ),
                 )
-                here.path.forEachIndexed { depth, folderId ->
+                folderPath.forEachIndexed { depth, folderId ->
                     add(
                         column(
                             title = pathRows.firstOrNull { it.id == folderId }?.title.orUntitled(),
                             contents = byParent[folderId].orEmpty(),
-                            selectedId = here.path.getOrNull(depth + 1) ?: here.itemId,
+                            selectedId = here.path.getOrNull(depth + 1),
                             filter = filter,
                         ),
                     )
@@ -99,15 +111,17 @@ class BrowserStateProducer(private val nodes: NodeStore) {
             }
         }
 
-        val selected = nodes.nodeOf(here.itemId)
+        // The trailing element, and only when it is a leaf — a folder selection is a column,
+        // not a thing to open. Mirrors the prototype's `bItem` (`:744`).
+        val selected = nodes.nodeOf(here.path.lastOrNull())?.takeIf { it.kind == NodeKind.Artifact }
         return BrowserSlice(
             columns = columns,
             detail = selected?.let { node ->
                 BrowserDetail(
                     title = node.title.orUntitled(),
                     kindLabel = node.kindLabel(),
-                    isContainer = node.kind != NodeKind.Artifact,
-                    openKey = TabKey.Artifact(node.id).takeIf { node.kind == NodeKind.Artifact },
+                    isContainer = false,
+                    openKey = TabKey.Artifact(node.id),
                 )
             },
         )

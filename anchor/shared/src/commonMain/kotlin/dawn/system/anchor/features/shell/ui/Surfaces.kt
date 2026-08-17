@@ -46,8 +46,8 @@ import dawn.system.anchor.services.design.destinationIcon
  *
  * **Each surface owns its own shape.** That is the handoff's central correction: Markets is a
  * dashboard, Graph is a canvas, Home is a feed — none of them is a tree, and the first pass
- * failed by rendering all of them through one tree-shaped pane. Only [Destination.Browser] is
- * a tree, and that is where tree-ness is quarantined.
+ * failed by rendering all of them through one tree-shaped pane. Only the browser is a tree,
+ * and that is where tree-ness is quarantined — as a surface, no longer as a destination.
  *
  * The one `WKWebView` is created *here*, above the pager, rather than inside the page that
  * shows it. A surface that owns a live native view destroys it every time you switch away,
@@ -68,12 +68,17 @@ internal fun SurfaceHost(state: ShellScreen.State, modifier: Modifier = Modifier
     // with the slot showing it — the rule that survives a recycler landing later.
     val webHost = rememberWebSurfaceHost(state.editor, enabled = webDocs.isNotEmpty())
 
-    // Everything the shell can show, as one flat list of pages: the four destinations, the
-    // editor if anything web-backed is open, then every document with a surface of its own.
-    // There is no document layer and no destination layer with a condition deciding which
-    // draws — there are just pages, and one of them is current.
+    // Everything the shell can show, as one flat list of pages: the three destinations, the
+    // browser, the editor if anything web-backed is open, then every document with a surface
+    // of its own. There is no document layer and no destination layer with a condition
+    // deciding which draws — there are just pages, and one of them is current.
+    //
+    // The browser page is ALWAYS here, whether or not a browser tab is open, because a
+    // breadcrumb jump shows the browser surface without opening one. Making it conditional
+    // would leave `activeIndex` at its no-match fallback of 0, silently rendering Home.
     val pages = remember(state.destinations, state.documents.documents) {
         state.destinations.map(ShellPage::Dest) +
+            ShellPage.Browser +
             listOfNotNull(webDocs.takeIf { it.isNotEmpty() }?.let(ShellPage::Web)) +
             state.documents.documents.filterIsInstance<OpenDocument.Standalone>().map(ShellPage::Doc)
     }
@@ -91,10 +96,11 @@ internal fun SurfaceHost(state: ShellScreen.State, modifier: Modifier = Modifier
         when (page) {
             is ShellPage.Dest -> when (page.destination) {
                 Destination.Home -> Placeholder("Home", "Continue, insights and today's activity.")
-                Destination.Browser -> BrowserSurface(state.browser, state.nav.handle)
                 Destination.Markets -> Placeholder("Markets", "Index strip, watchlist and positions.")
                 Destination.Graph -> Placeholder("Graph", "The entity canvas.")
             }
+
+            ShellPage.Browser -> BrowserSurface(state.browser, state.nav.handle)
 
             // Switching between two notes never moves the pager: they are the same page,
             // and the editor is told which pane to show. Nothing native is touched.
@@ -143,6 +149,17 @@ private sealed interface ShellPage {
     }
 
     /**
+     * The columns, full width — one page, always present.
+     *
+     * It stays resident for the same reason every page does, and it must exist even when no
+     * browser tab is open: the breadcrumb's `Browser` crumb shows this surface without
+     * promoting anything.
+     */
+    data object Browser : ShellPage {
+        override val key: String get() = "browser"
+    }
+
+    /**
      * Every web-backed document as ONE page, because they share one web view.
      *
      * The key is a constant for the same reason it is a page: opening a second note must
@@ -154,6 +171,7 @@ private sealed interface ShellPage {
 
     fun matches(surface: Surface): Boolean = when {
         this is Dest && surface is Surface.Dest -> destination == surface.destination
+        this is Browser -> surface is Surface.Browser
         this is Web && surface is Surface.Doc -> docs.any { it.key == surface.key }
         this is Doc && surface is Surface.Doc -> document.key == surface.key
         else -> false
@@ -284,8 +302,10 @@ internal fun FloatingDock(state: ShellScreen.State, modifier: Modifier = Modifie
             }
         }
 
-        state.nav.nav.switcherOrder().take(2).forEach { key ->
-            val row = state.open.firstOrNull { it.key == key } ?: return@forEach
+        // Recency here, unlike the sidebar's list: the dock has room for two, so "the two you
+        // were just in" is the only useful pair.
+        state.nav.nav.switcherOrder().take(2).forEach { tab ->
+            val row = state.open.firstOrNull { it.tab == tab } ?: return@forEach
             Row(
                 Modifier
                     .clip(AnchorShape.row)

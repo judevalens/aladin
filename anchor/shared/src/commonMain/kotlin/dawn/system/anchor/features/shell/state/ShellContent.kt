@@ -8,6 +8,7 @@ import dawn.system.anchor.domain.ArtifactKind
 import dawn.system.anchor.domain.Destination
 import dawn.system.anchor.domain.ItemState
 import dawn.system.anchor.domain.Nav
+import dawn.system.anchor.domain.OpenTab
 import dawn.system.anchor.domain.Surface
 import dawn.system.anchor.domain.TabKey
 import dawn.system.anchor.domain.artifactKind
@@ -26,15 +27,31 @@ private fun String?.orUntitled(): String = this?.takeIf { it.isNotBlank() } ?: U
  * "what do I call this node". That was five places in the shell this replaces.
  */
 data class OpenRow(
-    val key: TabKey,
+    val tab: OpenTab,
     val title: String,
     /** The folder that owns it, as secondary text — two same-named notes stay distinguishable. */
     val folder: String?,
+    /** Null for the browser tab, which is not an artifact and has no kind to show. */
     val kind: ArtifactKind?,
     /** Always null today: nothing on the sync frame can report unread, recovered or stale. */
     val state: ItemState?,
     val active: Boolean,
 )
+
+/**
+ * A stable list key for one open tab. Identity, not position — removing a row must move the
+ * others rather than re-map their content.
+ */
+fun OpenTab.rowKey(): String = when (this) {
+    OpenTab.Browser -> "browser"
+    is OpenTab.Doc -> key.asString()
+}
+
+/** The event that shows this tab: opening a document and returning to the browser are one move. */
+fun OpenTab.openEvent(): NavEvent = when (this) {
+    OpenTab.Browser -> NavEvent.OpenBrowserTab
+    is OpenTab.Doc -> NavEvent.OpenDoc(key)
+}
 
 /** One breadcrumb segment. [target] is null for the ones that are not tappable. */
 data class Crumb(val label: String, val target: NavEvent?)
@@ -43,22 +60,38 @@ data class Crumb(val label: String, val target: NavEvent?)
  * The Open list, in [Nav.open]'s **append order** — deliberately not recency.
  *
  * A list that reorders under a finger moves every other target on the way to the one you
- * wanted. Recency belongs to the switcher, which freezes it for the life of the overlay for
- * the same reason.
+ * wanted. Recency belongs to the switcher and to the collapsed dock's two pills, which the
+ * design labels "recent first" for exactly that reason; the sidebar list is the one place
+ * stability matters more.
+ *
+ * The browser tab resolves without a node, because it names none — it is a place, not a row.
  */
 @Composable
 fun NodeStore.openRowsFor(nav: Nav): List<OpenRow> =
-    nav.open.map { key ->
-        val node = nodeOf(key.nodeId)
-        val folder = nodeOf(node?.parentId)
-        OpenRow(
-            key = key,
-            title = node?.title.orUntitled(),
-            folder = folder?.title?.takeIf { it.isNotBlank() },
-            kind = node?.artifactKind,
-            state = null,
-            active = key == nav.activeDoc,
-        )
+    nav.open.map { tab ->
+        when (tab) {
+            OpenTab.Browser -> OpenRow(
+                tab = tab,
+                title = Surface.Browser.TITLE,
+                folder = null,
+                kind = null,
+                state = null,
+                active = nav.here.surface == Surface.Browser,
+            )
+
+            is OpenTab.Doc -> {
+                val node = nodeOf(tab.key.nodeId)
+                val folder = nodeOf(node?.parentId)
+                OpenRow(
+                    tab = tab,
+                    title = node?.title.orUntitled(),
+                    folder = folder?.title?.takeIf { it.isNotBlank() },
+                    kind = node?.artifactKind,
+                    state = null,
+                    active = tab.key == nav.activeDoc,
+                )
+            }
+        }
     }
 
 /**
@@ -68,55 +101,62 @@ fun NodeStore.openRowsFor(nav: Nav): List<OpenRow> =
  * together because none of them holds a copy.
  *
  * On the Browser the crumbs are the **columns**, and each is tappable: tapping one truncates
- * the path back to it, which is the same move as re-picking that folder in its own column.
- * From a document only `Browser` is tappable, and it jumps to that document in its own folder.
+ * the path back to it, which is the same move as re-picking that row in its own column. From a
+ * document every ancestor is tappable too, and each jumps into the browser at its own level.
  *
- * (The prototype leaves the Browser crumbs inert, because its fixture is one level deep and
- * there is nothing to truncate back to. With real Miller depth they have to work.)
- *
- * Note where a document's crumb reads its folder from: **the node**, not [Nav.Entry.folderId].
- * The entry's ids are the Browser surface's column selection, a different thing — which is why
+ * Note where a document's crumbs read their folders from: **the nodes**, not the entry's path.
+ * The entry's path is the Browser surface's column selection, a different thing — which is why
  * truncating a trail entry can never make a breadcrumb wrong.
+ *
+ * **Past four crumbs the middle collapses to `…`**, so depth never pushes the leaf off the bar.
+ * That is the whole reason an arbitrarily deep tree stays legible here.
  */
 @Composable
 fun NodeStore.crumbsFor(nav: Nav): List<Crumb> {
     val here = nav.here
-    return when (val surface = here.surface) {
-        is Surface.Dest ->
-            if (surface.destination == Destination.Browser) {
-                // One crumb per column, so the trail of folders you descended is legible
-                // without counting columns. Tapping one truncates back to it — the same
-                // move as picking that folder again in its own column.
-                val path by remember(here.path) { each(here.path) }.collectAsState(emptyList())
-                val item = nodeOf(here.itemId)
-                buildList {
-                    add(Crumb(Destination.Browser.title, NavEvent.GoToBrowser(emptyList(), null)))
-                    here.path.forEachIndexed { depth, id ->
-                        val title = path.firstOrNull { it.id == id }?.title.orUntitled()
-                        add(Crumb(title, NavEvent.GoToBrowser(here.path.take(depth + 1), null)))
-                    }
-                    item?.let { add(Crumb(it.title.orUntitled(), null)) }
+    val crumbs = when (val surface = here.surface) {
+        is Surface.Dest -> listOf(Crumb(surface.destination.title, null))
+
+        // One crumb per column, so the trail you descended is legible without counting
+        // columns. Tapping one truncates back to it — the same move as picking that row again
+        // in its own column. A selected leaf is the last path element, so it gets a crumb from
+        // the same loop rather than a rule of its own.
+        Surface.Browser -> {
+            val nodes by remember(here.path) { each(here.path) }.collectAsState(emptyList())
+            buildList {
+                add(Crumb(Surface.Browser.TITLE, NavEvent.GoToBrowser(emptyList())))
+                here.path.forEachIndexed { depth, id ->
+                    val title = nodes.firstOrNull { it.id == id }?.title.orUntitled()
+                    add(Crumb(title, NavEvent.GoToBrowser(here.path.take(depth + 1))))
                 }
-            } else {
-                listOf(Crumb(surface.destination.title, null))
             }
+        }
 
         is Surface.Doc -> {
             val doc = nodeOf(surface.key.nodeId)
-            val folder = nodeOf(doc?.parentId)
-            // The full Miller path, so the crumb lands you on the document in its own
-            // folder with every column above it — not at the root.
-            val ancestors = ancestorPathOf(doc?.parentId)
+            // The **full** ancestor chain, every crumb tappable and each jumping into the
+            // browser at its own level — not just the parent. A document five levels deep is
+            // otherwise unreachable from where it sits.
+            val chain = ancestorPathOf(doc?.parentId) + listOfNotNull(doc?.parentId)
+            val nodes by remember(chain) { each(chain) }.collectAsState(emptyList())
             buildList {
-                add(
-                    Crumb(
-                        label = Destination.Browser.title,
-                        target = doc?.let { NavEvent.GoToBrowser(ancestors + listOfNotNull(it.parentId), it.id) },
-                    ),
-                )
-                folder?.let { add(Crumb(it.title.orUntitled(), null)) }
-                add(Crumb(doc?.title.orUntitled(), null))
+                add(Crumb(Surface.Browser.TITLE, NavEvent.GoToBrowser(emptyList())))
+                chain.forEachIndexed { depth, id ->
+                    val title = nodes.firstOrNull { it.id == id }?.title.orUntitled()
+                    add(Crumb(title, NavEvent.GoToBrowser(chain.take(depth + 1))))
+                }
+                add(Crumb(doc?.title.orUntitled(), doc?.let { NavEvent.GoToBrowser(chain + it.id) }))
             }
         }
     }
+    return crumbs.elided()
 }
+
+/**
+ * Keeps a breadcrumb to four segments: first, `…`, and the last two.
+ *
+ * Depth is expressed by the columns; the bar's job is to say where you are, and the leaf is
+ * the part of that which must never be pushed off. Mirrors the prototype's `elide` (`:749`).
+ */
+private fun List<Crumb>.elided(): List<Crumb> =
+    if (size <= 4) this else listOf(first(), Crumb("…", null), this[size - 2], last())

@@ -8,17 +8,24 @@ import androidx.compose.runtime.setValue
 import com.slack.circuit.runtime.CircuitUiState
 import dawn.system.anchor.domain.Destination
 import dawn.system.anchor.domain.Nav
+import dawn.system.anchor.domain.OpenTab
 import dawn.system.anchor.domain.TabKey
 import dawn.system.anchor.services.data.NodeStore
 
 /** Something the user did to move. Nothing here is a command the shell issues to itself. */
 sealed interface NavEvent {
     data class GoTo(val destination: Destination) : NavEvent
-    data class GoToBrowser(val path: List<String>, val itemId: String?) : NavEvent
+
+    /** A breadcrumb jump into the columns. Shows the browser; does not open a tab. */
+    data class GoToBrowser(val path: List<String>) : NavEvent
     data class OpenDoc(val key: TabKey) : NavEvent
-    data class CloseDoc(val key: TabKey) : NavEvent
-    data class SelectFolder(val column: Int, val folderId: String) : NavEvent
-    data class SelectItem(val itemId: String) : NavEvent
+
+    /** Promote the browser to a tab, or return to the one already open. */
+    data object OpenBrowserTab : NavEvent
+    data class Close(val tab: OpenTab) : NavEvent
+
+    /** Pick a row in a column — folder or leaf, the same move. */
+    data class Select(val column: Int, val id: String) : NavEvent
     data object Back : NavEvent
     data object Forward : NavEvent
 }
@@ -55,11 +62,14 @@ class NavStateProducer(private val nodes: NodeStore) {
     operator fun invoke(): NavSlice {
         var raw by remember { mutableStateOf(Nav()) }
 
-        // Exactly what the correction rule may ask about: every open document, and the two
-        // Browser ids of the position being rendered. Watching more would cost queries for
-        // rows nothing decides on; watching less would let a deletion go unnoticed.
+        // Exactly what the correction rule may ask about: every open DOCUMENT, and the path
+        // of the position being rendered. Watching more would cost queries for rows nothing
+        // decides on; watching less would let a deletion go unnoticed.
+        //
+        // The browser tab is not watched because it names no row — see `Nav.corrected`, where
+        // asking about it anyway is the mistake that would close it.
         val watched = remember(raw) {
-            (raw.open.map { it.nodeId } + raw.here.path + listOfNotNull(raw.here.itemId))
+            (raw.open.filterIsInstance<OpenTab.Doc>().map { it.key.nodeId } + raw.here.path)
                 .distinct()
         }
         val nav = raw.corrected(nodes.presenceOf(watched))
@@ -67,11 +77,11 @@ class NavStateProducer(private val nodes: NodeStore) {
         return NavSlice(nav) { event ->
             raw = when (event) {
                 is NavEvent.GoTo -> nav.goTo(event.destination)
-                is NavEvent.GoToBrowser -> nav.goToBrowser(event.path, event.itemId)
+                is NavEvent.GoToBrowser -> nav.goToBrowser(event.path)
                 is NavEvent.OpenDoc -> nav.openDoc(event.key)
-                is NavEvent.CloseDoc -> nav.closeDoc(event.key)
-                is NavEvent.SelectFolder -> nav.selectFolder(event.column, event.folderId)
-                is NavEvent.SelectItem -> nav.selectItem(event.itemId)
+                NavEvent.OpenBrowserTab -> nav.openBrowserTab()
+                is NavEvent.Close -> nav.close(event.tab)
+                is NavEvent.Select -> nav.select(event.column, event.id)
                 NavEvent.Back -> nav.step(-1)
                 NavEvent.Forward -> nav.step(1)
             }

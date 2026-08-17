@@ -72,7 +72,6 @@ fun destinationIcon(destination: Destination, tint: Color, size: Dp = 22.dp) {
     Glyph(
         icon = when (destination) {
             Destination.Home -> FeatherIcons.Home
-            Destination.Browser -> FeatherIcons.Columns
             Destination.Markets -> FeatherIcons.TrendingUp
             Destination.Graph -> FeatherIcons.Share2
         },

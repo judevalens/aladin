@@ -3,6 +3,7 @@ package dawn.system.anchor.shell
 import app.cash.turbine.ReceiveTurbine
 import com.slack.circuit.test.presenterTestOf
 import dawn.system.anchor.domain.Surface
+import dawn.system.anchor.domain.OpenTab
 import dawn.system.anchor.domain.TabKey
 import dawn.system.anchor.features.shell.state.NavEvent
 import dawn.system.anchor.features.shell.state.NavStateProducer
@@ -42,7 +43,7 @@ class NavProducerTest {
             nodes.settle()
 
             val opened = awaitUntil { it.nav.activeDoc == doc("a1") }
-            assertEquals(listOf(doc("a1")), opened.nav.open)
+            assertEquals(listOf(OpenTab.Doc(doc("a1"))), opened.nav.open)
             cancelAndIgnoreRemainingEvents()
         }
     }
@@ -56,10 +57,10 @@ class NavProducerTest {
         val nodes = FakeNodeStore(listOf(folder("f1")))
         presenterTestOf({ NavStateProducer(nodes)() }) {
             // Deliberately do NOT settle: nothing has been read.
-            awaitItem().handle(NavEvent.GoToBrowser(listOf("f1"), null))
+            awaitItem().handle(NavEvent.GoToBrowser(listOf("f1")))
 
-            val browsing = awaitUntil { it.nav.here.folderId != null }
-            assertEquals("f1", browsing.nav.here.folderId)
+            val browsing = awaitUntil { it.nav.here.path.isNotEmpty() }
+            assertEquals(listOf("f1"), browsing.nav.here.path)
             cancelAndIgnoreRemainingEvents()
         }
     }
@@ -68,13 +69,13 @@ class NavProducerTest {
     fun `a deleted folder stops being the selection`() = runTest {
         val nodes = FakeNodeStore(listOf(folder("f1")))
         presenterTestOf({ NavStateProducer(nodes)() }) {
-            awaitItem().handle(NavEvent.GoToBrowser(listOf("f1"), null))
+            awaitItem().handle(NavEvent.GoToBrowser(listOf("f1")))
             nodes.settle()
-            awaitUntil { it.nav.here.folderId == "f1" }
+            awaitUntil { it.nav.here.path == listOf("f1") }
 
             nodes.remove("f1")
 
-            assertNull(awaitUntil { it.nav.here.folderId == null }.nav.here.folderId)
+            assertEquals(emptyList<String>(), awaitUntil { it.nav.here.path.isEmpty() }.nav.here.path)
             cancelAndIgnoreRemainingEvents()
         }
     }
@@ -88,18 +89,18 @@ class NavProducerTest {
     fun `a row that comes back restores the position on its own`() = runTest {
         val nodes = FakeNodeStore(listOf(folder("f1")))
         presenterTestOf({ NavStateProducer(nodes)() }) {
-            awaitItem().handle(NavEvent.GoToBrowser(listOf("f1"), null))
+            awaitItem().handle(NavEvent.GoToBrowser(listOf("f1")))
             nodes.settle()
-            awaitUntil { it.nav.here.folderId == "f1" }
+            awaitUntil { it.nav.here.path == listOf("f1") }
 
             nodes.remove("f1")
-            awaitUntil { it.nav.here.folderId == null }
+            awaitUntil { it.nav.here.path.isEmpty() }
 
             nodes.put(folder("f1"))
 
             assertEquals(
-                "f1",
-                awaitUntil { it.nav.here.folderId == "f1" }.nav.here.folderId,
+                listOf("f1"),
+                awaitUntil { it.nav.here.path == listOf("f1") }.nav.here.path,
                 "nothing was destroyed, so the next frame is simply right again",
             )
             cancelAndIgnoreRemainingEvents()
@@ -112,12 +113,12 @@ class NavProducerTest {
         presenterTestOf({ NavStateProducer(nodes)() }) {
             awaitItem().handle(NavEvent.OpenDoc(doc("a1")))
             nodes.settle()
-            awaitUntil { it.nav.open == listOf(doc("a1")) }.handle(NavEvent.OpenDoc(doc("a2")))
+            awaitUntil { it.nav.open == listOf(OpenTab.Doc(doc("a1"))) }.handle(NavEvent.OpenDoc(doc("a2")))
             awaitUntil { it.nav.open.size == 2 }
 
             nodes.remove("a2")
 
-            val settled = awaitUntil { it.nav.open == listOf(doc("a1")) }
+            val settled = awaitUntil { it.nav.open == listOf(OpenTab.Doc(doc("a1"))) }
             assertTrue(settled.nav.entries.none { it.surface == Surface.Doc(doc("a2")) })
             assertEquals(Surface.Doc(doc("a1")), settled.nav.here.surface)
             cancelAndIgnoreRemainingEvents()

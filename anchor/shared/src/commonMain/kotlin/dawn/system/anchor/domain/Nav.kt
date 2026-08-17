@@ -85,6 +85,47 @@ sealed interface TabKey {
 sealed interface Surface {
     data class Dest(val destination: Destination) : Surface
     data class Doc(val key: TabKey) : Surface
+
+    /**
+     * The columns, full width.
+     *
+     * A surface but **not a destination**, and reachable two ways that must not be confused:
+     * promoting the dropdown to a tab (which puts [OpenTab.Browser] in the open set), and a
+     * breadcrumb jump from a document (which does not). So a browser surface can be showing
+     * while nothing browser-shaped is open — the prototype's `goBrowserAt` pushes `sel` and
+     * never touches `mru` (`Aladin iPad Shell v2.dc.html:668`).
+     */
+    data object Browser : Surface {
+        /** Its name everywhere it is written: the crumb, the Open row, the dropdown header. */
+        const val TITLE: String = "Browser"
+    }
+}
+
+/**
+ * One member of the open set.
+ *
+ * The browser tab sits here beside documents because the design says it behaves like one:
+ * it appears in Open, it takes a place in recency, `⌃Tab` cycles through it, and closing it
+ * prunes the trail exactly as closing a document does.
+ *
+ * It is **not** a [TabKey], though, and that distinction is load-bearing. A `TabKey` names a
+ * row in the tree — it is what the store is asked about, and therefore what "gone" is decided
+ * on. The browser names no row. Modelled as a key it would be asked about, answered for with
+ * nothing, read as [Presence.Gone], and closed by [Nav.corrected] on the frame after it
+ * opened.
+ */
+sealed interface OpenTab {
+
+    /** Where this tab points. What the trail stores, and what closing prunes. */
+    val surface: Surface
+
+    data class Doc(val key: TabKey) : OpenTab {
+        override val surface: Surface get() = Surface.Doc(key)
+    }
+
+    data object Browser : OpenTab {
+        override val surface: Surface get() = Surface.Browser
+    }
 }
 
 /**
@@ -94,19 +135,22 @@ sealed interface Surface {
  * when you land there — and deliberately *not* a document's own context. A document's folder
  * is read from the node, which is why truncating a trail entry never makes a breadcrumb wrong.
  *
- * [path] is a **Miller path**: folder ids, root-most first, one per column beyond the root
- * list. Column *i* renders the children of `path[i - 1]`, so the browser is exactly
- * `path.size + 1` columns wide and goes as deep as the tree does — it scrolls horizontally
- * rather than nesting. That answers the handoff's open question about depth.
+ * [path] is a **Miller path**: node ids, root-most first, one per column beyond the root list.
+ * Column *i* renders the children of `path[i - 1]`, so the browser goes as deep as the tree
+ * does and scrolls horizontally rather than nesting. That answers the handoff's open question
+ * about depth.
+ *
+ * **A selected leaf is the last element of the same array**, not a field beside it. That is
+ * not tidying: with a separate `itemId`, picking a leaf in a shallow column left the deeper
+ * columns standing, and the prototype's single row handler truncates for leaves and folders
+ * alike (`:738`). One array makes the truncation unconditional, and a leaf simply produces no
+ * column of its own. Which trailing ids are folders is a question for the store, never for
+ * this value — see [Nav.select].
  */
 data class Entry(
     val surface: Surface,
     val path: List<String> = emptyList(),
-    val itemId: String? = null,
-) {
-    /** The folder whose contents the deepest column shows. Null at the root list. */
-    val folderId: String? get() = path.lastOrNull()
-}
+)
 
 /**
  * Where you have been, and what is open. The whole navigation model.
@@ -141,16 +185,24 @@ data class Entry(
 data class Nav(
     val entries: List<Entry> = listOf(Entry(Surface.Dest(Destination.Home))),
     val index: Int = 0,
-    val open: List<TabKey> = emptyList(),
-    val mru: List<TabKey> = emptyList(),
+    val open: List<OpenTab> = emptyList(),
+    val mru: List<OpenTab> = emptyList(),
 ) {
 
     val here: Entry get() = entries[index]
     val canBack: Boolean get() = index > 0
     val canForward: Boolean get() = index < entries.lastIndex
 
-    /** The open document being shown, or null on a destination. */
+    /** The open document being shown, or null on a destination or the browser. */
     val activeDoc: TabKey? get() = (here.surface as? Surface.Doc)?.key
+
+    /**
+     * Whether the browser has been promoted to a tab.
+     *
+     * The toggle's rule reads this: with a tab open, the button **activates it** rather than
+     * stacking a dropdown over it, because only one browser is ever live (`:794`).
+     */
+    val hasBrowserTab: Boolean get() = open.contains(OpenTab.Browser)
 
     // ── the trail ────────────────────────────────────────────────────────────
 
@@ -182,32 +234,34 @@ data class Nav(
         push(here.copy(surface = Surface.Dest(destination)))
 
     /**
-     * The breadcrumb's `Browser` jump: go to the columns **with a path and item selected**.
+     * The breadcrumb's `Browser` jump: show the columns **at a path**.
+     *
      * This is what makes the crumb meaningful from a document — it lands you on the document
-     * in its own folder, columns and all, rather than at the root.
+     * in its own folder, columns and all, rather than at the root. It deliberately does **not**
+     * open a browser tab: the surface shows without joining the open set, matching `:668`.
      */
-    fun goToBrowser(path: List<String>, itemId: String?): Nav =
-        push(Entry(Surface.Dest(Destination.Browser), path, itemId))
+    fun goToBrowser(path: List<String>): Nav = push(Entry(Surface.Browser, path))
 
     // ── the Browser's columns ────────────────────────────────────────────────
 
     /**
-     * Picks a folder in column [column], where 0 is the root list.
+     * Picks the row [id] in column [column], where 0 is the root list.
      *
-     * **Truncate, then append** — the defining Miller move. Choosing a different folder in a
-     * column you had already descended past discards every column to its right, because those
-     * columns described a path you are no longer on. That is not a special case to handle; it
-     * is what the columns *mean*.
+     * **Truncate, then append** — the defining Miller move, and it applies to leaves exactly as
+     * it does to folders (`:738` has one handler for both). Choosing anything in a column you
+     * had already descended past discards every column to its right, because those columns
+     * described a path you are no longer on. That is not a special case to handle; it is what
+     * the columns *mean*, and it is the only "up" the design has.
      *
-     * **Not a history entry.** Browsing columns is not navigating, and the prototype agrees
-     * (`:623` sets its state directly rather than pushing) — otherwise every click in the
-     * columns would need a Back press to undo.
+     * Folder or leaf is not asked here and could not be answered here — this is a value, and
+     * kind lives in the store. A folder contributes a column of children; a leaf contributes
+     * none and is simply the selection. Both are the same move.
+     *
+     * **Not a history entry.** Browsing columns is not navigating (`:738` sets state directly
+     * rather than pushing) — otherwise every tap in the columns would need a Back press to undo.
      */
-    fun selectFolder(column: Int, folderId: String): Nav =
-        replaceHere(here.copy(path = here.path.take(column) + folderId, itemId = null))
-
-    /** Selecting a leaf. Also not a history entry — single-tap previews, it does not open. */
-    fun selectItem(itemId: String): Nav = replaceHere(here.copy(itemId = itemId))
+    fun select(column: Int, id: String): Nav =
+        replaceHere(here.copy(path = here.path.take(column) + id))
 
     // ── the open set ─────────────────────────────────────────────────────────
 
@@ -221,11 +275,23 @@ data class Nav(
      *
      * A document already open **keeps its place** in [open] rather than jumping to the end.
      */
-    fun openDoc(key: TabKey): Nav =
+    fun openDoc(key: TabKey): Nav = openTab(OpenTab.Doc(key))
+
+    /**
+     * Promotes the browser to a tab, or returns to the tab already open.
+     *
+     * One function for both, because they are the same move: the maximize glyph, the
+     * context menu's "Open in a tab", and the toggle finding a tab already open all land here
+     * (`:794`, `:819`) and all push history — promoting *is* a navigation, unlike opening the
+     * dropdown, which is not.
+     */
+    fun openBrowserTab(): Nav = openTab(OpenTab.Browser)
+
+    private fun openTab(tab: OpenTab): Nav =
         copy(
-            open = if (open.contains(key)) open else open + key,
-            mru = listOf(key) + mru.filterNot { it == key },
-        ).push(here.copy(surface = Surface.Doc(key)))
+            open = if (open.contains(tab)) open else open + tab,
+            mru = listOf(tab) + mru.filterNot { it == tab },
+        ).push(here.copy(surface = tab.surface))
 
     /**
      * Closes a document: it stops being open, and every trail entry showing it is pruned so
@@ -238,15 +304,14 @@ data class Nav(
      * the last of its insertion-ordered tab list — and its comment defers the question rather
      * than settling it; `workspace-slice.ts:85-87`. The prototype settles it, :576-587.)
      */
-    fun closeDoc(key: TabKey): Nav {
-        if (!open.contains(key)) return this
-        val remainingOpen = open.filterNot { it == key }
-        val remainingMru = mru.filterNot { it == key }
-        val kept = entries.filterNot { it.surface == Surface.Doc(key) }
+    fun close(tab: OpenTab): Nav {
+        if (!open.contains(tab)) return this
+        val remainingOpen = open.filterNot { it == tab }
+        val remainingMru = mru.filterNot { it == tab }
+        val kept = entries.filterNot { it.surface == tab.surface }
 
         if (kept.isEmpty()) {
-            val fallback = remainingMru.firstOrNull()
-                ?.let { Surface.Doc(it) }
+            val fallback = remainingMru.firstOrNull()?.surface
                 ?: Surface.Dest(Destination.Home)
             return Nav(
                 entries = listOf(here.copy(surface = fallback)),
@@ -256,7 +321,7 @@ data class Nav(
             )
         }
 
-        val wasShowing = here.surface == Surface.Doc(key)
+        val wasShowing = here.surface == tab.surface
         val landing = when {
             wasShowing -> index.coerceAtMost(kept.lastIndex)
             // Still showing something else: find where that is now that entries were removed.
@@ -287,7 +352,7 @@ data class Nav(
      * value: a switcher session takes this order once at open, moves a highlight within it,
      * and calls [openDoc] once on commit.
      */
-    fun switcherOrder(): List<TabKey> {
+    fun switcherOrder(): List<OpenTab> {
         val remaining = open.toMutableList()
         val ordered = mru.filter(remaining::remove)
         return ordered + remaining
@@ -322,18 +387,23 @@ data class Nav(
 
         // A document the workspace destroyed stops being open — the same path as closing it,
         // so the trail is pruned and the landing is picked by one rule rather than two.
-        val settled = open.filter { gone(it.nodeId) }.fold(this) { nav, key -> nav.closeDoc(key) }
+        //
+        // **Only documents are ever asked about.** The browser tab names no row, so there is
+        // nothing to ask and nothing that can answer Gone. Asking anyway is the failure this
+        // guards: the store answers null for an id it has no row for, that reads as Gone, and
+        // the tab closes itself on the frame after it opened.
+        val settled = open
+            .filterIsInstance<OpenTab.Doc>()
+            .filter { gone(it.key.nodeId) }
+            .fold(this) { nav, tab -> nav.close(tab) }
 
         val entry = settled.here
         // A deleted folder takes every column to its right with it — those columns described
         // its descendants, which are unreachable now. One pass, so a whole deleted branch
-        // unwinds at once rather than one rung per frame.
+        // unwinds at once rather than one rung per frame. A selected leaf is the last element,
+        // so the same truncation carries it off when its folder goes, with no separate rule.
         val keptPath = entry.path.takeWhile { !gone(it) }
-        val fixed = entry.copy(
-            path = keptPath,
-            // The item goes too when its folder did: it cannot still be in there.
-            itemId = entry.itemId?.takeUnless { gone(it) || keptPath.size != entry.path.size },
-        )
+        val fixed = entry.copy(path = keptPath)
         return if (fixed == entry) settled else settled.replaceHere(fixed)
     }
 

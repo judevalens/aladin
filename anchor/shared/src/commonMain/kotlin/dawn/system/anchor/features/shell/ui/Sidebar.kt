@@ -31,9 +31,12 @@ import dawn.system.anchor.features.shell.ShellScreen
 import dawn.system.anchor.features.shell.state.ChromeEvent
 import dawn.system.anchor.features.shell.state.NavEvent
 import dawn.system.anchor.features.shell.state.OpenRow
+import dawn.system.anchor.features.shell.state.openEvent
+import dawn.system.anchor.features.shell.state.rowKey
 import dawn.system.anchor.services.design.AnchorShape
 import dawn.system.anchor.services.design.AnchorTheme
 import dawn.system.anchor.services.design.CloseIcon
+import dawn.system.anchor.services.design.ColumnsIcon
 import dawn.system.anchor.services.design.FilterIcon
 import dawn.system.anchor.services.design.SearchIcon
 import dawn.system.anchor.services.design.SectionLabelStyle
@@ -84,6 +87,18 @@ private fun IconRow(state: ShellScreen.State) {
         // Search has no palette behind it yet — one of the handoff's open questions — so it
         // is drawn and inert rather than wired to something that does not exist.
         IconButton(enabled = false) { SearchIcon(tint = c.ink3, size = 19.dp) }
+
+        // The browser's door, and for now the whole of it. The design puts a dropdown behind
+        // this button; until that exists it shows the surface directly, so the tree never
+        // becomes unreachable in between. The lit rule is already the final one — lit while
+        // the browser is what you are looking at.
+        val onBrowser = state.nav.nav.here.surface == Surface.Browser
+        IconButton(
+            background = if (onBrowser) c.sel else null,
+            onClick = { state.nav.handle(NavEvent.GoToBrowser(state.nav.nav.here.path)) },
+        ) {
+            ColumnsIcon(tint = if (onBrowser) c.ink else c.ink3, size = 19.dp)
+        }
 
         val filtering = state.chrome.filterOpen
         IconButton(
@@ -172,7 +187,7 @@ private fun OpenZone(state: ShellScreen.State, modifier: Modifier = Modifier) {
                 Modifier.fillMaxWidth(),
                 contentPadding = PaddingValues(start = 10.dp, end = 10.dp, bottom = 8.dp),
             ) {
-                items(state.open, key = { it.key.asString() }) { row ->
+                items(state.open, key = { it.tab.rowKey() }) { row ->
                     OpenListRow(row, state)
                 }
             }
@@ -191,7 +206,7 @@ private fun OpenListRow(row: OpenRow, state: ShellScreen.State) {
             .height(m.openRow)
             .clip(AnchorShape.menuRow)
             .background(if (row.active) c.sel else c.panel.copy(alpha = 0f))
-            .clickable { state.nav.handle(NavEvent.OpenDoc(row.key)) }
+            .clickable { state.nav.handle(row.tab.openEvent()) }
             .padding(start = 12.dp, end = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -208,7 +223,7 @@ private fun OpenListRow(row: OpenRow, state: ShellScreen.State) {
             modifier = Modifier.weight(1f),
         )
         // 28pt glyph inside a 44pt row is fine; a 28pt *button* would not be.
-        IconButton(size = 28.dp, onClick = { state.nav.handle(NavEvent.CloseDoc(row.key)) }) {
+        IconButton(size = 28.dp, onClick = { state.nav.handle(NavEvent.Close(row.tab)) }) {
             CloseIcon(tint = c.ink4, size = 14.dp)
         }
     }
