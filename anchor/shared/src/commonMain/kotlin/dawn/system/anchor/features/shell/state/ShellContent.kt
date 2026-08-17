@@ -3,6 +3,7 @@ package dawn.system.anchor.features.shell.state
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import dawn.system.anchor.domain.ArtifactKind
 import dawn.system.anchor.domain.Destination
@@ -29,7 +30,12 @@ private fun String?.orUntitled(): String = this?.takeIf { it.isNotBlank() } ?: U
 data class OpenRow(
     val tab: OpenTab,
     val title: String,
-    /** The folder that owns it, as secondary text — two same-named notes stay distinguishable. */
+    /**
+     * The **full** ancestor chain, joined by ` › `.
+     *
+     * Not just the parent: a flat recency list has no other way to tell two same-named notes
+     * apart, and a document five levels deep is otherwise unidentifiable in it.
+     */
     val folder: String?,
     /** Null for the browser tab, which is not an artifact and has no kind to show. */
     val kind: ArtifactKind?,
@@ -69,27 +75,37 @@ data class Crumb(val label: String, val target: NavEvent?)
 @Composable
 fun NodeStore.openRowsFor(nav: Nav): List<OpenRow> =
     nav.open.map { tab ->
-        when (tab) {
-            OpenTab.Browser -> OpenRow(
-                tab = tab,
-                title = Surface.Browser.TITLE,
-                folder = null,
-                kind = null,
-                state = null,
-                active = nav.here.surface == Surface.Browser,
-            )
-
-            is OpenTab.Doc -> {
-                val node = nodeOf(tab.key.nodeId)
-                val folder = nodeOf(node?.parentId)
-                OpenRow(
+        // KEYED, and not optionally. Each row subscribes per id, and an unkeyed read carries
+        // the previous row's value into the next when the list changes — the bug that made
+        // every drill revert, in a different place.
+        key(tab.rowKey()) {
+            when (tab) {
+                OpenTab.Browser -> OpenRow(
                     tab = tab,
-                    title = node?.title.orUntitled(),
-                    folder = folder?.title?.takeIf { it.isNotBlank() },
-                    kind = node?.artifactKind,
+                    title = Surface.Browser.TITLE,
+                    folder = null,
+                    kind = null,
                     state = null,
-                    active = tab.key == nav.activeDoc,
+                    active = nav.here.surface == Surface.Browser,
                 )
+
+                is OpenTab.Doc -> {
+                    val node = nodeOf(tab.key.nodeId)
+                    val chain = ancestorPathOf(node?.parentId) + listOfNotNull(node?.parentId)
+                    val rows by remember(chain) { each(chain) }.collectAsState(emptyList())
+                    OpenRow(
+                        tab = tab,
+                        title = node?.title.orUntitled(),
+                        folder = chain
+                            .mapNotNull { id -> rows.firstOrNull { it.id == id }?.title }
+                            .filter { it.isNotBlank() }
+                            .joinToString(" › ")
+                            .takeIf { it.isNotBlank() },
+                        kind = node?.artifactKind,
+                        state = null,
+                        active = tab.key == nav.activeDoc,
+                    )
+                }
             }
         }
     }

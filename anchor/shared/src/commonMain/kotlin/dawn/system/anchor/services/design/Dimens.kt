@@ -69,6 +69,12 @@ object AladinMetrics {
     val browserDropdownHeight = 556.dp
     val overlayTop = 92.dp
 
+    /** The Open list as an overlay — the dropdown family's smaller member. */
+    val openDropdownWidth = 428.dp
+    val openDropdownMaxHeight = 436.dp
+    val openDropdownTop = 292.dp
+    val openDropdownRow = 52.dp
+
     /** The long-press menu on the browser icon. */
     val contextMenuWidth = 268.dp
 

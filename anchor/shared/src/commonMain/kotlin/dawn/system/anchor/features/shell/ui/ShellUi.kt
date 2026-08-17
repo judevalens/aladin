@@ -86,6 +86,7 @@ fun ShellUi(state: ShellScreen.State, modifier: Modifier = Modifier) {
         // placed two window-widths away and would take its overlay with it.
         BrowserDropdown(state)
         BrowserMenu(state)
+        OpenDropdown(state)
         WriteSheets(state)
     }
 }

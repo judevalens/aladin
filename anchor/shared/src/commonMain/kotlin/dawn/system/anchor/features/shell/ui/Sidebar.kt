@@ -36,6 +36,8 @@ import dawn.system.anchor.features.shell.state.openEvent
 import dawn.system.anchor.features.shell.state.rowKey
 import dawn.system.anchor.services.design.AnchorShape
 import dawn.system.anchor.services.design.AnchorTheme
+import dawn.system.anchor.services.design.ChevronDirection
+import dawn.system.anchor.services.design.ChevronIcon
 import dawn.system.anchor.services.design.CloseIcon
 import dawn.system.anchor.services.design.ColumnsIcon
 import dawn.system.anchor.services.design.FilterIcon
@@ -176,12 +178,14 @@ private fun OpenZone(state: ShellScreen.State, modifier: Modifier = Modifier) {
                 Text("${state.open.size}", style = SectionLabelStyle, color = c.ink4)
             }
             Spacer(Modifier.weight(1f))
-            if (state.open.size > 1) {
+            if (state.open.isNotEmpty()) {
+                // The expander. A chevron rather than the sparkle that was standing in here —
+                // sparkle means Copilot everywhere else in this shell.
                 IconButton(
                     size = 32.dp,
                     onClick = { state.chrome.handle(ChromeEvent.ToggleSwitcher) },
                 ) {
-                    SparkleIcon(tint = c.ink4, size = 16.dp)
+                    ChevronIcon(tint = c.ink4, size = 16.dp, direction = ChevronDirection.Down)
                 }
             }
         }
