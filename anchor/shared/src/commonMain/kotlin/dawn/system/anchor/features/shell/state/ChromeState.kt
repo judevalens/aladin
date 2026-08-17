@@ -13,6 +13,13 @@ sealed interface ChromeEvent {
     data object ToggleCopilot : ChromeEvent
     data object ToggleFilter : ChromeEvent
     data object ToggleSwitcher : ChromeEvent
+
+    /** The browser icon. Opening the dropdown is chrome, never navigation. */
+    data object ToggleBrowser : ChromeEvent
+    data object CloseBrowser : ChromeEvent
+
+    /** Pin: the dropdown stays through item opens, and stops catching taps behind it. */
+    data object ToggleBrowserPinned : ChromeEvent
 }
 
 /**
@@ -30,6 +37,13 @@ data class ChromeSlice(
     val copilotOpen: Boolean,
     val filterOpen: Boolean,
     val switcherOpen: Boolean,
+    val browserOpen: Boolean,
+    /**
+     * Pinned: the dropdown survives opening an item, and renders no click-catcher at all, so
+     * the document behind stays interactive. A working preference rather than a transient —
+     * the design has it persist across relaunches, which is still to build.
+     */
+    val browserPinned: Boolean,
     val dismissOverlays: () -> Unit,
     val handle: (ChromeEvent) -> Unit,
 ) : CircuitUiState
@@ -38,9 +52,9 @@ data class ChromeSlice(
  * The shell's own chrome. No dependencies — none of this is in the store, and nothing outside
  * the shell can tell whether the filter popover is open.
  *
- * Four booleans, where the previous shell had seven. The rest went with the navigation stack:
- * there is no path popover because place lives in the breadcrumb, and no column-browser
- * overlay because the columns are a destination now.
+ * Six booleans, where the previous shell had seven — and unlike that one, none of them is a
+ * second opinion about where you are. There is no path popover, because place lives in the
+ * breadcrumb.
  */
 @Composable
 fun rememberChromeState(): ChromeSlice {
@@ -48,18 +62,25 @@ fun rememberChromeState(): ChromeSlice {
     var copilotOpen by remember { mutableStateOf(false) }
     var filterOpen by remember { mutableStateOf(false) }
     var switcherOpen by remember { mutableStateOf(false) }
+    var browserOpen by remember { mutableStateOf(false) }
+    var browserPinned by remember { mutableStateOf(false) }
 
     return ChromeSlice(
         sidebarOpen = sidebarOpen,
         copilotOpen = copilotOpen,
         filterOpen = filterOpen,
         switcherOpen = switcherOpen,
+        browserOpen = browserOpen,
+        browserPinned = browserPinned,
         // Overlays close when you go somewhere; the sidebar and Copilot are not overlays and
         // deliberately survive — collapsing the sidebar is a statement about the whole shell,
         // not about the surface you happen to be on.
         dismissOverlays = {
             filterOpen = false
             switcherOpen = false
+            // The pinned browser is the exception, and the whole point of pinning: picks land
+            // behind it and it stays put.
+            if (!browserPinned) browserOpen = false
         },
     ) { event ->
         // Exhaustive, with no `else`. That is what a sealed hierarchy buys: a new chrome event
@@ -69,6 +90,9 @@ fun rememberChromeState(): ChromeSlice {
             ChromeEvent.ToggleCopilot -> copilotOpen = !copilotOpen
             ChromeEvent.ToggleFilter -> filterOpen = !filterOpen
             ChromeEvent.ToggleSwitcher -> switcherOpen = !switcherOpen
+            ChromeEvent.ToggleBrowser -> browserOpen = !browserOpen
+            ChromeEvent.CloseBrowser -> browserOpen = false
+            ChromeEvent.ToggleBrowserPinned -> browserPinned = !browserPinned
         }
     }
 }

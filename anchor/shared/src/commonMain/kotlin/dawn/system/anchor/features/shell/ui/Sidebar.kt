@@ -88,16 +88,15 @@ private fun IconRow(state: ShellScreen.State) {
         // is drawn and inert rather than wired to something that does not exist.
         IconButton(enabled = false) { SearchIcon(tint = c.ink3, size = 19.dp) }
 
-        // The browser's door, and for now the whole of it. The design puts a dropdown behind
-        // this button; until that exists it shows the surface directly, so the tree never
-        // becomes unreachable in between. The lit rule is already the final one — lit while
-        // the browser is what you are looking at.
+        // The browser's door: it opens the dropdown, never a destination. Lit while the
+        // dropdown is up or the browser is the surface you are on.
         val onBrowser = state.nav.nav.here.surface == Surface.Browser
+        val browserLit = state.chrome.browserOpen || onBrowser
         IconButton(
-            background = if (onBrowser) c.sel else null,
-            onClick = { state.nav.handle(NavEvent.GoToBrowser(state.nav.nav.here.path)) },
+            background = if (browserLit) c.sel else null,
+            onClick = { state.chrome.handle(ChromeEvent.ToggleBrowser) },
         ) {
-            ColumnsIcon(tint = if (onBrowser) c.ink else c.ink3, size = 19.dp)
+            ColumnsIcon(tint = if (browserLit) c.ink else c.ink3, size = 19.dp)
         }
 
         val filtering = state.chrome.filterOpen
