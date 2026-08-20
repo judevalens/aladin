@@ -19,6 +19,11 @@ import dawn.system.anchor.features.shell.state.DocumentStateProducer
 import dawn.system.anchor.features.shell.state.NavSlice
 import dawn.system.anchor.features.shell.state.NavStateProducer
 import dawn.system.anchor.features.shell.state.OpenRow
+import dawn.system.anchor.features.shell.state.NavEvent
+import dawn.system.anchor.features.shell.state.WriteSlice
+import dawn.system.anchor.features.shell.state.WriteStateProducer
+import dawn.system.anchor.domain.OpenTab
+import dawn.system.anchor.domain.TabKey
 import dawn.system.anchor.features.shell.state.crumbsFor
 import dawn.system.anchor.features.shell.state.openRowsFor
 import dawn.system.anchor.features.shell.state.rememberChromeState
@@ -66,6 +71,8 @@ data object ShellScreen : Screen {
         val documents: DocumentSlice,
         /** What the embedded editor needs to join a document; null until signed in. */
         val editor: EditorSession?,
+        /** Rename, delete and create — the sheets the browser's organize footer raises. */
+        val write: WriteSlice,
         val destinations: List<Destination>,
         val sync: SyncStatus,
         val signedInAs: String?,
@@ -82,6 +89,7 @@ class ShellPresenter(
     private val sync: SyncRunner,
     private val tokens: TokenProvider,
     private val config: ApiConfig,
+    private val writes: WriteStateProducer,
 ) : Presenter<ShellScreen.State> {
 
     @Composable
@@ -103,14 +111,25 @@ class ShellPresenter(
             }
         }
 
+        // New items land in the folder the browser is standing in. Deleting one closes it —
+        // the workspace destroying a row and the user closing its tab are the same ending, and
+        // `Nav.corrected` would reach the same place a frame later anyway.
+        val write = writes(
+            parentId = nav.nav.here.path.lastOrNull(),
+            onCreated = { nav.handle(NavEvent.OpenDoc(TabKey.Artifact(it.id))) },
+            onDeleted = { nav.handle(NavEvent.Close(OpenTab.Doc(TabKey.Artifact(it.id)))) },
+            onCreateChosen = {},
+        )
+
         return ShellScreen.State(
             nav = nav,
             chrome = chrome,
-            open = nodes.openRowsFor(nav.nav),
+            open = nodes.openRowsFor(nav.nav, chrome.filter),
             crumbs = nodes.crumbsFor(nav.nav),
-            browser = browser(nav.nav.here, BrowserFilter()),
+            browser = browser(nav.nav.here, chrome.filter),
             documents = documents(nav.nav),
             editor = editor,
+            write = write,
             destinations = Destination.entries,
             sync = syncStatus,
             signedInAs = (user as? AuthState.LoggedIn)?.user?.email,
@@ -128,10 +147,11 @@ val shellModule: Module = module {
     single { NavStateProducer(get()) }
     single { BrowserStateProducer(get()) }
     single { DocumentStateProducer(get(), get()) }
+    single { WriteStateProducer(get(), get()) }
 
     bindScreen(
         ShellScreen::class,
-        presenter = { _, _ -> ShellPresenter(get(), get(), get(), get(), get(), get(), get(), get()) },
+        presenter = { _, _ -> ShellPresenter(get(), get(), get(), get(), get(), get(), get(), get(), get()) },
         uiFactory = { ui<ShellScreen.State> { state, modifier -> ShellUi(state, modifier) } },
     )
 }

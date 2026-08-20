@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
@@ -80,7 +81,21 @@ fun ShellUi(state: ShellScreen.State, modifier: Modifier = Modifier) {
         if (!state.chrome.sidebarOpen) {
             FloatingDock(state, Modifier.align(Alignment.BottomCenter))
         }
+
+        // Overlays hang HERE, at the shell's own box, never inside the pager: a parked page is
+        // placed two window-widths away and would take its overlay with it.
+        BrowserDropdown(state)
+        BrowserMenu(state)
+        OpenDropdown(state)
+        FilterPopover(state)
+        WriteSheets(state)
     }
+}
+
+/** A one-pixel row rule — the horizontal twin, for stacked zones. */
+@Composable
+internal fun HorizontalHairline() {
+    Box(Modifier.fillMaxWidth().height(1.dp).background(AnchorTheme.colors.line2))
 }
 
 /** A one-pixel column rule. The shell's only divider. */

@@ -55,6 +55,29 @@ object AladinMetrics {
     val dockBottomInset = 20.dp
     val dockCell = 48.dp
 
+    /**
+     * The browser dropdown: 1010 x 556, hung under its icon at left 14.
+     *
+     * [overlayTop] is where every icon-row overlay hangs — the dropdown and the filter popover
+     * share it so the two read as siblings rather than as two unrelated panels.
+     */
+    val browserDropdownWidth = 1010.dp
+
+    /** Rail columns: three fit the dropdown's 1010pt exactly; the tab's are wider. */
+    val browserDropdownColumn = 336.dp
+    val browserTabColumn = 352.dp
+    val browserDropdownHeight = 556.dp
+    val overlayTop = 92.dp
+
+    /** The Open list as an overlay — the dropdown family's smaller member. */
+    val openDropdownWidth = 428.dp
+    val openDropdownMaxHeight = 436.dp
+    val openDropdownTop = 292.dp
+    val openDropdownRow = 52.dp
+
+    /** The long-press menu on the browser icon. */
+    val contextMenuWidth = 268.dp
+
     /** The Open expander popup. */
     val openPopupWidth = 620.dp
     val openPopupTop = 150.dp

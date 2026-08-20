@@ -6,6 +6,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.slack.circuit.runtime.CircuitUiState
+import dawn.system.anchor.domain.ArtifactKind
+import dawn.system.anchor.domain.BrowserFilter
+import dawn.system.anchor.domain.FolderPurpose
+import dawn.system.anchor.domain.ItemSort
 
 /** Panels and overlays the user toggles. Nothing outside the shell can tell they exist. */
 sealed interface ChromeEvent {
@@ -13,6 +17,23 @@ sealed interface ChromeEvent {
     data object ToggleCopilot : ChromeEvent
     data object ToggleFilter : ChromeEvent
     data object ToggleSwitcher : ChromeEvent
+
+    /** The browser icon. Opening the dropdown is chrome, never navigation. */
+    data object ToggleBrowser : ChromeEvent
+    data object CloseBrowser : ChromeEvent
+
+    /** Pin: the dropdown stays through item opens. */
+    data object ToggleBrowserPinned : ChromeEvent
+
+    /** Long-press on the browser icon: a menu, never a direct action. */
+    data object OpenBrowserMenu : ChromeEvent
+    data object CloseBrowserMenu : ChromeEvent
+
+    /** The facets. One filter narrows the Browser and the Open list together. */
+    data class ToggleKind(val kind: ArtifactKind) : ChromeEvent
+    data class TogglePurpose(val purpose: FolderPurpose) : ChromeEvent
+    data class SortBy(val sort: ItemSort) : ChromeEvent
+    data object ClearFilter : ChromeEvent
 }
 
 /**
@@ -30,6 +51,25 @@ data class ChromeSlice(
     val copilotOpen: Boolean,
     val filterOpen: Boolean,
     val switcherOpen: Boolean,
+    val browserOpen: Boolean,
+    /**
+     * The long-press menu. **A menu rather than a direct promotion**, because a long press that
+     * did something immediately would be a gesture you can only learn by accidentally firing
+     * it — and this one teaches that a tab exists.
+     */
+    val browserMenuOpen: Boolean,
+    /**
+     * Pinned: the dropdown survives opening an item, and renders no click-catcher at all, so
+     * the document behind stays interactive. A working preference rather than a transient —
+     * the design has it persist across relaunches, which is still to build.
+     */
+    val browserPinned: Boolean,
+    /**
+     * What narrows the Browser **and** the Open list — the design's own words, "applies to
+     * Browser and Open". Chrome rather than navigation: it changes what you can see, never
+     * where you are.
+     */
+    val filter: BrowserFilter,
     val dismissOverlays: () -> Unit,
     val handle: (ChromeEvent) -> Unit,
 ) : CircuitUiState
@@ -38,9 +78,9 @@ data class ChromeSlice(
  * The shell's own chrome. No dependencies — none of this is in the store, and nothing outside
  * the shell can tell whether the filter popover is open.
  *
- * Four booleans, where the previous shell had seven. The rest went with the navigation stack:
- * there is no path popover because place lives in the breadcrumb, and no column-browser
- * overlay because the columns are a destination now.
+ * Six booleans, where the previous shell had seven — and unlike that one, none of them is a
+ * second opinion about where you are. There is no path popover, because place lives in the
+ * breadcrumb.
  */
 @Composable
 fun rememberChromeState(): ChromeSlice {
@@ -48,18 +88,30 @@ fun rememberChromeState(): ChromeSlice {
     var copilotOpen by remember { mutableStateOf(false) }
     var filterOpen by remember { mutableStateOf(false) }
     var switcherOpen by remember { mutableStateOf(false) }
+    var browserOpen by remember { mutableStateOf(false) }
+    var browserPinned by remember { mutableStateOf(false) }
+    var browserMenuOpen by remember { mutableStateOf(false) }
+    var filter by remember { mutableStateOf(BrowserFilter()) }
 
     return ChromeSlice(
         sidebarOpen = sidebarOpen,
         copilotOpen = copilotOpen,
         filterOpen = filterOpen,
         switcherOpen = switcherOpen,
+        browserOpen = browserOpen,
+        browserMenuOpen = browserMenuOpen,
+        filter = filter,
+        browserPinned = browserPinned,
         // Overlays close when you go somewhere; the sidebar and Copilot are not overlays and
         // deliberately survive — collapsing the sidebar is a statement about the whole shell,
         // not about the surface you happen to be on.
         dismissOverlays = {
             filterOpen = false
             switcherOpen = false
+            // The pinned browser is the exception, and the whole point of pinning: picks land
+            // behind it and it stays put.
+            if (!browserPinned) browserOpen = false
+            browserMenuOpen = false
         },
     ) { event ->
         // Exhaustive, with no `else`. That is what a sealed hierarchy buys: a new chrome event
@@ -69,6 +121,19 @@ fun rememberChromeState(): ChromeSlice {
             ChromeEvent.ToggleCopilot -> copilotOpen = !copilotOpen
             ChromeEvent.ToggleFilter -> filterOpen = !filterOpen
             ChromeEvent.ToggleSwitcher -> switcherOpen = !switcherOpen
+            ChromeEvent.ToggleBrowser -> browserOpen = !browserOpen
+            ChromeEvent.CloseBrowser -> browserOpen = false
+            ChromeEvent.ToggleBrowserPinned -> browserPinned = !browserPinned
+            ChromeEvent.OpenBrowserMenu -> {
+                browserMenuOpen = true
+                // Never both: the menu is a choice ABOUT the browser, not a thing beside it.
+                browserOpen = false
+            }
+            ChromeEvent.CloseBrowserMenu -> browserMenuOpen = false
+            is ChromeEvent.ToggleKind -> filter = filter.toggle(event.kind)
+            is ChromeEvent.TogglePurpose -> filter = filter.toggle(event.purpose)
+            is ChromeEvent.SortBy -> filter = filter.sortedBy(event.sort)
+            ChromeEvent.ClearFilter -> filter = filter.cleared()
         }
     }
 }

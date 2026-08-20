@@ -22,15 +22,19 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.flow.first
 import dawn.system.anchor.domain.FolderPurpose
 import dawn.system.anchor.features.shell.state.BrowserRow
 import dawn.system.anchor.features.shell.state.BrowserSlice
 import dawn.system.anchor.features.shell.state.NavEvent
+import dawn.system.anchor.features.shell.state.WriteEvent
 import dawn.system.anchor.services.design.AnchorShape
 import dawn.system.anchor.services.design.AnchorTheme
 import dawn.system.anchor.services.design.ChevronDirection
@@ -43,30 +47,46 @@ import dawn.system.anchor.services.design.artifactKindIcon
  *
  * Not a fixed three-pane layout. Column 0 lists the roots, each subsequent column lists the
  * children of the folder selected in the one before it, and the strip grows as deep as you
- * descend. Picking a folder in a column you had already passed **discards every column to its
+ * descend. Picking anything in a column you had already passed **discards every column to its
  * right** — those columns described a path you are no longer on, which is what the columns
  * mean rather than a case to handle.
+ *
+ * Every column is the same width, and three fit. That is the whole reason depth is legible
+ * here where a 300pt indented tree would have squeezed titles into nothing: depth is expressed
+ * by columns and by the breadcrumb, not by indentation.
+ *
+ * [visible] exists for the auto-scroll and nothing else — see below.
  */
 @Composable
-internal fun BrowserSurface(
+internal fun BrowserRail(
     slice: BrowserSlice,
+    columnWidth: Dp,
     onNav: (NavEvent) -> Unit,
     modifier: Modifier = Modifier,
+    visible: Boolean = true,
 ) {
     val c = AnchorTheme.colors
-    val m = AnchorTheme.metrics
     val scroll = rememberScrollState()
 
     // Descending should reveal what you descended into, not leave it off-screen to the right.
-    LaunchedEffect(slice.columns.size) { scroll.animateScrollTo(scroll.maxValue) }
+    //
+    // Keyed on **visibility as well as depth**: reopening the dropdown on an already-deep path
+    // must land on the deepest columns, not the shallowest, and a depth-keyed effect would not
+    // re-fire because the depth had not changed.
+    //
+    // `snapshotFlow` rather than reading `maxValue` here: the new column has not been measured
+    // when this effect runs, so the value read in the same frame is the PREVIOUS maximum — the
+    // Compose shape of the same one-frame staleness the handoff warns about for the DOM.
+    LaunchedEffect(slice.columns.size, visible) {
+        if (!visible) return@LaunchedEffect
+        snapshotFlow { scroll.maxValue }
+            .first { it > 0 || slice.columns.size <= 1 }
+            .let { scroll.animateScrollTo(scroll.maxValue) }
+    }
 
     Row(modifier.fillMaxSize().horizontalScroll(scroll)) {
         slice.columns.forEachIndexed { depth, column ->
-            Column(
-                Modifier
-                    .width(if (depth == 0) m.browserFolderColumn else m.browserItemColumn)
-                    .fillMaxHeight(),
-            ) {
+            Column(Modifier.width(columnWidth).fillMaxHeight()) {
                 Row(
                     Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 16.dp, bottom = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -85,18 +105,15 @@ internal fun BrowserSurface(
                 } else {
                     LazyColumn(contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)) {
                         items(column.rows, key = { it.id }) { row ->
-                            ColumnRow(row) {
-                                if (row.isContainer) onNav(NavEvent.SelectFolder(depth, row.id))
-                                else onNav(NavEvent.SelectItem(row.id))
-                            }
+                            // One handler for folders and leaves alike: both truncate the
+                            // path to this column and append. It is the only "up" there is.
+                            ColumnRow(row) { onNav(NavEvent.Select(depth, row.id)) }
                         }
                     }
                 }
             }
             VerticalHairline()
         }
-
-        DetailColumn(slice, onNav, Modifier.width(m.browserItemColumn).fillMaxHeight())
     }
 }
 
@@ -130,6 +147,10 @@ private fun ColumnRow(row: BrowserRow, onClick: () -> Unit) {
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
+        // A folder's live item count: how many matching things are under it, which is also
+        // what decided it is here at all.
+        row.count?.let { Text("$it", style = SectionLabelStyle, color = c.ink4) }
+
         // Only a purpose the server can actually vouch for gets a chip. `Learning` has no
         // representation server-side, so it never appears rather than being guessed at.
         row.purpose?.takeIf { it == FolderPurpose.Research }?.let {
@@ -150,62 +171,101 @@ private fun ColumnRow(row: BrowserRow, onClick: () -> Unit) {
 }
 
 /**
- * The detail pane — what one selected item is, and the action row that opens it.
+ * The footer: what is selected, and the button that opens it.
+ *
+ * Replaces the third pane the first pass used as a preview. A pane that exists only to hold
+ * one button costs a whole column of a rail whose columns are the content — and the design
+ * puts the same information on one bar, so the rail keeps its width for what it is for.
  *
  * Opening from here leaves the Browser lit and its columns selected, which is what makes the
  * breadcrumb's `Browser` jump meaningful afterwards.
  */
 @Composable
-private fun DetailColumn(slice: BrowserSlice, onNav: (NavEvent) -> Unit, modifier: Modifier = Modifier) {
+internal fun BrowserFooter(
+    slice: BrowserSlice,
+    onNav: (NavEvent) -> Unit,
+    modifier: Modifier = Modifier,
+    depthHint: String? = null,
+    /** The organize actions. Absent in the dropdown, which is for picking, not triage. */
+    onOrganize: ((WriteEvent) -> Unit)? = null,
+) {
     val c = AnchorTheme.colors
     val m = AnchorTheme.metrics
     val detail = slice.detail
 
-    if (detail == null) {
-        Box(modifier.padding(horizontal = 22.dp), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    "Select an item to preview it.",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = c.ink3,
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "OPENING A DOCUMENT LEAVES BROWSER LIT",
-                    style = SectionLabelStyle,
-                    color = c.ink4,
-                )
-            }
-        }
-        return
-    }
-
-    Column(modifier.padding(horizontal = 22.dp, vertical = 16.dp)) {
+    Row(
+        modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Text(
-            detail.kindLabel,
+            text = if (detail == null) {
+                "SELECT AN ITEM TO OPEN IT"
+            } else {
+                "${detail.kindLabel} · ${detail.title}"
+            },
             style = SectionLabelStyle,
-            color = c.ink2,
-            modifier = Modifier
-                .clip(AnchorShape.chip)
-                .background(c.sel)
-                .padding(horizontal = 7.dp, vertical = 4.dp),
+            color = c.ink4,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
         )
-        Spacer(Modifier.height(10.dp))
-        Text(detail.title, style = MaterialTheme.typography.headlineSmall, color = c.ink)
-        Spacer(Modifier.height(16.dp))
 
-        detail.openKey?.let { key ->
-            Row(
-                Modifier
-                    .height(m.detailAction)
-                    .clip(AnchorShape.row)
-                    .background(c.amber)
-                    .clickable { onNav(NavEvent.OpenDoc(key)) }
-                    .padding(horizontal = 20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("Open", style = MaterialTheme.typography.titleMedium, color = c.onAmber)
+        // Only past the third column, and only then: a readout that is always there stops
+        // being a readout. Amber because it is the one thing on this bar worth noticing.
+        depthHint?.let { Text(it, style = SectionLabelStyle, color = c.amber) }
+
+        detail?.openKey?.let { key ->
+            FooterAction("Open", filled = true) { onNav(NavEvent.OpenDoc(key)) }
+        }
+
+        // Triage: the reason the tab exists at all. `Move…` is drawn and INERT — there is no
+        // move on the writer or on the API, and a button that pretended otherwise would be
+        // worse than one that plainly cannot be pressed. The prototype ships all three inert;
+        // these two work.
+        if (onOrganize != null && detail != null) {
+            FooterAction("Move…", enabled = false) {}
+            FooterAction("Rename") {
+                onOrganize(WriteEvent.ActionsRequested(detail.id))
+                onOrganize(WriteEvent.RenameStarted)
+            }
+            FooterAction("Delete", destructive = true) {
+                onOrganize(WriteEvent.ActionsRequested(detail.id))
+                onOrganize(WriteEvent.DeleteRequested)
             }
         }
+    }
+}
+
+@Composable
+private fun FooterAction(
+    label: String,
+    filled: Boolean = false,
+    destructive: Boolean = false,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    val c = AnchorTheme.colors
+    val m = AnchorTheme.metrics
+
+    Row(
+        Modifier
+            .height(m.touchTarget)
+            .clip(AnchorShape.row)
+            .then(if (filled) Modifier.background(c.amber) else Modifier)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = if (filled) 20.dp else 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.titleMedium,
+            color = when {
+                filled -> c.onAmber
+                destructive -> c.against
+                enabled -> c.ink2
+                else -> c.ink4
+            },
+        )
     }
 }

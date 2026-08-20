@@ -36,7 +36,10 @@ import compose.icons.feathericons.Mic
 import compose.icons.feathericons.Search
 import compose.icons.feathericons.Share2
 import compose.icons.feathericons.Star
+import compose.icons.feathericons.Check
+import compose.icons.feathericons.Maximize2
 import compose.icons.feathericons.MoreHorizontal
+import compose.icons.feathericons.Paperclip
 import compose.icons.feathericons.Sliders
 import compose.icons.feathericons.TrendingUp
 import compose.icons.feathericons.X
@@ -72,7 +75,6 @@ fun destinationIcon(destination: Destination, tint: Color, size: Dp = 22.dp) {
     Glyph(
         icon = when (destination) {
             Destination.Home -> FeatherIcons.Home
-            Destination.Browser -> FeatherIcons.Columns
             Destination.Markets -> FeatherIcons.TrendingUp
             Destination.Graph -> FeatherIcons.Share2
         },
@@ -210,3 +212,26 @@ fun FilterIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = DEFAULT_SI
 @Composable
 fun MoreIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = DEFAULT_SIZE) =
     Glyph(FeatherIcons.MoreHorizontal, tint, size, modifier)
+
+/**
+ * Pin — "stays open while you work".
+ *
+ * **A substitution, and a visible one.** The design asks for a thumbtack; Feather has no
+ * thumbtack, so this is `Paperclip` — the nearest glyph meaning "kept attached". Same call as
+ * `sparkles` → `Star`: take a real glyph from the icon set rather than draw one, and say so.
+ * Worth raising with the designer, since the pin is one of only three buttons in the dropdown's
+ * header.
+ */
+@Composable
+fun PinIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = DEFAULT_SIZE) =
+    Glyph(FeatherIcons.Paperclip, tint, size, modifier)
+
+/** Promote the dropdown to a full-width tab. */
+@Composable
+fun MaximizeIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = DEFAULT_SIZE) =
+    Glyph(FeatherIcons.Maximize2, tint, size, modifier)
+
+/** A checked facet. */
+@Composable
+fun CheckIcon(tint: Color, modifier: Modifier = Modifier, size: Dp = DEFAULT_SIZE) =
+    Glyph(FeatherIcons.Check, tint, size, modifier)

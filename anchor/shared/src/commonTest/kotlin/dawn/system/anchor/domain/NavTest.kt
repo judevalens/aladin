@@ -15,6 +15,8 @@ import kotlin.test.assertTrue
 class NavTest {
 
     private fun doc(id: String) = TabKey.Artifact(id)
+    private fun tab(id: String) = OpenTab.Doc(TabKey.Artifact(id))
+    private fun tabs(vararg ids: String) = ids.map(::tab)
     private fun surfaceOf(nav: Nav) = nav.here.surface
 
     // ── identity ─────────────────────────────────────────────────────────────
@@ -33,7 +35,7 @@ class NavTest {
         val overview = TabKey.Research("r1", ResearchView.Overview)
         val manifest = TabKey.Research("r1", ResearchView.Manifest)
         val nav = Nav().openDoc(overview).openDoc(manifest)
-        assertEquals(listOf(overview, manifest), nav.open)
+        assertEquals(listOf(OpenTab.Doc(overview), OpenTab.Doc(manifest)), nav.open)
     }
 
     // ── the trail ────────────────────────────────────────────────────────────
@@ -59,10 +61,8 @@ class NavTest {
 
     @Test
     fun `back restores the whole entry, columns included`() {
-        val nav = Nav().goToBrowser(listOf("f1"), "i1").goToBrowser(listOf("f2"), "i2")
-        val back = nav.step(-1)
-        assertEquals("f1", back.here.folderId)
-        assertEquals("i1", back.here.itemId)
+        val nav = Nav().goToBrowser(listOf("f1", "i1")).goToBrowser(listOf("f2", "i2"))
+        assertEquals(listOf("f1", "i1"), nav.step(-1).here.path)
     }
 
     /**
@@ -81,7 +81,7 @@ class NavTest {
             "b and c branched off the path",
         )
         assertEquals(
-            listOf(doc("a"), doc("b"), doc("c"), doc("d")),
+            tabs("a", "b", "c", "d"),
             nav.open,
             "but they are still open",
         )
@@ -102,29 +102,46 @@ class NavTest {
 
     @Test
     fun `selecting a column is not navigation, so it adds no history`() {
-        val nav = Nav().goToBrowser(listOf("f1"), null)
-        val after = nav.selectFolder(0, "f2").selectItem("i9")
+        val nav = Nav().goToBrowser(listOf("f1"))
+        val after = nav.select(0, "f2").select(1, "i9")
         assertEquals(nav.entries.size, after.entries.size)
-        assertEquals("f2", after.here.folderId)
-        assertEquals("i9", after.here.itemId)
+        assertEquals(listOf("f2", "i9"), after.here.path)
     }
 
     @Test
     fun `choosing a different folder drops the item, which does not live there`() {
-        val nav = Nav().goToBrowser(listOf("f1"), "i1").selectFolder(0, "f2")
-        assertNull(nav.here.itemId)
+        val nav = Nav().goToBrowser(listOf("f1", "i1")).select(0, "f2")
+        assertEquals(listOf("f2"), nav.here.path)
+    }
+
+    /**
+     * The rule a separate `itemId` could not express, and the reason the leaf lives in the
+     * path: the prototype has ONE row handler (`:738`), so picking a leaf in a shallow column
+     * collapses the deep columns exactly as picking a folder there would.
+     */
+    @Test
+    fun `picking a leaf in a shallower column also discards the columns to its right`() {
+        val nav = Nav()
+            .select(0, "a").select(1, "b").select(2, "leaf")
+        assertEquals(listOf("a", "b", "leaf"), nav.here.path)
+
+        assertEquals(
+            listOf("other-leaf"),
+            nav.select(0, "other-leaf").here.path,
+            "a leaf is not a special case; it truncates like anything else",
+        )
     }
 
     /** The defining Miller move: the columns to the right described a path you left. */
     @Test
     fun `picking in a shallower column discards every column to its right`() {
         val nav = Nav()
-            .selectFolder(0, "a")
-            .selectFolder(1, "b")
-            .selectFolder(2, "c")
+            .select(0, "a")
+            .select(1, "b")
+            .select(2, "c")
         assertEquals(listOf("a", "b", "c"), nav.here.path)
 
-        val sideways = nav.selectFolder(1, "b2")
+        val sideways = nav.select(1, "b2")
         assertEquals(
             listOf("a", "b2"),
             sideways.here.path,
@@ -135,25 +152,23 @@ class NavTest {
     @Test
     fun `descending appends a column, so the browser is as deep as the tree`() {
         var nav = Nav()
-        repeat(6) { depth -> nav = nav.selectFolder(depth, "f$depth") }
+        repeat(6) { depth -> nav = nav.select(depth, "f$depth") }
         assertEquals(List(6) { "f$it" }, nav.here.path)
     }
 
     @Test
     fun `re-picking the folder you are already in changes nothing`() {
-        val nav = Nav().selectFolder(0, "a").selectFolder(1, "b")
-        assertEquals(nav, nav.selectFolder(1, "b"))
+        val nav = Nav().select(0, "a").select(1, "b")
+        assertEquals(nav, nav.select(1, "b"))
     }
 
     @Test
     fun `a deleted folder takes every column to its right with it`() {
         val nav = Nav()
-            .selectFolder(0, "a").selectFolder(1, "b").selectFolder(2, "c")
-            .selectItem("i1")
+            .select(0, "a").select(1, "b").select(2, "c").select(3, "i1")
             .corrected(goneOnly("b"))
 
         assertEquals(listOf("a"), nav.here.path, "b's descendants are unreachable")
-        assertNull(nav.here.itemId)
     }
 
     // ── the open set ─────────────────────────────────────────────────────────
@@ -162,22 +177,21 @@ class NavTest {
     fun `opening registers, activates and records recency in one move`() {
         val nav = Nav().openDoc(doc("a"))
         assertEquals(Surface.Doc(doc("a")), surfaceOf(nav))
-        assertEquals(listOf(doc("a")), nav.open)
-        assertEquals(listOf(doc("a")), nav.mru)
+        assertEquals(tabs("a"), nav.open)
+        assertEquals(tabs("a"), nav.mru)
     }
 
     @Test
     fun `re-opening keeps its place in the list but becomes the most recent`() {
         val nav = Nav().openDoc(doc("a")).openDoc(doc("b")).openDoc(doc("a"))
-        assertEquals(listOf(doc("a"), doc("b")), nav.open, "the list must not reorder")
-        assertEquals(listOf(doc("a"), doc("b")), nav.mru, "recency must")
+        assertEquals(tabs("a", "b"), nav.open, "the list must not reorder")
+        assertEquals(tabs("a", "b"), nav.mru, "recency must")
     }
 
     @Test
     fun `opening a document keeps the browser selection, so the crumb still jumps`() {
-        val nav = Nav().goToBrowser(listOf("f1"), "i1").openDoc(doc("a"))
-        assertEquals("f1", nav.here.folderId)
-        assertEquals("i1", nav.here.itemId)
+        val nav = Nav().goToBrowser(listOf("f1", "i1")).openDoc(doc("a"))
+        assertEquals(listOf("f1", "i1"), nav.here.path)
     }
 
     // ── closing ──────────────────────────────────────────────────────────────
@@ -185,21 +199,21 @@ class NavTest {
     @Test
     fun `closing what you are showing lands on the trail, not on the most recent`() {
         val nav = Nav().openDoc(doc("a")).openDoc(doc("b")).openDoc(doc("c"))
-        val after = nav.closeDoc(doc("c"))
+        val after = nav.close(tab("c"))
         assertEquals(Surface.Doc(doc("b")), surfaceOf(after))
-        assertEquals(listOf(doc("a"), doc("b")), after.open)
+        assertEquals(tabs("a", "b"), after.open)
     }
 
     @Test
     fun `closing something else leaves you exactly where you were`() {
         val nav = Nav().openDoc(doc("a")).openDoc(doc("b"))
-        val after = nav.closeDoc(doc("a"))
+        val after = nav.close(tab("a"))
         assertEquals(Surface.Doc(doc("b")), surfaceOf(after))
     }
 
     @Test
     fun `a closed document is pruned from the trail, so back can never reach it`() {
-        val nav = Nav().openDoc(doc("a")).openDoc(doc("b")).closeDoc(doc("a"))
+        val nav = Nav().openDoc(doc("a")).openDoc(doc("b")).close(tab("a"))
         assertTrue(
             nav.entries.none { it.surface == Surface.Doc(doc("a")) },
             "back must not land on something you closed",
@@ -211,10 +225,10 @@ class NavTest {
         val nav = Nav(
             entries = listOf(Entry(Surface.Doc(doc("a")))),
             index = 0,
-            open = listOf(doc("a"), doc("b")),
-            mru = listOf(doc("a"), doc("b")),
+            open = tabs("a", "b"),
+            mru = tabs("a", "b"),
         )
-        assertEquals(Surface.Doc(doc("b")), surfaceOf(nav.closeDoc(doc("a"))))
+        assertEquals(Surface.Doc(doc("b")), surfaceOf(nav.close(tab("a"))))
     }
 
     @Test
@@ -222,16 +236,81 @@ class NavTest {
         val nav = Nav(
             entries = listOf(Entry(Surface.Doc(doc("a")))),
             index = 0,
-            open = listOf(doc("a")),
-            mru = listOf(doc("a")),
+            open = tabs("a"),
+            mru = tabs("a"),
         )
-        assertEquals(Surface.Dest(Destination.Home), surfaceOf(nav.closeDoc(doc("a"))))
+        assertEquals(Surface.Dest(Destination.Home), surfaceOf(nav.close(tab("a"))))
     }
 
     @Test
     fun `closing something that is not open changes nothing`() {
         val nav = Nav().openDoc(doc("a"))
-        assertEquals(nav, nav.closeDoc(doc("zzz")))
+        assertEquals(nav, nav.close(tab("zzz")))
+    }
+
+    // ── the browser tab ──────────────────────────────────────────────────────
+
+    /**
+     * **The reason the browser is not a [TabKey].**
+     *
+     * A key names a row in the tree, so a key is a thing the store gets asked about — and the
+     * store answers null for an id it has no row for, which reads as [Presence.Gone]. Modelled
+     * as a key, the browser tab would be closed by the correction on the frame after it opened,
+     * and the bug would look like "the tab won't stay open" rather than like a type mistake.
+     */
+    @Test
+    fun `correction never closes the browser tab, whatever the tree says`() {
+        val nav = Nav().openDoc(doc("a")).openBrowserTab()
+
+        val corrected = nav.corrected { Presence.Gone }
+
+        assertEquals(
+            listOf(OpenTab.Browser),
+            corrected.open,
+            "the document went, as it should; the browser stayed, having no row to lose",
+        )
+        assertEquals(Surface.Browser, surfaceOf(corrected))
+    }
+
+    @Test
+    fun `promoting the browser opens a tab, activates it and records recency`() {
+        val nav = Nav().openDoc(doc("a")).openBrowserTab()
+
+        assertEquals(Surface.Browser, surfaceOf(nav))
+        assertEquals(listOf(tab("a"), OpenTab.Browser), nav.open)
+        assertEquals(listOf(OpenTab.Browser, tab("a")), nav.mru)
+        assertTrue(nav.hasBrowserTab)
+    }
+
+    /**
+     * The two doors are different: the toggle promotes, the breadcrumb only shows. Conflating
+     * them would grow an Open row every time you tapped an ancestor crumb.
+     */
+    @Test
+    fun `a breadcrumb jump shows the browser without opening a tab`() {
+        val nav = Nav().openDoc(doc("a")).goToBrowser(listOf("f1"))
+
+        assertEquals(Surface.Browser, surfaceOf(nav))
+        assertTrue(!nav.hasBrowserTab, "showing the columns is not promoting them")
+        assertEquals(tabs("a"), nav.open)
+    }
+
+    @Test
+    fun `returning to an open browser tab keeps its place but becomes the most recent`() {
+        val nav = Nav().openBrowserTab().openDoc(doc("a")).openBrowserTab()
+
+        assertEquals(listOf(OpenTab.Browser, tab("a")), nav.open, "the list must not reorder")
+        assertEquals(listOf(OpenTab.Browser, tab("a")), nav.mru)
+    }
+
+    @Test
+    fun `closing the browser tab prunes the trail exactly as a document does`() {
+        val nav = Nav().openDoc(doc("a")).openBrowserTab()
+        val after = nav.close(OpenTab.Browser)
+
+        assertEquals(Surface.Doc(doc("a")), surfaceOf(after))
+        assertEquals(tabs("a"), after.open)
+        assertTrue(after.entries.none { it.surface == Surface.Browser })
     }
 
     // ── the switcher ─────────────────────────────────────────────────────────
@@ -239,11 +318,11 @@ class NavTest {
     @Test
     fun `the switcher orders by recency, but the open list decides membership`() {
         val nav = Nav(
-            open = listOf(doc("a"), doc("b"), doc("c")),
-            mru = listOf(doc("c"), doc("gone")),
+            open = tabs("a", "b", "c"),
+            mru = tabs("c", "gone"),
         )
         assertEquals(
-            listOf(doc("c"), doc("a"), doc("b")),
+            tabs("c", "a", "b"),
             nav.switcherOrder(),
             "a stale recency entry is dropped; documents missing from it append in open order",
         )
@@ -256,11 +335,11 @@ class NavTest {
     @Test
     fun `opening reorders recency, which is why a switcher must freeze this order`() {
         val nav = Nav().openDoc(doc("a")).openDoc(doc("b")).openDoc(doc("c"))
-        assertEquals(listOf(doc("c"), doc("b"), doc("a")), nav.switcherOrder())
+        assertEquals(tabs("c", "b", "a"), nav.switcherOrder())
 
         val stepped = nav.openDoc(doc("b"))
         assertEquals(
-            listOf(doc("b"), doc("c"), doc("a")),
+            tabs("b", "c", "a"),
             stepped.switcherOrder(),
             "one step moved b to the head — a second step would advance from a different list",
         )
@@ -274,35 +353,37 @@ class NavTest {
     /** The bug that shipped twice: an unread row is not a deleted one. */
     @Test
     fun `an unread id moves nothing`() {
-        val nav = Nav().goToBrowser(listOf("f1"), "i1").openDoc(doc("a"))
+        val nav = Nav().goToBrowser(listOf("f1", "i1")).openDoc(doc("a"))
         assertEquals(nav, nav.corrected { Presence.Unknown })
     }
 
     @Test
     fun `correction is idempotent, so applying it every frame is free`() {
-        val nav = Nav().goToBrowser(listOf("f1"), "i1").openDoc(doc("a"))
+        val nav = Nav().goToBrowser(listOf("f1", "i1")).openDoc(doc("a"))
         val once = nav.corrected(goneOnly("f1"))
         assertEquals(once, once.corrected(goneOnly("f1")))
     }
 
     @Test
     fun `a deleted folder stops being the selection, and takes its item with it`() {
-        val nav = Nav().goToBrowser(listOf("f1"), "i1").corrected(goneOnly("f1"))
-        assertNull(nav.here.folderId)
-        assertNull(nav.here.itemId, "an item cannot still be inside a folder that is gone")
+        val nav = Nav().goToBrowser(listOf("f1", "i1")).corrected(goneOnly("f1"))
+        assertEquals(
+            emptyList<String>(),
+            nav.here.path,
+            "an item cannot still be inside a folder that is gone",
+        )
     }
 
     @Test
     fun `a deleted item leaves the folder alone`() {
-        val nav = Nav().goToBrowser(listOf("f1"), "i1").corrected(goneOnly("i1"))
-        assertEquals("f1", nav.here.folderId)
-        assertNull(nav.here.itemId)
+        val nav = Nav().goToBrowser(listOf("f1", "i1")).corrected(goneOnly("i1"))
+        assertEquals(listOf("f1"), nav.here.path)
     }
 
     @Test
     fun `a deleted document stops being open and is pruned from the trail`() {
         val nav = Nav().openDoc(doc("a")).openDoc(doc("b")).corrected(goneOnly("b"))
-        assertEquals(listOf(doc("a")), nav.open)
+        assertEquals(tabs("a"), nav.open)
         assertTrue(nav.entries.none { it.surface == Surface.Doc(doc("b")) })
         assertEquals(Surface.Doc(doc("a")), surfaceOf(nav))
     }
@@ -313,11 +394,11 @@ class NavTest {
      */
     @Test
     fun `a row that comes back un-corrects, because nothing was destroyed`() {
-        val nav = Nav().goToBrowser(listOf("f1"), "i1")
+        val nav = Nav().goToBrowser(listOf("f1", "i1"))
         val duringSnapshot = nav.corrected(goneOnly("f1"))
-        assertNull(duringSnapshot.here.folderId)
+        assertEquals(emptyList<String>(), duringSnapshot.here.path)
         // The raw value was never written to, so the next frame is simply right again.
-        assertEquals("f1", nav.corrected { Presence.There }.here.folderId)
+        assertEquals(listOf("f1", "i1"), nav.corrected { Presence.There }.here.path)
     }
 
     @Test
@@ -329,7 +410,7 @@ class NavTest {
 
         assertEquals(Surface.Doc(doc("a")), surfaceOf(nav.step(-1)), "Back walks the path")
         assertTrue(
-            nav.switcherOrder().containsAll(listOf(doc("b"), doc("c"))),
+            nav.switcherOrder().containsAll(tabs("b", "c")),
             "but recency still reaches documents the trail has forgotten",
         )
     }

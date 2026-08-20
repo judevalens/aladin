@@ -1,8 +1,11 @@
 package dawn.system.anchor.features.shell.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -31,9 +34,14 @@ import dawn.system.anchor.features.shell.ShellScreen
 import dawn.system.anchor.features.shell.state.ChromeEvent
 import dawn.system.anchor.features.shell.state.NavEvent
 import dawn.system.anchor.features.shell.state.OpenRow
+import dawn.system.anchor.features.shell.state.openEvent
+import dawn.system.anchor.features.shell.state.rowKey
 import dawn.system.anchor.services.design.AnchorShape
 import dawn.system.anchor.services.design.AnchorTheme
+import dawn.system.anchor.services.design.ChevronDirection
+import dawn.system.anchor.services.design.ChevronIcon
 import dawn.system.anchor.services.design.CloseIcon
+import dawn.system.anchor.services.design.ColumnsIcon
 import dawn.system.anchor.services.design.FilterIcon
 import dawn.system.anchor.services.design.SearchIcon
 import dawn.system.anchor.services.design.SectionLabelStyle
@@ -56,6 +64,7 @@ internal fun Sidebar(state: ShellScreen.State, modifier: Modifier = Modifier) {
 
     Column(modifier.fillMaxHeight().background(c.panel)) {
         IconRow(state)
+        FilterPills(state)
         Destinations(state)
 
         Box(
@@ -85,12 +94,50 @@ private fun IconRow(state: ShellScreen.State) {
         // is drawn and inert rather than wired to something that does not exist.
         IconButton(enabled = false) { SearchIcon(tint = c.ink3, size = 19.dp) }
 
-        val filtering = state.chrome.filterOpen
+        // The browser's door, and **only one browser is ever live**. Standing on the browser
+        // surface, the button just closes any overlay. With a tab open elsewhere it activates
+        // that tab rather than stacking a dropdown over it. Otherwise it opens the dropdown.
+        val onBrowser = state.nav.nav.here.surface == Surface.Browser
+        val browserLit = state.chrome.browserOpen || onBrowser
         IconButton(
-            background = if (filtering) c.amberSoft else null,
-            onClick = { state.chrome.handle(ChromeEvent.ToggleFilter) },
+            background = if (browserLit) c.sel else null,
+            onClick = {
+                when {
+                    onBrowser -> state.chrome.handle(ChromeEvent.CloseBrowser)
+                    state.nav.nav.hasBrowserTab -> {
+                        state.chrome.handle(ChromeEvent.CloseBrowser)
+                        state.nav.handle(NavEvent.OpenBrowserTab)
+                    }
+                    else -> state.chrome.handle(ChromeEvent.ToggleBrowser)
+                }
+            },
+            onLongClick = { state.chrome.handle(ChromeEvent.OpenBrowserMenu) },
         ) {
-            FilterIcon(tint = if (filtering) c.amber else c.ink3, size = 19.dp)
+            ColumnsIcon(tint = if (browserLit) c.ink else c.ink3, size = 19.dp)
+        }
+
+        // Lit by what is ACTIVE, not by whether the popover happens to be open — the badge
+        // has to say "you are looking at a narrowed list" even after the popover is dismissed.
+        val narrowing = state.chrome.filter.isNarrowing
+        Box {
+            IconButton(
+                background = if (narrowing) c.amberSoft else null,
+                onClick = { state.chrome.handle(ChromeEvent.ToggleFilter) },
+            ) {
+                FilterIcon(tint = if (narrowing) c.amber else c.ink3, size = 19.dp)
+            }
+            if (narrowing) {
+                Text(
+                    "${state.chrome.filter.activeCount}",
+                    style = SectionLabelStyle,
+                    color = c.onAmber,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .clip(AnchorShape.pill)
+                        .background(c.amber)
+                        .padding(horizontal = 5.dp, vertical = 1.dp),
+                )
+            }
         }
 
         Spacer(Modifier.weight(1f))
@@ -98,6 +145,59 @@ private fun IconRow(state: ShellScreen.State) {
         IconButton(onClick = { state.chrome.handle(ChromeEvent.ToggleSidebar) }) {
             SidebarIcon(tint = c.ink3, size = 19.dp)
         }
+    }
+}
+
+/**
+ * The active facets, as removable pills — the one place a narrowed list says so without being
+ * opened. Only rendered while filtering, so the zone costs nothing the rest of the time.
+ */
+@Composable
+private fun FilterPills(state: ShellScreen.State) {
+    val c = AnchorTheme.colors
+    val filter = state.chrome.filter
+    if (!filter.isNarrowing) return
+
+    FlowRow(
+        Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        filter.purposes.forEach { purpose ->
+            Pill(purpose.name) { state.chrome.handle(ChromeEvent.TogglePurpose(purpose)) }
+        }
+        filter.kinds.forEach { kind ->
+            Pill(kind.wire.uppercase()) { state.chrome.handle(ChromeEvent.ToggleKind(kind)) }
+        }
+        Text(
+            "Clear",
+            style = MaterialTheme.typography.bodyMedium,
+            color = c.ink3,
+            modifier = Modifier
+                .clip(AnchorShape.control)
+                .clickable { state.chrome.handle(ChromeEvent.ClearFilter) }
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+        )
+    }
+}
+
+@Composable
+private fun Pill(label: String, onRemove: () -> Unit) {
+    val c = AnchorTheme.colors
+
+    Row(
+        Modifier
+            .height(32.dp)
+            .clip(AnchorShape.chip)
+            .background(c.amberSoft)
+            .border(1.dp, c.amberLine, AnchorShape.chip)
+            .clickable(onClick = onRemove)
+            .padding(horizontal = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, style = SectionLabelStyle, color = c.amber)
+        CloseIcon(tint = c.amber, size = 12.dp)
     }
 }
 
@@ -150,12 +250,14 @@ private fun OpenZone(state: ShellScreen.State, modifier: Modifier = Modifier) {
                 Text("${state.open.size}", style = SectionLabelStyle, color = c.ink4)
             }
             Spacer(Modifier.weight(1f))
-            if (state.open.size > 1) {
+            if (state.open.isNotEmpty()) {
+                // The expander. A chevron rather than the sparkle that was standing in here —
+                // sparkle means Copilot everywhere else in this shell.
                 IconButton(
                     size = 32.dp,
                     onClick = { state.chrome.handle(ChromeEvent.ToggleSwitcher) },
                 ) {
-                    SparkleIcon(tint = c.ink4, size = 16.dp)
+                    ChevronIcon(tint = c.ink4, size = 16.dp, direction = ChevronDirection.Down)
                 }
             }
         }
@@ -172,7 +274,7 @@ private fun OpenZone(state: ShellScreen.State, modifier: Modifier = Modifier) {
                 Modifier.fillMaxWidth(),
                 contentPadding = PaddingValues(start = 10.dp, end = 10.dp, bottom = 8.dp),
             ) {
-                items(state.open, key = { it.key.asString() }) { row ->
+                items(state.open, key = { it.tab.rowKey() }) { row ->
                     OpenListRow(row, state)
                 }
             }
@@ -191,7 +293,7 @@ private fun OpenListRow(row: OpenRow, state: ShellScreen.State) {
             .height(m.openRow)
             .clip(AnchorShape.menuRow)
             .background(if (row.active) c.sel else c.panel.copy(alpha = 0f))
-            .clickable { state.nav.handle(NavEvent.OpenDoc(row.key)) }
+            .clickable { state.nav.handle(row.tab.openEvent()) }
             .padding(start = 12.dp, end = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -208,7 +310,7 @@ private fun OpenListRow(row: OpenRow, state: ShellScreen.State) {
             modifier = Modifier.weight(1f),
         )
         // 28pt glyph inside a 44pt row is fine; a 28pt *button* would not be.
-        IconButton(size = 28.dp, onClick = { state.nav.handle(NavEvent.CloseDoc(row.key)) }) {
+        IconButton(size = 28.dp, onClick = { state.nav.handle(NavEvent.Close(row.tab)) }) {
             CloseIcon(tint = c.ink4, size = 14.dp)
         }
     }
@@ -259,6 +361,12 @@ internal fun IconButton(
     background: androidx.compose.ui.graphics.Color? = null,
     enabled: Boolean = true,
     onClick: () -> Unit = {},
+    /**
+     * A long press, where one means something. `combinedClickable` also **suppresses the click
+     * that would otherwise follow** — the prototype needs a 480ms timer and a `_fired` flag to
+     * do that by hand in the DOM; here it is the platform's own gesture.
+     */
+    onLongClick: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     Box(
@@ -266,7 +374,13 @@ internal fun IconButton(
             .size(size)
             .clip(AnchorShape.field)
             .background(background ?: AnchorTheme.colors.panel.copy(alpha = 0f))
-            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier),
+            .then(
+                if (!enabled) {
+                    Modifier
+                } else {
+                    Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                },
+            ),
         contentAlignment = Alignment.Center,
         content = { content() },
     )

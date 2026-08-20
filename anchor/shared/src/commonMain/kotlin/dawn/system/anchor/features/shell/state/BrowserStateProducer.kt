@@ -7,6 +7,7 @@ import androidx.compose.runtime.remember
 import com.slack.circuit.runtime.CircuitUiState
 import dawn.system.anchor.domain.ArtifactKind
 import dawn.system.anchor.domain.BrowserFilter
+import dawn.system.anchor.domain.BrowserTree
 import dawn.system.anchor.domain.Entry
 import dawn.system.anchor.domain.FolderPurpose
 import dawn.system.anchor.domain.ItemSort
@@ -29,6 +30,8 @@ data class BrowserRow(
     /** Nothing can report this yet; the dot is drawn only when it is non-null. */
     val state: ItemState?,
     val selected: Boolean,
+    /** A folder's live item count. Null on a leaf, which has nothing to count. */
+    val count: Int? = null,
 )
 
 /** One column: a folder's contents, and which of them is on the path. */
@@ -36,6 +39,7 @@ data class BrowserColumn(val title: String, val rows: List<BrowserRow>)
 
 /** The third pane — what one selected item is, and what opening it would do. */
 data class BrowserDetail(
+    val id: String,
     val title: String,
     val kindLabel: String,
     val isContainer: Boolean,
@@ -65,6 +69,13 @@ class BrowserStateProducer(private val nodes: NodeStore) {
     operator fun invoke(here: Entry, filter: BrowserFilter): BrowserSlice {
         val roots by remember { nodes.children(null) }.collectAsState(emptyList())
 
+        // The whole tree, for the two questions a column cannot answer about itself: how many
+        // matching items a folder holds, and what purpose its leaves inherit. It is a local
+        // replica, so this is an index over memory rather than a query per folder — but it IS
+        // a whole-tree subscription, which the per-column reads deliberately are not.
+        val all by remember { nodes.liveNodes() }.collectAsState(emptyList())
+        val tree = remember(all) { BrowserTree(all) }
+
         val deeper by remember(here.path) { nodes.eachChildren(here.path) }
             .collectAsState(emptyList())
 
@@ -74,40 +85,57 @@ class BrowserStateProducer(private val nodes: NodeStore) {
 
         val byParent = remember(deeper) { deeper.groupBy { it.parentId } }
 
-        val columns = remember(roots, byParent, pathRows, here, filter) {
+        // Only FOLDERS produce columns. A selected leaf is the last element of the same path
+        // and contributes none, which is what makes one array able to carry both (`:740-741`).
+        //
+        // An element whose row has not been read yet stops the walk rather than being assumed
+        // one way or the other: a missing column for a frame is recoverable, an empty column
+        // claiming a leaf has no children is a lie. Revisits are seeded from the replay cache,
+        // so this is only ever the genuine first read.
+        val folderPath = remember(here.path, pathRows) {
+            here.path.takeWhile { id -> pathRows.firstOrNull { it.id == id }?.isContainer == true }
+        }
+
+        val columns = remember(roots, byParent, pathRows, folderPath, here, filter, tree) {
             buildList {
                 add(
                     column(
-                        title = "Folders",
+                        title = "All folders",
                         contents = roots,
-                        // Column i's selection is the id that column i + 1 descends into,
-                        // falling back to the leaf when this is the deepest column.
-                        selectedId = here.path.firstOrNull() ?: here.itemId,
+                        // Column i's selection is simply `path[i]` now that the leaf lives in
+                        // the same array — no fallback, because there is no second field to
+                        // fall back to.
+                        selectedId = here.path.firstOrNull(),
                         filter = filter,
+                        tree = tree,
                     ),
                 )
-                here.path.forEachIndexed { depth, folderId ->
+                folderPath.forEachIndexed { depth, folderId ->
                     add(
                         column(
                             title = pathRows.firstOrNull { it.id == folderId }?.title.orUntitled(),
                             contents = byParent[folderId].orEmpty(),
-                            selectedId = here.path.getOrNull(depth + 1) ?: here.itemId,
+                            selectedId = here.path.getOrNull(depth + 1),
                             filter = filter,
+                            tree = tree,
                         ),
                     )
                 }
             }
         }
 
-        val selected = nodes.nodeOf(here.itemId)
+        // The trailing element, and only when it is a leaf — a folder selection is a column,
+        // not a thing to open. Mirrors the prototype's `bItem` (`:744`).
+        val selected = nodes.nodeOf(here.path.lastOrNull())?.takeIf { it.kind == NodeKind.Artifact }
         return BrowserSlice(
             columns = columns,
             detail = selected?.let { node ->
                 BrowserDetail(
+                    id = node.id,
                     title = node.title.orUntitled(),
                     kindLabel = node.kindLabel(),
-                    isContainer = node.kind != NodeKind.Artifact,
-                    openKey = TabKey.Artifact(node.id).takeIf { node.kind == NodeKind.Artifact },
+                    isContainer = false,
+                    openKey = TabKey.Artifact(node.id),
                 )
             },
         )
@@ -119,17 +147,33 @@ private fun column(
     contents: List<WorkspaceNode>,
     selectedId: String?,
     filter: BrowserFilter,
+    tree: BrowserTree,
 ): BrowserColumn {
     val surviving = contents.filter { node ->
-        filter.matches(
-            kind = node.artifactKind,
-            purpose = FolderPurpose.of(node),
-            state = null,
-        )
+        if (node.isContainer) {
+            // A folder is judged by what is INSIDE it, never by itself: filtering for PDFs
+            // must not hide every folder, and must not offer one you can only enter to find
+            // nothing. The count doing the deciding is the same one the row shows.
+            tree.matchingLeaves(node.id, filter) > 0
+        } else {
+            filter.matches(
+                kind = node.artifactKind,
+                // Inherited: an artifact carries no purpose of its own, so asking it directly
+                // would make every purpose facet match nothing.
+                purpose = tree.purposeOf(node),
+                state = null,
+            )
+        }
     }
-    val ordered = when (filter.sort) {
-        ItemSort.Name -> surviving.sortedBy { it.title.lowercase() }
-        ItemSort.Recent -> surviving
+    // Folders first and always A-Z; only the leaves take the chosen order. A rail whose
+    // folders drifted around under a sort would lose the one thing its columns are for.
+    //
+    // `Recent` is the tree's own order: the sync frame carries no timestamp, so "recent" here
+    // means position rather than time. Honest, and worth saying out loud.
+    val (folders, leaves) = surviving.partition { it.isContainer }
+    val ordered = folders.sortedBy { it.title.lowercase() } + when (filter.sort) {
+        ItemSort.Name -> leaves.sortedBy { it.title.lowercase() }
+        ItemSort.Recent -> leaves
     }
     return BrowserColumn(
         title = title,
@@ -139,9 +183,10 @@ private fun column(
                 title = node.title.orUntitled(),
                 isContainer = node.kind != NodeKind.Artifact,
                 kind = node.artifactKind,
-                purpose = FolderPurpose.of(node),
+                purpose = tree.purposeOf(node),
                 state = null,
                 selected = node.id == selectedId,
+                count = if (node.isContainer) tree.matchingLeaves(node.id, filter) else null,
             )
         },
     )

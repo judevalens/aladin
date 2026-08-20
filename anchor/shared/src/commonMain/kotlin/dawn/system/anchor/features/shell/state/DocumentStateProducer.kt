@@ -10,6 +10,7 @@ import androidx.compose.runtime.setValue
 import com.slack.circuit.runtime.CircuitUiState
 import dawn.system.anchor.domain.ArtifactKind
 import dawn.system.anchor.domain.Nav
+import dawn.system.anchor.domain.OpenTab
 import dawn.system.anchor.domain.TabKey
 import dawn.system.anchor.domain.artifactKind
 import dawn.system.anchor.services.data.ArtifactResourceStore
@@ -103,7 +104,11 @@ class DocumentStateProducer(
         // EVERY open document is resolved, not just the visible one, because every one of them
         // becomes a page and stays composed. A document you switch to must already have its
         // bytes, or "switching" is a download.
-        val documents = nav.open.map { tab ->
+        //
+        // The browser tab is filtered out rather than special-cased below: it is a place, not a
+        // document, and asking the store about it would resolve an "Untitled" nothing.
+        val documents = nav.open.filterIsInstance<OpenTab.Doc>().map { open ->
+            val tab = open.key
             key(tab.asString()) {
                 val node = nodes.nodeOf(tab.nodeId)
                 val title = node?.title?.takeIf { it.isNotBlank() } ?: "Untitled"
