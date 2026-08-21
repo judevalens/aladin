@@ -60,6 +60,7 @@ type fakePreview struct {
 	states        map[string]service.PreviewState // route -> state ("#/" is the Open landing)
 	anchors       map[string][]string             // route -> anchor ids present in the DOM
 	consoleErrors map[string][]string             // route -> console.error lines
+	escapingLinks map[string][]string             // route -> non-hash hrefs in the DOM
 	route         string                          // current route (tracked across Navigate)
 }
 
@@ -96,6 +97,10 @@ func (f *fakePreview) CheckAnchors(_ context.Context, _ string, ids []string) (m
 
 func (f *fakePreview) ConsoleErrors(_ context.Context, _ string) ([]string, error) {
 	return f.consoleErrors[f.route], nil
+}
+
+func (f *fakePreview) EscapingLinks(_ context.Context, _ string) ([]string, error) {
+	return f.escapingLinks[f.route], nil
 }
 
 func mounted() service.PreviewState    { return service.PreviewState{Mounted: true} }
@@ -157,6 +162,24 @@ func TestVerifyApp(t *testing.T) {
 		report, _ := ts.verifyApp(ctx, "p1", service.ChannelPublished, false)
 		if msg := verifyFailure(report); !strings.Contains(msg, "#/b") || !strings.Contains(msg, "TypeError: boom") {
 			t.Fatalf("want failure naming #/b's exception, got %q", msg)
+		}
+	})
+
+	// A route can render perfectly and still be unreachable: a non-hash href
+	// navigates the SERVED frame off its ?access_token URL, so the shard is
+	// replaced by an auth error the moment the link is clicked. Preview runs from
+	// about:blank, so only this check ever sees it.
+	t.Run("a link that navigates off the shard → failure names the href", func(t *testing.T) {
+		p := healthyPreview()
+		p.escapingLinks = map[string][]string{"#/a": {"/returns", "sections/quiz"}}
+		ts := docToolServer{store: fakeStore{files: map[string]string{"anchors.json": twoRouteManifest}}, preview: p}
+		report, _ := ts.verifyApp(ctx, "p1", service.ChannelPublished, false)
+		if report.OK {
+			t.Fatalf("an escaping link should fail the pass: %+v", report)
+		}
+		msg := verifyFailure(report)
+		if !strings.Contains(msg, "#/a") || !strings.Contains(msg, "/returns") || !strings.Contains(msg, "401") {
+			t.Fatalf("want failure naming #/a's escaping link, got %q", msg)
 		}
 	})
 

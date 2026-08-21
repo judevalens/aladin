@@ -795,6 +795,46 @@ func TestAuthResolveUnauthenticatedReturns401(t *testing.T) {
 	}
 }
 
+// A shard link that navigates the frame off its token-carrying URL used to hand
+// the person a raw {"error":"Unauthenticated"} with no hint of the cause. A
+// browser navigation now gets an explanation; API callers still get the JSON.
+func TestUnauthenticatedBrowserNavigationGetsHTML(t *testing.T) {
+	t.Parallel()
+
+	server := NewWithDependencies(":0", app.StaticDependencies{AuthSvc: &fakeAuthService{}})
+
+	navReq := httptest.NewRequest(http.MethodGet, "/returns", nil)
+	navReq.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	navRec := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(navRec, navReq)
+
+	if navRec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", navRec.Code)
+	}
+	if ct := navRec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Fatalf("Content-Type = %q, want text/html", ct)
+	}
+	if body := navRec.Body.String(); !strings.Contains(body, "#/section") {
+		t.Errorf("explanation missing the hash-route guidance: %s", body)
+	}
+
+	// XHR/fetch and unspecified callers keep the machine-readable shape.
+	for _, accept := range []string{"application/json", "*/*", ""} {
+		apiReq := httptest.NewRequest(http.MethodGet, "/api/auth/resolve", nil)
+		if accept != "" {
+			apiReq.Header.Set("Accept", accept)
+		}
+		apiRec := httptest.NewRecorder()
+		server.httpServer.Handler.ServeHTTP(apiRec, apiReq)
+		if apiRec.Code != http.StatusUnauthorized {
+			t.Fatalf("Accept=%q status = %d, want 401", accept, apiRec.Code)
+		}
+		if got := strings.TrimSpace(apiRec.Body.String()); got != `{"error":"Unauthenticated"}` {
+			t.Errorf("Accept=%q body = %s, want the JSON error", accept, got)
+		}
+	}
+}
+
 type fakeAuthService struct {
 	loginSession    artifactservice.AuthSession
 	registerSession artifactservice.AuthSession

@@ -132,6 +132,14 @@ Multi-page docs — ONE app, HASH routing:
   For richer nested routing, install_lib("react-router-dom") and use HashRouter
   (NOT BrowserRouter).
 
+  EVERY link must be a fragment link. The served shard's whole credential is the
+  ?access_token in its own URL, so <a href="/section"> (or any relative href)
+  navigates the frame off that URL and replaces your app with an auth error —
+  even though the route renders perfectly in preview, which runs from
+  about:blank. verify_app/publish_app now REFUSE a build with such a link. Use
+  the kit's Link/AppShell (they emit "#/..." whichever way you spell the nav target) or
+  write href="#/section" by hand.
+
 Inspecting (do this before publish):
   - preview_open → confirm mounted:true and exceptions empty.
   - preview_navigate(page_id, "#/route") → go to each route, then preview_snapshot

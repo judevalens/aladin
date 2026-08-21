@@ -330,7 +330,11 @@ type verifyRoute struct {
 	AnchorsMissing []string       `json:"anchors_missing,omitempty"`
 	Exceptions     []string       `json:"exceptions,omitempty"`
 	ConsoleErrors  []string       `json:"console_errors,omitempty"`
-	NavigateError  string         `json:"navigate_error,omitempty"`
+	// EscapingLinks are hrefs on this route that are not fragment links — they
+	// navigate the frame off the shard's authenticated URL and break it when
+	// clicked, even though the route itself renders fine. Always a failure.
+	EscapingLinks []string `json:"escaping_links,omitempty"`
+	NavigateError string   `json:"navigate_error,omitempty"`
 }
 
 type refsSummary struct {
@@ -869,6 +873,13 @@ func (t docToolServer) verifyApp(ctx context.Context, pageID string, channel ser
 		if errs, cerr := t.preview.ConsoleErrors(ctx, pageID); cerr == nil {
 			vr.ConsoleErrors = errs
 		}
+		// A route can render perfectly and still be unreachable in practice: a
+		// non-fragment href navigates the served frame away from the URL that
+		// carries its credential. The renderer previews from about:blank, so this
+		// only ever shows up in the served app — hence the check here.
+		if links, lerr := t.preview.EscapingLinks(ctx, pageID); lerr == nil {
+			vr.EscapingLinks = links
+		}
 		declared := byRoute[route]
 		if len(declared) > 0 {
 			counts, aerr := t.preview.CheckAnchors(ctx, pageID, declared)
@@ -882,6 +893,7 @@ func (t docToolServer) verifyApp(ctx context.Context, pageID string, channel ser
 			}
 		}
 		vr.OK = vr.Mounted && len(vr.Exceptions) == 0 && len(vr.AnchorsMissing) == 0 &&
+			len(vr.EscapingLinks) == 0 &&
 			(!strictConsole || len(vr.ConsoleErrors) == 0)
 		return vr
 	}
@@ -936,6 +948,10 @@ func verifyFailure(report verifyReport) string {
 			lines = append(lines, r.Route+" (did not mount)")
 		case len(r.Exceptions) > 0:
 			lines = append(lines, fmt.Sprintf("%s (%d uncaught exception(s): %s)", r.Route, len(r.Exceptions), firstLine(r.Exceptions[0])))
+		case len(r.EscapingLinks) > 0:
+			lines = append(lines, fmt.Sprintf(
+				"%s (link(s) navigate off the shard and will 401 when clicked: %s — use hash routes, e.g. href=\"#/section\" or the kit's Link/AppShell)",
+				r.Route, strings.Join(r.EscapingLinks, ", ")))
 		case len(r.AnchorsMissing) > 0:
 			lines = append(lines, fmt.Sprintf("%s (declared anchors not in the DOM: %s)", r.Route, strings.Join(r.AnchorsMissing, ", ")))
 		case len(r.ConsoleErrors) > 0:

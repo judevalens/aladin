@@ -2,6 +2,7 @@ package api
 
 import (
 	"aladin/backend_v2/internal/app"
+	"aladin/backend_v2/internal/docsurface"
 	coreservice "aladin/backend_v2/internal/service"
 	"context"
 	"encoding/json"
@@ -234,8 +235,38 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		// A browser landing here is almost always a shard whose link navigated the
+		// frame off its token-carrying URL; raw JSON tells that person nothing.
+		if isBrowserNavigation(r) {
+			w.Header().Set("Referrer-Policy", "no-referrer")
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(docsurface.LostCredentialHTML()))
+			return
+		}
 		writeAPIError(w, r, http.StatusUnauthorized, categoryBadRequest, "Unauthenticated", coreservice.ErrUnauthenticated)
 	})
+}
+
+// isBrowserNavigation reports whether this is a top-level document load by a
+// browser (as opposed to an API/XHR call), so an auth failure can answer in the
+// medium the caller actually renders. Accept is the signal: a navigation asks for
+// text/html first; fetch/XHR sends application/json or */*.
+func isBrowserNavigation(r *http.Request) bool {
+	if r.Method != http.MethodGet {
+		return false
+	}
+	for _, part := range strings.Split(r.Header.Get("Accept"), ",") {
+		media := strings.TrimSpace(strings.SplitN(part, ";", 2)[0])
+		switch media {
+		case "text/html":
+			return true
+		case "application/json":
+			return false
+		}
+	}
+	return false
 }
 
 func isPublicRoute(r *http.Request) bool {

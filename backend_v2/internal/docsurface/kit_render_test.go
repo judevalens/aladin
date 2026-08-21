@@ -145,3 +145,174 @@ func TestKitComponentsRenderInPreview(t *testing.T) {
 		t.Errorf("kit shard logged console errors: %v", errs)
 	}
 }
+
+// A shard whose nav is written the way agents actually write it — bare paths
+// ("/returns"), matching the Route paths. Before the fix, AppShell emitted those
+// verbatim as <a href="/returns">, which navigates the SERVED frame off
+// /content/{id}/?access_token=… and replaces the shard with an auth error. The
+// preview loads about:blank, so nothing ever caught it.
+const kitPathNavIndexTSX = `import { createRoot } from "react-dom/client";
+import { AppShell, Route, Link, Region } from "@aladin/kit";
+
+function App() {
+  return (
+    <AppShell
+      title="Nav"
+      nav={[
+        { id: "overview", label: "Overview", to: "/" },
+        { id: "returns", label: "Returns", to: "/returns" },
+        { id: "hashy", label: "Hashy", to: "#/hashy" },
+        { id: "bare", label: "Bare", to: "bare" },
+      ]}
+    >
+      <Route path="/">
+        <Region anchor="overview">
+          <Link to="/returns">go to returns</Link>
+        </Region>
+      </Route>
+      <Route path="/returns">
+        <Region anchor="returns">returns body</Region>
+      </Route>
+    </AppShell>
+  );
+}
+
+createRoot(document.getElementById("root")!).render(<App />);
+`
+
+// Every link the kit emits must be a fragment link, whichever way the shard spelled
+// `to` — and EscapingLinks (the publish gate) must agree there is nothing to flag.
+func TestAppShellNavEmitsHashLinksOnly(t *testing.T) {
+	chromeAvailable(t)
+	root := t.TempDir()
+	store := NewStore(root)
+	ctx := testCtx()
+	if _, err := store.EnsurePageDir(ctx, "p1"); err != nil {
+		t.Fatalf("EnsurePageDir: %v", err)
+	}
+	if err := store.WriteFile(ctx, "p1", "index.tsx", []byte(kitPathNavIndexTSX)); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	builder := NewBuilder(store, t.TempDir())
+	res, err := builder.Build(ctx, "p1", service.ChannelPublished)
+	if err != nil {
+		t.Skipf("build unavailable (needs esm.sh for react): %v", err)
+	}
+	if !res.OK {
+		if strings.Contains(res.Log, "esm.sh") || strings.Contains(res.Log, "dial tcp") {
+			t.Skipf("build needs network: %s", res.Log)
+		}
+		t.Fatalf("shard did not build:\n%s", res.Log)
+	}
+
+	m := NewPreviewSessions(store, builder, PreviewOptions{}).(*PreviewSessions)
+	t.Cleanup(func() { _ = m.CloseAll(ctx) })
+	if _, err := m.Open(ctx, "p1", service.ChannelPublished, service.PreviewOpenOptions{}); err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	st, err := m.Eval(ctx, "p1", `Array.from(document.querySelectorAll('a[href]')).map(function(a){return a.getAttribute('href')}).join(' ')`)
+	if err != nil {
+		t.Fatalf("Eval: %v", err)
+	}
+	for _, want := range []string{"#/", "#/returns", "#/hashy", "#/bare"} {
+		if !strings.Contains(st.EvalResult, want) {
+			t.Errorf("nav href %q missing from %q", want, st.EvalResult)
+		}
+	}
+	if strings.Contains(st.EvalResult, `"/returns"`) || strings.Contains(st.EvalResult, " /returns") {
+		t.Errorf("a non-hash href escaped into the DOM: %q", st.EvalResult)
+	}
+
+	// The publish gate's own view of the same page.
+	links, err := m.EscapingLinks(ctx, "p1")
+	if err != nil {
+		t.Fatalf("EscapingLinks: %v", err)
+	}
+	if len(links) != 0 {
+		t.Errorf("EscapingLinks = %v, want none", links)
+	}
+
+	// And the hash route the nav points at actually resolves (path/hash forms
+	// normalize to the same route, so Route still matches).
+	nav, err := m.Navigate(ctx, "p1", "/returns")
+	if err != nil {
+		t.Fatalf("Navigate: %v", err)
+	}
+	if !nav.Mounted {
+		t.Fatalf("route did not mount: %+v", nav)
+	}
+	counts, err := m.CheckAnchors(ctx, "p1", []string{"returns"})
+	if err != nil {
+		t.Fatalf("CheckAnchors: %v", err)
+	}
+	if counts["returns"] == 0 {
+		t.Error("route /returns did not render its region")
+	}
+}
+
+// The gate itself: a hand-rolled anchor that bypasses the kit is still caught,
+// while fragment links and explicit schemes are left alone.
+const kitEscapingLinkIndexTSX = `import { createRoot } from "react-dom/client";
+import { Page, Region } from "@aladin/kit";
+
+function App() {
+  return (
+    <Page>
+      <Region anchor="body">
+        <a href="/returns">bad: root-relative</a>
+        <a href="sections/quiz">bad: relative</a>
+        <a href="#/ok">fine: hash route</a>
+        <a href="https://example.com">fine: explicit scheme</a>
+        <a href="mailto:x@example.com">fine: mailto</a>
+      </Region>
+    </Page>
+  );
+}
+
+createRoot(document.getElementById("root")!).render(<App />);
+`
+
+func TestEscapingLinksFlagsNonHashHrefs(t *testing.T) {
+	chromeAvailable(t)
+	store := NewStore(t.TempDir())
+	ctx := testCtx()
+	if _, err := store.EnsurePageDir(ctx, "p1"); err != nil {
+		t.Fatalf("EnsurePageDir: %v", err)
+	}
+	if err := store.WriteFile(ctx, "p1", "index.tsx", []byte(kitEscapingLinkIndexTSX)); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	builder := NewBuilder(store, t.TempDir())
+	res, err := builder.Build(ctx, "p1", service.ChannelPublished)
+	if err != nil {
+		t.Skipf("build unavailable (needs esm.sh for react): %v", err)
+	}
+	if !res.OK {
+		if strings.Contains(res.Log, "esm.sh") || strings.Contains(res.Log, "dial tcp") {
+			t.Skipf("build needs network: %s", res.Log)
+		}
+		t.Fatalf("shard did not build:\n%s", res.Log)
+	}
+	m := NewPreviewSessions(store, builder, PreviewOptions{}).(*PreviewSessions)
+	t.Cleanup(func() { _ = m.CloseAll(ctx) })
+	if _, err := m.Open(ctx, "p1", service.ChannelPublished, service.PreviewOpenOptions{}); err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	links, err := m.EscapingLinks(ctx, "p1")
+	if err != nil {
+		t.Fatalf("EscapingLinks: %v", err)
+	}
+	got := strings.Join(links, ",")
+	for _, want := range []string{"/returns", "sections/quiz"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("EscapingLinks %v did not flag %q", links, want)
+		}
+	}
+	for _, unwanted := range []string{"#/ok", "https://example.com", "mailto:"} {
+		if strings.Contains(got, unwanted) {
+			t.Errorf("EscapingLinks %v wrongly flagged %q", links, unwanted)
+		}
+	}
+}

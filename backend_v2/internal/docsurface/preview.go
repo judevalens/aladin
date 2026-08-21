@@ -107,7 +107,7 @@ type previewSession struct {
 	opMu    sync.Mutex
 	started bool // browser/tab allocated (first Run done); guarded by opMu
 
-	logMu      sync.Mutex
+	logMu         sync.Mutex
 	console       []string
 	consoleErrors []string
 	exceptions    []string
@@ -407,6 +407,41 @@ func (m *PreviewSessions) CheckAnchors(ctx context.Context, pageID string, ancho
 		out[id] = n
 	}
 	return out, nil
+}
+
+// EscapingLinks returns the hrefs on the CURRENT route that would navigate the
+// frame off its own document. A served shard lives at
+// /content/{id}/?access_token=… and that query token is its whole credential, so
+// any href that is not a pure fragment replaces the shard with the API's
+// {"error":"Unauthenticated"} the moment it is clicked. Fragment links, explicit
+// schemes (mailto:/tel:/https:…) and javascript: are left alone — only in-app
+// navigation that silently drops the credential is reported.
+func (m *PreviewSessions) EscapingLinks(ctx context.Context, pageID string) ([]string, error) {
+	s, err := m.getExisting(ctx, pageID)
+	if err != nil {
+		return nil, err
+	}
+	s.opMu.Lock()
+	defer s.opMu.Unlock()
+	opCtx, cancel := context.WithTimeout(s.tabCtx, opTimeout)
+	defer cancel()
+
+	// getAttribute (not .href) so the raw authored value is judged, before the
+	// browser resolves it against the document URL.
+	expr := `(function(){var out=[];
+	  document.querySelectorAll('a[href]').forEach(function(a){
+	    var h=(a.getAttribute('href')||'').trim();
+	    if(!h) return;
+	    if(h.charAt(0)==='#') return;              // in-app hash route: safe
+	    if(/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(h)) return; // explicit scheme: deliberate
+	    if(out.indexOf(h)<0) out.push(h);
+	  });
+	  return out.slice(0,20);})()`
+	var hrefs []string
+	if err := chromedp.Run(opCtx, chromedp.Evaluate(expr, &hrefs)); err != nil {
+		return nil, fmt.Errorf("escaping links: %w", err)
+	}
+	return hrefs, nil
 }
 
 // Reset force-restarts the renderer: it tears down the shared browser and all

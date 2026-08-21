@@ -64,12 +64,30 @@ export function useRoute(): string {
   return route;
 }
 
+// routePath normalizes any route spelling ("returns", "/returns", "#/returns")
+// to the bare form useRoute() returns ("/returns"), so Route/nav comparisons hold
+// however a shard writes it.
+export function routePath(to: string): string {
+  const s = (to ?? "").trim().replace(/^#/, "");
+  if (!s) return "/";
+  return s.startsWith("/") ? s : "/" + s;
+}
+
+// hashHref is the ONLY way this kit emits a navigation href. A shard document is
+// served from /content/{id}/?access_token=… and that token is its whole
+// credential, so ANY non-hash href navigates the frame off its authenticated URL
+// and the shard is replaced by {"error":"Unauthenticated"}. Every link is a hash
+// link, no matter how the caller spelled `to`.
+export function hashHref(to: string): string {
+  return "#" + routePath(to);
+}
+
 export function HashRouter({ children }: { children?: ReactNode }) {
   return <>{children}</>;
 }
 
 export function Route({ path, children }: { path: string; children?: ReactNode }) {
-  return useRoute() === path ? <>{children}</> : null;
+  return routePath(useRoute()) === routePath(path) ? <>{children}</> : null;
 }
 
 export function Link({
@@ -82,7 +100,7 @@ export function Link({
   children?: ReactNode;
 }) {
   return (
-    <a href={"#" + to} className={className}>
+    <a href={hashHref(to)} className={className}>
       {children}
     </a>
   );
@@ -623,7 +641,7 @@ export function AppShell({
   className?: string;
   children?: ReactNode;
 }) {
-  const route = useRoute();
+  const route = routePath(useRoute());
   return (
     <div className={cn("flex min-h-screen bg-bg text-ink", className)}>
       <aside className="flex w-52 shrink-0 flex-col border-r border-line bg-rail p-3">
@@ -632,10 +650,12 @@ export function AppShell({
           {(nav ?? []).map((item) => (
             <a
               key={item.id}
-              href={item.to}
+              href={hashHref(item.to)}
               className={cn(
                 "rounded-chip px-2 py-1.5 text-sm transition-colors",
-                route === item.to ? "bg-amber-soft text-amber" : "text-ink-2 hover:bg-raise hover:text-ink",
+                route === routePath(item.to)
+                  ? "bg-amber-soft text-amber"
+                  : "text-ink-2 hover:bg-raise hover:text-ink",
               )}
             >
               {item.label}

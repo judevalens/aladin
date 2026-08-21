@@ -136,6 +136,11 @@ type PreviewService interface {
 	// ConsoleErrors returns just the console.error lines since open, so a verify
 	// pass can report (or gate on) them separately from the full transcript.
 	ConsoleErrors(ctx context.Context, pageID string) ([]string, error)
+	// EscapingLinks returns the hrefs on the current route that would navigate the
+	// frame off its own authenticated document (anything that is not a fragment
+	// link or an explicit scheme). A served shard's credential lives in its URL
+	// query, so such a link replaces the shard with an auth error when clicked.
+	EscapingLinks(ctx context.Context, pageID string) ([]string, error)
 	// Close frees the page's tab (no-op if none open).
 	Close(ctx context.Context, pageID string) error
 	// Reset force-tears down the shared browser + every tab so the next Open
