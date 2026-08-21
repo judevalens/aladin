@@ -36,6 +36,9 @@ data class WebPane(val id: String, val kind: Kind, val title: String) {
 
         /** An agent-authored shard, sandboxed to an opaque origin. */
         Shard("shard"),
+
+        /** A tldraw board, saved as the board artifact's snapshot. */
+        Board("board"),
     }
 }
 

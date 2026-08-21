@@ -25,6 +25,7 @@ sealed interface WriteEvent {
     data object DeleteCancelled : WriteEvent
     data object CreateFolder : WriteEvent
     data object CreatePage : WriteEvent
+    data object CreateBoard : WriteEvent
     data object WriteErrorDismissed : WriteEvent
 }
 
@@ -163,6 +164,15 @@ class WriteStateProducer(
                         runCatching { writer.createPage(parentId, "Untitled page") }
                             .onSuccess { id -> nodes.byId(id)?.let(onCreated) }
                             .onFailure { writeError = it.failureText("new page") }
+                    }
+                }
+
+                WriteEvent.CreateBoard -> {
+                    onCreateChosen()
+                    scope.launch {
+                        runCatching { writer.createBoard(parentId, "Untitled board") }
+                            .onSuccess { id -> nodes.byId(id)?.let(onCreated) }
+                            .onFailure { writeError = it.failureText("new board") }
                     }
                 }
 

@@ -55,6 +55,7 @@ export interface WorkspaceShellState {
   onCreateFolder: () => Promise<void>;
   onCreateResearch: () => Promise<void>;
   onCreateNote: () => Promise<void>;
+  onCreateBoard: () => Promise<void>;
   onCreateLink: () => void;
   onCreateVoice: () => void;
   onCreateFile: () => void;
@@ -84,6 +85,7 @@ export interface BrowserPaneState {
   onCreateFolderHere: (folderId: string) => void;
   onCreateResearchHere: (folderId: string) => void;
   onCreateNoteHere: (folderId: string) => void;
+  onCreateBoardHere: (folderId: string) => void;
   /** Deletes a folder or research folder. Server-authoritative; the tree updates off the frame. */
   onDeleteFolder: (folderId: string) => Promise<void>;
   onDeleteArtifact: (artifactId: string) => Promise<void>;
@@ -215,6 +217,17 @@ export function useWorkspaceShell(): WorkspaceShellState {
         setCreateArtifactPending(false);
       }
     },
+    onCreateBoard: async () => {
+      try {
+        setCreateArtifactPending(true);
+        const artifact = await services.workspace.createArtifact(
+          createArtifactCommand(tree, null, "board"),
+        );
+        useAppStore.getState().openArtifact(artifact.id);
+      } finally {
+        setCreateArtifactPending(false);
+      }
+    },
     onCreateLink: () => setLinkDialogOpen(true),
     onCreateVoice: () => {
       const focusedFolderId = useAppStore.getState().workspace.focusedFolderId;
@@ -328,6 +341,14 @@ export function useBrowserPane(): BrowserPaneState {
       expandFolders([folderId]);
       void services.workspace
         .createArtifact(createArtifactCommand(tree, folderId, "note"))
+        .then((artifact) => {
+          openArtifact(artifact.id);
+        });
+    },
+    onCreateBoardHere: (folderId: string) => {
+      expandFolders([folderId]);
+      void services.workspace
+        .createArtifact(createArtifactCommand(tree, folderId, "board"))
         .then((artifact) => {
           openArtifact(artifact.id);
         });

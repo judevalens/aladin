@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Eyebrow } from "@/components/ui/eyebrow";
 import { Icon } from "@/components/ui/icon";
 import { createPortal } from "react-dom";
-import { ArrowRight, ChevronRight, Columns3, FileText, FlaskConical, Folder, Home, Layout, Link2, Mic, Paperclip, X } from "lucide-react";
+import { ArrowRight, ChevronRight, Columns3, FileText, FlaskConical, Folder, Grid3X3, Home, Layout, Link2, Mic, Paperclip, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ArtifactKind, BrowserTreeNode } from "@/shared/api/models";
 import { findFolderChildren, isContainerKind } from "@/modules/workspace/domain";
@@ -20,6 +20,7 @@ const TYPE_META: Record<ArtifactKind, { label: string; icon: LucideIcon }> = {
   voice: { label: "Voice", icon: Mic },
   file: { label: "File", icon: Paperclip },
   app: { label: "App", icon: Layout },
+  board: { label: "Board", icon: Grid3X3 },
 };
 
 function findArtifactNode(tree: BrowserTreeNode[], artifactId: string): BrowserTreeNode | null {

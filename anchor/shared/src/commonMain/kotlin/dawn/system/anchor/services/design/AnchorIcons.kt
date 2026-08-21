@@ -96,6 +96,7 @@ fun artifactKindIcon(artifactType: String?, isContainer: Boolean, tint: Color, s
         icon = when {
             isContainer -> FeatherIcons.Folder
             artifactType == "app" -> FeatherIcons.Layout
+            artifactType == "board" -> FeatherIcons.Grid
             artifactType == "page" || artifactType == "note" -> FeatherIcons.Edit3
             artifactType == "voice" -> FeatherIcons.Mic
             artifactType == "link" -> FeatherIcons.Link

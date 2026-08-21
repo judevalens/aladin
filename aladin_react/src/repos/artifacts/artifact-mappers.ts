@@ -32,6 +32,8 @@ export function artifactKindFromString(value: string | null | undefined): Artifa
       return "file";
     case "app":
       return "app";
+    case "board":
+      return "board";
     default:
       return "note";
   }

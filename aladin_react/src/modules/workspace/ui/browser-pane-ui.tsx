@@ -48,6 +48,7 @@ export function BrowserPaneUI() {
     onDeleteArtifact,
     onCreateResearchHere,
     onCreateNoteHere,
+    onCreateBoardHere,
   } = useBrowserPane();
   const openCommandPalette = useAppStore((state) => state.setCommandPaletteOpen);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -155,6 +156,7 @@ export function BrowserPaneUI() {
             onCreateFolderHere={onCreateFolderHere}
             onCreateResearchHere={onCreateResearchHere}
             onCreateNoteHere={onCreateNoteHere}
+            onCreateBoardHere={onCreateBoardHere}
             onOpenMiller={openMiller}
           />
         ))}
@@ -199,6 +201,7 @@ function BrowserPaneRow({
   onCreateFolderHere,
   onCreateResearchHere,
   onCreateNoteHere,
+  onCreateBoardHere,
   onOpenMiller,
 }: {
   row: (ReturnType<typeof useBrowserPane>)["rows"][number];
@@ -214,6 +217,7 @@ function BrowserPaneRow({
   onCreateFolderHere: (folderId: string) => void;
   onCreateResearchHere: (folderId: string) => void;
   onCreateNoteHere: (folderId: string) => void;
+  onCreateBoardHere: (folderId: string) => void;
   onOpenMiller: (folderId: string | null, anchor: DOMRect, seedLeaf?: string) => void;
 }) {
   const rowRef = useRef<HTMLButtonElement | null>(null);
@@ -337,6 +341,7 @@ function BrowserPaneRow({
               </ContextMenuItem>
             ) : null}
             <ContextMenuItem onSelect={() => onCreateNoteHere(row.folderId!)}>New note here</ContextMenuItem>
+            <ContextMenuItem onSelect={() => onCreateBoardHere(row.folderId!)}>New board here</ContextMenuItem>
             {/* Rename dispatches by kind: the folder API is deliberately folder-only, so a
                 research folder renames through its own endpoint. */}
             <ContextMenuSeparator />

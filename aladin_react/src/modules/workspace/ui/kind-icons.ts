@@ -3,6 +3,7 @@ import {
   FileJson,
   FileText,
   FlaskConical,
+  Grid3X3,
   History,
   LayoutDashboard,
   Layout,
@@ -29,6 +30,7 @@ export const ARTIFACT_ICONS: Record<ArtifactKind, LucideIcon> = {
   voice: Mic,
   file: Paperclip,
   app: Layout,
+  board: Grid3X3,
 };
 
 /** A research folder's structural slots (domain.RESEARCH_SLOT_VIEWS) as glyphs. */

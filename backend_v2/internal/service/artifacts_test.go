@@ -78,6 +78,32 @@ func TestArtifactServiceCreatePageRequiresTitle(t *testing.T) {
 	}
 }
 
+func TestArtifactServiceCreateBoardStoresSnapshot(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeArtifactRepository{}
+	svc := NewArtifactService(repo, &fakeArtifactFiles{})
+
+	result, err := svc.Create(testPrincipalContext(), ArtifactPayload{
+		Type:    "board",
+		Title:   "Lesson sketch",
+		Content: `{"document":{"store":{}}}`,
+	})
+	if err != nil {
+		t.Fatalf("Create error: %v", err)
+	}
+	rec := result.Artifact
+	if rec.Type != "board" {
+		t.Fatalf("type = %q, want board", rec.Type)
+	}
+	if rec.Content != `{"document":{"store":{}}}` {
+		t.Fatalf("content = %q, want tldraw snapshot", rec.Content)
+	}
+	if repo.pagesByID[rec.ID] != nil {
+		t.Fatalf("board should not create a page document row")
+	}
+}
+
 func TestArtifactServiceRequiresPrincipal(t *testing.T) {
 	t.Parallel()
 

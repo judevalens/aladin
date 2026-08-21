@@ -3,8 +3,9 @@ import type { ReactNode } from "react";
 import type { EmbedConfig } from "@/embed/embed-config";
 import { createRoot } from "react-dom/client";
 
+import { BoardPane } from "@/embed/board-pane";
 import { BlockNotePageEditorDriver } from "@/modules/pages/editor/page-editor-driver";
-import { createApiClient } from "@/shared/api/client";
+import { createApiClient, type ApiClient } from "@/shared/api/client";
 import { createShardApi } from "@/shared/api/shard-api";
 import { createContentTokenStore } from "@/shared/runtime/content-token-store";
 import { createBridgeHost } from "@/modules/doc-surface/bridge/bridge-host";
@@ -51,7 +52,7 @@ import "@/index.css";
 export interface HostPane {
   /** Artifact id. Also the React key, so a pane keeps its state across reorders. */
   id: string;
-  kind: "page" | "shard";
+  kind: "page" | "shard" | "board";
   title?: string;
 }
 
@@ -133,8 +134,24 @@ function Pane({ pane, config }: { pane: HostPane; config: EmbedConfig }) {
       </div>
     );
   }
+  if (pane.kind === "board") return <BoardHostPane pane={pane} config={config} />;
 
   return <ShardPane pane={pane} config={config} />;
+}
+
+function useApiClient(config: EmbedConfig): ApiClient | null {
+  return useMemo(() => {
+    if (!config.apiBaseUrl) return null;
+    return createApiClient(
+      {
+        isDesktopApp: false,
+        apiBaseUrl: config.apiBaseUrl,
+        websocketBaseUrl: "",
+        collabWsBaseUrl: config.collabWsUrl,
+      },
+      { getToken: () => config.token },
+    );
+  }, [config]);
 }
 
 /**
@@ -150,17 +167,9 @@ function Pane({ pane, config }: { pane: HostPane; config: EmbedConfig }) {
  * and one content token serves them all.
  */
 function useShardPlanes(config: EmbedConfig) {
+  const client = useApiClient(config);
   return useMemo(() => {
-    if (!config.apiBaseUrl) return null;
-    const client = createApiClient(
-      {
-        isDesktopApp: false,
-        apiBaseUrl: config.apiBaseUrl,
-        websocketBaseUrl: "",
-        collabWsBaseUrl: config.collabWsUrl,
-      },
-      { getToken: () => config.token },
-    );
+    if (!client) return null;
     const api = createShardApi(client);
     return {
       api,
@@ -168,7 +177,19 @@ function useShardPlanes(config: EmbedConfig) {
       hub: createShardDataHub(api),
       contentTokens: createContentTokenStore(client),
     };
-  }, [config]);
+  }, [client]);
+}
+
+function BoardHostPane({ pane, config }: { pane: HostPane; config: EmbedConfig }) {
+  const client = useApiClient(config);
+  if (!client) {
+    return (
+      <ShardNotice title={pane.title ?? "Board"}>
+        The host did not send an apiBaseUrl, so there is nowhere to save the board.
+      </ShardNotice>
+    );
+  }
+  return <BoardPane boardId={pane.id} title={pane.title} client={client} />;
 }
 
 /**

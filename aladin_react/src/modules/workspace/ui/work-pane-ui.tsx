@@ -42,7 +42,7 @@ export function WorkPaneUI() {
     const byKey = new Map(tabs.map((t) => [t.key, t]));
     const isHeavy = (key: string) => {
       const kind = byKey.get(key)?.artifact?.kind;
-      return kind === "note" || kind === "app";
+      return kind === "note" || kind === "app" || kind === "board";
     };
     // The active key is included even before the effect lands, or the frame in which it
     // changes would render an empty pane.
@@ -201,6 +201,15 @@ function ArtifactTabPane({ artifactId, hidden }: { artifactId: string; hidden: b
   }
   if (artifact.kind === "note") return <PageEditorUI pageId={artifact.id} />;
   if (artifact.kind === "app") return <DocSurfaceUI artifact={artifact} hidden={hidden} />;
+  if (artifact.kind === "board") {
+    return (
+      <PlaceholderPane
+        title={artifact.title || "Board"}
+        body="Open this on the iPad client to draw."
+        className="h-full"
+      />
+    );
+  }
   if (artifact.kind === "link") {
     return (
       <ScrollArea className="h-full">

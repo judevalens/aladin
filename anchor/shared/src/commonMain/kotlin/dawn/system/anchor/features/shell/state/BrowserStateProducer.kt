@@ -200,6 +200,7 @@ private fun WorkspaceNode.kindLabel(): String = when (kind) {
         ArtifactKind.Page -> "NOTE"
         ArtifactKind.Link -> "LINK"
         ArtifactKind.App -> "APP"
+        ArtifactKind.Board -> "BOARD"
         ArtifactKind.Voice -> "VOICE"
         ArtifactKind.File -> "FILE"
         null -> "ARTIFACT"

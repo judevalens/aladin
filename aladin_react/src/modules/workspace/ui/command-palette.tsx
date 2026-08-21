@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Icon } from "@/components/ui/icon";
 import { useNavigate } from "react-router-dom";
-import { Building2, CandlestickChart, FilePlus2, FileText, FlaskConical, FolderPlus, Globe, Layers, Link2, Mic, Upload, User } from "lucide-react";
+import { Building2, CandlestickChart, FilePlus2, FileText, FlaskConical, FolderPlus, Globe, Grid3X3, Layers, Link2, Mic, Upload, User } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
   CommandDialog,
@@ -19,6 +19,7 @@ export interface CommandPaletteActions {
   onCreateFolder: () => void;
   onCreateResearch: () => void;
   onCreateNote: () => void;
+  onCreateBoard: () => void;
   onCreateLink: () => void;
   onCreateVoice: () => void;
   onCreateFile: () => void;
@@ -33,6 +34,7 @@ const KIND_ICON: Record<string, LucideIcon> = {
   entity: Globe,
   page: FileText,
   shard: Layers,
+  board: Grid3X3,
 };
 
 /**
@@ -127,6 +129,10 @@ export function CommandPalette({
             <CommandItem value="new note" onSelect={() => run(actions.onCreateNote)}>
               <Icon as={FilePlus2} className="text-ink-3" />
               New note
+            </CommandItem>
+            <CommandItem value="new board" onSelect={() => run(actions.onCreateBoard)}>
+              <Icon as={Grid3X3} className="text-ink-3" />
+              New board
             </CommandItem>
             <CommandItem value="new folder" onSelect={() => run(actions.onCreateFolder)}>
               <Icon as={FolderPlus} className="text-ink-3" />

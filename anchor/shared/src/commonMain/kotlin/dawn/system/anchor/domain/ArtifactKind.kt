@@ -4,7 +4,7 @@ package dawn.system.anchor.domain
  * What an artifact *is*.
  *
  * The closed set is the **server's**, not the design's: `artifacts.type` is validated in Go
- * as `page | link | app | voice | file` and nothing else reaches a client. There is no SQL
+ * as `page | link | app | board | voice | file` and nothing else reaches a client. There is no SQL
  * constraint behind it, and the three write paths disagree about which subset each allows —
  * so this enum is the one place that states the whole set.
  *
@@ -23,6 +23,7 @@ enum class ArtifactKind(val wire: String) {
     Page("page"),
     Link("link"),
     App("app"),
+    Board("board"),
     Voice("voice"),
     File("file"),
     ;
@@ -30,11 +31,11 @@ enum class ArtifactKind(val wire: String) {
     /**
      * Whether this shares the one web view.
      *
-     * `page` and `app` are rendered by the desktop editor embedded in a `WKWebView`, which
+     * `page`, `app` and `board` are rendered by the desktop editor embedded in a `WKWebView`, which
      * holds every open document at once — so they cost one surface between them, not one
      * each. Everything else gets a surface of its own.
      */
-    val isWebBacked: Boolean get() = this == Page || this == App
+    val isWebBacked: Boolean get() = this == Page || this == App || this == Board
 
     companion object {
         fun fromWire(value: String?): ArtifactKind? = entries.firstOrNull { it.wire == value }

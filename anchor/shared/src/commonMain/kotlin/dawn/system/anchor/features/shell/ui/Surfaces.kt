@@ -137,7 +137,11 @@ internal fun SurfaceHost(state: ShellScreen.State, modifier: Modifier = Modifier
  */
 private fun OpenDocument.Web.asPane(): WebPane = WebPane(
     id = key.nodeId,
-    kind = if (kind == ArtifactKind.App) WebPane.Kind.Shard else WebPane.Kind.Page,
+    kind = when (kind) {
+        ArtifactKind.App -> WebPane.Kind.Shard
+        ArtifactKind.Board -> WebPane.Kind.Board
+        else -> WebPane.Kind.Page
+    },
     title = title,
 )
 

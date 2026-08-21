@@ -184,7 +184,7 @@ export interface BreadcrumbRecord {
   label: string;
 }
 
-export type ArtifactKind = "note" | "link" | "voice" | "file" | "app";
+export type ArtifactKind = "note" | "link" | "voice" | "file" | "app" | "board";
 
 /** One ticker-search hit — a security (e.g. NVDA), the command-box typeahead row. */
 export interface InstrumentHit {

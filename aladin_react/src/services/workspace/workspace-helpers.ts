@@ -42,12 +42,12 @@ export function createResearchCommand(tree: BrowserTreeNode[], folderId: string 
 export function createArtifactCommand(
   tree: BrowserTreeNode[],
   folderId: string | null,
-  kind: "note" | "link",
+  kind: "note" | "link" | "board",
   opts?: { title?: string; sourceUrl?: string },
 ) {
   const title = opts?.title?.trim() || nextArtifactTitle(tree, folderId, kind);
   return {
-    type: kind === "note" ? "page" : "link",
+    type: kind === "note" ? "page" : kind,
     folderId,
     title,
     content: kind === "note" ? "New artifact" : "",

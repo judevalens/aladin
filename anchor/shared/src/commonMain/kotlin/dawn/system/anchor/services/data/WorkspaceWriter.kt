@@ -44,6 +44,9 @@ interface WorkspaceWriter {
     /** Creates an empty BlockNote page inside [parentId]. Returns its artifact id. */
     suspend fun createPage(parentId: String?, title: String): String
 
+    /** Creates an empty tldraw board inside [parentId]. Returns its artifact id. */
+    suspend fun createBoard(parentId: String?, title: String): String
+
     /** Renames [node], dispatching on its kind — the three tree kinds have three endpoints. */
     suspend fun rename(node: WorkspaceNode, title: String)
 
@@ -77,6 +80,22 @@ internal class KtorWorkspaceWriter(
                     "artifact",
                     buildJsonObject {
                         put("type", "page")
+                        put("content", "")
+                    },
+                )
+            },
+        )
+
+    override suspend fun createBoard(parentId: String?, title: String): String =
+        create(
+            buildJsonObject {
+                put("kind", "artifact")
+                put("title", title)
+                putNullable("parentId", parentId)
+                put(
+                    "artifact",
+                    buildJsonObject {
+                        put("type", "board")
                         put("content", "")
                     },
                 )

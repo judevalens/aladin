@@ -225,8 +225,8 @@ func (s *DefaultArtifactService) Create(ctx context.Context, payload ArtifactPay
 	if artifactType == "" {
 		return ArtifactCreateResponse{}, BadRequest("type is required")
 	}
-	if artifactType != "page" && artifactType != "link" && artifactType != "app" {
-		return ArtifactCreateResponse{}, BadRequest("type must be one of: page, link, app")
+	if artifactType != "page" && artifactType != "link" && artifactType != "app" && artifactType != "board" {
+		return ArtifactCreateResponse{}, BadRequest("type must be one of: page, link, app, board")
 	}
 	payload.FolderID = TrimStringPtr(payload.FolderID)
 	if payload.FolderID != nil {
@@ -266,6 +266,10 @@ func (s *DefaultArtifactService) Create(ctx context.Context, payload ArtifactPay
 	case "app":
 		// Doc Surface page. Source lives on the data volume (not Postgres);
 		// this row carries only metadata + (later) the MD summary. No blocks.
+		if title == "" {
+			return ArtifactCreateResponse{}, BadRequest("title is required")
+		}
+	case "board":
 		if title == "" {
 			return ArtifactCreateResponse{}, BadRequest("title is required")
 		}
@@ -395,7 +399,7 @@ func (s *DefaultArtifactService) Update(ctx context.Context, id string, patch Ar
 		if trimmedType == "" {
 			return ArtifactResponse{}, BadRequest("type cannot be empty")
 		}
-		if trimmedType != "page" && trimmedType != "link" && trimmedType != "voice" && trimmedType != "file" && trimmedType != "app" {
+		if trimmedType != "page" && trimmedType != "link" && trimmedType != "voice" && trimmedType != "file" && trimmedType != "app" && trimmedType != "board" {
 			return ArtifactResponse{}, BadRequest("unsupported type")
 		}
 		patch.Type = &trimmedType
@@ -421,10 +425,10 @@ func (s *DefaultArtifactService) Update(ctx context.Context, id string, patch Ar
 	if patch.Type != nil {
 		nextType = *patch.Type
 	}
-	// app artifacts are backed by files on the data volume (not page_documents);
-	// converting to/from another type would orphan that storage. Forbid it.
-	if current.Type != nextType && (current.Type == "app" || nextType == "app") {
-		return ArtifactResponse{}, BadRequest("an app artifact's type cannot be changed")
+	// app artifacts are backed by files on the data volume and boards carry editor snapshots
+	// in artifact content; converting either would orphan type-specific state. Forbid it.
+	if current.Type != nextType && (current.Type == "app" || nextType == "app" || current.Type == "board" || nextType == "board") {
+		return ArtifactResponse{}, BadRequest("this artifact's type cannot be changed")
 	}
 	nextTitle := current.Title
 	if patch.Title != nil {
@@ -444,6 +448,9 @@ func (s *DefaultArtifactService) Update(ctx context.Context, id string, patch Ar
 		return ArtifactResponse{}, BadRequest("title is required")
 	}
 	if nextType == "app" && strings.TrimSpace(nextTitle) == "" {
+		return ArtifactResponse{}, BadRequest("title is required")
+	}
+	if nextType == "board" && strings.TrimSpace(nextTitle) == "" {
 		return ArtifactResponse{}, BadRequest("title is required")
 	}
 	if current.Type == "page" && patch.Content != nil {
@@ -737,4 +744,3 @@ func (s *DefaultArtifactService) FolderBreadcrumbs(ctx context.Context, id strin
 	}
 	return s.repo.FolderBreadcrumbs(ctx, id)
 }
-

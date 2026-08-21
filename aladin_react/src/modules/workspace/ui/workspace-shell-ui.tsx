@@ -55,6 +55,7 @@ export function WorkspaceShellUI() {
     onCreateFolder,
     onCreateResearch,
     onCreateNote,
+    onCreateBoard,
     onCreateLink,
     onCreateVoice,
     onCreateFile,
@@ -113,7 +114,7 @@ export function WorkspaceShellUI() {
       <CommandPalette
         open={commandOpen}
         onOpenChange={setCommandOpen}
-        actions={{ onCreateFolder, onCreateResearch, onCreateNote, onCreateLink, onCreateVoice, onCreateFile }}
+        actions={{ onCreateFolder, onCreateResearch, onCreateNote, onCreateBoard, onCreateLink, onCreateVoice, onCreateFile }}
       />
       {tabSwitcherOpen ? <TabSwitcher /> : null}
       <TickerModal />
@@ -164,6 +165,7 @@ export function WorkspaceShellUI() {
                 <DropdownMenuItem onClick={onCreateFolder}>New folder</DropdownMenuItem>
                 <DropdownMenuItem onClick={onCreateResearch}>New research</DropdownMenuItem>
                 <DropdownMenuItem onClick={onCreateNote}>New note</DropdownMenuItem>
+                <DropdownMenuItem onClick={onCreateBoard}>New board</DropdownMenuItem>
                 <DropdownMenuItem onClick={onCreateLink}>New link</DropdownMenuItem>
                 <DropdownMenuItem onClick={onCreateVoice}>New voice note</DropdownMenuItem>
                 <DropdownMenuItem onClick={onCreateFile}>Upload file</DropdownMenuItem>

@@ -118,6 +118,7 @@ private val KINDS = listOf(
     ArtifactKind.Page to "Notes",
     ArtifactKind.Link to "Links",
     ArtifactKind.App to "Shards",
+    ArtifactKind.Board to "Boards",
     ArtifactKind.Voice to "Voice",
 )
 

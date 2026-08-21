@@ -17,14 +17,19 @@ class WebSurfaceHostTest {
     @Test
     fun `the command carries the whole desired state`() {
         val command = syncCommand(
-            panes = listOf(page("p1", "Collars"), WebPane("s1", WebPane.Kind.Shard, "Payoff")),
+            panes = listOf(
+                page("p1", "Collars"),
+                WebPane("s1", WebPane.Kind.Shard, "Payoff"),
+                WebPane("b1", WebPane.Kind.Board, "Board"),
+            ),
             activeId = "s1",
         )
 
         assertEquals(
-            """window.__aladinHost.sync({panes:[""" +
+                """window.__aladinHost.sync({panes:[""" +
                 """{id:"p1",kind:"page",title:"Collars"},""" +
-                """{id:"s1",kind:"shard",title:"Payoff"}""" +
+                """{id:"s1",kind:"shard",title:"Payoff"},""" +
+                """{id:"b1",kind:"board",title:"Board"}""" +
                 """],active:"s1"});""",
             command,
         )

@@ -28,6 +28,10 @@ function artifactKind(type?: string | null): ArtifactKind {
       return "voice";
     case "file":
       return "file";
+    case "app":
+      return "app";
+    case "board":
+      return "board";
     default:
       return "note";
   }

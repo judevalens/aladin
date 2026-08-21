@@ -339,7 +339,9 @@ export function nextArtifactTitle(
         ? "Voice Note"
         : kind === "file"
           ? "New File"
-          : "New Note";
+          : kind === "board"
+            ? "New Board"
+            : "New Note";
   return nextTitled(baseTitle, existingTitles);
 }
 
