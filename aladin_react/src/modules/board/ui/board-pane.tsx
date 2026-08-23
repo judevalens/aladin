@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Tldraw,
   type Editor,
@@ -20,6 +20,11 @@ import {
 } from "../domain/board-content";
 import { BoardHostContext, type BoardHost } from "../domain/board-host";
 import { addExcerpt } from "../domain/board-objects";
+import {
+  createBoardSaver,
+  type BoardSaveState,
+  type BoardSaver,
+} from "../domain/board-persistence";
 import { BoardLassoTool } from "../tools/lasso-tool";
 import { CardShapeUtil } from "../shapes/card-shape";
 import { DocWindowShapeUtil } from "../shapes/doc-window-shape";
@@ -32,10 +37,16 @@ import { BoardChrome } from "./board-chrome";
 const BOARD_COMPONENTS: TLComponents = { InFrontOfTheCanvas: BoardChrome };
 const BOARD_TOOLS: TLStateNodeConstructor[] = [BoardLassoTool];
 const BOARD_SHAPES = [DocWindowShapeUtil, ExcerptShapeUtil, TaskShapeUtil, CardShapeUtil];
-const BOARD_OPTIONS = { longPressDurationMs: 400 };
+// Double-tap on the plane must never spawn a text shape (rule 4: pure plane) — and on an
+// iPad a double-tap is a gesture, not a request for a text box.
+const BOARD_OPTIONS = { longPressDurationMs: 400, createTextOnCanvasDoubleClick: false };
 const NO_HOST: BoardHost = {};
 
-type SaveState = "loading" | "saving" | "saved" | "error";
+/**
+ * Load: whether the board's content has arrived. Saving is armed ONLY once it has — a failed
+ * load must never let the next edit PATCH an empty snapshot over the server's board.
+ */
+type LoadState = "loading" | "ready" | "failed";
 
 /**
  * The board surface — one component, two hosts (the iPad's embedded web view and the
@@ -44,7 +55,8 @@ type SaveState = "loading" | "saving" | "saved" | "error";
  *
  * Persistence is the whole-snapshot REST spine: load once, then debounce-PATCH the full
  * `TLEditorSnapshot` into `artifacts.content`. Board content stays off the outbox sync
- * spine on purpose (the page_ydoc precedent: heavy content does not ride frames).
+ * spine on purpose (the page_ydoc precedent: heavy content does not ride frames). The
+ * debounce / retry / flush rules live in `createBoardSaver` (tested with fake timers).
  */
 export function BoardPane({
   boardId,
@@ -57,74 +69,109 @@ export function BoardPane({
   client: ApiClient;
   host?: BoardHost;
 }) {
-  const loadedRef = useRef(false);
-  const saveTimerRef = useRef<number | null>(null);
-  const cleanupRef = useRef<(() => void) | null>(null);
   const editorRef = useRef<Editor | null>(null);
-  const [saveState, setSaveState] = useState<SaveState>("loading");
+  const cleanupRef = useRef<(() => void) | null>(null);
+  const loadedRef = useRef(false);
+  const [loadState, setLoadState] = useState<LoadState>("loading");
+  const [saveState, setSaveState] = useState<BoardSaveState>("saved");
   const [message, setMessage] = useState("");
   const [folderId, setFolderId] = useState<string | null>(null);
   const content = useMemo(() => createBoardContentSource(client), [client]);
-
-  // A debounce pending when the pane hides or unmounts would ride an iOS-throttled (or
-  // never-firing) timer — flush it immediately instead. Changes made while visible always
-  // have their timer armed by then, so this closes the whole at-hide window.
-  const flushPendingSave = useMemo(
-    () => () => {
-      if (saveTimerRef.current === null || !editorRef.current) return;
-      window.clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-      void saveSnapshotRef.current?.(editorRef.current);
-    },
-    [],
-  );
-  const saveSnapshotRef = useRef<((editor: Editor) => Promise<void>) | null>(null);
-
-  useEffect(() => {
-    const onHide = () => {
-      if (document.visibilityState === "hidden") flushPendingSave();
-    };
-    document.addEventListener("visibilitychange", onHide);
-    return () => {
-      document.removeEventListener("visibilitychange", onHide);
-      flushPendingSave();
-      cleanupRef.current?.();
-      if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
-    };
-  }, [flushPendingSave]);
 
   // Built once per mount (token values read from the live CSS vars at that moment) and
   // IDENTITY-STABLE: a fresh `themes` object per render makes Tldraw recreate the editor —
   // which disposes the store and silently drops every unsaved shape.
   const themes = useMemo(() => ({ default: buildBoardTheme() }), []);
 
-  const saveSnapshot = useMemo(
-    () => async (editor: Editor) => {
-      setSaveState("saving");
-      try {
+  // One saver per board, owned by an effect so StrictMode's mount→unmount→mount creates a
+  // fresh one rather than disposing the only one. It PATCHes whatever the editor holds at
+  // save time; `load` arms it, the store listener dirties it, hide/unmount flush it.
+  const saverRef = useRef<BoardSaver | null>(null);
+  useEffect(() => {
+    const saver = createBoardSaver({
+      save: async () => {
+        const editor = editorRef.current;
+        if (!editor) return;
         await client.fetch<UserArtifact>(`/api/artifacts/${encodeURIComponent(boardId)}`, {
           method: "PATCH",
           body: JSON.stringify({ content: JSON.stringify(editor.getSnapshot()) }),
         });
-        setSaveState("saved");
-        setMessage("");
-      } catch (error) {
-        setSaveState("error");
-        setMessage(error instanceof Error ? error.message : "could not save the board");
-      }
+      },
+      onState: (state, error) => {
+        setSaveState(state);
+        setMessage(
+          state === "error"
+            ? error instanceof Error
+              ? error.message
+              : "could not save the board"
+            : "",
+        );
+      },
+    });
+    // A remount after a successful load (StrictMode) must not leave the new saver unarmed.
+    if (loadedRef.current) saver.arm();
+    saverRef.current = saver;
+
+    // A debounce pending when the pane hides or unmounts would ride an iOS-throttled (or
+    // never-firing) timer — flush it immediately instead. `pagehide` covers the iPad's
+    // web-content process going away; `visibilitychange` covers tab/pane switches.
+    const flush = () => saver.flush();
+    const onHide = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+    document.addEventListener("visibilitychange", onHide);
+    window.addEventListener("pagehide", flush);
+    return () => {
+      document.removeEventListener("visibilitychange", onHide);
+      window.removeEventListener("pagehide", flush);
+      flush();
+      saver.dispose();
+      if (saverRef.current === saver) saverRef.current = null;
+    };
+  }, [boardId, client]);
+
+  // Fetch the board and hand it to the editor. Until this succeeds the pane is read-only in
+  // effect: the saver stays unarmed, so no edit can PATCH (the data-loss guard). The store
+  // listener and the in-flight load are released by tldraw through the cleanup `handleMount`
+  // returns — not by an effect, where StrictMode's double-invoke would tear them down under a
+  // live editor.
+  const load = useCallback(
+    (editor: Editor) => {
+      let cancelled = false;
+      setLoadState("loading");
+      setMessage("");
+      void client
+        .fetch<UserArtifact>(`/api/artifacts/${encodeURIComponent(boardId)}`)
+        .then((record) => {
+          if (cancelled) return;
+          setFolderId(record.folderId ?? null);
+          const snapshot = parseSnapshot(record.content);
+          if (snapshot) {
+            editor.loadSnapshot(snapshot);
+            // The session carries the camera the board was last left at — trust it. Only
+            // a snapshot without one (older saves, imports) gets framed from scratch.
+            if (!hasSessionCamera(snapshot)) requestAnimationFrame(() => editor.zoomToFit());
+          }
+          loadedRef.current = true;
+          saverRef.current?.arm();
+          setLoadState("ready");
+        })
+        .catch((error: unknown) => {
+          if (cancelled) return;
+          setLoadState("failed");
+          setMessage(error instanceof Error ? error.message : "could not load the board");
+        });
+      return () => {
+        cancelled = true;
+      };
     },
     [boardId, client],
   );
-  saveSnapshotRef.current = saveSnapshot;
 
-  function scheduleSave(editor: Editor) {
-    if (!loadedRef.current) return;
-    if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = window.setTimeout(() => {
-      saveTimerRef.current = null;
-      void saveSnapshot(editor);
-    }, 700);
-  }
+  const retryLoad = () => {
+    const editor = editorRef.current;
+    if (editor) load(editor);
+  };
 
   function handleMount(editor: Editor) {
     editorRef.current = editor;
@@ -139,41 +186,21 @@ export function BoardPane({
       const text = info.text.trim();
       if (text) addExcerpt(editor, { text, at: info.point });
     });
-    setSaveState("loading");
 
     cleanupRef.current?.();
-    let cancelled = false;
-    const unlisten = editor.store.listen(() => scheduleSave(editor), {
+    const unlisten = editor.store.listen(() => saverRef.current?.markDirty(), {
       scope: "document",
       source: "user",
     });
+    const cancelLoad = load(editor);
     cleanupRef.current = () => {
-      cancelled = true;
+      cancelLoad();
       unlisten();
     };
-
-    void client
-      .fetch<UserArtifact>(`/api/artifacts/${encodeURIComponent(boardId)}`)
-      .then((record) => {
-        if (cancelled) return;
-        setFolderId(record.folderId ?? null);
-        const snapshot = parseSnapshot(record.content);
-        if (snapshot) {
-          editor.loadSnapshot(snapshot);
-          requestAnimationFrame(() => editor.zoomToFit());
-        }
-        loadedRef.current = true;
-        setSaveState("saved");
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        loadedRef.current = true;
-        setSaveState("error");
-        setMessage(error instanceof Error ? error.message : "could not load the board");
-      });
-
     return cleanupRef.current;
   }
+
+  const failed = loadState === "failed";
 
   return (
     <div className="flex h-full w-full flex-col bg-bg">
@@ -181,11 +208,24 @@ export function BoardPane({
         <div className="min-w-0 flex-1 truncate font-display text-body font-medium text-ink">
           {title || "Board"}
         </div>
-        <div className="font-mono text-meta uppercase text-ink-4">{saveStateLabel(saveState)}</div>
+        <div className="font-mono text-meta uppercase text-ink-4">
+          {statusLabel(loadState, saveState)}
+        </div>
       </div>
-      {message ? (
-        <div className="border-b border-line bg-card px-3 py-2 font-mono text-small text-against">
-          {message}
+      {failed || message ? (
+        <div className="flex items-center gap-3 border-b border-line bg-card px-3 py-2 font-mono text-small text-against">
+          <span className="min-w-0 flex-1 truncate">
+            {failed ? `couldn't load this board — ${message || "no response"}` : message}
+          </span>
+          {failed ? (
+            <button
+              type="button"
+              onClick={retryLoad}
+              className="h-11 shrink-0 rounded-control border border-line px-3 font-display text-small text-ink-2 hover:bg-hover hover:text-ink"
+            >
+              Retry
+            </button>
+          ) : null}
         </div>
       ) : null}
       <div className="min-h-0 flex-1">
@@ -225,15 +265,23 @@ function isEditorSnapshot(value: unknown): value is TLEditorSnapshot {
   return typeof value === "object" && value !== null && "document" in value && "session" in value;
 }
 
-function saveStateLabel(state: SaveState) {
-  switch (state) {
-    case "loading":
-      return "Loading";
+/** Whether the saved session restores a camera (tldraw keeps one per page state). */
+export function hasSessionCamera(snapshot: TLEditorSnapshot): boolean {
+  const states = (snapshot.session as { pageStates?: { camera?: unknown }[] } | undefined)
+    ?.pageStates;
+  return Array.isArray(states) && states.some((state) => state?.camera != null);
+}
+
+function statusLabel(load: LoadState, save: BoardSaveState) {
+  if (load === "loading") return "Loading";
+  if (load === "failed") return "Not loaded";
+  switch (save) {
+    case "dirty":
     case "saving":
       return "Saving";
     case "saved":
       return "Saved";
     case "error":
-      return "Offline";
+      return "Retrying";
   }
 }

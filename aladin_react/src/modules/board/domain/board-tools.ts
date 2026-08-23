@@ -27,6 +27,22 @@ const SUB_TOOL_IDS: Record<PencilSubTool, string> = {
   lasso: "lasso",
 };
 
+/**
+ * Every tldraw tool the board models. tldraw keeps its keyboard shortcuts alive under
+ * `hideUi`, so `f`/`n`/`r`/`h`/`k` would otherwise enter frame/note/geo/hand/laser — tools
+ * the dock cannot show and rule 4 ("no system frames or modes") forbids. The chrome snaps
+ * anything outside this set back to select.
+ */
+export const BOARD_TOOL_IDS: ReadonlySet<string> = new Set([
+  "select",
+  "arrow",
+  ...Object.values(SUB_TOOL_IDS),
+]);
+
+export function isBoardToolId(toolId: string): boolean {
+  return BOARD_TOOL_IDS.has(toolId);
+}
+
 /** The tldraw tool id the dock should activate. */
 export function tldrawToolId(tool: BoardTool, subTool: PencilSubTool): string {
   if (tool === "select") return "select";

@@ -57,7 +57,18 @@ function spikePageText(page: number): string {
   return `Page ${page} of the spike document — the board reads this window's own page, not the folder's.`;
 }
 
+/**
+ * `/spike/board?fail=load` makes the board GET reject; `?fail=save` makes every PATCH
+ * reject. The two failure paths the pane must survive (a failed load must never arm saving;
+ * a failed save must retry, not drop the edit), driven without a backend.
+ */
+function failMode(): "load" | "save" | null {
+  const value = new URLSearchParams(window.location.search).get("fail");
+  return value === "load" || value === "save" ? value : null;
+}
+
 function createSpikeApiClient(): ApiClient {
+  const fail = failMode();
   return {
     resolveUrl: (path) => path,
     fetch<T>(path: string, init?: RequestInit): Promise<T> {
@@ -66,10 +77,12 @@ function createSpikeApiClient(): ApiClient {
 
       if (url.pathname === `/api/artifacts/${SPIKE_BOARD_ID}`) {
         if (method === "GET") {
+          if (fail === "load") return Promise.reject(new ApiError("spike: load failure", 503));
           const content = window.localStorage.getItem(STORAGE_KEY) ?? "";
           return Promise.resolve(spikeArtifact(content) as T);
         }
         if (method === "PATCH") {
+          if (fail === "save") return Promise.reject(new ApiError("spike: save failure", 503));
           const body = JSON.parse(String(init?.body ?? "{}")) as { content?: string };
           if (typeof body.content === "string") {
             window.localStorage.setItem(STORAGE_KEY, body.content);

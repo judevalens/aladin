@@ -41,3 +41,12 @@
   -webkit-backdrop-filter: blur(28px);
   box-shadow: 0 26px 64px rgb(0 0 0 / 0.6);
 }
+
+/* tldraw's `.tl-container *` sets user-select:none on every descendant, and its escape hatch
+   covers inputs/contenteditables but not <textarea>. Our shapes edit in a textarea — without
+   this, iOS shows no caret loupe and no selection handles inside a task, card or excerpt. */
+.tl-container textarea {
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
+}

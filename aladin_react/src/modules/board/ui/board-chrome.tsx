@@ -18,6 +18,7 @@ import {
   BOARD_WEIGHTS,
   PENCIL_HINTS,
   boardToolFromTldraw,
+  isBoardToolId,
   tldrawToolId,
   type BoardTool,
   type BoardWeightIndex,
@@ -41,6 +42,12 @@ export function BoardChrome() {
   const editor = useEditor();
   const toolId = useValue("toolId", () => editor.getCurrentToolId(), [editor]);
   const { tool, subTool: activeSubTool } = boardToolFromTldraw(toolId);
+
+  // A stray shortcut (f/n/r/h/k…) put tldraw into a tool the board does not model — snap
+  // back to select rather than show a lit Select button over a frame tool.
+  useEffect(() => {
+    if (!isBoardToolId(toolId)) editor.setCurrentTool("select");
+  }, [toolId, editor]);
 
   const [lastSubTool, setLastSubTool] = useState<PencilSubTool>("pen");
   const [inkColor, setInkColor] = useState<BoardInkColor>("learn");
