@@ -51,5 +51,6 @@ export const DOCK_PATHS = {
   card: "M4 6h16v12H4zM8 10h8M8 14h5",
   search: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14M16 16l5 5",
   close: "M18 6L6 18M6 6l12 12",
+  more: "M5 12h.01M12 12h.01M19 12h.01",
   clipboard: "M8 8h13v13H8zM16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3",
 } as const;

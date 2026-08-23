@@ -30,6 +30,7 @@ import dawn.system.anchor.services.platform.fileExists
 import dawn.system.anchor.services.platform.fileSizeBytes
 import dawn.system.anchor.services.platform.writeBytes
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.jetbrains.compose.resources.ExperimentalResourceApi
@@ -116,6 +117,7 @@ fun rememberWebSurfaceHost(
     session: EditorSession?,
     enabled: Boolean,
     onOpenArtifact: (String) -> Unit = {},
+    onAskAbout: (HostMessage.AskAbout) -> Unit = {},
     onHaptic: (Haptic) -> Unit = ::performHaptic,
 ): WebSurfaceHost? {
     var documentPath by remember { mutableStateOf<String?>(null) }
@@ -153,6 +155,7 @@ fun rememberWebSurfaceHost(
         onMessage = { raw ->
             when (val message = parseHostMessage(raw)) {
                 is HostMessage.OpenArtifact -> onOpenArtifact(message.id)
+                is HostMessage.AskAbout -> onAskAbout(message)
                 is HostMessage.Haptic -> onHaptic(message.kind)
                 is HostMessage.WebError -> println("anchor embed error: ${message.message}")
                 HostMessage.Ready, null -> Unit
@@ -250,6 +253,13 @@ sealed interface HostMessage {
     /** The board's selection bar: "Open in folder" — navigate to this artifact. */
     data class OpenArtifact(val id: String) : HostMessage
 
+    /**
+     * The board's selection bar: "Ask about this" — open the copilot with the object as
+     * context. [artifactId] is null for objects that are not windows onto an artifact
+     * (a task, a card); [title] is what the bar showed.
+     */
+    data class AskAbout(val artifactId: String?, val title: String) : HostMessage
+
     /** A tap in the page changed something (tool, insert, flip) — play the device's tick. */
     data class Haptic(val kind: dawn.system.anchor.services.platform.Haptic) : HostMessage
 
@@ -271,6 +281,15 @@ internal fun parseHostMessage(raw: String): HostMessage? = runCatching {
         "openArtifact" -> obj["id"]?.jsonPrimitive?.content
             ?.takeIf { it.isNotBlank() }
             ?.let(HostMessage::OpenArtifact)
+        "askAbout" -> obj["title"]?.jsonPrimitive?.content
+            ?.takeIf { it.isNotBlank() }
+            ?.let { title ->
+                val artifactId = obj["artifactId"]
+                    ?.takeIf { it !is JsonNull }
+                    ?.jsonPrimitive?.content
+                    ?.takeIf { it.isNotBlank() }
+                HostMessage.AskAbout(artifactId, title)
+            }
         "haptic" -> when (obj["kind"]?.jsonPrimitive?.content) {
             "light" -> HostMessage.Haptic(Haptic.Light)
             "medium" -> HostMessage.Haptic(Haptic.Medium)

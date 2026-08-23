@@ -5,8 +5,10 @@ import { CARD_DEFAULTS, cardProps, type CardShape } from "./shape-types";
 import { ShapeTextArea, roundedIndicator } from "./shape-shared";
 
 /**
- * Flashcard. Tap anywhere flips (ShapeUtil.onClick — a click that was not a drag);
- * double-tap edits the VISIBLE face. No scheduler, no due counts — product rule 5.
+ * Flashcard. The first tap selects (like every object); a tap on the SELECTED card flips
+ * it (ShapeUtil.onClick — a click that was not a drag). Without that order you could never
+ * select a card to move or remove it without answering it. Double-tap edits the visible
+ * face. No scheduler, no due counts — product rule 5.
  */
 export class CardShapeUtil extends BaseBoxShapeUtil<CardShape> {
   static override type = "aladin-card" as const;
@@ -23,6 +25,8 @@ export class CardShapeUtil extends BaseBoxShapeUtil<CardShape> {
   override onClick(shape: CardShape) {
     // Flipping while editing would yank the textarea out from under the caret.
     if (this.editor.getEditingShapeId() === shape.id) return;
+    // Not yet selected: let the click select it (returning nothing leaves the click alone).
+    if (!this.editor.getSelectedShapeIds().includes(shape.id)) return;
     return {
       id: shape.id,
       type: shape.type,
@@ -53,7 +57,7 @@ export class CardShapeUtil extends BaseBoxShapeUtil<CardShape> {
               {face}
             </span>
             <span className="ml-auto font-mono text-board-meta text-ink-4">
-              {flipped ? "tap to hide" : "tap to answer"}
+              {flipped ? "tap again to hide" : "tap again to answer"}
             </span>
           </div>
           <div className={`mt-3 min-h-0 flex-1 ${faceClass}`}>
@@ -68,7 +72,11 @@ export class CardShapeUtil extends BaseBoxShapeUtil<CardShape> {
                     props: flipped ? { back: next } : { front: next },
                   })
                 }
-                className="h-full"
+                onNeedHeight={(needed) => {
+                    if (needed > shape.props.h + 1) {
+                      this.editor.updateShape({ id: shape.id, type: shape.type, props: { h: needed } });
+                    }
+                  }}
               />
             ) : (
               <div>{text}</div>

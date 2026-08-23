@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useEditor, useValue } from "tldraw";
 
 import { useBoardHost } from "../domain/board-host";
@@ -6,22 +7,81 @@ import { useBoardToasts } from "../domain/board-toasts";
 import { DOCK_PATHS, DockIcon } from "./dock-icons";
 
 /**
- * The floating bar at the top of the board while exactly one object is selected.
- * Buttons appear only when the host can honor them; Remove always works — it removes the
- * WINDOW, never the artifact (product rule 2).
+ * The floating bar at the top of the board while something is selected.
+ *
+ * One object: title + meta, the host's actions (Ask / Open), a "…" overflow with the
+ * arrange verbs a long-press would otherwise carry (long-press means insert here), and
+ * Remove. Several: the count, Group/Ungroup, Remove. Buttons appear only when the host can
+ * honor them; Remove always works — it removes the WINDOW(S), never the artifact (rule 2),
+ * and says so with an Undo.
  */
 export function SelectionBar() {
   const editor = useEditor();
   const host = useBoardHost();
   const toasts = useBoardToasts();
-  const shape = useValue("only-selected", () => editor.getOnlySelectedShape(), [editor]);
+  const shapes = useValue("selected", () => editor.getSelectedShapes(), [editor]);
   const editing = useValue("editing-any", () => editor.getEditingShapeId() !== null, [editor]);
+  const [moreOpen, setMoreOpen] = useState(false);
 
-  if (!shape || editing) return null;
+  // The overflow closes with the selection and on any tap on the plane.
+  useEffect(() => {
+    if (!moreOpen) return;
+    const close = (info: { name: string }) => {
+      if (info.name === "pointer_down") setMoreOpen(false);
+    };
+    editor.on("event", close);
+    return () => {
+      editor.off("event", close);
+    };
+  }, [editor, moreOpen]);
+  useEffect(() => {
+    setMoreOpen(false);
+  }, [shapes.length]);
+
+  if (shapes.length === 0 || editing) return null;
+  const ids = shapes.map((s) => s.id);
+
+  const remove = () => {
+    const mark = editor.markHistoryStoppingPoint("remove-from-board");
+    editor.deleteShapes(ids);
+    host.haptic?.("light");
+    toasts.show({
+      text:
+        ids.length === 1
+          ? "Removed from the board — the artifact stays in its folder"
+          : `Removed ${ids.length} objects from the board — artifacts stay in their folders`,
+      action: { label: "Undo", onPress: () => editor.bailToMark(mark) },
+    });
+  };
+
+  if (shapes.length > 1) {
+    const groups = shapes.filter((s) => s.type === "group").length;
+    return (
+      <Bar>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-board-title text-ink">{shapes.length} objects</div>
+          <div className="mt-0.5 truncate font-mono text-board-meta text-ink-4">
+            drag to move together · pinch on the selection to scale
+          </div>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          {groups > 0 ? (
+            <TextAction label="Ungroup" onClick={() => editor.ungroupShapes(ids)} />
+          ) : (
+            <TextAction label="Group" onClick={() => editor.groupShapes(ids)} />
+          )}
+          <RemoveButton onClick={remove} />
+        </div>
+      </Bar>
+    );
+  }
+
+  const shape = shapes[0];
   const summary = describeShape(editor, shape);
+  const locked = editor.getShape(shape.id)?.isLocked ?? false;
 
   return (
-    <div className="board-island board-edge-top pointer-events-auto absolute inset-x-5.5 flex items-center gap-3.5 rounded-board-card py-2 pl-4 pr-2">
+    <Bar>
       <div className="min-w-0 flex-1">
         <div className="truncate text-board-title text-ink">{summary.title}</div>
         <div className="mt-0.5 flex items-center gap-2">
@@ -33,7 +93,7 @@ export function SelectionBar() {
           <span className="truncate font-mono text-board-meta text-ink-4">{summary.meta}</span>
         </div>
       </div>
-      <div className="flex shrink-0 gap-2">
+      <div className="relative flex shrink-0 gap-2">
         {host.onAskAbout ? (
           <button
             type="button"
@@ -49,34 +109,106 @@ export function SelectionBar() {
           </button>
         ) : null}
         {summary.openLabel && summary.artifactId && host.onOpenArtifact ? (
-          <button
-            type="button"
+          <TextAction
+            label={summary.openLabel}
             onClick={() => host.onOpenArtifact?.(summary.artifactId as string)}
-            className="board-tile h-11 rounded-control border border-line px-3.5 text-board-row text-ink-2 hover:text-ink"
-          >
-            {summary.openLabel}
-          </button>
+          />
         ) : null}
         <button
           type="button"
-          aria-label="Remove from board"
-          title="Remove from board — the artifact stays in its folder"
-          onClick={() => {
-            // One tap removes the WINDOW; the toast's Undo is the only confirmation a
-            // keyboard-less device gets, so it has to be there.
-            const mark = editor.markHistoryStoppingPoint("remove-from-board");
-            editor.deleteShapes([shape.id]);
-            host.haptic?.("light");
-            toasts.show({
-              text: "Removed from the board — the artifact stays in its folder",
-              action: { label: "Undo", onPress: () => editor.bailToMark(mark) },
-            });
-          }}
-          className="board-tile grid h-11 w-11 place-items-center rounded-control text-ink-3 hover:bg-hover hover:text-against"
+          aria-label="More"
+          aria-expanded={moreOpen}
+          onClick={() => setMoreOpen((open) => !open)}
+          className={`board-tile grid h-11 w-11 place-items-center rounded-control ${
+            moreOpen ? "bg-sel text-ink" : "text-ink-3 hover:bg-hover hover:text-ink"
+          }`}
         >
-          <DockIcon d={DOCK_PATHS.trash} size={17} strokeWidth={1.9} />
+          <DockIcon d={DOCK_PATHS.more} size={19} strokeWidth={2.2} />
         </button>
+        <RemoveButton onClick={remove} />
+        {moreOpen ? (
+          <div
+            role="menu"
+            className="board-island board-island--popover absolute right-0 top-[calc(100%+10px)] flex w-60 flex-col overflow-hidden py-1"
+          >
+            <MenuRow
+              label="Duplicate"
+              onPick={() => {
+                setMoreOpen(false);
+                editor.duplicateShapes(ids, { x: 24, y: 24 });
+              }}
+            />
+            <MenuRow
+              label="Bring to front"
+              onPick={() => {
+                setMoreOpen(false);
+                editor.bringToFront(ids);
+              }}
+            />
+            <MenuRow
+              label="Send to back"
+              onPick={() => {
+                setMoreOpen(false);
+                editor.sendToBack(ids);
+              }}
+            />
+            <MenuRow
+              label={locked ? "Unlock" : "Lock in place"}
+              onPick={() => {
+                setMoreOpen(false);
+                editor.toggleLock(ids);
+              }}
+            />
+          </div>
+        ) : null}
       </div>
+    </Bar>
+  );
+}
+
+function Bar({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="board-island board-edge-top pointer-events-auto absolute inset-x-5.5 flex items-center gap-3.5 rounded-board-card py-2 pl-4 pr-2">
+      {children}
     </div>
+  );
+}
+
+function TextAction({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="board-tile h-11 rounded-control border border-line px-3.5 text-board-row text-ink-2 hover:text-ink"
+    >
+      {label}
+    </button>
+  );
+}
+
+function RemoveButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-label="Remove from board"
+      title="Remove from board — the artifact stays in its folder"
+      onClick={onClick}
+      className="board-tile grid h-11 w-11 place-items-center rounded-control text-ink-3 hover:bg-hover hover:text-against"
+    >
+      <DockIcon d={DOCK_PATHS.trash} size={17} strokeWidth={1.9} />
+    </button>
+  );
+}
+
+function MenuRow({ label, onPick }: { label: string; onPick: () => void }) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onPick}
+      className="flex h-11 w-full items-center px-4 text-left text-board-row text-ink hover:bg-hover active:bg-sel"
+    >
+      {label}
+    </button>
   );
 }

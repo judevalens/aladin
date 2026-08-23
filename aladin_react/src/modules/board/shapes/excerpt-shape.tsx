@@ -47,6 +47,11 @@ export class ExcerptShapeUtil extends BaseBoxShapeUtil<ExcerptShape> {
                     props: { text: next },
                   })
                 }
+                onNeedHeight={(needed) => {
+                    if (needed > shape.props.h + 1) {
+                      this.editor.updateShape({ id: shape.id, type: shape.type, props: { h: needed } });
+                    }
+                  }}
               />
             ) : (
               <div>{shape.props.text}</div>

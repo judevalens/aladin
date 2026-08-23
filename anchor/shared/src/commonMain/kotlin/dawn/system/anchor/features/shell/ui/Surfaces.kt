@@ -64,10 +64,13 @@ internal fun SurfaceHost(state: ShellScreen.State, modifier: Modifier = Modifier
     // with the slot showing it — the rule that survives a recycler landing later.
     // "Open in folder" on a board's selection bar arrives over the bridge as an artifact
     // id; opening it is the same event a Browser row's Open button sends.
+    // "Ask about this" opens the copilot pane; seeding it with the object is for when the
+    // companion's copilot exists (the pane is a placeholder today).
     val webHost = rememberWebSurfaceHost(
         state.editor,
         enabled = webDocs.isNotEmpty(),
         onOpenArtifact = { id -> state.nav.handle(NavEvent.OpenDoc(TabKey.Artifact(id))) },
+        onAskAbout = { if (!state.chrome.copilotOpen) state.chrome.handle(ChromeEvent.ToggleCopilot) },
     )
 
     // Everything the shell can show, as one flat list of pages: the three destinations, the

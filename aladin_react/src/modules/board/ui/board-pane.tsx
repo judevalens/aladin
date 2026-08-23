@@ -68,12 +68,19 @@ export function BoardPane({
   client,
   host = NO_HOST,
   chrome = "full",
+  active = true,
 }: {
   boardId: string;
   title?: string;
   client: ApiClient;
   host?: BoardHost;
   chrome?: BoardChromeMode;
+  /**
+   * False while the host keeps this pane mounted but off screen (the iPad's one web view
+   * holds every open board). A paused board drops focus — no key handling, no pointer
+   * capture — and flushes any pending save on the way out.
+   */
+  active?: boolean;
 }) {
   const editorRef = useRef<Editor | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
@@ -136,6 +143,14 @@ export function BoardPane({
       if (saverRef.current === saver) saverRef.current = null;
     };
   }, [boardId, client]);
+
+  // Off screen: give up focus and flush. On screen again: take focus back.
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    if (!active) saverRef.current?.flush();
+    editor.updateInstanceState({ isFocused: active });
+  }, [active]);
 
   // Fetch the board and hand it to the editor. Until this succeeds the pane is read-only in
   // effect: the saver stays unarmed, so no edit can PATCH (the data-loss guard). The store

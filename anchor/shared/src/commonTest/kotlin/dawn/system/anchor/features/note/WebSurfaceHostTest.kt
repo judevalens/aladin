@@ -143,6 +143,19 @@ class WebSurfaceHostTest {
     }
 
     @Test
+    fun `askAbout parses with or without an artifact, and needs a title`() {
+        assertEquals(
+            HostMessage.AskAbout("a-1", "Collars"),
+            parseHostMessage("""{"type":"askAbout","artifactId":"a-1","title":"Collars"}"""),
+        )
+        assertEquals(
+            HostMessage.AskAbout(null, "A task"),
+            parseHostMessage("""{"type":"askAbout","artifactId":null,"title":"A task"}"""),
+        )
+        assertEquals(null, parseHostMessage("""{"type":"askAbout","artifactId":"a-1"}"""))
+    }
+
+    @Test
     fun `haptic parses to its weight and drops unknown weights`() {
         assertEquals(
             HostMessage.Haptic(dawn.system.anchor.services.platform.Haptic.Select),

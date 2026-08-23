@@ -125,14 +125,14 @@ function Host({ config }: { config: EmbedConfig }) {
           hidden={pane.id !== state.active}
           className="h-full w-full"
         >
-          <Pane pane={pane} config={config} />
+          <Pane pane={pane} config={config} active={pane.id === state.active} />
         </div>
       ))}
     </div>
   );
 }
 
-function Pane({ pane, config }: { pane: HostPane; config: EmbedConfig }) {
+function Pane({ pane, config, active }: { pane: HostPane; config: EmbedConfig; active: boolean }) {
   if (pane.kind === "page") {
     return (
       <div className="mx-auto flex h-full w-[92%] flex-col">
@@ -148,7 +148,7 @@ function Pane({ pane, config }: { pane: HostPane; config: EmbedConfig }) {
       </div>
     );
   }
-  if (pane.kind === "board") return <BoardHostPane pane={pane} config={config} />;
+  if (pane.kind === "board") return <BoardHostPane pane={pane} config={config} active={active} />;
 
   return <ShardPane pane={pane} config={config} />;
 }
@@ -194,14 +194,25 @@ function useShardPlanes(config: EmbedConfig) {
   }, [client]);
 }
 
-// The companion's board host: "Open in folder" and haptics ride the native bridge; there
-// is no copilot on the iPad yet, so onAskAbout stays absent and the button never renders.
+// The companion's board host: everything rides the native bridge as JSON-string verbs.
 const EMBED_BOARD_HOST: BoardHost = {
   onOpenArtifact: (id: string) => post({ type: "openArtifact", id }),
+  // "Ask about this" opens the shell's copilot pane with the object as context. The pane
+  // is a placeholder on the companion today; the verb lands now so the bar matches desktop.
+  onAskAbout: (ctx) =>
+    post({ type: "askAbout", artifactId: ctx.artifactId ?? null, title: ctx.title }),
   haptic: (kind) => post({ type: "haptic", kind }),
 };
 
-function BoardHostPane({ pane, config }: { pane: HostPane; config: EmbedConfig }) {
+function BoardHostPane({
+  pane,
+  config,
+  active,
+}: {
+  pane: HostPane;
+  config: EmbedConfig;
+  active: boolean;
+}) {
   const client = useApiClient(config);
   if (!client) {
     return (
@@ -218,6 +229,7 @@ function BoardHostPane({ pane, config }: { pane: HostPane; config: EmbedConfig }
       host={EMBED_BOARD_HOST}
       // The shell's tab strip already names the board; the pane draws only the plane.
       chrome="plane"
+      active={active}
     />
   );
 }

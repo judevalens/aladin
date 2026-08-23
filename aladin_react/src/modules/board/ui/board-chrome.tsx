@@ -325,10 +325,15 @@ export function BoardChrome() {
     editor.createShape({
       id,
       type: "text",
-      x: center.x - 60,
-      y: center.y - 24,
+      x: center.x,
+      y: center.y,
       props: { font: "draw", color: inkColor, size: "l", richText: toRichText("") },
     });
+    // Centre on the measured box, not a guess at the label's size.
+    const bounds = editor.getShapePageBounds(id);
+    if (bounds) {
+      editor.updateShape({ id, type: "text", x: center.x - bounds.w / 2, y: center.y - bounds.h / 2 });
+    }
     editor.setCurrentTool("select");
     editor.select(id);
     editor.setEditingShape(id);
