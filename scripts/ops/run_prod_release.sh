@@ -50,9 +50,13 @@ port_for() {
 # executable path (the Go binaries), args= carries the script path for the node
 # sidecars, whose comm is the shared node binary. Fixed-string matching only —
 # the path contains a space and must never be treated as a regex.
+# `read -r pid path` (IFS split), NOT a manual first-space split: ps right-aligns
+# pid in a 5-char column, so a <=4-digit pid carries leading padding that a
+# first-space split turns into an empty pid + a path starting with digits. That
+# made every release process invisible whenever the pid counter sat below 10000 —
+# activation then refused to replace a tier it couldn't see.
 release_procs() {
-  ps -Ao pid=,comm= 2>/dev/null | while IFS= read -r line; do
-    pid=${line%% *}; path=${line#* }
+  ps -Ao pid=,comm= 2>/dev/null | while read -r pid path; do
     case "$path" in
       "$RELEASES"/*)
         rest=${path#"$RELEASES"/}
@@ -60,8 +64,7 @@ release_procs() {
         printf '%s\t%s\t%s\n' "$pid" "$rel" "$(basename "$path")" ;;
     esac
   done
-  ps -Ao pid=,args= 2>/dev/null | while IFS= read -r line; do
-    pid=${line%% *}; args=${line#* }
+  ps -Ao pid=,args= 2>/dev/null | while read -r pid args; do
     case "$args" in
       *"$RELEASES/"*/services/*)
         tail=${args#*"$RELEASES"/}

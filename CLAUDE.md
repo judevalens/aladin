@@ -68,6 +68,35 @@ npm run tauri:dev                                  # full desktop app
 The real dev stack (`make db-up`, `make backend`) exists but is the user's; don't
 start/stop it for routine verification — use the sandbox.
 
+`make backend` runs the tier in the foreground. To run it in the background instead —
+same code, straight out of the working tree, no releases or backups:
+
+```bash
+make dev-up        # api :8000 · mcp :8090 · blocknote :3500/:3501 · copilot :3550 · worker · web :4173
+make dev-status    # what's up, and whether these targets started it
+make dev-logs      # SERVICE=api to scope; logs live in .dev/logs/
+make dev-restart   # rebuild the Go binaries from the tree and start over
+make dev-down      # stop everything on those ports, hand-started included
+```
+
+`dev-up` is not additive: it kills whatever holds a dev port first, so a stale process
+can't keep serving old code on a port you think you just restarted. `PROCS="api web"`
+scopes both start and stop. The infra containers are NOT touched — `make db-up` owns
+those, and a port held by a container is left alone rather than killed (that listener is
+Docker itself). Go services are built to `.dev/bin` and run from `backend_v2/` (godotenv
+resolves `.env` against the working directory) rather than via `go run`, whose compiled
+child survives a kill of the pid you started.
+
+```bash
+make dev-doctor    # infra · config · processes · health · data, with the fix named
+make dev-help      # the whole dev map, like prod-help
+make dev-app       # run the desktop app from this tree (tauri dev, hot reload)
+```
+
+`dev-app` runs the tree, it does not install anything — `make prod-app` is the only target
+that puts a bundle in `/Applications`. It stops the standalone `web` service first, because
+`tauri dev` runs its own `npm run dev` and vite is configured `strictPort: true` on 4173.
+
 ## iPad companion (`anchor/`)
 
 ```bash
@@ -76,6 +105,24 @@ cd anchor
 ./gradlew :shared:compileKotlinIosSimulatorArm64 # iOS compile check
 # iOS app: build from anchor/iosApp with xcodebuild, or open iosApp.xcodeproj in Xcode.
 ```
+
+Two Release flavours install side by side on the iPad — separate bundle ids, so separate
+local databases and logins (from the repo root, iPad connected + unlocked):
+
+```bash
+make prod-ipad            # "Anchor" (blue icon)     -> prod stack: api :8080, collab :3511
+make dev-ipad             # "Anchor Dev" (amber)     -> dev stack:  api :8000, collab :3501
+```
+
+An **Xcode run is the dev flavour** (the defaults live in `iosApp/Configuration/Config.xcconfig`),
+so debugging never overwrites the prod install. The service URLs are xcodebuild settings that
+land in `Info.plist` and are read back by `HttpClient.ios.kt` — switching stacks doesn't mean
+editing Kotlin. `HOST=` overrides the Mac's LAN address, `DEVICE=` picks the device.
+
+The page editor is **not** fetched over HTTP: `npm run build:embed` (in `aladin_react/`)
+bundles it to `shared/src/commonMain/composeResources/files/page-editor.html`, which ships
+inside the app and loads from `file://`. Re-run it before installing when the web editor
+changed — otherwise the build carries the committed bundle.
 
 The base URL is a constant in `shared/src/iosMain/.../network/HttpClient.ios.kt`: a device
 cannot use `localhost` (that is the iPad), so it points at the dev Mac's LAN address.

@@ -2,6 +2,13 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
     <dict>
+        <!-- Populated from xcodebuild settings so one tree can be built against the dev
+             or the prod stack; empty when unset, and the Kotlin defaults take over
+             (see HttpClient.ios.kt). -->
+        <key>AladinApiBaseUrl</key>
+        <string>$(ALADIN_API_BASE_URL)</string>
+        <key>AladinCollabWsUrl</key>
+        <string>$(ALADIN_COLLAB_WS_URL)</string>
         <key>CADisableMinimumFrameDurationOnPhone</key>
         <true/>
         <!-- The dev backend is plain HTTP on the LAN. NSAllowsLocalNetworking permits

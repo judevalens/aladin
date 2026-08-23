@@ -46,3 +46,6 @@ scripts/ops/__pycache__/
 
 # compiled Go API binary (go build -o api ./cmd/api)
 /backend_v2/api
+
+# Local dev tier: pidfiles, logs, built Go binaries (scripts/ops/run_dev.sh)
+.dev/

@@ -150,8 +150,85 @@ ops-force-stream: ## Force one stream due; requires PROVIDER=... STREAM_KEY="...
 ops-reset-stuck-cycles: ## Close stale active/running cycles; optional AGE=30m
 	python3 scripts/ops/aladin_ops.py reset-stuck-cycles --age $(or $(AGE),30m)
 
+# --- DEV app tier (the working tree, run in the background) ---------------------
+# `make backend` still exists and runs the same services in the foreground with a
+# tail of their logs; these targets are for when you want them up and your terminal
+# back. They do not touch the infra containers — `make db-up` owns those.
+.PHONY: dev-up dev-down dev-restart dev-status dev-logs dev-doctor dev-app dev-app-deps dev-help
+
+dev-up: ## Start the dev tier (api :8000, mcp :8090, blocknote :3500/:3501, copilot :3550, worker, web :4173), killing whatever holds those ports first
+	bash scripts/ops/run_dev.sh start
+
+dev-down: ## Stop every dev service on those ports — including ones started by hand
+	bash scripts/ops/run_dev.sh stop
+
+dev-restart: ## dev-down + dev-up (rebuilds the Go binaries from the working tree)
+	bash scripts/ops/run_dev.sh restart
+
+dev-status: ## Show which dev services are up, on which port, and whether this tool started them
+	@bash scripts/ops/run_dev.sh status
+
+dev-logs: ## Tail the dev logs (SERVICE=api|mcp|blocknote|copilot-agent|worker|web to scope)
+	bash scripts/ops/run_dev.sh logs
+
+dev-doctor: ## Diagnose the dev loop: infra, config, processes, health, data
+	@bash scripts/ops/dev_doctor.sh
+
+dev-app-deps:
+	@cd aladin_react && if [ ! -d node_modules ] || [ package-lock.json -nt node_modules/.package-lock.json ]; then \
+		echo ">> deps are stale (package-lock.json is newer than the installed tree) — npm ci"; \
+		npm ci; \
+	else \
+		echo ">> deps up to date"; \
+	fi
+
+dev-app: dev-app-deps ## Run the desktop app from this working tree (tauri dev, hot reload). Frees :4173 first — tauri starts its own vite
+	@PROCS=web bash scripts/ops/run_dev.sh stop
+	cd aladin_react && npm run tauri:dev
+
+dev-help: ## Explain the dev commands: what to run, what each one touches, in what order
+	@printf '%b\n' \
+	  '' \
+	  '\033[1mDEV\033[0m — everything runs from the \033[1mworking tree\033[0m. No releases, no backups.' \
+	  '' \
+	  '\033[1m  Daily\033[0m' \
+	  '    make dev-doctor           diagnose it all: infra, config, processes, health, data' \
+	  '    make dev-up               start the app tier in the background' \
+	  '    make dev-restart          rebuild from the working tree and start over' \
+	  '    make dev-status           what is up, on which port, and who started it' \
+	  '    make dev-logs             tail .dev/logs/          SERVICE=api|worker|web|...' \
+	  '    make dev-down             stop everything on the dev ports' \
+	  '' \
+	  '\033[1m  What dev-up runs\033[0m   PROCS="api web" scopes both start and stop' \
+	  '    api :8000 · mcp :8090 · blocknote :3500 + collab :3501 · copilot-agent :3550' \
+	  '    worker (no port) · web :4173' \
+	  '    It is NOT additive: whatever holds a dev port is killed first, so a stale' \
+	  '    process cannot keep serving old code on a port you thought you restarted.' \
+	  '    A port held by a CONTAINER is left alone — stop that with docker compose.' \
+	  '' \
+	  '\033[1m  Foreground alternative\033[0m' \
+	  '    make backend              api + blocknote + copilot-agent, logs in your terminal' \
+	  '    make worker-go · make mcp · (cd aladin_react && npm run dev)' \
+	  '    Same services. dev-up exists for when you want your terminal back.' \
+	  '' \
+	  '\033[1m  Infra\033[0m   Docker: postgres :5433, redis :6379, neo4j :7687 — dev-up never touches these' \
+	  '    make db-up · make db-down          the containers the app tier connects to' \
+	  '    make test-db-up                    the ISOLATED sandbox (pg :5444) — tests only' \
+	  '' \
+	  '\033[1m  Clients\033[0m' \
+	  '    make dev-app              run the desktop app from this tree (tauri dev, hot reload)' \
+	  '    make dev-ipad             iPad companion "Anchor Dev" -> the connected iPad' \
+	  '    make tauri-client-b       a 2nd desktop client with its own login, to test collab' \
+	  '' \
+	  '\033[1m  Resetting\033[0m' \
+	  '    make nuke-local-db        wipe ONE Tauri client local SQLite after a schema change' \
+	  '    make nuke-clients         wipe every clients local SQLite (after a server DB reset)' \
+	  '' \
+	  '  make prod-help  is the same map for prod.  make help  lists every target.' \
+	  ''
+
 # --- PROD stack ---------------------------------------------------------------
-.PHONY: prod-env prod-check-env prod-build prod-up prod-down prod-restart prod-ps prod-logs prod-psql prod-backup prod-backup-install prod-backup-status prod-restore-drill prod-run prod-run-stop prod-run-status prod-update prod-doctor prod-help prod-nuke prod-release prod-release-list prod-release-clean prod-release-version prod-app prod-app-deps prod-app-clear prod-app-uninstall
+.PHONY: prod-env prod-check-env prod-build prod-up prod-down prod-restart prod-ps prod-logs prod-psql prod-backup prod-backup-install prod-backup-status prod-restore-drill prod-run prod-run-stop prod-run-status prod-update prod-doctor prod-help prod-nuke prod-release prod-release-list prod-release-clean prod-release-version prod-app prod-app-deps prod-app-clear prod-app-uninstall prod-ipad dev-ipad
 
 PROD_BACKUP_INSTALL_DIR := $(HOME)/Library/Application Support/aladin
 
@@ -318,6 +395,12 @@ prod-app: prod-app-deps ## Build the desktop app pointed at prod + install it to
 	rm -rf "/Applications/Aladin.app"
 	cp -R "aladin_react/src-tauri/target/release/bundle/macos/Aladin.app" "/Applications/Aladin.app"
 	@echo ">> installed. Launch it from /Applications (open -a Aladin)."
+
+prod-ipad: ## Install "Anchor" on the connected iPad: Release build pointed at PROD (:8080/:3511). HOST=… DEVICE=… NO_LAUNCH=1
+	bash scripts/ops/ipad_install.sh prod
+
+dev-ipad: ## Install "Anchor Dev" alongside it: same build pointed at the DEV stack (:8000/:3501); own id, own local DB
+	bash scripts/ops/ipad_install.sh dev
 
 prod-app-clear: ## Wipe the prod app's LOCAL state (keep the app) — use after a prod DB wipe; FORCE=1 if it's running
 	bash scripts/ops/prod_app_remove.sh clear

@@ -18,7 +18,14 @@ Use the run configurations provided by the run widget in your IDE's toolbar. You
 options:
 
 - Android app: `./gradlew :androidApp:assembleDebug`
-- iOS app: open the [/iosApp](./iosApp) directory in Xcode and run it from there.
+- iOS app: open the [/iosApp](./iosApp) directory in Xcode and run it from there. An Xcode
+  run builds the **dev flavour** — bundle id `dawn.system.anchor.anchor.dev`, named
+  "Anchor Dev", amber icon — so it never overwrites the prod install on the device.
+- On a physical iPad, from the repo root: `make prod-ipad` installs "Anchor" (Release,
+  pointed at the prod stack) and `make dev-ipad` installs "Anchor Dev" next to it. The
+  backend URLs are xcodebuild settings that pass through `Info.plist` into
+  `HttpClient.ios.kt`; `tools/recolor-icon.swift` regenerates the dev icon from the prod
+  one after the app icon changes.
 
 ### Running tests
 
