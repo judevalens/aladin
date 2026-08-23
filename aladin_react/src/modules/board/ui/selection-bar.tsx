@@ -2,6 +2,7 @@ import { useEditor, useValue } from "tldraw";
 
 import { useBoardHost } from "../domain/board-host";
 import { describeShape } from "../domain/board-selection";
+import { useBoardToasts } from "../domain/board-toasts";
 import { DOCK_PATHS, DockIcon } from "./dock-icons";
 
 /**
@@ -12,6 +13,7 @@ import { DOCK_PATHS, DockIcon } from "./dock-icons";
 export function SelectionBar() {
   const editor = useEditor();
   const host = useBoardHost();
+  const toasts = useBoardToasts();
   const shape = useValue("only-selected", () => editor.getOnlySelectedShape(), [editor]);
   const editing = useValue("editing-any", () => editor.getEditingShapeId() !== null, [editor]);
 
@@ -59,7 +61,17 @@ export function SelectionBar() {
           type="button"
           aria-label="Remove from board"
           title="Remove from board — the artifact stays in its folder"
-          onClick={() => editor.deleteShapes([shape.id])}
+          onClick={() => {
+            // One tap removes the WINDOW; the toast's Undo is the only confirmation a
+            // keyboard-less device gets, so it has to be there.
+            const mark = editor.markHistoryStoppingPoint("remove-from-board");
+            editor.deleteShapes([shape.id]);
+            host.haptic?.("light");
+            toasts.show({
+              text: "Removed from the board — the artifact stays in its folder",
+              action: { label: "Undo", onPress: () => editor.bailToMark(mark) },
+            });
+          }}
           className="board-tile grid h-11 w-11 place-items-center rounded-control text-ink-3 hover:bg-hover hover:text-against"
         >
           <DockIcon d={DOCK_PATHS.trash} size={17} strokeWidth={1.9} />

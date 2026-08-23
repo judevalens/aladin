@@ -29,6 +29,7 @@ export function Dock({
   subTool,
   inkColor,
   weight,
+  drawWithFinger,
   insertOpen,
   styleOpen,
   canUndo,
@@ -39,6 +40,7 @@ export function Dock({
   onPickSubTool,
   onPickColor,
   onPickWeight,
+  onToggleDrawWithFinger,
   onToggleInsert,
   onToggleStyle,
   onAddInk,
@@ -49,6 +51,7 @@ export function Dock({
   subTool: PencilSubTool;
   inkColor: BoardInkColor;
   weight: BoardWeightIndex;
+  drawWithFinger: boolean;
   insertOpen: boolean;
   styleOpen: boolean;
   canUndo: boolean;
@@ -59,6 +62,7 @@ export function Dock({
   onPickSubTool: (subTool: PencilSubTool) => void;
   onPickColor: (color: BoardInkColor) => void;
   onPickWeight: (weight: BoardWeightIndex) => void;
+  onToggleDrawWithFinger: () => void;
   onToggleInsert: () => void;
   onToggleStyle: () => void;
   onAddInk: () => void;
@@ -184,8 +188,10 @@ export function Dock({
               centerX={styleLeft}
               inkColor={inkColor}
               weight={weight}
+              drawWithFinger={drawWithFinger}
               onPickColor={onPickColor}
               onPickWeight={onPickWeight}
+              onToggleDrawWithFinger={onToggleDrawWithFinger}
             />
           ) : null}
         </>

@@ -8,23 +8,27 @@ import {
 import type { BoardInkColor } from "../domain/board-theme";
 
 /**
- * Pencil style — the three inks and the three weights, folded out of the dock into one
- * island above the style tile. Every swatch and dot is a 44pt target; the chosen swatch
- * wears the handoff's double ring.
+ * Pencil style — the three inks, the three weights, and whether a finger may draw, folded
+ * out of the dock into one island above the style tile. Every swatch and dot is a 44pt
+ * target; the chosen swatch wears the handoff's double ring.
  */
 export function StylePopover({
   centerX,
   inkColor,
   weight,
+  drawWithFinger,
   onPickColor,
   onPickWeight,
+  onToggleDrawWithFinger,
 }: {
   /** The style tile's centre, in the dock's coordinate space. */
   centerX: number;
   inkColor: BoardInkColor;
   weight: BoardWeightIndex;
+  drawWithFinger: boolean;
   onPickColor: (color: BoardInkColor) => void;
   onPickWeight: (weight: BoardWeightIndex) => void;
+  onToggleDrawWithFinger: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [left, setLeft] = useState(centerX);
@@ -90,6 +94,18 @@ export function StylePopover({
           />
         </button>
       ))}
+      <span className="mx-1 h-7 w-px bg-line" />
+      {/* Freeform's "Draw with Finger": off, a finger pans while the Pencil draws. */}
+      <button
+        type="button"
+        aria-pressed={drawWithFinger}
+        onClick={onToggleDrawWithFinger}
+        className={`board-tile h-11 rounded-control px-3 text-board-label ${
+          drawWithFinger ? "bg-sel text-ink" : "text-ink-3 hover:bg-hover"
+        }`}
+      >
+        Finger draws
+      </button>
     </div>
   );
 }

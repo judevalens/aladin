@@ -6,15 +6,24 @@ import {
   toRichText,
   useEditor,
   useValue,
+  type Editor,
   type TLEventInfo,
   type VecLike,
 } from "tldraw";
 
-import { boardCameraOptions, pencilCameraOptions } from "../domain/board-camera";
+import { TAP_SLOP_PX, boardCameraOptions, pencilCameraOptions } from "../domain/board-camera";
 import { useBoardContent, useBoardFolder, type PickerArtifact } from "../domain/board-content";
+import { createTapTracker } from "../domain/board-gestures";
 import { useBoardHost } from "../domain/board-host";
 import { addCard, addDocWindow, addExcerpt, addTask, boardArtifactIds } from "../domain/board-objects";
+import {
+  browserPrefsStorage,
+  loadBoardPrefs,
+  saveBoardPrefs,
+  type BoardToolPrefs,
+} from "../domain/board-prefs";
 import type { BoardInkColor } from "../domain/board-theme";
+import { useBoardToasts } from "../domain/board-toasts";
 import {
   BOARD_WEIGHTS,
   PENCIL_HINTS,
@@ -25,6 +34,8 @@ import {
   type BoardWeightIndex,
   type PencilSubTool,
 } from "../domain/board-tools";
+import { BackToContent } from "./back-to-content";
+import { BoardToastView } from "./board-toast";
 import { Dock } from "./dock";
 import { DOCK_PATHS, DockIcon } from "./dock-icons";
 import { HintPill } from "./hint-pill";
@@ -34,20 +45,26 @@ import { SelectionBar } from "./selection-bar";
 import { StatusPill } from "./status-pill";
 import { ZoomPill } from "./zoom-pill";
 
+const INKING_TOOLS = new Set(["draw", "highlight", "eraser"]);
+/** How long the chrome stays faded after the pen lifts. */
+const INKING_LINGER_MS = 600;
+
 /**
  * The board's floating chrome, mounted via `components.InFrontOfTheCanvas` so it lives
  * inside the editor context. tldraw's `getCurrentToolId()` is the single source of truth
  * for which tool is active — the dock derives its lit state from it and only remembers
- * the last pencil sub-tool, ink color and weight.
+ * the last pencil sub-tool, ink color and weight (persisted as the board prefs).
  */
 export function BoardChrome() {
   const editor = useEditor();
   const host = useBoardHost();
+  const toasts = useBoardToasts();
   const toolId = useValue("toolId", () => editor.getCurrentToolId(), [editor]);
   const { tool, subTool: activeSubTool } = boardToolFromTldraw(toolId);
   const canUndo = useValue("canUndo", () => editor.getCanUndo(), [editor]);
   const canRedo = useValue("canRedo", () => editor.getCanRedo(), [editor]);
   const viewport = useValue("viewport", () => editor.getViewportScreenBounds(), [editor]);
+  const penMode = useValue("penMode", () => editor.getInstanceState().isPenMode, [editor]);
 
   // A stray shortcut (f/n/r/h/k…) put tldraw into a tool the board does not model — snap
   // back to select rather than show a lit Select button over a frame tool.
@@ -55,13 +72,18 @@ export function BoardChrome() {
     if (!isBoardToolId(toolId)) editor.setCurrentTool("select");
   }, [toolId, editor]);
 
-  const [lastSubTool, setLastSubTool] = useState<PencilSubTool>("pen");
-  const [inkColor, setInkColor] = useState<BoardInkColor>("learn");
-  const [weight, setWeight] = useState<BoardWeightIndex>(1);
+  // ── Prefs: hydrated once, written on every change ──
+  const storage = useMemo(browserPrefsStorage, []);
+  const [prefs, setPrefs] = useState<BoardToolPrefs>(() => loadBoardPrefs(storage));
+  useEffect(() => saveBoardPrefs(storage, prefs), [storage, prefs]);
+  const { inkColor, weight, drawWithFinger } = prefs;
+  const subTool = activeSubTool ?? prefs.subTool;
+
   const [pickerOpen, setPickerOpen] = useState(false);
   const [styleOpen, setStyleOpen] = useState(false);
   const [hold, setHold] = useState<{ page: VecLike; viewport: VecLike } | null>(null);
-  const subTool = activeSubTool ?? lastSubTool;
+  const [holdRing, setHoldRing] = useState<VecLike | null>(null);
+  const [inking, setInking] = useState(false);
 
   // Picker data: the board's folder siblings, refreshed each time the panel opens.
   const contentSource = useBoardContent();
@@ -91,21 +113,18 @@ export function BoardChrome() {
     [editor],
   );
 
-  // Rule 3 — the pencil owns the camera. Any entry into a pencil sub-tool (dock tap,
-  // shortcut, whatever) snaps to 1:1 about the viewport center and clamps the zoom steps,
-  // so pinch is a no-op while two-finger pan keeps working. Leaving pencil restores the
-  // stepped camera. Styles ride the same seam: pencil asserts the ink color/weight, arrow
-  // asserts the link style, so the two regimes cannot leak strokes into each other.
+  // ── Rule 3: the pencil owns the camera — and gives it back ──
+  // Entering a pencil sub-tool snaps to 1:1 about the viewport center and clamps the zoom
+  // steps, so pinch is a no-op while two-finger pan keeps working. Leaving restores the
+  // zoom you came from, about wherever you are now (you may have panned while inking).
+  // Styles ride the same seam: pencil asserts the ink color/weight, arrow the link style.
   const inkRef = useRef({ inkColor, weight });
   inkRef.current = { inkColor, weight };
+  const prePencilZoom = useRef<number | null>(null);
   useEffect(() => {
     if (tool === "pencil") {
-      const { w, h } = editor.getViewportScreenBounds();
-      const center = editor.getViewportPageBounds().center;
-      editor.setCamera(
-        { x: w / 2 - center.x, y: h / 2 - center.y, z: 1 },
-        { animation: { duration: 150 } },
-      );
+      if (prePencilZoom.current === null) prePencilZoom.current = editor.getZoomLevel();
+      setCameraZoomAboutCenter(editor, 1);
       editor.setCameraOptions(pencilCameraOptions);
       editor.setStyleForNextShapes(DefaultColorStyle, inkRef.current.inkColor);
       editor.setStyleForNextShapes(
@@ -115,6 +134,9 @@ export function BoardChrome() {
     } else {
       setStyleOpen(false);
       editor.setCameraOptions(boardCameraOptions);
+      const back = prePencilZoom.current;
+      prePencilZoom.current = null;
+      if (back !== null && Math.abs(back - 1) > 0.001) setCameraZoomAboutCenter(editor, back);
       if (tool === "arrow") {
         editor.setStyleForNextShapes(DefaultColorStyle, "link");
         editor.setStyleForNextShapes(DefaultSizeStyle, "s");
@@ -122,14 +144,55 @@ export function BoardChrome() {
     }
   }, [tool, editor]);
 
-  // Hold the plane ~400ms → insert popover anchored at that point; any tap on the plane
-  // dismisses whatever floats (the handoff's "tap elsewhere dismisses").
+  // ── Finger ≠ Pencil ──
+  // tldraw flips `isPenMode` on by itself at the first direct-Pencil touch and then drops
+  // EVERY finger event in EVERY tool — a finger could no longer select a card. The board
+  // owns the flag instead: pen mode only inside the pencil tools, only once a Pencil has
+  // been seen, and never when the user asked for a finger that draws. In select and arrow a
+  // finger always works.
+  const [penSeen, setPenSeen] = useState(false);
+  const wantPenMode = tool === "pencil" && penSeen && !drawWithFinger;
+  useEffect(() => {
+    if (penMode !== wantPenMode) editor.updateInstanceState({ isPenMode: wantPenMode });
+  }, [editor, penMode, wantPenMode]);
+
+  // ── Events from the plane: hold ring, hold-to-insert, dismissals, inking fade ──
+  const inkingTimer = useRef<number | null>(null);
   useEffect(() => {
     function onEvent(info: TLEventInfo) {
       if (info.name === "pointer_down") {
+        if ("isPen" in info && info.isPen) setPenSeen(true);
         setHold(null);
         setPickerOpen(false);
         setStyleOpen(false);
+        const currentTool = editor.getCurrentToolId();
+        if (inkingTimer.current !== null) window.clearTimeout(inkingTimer.current);
+        setInking(INKING_TOOLS.has(currentTool) && !editor.inputs.getIsPinching());
+        if (
+          currentTool === "select" &&
+          "target" in info &&
+          info.target === "canvas" &&
+          !editor.inputs.getIsPanning()
+        ) {
+          const origin = editor.inputs.getOriginScreenPoint();
+          setHoldRing({ x: origin.x, y: origin.y });
+        }
+        return;
+      }
+      if (info.name === "pointer_move") {
+        if (holdRingRef.current) {
+          const origin = editor.inputs.getOriginScreenPoint();
+          const now = editor.inputs.getCurrentScreenPoint();
+          if (Math.hypot(now.x - origin.x, now.y - origin.y) > TAP_SLOP_PX) setHoldRing(null);
+        }
+        return;
+      }
+      if (info.name === "pointer_up" || info.name === "cancel" || info.name === "complete") {
+        setHoldRing(null);
+        if (inkingRef.current) {
+          if (inkingTimer.current !== null) window.clearTimeout(inkingTimer.current);
+          inkingTimer.current = window.setTimeout(() => setInking(false), INKING_LINGER_MS);
+        }
         return;
       }
       if (
@@ -138,16 +201,90 @@ export function BoardChrome() {
         info.target === "canvas" &&
         editor.getCurrentToolId() === "select"
       ) {
-        const page = { ...editor.inputs.currentPagePoint };
+        // The point the press BEGAN at, not where the finger drifted to over 400ms.
+        const page = editor.inputs.getOriginPagePoint().clone();
         const viewport = editor.pageToViewport(page);
+        setHoldRing(null);
         setHold({ page, viewport: { x: viewport.x, y: viewport.y } });
       }
     }
     editor.on("event", onEvent);
     return () => {
       editor.off("event", onEvent);
+      if (inkingTimer.current !== null) window.clearTimeout(inkingTimer.current);
     };
   }, [editor]);
+  const holdRingRef = useRef(holdRing);
+  holdRingRef.current = holdRing;
+  const inkingRef = useRef(inking);
+  inkingRef.current = inking;
+  // A tool change mid-stroke (shortcut, dock) ends the fade; nothing else would.
+  useEffect(() => {
+    if (!INKING_TOOLS.has(toolId)) setInking(false);
+  }, [toolId]);
+
+  // ── Multi-finger taps (undo / redo) and the one-finger pan in pen mode ──
+  // Touch listeners on tldraw's container, parallel to its pointer handling: tldraw drops a
+  // finger's pointer events while in pen mode, which is exactly when the finger should pan.
+  const wantPenModeRef = useRef(wantPenMode);
+  wantPenModeRef.current = wantPenMode;
+  useEffect(() => {
+    const container = editor.getContainer();
+    const taps = createTapTracker({
+      onTap: (fingers) => {
+        if (fingers === 2 && editor.getCanUndo()) {
+          editor.undo();
+          host.haptic?.("light");
+        } else if (fingers === 3 && editor.getCanRedo()) {
+          editor.redo();
+          host.haptic?.("light");
+        }
+      },
+    });
+    let pan: { id: number; x: number; y: number } | null = null;
+
+    const onStart = (e: TouchEvent) => {
+      for (const t of Array.from(e.changedTouches)) taps.start(t.identifier, t.clientX, t.clientY, e.timeStamp);
+      if (wantPenModeRef.current && e.touches.length === 1) {
+        const t = e.touches[0];
+        pan = { id: t.identifier, x: t.clientX, y: t.clientY };
+      } else {
+        pan = null;
+      }
+    };
+    const onMove = (e: TouchEvent) => {
+      for (const t of Array.from(e.changedTouches)) taps.move(t.identifier, t.clientX, t.clientY);
+      if (pan && e.touches.length === 1 && e.touches[0].identifier === pan.id) {
+        const t = e.touches[0];
+        const dx = t.clientX - pan.x;
+        const dy = t.clientY - pan.y;
+        pan = { id: pan.id, x: t.clientX, y: t.clientY };
+        const cam = editor.getCamera();
+        editor.stopCameraAnimation();
+        editor.setCamera({ x: cam.x + dx / cam.z, y: cam.y + dy / cam.z, z: cam.z });
+      } else if (e.touches.length !== 1) {
+        pan = null;
+      }
+    };
+    const onEnd = (e: TouchEvent) => {
+      for (const t of Array.from(e.changedTouches)) taps.end(t.identifier, e.timeStamp);
+      if (e.touches.length === 0) pan = null;
+    };
+    const onCancel = () => {
+      taps.cancel();
+      pan = null;
+    };
+    container.addEventListener("touchstart", onStart, { passive: true });
+    container.addEventListener("touchmove", onMove, { passive: true });
+    container.addEventListener("touchend", onEnd, { passive: true });
+    container.addEventListener("touchcancel", onCancel, { passive: true });
+    return () => {
+      container.removeEventListener("touchstart", onStart);
+      container.removeEventListener("touchmove", onMove);
+      container.removeEventListener("touchend", onEnd);
+      container.removeEventListener("touchcancel", onCancel);
+    };
+  }, [editor, host]);
 
   const pickTool = (next: BoardTool) => {
     if (next !== tool) host.haptic?.("select");
@@ -156,20 +293,25 @@ export function BoardChrome() {
 
   const pickSubTool = (next: PencilSubTool) => {
     if (next !== subTool) host.haptic?.("select");
-    setLastSubTool(next);
+    setPrefs((p) => ({ ...p, subTool: next }));
     setStyleOpen(false);
     editor.setCurrentTool(tldrawToolId("pencil", next));
   };
 
   const pickColor = (color: BoardInkColor) => {
-    setInkColor(color);
+    setPrefs((p) => ({ ...p, inkColor: color }));
     applyInkStyles(color, weight);
     host.haptic?.("select");
   };
 
   const pickWeight = (next: BoardWeightIndex) => {
-    setWeight(next);
+    setPrefs((p) => ({ ...p, weight: next }));
     applyInkStyles(inkColor, next);
+    host.haptic?.("select");
+  };
+
+  const toggleDrawWithFinger = () => {
+    setPrefs((p) => ({ ...p, drawWithFinger: !p.drawWithFinger }));
     host.haptic?.("select");
   };
 
@@ -200,9 +342,12 @@ export function BoardChrome() {
       if (text) {
         addExcerpt(editor, { text });
         inserted();
+      } else {
+        toasts.show({ text: "Nothing to paste — the clipboard is empty" });
       }
     } catch {
       // Clipboard permission denied — ⌘V still lands through the external-content handler.
+      toasts.show({ text: "Allow paste for this site, or press ⌘V on the board" });
     }
   };
 
@@ -278,13 +423,19 @@ export function BoardChrome() {
   }, [pickerOpen, pickerArtifacts, editor]);
 
   return (
-    <div className="pointer-events-none absolute inset-0 font-display">
+    <div
+      className={`board-chrome pointer-events-none absolute inset-0 font-display ${
+        inking ? "board-chrome--inking" : ""
+      }`}
+    >
       <SelectionBar />
+      <BackToContent />
       <Dock
         tool={tool}
         subTool={subTool}
         inkColor={inkColor}
         weight={weight}
+        drawWithFinger={drawWithFinger}
         insertOpen={pickerOpen}
         styleOpen={styleOpen}
         canUndo={canUndo}
@@ -295,6 +446,7 @@ export function BoardChrome() {
         onPickSubTool={pickSubTool}
         onPickColor={pickColor}
         onPickWeight={pickWeight}
+        onToggleDrawWithFinger={toggleDrawWithFinger}
         onToggleInsert={() => {
           setStyleOpen(false);
           setPickerOpen((open) => !open);
@@ -314,6 +466,7 @@ export function BoardChrome() {
         }}
       />
       <StatusPill />
+      <BoardToastView />
       {/* The style popover shares the hint's row above the dock and IS the pencil context
           while it is open — the hint yields to it. */}
       {tool === "pencil" ? (
@@ -337,6 +490,9 @@ export function BoardChrome() {
           onClose={() => setPickerOpen(false)}
         />
       ) : null}
+      {holdRing && !hold ? (
+        <div className="board-hold-ring" style={{ left: holdRing.x, top: holdRing.y }} />
+      ) : null}
       {hold ? (
         <InsertPopover
           x={hold.viewport.x}
@@ -348,5 +504,15 @@ export function BoardChrome() {
         />
       ) : null}
     </div>
+  );
+}
+
+/** Zoom to `z` keeping whatever is at the viewport's centre there. */
+function setCameraZoomAboutCenter(editor: Editor, z: number) {
+  const { w, h } = editor.getViewportScreenBounds();
+  const center = editor.getViewportPageBounds().center;
+  editor.setCamera(
+    { x: w / (2 * z) - center.x, y: h / (2 * z) - center.y, z },
+    { animation: { duration: 150 } },
   );
 }

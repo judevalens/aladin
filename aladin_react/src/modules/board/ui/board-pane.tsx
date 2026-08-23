@@ -20,6 +20,7 @@ import {
 } from "../domain/board-content";
 import { BoardHostContext, type BoardHost } from "../domain/board-host";
 import { BoardStatusContext, type BoardLoadState, type BoardStatus } from "../domain/board-status";
+import { BoardToastContext, createToastStore } from "../domain/board-toasts";
 import { addExcerpt } from "../domain/board-objects";
 import {
   createBoardSaver,
@@ -82,6 +83,7 @@ export function BoardPane({
   const [message, setMessage] = useState("");
   const [folderId, setFolderId] = useState<string | null>(null);
   const content = useMemo(() => createBoardContentSource(client), [client]);
+  const toasts = useMemo(createToastStore, []);
 
   // Built once per mount (token values read from the live CSS vars at that moment) and
   // IDENTITY-STABLE: a fresh `themes` object per render makes Tldraw recreate the editor —
@@ -243,6 +245,7 @@ export function BoardPane({
       <div className="min-h-0 flex-1">
         <BoardHostContext.Provider value={host}>
           <BoardStatusContext.Provider value={status}>
+            <BoardToastContext.Provider value={toasts}>
             <BoardContentContext.Provider value={content}>
               <BoardFolderContext.Provider value={folderId}>
                 <Tldraw
@@ -257,6 +260,7 @@ export function BoardPane({
                 />
               </BoardFolderContext.Provider>
             </BoardContentContext.Provider>
+            </BoardToastContext.Provider>
           </BoardStatusContext.Provider>
         </BoardHostContext.Provider>
       </div>
