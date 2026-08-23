@@ -19,6 +19,7 @@ import {
   createBoardContentSource,
 } from "../domain/board-content";
 import { BoardHostContext, type BoardHost } from "../domain/board-host";
+import { BoardStatusContext, type BoardLoadState, type BoardStatus } from "../domain/board-status";
 import { addExcerpt } from "../domain/board-objects";
 import {
   createBoardSaver,
@@ -43,10 +44,12 @@ const BOARD_OPTIONS = { longPressDurationMs: 400, createTextOnCanvasDoubleClick:
 const NO_HOST: BoardHost = {};
 
 /**
- * Load: whether the board's content has arrived. Saving is armed ONLY once it has — a failed
- * load must never let the next edit PATCH an empty snapshot over the server's board.
+ * How much of its own frame the pane draws. `full` = header bar with title and status (the
+ * desktop work pane, the spike). `plane` = just the plane and its floating chrome — the
+ * iPad shell already shows the title in its tab strip, and 36px of duplicate header on a
+ * surface whose whole point is the plane is 36px lost.
  */
-type LoadState = "loading" | "ready" | "failed";
+export type BoardChromeMode = "full" | "plane";
 
 /**
  * The board surface — one component, two hosts (the iPad's embedded web view and the
@@ -63,16 +66,18 @@ export function BoardPane({
   title,
   client,
   host = NO_HOST,
+  chrome = "full",
 }: {
   boardId: string;
   title?: string;
   client: ApiClient;
   host?: BoardHost;
+  chrome?: BoardChromeMode;
 }) {
   const editorRef = useRef<Editor | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
   const loadedRef = useRef(false);
-  const [loadState, setLoadState] = useState<LoadState>("loading");
+  const [loadState, setLoadState] = useState<BoardLoadState>("loading");
   const [saveState, setSaveState] = useState<BoardSaveState>("saved");
   const [message, setMessage] = useState("");
   const [folderId, setFolderId] = useState<string | null>(null);
@@ -201,18 +206,25 @@ export function BoardPane({
   }
 
   const failed = loadState === "failed";
+  const status = useMemo<BoardStatus>(
+    () => ({ load: loadState, save: saveState, message, retryLoad }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- retryLoad reads refs only
+    [loadState, saveState, message],
+  );
 
   return (
     <div className="flex h-full w-full flex-col bg-bg">
-      <div className="flex h-9 shrink-0 items-center gap-3 border-b border-line bg-panel px-3">
-        <div className="min-w-0 flex-1 truncate font-display text-body font-medium text-ink">
-          {title || "Board"}
+      {chrome === "full" ? (
+        <div className="flex h-9 shrink-0 items-center gap-3 border-b border-line bg-panel px-3">
+          <div className="min-w-0 flex-1 truncate font-display text-body font-medium text-ink">
+            {title || "Board"}
+          </div>
+          <div className="font-mono text-meta uppercase text-ink-4">
+            {statusLabel(loadState, saveState)}
+          </div>
         </div>
-        <div className="font-mono text-meta uppercase text-ink-4">
-          {statusLabel(loadState, saveState)}
-        </div>
-      </div>
-      {failed || message ? (
+      ) : null}
+      {chrome === "full" && (failed || message) ? (
         <div className="flex items-center gap-3 border-b border-line bg-card px-3 py-2 font-mono text-small text-against">
           <span className="min-w-0 flex-1 truncate">
             {failed ? `couldn't load this board — ${message || "no response"}` : message}
@@ -230,20 +242,22 @@ export function BoardPane({
       ) : null}
       <div className="min-h-0 flex-1">
         <BoardHostContext.Provider value={host}>
-          <BoardContentContext.Provider value={content}>
-            <BoardFolderContext.Provider value={folderId}>
-              <Tldraw
-                hideUi
-                themes={themes}
-                colorScheme="dark"
-                components={BOARD_COMPONENTS}
-                tools={BOARD_TOOLS}
-                shapeUtils={BOARD_SHAPES}
-                options={BOARD_OPTIONS}
-                onMount={handleMount}
-              />
-            </BoardFolderContext.Provider>
-          </BoardContentContext.Provider>
+          <BoardStatusContext.Provider value={status}>
+            <BoardContentContext.Provider value={content}>
+              <BoardFolderContext.Provider value={folderId}>
+                <Tldraw
+                  hideUi
+                  themes={themes}
+                  colorScheme="dark"
+                  components={BOARD_COMPONENTS}
+                  tools={BOARD_TOOLS}
+                  shapeUtils={BOARD_SHAPES}
+                  options={BOARD_OPTIONS}
+                  onMount={handleMount}
+                />
+              </BoardFolderContext.Provider>
+            </BoardContentContext.Provider>
+          </BoardStatusContext.Provider>
         </BoardHostContext.Provider>
       </div>
     </div>
@@ -272,7 +286,7 @@ export function hasSessionCamera(snapshot: TLEditorSnapshot): boolean {
   return Array.isArray(states) && states.some((state) => state?.camera != null);
 }
 
-function statusLabel(load: LoadState, save: BoardSaveState) {
+function statusLabel(load: BoardLoadState, save: BoardSaveState) {
   if (load === "loading") return "Loading";
   if (load === "failed") return "Not loaded";
   switch (save) {

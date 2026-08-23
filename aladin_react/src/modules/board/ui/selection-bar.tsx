@@ -19,16 +19,16 @@ export function SelectionBar() {
   const summary = describeShape(editor, shape);
 
   return (
-    <div className="board-glass-dock pointer-events-auto absolute left-[22px] right-[22px] top-4 flex items-center gap-3.5 rounded-[18px] py-2.5 pl-4 pr-3">
+    <div className="board-island board-edge-top pointer-events-auto absolute inset-x-5.5 flex items-center gap-3.5 rounded-board-card py-2 pl-4 pr-2">
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[15.5px] leading-[1.35] text-ink">{summary.title}</div>
-        <div className="mt-[3px] flex items-center gap-2">
+        <div className="truncate text-board-title text-ink">{summary.title}</div>
+        <div className="mt-0.5 flex items-center gap-2">
           {summary.cited ? (
-            <span className="shrink-0 rounded-full bg-for/10 px-[9px] py-[3px] font-mono text-[10px] uppercase tracking-[0.05em] text-for">
+            <span className="shrink-0 rounded-full bg-for/10 px-2 py-0.5 font-mono text-board-meta uppercase tracking-wider text-for">
               cited
             </span>
           ) : null}
-          <span className="truncate font-mono text-[10.5px] text-ink-4">{summary.meta}</span>
+          <span className="truncate font-mono text-board-meta text-ink-4">{summary.meta}</span>
         </div>
       </div>
       <div className="flex shrink-0 gap-2">
@@ -41,7 +41,7 @@ export function SelectionBar() {
                 title: summary.title,
               })
             }
-            className="h-[42px] rounded-xl border border-amber-line bg-amber-soft px-3.5 text-[14.5px] font-semibold text-amber"
+            className="board-tile h-11 rounded-control border border-amber-line bg-amber-soft px-3.5 text-board-row font-semibold text-amber"
           >
             Ask about this
           </button>
@@ -50,7 +50,7 @@ export function SelectionBar() {
           <button
             type="button"
             onClick={() => host.onOpenArtifact?.(summary.artifactId as string)}
-            className="h-[42px] rounded-xl border border-line px-3.5 text-[14.5px] text-ink-2 hover:text-ink"
+            className="board-tile h-11 rounded-control border border-line px-3.5 text-board-row text-ink-2 hover:text-ink"
           >
             {summary.openLabel}
           </button>
@@ -60,7 +60,7 @@ export function SelectionBar() {
           aria-label="Remove from board"
           title="Remove from board — the artifact stays in its folder"
           onClick={() => editor.deleteShapes([shape.id])}
-          className="grid h-[42px] w-[42px] place-items-center rounded-xl text-ink-3 hover:bg-hover hover:text-against"
+          className="board-tile grid h-11 w-11 place-items-center rounded-control text-ink-3 hover:bg-hover hover:text-against"
         >
           <DockIcon d={DOCK_PATHS.trash} size={17} strokeWidth={1.9} />
         </button>

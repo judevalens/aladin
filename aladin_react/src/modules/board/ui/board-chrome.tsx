@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DefaultColorStyle,
   DefaultSizeStyle,
@@ -12,6 +12,7 @@ import {
 
 import { boardCameraOptions, pencilCameraOptions } from "../domain/board-camera";
 import { useBoardContent, useBoardFolder, type PickerArtifact } from "../domain/board-content";
+import { useBoardHost } from "../domain/board-host";
 import { addCard, addDocWindow, addExcerpt, addTask, boardArtifactIds } from "../domain/board-objects";
 import type { BoardInkColor } from "../domain/board-theme";
 import {
@@ -30,6 +31,7 @@ import { HintPill } from "./hint-pill";
 import { InsertPopover, type InsertRow } from "./insert-popover";
 import { PickerPanel } from "./picker-panel";
 import { SelectionBar } from "./selection-bar";
+import { StatusPill } from "./status-pill";
 import { ZoomPill } from "./zoom-pill";
 
 /**
@@ -40,8 +42,12 @@ import { ZoomPill } from "./zoom-pill";
  */
 export function BoardChrome() {
   const editor = useEditor();
+  const host = useBoardHost();
   const toolId = useValue("toolId", () => editor.getCurrentToolId(), [editor]);
   const { tool, subTool: activeSubTool } = boardToolFromTldraw(toolId);
+  const canUndo = useValue("canUndo", () => editor.getCanUndo(), [editor]);
+  const canRedo = useValue("canRedo", () => editor.getCanRedo(), [editor]);
+  const viewport = useValue("viewport", () => editor.getViewportScreenBounds(), [editor]);
 
   // A stray shortcut (f/n/r/h/k…) put tldraw into a tool the board does not model — snap
   // back to select rather than show a lit Select button over a frame tool.
@@ -53,6 +59,7 @@ export function BoardChrome() {
   const [inkColor, setInkColor] = useState<BoardInkColor>("learn");
   const [weight, setWeight] = useState<BoardWeightIndex>(1);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [styleOpen, setStyleOpen] = useState(false);
   const [hold, setHold] = useState<{ page: VecLike; viewport: VecLike } | null>(null);
   const subTool = activeSubTool ?? lastSubTool;
 
@@ -106,6 +113,7 @@ export function BoardChrome() {
         BOARD_WEIGHTS[inkRef.current.weight].size,
       );
     } else {
+      setStyleOpen(false);
       editor.setCameraOptions(boardCameraOptions);
       if (tool === "arrow") {
         editor.setStyleForNextShapes(DefaultColorStyle, "link");
@@ -121,6 +129,7 @@ export function BoardChrome() {
       if (info.name === "pointer_down") {
         setHold(null);
         setPickerOpen(false);
+        setStyleOpen(false);
         return;
       }
       if (
@@ -141,23 +150,30 @@ export function BoardChrome() {
   }, [editor]);
 
   const pickTool = (next: BoardTool) => {
+    if (next !== tool) host.haptic?.("select");
     editor.setCurrentTool(tldrawToolId(next, subTool));
   };
 
   const pickSubTool = (next: PencilSubTool) => {
+    if (next !== subTool) host.haptic?.("select");
     setLastSubTool(next);
+    setStyleOpen(false);
     editor.setCurrentTool(tldrawToolId("pencil", next));
   };
 
   const pickColor = (color: BoardInkColor) => {
     setInkColor(color);
     applyInkStyles(color, weight);
+    host.haptic?.("select");
   };
 
   const pickWeight = (next: BoardWeightIndex) => {
     setWeight(next);
     applyInkStyles(inkColor, next);
+    host.haptic?.("select");
   };
+
+  const inserted = () => host.haptic?.("light");
 
   // Select-mode "Ink": a Caveat text label, editing immediately. Real drawn ink is strokes
   // via the pencil — this is the heading/legend affordance.
@@ -174,13 +190,17 @@ export function BoardChrome() {
     editor.setCurrentTool("select");
     editor.select(id);
     editor.setEditingShape(id);
+    inserted();
   };
 
   const pasteAsExcerpt = async () => {
     setPickerOpen(false);
     try {
       const text = (await navigator.clipboard.readText()).trim();
-      if (text) addExcerpt(editor, { text });
+      if (text) {
+        addExcerpt(editor, { text });
+        inserted();
+      }
     } catch {
       // Clipboard permission denied — ⌘V still lands through the external-content handler.
     }
@@ -200,26 +220,62 @@ export function BoardChrome() {
         },
         {
           key: "task",
-          icon: <DockIcon d={DOCK_PATHS.select} size={17} strokeWidth={1.8} />,
+          icon: <DockIcon d={DOCK_PATHS.task} size={17} strokeWidth={1.8} />,
           title: "Task",
           meta: "create",
           onPick: () => {
             addTask(editor, hold.page);
+            inserted();
             setHold(null);
           },
         },
         {
           key: "card",
-          icon: <DockIcon d={DOCK_PATHS.clipboard} size={17} strokeWidth={1.8} />,
+          icon: <DockIcon d={DOCK_PATHS.card} size={17} strokeWidth={1.8} />,
           title: "Card",
           meta: "create",
           onPick: () => {
             addCard(editor, hold.page);
+            inserted();
             setHold(null);
           },
         },
       ]
     : [];
+
+  // Picker rows — memoised: `boardArtifactIds` walks every shape, and the chrome re-renders
+  // on every tool and zoom tick.
+  const pickerRows = useMemo<InsertRow[]>(() => {
+    if (!pickerOpen) return [];
+    const onBoard = boardArtifactIds(editor);
+    return (pickerArtifacts ?? []).map((artifact): InsertRow => {
+      const existing = onBoard.get(artifact.id);
+      const iconPath = (DOCK_PATHS as Record<string, string>)[artifact.kind] ?? DOCK_PATHS.file;
+      return {
+        key: artifact.id,
+        icon: <DockIcon d={iconPath} size={17} strokeWidth={1.75} />,
+        title: artifact.title,
+        meta: existing ? "on this board" : artifact.meta,
+        metaTone: existing ? "amber" : undefined,
+        onPick: existing
+          ? () => {
+              setPickerOpen(false);
+              editor.select(existing);
+              editor.zoomToSelection({ animation: { duration: 220 } });
+            }
+          : () => {
+              setPickerOpen(false);
+              addDocWindow(editor, {
+                artifactId: artifact.id,
+                artifactKind: artifact.kind,
+                title: artifact.title,
+              });
+              inserted();
+            },
+      };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `inserted` is a stable host call
+  }, [pickerOpen, pickerArtifacts, editor]);
 
   return (
     <div className="pointer-events-none absolute inset-0 font-display">
@@ -230,47 +286,44 @@ export function BoardChrome() {
         inkColor={inkColor}
         weight={weight}
         insertOpen={pickerOpen}
+        styleOpen={styleOpen}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        onUndo={() => editor.undo()}
+        onRedo={() => editor.redo()}
         onPickTool={pickTool}
         onPickSubTool={pickSubTool}
         onPickColor={pickColor}
         onPickWeight={pickWeight}
-        onToggleInsert={() => setPickerOpen((open) => !open)}
+        onToggleInsert={() => {
+          setStyleOpen(false);
+          setPickerOpen((open) => !open);
+        }}
+        onToggleStyle={() => {
+          setPickerOpen(false);
+          setStyleOpen((open) => !open);
+        }}
         onAddInk={() => addInk()}
-        onAddTask={() => addTask(editor)}
-        onAddCard={() => addCard(editor)}
+        onAddTask={() => {
+          addTask(editor);
+          inserted();
+        }}
+        onAddCard={() => {
+          addCard(editor);
+          inserted();
+        }}
       />
-      {tool === "pencil" ? <HintPill text={PENCIL_HINTS[subTool]} /> : <ZoomPill />}
+      <StatusPill />
+      {/* The style popover shares the hint's row above the dock and IS the pencil context
+          while it is open — the hint yields to it. */}
+      {tool === "pencil" ? (
+        styleOpen ? null : <HintPill text={PENCIL_HINTS[subTool]} />
+      ) : (
+        <ZoomPill />
+      )}
       {pickerOpen ? (
         <PickerPanel
-          rows={(() => {
-            const onBoard = boardArtifactIds(editor);
-            return (pickerArtifacts ?? []).map((artifact): InsertRow => {
-              const existing = onBoard.get(artifact.id);
-              const iconPath =
-                (DOCK_PATHS as Record<string, string>)[artifact.kind] ?? DOCK_PATHS.file;
-              return {
-                key: artifact.id,
-                icon: <DockIcon d={iconPath} size={17} strokeWidth={1.75} />,
-                title: artifact.title,
-                meta: existing ? "on this board" : artifact.meta,
-                metaTone: existing ? "amber" : undefined,
-                onPick: existing
-                  ? () => {
-                      setPickerOpen(false);
-                      editor.select(existing);
-                      editor.zoomToSelection({ animation: { duration: 220 } });
-                    }
-                  : () => {
-                      setPickerOpen(false);
-                      addDocWindow(editor, {
-                        artifactId: artifact.id,
-                        artifactKind: artifact.kind,
-                        title: artifact.title,
-                      });
-                    },
-              };
-            });
-          })()}
+          rows={pickerRows}
           emptyNote={
             !contentSource
               ? "no workspace in this host"
@@ -288,6 +341,8 @@ export function BoardChrome() {
         <InsertPopover
           x={hold.viewport.x}
           y={hold.viewport.y}
+          viewportWidth={viewport.w}
+          viewportHeight={viewport.h}
           rows={holdRows}
           footer="held the board · same list as ⌘K"
         />

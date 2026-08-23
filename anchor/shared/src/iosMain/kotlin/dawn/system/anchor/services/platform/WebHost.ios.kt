@@ -12,9 +12,11 @@ import androidx.compose.ui.viewinterop.UIKitView
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.readValue
 import platform.CoreGraphics.CGRectZero
+import platform.Foundation.NSBundle
 import platform.Foundation.NSData
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSURL
+import platform.UIKit.UIScrollViewContentInsetAdjustmentBehavior
 import platform.WebKit.WKNavigation
 import platform.WebKit.WKNavigationDelegateProtocol
 import platform.WebKit.WKScriptMessage
@@ -98,6 +100,19 @@ actual class WebHostHandle internal constructor(
         scrollView.bouncesZoom = false
         scrollView.bounces = false
         scrollView.pinchGestureRecognizer?.setEnabled(false)
+        // The page lays itself out edge to edge (viewport-fit=cover) and reads the safe
+        // area through env(); UIKit must not ALSO inset the scroll view, or the board's
+        // chrome would sit twice as far from the home indicator.
+        scrollView.contentInsetAdjustmentBehavior =
+            UIScrollViewContentInsetAdjustmentBehavior.UIScrollViewContentInsetAdjustmentNever
+        // A left-edge swipe on the board is a pan, not "back" — there is no history to go
+        // back to, and the gesture would fight the canvas.
+        allowsBackForwardNavigationGestures = false
+        // Safari's Web Inspector reaches the dev flavour only (bundle id ends in ".dev").
+        // Nothing else about the build knows its flavour; the id is the one fact that does.
+        if (NSBundle.mainBundle.bundleIdentifier?.endsWith(".dev") == true) {
+            setInspectable(true)
+        }
         // `this`, not `view`: we are inside `view`'s initializer, so the property is still
         // unset here — messaging it would go to nil and silently load nothing.
         loadEmbedDocument(target = this)

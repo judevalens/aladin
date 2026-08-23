@@ -111,7 +111,7 @@ export const cardProps: RecordProps<CardShape> = {
 /** Default rects, from the handoff's reference frames. */
 export const DOC_WINDOW_DEFAULTS: DocWindowProps = {
   w: 364,
-  h: 286,
+  h: 304,
   artifactId: "",
   artifactKind: "file",
   title: "",

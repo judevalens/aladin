@@ -12,34 +12,104 @@
   --board-learn: #8fb9e8;
   --board-learn-soft: 143 185 232 / 0.12;
   --board-learn-line: 143 185 232 / 0.32;
-  /* The handoff's floating-chrome glass base (#101013). Only used by the classes below —
-     components stay on tokens/classes. */
-  --board-glass: 16 16 19;
 }
 
-/* The three glass surfaces of the board's floating chrome, per the handoff. */
-.board-glass-dock {
+/* ── The island ─────────────────────────────────────────────────────────────────────────
+   ONE floating-surface primitive for everything that hovers over the plane: the dock, the
+   zoom and status pills, the picker and the hold popover, the selection bar. Same material,
+   same line, same depth — that sameness is what reads as a product rather than a pile of
+   widgets (Excalidraw's "Island"). The glass is the PANEL token at 90%, so every theme,
+   light ones included, gets its own glass instead of a dark literal. */
+.board-island {
   border: 1px solid rgb(var(--line));
-  border-radius: 20px;
-  background: rgb(var(--board-glass) / 0.9);
+  border-radius: var(--radius-board-island);
+  background: color-mix(in srgb, var(--panel) 90%, transparent);
   backdrop-filter: blur(26px) saturate(1.6);
   -webkit-backdrop-filter: blur(26px) saturate(1.6);
-  box-shadow: 0 20px 50px rgb(0 0 0 / 0.5);
+  box-shadow: var(--shadow-float);
 }
-.board-glass-pill {
-  border: 1px solid rgb(var(--line));
-  border-radius: 16px;
-  background: rgb(var(--board-glass) / 0.86);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+.board-island--pill {
+  border-radius: var(--radius-board-tile);
+  background: color-mix(in srgb, var(--panel) 86%, transparent);
+  box-shadow: none;
 }
-.board-glass-popover {
+.board-island--popover {
+  border-radius: var(--radius-board-card);
+  background: color-mix(in srgb, var(--panel) 96%, transparent);
+  backdrop-filter: blur(28px) saturate(1.4);
+  -webkit-backdrop-filter: blur(28px) saturate(1.4);
+  box-shadow: var(--shadow-popover);
+}
+
+/* Chrome edges. The bottom edge clears the host's floating chrome (`--host-bottom-inset`,
+   0 unless the native shell floats something) AND the hardware safe area (home indicator);
+   the page runs edge to edge under `viewport-fit=cover`, so env() is real on the iPad. */
+.board-edge-bottom {
+  bottom: calc(22px + var(--host-bottom-inset, 0px) + env(safe-area-inset-bottom, 0px));
+}
+.board-edge-above-dock {
+  bottom: calc(92px + var(--host-bottom-inset, 0px) + env(safe-area-inset-bottom, 0px));
+}
+.board-edge-top {
+  top: calc(16px + env(safe-area-inset-top, 0px));
+}
+/* The pills that flank the dock (zoom right, status left). On a wide pane they share the
+   dock's row; on a portrait iPad the dock's tray would run under them, so they lift to the
+   row above. One rule, so the two can never disagree. */
+.board-flank {
+  bottom: calc(22px + var(--host-bottom-inset, 0px) + env(safe-area-inset-bottom, 0px));
+}
+@media (max-width: 1023px) {
+  .board-flank {
+    bottom: calc(92px + var(--host-bottom-inset, 0px) + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* A tappable tile: the press state is the board's only "it registered" signal on glass
+   where there is no hover — quick, slight, and never a colour change alone. */
+.board-tile {
+  transition:
+    transform 90ms ease-out,
+    background-color 120ms ease-out,
+    color 120ms ease-out;
+}
+.board-tile:active {
+  transform: scale(0.94);
+}
+
+/* ── Objects on the plane ────────────────────────────────────────────────────────────── */
+/* The card base every object but bare ink shares. Inline styles in the shape components were
+   ~700 lines of per-render object literals; the layout lives here, the per-shape data (text,
+   checked, flipped) stays in the component. */
+.board-object {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-board-card);
+  background: var(--card);
   border: 1px solid rgb(var(--line));
-  border-radius: 18px;
-  background: rgb(var(--board-glass) / 0.96);
-  backdrop-filter: blur(28px);
-  -webkit-backdrop-filter: blur(28px);
-  box-shadow: 0 26px 64px rgb(0 0 0 / 0.6);
+  font-family: var(--font-display);
+  color: var(--ink);
+}
+.board-object--card {
+  background: var(--raise);
+  border: 2px solid rgb(var(--board-learn-line));
+}
+/* A textarea inside an object edits in place; it inherits the face it replaces. */
+.board-object textarea {
+  display: block;
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+  padding: 0;
+  margin: 0;
+  pointer-events: all;
+  overflow: hidden;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
 }
 
 /* tldraw's `.tl-container *` sets user-select:none on every descendant, and its escape hatch
@@ -49,4 +119,9 @@
   user-select: text;
   -webkit-user-select: text;
   -webkit-touch-callout: default;
+}
+
+/* The learn hue as ink — the one board-only colour the shell has no token for. */
+.text-board-learn {
+  color: var(--board-learn);
 }

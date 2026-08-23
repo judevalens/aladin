@@ -143,6 +143,29 @@ class WebSurfaceHostTest {
     }
 
     @Test
+    fun `haptic parses to its weight and drops unknown weights`() {
+        assertEquals(
+            HostMessage.Haptic(dawn.system.anchor.services.platform.Haptic.Select),
+            parseHostMessage("""{"type":"haptic","kind":"select"}"""),
+        )
+        assertEquals(
+            HostMessage.Haptic(dawn.system.anchor.services.platform.Haptic.Light),
+            parseHostMessage("""{"type":"haptic","kind":"light"}"""),
+        )
+        assertEquals(null, parseHostMessage("""{"type":"haptic","kind":"earthquake"}"""))
+        assertEquals(null, parseHostMessage("""{"type":"haptic"}"""))
+    }
+
+    /** A board must not shrink above the keyboard — a resized canvas jumps its camera. */
+    @Test
+    fun `only text surfaces give way to the keyboard`() {
+        assertTrue(givesWayToKeyboard(WebPane.Kind.Page))
+        assertTrue(givesWayToKeyboard(WebPane.Kind.Shard))
+        assertTrue(givesWayToKeyboard(null))
+        assertTrue(!givesWayToKeyboard(WebPane.Kind.Board))
+    }
+
+    @Test
     fun `ready parses, with or without extra fields`() {
         assertEquals(HostMessage.Ready, parseHostMessage("""{"type":"ready"}"""))
         assertEquals(HostMessage.Ready, parseHostMessage("""{"type":"ready","v":2}"""))

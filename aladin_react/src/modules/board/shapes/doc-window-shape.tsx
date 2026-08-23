@@ -3,13 +3,14 @@ import { BaseBoxShapeUtil, HTMLContainer } from "tldraw";
 import type { TLIndicatorPath } from "tldraw";
 
 import { useBoardContent, type DocPageContent } from "../domain/board-content";
+import { DOCK_PATHS, DockIcon } from "../ui/dock-icons";
 import { DOC_WINDOW_DEFAULTS, docWindowProps, type DocWindowShape } from "./shape-types";
 import { roundedIndicator, tappable } from "./shape-shared";
 
 const KIND_ICONS: Record<string, string> = {
-  file: "M14 3v5h5M19 8v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7z",
-  note: "M4 4h16v16H4zM8 9h8M8 13h8M8 17h5",
-  link: "M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.5-1.5",
+  file: DOCK_PATHS.file,
+  note: DOCK_PATHS.note,
+  link: DOCK_PATHS.link,
 };
 
 /**
@@ -62,134 +63,60 @@ export class DocWindowShapeUtil extends BaseBoxShapeUtil<DocWindowShape> {
       });
     };
 
-    const mono: React.CSSProperties = {
-      fontFamily: "'JetBrains Mono', ui-monospace, monospace",
-      fontSize: 10,
-      color: "var(--ink-4)",
-    };
-
     return (
       <HTMLContainer>
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            width: "100%",
-            height: "100%",
-            borderRadius: 18,
-            background: "var(--card)",
-            border: "1px solid rgb(var(--line))",
-            overflow: "hidden",
-            fontFamily: "'Space Grotesk Variable', 'Space Grotesk', system-ui, sans-serif",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              padding: "13px 16px",
-              borderBottom: "1px solid rgb(var(--line-2))",
-            }}
-          >
-            <svg
-              width="17"
-              height="17"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="var(--ink-3)"
-              strokeWidth="1.75"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              style={{ flexShrink: 0 }}
-            >
-              <path d={KIND_ICONS[shape.props.artifactKind] ?? KIND_ICONS.file} />
-            </svg>
-            <span
-              style={{
-                minWidth: 0,
-                fontSize: 14.5,
-                color: "var(--ink-2)",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {shape.props.title}
+        <div className="board-object flex flex-col overflow-hidden">
+          <div className="flex items-center gap-2.5 border-b border-line-2 px-4 py-3">
+            <span className="shrink-0 text-ink-3">
+              <DockIcon d={KIND_ICONS[shape.props.artifactKind] ?? KIND_ICONS.file} size={17} strokeWidth={1.75} />
             </span>
-            <span
-              style={{
-                flexShrink: 0,
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                marginLeft: "auto",
-                padding: "3px 9px",
-                borderRadius: 8,
-                background: "rgb(var(--amber-soft))",
-                fontFamily: "'JetBrains Mono', ui-monospace, monospace",
-                fontSize: 10,
-                color: "var(--amber)",
-              }}
-            >
-              <span
-                style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: 999,
-                  background: "var(--amber)",
-                }}
-              />
+            <span className="min-w-0 truncate text-board-row text-ink-2">{shape.props.title}</span>
+            <span className="ml-auto flex shrink-0 items-center gap-1.5 rounded-chip bg-amber-soft px-2 py-0.5 font-mono text-board-meta text-amber">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber" />
               live
             </span>
           </div>
-          <div style={{ flex: 1, minHeight: 0, padding: "14px 16px", overflow: "hidden" }}>
+          <div className="min-h-0 flex-1 overflow-hidden px-4 py-3.5">
             {content?.state === "ready" ? (
               <>
-                <div
-                  style={{
-                    ...mono,
-                    letterSpacing: "0.08em",
-                    textTransform: "uppercase",
-                  }}
-                >
+                <div className="font-mono text-board-meta uppercase tracking-wider text-ink-4">
                   {content.sourceLine}
                 </div>
-                <p
-                  style={{
-                    margin: "9px 0 0",
-                    fontFamily: "Georgia, 'Times New Roman', serif",
-                    fontSize: 15,
-                    lineHeight: 1.65,
-                    color: "var(--ink-2)",
-                  }}
-                >
+                <p className="mt-2 font-serif text-board-row leading-[1.65] text-ink-2">
                   {content.excerpt}
                 </p>
               </>
             ) : (
-              <div style={{ ...mono, fontSize: 11, color: "var(--ink-4)" }}>
+              <div className="font-mono text-small text-ink-4">
                 {content?.state === "missing"
                   ? "the artifact is gone — the window stays"
                   : "live window — resolving…"}
               </div>
             )}
           </div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-              padding: "0 16px 13px",
-              ...mono,
-            }}
-          >
-            <span {...tappable(this.editor, () => setPage(page - 1))}>◀</span>
+          <div className="flex items-center gap-0.5 px-1.5 pb-1 font-mono text-board-meta text-ink-4">
+            <button
+              type="button"
+              aria-label="Previous page"
+              {...tappable(this.editor, () => setPage(page - 1))}
+              className="board-tile grid h-11 w-11 place-items-center rounded-control text-ink-3 hover:bg-hover disabled:text-ink-4"
+              disabled={page <= 1}
+            >
+              <DockIcon d={DOCK_PATHS.chevronLeft} size={15} strokeWidth={2} />
+            </button>
             <span>
               page {page} / {pageCount}
             </span>
-            <span {...tappable(this.editor, () => setPage(page + 1))}>▶</span>
-            <span style={{ marginLeft: "auto" }}>this window's own page</span>
+            <button
+              type="button"
+              aria-label="Next page"
+              {...tappable(this.editor, () => setPage(page + 1))}
+              className="board-tile grid h-11 w-11 place-items-center rounded-control text-ink-3 hover:bg-hover disabled:text-ink-4"
+              disabled={page >= pageCount}
+            >
+              <DockIcon d={DOCK_PATHS.chevronRight} size={15} strokeWidth={2} />
+            </button>
+            <span className="ml-auto pr-2.5">this window's own page</span>
           </div>
         </div>
       </HTMLContainer>

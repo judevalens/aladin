@@ -20,8 +20,10 @@ import anchor.shared.generated.resources.Res
 import dawn.system.anchor.services.design.AnchorTheme
 import dawn.system.anchor.services.design.MetaStyle
 import androidx.compose.runtime.Stable
+import dawn.system.anchor.services.platform.Haptic
 import dawn.system.anchor.services.platform.WebHostHandle
 import dawn.system.anchor.services.platform.WebHostSurface
+import dawn.system.anchor.services.platform.performHaptic
 import dawn.system.anchor.services.platform.rememberWebHost
 import dawn.system.anchor.services.platform.documentsDirPath
 import dawn.system.anchor.services.platform.fileExists
@@ -114,6 +116,7 @@ fun rememberWebSurfaceHost(
     session: EditorSession?,
     enabled: Boolean,
     onOpenArtifact: (String) -> Unit = {},
+    onHaptic: (Haptic) -> Unit = ::performHaptic,
 ): WebSurfaceHost? {
     var documentPath by remember { mutableStateOf<String?>(null) }
 
@@ -150,6 +153,7 @@ fun rememberWebSurfaceHost(
         onMessage = { raw ->
             when (val message = parseHostMessage(raw)) {
                 is HostMessage.OpenArtifact -> onOpenArtifact(message.id)
+                is HostMessage.Haptic -> onHaptic(message.kind)
                 is HostMessage.WebError -> println("anchor embed error: ${message.message}")
                 HostMessage.Ready, null -> Unit
             }
@@ -169,6 +173,10 @@ fun rememberWebSurfaceHost(
  * `imePadding` here and NOT on the shell's columns — the editor is the only surface that
  * takes text, so it is the only one that should give way to the keyboard. WebKit then
  * scrolls the caret within the smaller viewport, which is one thing moving instead of two.
+ *
+ * …except for a **board**. Shrinking a tldraw canvas re-measures its viewport, and the
+ * camera visibly jumps every time a task or card takes the keyboard; the plane keeps its
+ * size and the editing object stays where the finger put it (see [givesWayToKeyboard]).
  */
 @Composable
 fun WebSurfacePage(
@@ -179,12 +187,13 @@ fun WebSurfacePage(
     modifier: Modifier = Modifier,
 ) {
     val c = AnchorTheme.colors
+    val activeKind = panes.firstOrNull { it.id == activeId }?.kind
 
     Box(modifier.fillMaxSize().background(c.bg)) {
         WebHostSurface(
             handle = host.handle,
             command = syncCommand(panes, activeId, bottomInset.value.toInt()),
-            modifier = Modifier.fillMaxSize().imePadding(),
+            modifier = Modifier.fillMaxSize().let { if (givesWayToKeyboard(activeKind)) it.imePadding() else it },
         )
 
         if (host.restarts > 0) {
@@ -197,6 +206,12 @@ fun WebSurfacePage(
         }
     }
 }
+
+/**
+ * Whether the web view shrinks above the keyboard for this kind of pane. Text surfaces do
+ * (the caret must stay visible); a board does not (a resized canvas jumps its camera).
+ */
+internal fun givesWayToKeyboard(kind: WebPane.Kind?): Boolean = kind != WebPane.Kind.Board
 
 private const val DEFAULT_USER_NAME = "iPad"
 private const val EDITOR_RESOURCE = "files/page-editor.html"
@@ -235,6 +250,9 @@ sealed interface HostMessage {
     /** The board's selection bar: "Open in folder" — navigate to this artifact. */
     data class OpenArtifact(val id: String) : HostMessage
 
+    /** A tap in the page changed something (tool, insert, flip) — play the device's tick. */
+    data class Haptic(val kind: dawn.system.anchor.services.platform.Haptic) : HostMessage
+
     /** A JS error the page trapped — diagnostics only; the page shows its own notice. */
     data class WebError(val message: String) : HostMessage
 }
@@ -253,6 +271,12 @@ internal fun parseHostMessage(raw: String): HostMessage? = runCatching {
         "openArtifact" -> obj["id"]?.jsonPrimitive?.content
             ?.takeIf { it.isNotBlank() }
             ?.let(HostMessage::OpenArtifact)
+        "haptic" -> when (obj["kind"]?.jsonPrimitive?.content) {
+            "light" -> HostMessage.Haptic(Haptic.Light)
+            "medium" -> HostMessage.Haptic(Haptic.Medium)
+            "select" -> HostMessage.Haptic(Haptic.Select)
+            else -> null
+        }
         "error" -> HostMessage.WebError(obj["message"]?.jsonPrimitive?.content ?: "unknown")
         else -> null
     }

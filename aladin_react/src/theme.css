@@ -19,6 +19,10 @@
     --font-heading: var(--font-display);
     --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
     --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+    /* Reading faces the board's objects use: artifact excerpts set in a serif, handwriting
+       stand-ins (ink labels, tasks) in Caveat — real ink is strokes, not a font. */
+    --font-serif: Georgia, "Times New Roman", serif;
+    --font-hand: "Caveat", cursive;
 
     /* Aladin surfaces */
     --color-rail: var(--rail);
@@ -39,6 +43,9 @@
     --color-amber: var(--amber);
     --color-amber-soft: rgb(var(--amber-soft));
     --color-amber-line: rgb(var(--amber-line));
+    /* Ink ON the accent (a check mark on an amber checkbox): dark on the amber family,
+       white on the blue accents — set per theme next to --amber. */
+    --color-on-amber: var(--on-amber);
     --color-line: rgb(var(--line));
     --color-line-2: rgb(var(--line-2));
     --color-hover: rgb(var(--hover));
@@ -86,6 +93,18 @@
     --text-lead: 15px;      --text-lead--line-height: 1.7;
     --text-title: 22px;     --text-title--line-height: 1.25;
     --text-display: 30px;   --text-display--line-height: 1.15;
+    /* Board chrome — the floating islands and their rows, per the board handoff. Outside
+       the six steps on purpose (touch rows, pencil-distance reading); named here so the
+       board module carries no px literals. */
+    --text-board-meta: 10px;    --text-board-meta--line-height: 1.4;
+    --text-board-label: 14px;   --text-board-label--line-height: 1.35;
+    --text-board-row: 15px;     --text-board-row--line-height: 1.35;
+    --text-board-title: 15.5px; --text-board-title--line-height: 1.35;
+    /* …and the objects on the plane: card back / card front / excerpt quote / task hand. */
+    --text-board-body: 16px;    --text-board-body--line-height: 1.4;
+    --text-board-face: 19px;    --text-board-face--line-height: 1.4;
+    --text-board-quote: 20px;   --text-board-quote--line-height: 1.3;
+    --text-board-hand: 27px;    --text-board-hand--line-height: 1.25;
 
     /* Radius — follows container size, not taste. chip/card/modal were already
        right, just under-used; tap/control name the two steps below them. */
@@ -99,6 +118,11 @@
     --radius-lg: var(--radius);
     --radius-xl: calc(var(--radius) * 1.4);
     --radius-2xl: calc(var(--radius) * 1.8);
+    /* Board — one island primitive for every floating surface (dock, pills, popovers),
+       tiles inside it, and the objects on the plane. */
+    --radius-board-tile: 15px;   /* dock buttons */
+    --radius-board-card: 18px;   /* objects on the plane, popovers */
+    --radius-board-island: 20px; /* the dock itself */
 
     /* Reading measure for the work pane. `max-w-workspace-max` was in use in four
        files with NO token behind it, so it silently resolved to nothing and those
@@ -124,6 +148,10 @@
     --shadow-panel: -24px 0 60px rgba(0, 0, 0, 0.5);
     --shadow-modal: 0 28px 70px rgba(0, 0, 0, 0.6);
     --shadow-toast: 0 12px 40px rgba(0, 0, 0, 0.5);
+    /* Floating chrome over a canvas: deep, because an undimmed island has only depth to
+       separate it from the plane. --shadow-popover is the heavier step for menus. */
+    --shadow-float: 0 20px 50px rgb(0 0 0 / 0.5);
+    --shadow-popover: 0 26px 64px rgb(0 0 0 / 0.6);
 
     /* Animations */
     --animate-pop: pop 0.17s cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -179,6 +207,7 @@
     --sel: 255 255 255 / 0.06;
     /* accent */
     --amber: #c9925a;
+    --on-amber: #0f0f12;
     --amber-soft: 201 146 90 / 0.12;
     --amber-line: 201 146 90 / 0.3;
     /* semantic hues */
@@ -247,6 +276,7 @@
     --ink-3: #67656f;
     --ink-4: #4a4952;
     --amber: #c69566;
+    --on-amber: #0f0f12;
     --amber-soft: 198 149 102 / 0.13;
     --amber-line: 198 149 102 / 0.3;
 }
@@ -322,6 +352,7 @@
     --sel: 94 106 210 / 0.20;
     /* Linear indigo accent */
     --amber: #5e6ad2;
+    --on-amber: #ffffff;
     --amber-soft: 94 106 210 / 0.16;
     --amber-line: 94 106 210 / 0.42;
     /* indigo primary → light text */
@@ -351,6 +382,7 @@
     --sel: 10 132 255 / 0.22;
     /* Apple system blue (dark) */
     --amber: #0a84ff;
+    --on-amber: #ffffff;
     --amber-soft: 10 132 255 / 0.16;
     --amber-line: 10 132 255 / 0.42;
     /* iOS dark system colors */
@@ -387,6 +419,7 @@
     --sel: 0 122 255 / 0.14;
     /* Apple system blue (light) */
     --amber: #007aff;
+    --on-amber: #ffffff;
     --amber-soft: 0 122 255 / 0.12;
     --amber-line: 0 122 255 / 0.4;
     /* iOS light system colors (deepened for legibility on white) */
@@ -425,6 +458,7 @@
     --sel: 179 121 47 / 0.15;
     /* deepened accent + hues for contrast on a light ground */
     --amber: #b3792f;
+    --on-amber: #0f0f12;
     --amber-soft: 179 121 47 / 0.13;
     --amber-line: 179 121 47 / 0.38;
     --for: #3f9d72;

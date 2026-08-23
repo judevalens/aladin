@@ -43,49 +43,20 @@ export class CardShapeUtil extends BaseBoxShapeUtil<CardShape> {
     const { flipped } = shape.props;
     const face = flipped ? "back" : "front";
     const text = flipped ? shape.props.back : shape.props.front;
-    const textStyle: React.CSSProperties = flipped
-      ? { fontSize: 16, lineHeight: 1.4, color: "var(--ink-2)" }
-      : { fontSize: 19, lineHeight: 1.4, color: "var(--ink)" };
+    const faceClass = flipped ? "text-board-body text-ink-2" : "text-board-face text-ink";
 
     return (
       <HTMLContainer>
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            width: "100%",
-            height: "100%",
-            padding: "16px 18px",
-            borderRadius: 18,
-            background: "var(--raise)",
-            border: "2px solid rgb(var(--board-learn-line))",
-            fontFamily: "'Space Grotesk Variable', 'Space Grotesk', system-ui, sans-serif",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-            <span
-              style={{
-                fontFamily: "'JetBrains Mono', ui-monospace, monospace",
-                fontSize: 10,
-                letterSpacing: "0.07em",
-                textTransform: "uppercase",
-                color: "var(--board-learn)",
-              }}
-            >
+        <div className="board-object board-object--card flex flex-col px-4.5 py-4">
+          <div className="flex items-center gap-2">
+            <span className="text-board-learn font-mono text-board-meta uppercase tracking-wider">
               {face}
             </span>
-            <span
-              style={{
-                marginLeft: "auto",
-                fontFamily: "'JetBrains Mono', ui-monospace, monospace",
-                fontSize: 10,
-                color: "var(--ink-4)",
-              }}
-            >
+            <span className="ml-auto font-mono text-board-meta text-ink-4">
               {flipped ? "tap to hide" : "tap to answer"}
             </span>
           </div>
-          <div style={{ marginTop: 12, flex: 1, minHeight: 0 }}>
+          <div className={`mt-3 min-h-0 flex-1 ${faceClass}`}>
             {isEditing ? (
               <ShapeTextArea
                 editor={this.editor}
@@ -97,22 +68,13 @@ export class CardShapeUtil extends BaseBoxShapeUtil<CardShape> {
                     props: flipped ? { back: next } : { front: next },
                   })
                 }
-                style={{ ...textStyle, fontFamily: "inherit", height: "100%" }}
+                className="h-full"
               />
             ) : (
-              <div style={textStyle}>{text}</div>
+              <div>{text}</div>
             )}
           </div>
-          <div
-            style={{
-              paddingTop: 12,
-              fontFamily: "'JetBrains Mono', ui-monospace, monospace",
-              fontSize: 10,
-              color: "var(--ink-4)",
-            }}
-          >
-            {shape.props.cite}
-          </div>
+          <div className="pt-3 font-mono text-board-meta text-ink-4">{shape.props.cite}</div>
         </div>
       </HTMLContainer>
     );

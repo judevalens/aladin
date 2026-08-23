@@ -3,6 +3,7 @@ import type { ErrorInfo, ReactNode } from "react";
 import type { EmbedConfig } from "@/embed/embed-config";
 import { createRoot } from "react-dom/client";
 
+import type { BoardHost } from "@/modules/board/domain/board-host";
 import { BoardPane } from "@/modules/board/ui/board-pane";
 import { BlockNotePageEditorDriver } from "@/modules/pages/editor/page-editor-driver";
 import { createApiClient, type ApiClient } from "@/shared/api/client";
@@ -193,10 +194,11 @@ function useShardPlanes(config: EmbedConfig) {
   }, [client]);
 }
 
-// The companion's board host: "Open in folder" rides the native bridge; there is no
-// copilot on the iPad yet, so onAskAbout stays absent and the button never renders.
-const EMBED_BOARD_HOST = {
+// The companion's board host: "Open in folder" and haptics ride the native bridge; there
+// is no copilot on the iPad yet, so onAskAbout stays absent and the button never renders.
+const EMBED_BOARD_HOST: BoardHost = {
   onOpenArtifact: (id: string) => post({ type: "openArtifact", id }),
+  haptic: (kind) => post({ type: "haptic", kind }),
 };
 
 function BoardHostPane({ pane, config }: { pane: HostPane; config: EmbedConfig }) {
@@ -209,7 +211,14 @@ function BoardHostPane({ pane, config }: { pane: HostPane; config: EmbedConfig }
     );
   }
   return (
-    <BoardPane boardId={pane.id} title={pane.title} client={client} host={EMBED_BOARD_HOST} />
+    <BoardPane
+      boardId={pane.id}
+      title={pane.title}
+      client={client}
+      host={EMBED_BOARD_HOST}
+      // The shell's tab strip already names the board; the pane draws only the plane.
+      chrome="plane"
+    />
   );
 }
 

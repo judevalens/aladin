@@ -4,7 +4,7 @@ import type { TLIndicatorPath } from "tldraw";
 import { EXCERPT_DEFAULTS, excerptProps, type ExcerptShape } from "./shape-types";
 import { ShapeTextArea, roundedIndicator } from "./shape-shared";
 
-/** A frozen quote: Georgia italic + `frozen` chip + citation. Double-tap edits the text. */
+/** A frozen quote: serif italic + `frozen` chip + citation. Double-tap edits the text. */
 export class ExcerptShapeUtil extends BaseBoxShapeUtil<ExcerptShape> {
   static override type = "aladin-excerpt" as const;
   static override props = excerptProps;
@@ -27,13 +27,6 @@ export class ExcerptShapeUtil extends BaseBoxShapeUtil<ExcerptShape> {
       () => this.editor.getEditingShapeId() === shape.id,
       [shape.id],
     );
-    const textStyle: React.CSSProperties = {
-      fontFamily: "Georgia, 'Times New Roman', serif",
-      fontStyle: "italic",
-      fontSize: 20,
-      lineHeight: 1.3,
-      color: "var(--ink)",
-    };
     const cite =
       shape.props.page != null
         ? `${shape.props.sourceTitle} · p. ${shape.props.page}`
@@ -41,57 +34,29 @@ export class ExcerptShapeUtil extends BaseBoxShapeUtil<ExcerptShape> {
 
     return (
       <HTMLContainer>
-        <div
-          style={{
-            width: "100%",
-            height: "100%",
-            padding: "16px 18px",
-            borderRadius: 18,
-            background: "var(--card)",
-            border: "1px solid rgb(var(--line))",
-          }}
-        >
-          {isEditing ? (
-            <ShapeTextArea
-              editor={this.editor}
-              value={shape.props.text}
-              onChange={(next) =>
-                this.editor.updateShape({
-                  id: shape.id,
-                  type: shape.type,
-                  props: { text: next },
-                })
-              }
-              style={textStyle}
-            />
-          ) : (
-            <div style={textStyle}>{shape.props.text}</div>
-          )}
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14 }}>
-            <span
-              style={{
-                padding: "3px 9px",
-                borderRadius: 8,
-                background: "var(--field)",
-                fontFamily: "'JetBrains Mono', ui-monospace, monospace",
-                fontSize: 10,
-                color: "var(--ink-3)",
-              }}
-            >
+        <div className="board-object px-4.5 py-4">
+          <div className="font-serif text-board-quote italic text-ink">
+            {isEditing ? (
+              <ShapeTextArea
+                editor={this.editor}
+                value={shape.props.text}
+                onChange={(next) =>
+                  this.editor.updateShape({
+                    id: shape.id,
+                    type: shape.type,
+                    props: { text: next },
+                  })
+                }
+              />
+            ) : (
+              <div>{shape.props.text}</div>
+            )}
+          </div>
+          <div className="mt-3.5 flex items-center gap-2">
+            <span className="rounded-chip bg-field px-2 py-0.5 font-mono text-board-meta text-ink-3">
               frozen
             </span>
-            <span
-              style={{
-                fontFamily: "'JetBrains Mono', ui-monospace, monospace",
-                fontSize: 10.5,
-                color: "var(--ink-4)",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {cite}
-            </span>
+            <span className="truncate font-mono text-board-meta text-ink-4">{cite}</span>
           </div>
         </div>
       </HTMLContainer>

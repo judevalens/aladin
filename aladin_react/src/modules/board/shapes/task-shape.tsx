@@ -1,6 +1,7 @@
 import { BaseBoxShapeUtil, HTMLContainer, useValue } from "tldraw";
 import type { TLIndicatorPath } from "tldraw";
 
+import { DOCK_PATHS, DockIcon } from "../ui/dock-icons";
 import { TASK_DEFAULTS, taskProps, type TaskShape } from "./shape-types";
 import { ShapeTextArea, roundedIndicator, tappable } from "./shape-shared";
 
@@ -28,29 +29,11 @@ export class TaskShapeUtil extends BaseBoxShapeUtil<TaskShape> {
       [shape.id],
     );
     const { checked } = shape.props;
-    const textStyle: React.CSSProperties = {
-      fontFamily: "'Caveat', cursive",
-      fontSize: 27,
-      lineHeight: 1.25,
-      color: checked ? "var(--ink-4)" : "var(--amber)",
-      textDecoration: checked ? "line-through" : "none",
-    };
 
     return (
       <HTMLContainer>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "flex-start",
-            gap: 14,
-            width: "100%",
-            height: "100%",
-            padding: "16px 18px",
-            borderRadius: 18,
-            background: "var(--card)",
-            border: "1px solid rgb(var(--line))",
-          }}
-        >
+        <div className="board-object flex items-start gap-3.5 px-4.5 py-4">
+          {/* 44pt hit box around the 30px mark — a finger's target, the design's size. */}
           <span
             role="checkbox"
             aria-checked={checked}
@@ -61,59 +44,42 @@ export class TaskShapeUtil extends BaseBoxShapeUtil<TaskShape> {
                 props: { checked: !checked },
               }),
             )}
-            style={{
-              display: "grid",
-              placeItems: "center",
-              flexShrink: 0,
-              width: 30,
-              height: 30,
-              borderRadius: 9,
-              border: `2px solid ${checked ? "var(--amber)" : "rgba(255,255,255,.24)"}`,
-              background: checked ? "var(--amber)" : "transparent",
-              pointerEvents: "all",
-              cursor: "pointer",
-            }}
+            className="-m-[7px] grid h-11 w-11 shrink-0 place-items-center"
           >
-            <svg
-              width="17"
-              height="17"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="var(--on-amber)"
-              strokeWidth="3"
-              strokeLinecap="round"
-              opacity={checked ? 1 : 0}
+            <span
+              className={`board-tile grid h-[30px] w-[30px] place-items-center rounded-control border-2 ${
+                checked ? "border-amber bg-amber text-on-amber" : "border-ink-4 bg-transparent"
+              }`}
             >
-              <path d="M5 13l4 4L19 7" />
-            </svg>
+              <span className={checked ? "opacity-100" : "opacity-0"}>
+                <DockIcon d={DOCK_PATHS.check} size={17} strokeWidth={3} />
+              </span>
+            </span>
           </span>
-          <div style={{ minWidth: 0, flex: 1 }}>
-            {isEditing ? (
-              <ShapeTextArea
-                editor={this.editor}
-                value={shape.props.text}
-                onChange={(next) =>
-                  this.editor.updateShape({
-                    id: shape.id,
-                    type: shape.type,
-                    props: { text: next },
-                  })
-                }
-                style={{ ...textStyle, textDecoration: "none" }}
-              />
-            ) : (
-              <div style={textStyle}>{shape.props.text}</div>
-            )}
+          <div className="min-w-0 flex-1">
             <div
-              style={{
-                marginTop: 6,
-                fontFamily: "'JetBrains Mono', ui-monospace, monospace",
-                fontSize: 10,
-                letterSpacing: "0.05em",
-                textTransform: "uppercase",
-                color: "var(--ink-4)",
-              }}
+              className={`font-hand text-board-hand ${
+                checked ? "text-ink-4 line-through" : "text-amber"
+              }`}
             >
+              {isEditing ? (
+                <ShapeTextArea
+                  editor={this.editor}
+                  value={shape.props.text}
+                  onChange={(next) =>
+                    this.editor.updateShape({
+                      id: shape.id,
+                      type: shape.type,
+                      props: { text: next },
+                    })
+                  }
+                  className="no-underline"
+                />
+              ) : (
+                <div>{shape.props.text}</div>
+              )}
+            </div>
+            <div className="mt-1.5 font-mono text-board-meta uppercase tracking-wider text-ink-4">
               {shape.props.meta}
             </div>
           </div>
