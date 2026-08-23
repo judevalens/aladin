@@ -91,6 +91,26 @@ function createSpikeApiClient(): ApiClient {
         }
       }
 
+      if (url.pathname === "/api/search" && method === "GET") {
+        const q = (url.searchParams.get("q") ?? "").toLowerCase();
+        const everywhere = [
+          ...SPIKE_FOLDER,
+          { id: "a_greeks", type: "file", title: "Greeks — a field guide" },
+          { id: "a_journal", type: "page", title: "Journal — week 34" },
+        ];
+        return Promise.resolve({
+          sections: [
+            {
+              type: "artifact",
+              label: "Artifacts",
+              hits: everywhere
+                .filter((a) => a.title.toLowerCase().includes(q))
+                .map((a) => ({ kind: a.type, id: a.id, title: a.title, subtitle: "elsewhere", score: 1 })),
+            },
+          ],
+        } as T);
+      }
+
       if (url.pathname === "/api/artifacts/" && method === "GET") {
         return Promise.resolve(
           SPIKE_FOLDER.map((a) => ({

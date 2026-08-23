@@ -1,7 +1,7 @@
 import { createContext, useContext } from "react";
 
 import { ApiError, type ApiClient } from "@/shared/api/client";
-import type { UserArtifact } from "@/shared/api/models";
+import type { SearchResponse, UserArtifact } from "@/shared/api/models";
 
 /**
  * The read-live content plane for doc windows and the picker.
@@ -36,6 +36,8 @@ export interface BoardContentSource {
   get(artifactId: string, page: number): DocPageContent;
   /** The board's folder siblings, insertable as live windows. */
   listFolderArtifacts(folderId: string | null): Promise<PickerArtifact[]>;
+  /** The picker's "then everywhere": the workspace search, narrowed to insertable kinds. */
+  searchArtifacts(query: string): Promise<PickerArtifact[]>;
 }
 
 export const BoardContentContext = createContext<BoardContentSource | null>(null);
@@ -199,6 +201,22 @@ export function createBoardContentSource(client: ApiClient): BoardContentSource 
     },
     get(artifactId, page) {
       return entry(`${artifactId}:${page}`).value;
+    },
+    async searchArtifacts(query) {
+      const q = query.trim();
+      if (!q) return [];
+      const params = new URLSearchParams({ q, limit: "12" });
+      const response = await client.fetch<SearchResponse>(`/api/search?${params.toString()}`);
+      return (response?.sections ?? [])
+        .filter((section) => section.type === "artifact")
+        .flatMap((section) => section.hits)
+        .filter((hit) => ARTIFACT_TYPE_TO_KIND[hit.kind])
+        .map((hit) => ({
+          id: hit.id,
+          kind: ARTIFACT_TYPE_TO_KIND[hit.kind],
+          title: hit.title,
+          meta: hit.subtitle || (hit.kind === "page" ? "note" : hit.kind),
+        }));
     },
     async listFolderArtifacts(folderId) {
       const query = folderId ? `?folderId=${encodeURIComponent(folderId)}` : "";

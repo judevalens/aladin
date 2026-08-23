@@ -40,7 +40,8 @@ import { Dock } from "./dock";
 import { DOCK_PATHS, DockIcon } from "./dock-icons";
 import { HintPill } from "./hint-pill";
 import { InsertPopover, type InsertRow } from "./insert-popover";
-import { PickerPanel } from "./picker-panel";
+import { EmptyHint } from "./empty-hint";
+import { PickerPanel, type PickerNote } from "./picker-panel";
 import { SelectionBar } from "./selection-bar";
 import { StatusPill } from "./status-pill";
 import { ZoomPill } from "./zoom-pill";
@@ -85,25 +86,75 @@ export function BoardChrome() {
   const [holdRing, setHoldRing] = useState<VecLike | null>(null);
   const [inking, setInking] = useState(false);
 
-  // Picker data: the board's folder siblings, refreshed each time the panel opens.
+  // Picker data: the board's folder siblings, refreshed each time the panel (or the hold
+  // popover, which shares the list) opens; a query also reaches the whole workspace.
   const contentSource = useBoardContent();
   const folderId = useBoardFolder();
-  const [pickerArtifacts, setPickerArtifacts] = useState<PickerArtifact[] | null>(null);
+  const [query, setQuery] = useState("");
+  const [folderRows, setFolderRows] = useState<PickerArtifact[] | null>(null);
+  const [folderError, setFolderError] = useState(false);
+  const [folderFetch, setFolderFetch] = useState(0);
+  const listOpen = pickerOpen || hold !== null;
   useEffect(() => {
-    if (!pickerOpen || !contentSource) return;
+    if (!listOpen || !contentSource) return;
     let alive = true;
+    setFolderError(false);
     contentSource
       .listFolderArtifacts(folderId)
       .then((rows) => {
-        if (alive) setPickerArtifacts(rows);
+        if (alive) setFolderRows(rows);
       })
       .catch(() => {
-        if (alive) setPickerArtifacts([]);
+        if (alive) {
+          setFolderRows(null);
+          setFolderError(true);
+        }
       });
     return () => {
       alive = false;
     };
-  }, [pickerOpen, contentSource, folderId]);
+  }, [listOpen, contentSource, folderId, folderFetch]);
+
+  const [searchRows, setSearchRows] = useState<PickerArtifact[]>([]);
+  useEffect(() => {
+    const q = query.trim();
+    if (!pickerOpen || !contentSource || q.length < 2) {
+      setSearchRows([]);
+      return;
+    }
+    let alive = true;
+    const handle = window.setTimeout(() => {
+      contentSource
+        .searchArtifacts(q)
+        .then((rows) => {
+          if (alive) setSearchRows(rows);
+        })
+        .catch(() => {
+          if (alive) setSearchRows([]);
+        });
+    }, 250);
+    return () => {
+      alive = false;
+      window.clearTimeout(handle);
+    };
+  }, [pickerOpen, contentSource, query]);
+  useEffect(() => {
+    if (!pickerOpen) setQuery("");
+  }, [pickerOpen]);
+
+  // ⌘K / Ctrl+K opens the picker — the popover footer promises it, desktop expects it.
+  useEffect(() => {
+    const doc = editor.getContainer().ownerDocument;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k" && !e.defaultPrevented) {
+        e.preventDefault();
+        setStyleOpen(false);
+        setPickerOpen((open) => !open);
+      }
+    };
+    doc.addEventListener("keydown", onKey);
+    return () => doc.removeEventListener("keydown", onKey);
+  }, [editor]);
 
   const applyInkStyles = useCallback(
     (color: BoardInkColor, weightIndex: BoardWeightIndex) => {
@@ -358,6 +409,38 @@ export function BoardChrome() {
 
   const holdRows: InsertRow[] = hold
     ? [
+        ...(folderRows ?? []).map((artifact): InsertRow => {
+          const onBoard = boardArtifactIds(editor);
+          const existing = onBoard.get(artifact.id);
+          return {
+            key: artifact.id,
+            icon: (
+              <DockIcon
+                d={(DOCK_PATHS as Record<string, string>)[artifact.kind] ?? DOCK_PATHS.file}
+                size={17}
+                strokeWidth={1.75}
+              />
+            ),
+            title: artifact.title,
+            meta: existing ? "on this board" : artifact.meta,
+            metaTone: existing ? "amber" : undefined,
+            onPick: () => {
+              setHold(null);
+              if (existing) {
+                editor.select(existing);
+                editor.zoomToSelection({ animation: { duration: 220 } });
+                return;
+              }
+              addDocWindow(editor, {
+                artifactId: artifact.id,
+                artifactKind: artifact.kind,
+                title: artifact.title,
+                at: hold.page,
+              });
+              inserted();
+            },
+          };
+        }),
         {
           key: "ink",
           icon: <DockIcon d={DOCK_PATHS.pencil} size={17} strokeWidth={1.8} />,
@@ -398,7 +481,13 @@ export function BoardChrome() {
   const pickerRows = useMemo<InsertRow[]>(() => {
     if (!pickerOpen) return [];
     const onBoard = boardArtifactIds(editor);
-    return (pickerArtifacts ?? []).map((artifact): InsertRow => {
+    const q = query.trim().toLowerCase();
+    const inFolder = (folderRows ?? []).filter(
+      (a) => !q || a.title.toLowerCase().includes(q) || a.meta.toLowerCase().includes(q),
+    );
+    const folderIds = new Set((folderRows ?? []).map((a) => a.id));
+    const elsewhere = searchRows.filter((a) => !folderIds.has(a.id));
+    return [...inFolder, ...elsewhere].map((artifact): InsertRow => {
       const existing = onBoard.get(artifact.id);
       const iconPath = (DOCK_PATHS as Record<string, string>)[artifact.kind] ?? DOCK_PATHS.file;
       return {
@@ -425,7 +514,28 @@ export function BoardChrome() {
       };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `inserted` is a stable host call
-  }, [pickerOpen, pickerArtifacts, editor]);
+  }, [pickerOpen, folderRows, searchRows, query, editor]);
+
+  const pickerNote: PickerNote = !contentSource
+    ? { kind: "info", text: "no workspace in this host" }
+    : folderError
+      ? {
+          kind: "error",
+          text: "couldn't list this folder",
+          onRetry: () => setFolderFetch((n) => n + 1),
+        }
+      : folderRows === null
+        ? { kind: "info", text: "listing this folder…" }
+        : pickerRows.length === 0
+          ? {
+              kind: "info",
+              text: query.trim()
+                ? query.trim().length < 2
+                  ? "keep typing to search everywhere"
+                  : "nothing matches — here or anywhere"
+                : "nothing insertable in this folder yet",
+            }
+          : { kind: "none" };
 
   return (
     <div
@@ -435,6 +545,7 @@ export function BoardChrome() {
     >
       <SelectionBar />
       <BackToContent />
+      <EmptyHint />
       <Dock
         tool={tool}
         subTool={subTool}
@@ -481,16 +592,10 @@ export function BoardChrome() {
       )}
       {pickerOpen ? (
         <PickerPanel
+          query={query}
+          onQueryChange={setQuery}
           rows={pickerRows}
-          emptyNote={
-            !contentSource
-              ? "no workspace in this host"
-              : pickerArtifacts === null
-                ? "listing this folder…"
-                : pickerArtifacts.length === 0
-                  ? "nothing insertable in this folder yet"
-                  : null
-          }
+          note={pickerNote}
           onPaste={() => void pasteAsExcerpt()}
           onClose={() => setPickerOpen(false)}
         />
@@ -505,7 +610,7 @@ export function BoardChrome() {
           viewportWidth={viewport.w}
           viewportHeight={viewport.h}
           rows={holdRows}
-          footer="held the board · same list as ⌘K"
+          footer="held the board · lands here · ⌘K opens the same list"
         />
       ) : null}
     </div>

@@ -257,7 +257,15 @@ export function BoardPane({
           ) : null}
         </div>
       ) : null}
-      <div className="min-h-0 flex-1">
+      <div className="relative min-h-0 flex-1">
+        {/* The canvas stays mounted (its editor is expensive and identity-sensitive) but
+            hidden behind a veil until the snapshot is in — no empty plane that pops full
+            and jumps its camera a beat later. */}
+        {loadState === "loading" ? (
+          <div className="absolute inset-0 z-10 grid place-items-center bg-bg font-mono text-small text-ink-4">
+            loading the board…
+          </div>
+        ) : null}
         <BoardHostContext.Provider value={host}>
           <BoardStatusContext.Provider value={status}>
             <BoardToastContext.Provider value={toasts}>
