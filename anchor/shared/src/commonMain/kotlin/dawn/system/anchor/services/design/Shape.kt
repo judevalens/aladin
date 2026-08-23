@@ -12,6 +12,10 @@ object AnchorShape {
     val control = RoundedCornerShape(11.dp)
     val chip = RoundedCornerShape(12.dp)
     val field = RoundedCornerShape(13.dp)
+    /** A tab in the strip over the content. */
+    val tab = RoundedCornerShape(12.dp)
+    /** A row of the sidebar tree. */
+    val treeRow = RoundedCornerShape(13.dp)
     /** Root-menu section row. */
     val menuRow = RoundedCornerShape(14.dp)
     val row = RoundedCornerShape(15.dp)

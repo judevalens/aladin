@@ -12,6 +12,8 @@ import androidx.compose.ui.viewinterop.UIKitView
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.readValue
 import platform.CoreGraphics.CGRectZero
+import platform.Foundation.NSData
+import platform.Foundation.NSFileManager
 import platform.Foundation.NSURL
 import platform.WebKit.WKNavigation
 import platform.WebKit.WKNavigationDelegateProtocol
@@ -37,8 +39,8 @@ import platform.darwin.NSObject
 @Stable
 @OptIn(ExperimentalForeignApi::class)
 actual class WebHostHandle internal constructor(
-    filePath: String,
-    readAccessDirPath: String,
+    private val filePath: String,
+    private val readAccessDirPath: String,
     bootstrapJs: String,
     onMessage: (String) -> Unit,
     private val onTerminated: () -> Unit,
@@ -59,7 +61,12 @@ actual class WebHostHandle internal constructor(
 
         override fun webViewWebContentProcessDidTerminate(webView: WKWebView) {
             onTerminated()
-            webView.reload()
+            // NOT `reload()`: after a content-process crash the back-forward entry for a
+            // file: URL is gone, and reload() silently does nothing — no navigation, no
+            // `generation` bump, no re-sent sync command, a pane that stays blank forever
+            // (observed on device, board surface, 2026-08-20). Re-issuing the original
+            // load is the reliable recovery for file-URL documents.
+            loadEmbedDocument()
         }
     }
 
@@ -80,15 +87,56 @@ actual class WebHostHandle internal constructor(
     ).apply {
         setOpaque(false)
         navigationDelegate = navigation
-        loadFileURL(
-            URL = NSURL.fileURLWithPath(filePath),
-            allowingReadAccessToURL = NSURL.fileURLWithPath(readAccessDirPath, isDirectory = true),
-        )
+        // The embed is an app surface, not a document: WKWebView's own page zoom must
+        // never fire. A palm-plus-Pencil pinch on the board otherwise zooms the PAGE —
+        // dock and canvas leave the visual viewport and the surface reads as vanished
+        // (observed on device, 2026-08-22). The page's viewport meta says the same;
+        // this is the native-side belt to that suspender. Scrolling stays enabled —
+        // the page is 100vh/overflow-hidden, but the keyboard caret relies on it.
+        scrollView.minimumZoomScale = 1.0
+        scrollView.maximumZoomScale = 1.0
+        scrollView.bouncesZoom = false
+        scrollView.bounces = false
+        scrollView.pinchGestureRecognizer?.setEnabled(false)
+        // `this`, not `view`: we are inside `view`'s initializer, so the property is still
+        // unset here — messaging it would go to nil and silently load nothing.
+        loadEmbedDocument(target = this)
+    }
+
+    /**
+     * Loads the bundled editor with an `http://localhost/` base URL rather than `file://`.
+     *
+     * Not cosmetic: tldraw 5.3 treats http/localhost (and Tauri's `*.localhost`) as
+     * development and everything else as unlicensed production — which HIDES THE WHOLE
+     * EDITOR five seconds after mount (`LicenseProvider.shouldHideEditorAfterDelay`).
+     * A file:// page has no hostname, falls outside every exemption, and the board went
+     * blank on device while desktop (on http://localhost) ran fine. The document is
+     * self-contained, and every service URL it uses is absolute, so the base URL changes
+     * nothing else. (Origin-keyed storage — the notes' IndexedDB cache — re-syncs from
+     * the collab server on first open under the new origin.)
+     */
+    internal fun loadEmbedDocument(target: WKWebView = view) {
+        val data = NSFileManager.defaultManager.contentsAtPath(filePath)
+        if (data != null) {
+            target.loadData(
+                data = data,
+                MIMEType = "text/html",
+                characterEncodingName = "utf-8",
+                baseURL = NSURL.URLWithString("http://localhost/")!!,
+            )
+        } else {
+            // The unpack failed underneath us; the file path form at least fails loudly.
+            target.loadFileURL(
+                URL = NSURL.fileURLWithPath(filePath),
+                allowingReadAccessToURL = NSURL.fileURLWithPath(readAccessDirPath, isDirectory = true),
+            )
+        }
     }
 
     internal fun evaluate(command: String) {
         view.evaluateJavaScript(command, null)
     }
+
 }
 
 @OptIn(ExperimentalForeignApi::class)

@@ -41,10 +41,10 @@ import dawn.system.anchor.services.design.artifactKindIcon
 /**
  * The Open list as an overlay — the browser dropdown's smaller sibling, deliberately.
  *
- * **Recent first here, append order in the sidebar**, and that is not an inconsistency. The
- * sidebar list is a set of targets you reach for by position, so it must not reorder under a
- * finger; this is a switcher, where "the one I was just in" is the whole point and the design
- * labels it so. One value serves both: `Nav.open` is membership and append order, `Nav.mru` is
+ * **Recent first here, append order in the tab strip**, and that is not an inconsistency. The
+ * strip is a set of targets you reach for by position, so it must not reorder under a finger;
+ * this is a switcher, where "the one I was just in" is the whole point and the design labels
+ * it so. One value serves both: `Nav.open` is membership and append order, `Nav.mru` is
  * recency, and neither is derived from the other.
  */
 @Composable
@@ -61,11 +61,13 @@ internal fun BoxScope.OpenDropdown(state: ShellScreen.State) {
 
     AnchoredOverlay(
         visible = state.chrome.switcherOpen,
-        anchor = if (state.chrome.sidebarOpen) {
-            OverlayAnchor.Below(left = 14.dp, top = m.openDropdownTop)
-        } else {
-            OverlayAnchor.AboveDock(bottom = 96.dp)
-        },
+        // Under the tab strip's switcher button at the content's trailing edge. The overlay
+        // hangs at the shell's own box, which spans the Copilot pane too, so the pane's width
+        // is stepped over while it is open.
+        anchor = OverlayAnchor.BelowEnd(
+            right = 14.dp + if (state.chrome.copilotOpen) m.copilotPaneWidth + 1.dp else 0.dp,
+            top = m.toolbarHeight + m.tabStripHeight - 4.dp,
+        ),
         onDismiss = { state.chrome.handle(ChromeEvent.ToggleSwitcher) },
         modifier = Modifier.width(m.openDropdownWidth).heightIn(max = m.openDropdownMaxHeight),
     ) {

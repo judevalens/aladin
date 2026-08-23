@@ -40,8 +40,15 @@ object AladinMetrics {
     /** A destination row — the four the sidebar offers. */
     val destinationRow = 48.dp
 
-    /** An Open-list row: status dot, title, close. */
-    val openRow = 44.dp
+    /** The sidebar tree: rows, and the indent per level (capped at four levels). */
+    val treeRow = 44.dp
+    val treeIndentBase = 12.dp
+    val treeIndent = 16.dp
+
+    /** The tab strip over the content: the open documents, in append order. */
+    val tabStripHeight = 52.dp
+    val tabHeight = touchTarget
+    val tabMaxWidth = 340.dp
 
     /** Browser columns: folders, then items. The third takes what is left. */
     val browserFolderColumn = 318.dp
@@ -51,9 +58,8 @@ object AladinMetrics {
     val browserRow = 48.dp
     val detailAction = 46.dp
 
-    /** The floating dock shown while the sidebar is collapsed. */
-    val dockBottomInset = 20.dp
-    val dockCell = 48.dp
+    /** The sidebar's bottom inset, under the Copilot hero. */
+    val sidebarBottomInset = 20.dp
 
     /**
      * The browser dropdown: 1010 x 556, hung under its icon at left 14.
@@ -72,7 +78,6 @@ object AladinMetrics {
     /** The Open list as an overlay — the dropdown family's smaller member. */
     val openDropdownWidth = 428.dp
     val openDropdownMaxHeight = 436.dp
-    val openDropdownTop = 292.dp
     val openDropdownRow = 52.dp
 
     /** The long-press menu on the browser icon. */
@@ -92,17 +97,14 @@ object AladinMetrics {
     /** The reader's measure — a column, not the full width. */
     val readerMeasure = 680.dp
 
-    /**
-     * Surface padding. Grows while the dock is showing so nothing hides beneath it.
-     */
+    /** Surface padding. */
     val surfacePaddingBottom = 34.dp
-    val surfacePaddingBottomWithDock = 112.dp
 
     /** The sidebar and copilot collapse. */
     const val COLUMN_COLLAPSE_MILLIS = 250
     /** A surface arriving: fade up, eight points. */
     const val SURFACE_IN_MILLIS = 220
-    /** Overlays and the dock: pop. */
+    /** Overlays: pop. */
     const val POP_IN_MILLIS = 180
 }
 

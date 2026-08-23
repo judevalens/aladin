@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -16,33 +15,23 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import dawn.system.anchor.domain.Destination
 import dawn.system.anchor.domain.Surface
 import dawn.system.anchor.features.shell.ShellScreen
 import dawn.system.anchor.features.shell.state.ChromeEvent
 import dawn.system.anchor.features.shell.state.NavEvent
-import dawn.system.anchor.features.shell.state.OpenRow
-import dawn.system.anchor.features.shell.state.openEvent
-import dawn.system.anchor.features.shell.state.rowKey
 import dawn.system.anchor.services.design.AnchorShape
 import dawn.system.anchor.services.design.AnchorTheme
-import dawn.system.anchor.services.design.ChevronDirection
-import dawn.system.anchor.services.design.ChevronIcon
 import dawn.system.anchor.services.design.CloseIcon
 import dawn.system.anchor.services.design.ColumnsIcon
 import dawn.system.anchor.services.design.FilterIcon
+import dawn.system.anchor.services.design.PlusIcon
 import dawn.system.anchor.services.design.SearchIcon
 import dawn.system.anchor.services.design.SectionLabelStyle
 import dawn.system.anchor.services.design.SidebarIcon
@@ -52,10 +41,11 @@ import dawn.system.anchor.services.design.destinationIcon
 /**
  * The sidebar: the only navigation, and it never changes meaning.
  *
- * Six zones top to bottom, and **only the Open list scrolls**. That is deliberate rather than
+ * Six zones top to bottom, and **only the tree scrolls**. That is deliberate rather than
  * incidental — the handoff is explicit that destinations and the Copilot entry must not be
  * reachable-only-by-scrolling, which is exactly what a single scrolling column would make
- * them once a dozen documents are open.
+ * them once the tree is a few folders deep. The open documents live in the tab strip over the
+ * content, not here.
  */
 @Composable
 internal fun Sidebar(state: ShellScreen.State, modifier: Modifier = Modifier) {
@@ -72,11 +62,11 @@ internal fun Sidebar(state: ShellScreen.State, modifier: Modifier = Modifier) {
         )
 
         // `weight` is what makes this the only zone that gives: everything above and below
-        // keeps its natural height, so the hero stays visible with twelve documents open.
-        OpenZone(state, Modifier.weight(1f))
+        // keeps its natural height, so the hero stays visible however deep the tree goes.
+        TreeZone(state, Modifier.weight(1f))
 
         CopilotHero(state)
-        Spacer(Modifier.height(m.dockBottomInset - 6.dp))
+        Spacer(Modifier.height(m.sidebarBottomInset - 6.dp))
     }
 }
 
@@ -138,6 +128,17 @@ private fun IconRow(state: ShellScreen.State) {
                         .padding(horizontal = 5.dp, vertical = 1.dp),
                 )
             }
+        }
+
+        // Make something. It closes the cluster of "ways to look at what exists" because it is
+        // the one button here that adds to it — and it opens a menu rather than acting, since
+        // a folder, a note and a board are three intentions with no default among them.
+        val creating = state.chrome.createOpen
+        IconButton(
+            background = if (creating) c.sel else null,
+            onClick = { state.chrome.handle(ChromeEvent.ToggleCreate) },
+        ) {
+            PlusIcon(tint = if (creating) c.ink else c.ink3, size = 19.dp)
         }
 
         Spacer(Modifier.weight(1f))
@@ -231,87 +232,6 @@ private fun Destinations(state: ShellScreen.State) {
                     color = if (lit) c.ink else c.ink2,
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun OpenZone(state: ShellScreen.State, modifier: Modifier = Modifier) {
-    val c = AnchorTheme.colors
-
-    Column(modifier.fillMaxWidth()) {
-        Row(
-            Modifier.fillMaxWidth().padding(start = 20.dp, end = 10.dp, top = 14.dp, bottom = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text("OPEN", style = SectionLabelStyle, color = c.ink4)
-            if (state.open.isNotEmpty()) {
-                Text("${state.open.size}", style = SectionLabelStyle, color = c.ink4)
-            }
-            Spacer(Modifier.weight(1f))
-            if (state.open.isNotEmpty()) {
-                // The expander. A chevron rather than the sparkle that was standing in here —
-                // sparkle means Copilot everywhere else in this shell.
-                IconButton(
-                    size = 32.dp,
-                    onClick = { state.chrome.handle(ChromeEvent.ToggleSwitcher) },
-                ) {
-                    ChevronIcon(tint = c.ink4, size = 16.dp, direction = ChevronDirection.Down)
-                }
-            }
-        }
-
-        if (state.open.isEmpty()) {
-            Text(
-                "Nothing open.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = c.ink4,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 22.dp),
-            )
-        } else {
-            LazyColumn(
-                Modifier.fillMaxWidth(),
-                contentPadding = PaddingValues(start = 10.dp, end = 10.dp, bottom = 8.dp),
-            ) {
-                items(state.open, key = { it.tab.rowKey() }) { row ->
-                    OpenListRow(row, state)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun OpenListRow(row: OpenRow, state: ShellScreen.State) {
-    val c = AnchorTheme.colors
-    val m = AnchorTheme.metrics
-
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .height(m.openRow)
-            .clip(AnchorShape.menuRow)
-            .background(if (row.active) c.sel else c.panel.copy(alpha = 0f))
-            .clickable { state.nav.handle(row.tab.openEvent()) }
-            .padding(start = 12.dp, end = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // The state dot. Amber while active; otherwise the item's own state, which nothing can
-        // report yet — so it is the quiet ink rather than an invented colour.
-        Box(Modifier.size(7.dp).clip(CircleShape).background(if (row.active) c.amber else c.ink4))
-        Text(
-            text = row.title,
-            style = MaterialTheme.typography.bodyMedium,
-            color = if (row.active) c.ink else c.ink2,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
-        // 28pt glyph inside a 44pt row is fine; a 28pt *button* would not be.
-        IconButton(size = 28.dp, onClick = { state.nav.handle(NavEvent.Close(row.tab)) }) {
-            CloseIcon(tint = c.ink4, size = 14.dp)
         }
     }
 }

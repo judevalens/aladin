@@ -44,6 +44,9 @@ internal sealed interface OverlayAnchor {
 
     /** Above the floating dock, horizontally centred on it. */
     data class AboveDock(val bottom: Dp) : OverlayAnchor
+
+    /** Under a control at the content's trailing edge — the tab strip's switcher button. */
+    data class BelowEnd(val right: Dp, val top: Dp) : OverlayAnchor
 }
 
 /**
@@ -100,6 +103,7 @@ internal fun BoxScope.AnchoredOverlay(
     val alignment = when (anchor) {
         is OverlayAnchor.Below -> Alignment.TopStart
         is OverlayAnchor.AboveDock -> Alignment.BottomCenter
+        is OverlayAnchor.BelowEnd -> Alignment.TopEnd
     }
 
     Box(Modifier.align(alignment)) {
@@ -114,6 +118,7 @@ internal fun BoxScope.AnchoredOverlay(
                         when (anchor) {
                             is OverlayAnchor.Below -> Modifier.offset(x = anchor.left, y = anchor.top)
                             is OverlayAnchor.AboveDock -> Modifier.padding(bottom = anchor.bottom)
+                            is OverlayAnchor.BelowEnd -> Modifier.padding(end = anchor.right, top = anchor.top)
                         },
                     )
                     .shadow(elevation, shape)

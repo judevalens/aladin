@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dawn.system.anchor.features.shell.ShellScreen
@@ -23,8 +22,8 @@ import dawn.system.anchor.services.design.AladinMetrics
 import dawn.system.anchor.services.design.AnchorTheme
 
 /**
- * The shell's frame: sidebar · content · copilot, with a floating dock when the sidebar is
- * away.
+ * The shell's frame: sidebar · content (toolbar, tab strip, surface) · copilot. With the
+ * sidebar away, the toolbar's pane toggle is the one affordance — there is no second chrome.
  *
  * Stateless. It renders [ShellScreen.State] and calls the handlers the slices carry, which is
  * what lets the same layout be driven by a test, a preview, or the real presenter.
@@ -57,6 +56,9 @@ fun ShellUi(state: ShellScreen.State, modifier: Modifier = Modifier) {
 
             Column(Modifier.weight(1f).fillMaxHeight()) {
                 ContentToolbar(state)
+                // The open documents, as tabs. Only while something is open: with nothing
+                // open there is nothing to switch between, and the band would be dead space.
+                if (state.open.isNotEmpty()) TabStrip(state)
                 SurfaceHost(state, Modifier.weight(1f).fillMaxWidth())
             }
 
@@ -76,18 +78,13 @@ fun ShellUi(state: ShellScreen.State, modifier: Modifier = Modifier) {
             }
         }
 
-        // The dock appears only while the sidebar is away — and the toolbar's pane toggle
-        // appears only then too, so the affordance is never duplicated.
-        if (!state.chrome.sidebarOpen) {
-            FloatingDock(state, Modifier.align(Alignment.BottomCenter))
-        }
-
         // Overlays hang HERE, at the shell's own box, never inside the pager: a parked page is
         // placed two window-widths away and would take its overlay with it.
         BrowserDropdown(state)
         BrowserMenu(state)
         OpenDropdown(state)
         FilterPopover(state)
+        CreateMenu(state)
         WriteSheets(state)
     }
 }

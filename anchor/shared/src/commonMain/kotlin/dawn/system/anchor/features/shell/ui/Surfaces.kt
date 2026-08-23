@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,6 +25,7 @@ import dawn.system.anchor.domain.Surface
 import dawn.system.anchor.features.shell.ShellScreen
 import dawn.system.anchor.features.shell.state.ChromeEvent
 import dawn.system.anchor.features.shell.state.Fetch
+import dawn.system.anchor.domain.TabKey
 import dawn.system.anchor.features.shell.state.NavEvent
 import dawn.system.anchor.features.shell.state.OpenDocument
 import dawn.system.anchor.features.note.WebPane
@@ -35,11 +35,7 @@ import dawn.system.anchor.services.platform.PdfViewer
 import dawn.system.anchor.services.design.AnchorShape
 import dawn.system.anchor.services.design.AnchorTheme
 import dawn.system.anchor.services.design.CloseIcon
-import dawn.system.anchor.services.design.SearchIcon
-import dawn.system.anchor.services.design.SectionLabelStyle
-import dawn.system.anchor.services.design.SidebarIcon
 import dawn.system.anchor.services.design.SparkleIcon
-import dawn.system.anchor.services.design.destinationIcon
 
 /**
  * The content slot.
@@ -66,7 +62,13 @@ internal fun SurfaceHost(state: ShellScreen.State, modifier: Modifier = Modifier
 
     // Created ABOVE the pager and unconditionally, so the view can never share a lifetime
     // with the slot showing it — the rule that survives a recycler landing later.
-    val webHost = rememberWebSurfaceHost(state.editor, enabled = webDocs.isNotEmpty())
+    // "Open in folder" on a board's selection bar arrives over the bridge as an artifact
+    // id; opening it is the same event a Browser row's Open button sends.
+    val webHost = rememberWebSurfaceHost(
+        state.editor,
+        enabled = webDocs.isNotEmpty(),
+        onOpenArtifact = { id -> state.nav.handle(NavEvent.OpenDoc(TabKey.Artifact(id))) },
+    )
 
     // Everything the shell can show, as one flat list of pages: the three destinations, the
     // browser, the editor if anything web-backed is open, then every document with a surface
@@ -277,79 +279,6 @@ internal fun CopilotSidebar(state: ShellScreen.State, modifier: Modifier = Modif
                 style = MaterialTheme.typography.bodyMedium,
                 color = c.ink3,
             )
-        }
-    }
-}
-
-/**
- * The dock shown while the sidebar is away — the destinations, the two most recent documents,
- * search and Copilot, floating over the content.
- *
- * Its open pills read [ShellScreen.State.open] in **recency** order, unlike the sidebar's
- * list: the dock has room for two, so "the two you were just in" is the only useful pair.
- */
-@Composable
-internal fun FloatingDock(state: ShellScreen.State, modifier: Modifier = Modifier) {
-    val c = AnchorTheme.colors
-    val m = AnchorTheme.metrics
-    val here = state.nav.nav.here.surface
-
-    Row(
-        modifier
-            .padding(bottom = m.dockBottomInset)
-            .clip(AnchorShape.sheet)
-            .background(c.chrome)
-            .padding(8.dp),
-        horizontalArrangement = Arrangement.spacedBy(5.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconButton(size = m.dockCell, onClick = { state.chrome.handle(ChromeEvent.ToggleSidebar) }) {
-            SidebarIcon(tint = c.ink3, size = 19.dp)
-        }
-
-        state.destinations.forEach { destination ->
-            val lit = here is Surface.Dest && here.destination == destination
-            IconButton(
-                size = m.dockCell,
-                background = if (lit) c.amberSoft else null,
-                onClick = { state.nav.handle(NavEvent.GoTo(destination)) },
-            ) {
-                destinationIcon(destination, tint = if (lit) c.amber else c.ink3, size = 19.dp)
-            }
-        }
-
-        // Recency here, unlike the sidebar's list: the dock has room for two, so "the two you
-        // were just in" is the only useful pair.
-        state.nav.nav.switcherOrder().take(2).forEach { tab ->
-            val row = state.open.firstOrNull { it.tab == tab } ?: return@forEach
-            Row(
-                Modifier
-                    .clip(AnchorShape.row)
-                    .background(if (row.active) c.sel else c.chrome)
-                    .padding(horizontal = 12.dp, vertical = 14.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    Modifier.size(7.dp).clip(CircleShape)
-                        .background(if (row.active) c.amber else c.ink4),
-                )
-                Text(
-                    row.title,
-                    style = SectionLabelStyle,
-                    color = if (row.active) c.ink else c.ink2,
-                    maxLines = 1,
-                )
-            }
-        }
-
-        IconButton(size = m.dockCell, enabled = false) { SearchIcon(tint = c.ink3, size = 19.dp) }
-        IconButton(
-            size = m.dockCell,
-            background = c.amber,
-            onClick = { state.chrome.handle(ChromeEvent.ToggleCopilot) },
-        ) {
-            SparkleIcon(tint = c.onAmber, size = 19.dp)
         }
     }
 }

@@ -148,13 +148,31 @@ private fun column(
     selectedId: String?,
     filter: BrowserFilter,
     tree: BrowserTree,
-): BrowserColumn {
+): BrowserColumn = BrowserColumn(title, childRowsOf(contents, selectedId, filter, tree))
+
+/**
+ * Which of [contents] survive [filter], in rail order, as resolved rows. Shared by the
+ * Browser's columns and the sidebar tree, so the two can never disagree about what a folder
+ * holds or what order it comes in.
+ *
+ * [keepEmptyFolders]: the Browser drops a folder nothing matches inside — a folder you can
+ * enter only to find nothing is worse than one not offered. The tree, unfiltered, must still
+ * list an empty folder, or the one you just made is unreachable for the "create here" that
+ * would fill it.
+ */
+internal fun childRowsOf(
+    contents: List<WorkspaceNode>,
+    selectedId: String?,
+    filter: BrowserFilter,
+    tree: BrowserTree,
+    keepEmptyFolders: Boolean = false,
+): List<BrowserRow> {
     val surviving = contents.filter { node ->
         if (node.isContainer) {
             // A folder is judged by what is INSIDE it, never by itself: filtering for PDFs
             // must not hide every folder, and must not offer one you can only enter to find
             // nothing. The count doing the deciding is the same one the row shows.
-            tree.matchingLeaves(node.id, filter) > 0
+            keepEmptyFolders || tree.matchingLeaves(node.id, filter) > 0
         } else {
             filter.matches(
                 kind = node.artifactKind,
@@ -175,21 +193,18 @@ private fun column(
         ItemSort.Name -> leaves.sortedBy { it.title.lowercase() }
         ItemSort.Recent -> leaves
     }
-    return BrowserColumn(
-        title = title,
-        rows = ordered.map { node ->
-            BrowserRow(
-                id = node.id,
-                title = node.title.orUntitled(),
-                isContainer = node.kind != NodeKind.Artifact,
-                kind = node.artifactKind,
-                purpose = tree.purposeOf(node),
-                state = null,
-                selected = node.id == selectedId,
-                count = if (node.isContainer) tree.matchingLeaves(node.id, filter) else null,
-            )
-        },
-    )
+    return ordered.map { node ->
+        BrowserRow(
+            id = node.id,
+            title = node.title.orUntitled(),
+            isContainer = node.kind != NodeKind.Artifact,
+            kind = node.artifactKind,
+            purpose = tree.purposeOf(node),
+            state = null,
+            selected = node.id == selectedId,
+            count = if (node.isContainer) tree.matchingLeaves(node.id, filter) else null,
+        )
+    }
 }
 
 /** What to call a node for a human. One place, so no surface invents a second answer. */

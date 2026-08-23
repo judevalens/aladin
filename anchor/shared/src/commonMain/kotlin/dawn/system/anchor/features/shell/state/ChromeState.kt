@@ -29,6 +29,10 @@ sealed interface ChromeEvent {
     data object OpenBrowserMenu : ChromeEvent
     data object CloseBrowserMenu : ChromeEvent
 
+    /** The plus. A menu of what to create, never a create-the-default-thing button. */
+    data object ToggleCreate : ChromeEvent
+    data object CloseCreate : ChromeEvent
+
     /** The facets. One filter narrows the Browser and the Open list together. */
     data class ToggleKind(val kind: ArtifactKind) : ChromeEvent
     data class TogglePurpose(val purpose: FolderPurpose) : ChromeEvent
@@ -59,6 +63,12 @@ data class ChromeSlice(
      */
     val browserMenuOpen: Boolean,
     /**
+     * The plus menu. There is no default thing to make — a folder, a note and a board are
+     * three different intentions — so the button opens a choice rather than creating one kind
+     * and leaving the others somewhere you have to find.
+     */
+    val createOpen: Boolean,
+    /**
      * Pinned: the dropdown survives opening an item, and renders no click-catcher at all, so
      * the document behind stays interactive. A working preference rather than a transient —
      * the design has it persist across relaunches, which is still to build.
@@ -78,9 +88,8 @@ data class ChromeSlice(
  * The shell's own chrome. No dependencies — none of this is in the store, and nothing outside
  * the shell can tell whether the filter popover is open.
  *
- * Six booleans, where the previous shell had seven — and unlike that one, none of them is a
- * second opinion about where you are. There is no path popover, because place lives in the
- * breadcrumb.
+ * Seven booleans — and unlike the shell this replaced, none of them is a second opinion about
+ * where you are. There is no path popover, because place lives in the breadcrumb.
  */
 @Composable
 fun rememberChromeState(): ChromeSlice {
@@ -91,6 +100,7 @@ fun rememberChromeState(): ChromeSlice {
     var browserOpen by remember { mutableStateOf(false) }
     var browserPinned by remember { mutableStateOf(false) }
     var browserMenuOpen by remember { mutableStateOf(false) }
+    var createOpen by remember { mutableStateOf(false) }
     var filter by remember { mutableStateOf(BrowserFilter()) }
 
     return ChromeSlice(
@@ -100,6 +110,7 @@ fun rememberChromeState(): ChromeSlice {
         switcherOpen = switcherOpen,
         browserOpen = browserOpen,
         browserMenuOpen = browserMenuOpen,
+        createOpen = createOpen,
         filter = filter,
         browserPinned = browserPinned,
         // Overlays close when you go somewhere; the sidebar and Copilot are not overlays and
@@ -112,6 +123,7 @@ fun rememberChromeState(): ChromeSlice {
             // behind it and it stays put.
             if (!browserPinned) browserOpen = false
             browserMenuOpen = false
+            createOpen = false
         },
     ) { event ->
         // Exhaustive, with no `else`. That is what a sealed hierarchy buys: a new chrome event
@@ -130,6 +142,12 @@ fun rememberChromeState(): ChromeSlice {
                 browserOpen = false
             }
             ChromeEvent.CloseBrowserMenu -> browserMenuOpen = false
+            ChromeEvent.ToggleCreate -> {
+                createOpen = !createOpen
+                // A choice about the workspace, not a thing beside the browser's own list.
+                if (createOpen) browserOpen = false
+            }
+            ChromeEvent.CloseCreate -> createOpen = false
             is ChromeEvent.ToggleKind -> filter = filter.toggle(event.kind)
             is ChromeEvent.TogglePurpose -> filter = filter.toggle(event.purpose)
             is ChromeEvent.SortBy -> filter = filter.sortedBy(event.sort)

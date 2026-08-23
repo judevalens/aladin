@@ -44,6 +44,14 @@ class BrowserTreeTest {
     )
 
     @Test
+    fun `the index answers children and lookups directly, for the tree walk`() {
+        assertEquals(listOf("semis", "empty"), tree.childrenOf(null).map { it.id })
+        assertEquals(listOf("tsm", "transcripts"), tree.childrenOf("sources").map { it.id })
+        assertEquals("nvda", tree.node("nvda")?.id)
+        assertNull(tree.node("nope"))
+    }
+
+    @Test
     fun `a folder counts every matching item beneath it, not just its children`() {
         assertEquals(3, tree.matchingLeaves("semis", BrowserFilter()), "overview, tsm, nvda")
         assertEquals(2, tree.matchingLeaves("sources", BrowserFilter()))

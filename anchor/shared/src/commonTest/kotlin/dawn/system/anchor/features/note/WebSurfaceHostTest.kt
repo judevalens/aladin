@@ -30,7 +30,7 @@ class WebSurfaceHostTest {
                 """{id:"p1",kind:"page",title:"Collars"},""" +
                 """{id:"s1",kind:"shard",title:"Payoff"},""" +
                 """{id:"b1",kind:"board",title:"Board"}""" +
-                """],active:"s1"});""",
+                """],active:"s1",insets:{bottom:0}});""",
             command,
         )
     }
@@ -49,7 +49,7 @@ class WebSurfaceHostTest {
     @Test
     fun `nothing open is a valid state, not an omitted call`() {
         assertEquals(
-            "window.__aladinHost.sync({panes:[],active:null});",
+            "window.__aladinHost.sync({panes:[],active:null,insets:{bottom:0}});",
             syncCommand(emptyList(), null),
         )
     }
@@ -130,5 +130,35 @@ class WebSurfaceHostTest {
     fun `a user keeps the same presence colour between sessions`() {
         assertEquals(colorForUser("jude@example.com"), colorForUser("jude@example.com"))
         assertTrue(colorForUser("a").startsWith("hsl("))
+    }
+
+    // ── web → native ──
+
+    @Test
+    fun `openArtifact parses to its id`() {
+        assertEquals(
+            HostMessage.OpenArtifact("a-123"),
+            parseHostMessage("""{"type":"openArtifact","id":"a-123"}"""),
+        )
+    }
+
+    @Test
+    fun `ready parses, with or without extra fields`() {
+        assertEquals(HostMessage.Ready, parseHostMessage("""{"type":"ready"}"""))
+        assertEquals(HostMessage.Ready, parseHostMessage("""{"type":"ready","v":2}"""))
+    }
+
+    /**
+     * A newer bundle must never crash an older shell: unknown types, missing ids and
+     * non-JSON bodies (the pre-JSON bundle posted an object, which lands as an
+     * NSDictionary description) all read as "nothing to do".
+     */
+    @Test
+    fun `unknown or malformed messages are ignored`() {
+        assertEquals(null, parseHostMessage("""{"type":"askAbout","id":"x"}"""))
+        assertEquals(null, parseHostMessage("""{"type":"openArtifact"}"""))
+        assertEquals(null, parseHostMessage("""{"type":"openArtifact","id":""}"""))
+        assertEquals(null, parseHostMessage("{ type = ready; }"))
+        assertEquals(null, parseHostMessage("not json at all"))
     }
 }

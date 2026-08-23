@@ -42,6 +42,12 @@ class BrowserTree(nodes: List<WorkspaceNode>) {
         return FolderPurpose.of(cursor)
     }
 
+    /** The direct children of [parentId] (null = the roots), in store order. */
+    fun childrenOf(parentId: String?): List<WorkspaceNode> = byParent[parentId].orEmpty()
+
+    /** One row by id, or null if the index does not hold it. */
+    fun node(id: String): WorkspaceNode? = byId[id]
+
     /**
      * How many items under [folderId] survive [filter] — the number a folder row shows, and
      * the test for whether it is offered at all.

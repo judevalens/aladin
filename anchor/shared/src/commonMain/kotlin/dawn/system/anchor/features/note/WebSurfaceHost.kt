@@ -14,6 +14,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import anchor.shared.generated.resources.Res
 import dawn.system.anchor.services.design.AnchorTheme
@@ -26,6 +27,9 @@ import dawn.system.anchor.services.platform.documentsDirPath
 import dawn.system.anchor.services.platform.fileExists
 import dawn.system.anchor.services.platform.fileSizeBytes
 import dawn.system.anchor.services.platform.writeBytes
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.jetbrains.compose.resources.ExperimentalResourceApi
 
 /** One web-backed artifact open inside the host. */
@@ -48,7 +52,8 @@ data class WebPane(val id: String, val kind: Kind, val title: String) {
  * Reimplementing a block editor and a Yjs client in Kotlin would be weeks of work for a
  * *second* implementation of the block model, to be kept in step with desktop forever.
  * Instead the companion carries the real editor as a self-contained document
- * (`aladin_react`'s `npm run build:embed`) and loads it from `file://`.
+ * (`aladin_react`'s `npm run build:embed`) and loads it from disk — served to WebKit under an
+ * `http://localhost/` base, see `WebHostHandle.loadEmbedDocument` for why that is load-bearing.
  *
  * **Why one view rather than one per artifact.** A WebContent process is ~187 MB, so a view
  * per open note capped the companion at about two of them and made every switch a native
@@ -105,7 +110,11 @@ data class EditorSession(
  */
 @OptIn(ExperimentalResourceApi::class)
 @Composable
-fun rememberWebSurfaceHost(session: EditorSession?, enabled: Boolean): WebSurfaceHost? {
+fun rememberWebSurfaceHost(
+    session: EditorSession?,
+    enabled: Boolean,
+    onOpenArtifact: (String) -> Unit = {},
+): WebSurfaceHost? {
     var documentPath by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(enabled) {
@@ -138,8 +147,17 @@ fun rememberWebSurfaceHost(session: EditorSession?, enabled: Boolean): WebSurfac
             userName = editor.userName ?: DEFAULT_USER_NAME,
             apiBaseUrl = editor.apiBaseUrl,
         ),
-        onMessage = { /* `ready` only, today; the page queues its own backlog. */ },
-        onContentProcessTerminated = { restarts++ },
+        onMessage = { raw ->
+            when (val message = parseHostMessage(raw)) {
+                is HostMessage.OpenArtifact -> onOpenArtifact(message.id)
+                is HostMessage.WebError -> println("anchor embed error: ${message.message}")
+                HostMessage.Ready, null -> Unit
+            }
+        },
+        onContentProcessTerminated = {
+            restarts++
+            println("anchor embed: WEB CONTENT PROCESS TERMINATED (restart #$restarts)")
+        },
     )
 
     return remember(handle, restarts) { WebSurfaceHost(handle, restarts) }
@@ -157,6 +175,7 @@ fun WebSurfacePage(
     host: WebSurfaceHost,
     panes: List<WebPane>,
     activeId: String?,
+    bottomInset: Dp = 0.dp,
     modifier: Modifier = Modifier,
 ) {
     val c = AnchorTheme.colors
@@ -164,7 +183,7 @@ fun WebSurfacePage(
     Box(modifier.fillMaxSize().background(c.bg)) {
         WebHostSurface(
             handle = host.handle,
-            command = syncCommand(panes, activeId),
+            command = syncCommand(panes, activeId, bottomInset.value.toInt()),
             modifier = Modifier.fillMaxSize().imePadding(),
         )
 
@@ -208,6 +227,37 @@ internal suspend fun unpackEditorDocument(readResource: suspend () -> ByteArray)
     return path
 }
 
+/** What the embedded page can ask of the shell, web → native. */
+sealed interface HostMessage {
+    /** The page's React root mounted and drained the queued state. */
+    data object Ready : HostMessage
+
+    /** The board's selection bar: "Open in folder" — navigate to this artifact. */
+    data class OpenArtifact(val id: String) : HostMessage
+
+    /** A JS error the page trapped — diagnostics only; the page shows its own notice. */
+    data class WebError(val message: String) : HostMessage
+}
+
+private val hostMessageJson = Json { ignoreUnknownKeys = true }
+
+/**
+ * Parses one bridge message. The page always posts a JSON STRING (an object's native
+ * toString is not parseable), and unknown or malformed messages are ignored — a newer
+ * bundle must not crash an older shell.
+ */
+internal fun parseHostMessage(raw: String): HostMessage? = runCatching {
+    val obj = hostMessageJson.parseToJsonElement(raw).jsonObject
+    when (obj["type"]?.jsonPrimitive?.content) {
+        "ready" -> HostMessage.Ready
+        "openArtifact" -> obj["id"]?.jsonPrimitive?.content
+            ?.takeIf { it.isNotBlank() }
+            ?.let(HostMessage::OpenArtifact)
+        "error" -> HostMessage.WebError(obj["message"]?.jsonPrimitive?.content ?: "unknown")
+        else -> null
+    }
+}.getOrNull()
+
 /** Session configuration, as one global set before the page's own scripts run. */
 internal fun embedBootstrap(
     token: String,
@@ -231,12 +281,18 @@ internal fun embedBootstrap(
  * Not a diff and not a sequence of opens and closes: those need the two sides to agree on
  * history, and after a web content process dies there is no history to agree on.
  */
-internal fun syncCommand(panes: List<WebPane>, activeId: String?): String {
+internal fun syncCommand(panes: List<WebPane>, activeId: String?, bottomInset: Int = 0): String {
     val list = panes.joinToString(",") { pane ->
         "{id:${jsString(pane.id)},kind:${jsString(pane.kind.wire)},title:${jsString(pane.title)}}"
     }
     val active = activeId?.takeIf { id -> panes.any { it.id == id } }
-    return "window.__aladinHost.sync({panes:[$list],active:${active?.let(::jsString) ?: "null"}});"
+    // `insets.bottom`: native chrome floating over the page's bottom edge — the shell's
+    // dock while the sidebar is collapsed. A surface with its own floating chrome (the
+    // board's tool dock) lifts it by this much, the nav handoff's rule for the Graph's zoom
+    // control ("bottom 24px → 110px while the dock shows"). Part of the same declarative
+    // state, so a re-send after a web process death restores it too.
+    return "window.__aladinHost.sync({panes:[$list],active:${active?.let(::jsString) ?: "null"}," +
+        "insets:{bottom:${bottomInset.coerceAtLeast(0)}}});"
 }
 
 /**

@@ -21,9 +21,12 @@ import dawn.system.anchor.features.shell.state.NavStateProducer
 import dawn.system.anchor.features.shell.state.OpenRow
 import dawn.system.anchor.features.shell.state.NavEvent
 import dawn.system.anchor.features.shell.state.WriteSlice
+import dawn.system.anchor.features.shell.state.TreeSlice
+import dawn.system.anchor.features.shell.state.TreeStateProducer
 import dawn.system.anchor.features.shell.state.WriteStateProducer
 import dawn.system.anchor.domain.OpenTab
 import dawn.system.anchor.domain.TabKey
+import dawn.system.anchor.features.shell.state.ChromeEvent
 import dawn.system.anchor.features.shell.state.crumbsFor
 import dawn.system.anchor.features.shell.state.openRowsFor
 import dawn.system.anchor.features.shell.state.rememberChromeState
@@ -61,8 +64,10 @@ data object ShellScreen : Screen {
     data class State(
         val nav: NavSlice,
         val chrome: ChromeSlice,
-        /** The Open list, in append order. Resolved rows — the UI never sees a node. */
+        /** The open documents, in append order — the tab strip. Resolved rows — the UI never sees a node. */
         val open: List<OpenRow>,
+        /** The sidebar's folder tree, and where a new item will land. */
+        val tree: TreeSlice,
         /** The whole sense of place. */
         val crumbs: List<Crumb>,
         /** The Miller columns, when Browser is the surface. */
@@ -90,6 +95,7 @@ class ShellPresenter(
     private val tokens: TokenProvider,
     private val config: ApiConfig,
     private val writes: WriteStateProducer,
+    private val tree: TreeStateProducer,
 ) : Presenter<ShellScreen.State> {
 
     @Composable
@@ -111,20 +117,24 @@ class ShellPresenter(
             }
         }
 
-        // New items land in the folder the browser is standing in. Deleting one closes it —
-        // the workspace destroying a row and the user closing its tab are the same ending, and
-        // `Nav.corrected` would reach the same place a frame later anyway.
+        val treeSlice = tree(nav.nav, chrome.filter)
+
+        // New items land where the tree says — its focused folder, else the open document's
+        // folder, else the Browser's. Deleting one closes it — the workspace destroying a row
+        // and the user closing its tab are the same ending, and `Nav.corrected` would reach the
+        // same place a frame later anyway.
         val write = writes(
-            parentId = nav.nav.here.path.lastOrNull(),
+            parentId = treeSlice.createTarget.folderId,
             onCreated = { nav.handle(NavEvent.OpenDoc(TabKey.Artifact(it.id))) },
             onDeleted = { nav.handle(NavEvent.Close(OpenTab.Doc(TabKey.Artifact(it.id)))) },
-            onCreateChosen = {},
+            onCreateChosen = { chrome.handle(ChromeEvent.CloseCreate) },
         )
 
         return ShellScreen.State(
             nav = nav,
             chrome = chrome,
             open = nodes.openRowsFor(nav.nav, chrome.filter),
+            tree = treeSlice,
             crumbs = nodes.crumbsFor(nav.nav),
             browser = browser(nav.nav.here, chrome.filter),
             documents = documents(nav.nav),
@@ -148,10 +158,11 @@ val shellModule: Module = module {
     single { BrowserStateProducer(get()) }
     single { DocumentStateProducer(get(), get()) }
     single { WriteStateProducer(get(), get()) }
+    single { TreeStateProducer(get()) }
 
     bindScreen(
         ShellScreen::class,
-        presenter = { _, _ -> ShellPresenter(get(), get(), get(), get(), get(), get(), get(), get(), get()) },
+        presenter = { _, _ -> ShellPresenter(get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) },
         uiFactory = { ui<ShellScreen.State> { state, modifier -> ShellUi(state, modifier) } },
     )
 }
