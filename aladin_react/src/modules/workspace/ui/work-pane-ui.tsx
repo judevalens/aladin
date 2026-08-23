@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { PlaceholderPane } from "@/components/ui/aladin";
 import { useArtifact } from "@/modules/artifacts/hooks/use-artifact";
+import { DesktopBoardPane } from "@/modules/board/ui/desktop-board-pane";
 import { FileArtifactUI, LinkArtifactUI, VoiceArtifactUI } from "@/modules/artifacts/ui/artifact-ui";
 import { PageEditorUI } from "@/modules/pages/ui/page-editor-ui";
 import { DocSurfaceUI } from "@/modules/doc-surface/ui/doc-surface-ui";
@@ -202,13 +203,7 @@ function ArtifactTabPane({ artifactId, hidden }: { artifactId: string; hidden: b
   if (artifact.kind === "note") return <PageEditorUI pageId={artifact.id} />;
   if (artifact.kind === "app") return <DocSurfaceUI artifact={artifact} hidden={hidden} />;
   if (artifact.kind === "board") {
-    return (
-      <PlaceholderPane
-        title={artifact.title || "Board"}
-        body="Open this on the iPad client to draw."
-        className="h-full"
-      />
-    );
+    return <DesktopBoardPane boardId={artifact.id} title={artifact.title} />;
   }
   if (artifact.kind === "link") {
     return (

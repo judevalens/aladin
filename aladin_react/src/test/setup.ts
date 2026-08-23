@@ -7,3 +7,8 @@ import { afterEach } from "vitest";
 // portals into document.body does: the previous test's overlay is still mounted when the next
 // one queries, and getByRole finds two of everything.
 afterEach(cleanup);
+
+// jsdom has a CSS global but no CSS.supports; tldraw probes it at import time.
+if (typeof CSS !== "undefined" && typeof CSS.supports !== "function") {
+  CSS.supports = () => false;
+}

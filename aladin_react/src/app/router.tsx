@@ -20,6 +20,7 @@ import { EntitiesIndexUI } from "@/modules/entities/ui/entities-index-ui";
 import { EntitiesIndexSpike } from "@/modules/entities/ui/entities-index-spike";
 import { EntitiesInboxSpike } from "@/modules/entities/ui/entities-inbox-spike";
 import { EntitiesHomeSpike } from "@/modules/entities/ui/entities-home-spike";
+import { BoardSpike } from "@/modules/board/ui/board-spike";
 import { TutorSpike } from "@/modules/tutor/ui/tutor-spike";
 import { TutorReadSpike } from "@/modules/tutor/ui/tutor-read-spike";
 import { TutorNotebookSpike } from "@/modules/tutor/ui/tutor-notebook-spike";
@@ -77,6 +78,12 @@ export const router = createBrowserRouter([
     // host injects as window.__ALADIN_EMBED__ (never a query param).
     path: "/embed/page/:id",
     element: <PageEditorEmbed />,
+  },
+  {
+    // Dev-only board spike — the board surface on an in-memory client, no auth. The
+    // primary iteration loop (the iOS Simulator kills tldraw's WebContent process).
+    path: "/spike/board",
+    element: <BoardSpike />,
   },
   {
     // Dev-only Tutor spike — the learning-copilot surface on mock data (design/TUTOR_PRD.md

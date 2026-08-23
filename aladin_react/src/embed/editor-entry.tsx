@@ -1,9 +1,9 @@
-import { StrictMode, useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { Component, StrictMode, useEffect, useMemo, useRef, useState } from "react";
+import type { ErrorInfo, ReactNode } from "react";
 import type { EmbedConfig } from "@/embed/embed-config";
 import { createRoot } from "react-dom/client";
 
-import { BoardPane } from "@/embed/board-pane";
+import { BoardPane } from "@/modules/board/ui/board-pane";
 import { BlockNotePageEditorDriver } from "@/modules/pages/editor/page-editor-driver";
 import { createApiClient, type ApiClient } from "@/shared/api/client";
 import { createShardApi } from "@/shared/api/shard-api";
@@ -62,6 +62,12 @@ export interface HostState {
   panes: HostPane[];
   /** The one that is on screen. Null hides them all. */
   active: string | null;
+  /**
+   * Native chrome floating over the page's edges — the shell's dock while its sidebar is
+   * collapsed. Surfaces with their own floating chrome (the board's dock) lift it by this
+   * much; exposed to them as the `--host-bottom-inset` CSS variable.
+   */
+  insets?: { bottom?: number };
 }
 
 /**
@@ -82,9 +88,13 @@ declare global {
   }
 }
 
-/** Web → native. A no-op off-device, so the bundle still runs in a plain browser. */
+/**
+ * Web → native. A no-op off-device, so the bundle still runs in a plain browser.
+ * Always a JSON STRING: the Kotlin side receives `body.toString()` verbatim, and a string
+ * is what kotlinx-serialization can parse — an NSDictionary's toString is not.
+ */
 function post(message: Record<string, unknown>) {
-  window.webkit?.messageHandlers?.anchor?.postMessage(message);
+  window.webkit?.messageHandlers?.anchor?.postMessage(JSON.stringify(message));
 }
 
 function Host({ config }: { config: EmbedConfig }) {
@@ -102,7 +112,10 @@ function Host({ config }: { config: EmbedConfig }) {
   }, []);
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-bg">
+    <div
+      className="h-screen w-screen overflow-hidden bg-bg"
+      style={{ "--host-bottom-inset": `${state.insets?.bottom ?? 0}px` } as React.CSSProperties}
+    >
       {state.panes.map((pane) => (
         <div
           key={pane.id}
@@ -180,6 +193,12 @@ function useShardPlanes(config: EmbedConfig) {
   }, [client]);
 }
 
+// The companion's board host: "Open in folder" rides the native bridge; there is no
+// copilot on the iPad yet, so onAskAbout stays absent and the button never renders.
+const EMBED_BOARD_HOST = {
+  onOpenArtifact: (id: string) => post({ type: "openArtifact", id }),
+};
+
 function BoardHostPane({ pane, config }: { pane: HostPane; config: EmbedConfig }) {
   const client = useApiClient(config);
   if (!client) {
@@ -189,7 +208,9 @@ function BoardHostPane({ pane, config }: { pane: HostPane; config: EmbedConfig }
       </ShardNotice>
     );
   }
-  return <BoardPane boardId={pane.id} title={pane.title} client={client} />;
+  return (
+    <BoardPane boardId={pane.id} title={pane.title} client={client} host={EMBED_BOARD_HOST} />
+  );
 }
 
 /**
@@ -280,6 +301,50 @@ function ShardNotice({ title, children }: { title?: string; children: ReactNode 
   );
 }
 
+/**
+ * A render error must never present as a silently blank pane — on a device there is no
+ * console to check. The boundary keeps the failure on screen and reports it over the
+ * bridge; the native side ignores unknown message types, so this is diagnostics-only.
+ */
+class EmbedErrorBoundary extends Component<
+  { children: ReactNode },
+  { error: Error | null }
+> {
+  state: { error: Error | null } = { error: null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    post({
+      type: "error",
+      message: String(error?.message ?? error),
+      stack: String(error?.stack ?? "").slice(0, 2000),
+      componentStack: String(info.componentStack ?? "").slice(0, 1000),
+    });
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div className="flex h-screen w-screen flex-col items-center justify-center gap-3 bg-bg px-10 text-center">
+        <p className="font-display text-body font-medium text-against">The editor crashed</p>
+        <p className="max-w-[600px] break-words font-mono text-small text-ink-3">
+          {String(this.state.error.message ?? this.state.error)}
+        </p>
+        <button
+          type="button"
+          onClick={() => this.setState({ error: null })}
+          className="mt-2 rounded-control border border-line px-4 py-2 font-display text-small text-ink-2"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
+}
+
 function Embed() {
   const config = window.__ALADIN_EMBED__;
 
@@ -299,11 +364,27 @@ function Embed() {
   return <Host config={config} />;
 }
 
+// Uncaught errors outside React (event handlers, timers, promises) are invisible in a
+// WKWebView; report them over the bridge so the native console shows what actually broke.
+window.addEventListener("error", (event) => {
+  post({ type: "error", message: String(event.message), source: "window.onerror" });
+});
+window.addEventListener("unhandledrejection", (event) => {
+  const reason = event.reason as { message?: unknown } | undefined;
+  post({
+    type: "error",
+    message: String(reason?.message ?? event.reason),
+    source: "unhandledrejection",
+  });
+});
+
 const root = document.getElementById("root");
 if (root) {
   createRoot(root).render(
     <StrictMode>
-      <Embed />
+      <EmbedErrorBoundary>
+        <Embed />
+      </EmbedErrorBoundary>
     </StrictMode>,
   );
 }

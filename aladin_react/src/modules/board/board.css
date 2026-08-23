@@ -1,0 +1,43 @@
+/* Board-scoped styles. Imported by board-pane.tsx so both hosts (the iPad embed and the
+   desktop work pane) carry them; the embed build inlines the woff2 files as data URIs. */
+
+/* Caveat = the handwriting face for ink labels/headings (real ink is strokes). Latin
+   400 + 600 only, to bound the embed bundle. */
+@import "@fontsource/caveat/latin-400.css";
+@import "@fontsource/caveat/latin-600.css";
+
+/* The learning/thinking-ink hue from the board handoff. Not a shell token yet (closest,
+   --catalyst #5b9bd8, is a different color) — board-scoped until design promotes it. */
+:root {
+  --board-learn: #8fb9e8;
+  --board-learn-soft: 143 185 232 / 0.12;
+  --board-learn-line: 143 185 232 / 0.32;
+  /* The handoff's floating-chrome glass base (#101013). Only used by the classes below —
+     components stay on tokens/classes. */
+  --board-glass: 16 16 19;
+}
+
+/* The three glass surfaces of the board's floating chrome, per the handoff. */
+.board-glass-dock {
+  border: 1px solid rgb(var(--line));
+  border-radius: 20px;
+  background: rgb(var(--board-glass) / 0.9);
+  backdrop-filter: blur(26px) saturate(1.6);
+  -webkit-backdrop-filter: blur(26px) saturate(1.6);
+  box-shadow: 0 20px 50px rgb(0 0 0 / 0.5);
+}
+.board-glass-pill {
+  border: 1px solid rgb(var(--line));
+  border-radius: 16px;
+  background: rgb(var(--board-glass) / 0.86);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+.board-glass-popover {
+  border: 1px solid rgb(var(--line));
+  border-radius: 18px;
+  background: rgb(var(--board-glass) / 0.96);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  box-shadow: 0 26px 64px rgb(0 0 0 / 0.6);
+}

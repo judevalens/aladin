@@ -214,6 +214,9 @@ export function createAppComposition() {
       dataEvents,
       localSync,
       apis,
+      // The raw authenticated client, for surfaces that live in shared code and take an
+      // ApiClient directly (the board pane mounts identically here and in the iPad embed).
+      apiClient,
       contentTokens,
       realtime,
     },

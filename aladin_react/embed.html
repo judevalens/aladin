@@ -2,7 +2,14 @@
 <html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- maximum-scale/user-scalable pin WKWebView's NATIVE page zoom (respected there,
+         unlike Safari): a palm+Pencil pinch on the board otherwise zooms the whole page
+         into a blank corner of dark canvas — "the board disappeared" (device, 2026-08-22).
+         Surface-level zoom (the board camera, PDF pages) is the app's own, in JS. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
     <title>Aladin — page editor</title>
   </head>
   <body>
