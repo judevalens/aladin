@@ -3,12 +3,14 @@ package api
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	artifactservice "aladin/backend_v2/internal/service"
 )
 
 func (s *Server) registerDocumentRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/artifacts/{id}/document", s.handleArtifactDocument)
+	mux.HandleFunc("GET /api/artifacts/{id}/document/pages", s.handleArtifactDocumentPages)
 	mux.HandleFunc("GET /api/artifacts/{id}/outline", s.handleArtifactOutline)
 }
 
@@ -38,6 +40,42 @@ func (s *Server) handleArtifactDocument(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, doc)
+}
+
+// maxDocumentPageRange bounds one pages request — a board's doc window reads a page or
+// two at a time; anything wanting the whole book should say so via document?text=1.
+const maxDocumentPageRange = 20
+
+// handleArtifactDocumentPages serves a page RANGE of an artifact's ingested text —
+// what a board's live doc window reads as its own page turns, without pulling the
+// megabytes the full document?text=1 form carries.
+//
+//	GET /api/artifacts/{id}/document/pages?from=94&to=94
+func (s *Server) handleArtifactDocumentPages(w http.ResponseWriter, r *http.Request) {
+	from, errFrom := strconv.Atoi(r.URL.Query().Get("from"))
+	to, errTo := strconv.Atoi(r.URL.Query().Get("to"))
+	if errFrom != nil || errTo != nil || from < 1 || to < from {
+		writeAPIError(w, r, http.StatusBadRequest, categoryBadRequest,
+			"from and to must be positive integers with from <= to", nil)
+		return
+	}
+	if to-from+1 > maxDocumentPageRange {
+		to = from + maxDocumentPageRange - 1
+	}
+
+	pages, err := s.deps.Documents().Pages(r.Context(), r.PathValue("id"), from, to)
+	if err != nil {
+		if writeAccessError(w, r, err) {
+			return
+		}
+		if errors.Is(err, artifactservice.ErrNotFound) {
+			writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "No ingested document for this artifact", err)
+			return
+		}
+		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"pages": pages})
 }
 
 // handleArtifactOutline serves the chunk tree — the structure recovered by segmentation,
