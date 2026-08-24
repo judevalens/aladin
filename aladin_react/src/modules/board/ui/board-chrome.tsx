@@ -277,6 +277,13 @@ export function BoardChrome() {
   // ── Multi-finger taps (undo / redo) and the one-finger pan in pen mode ──
   // Touch listeners on tldraw's container, parallel to its pointer handling: tldraw drops a
   // finger's pointer events while in pen mode, which is exactly when the finger should pan.
+  //
+  // THE PENCIL IS A TOUCH TOO. On iOS the Apple Pencil raises the same TouchEvents with
+  // `touchType: "stylus"` — treat it as a finger and the pan follows the drawing tip, so the
+  // canvas slides under the stroke and ink piles up at the pen ("the ink moves with the
+  // pencil", found on device 2026-08-24). Stylus touches are therefore invisible here: they
+  // never count toward taps, never pan, and an active stylus suspends the finger-pan (a
+  // camera move mid-stroke would displace the ink being laid down).
   const wantPenModeRef = useRef(wantPenMode);
   wantPenModeRef.current = wantPenMode;
   useEffect(() => {
@@ -293,35 +300,55 @@ export function BoardChrome() {
       },
     });
     let pan: { id: number; x: number; y: number } | null = null;
+    const stylusIds = new Set<number>();
+
+    const isStylus = (t: Touch) =>
+      (t as Touch & { touchType?: string }).touchType === "stylus";
+    const fingersOf = (list: TouchList) => Array.from(list).filter((t) => !isStylus(t));
 
     const onStart = (e: TouchEvent) => {
-      for (const t of Array.from(e.changedTouches)) taps.start(t.identifier, t.clientX, t.clientY, e.timeStamp);
-      if (wantPenModeRef.current && e.touches.length === 1) {
-        const t = e.touches[0];
-        pan = { id: t.identifier, x: t.clientX, y: t.clientY };
+      for (const t of Array.from(e.changedTouches)) {
+        if (isStylus(t)) stylusIds.add(t.identifier);
+        else taps.start(t.identifier, t.clientX, t.clientY, e.timeStamp);
+      }
+      const fingers = fingersOf(e.touches);
+      if (wantPenModeRef.current && stylusIds.size === 0 && fingers.length === 1) {
+        pan = { id: fingers[0].identifier, x: fingers[0].clientX, y: fingers[0].clientY };
       } else {
         pan = null;
       }
     };
     const onMove = (e: TouchEvent) => {
-      for (const t of Array.from(e.changedTouches)) taps.move(t.identifier, t.clientX, t.clientY);
-      if (pan && e.touches.length === 1 && e.touches[0].identifier === pan.id) {
-        const t = e.touches[0];
+      for (const t of Array.from(e.changedTouches)) {
+        if (!isStylus(t)) taps.move(t.identifier, t.clientX, t.clientY);
+      }
+      const fingers = fingersOf(e.touches);
+      if (
+        pan &&
+        stylusIds.size === 0 &&
+        fingers.length === 1 &&
+        fingers[0].identifier === pan.id
+      ) {
+        const t = fingers[0];
         const dx = t.clientX - pan.x;
         const dy = t.clientY - pan.y;
         pan = { id: pan.id, x: t.clientX, y: t.clientY };
         const cam = editor.getCamera();
         editor.stopCameraAnimation();
         editor.setCamera({ x: cam.x + dx / cam.z, y: cam.y + dy / cam.z, z: cam.z });
-      } else if (e.touches.length !== 1) {
+      } else if (fingers.length !== 1 || stylusIds.size > 0) {
         pan = null;
       }
     };
     const onEnd = (e: TouchEvent) => {
-      for (const t of Array.from(e.changedTouches)) taps.end(t.identifier, e.timeStamp);
-      if (e.touches.length === 0) pan = null;
+      for (const t of Array.from(e.changedTouches)) {
+        if (stylusIds.has(t.identifier)) stylusIds.delete(t.identifier);
+        else taps.end(t.identifier, e.timeStamp);
+      }
+      if (fingersOf(e.touches).length === 0) pan = null;
     };
-    const onCancel = () => {
+    const onCancel = (e: TouchEvent) => {
+      for (const t of Array.from(e.changedTouches)) stylusIds.delete(t.identifier);
       taps.cancel();
       pan = null;
     };
@@ -586,7 +613,17 @@ export function BoardChrome() {
       {/* The style popover shares the hint's row above the dock and IS the pencil context
           while it is open — the hint yields to it. */}
       {tool === "pencil" ? (
-        styleOpen ? null : <HintPill text={PENCIL_HINTS[subTool]} />
+        styleOpen ? null : (
+          <HintPill
+            text={
+              // The moment finger≠pencil is in force, say so — a panning finger reads as
+              // broken to anyone who has not been told the rule.
+              wantPenMode && subTool === "pen"
+                ? "The Pencil draws — a finger pans. “Finger draws” lives in the style tile"
+                : PENCIL_HINTS[subTool]
+            }
+          />
+        )
       ) : (
         <ZoomPill />
       )}
