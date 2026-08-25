@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Tldraw,
+  loadSnapshot,
   type Editor,
   type TLComponents,
   type TLEditorSnapshot,
@@ -69,6 +70,7 @@ export function BoardPane({
   host = NO_HOST,
   chrome = "full",
   active = true,
+  revision = null,
 }: {
   boardId: string;
   title?: string;
@@ -81,10 +83,20 @@ export function BoardPane({
    * capture — and flushes any pending save on the way out.
    */
   active?: boolean;
+  /**
+   * The artifact's version as the HOST's replica knows it — desktop passes the synced
+   * row's updatedAt, the iPad the node's seq. Any change means "the board moved on the
+   * server": the pane refetches the snapshot and, if it is not the content it already
+   * holds and nothing local is unsaved, loads it in place (camera kept). The value is
+   * opaque; only change matters. Null = the host has no signal (the spike's default).
+   */
+  revision?: string | number | null;
 }) {
   const editorRef = useRef<Editor | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
   const loadedRef = useRef(false);
+  /** `updatedAt` of the content this pane holds — set by loads and by our own PATCHes. */
+  const stampRef = useRef<string | null>(null);
   const [loadState, setLoadState] = useState<BoardLoadState>("loading");
   const [saveState, setSaveState] = useState<BoardSaveState>("saved");
   const [message, setMessage] = useState("");
@@ -106,10 +118,16 @@ export function BoardPane({
       save: async () => {
         const editor = editorRef.current;
         if (!editor) return;
-        await client.fetch<UserArtifact>(`/api/artifacts/${encodeURIComponent(boardId)}`, {
-          method: "PATCH",
-          body: JSON.stringify({ content: JSON.stringify(editor.getSnapshot()) }),
-        });
+        const record = await client.fetch<UserArtifact>(
+          `/api/artifacts/${encodeURIComponent(boardId)}`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({ content: JSON.stringify(editor.getSnapshot()) }),
+          },
+        );
+        // Our own write is the newest content we know — a revision echo of this save
+        // must not trigger a reload.
+        if (record?.updatedAt) stampRef.current = record.updatedAt;
       },
       onState: (state, error) => {
         setSaveState(state);
@@ -169,11 +187,15 @@ export function BoardPane({
           setFolderId(record.folderId ?? null);
           const snapshot = parseSnapshot(record.content);
           if (snapshot) {
-            editor.loadSnapshot(snapshot);
+            // As a REMOTE change: the store listener watches source "user", and a load
+            // that reads as user edits would arm the saver and echo an identical PATCH —
+            // which, with another client open and listening, ping-pongs forever.
+            editor.store.mergeRemoteChanges(() => loadSnapshot(editor.store, snapshot));
             // The session carries the camera the board was last left at — trust it. Only
             // a snapshot without one (older saves, imports) gets framed from scratch.
             if (!hasSessionCamera(snapshot)) requestAnimationFrame(() => editor.zoomToFit());
           }
+          stampRef.current = record.updatedAt ?? null;
           loadedRef.current = true;
           saverRef.current?.arm();
           setLoadState("ready");
@@ -194,6 +216,64 @@ export function BoardPane({
     const editor = editorRef.current;
     if (editor) load(editor);
   };
+
+  // ── Live refresh: the host said the artifact moved ──
+  // Refetch, and only load what is genuinely newer than what we hold; never over unsaved
+  // local edits or an open textarea (retry shortly instead — the signal stays true).
+  const refreshTimerRef = useRef<number | null>(null);
+  const refresh = useCallback(async () => {
+    const editor = editorRef.current;
+    if (!editor || !loadedRef.current) return;
+    const retryLater = () => {
+      if (refreshTimerRef.current !== null) window.clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = window.setTimeout(() => {
+        refreshTimerRef.current = null;
+        void refresh();
+      }, 2000);
+    };
+    const busy = () =>
+      saverRef.current?.dirty ||
+      saverRef.current?.state === "saving" ||
+      editor.getEditingShapeId() !== null;
+    if (busy()) {
+      retryLater();
+      return;
+    }
+    try {
+      const record = await client.fetch<UserArtifact>(
+        `/api/artifacts/${encodeURIComponent(boardId)}`,
+      );
+      if (!editorRef.current || editorRef.current !== editor) return;
+      setFolderId(record.folderId ?? null);
+      if (!record.updatedAt || record.updatedAt === stampRef.current) return;
+      const snapshot = parseSnapshot(record.content);
+      if (!snapshot) return;
+      if (busy()) {
+        // Edits landed while we fetched — local wins, our save will supersede this.
+        retryLater();
+        return;
+      }
+      // Document only: the saved session is the OTHER device's camera and selection.
+      editor.store.mergeRemoteChanges(() =>
+        loadSnapshot(editor.store, { document: snapshot.document }),
+      );
+      stampRef.current = record.updatedAt;
+    } catch {
+      // Transient — the next revision signal (or retry) tries again.
+    }
+  }, [boardId, client]);
+  useEffect(() => () => {
+    if (refreshTimerRef.current !== null) window.clearTimeout(refreshTimerRef.current);
+  }, []);
+
+  const lastRevisionRef = useRef<string | number | null>(null);
+  useEffect(() => {
+    if (revision == null || revision === lastRevisionRef.current) return;
+    lastRevisionRef.current = revision;
+    // Before the first load completes there is nothing to reconcile — the load is fresh.
+    if (!loadedRef.current) return;
+    void refresh();
+  }, [revision, refresh]);
 
   function handleMount(editor: Editor) {
     editorRef.current = editor;

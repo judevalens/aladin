@@ -242,4 +242,5 @@ private fun toDomain(row: dawn.system.anchor.db.Node): WorkspaceNode = Workspace
     artifactType = row.artifact_type,
     sourceUrl = row.source_url,
     summary = row.summary,
+    rev = row.seq,
 )

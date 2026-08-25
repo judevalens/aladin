@@ -19,6 +19,12 @@ data class WorkspaceNode(
     /** A `link` artifact's target. Null for every other kind. */
     val sourceUrl: String? = null,
     val summary: String? = null,
+    /**
+     * The per-entity sync version (the frame seq that produced this row). Monotonic per
+     * node; a change means the server-side artifact moved — which is the whole signal a
+     * live surface (the board) needs to refetch its content.
+     */
+    val rev: Long = 0,
 ) {
     val isContainer: Boolean get() = kind != NodeKind.Artifact
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { ApiError, type ApiClient } from "@/shared/api/client";
 import type { UserArtifact } from "@/shared/api/models";
@@ -161,6 +161,18 @@ function createSpikeApiClient(): ApiClient {
 export function BoardSpike() {
   const client = useMemo(createSpikeApiClient, []);
 
+  // Two spike tabs share the localStorage board; `storage` fires in the OTHER tabs when
+  // one saves — a stand-in for the sync spine, so the live-refresh path is walkable
+  // without a backend: draw in tab A, watch it land in tab B.
+  const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEY) setRevision((r) => r + 1);
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
   // The spike renders outside the auth shell, which is what normally stamps the theme.
   useEffect(() => {
     const html = document.documentElement;
@@ -174,7 +186,7 @@ export function BoardSpike() {
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-bg">
-      <BoardPane boardId={SPIKE_BOARD_ID} title="Collar board" client={client} />
+      <BoardPane boardId={SPIKE_BOARD_ID} title="Collar board" client={client} revision={revision} />
     </div>
   );
 }

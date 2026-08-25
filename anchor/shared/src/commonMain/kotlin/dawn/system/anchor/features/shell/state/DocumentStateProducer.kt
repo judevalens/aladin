@@ -61,6 +61,8 @@ sealed interface OpenDocument {
         override val key: TabKey,
         override val title: String,
         val kind: ArtifactKind,
+        /** The node's sync version — the board pane refetches its snapshot when it moves. */
+        val rev: Long = 0,
     ) : OpenDocument
 
     /** Anything with no surface yet — a voice memo, a link. */
@@ -122,7 +124,7 @@ class DocumentStateProducer(
                 } else when {
                     // The kind decides, not the file: a note and a shard are both rendered
                     // by the embedded editor, which is why they share one surface.
-                    kind.isWebBacked -> OpenDocument.Web(tab, title, kind)
+                    kind.isWebBacked -> OpenDocument.Web(tab, title, kind, rev = node.rev)
 
                     kind == ArtifactKind.File -> {
                         // Seeded from the cache, which answers synchronously, so anything

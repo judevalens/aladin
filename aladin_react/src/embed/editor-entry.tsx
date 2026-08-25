@@ -55,6 +55,12 @@ export interface HostPane {
   id: string;
   kind: "page" | "shard" | "board";
   title?: string;
+  /**
+   * The artifact's per-entity version (seq) as the shell's replica knows it. A board pane
+   * treats any change as "refetch the snapshot" — the shell's syncer is the signal, the
+   * REST body is the payload (the R2 pattern: sync the index, fetch the body).
+   */
+  rev?: number;
 }
 
 /** What the native side asks for: the whole desired state, not a delta. */
@@ -230,6 +236,7 @@ function BoardHostPane({
       // The shell's tab strip already names the board; the pane draws only the plane.
       chrome="plane"
       active={active}
+      revision={pane.rev ?? null}
     />
   );
 }

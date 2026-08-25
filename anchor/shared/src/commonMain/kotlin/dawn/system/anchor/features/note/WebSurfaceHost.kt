@@ -36,7 +36,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.jetbrains.compose.resources.ExperimentalResourceApi
 
 /** One web-backed artifact open inside the host. */
-data class WebPane(val id: String, val kind: Kind, val title: String) {
+data class WebPane(val id: String, val kind: Kind, val title: String, val rev: Long = 0) {
     enum class Kind(val wire: String) {
         /** A BlockNote page, editing the same Y.Doc desktop is editing. */
         Page("page"),
@@ -326,7 +326,8 @@ internal fun embedBootstrap(
  */
 internal fun syncCommand(panes: List<WebPane>, activeId: String?, bottomInset: Int = 0): String {
     val list = panes.joinToString(",") { pane ->
-        "{id:${jsString(pane.id)},kind:${jsString(pane.kind.wire)},title:${jsString(pane.title)}}"
+        "{id:${jsString(pane.id)},kind:${jsString(pane.kind.wire)},title:${jsString(pane.title)}," +
+            "rev:${pane.rev}}"
     }
     val active = activeId?.takeIf { id -> panes.any { it.id == id } }
     // `insets.bottom`: native chrome floating over the page's bottom edge — the shell's

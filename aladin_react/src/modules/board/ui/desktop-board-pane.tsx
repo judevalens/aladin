@@ -2,6 +2,7 @@ import { useMemo } from "react";
 
 import { useAppComposition } from "@/app/composition/app-composition";
 import { useAppStore } from "@/app/state/store";
+import { useArtifact } from "@/modules/artifacts/hooks/use-artifact";
 import { BoardPane } from "./board-pane";
 import type { BoardHost } from "../domain/board-host";
 
@@ -14,6 +15,9 @@ import type { BoardHost } from "../domain/board-host";
  */
 export function DesktopBoardPane({ boardId, title }: { boardId: string; title?: string }) {
   const { runtime } = useAppComposition();
+  // The replica row re-emits when a sync frame lands for this artifact; its updatedAt is
+  // the pane's revision signal — a board saved on the iPad refreshes here on the frame.
+  const artifact = useArtifact(boardId);
 
   const host = useMemo<BoardHost>(
     () => ({
@@ -24,5 +28,13 @@ export function DesktopBoardPane({ boardId, title }: { boardId: string; title?: 
     [],
   );
 
-  return <BoardPane boardId={boardId} title={title} client={runtime.apiClient} host={host} />;
+  return (
+    <BoardPane
+      boardId={boardId}
+      title={title}
+      client={runtime.apiClient}
+      host={host}
+      revision={artifact?.updatedLabel ?? null}
+    />
+  );
 }

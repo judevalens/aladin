@@ -141,6 +141,7 @@ internal fun SurfaceHost(state: ShellScreen.State, modifier: Modifier = Modifier
  * where the workspace stores `page` and `app`. One translation, at the boundary.
  */
 private fun OpenDocument.Web.asPane(): WebPane = WebPane(
+    rev = rev,
     id = key.nodeId,
     kind = when (kind) {
         ArtifactKind.App -> WebPane.Kind.Shard

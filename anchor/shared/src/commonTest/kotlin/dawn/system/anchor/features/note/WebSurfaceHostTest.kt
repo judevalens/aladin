@@ -20,16 +20,16 @@ class WebSurfaceHostTest {
             panes = listOf(
                 page("p1", "Collars"),
                 WebPane("s1", WebPane.Kind.Shard, "Payoff"),
-                WebPane("b1", WebPane.Kind.Board, "Board"),
+                WebPane("b1", WebPane.Kind.Board, "Board", rev = 41),
             ),
             activeId = "s1",
         )
 
         assertEquals(
                 """window.__aladinHost.sync({panes:[""" +
-                """{id:"p1",kind:"page",title:"Collars"},""" +
-                """{id:"s1",kind:"shard",title:"Payoff"},""" +
-                """{id:"b1",kind:"board",title:"Board"}""" +
+                """{id:"p1",kind:"page",title:"Collars",rev:0},""" +
+                """{id:"s1",kind:"shard",title:"Payoff",rev:0},""" +
+                """{id:"b1",kind:"board",title:"Board",rev:41}""" +
                 """],active:"s1",insets:{bottom:0}});""",
             command,
         )
