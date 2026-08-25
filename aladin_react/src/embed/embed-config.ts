@@ -21,6 +21,11 @@ export interface EmbedConfig {
    * nothing but the collab socket, which is why this stayed absent until shards landed.
    */
   apiBaseUrl?: string;
+  /**
+   * The board sync room server's base, e.g. `ws://192.168.1.109:3502`. Boards refuse to
+   * mount without it (a local-only board on a companion device would silently fork).
+   */
+  boardSyncWsUrl?: string;
 }
 
 declare global {

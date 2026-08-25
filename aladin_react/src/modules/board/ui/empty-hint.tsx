@@ -12,7 +12,7 @@ export function EmptyHint() {
   const status = useBoardStatus();
   const empty = useValue("empty", () => editor.getCurrentPageShapeIds().size === 0, [editor]);
   const [dismissed, setDismissed] = useState(false);
-  if (!empty || dismissed || status.load !== "ready") return null;
+  if (!empty || dismissed || (status.mode === "synced" && status.state !== "online")) return null;
   return (
     <button
       type="button"

@@ -18,5 +18,11 @@
       "@/*": ["./src/*"],
     },
   },
+  "exclude": [
+    // Cross-package tests (they import the room server out of services/blocknote and use
+    // node builtins) — type-safety comes from running them; vitest executes, tsc skips.
+    "src/test/board-sync-e2e.test.ts",
+    "src/test/board-schema-drift.test.ts"
+  ],
   "include": ["src"],
 }

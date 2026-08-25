@@ -4,7 +4,7 @@ import type { EmbedConfig } from "@/embed/embed-config";
 import { createRoot } from "react-dom/client";
 
 import type { BoardHost } from "@/modules/board/domain/board-host";
-import { BoardPane } from "@/modules/board/ui/board-pane";
+import { BoardPane, type BoardSyncConfig } from "@/modules/board/ui/board-pane";
 import { BlockNotePageEditorDriver } from "@/modules/pages/editor/page-editor-driver";
 import { createApiClient, type ApiClient } from "@/shared/api/client";
 import { createShardApi } from "@/shared/api/shard-api";
@@ -220,10 +220,23 @@ function BoardHostPane({
   active: boolean;
 }) {
   const client = useApiClient(config);
+  // The room server's base rides the bootstrap; the token is re-read per (re)connect —
+  // the freshest this webview has (the shell captures it at build; a known gap).
+  const sync = useMemo<BoardSyncConfig | null>(() => {
+    if (!config.boardSyncWsUrl) return null;
+    return { url: config.boardSyncWsUrl, getToken: () => config.token };
+  }, [config]);
   if (!client) {
     return (
       <ShardNotice title={pane.title ?? "Board"}>
-        The host did not send an apiBaseUrl, so there is nowhere to save the board.
+        The host did not send an apiBaseUrl, so there is nowhere to load the board from.
+      </ShardNotice>
+    );
+  }
+  if (!sync) {
+    return (
+      <ShardNotice title={pane.title ?? "Board"}>
+        This shell did not send a board sync URL — update the companion app.
       </ShardNotice>
     );
   }
@@ -236,7 +249,8 @@ function BoardHostPane({
       // The shell's tab strip already names the board; the pane draws only the plane.
       chrome="plane"
       active={active}
-      revision={pane.rev ?? null}
+      sync={sync}
+      user={config.user}
     />
   );
 }

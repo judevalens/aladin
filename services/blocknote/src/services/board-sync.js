@@ -162,6 +162,16 @@ export function createBoardSyncServer({
     entry.room = new TLSocketRoom({
       schema,
       storage: entry.storage,
+      // BOARD_SYNC_DEBUG=1: log every wire message — the first thing to reach for when a
+      // client connects but never syncs.
+      ...(process.env.BOARD_SYNC_DEBUG
+        ? {
+            onAfterReceiveMessage: ({ sessionId, stringified }) =>
+              console.log(`room<-${sessionId}`, stringified.slice(0, 160)),
+            onBeforeSendMessage: ({ sessionId, stringified }) =>
+              console.log(`room->${sessionId}`, stringified.slice(0, 160)),
+          }
+        : {}),
       log: {
         warn: (...args) => console.warn(`board-sync ${artifactId}:`, ...args),
         error: (...args) => console.error(`board-sync ${artifactId}:`, ...args),

@@ -38,10 +38,16 @@ export function createRuntimeConfig(): ApiRuntimeConfig {
   const collabWsBaseUrl =
     normalizeBaseUrl(import.meta.env.VITE_COLLAB_WS_URL) || "ws://localhost:3501";
 
+  // Board sync (tldraw rooms) is a third sidecar listener, default ws://localhost:3502
+  // in dev; prod desktop builds override with VITE_BOARD_SYNC_WS_URL (ws://localhost:3512).
+  const boardSyncWsUrl =
+    normalizeBaseUrl(import.meta.env.VITE_BOARD_SYNC_WS_URL) || "ws://localhost:3502";
+
   return {
     isDesktopApp: desktop,
     apiBaseUrl,
     websocketBaseUrl: toWebsocketBaseUrl(apiBaseUrl),
     collabWsBaseUrl,
+    boardSyncWsUrl,
   };
 }

@@ -41,6 +41,10 @@ export interface ApiRuntimeConfig {
   websocketBaseUrl: string;
   // Hocuspocus collab WebSocket base (separate port/service from the API).
   collabWsBaseUrl: string;
+  // Board sync room server base (tldraw multiplayer, its own port beside collab).
+  // Optional: hosts without one (the embed before its shell learns the URL) fall back
+  // to local-only boards.
+  boardSyncWsUrl?: string;
 }
 
 export interface SessionTokenStore {

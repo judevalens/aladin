@@ -1,15 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 
 import { ApiError, type ApiClient } from "@/shared/api/client";
 import type { UserArtifact } from "@/shared/api/models";
 import { BoardPane } from "./board-pane";
 
 /**
- * /spike/board — the board surface on an in-memory ApiClient, no auth, no backend.
+ * /spike/board — the board surface with no auth and no backend.
  *
  * This is where day-to-day board iteration happens: the iOS Simulator kills tldraw's
  * WebContent process (sim-only JSC bug), so the loop is browser spike → real iPad. The
- * fake client persists the snapshot in localStorage so a reload keeps the board.
+ * pane runs in LOCAL mode (tldraw's own IndexedDB persistence via persistenceKey); the
+ * fake client only feeds the picker/doc-window content plane.
  */
 
 const SPIKE_BOARD_ID = "spike-board";
@@ -57,18 +58,7 @@ function spikePageText(page: number): string {
   return `Page ${page} of the spike document — the board reads this window's own page, not the folder's.`;
 }
 
-/**
- * `/spike/board?fail=load` makes the board GET reject; `?fail=save` makes every PATCH
- * reject. The two failure paths the pane must survive (a failed load must never arm saving;
- * a failed save must retry, not drop the edit), driven without a backend.
- */
-function failMode(): "load" | "save" | null {
-  const value = new URLSearchParams(window.location.search).get("fail");
-  return value === "load" || value === "save" ? value : null;
-}
-
 function createSpikeApiClient(): ApiClient {
-  const fail = failMode();
   return {
     resolveUrl: (path) => path,
     fetch<T>(path: string, init?: RequestInit): Promise<T> {
@@ -77,12 +67,9 @@ function createSpikeApiClient(): ApiClient {
 
       if (url.pathname === `/api/artifacts/${SPIKE_BOARD_ID}`) {
         if (method === "GET") {
-          if (fail === "load") return Promise.reject(new ApiError("spike: load failure", 503));
-          const content = window.localStorage.getItem(STORAGE_KEY) ?? "";
-          return Promise.resolve(spikeArtifact(content) as T);
+          return Promise.resolve(spikeArtifact("") as T);
         }
         if (method === "PATCH") {
-          if (fail === "save") return Promise.reject(new ApiError("spike: save failure", 503));
           const body = JSON.parse(String(init?.body ?? "{}")) as { content?: string };
           if (typeof body.content === "string") {
             window.localStorage.setItem(STORAGE_KEY, body.content);
@@ -161,17 +148,6 @@ function createSpikeApiClient(): ApiClient {
 export function BoardSpike() {
   const client = useMemo(createSpikeApiClient, []);
 
-  // Two spike tabs share the localStorage board; `storage` fires in the OTHER tabs when
-  // one saves — a stand-in for the sync spine, so the live-refresh path is walkable
-  // without a backend: draw in tab A, watch it land in tab B.
-  const [revision, setRevision] = useState(0);
-  useEffect(() => {
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEY) setRevision((r) => r + 1);
-    };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
 
   // The spike renders outside the auth shell, which is what normally stamps the theme.
   useEffect(() => {
@@ -186,7 +162,7 @@ export function BoardSpike() {
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-bg">
-      <BoardPane boardId={SPIKE_BOARD_ID} title="Collar board" client={client} revision={revision} />
+      <BoardPane boardId={SPIKE_BOARD_ID} title="Collar board" client={client} />
     </div>
   );
 }

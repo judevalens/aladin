@@ -1,27 +1,22 @@
 import { createContext, useContext } from "react";
 
-import type { BoardSaveState } from "./board-persistence";
-
-/** Load: whether the board's content has arrived. Saving is armed only once it has. */
-export type BoardLoadState = "loading" | "ready" | "failed";
-
 /**
- * The pane's persistence status, read by the chrome's status pill. Provided by BoardPane;
- * the chrome never talks to the saver directly.
+ * The pane's store status, read by the chrome's status pill. `local` boards (the spike)
+ * have nothing to report; a synced board surfaces the connection — including the terminal
+ * sync errors, which tldraw never retries on its own (`retry` remounts and redials).
  */
 export interface BoardStatus {
-  load: BoardLoadState;
-  save: BoardSaveState;
-  /** The last error's message, empty when there is none. */
-  message: string;
-  retryLoad: () => void;
+  mode: "synced" | "local";
+  state: "loading" | "online" | "offline" | "error";
+  /** Human-readable cause, present when state is "error". */
+  reason?: string;
+  retry: () => void;
 }
 
 export const BoardStatusContext = createContext<BoardStatus>({
-  load: "ready",
-  save: "saved",
-  message: "",
-  retryLoad: () => {},
+  mode: "local",
+  state: "online",
+  retry: () => {},
 });
 
 export function useBoardStatus(): BoardStatus {
