@@ -389,6 +389,7 @@ prod-app-deps:
 
 prod-app: prod-app-deps ## Build the desktop app pointed at prod + install it to /Applications (identifier com.aladin.app)
 	cd aladin_react && VITE_DESKTOP_API_BASE_URL=http://localhost:8080 VITE_COLLAB_WS_URL=ws://localhost:3511 \
+		VITE_BOARD_SYNC_WS_URL=ws://localhost:3512 \
 		npm run tauri:build -- --bundles app \
 		--config '{"identifier":"com.aladin.app","productName":"Aladin"}'
 	@echo ">> installing to /Applications/Aladin.app"
