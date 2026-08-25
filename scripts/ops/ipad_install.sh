@@ -23,8 +23,8 @@ set -euo pipefail
 
 MODE="${1:-prod}"
 case "$MODE" in
-  prod) API_PORT=8080; COLLAB_PORT=3511; SUFFIX="";     APP_NAME="Anchor";     ICON="AppIcon" ;;
-  dev)  API_PORT=8000; COLLAB_PORT=3501; SUFFIX=".dev"; APP_NAME="Anchor Dev"; ICON="AppIconDev" ;;
+  prod) API_PORT=8080; COLLAB_PORT=3511; BOARD_SYNC_PORT=3512; SUFFIX="";     APP_NAME="Anchor";     ICON="AppIcon" ;;
+  dev)  API_PORT=8000; COLLAB_PORT=3501; BOARD_SYNC_PORT=3502; SUFFIX=".dev"; APP_NAME="Anchor Dev"; ICON="AppIconDev" ;;
   *) echo "usage: $0 prod|dev" >&2; exit 2 ;;
 esac
 # The page editor is not fetched over HTTP: `npm run build:embed` bundles it into
@@ -105,6 +105,7 @@ xcodebuild build \
   -allowProvisioningUpdates \
   ALADIN_API_BASE_URL="http://$HOST:$API_PORT" \
   ALADIN_COLLAB_WS_URL="ws://$HOST:$COLLAB_PORT" \
+  ALADIN_BOARD_SYNC_WS_URL="ws://$HOST:$BOARD_SYNC_PORT" \
   ALADIN_BUNDLE_SUFFIX="$SUFFIX" \
   INFOPLIST_KEY_CFBundleDisplayName="$APP_NAME" \
   ASSETCATALOG_COMPILER_APPICON_NAME="$ICON" \

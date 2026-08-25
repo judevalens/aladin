@@ -25,3 +25,6 @@ actual fun defaultWebBaseUrl(): String = "http://192.168.1.109:4173"
 
 actual fun defaultCollabWsUrl(): String =
     buildSetting("AladinCollabWsUrl") ?: "ws://192.168.1.109:3501"
+
+actual fun defaultBoardSyncWsUrl(): String =
+    buildSetting("AladinBoardSyncWsUrl") ?: "ws://192.168.1.109:3502"

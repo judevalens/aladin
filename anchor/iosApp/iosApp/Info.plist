@@ -9,6 +9,8 @@
         <string>$(ALADIN_API_BASE_URL)</string>
         <key>AladinCollabWsUrl</key>
         <string>$(ALADIN_COLLAB_WS_URL)</string>
+        <key>AladinBoardSyncWsUrl</key>
+        <string>$(ALADIN_BOARD_SYNC_WS_URL)</string>
         <key>CADisableMinimumFrameDurationOnPhone</key>
         <true/>
         <!-- The dev backend is plain HTTP on the LAN. NSAllowsLocalNetworking permits

@@ -89,6 +89,8 @@ data class WebSurfaceHost(val handle: WebHostHandle, val restarts: Int)
 data class EditorSession(
     val token: String,
     val collabWsUrl: String,
+    /** The board sync room server's origin — boards refuse to mount without it. */
+    val boardSyncWsUrl: String,
     /**
      * The API origin. Only shards need it — a note is served entirely by the collab
      * socket — but it is read once at view creation, so it has to be here before the
@@ -149,6 +151,7 @@ fun rememberWebSurfaceHost(
         bootstrapJs = embedBootstrap(
             token = editor.token,
             collabWsUrl = editor.collabWsUrl,
+            boardSyncWsUrl = editor.boardSyncWsUrl,
             userName = editor.userName ?: DEFAULT_USER_NAME,
             apiBaseUrl = editor.apiBaseUrl,
         ),
@@ -305,11 +308,13 @@ internal fun parseHostMessage(raw: String): HostMessage? = runCatching {
 internal fun embedBootstrap(
     token: String,
     collabWsUrl: String,
+    boardSyncWsUrl: String,
     userName: String,
     apiBaseUrl: String,
 ): String = "window.__ALADIN_EMBED__={" +
     "token:${jsString(token)}," +
     "collabWsUrl:${jsString(collabWsUrl)}," +
+    "boardSyncWsUrl:${jsString(boardSyncWsUrl)}," +
     "apiBaseUrl:${jsString(apiBaseUrl)}," +
     "user:{name:${jsString(userName)},color:${jsString(colorForUser(userName))}}" +
     "};" +

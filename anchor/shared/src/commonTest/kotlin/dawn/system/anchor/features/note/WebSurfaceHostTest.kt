@@ -85,6 +85,7 @@ class WebSurfaceHostTest {
         val bootstrap = embedBootstrap(
             token = "t",
             collabWsUrl = "ws://10.0.0.2:3501",
+            boardSyncWsUrl = "ws://10.0.0.2:3502",
             userName = "Jude",
             apiBaseUrl = "http://10.0.0.2:8000",
         )
@@ -107,11 +108,14 @@ class WebSurfaceHostTest {
         val bootstrap = embedBootstrap(
             token = "t",
             collabWsUrl = "ws://10.0.0.2:3501",
+            boardSyncWsUrl = "ws://10.0.0.2:3502",
             userName = "Jude",
             apiBaseUrl = "http://10.0.0.2:8000",
         )
 
         assertTrue(bootstrap.contains("""apiBaseUrl:"http://10.0.0.2:8000""""), bootstrap)
+        // The board sync origin rides the same bootstrap — boards refuse to mount without it.
+        assertTrue(bootstrap.contains("""boardSyncWsUrl:"ws://10.0.0.2:3502""""), bootstrap)
     }
 
     @Test
@@ -119,6 +123,7 @@ class WebSurfaceHostTest {
         val bootstrap = embedBootstrap(
             token = """a"b\c""",
             collabWsUrl = "ws://x",
+            boardSyncWsUrl = "ws://x",
             userName = "u",
             apiBaseUrl = "http://x",
         )

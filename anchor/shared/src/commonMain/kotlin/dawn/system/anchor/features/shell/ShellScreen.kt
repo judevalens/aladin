@@ -113,7 +113,13 @@ class ShellPresenter(
         // a refresh mid-session does not, deliberately — see rememberWebSurfaceHost.
         val editor = (user as? AuthState.LoggedIn)?.let { signedIn ->
             tokens.currentToken()?.let { token ->
-                EditorSession(token, config.collabWsUrl, config.baseUrl, signedIn.user?.email)
+                EditorSession(
+                    token = token,
+                    collabWsUrl = config.collabWsUrl,
+                    boardSyncWsUrl = config.boardSyncWsUrl,
+                    apiBaseUrl = config.baseUrl,
+                    userName = signedIn.user?.email,
+                )
             }
         }
 

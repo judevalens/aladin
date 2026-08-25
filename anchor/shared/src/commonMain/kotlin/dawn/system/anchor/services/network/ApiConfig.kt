@@ -20,6 +20,12 @@ data class ApiConfig(
      * what makes the embedded editor join the *same* document desktop is editing.
      */
     val collabWsUrl: String = defaultCollabWsUrl(),
+
+    /**
+     * The board sync room server (tldraw multiplayer), a third sidecar listener beside
+     * collab. Boards refuse to mount in the embed without it.
+     */
+    val boardSyncWsUrl: String = defaultBoardSyncWsUrl(),
 ) {
     /** The embed route that mounts a page's editor. */
     fun pageEditorUrl(pageId: String): String = "$webBaseUrl/embed/page/$pageId"
@@ -41,3 +47,6 @@ expect fun defaultWebBaseUrl(): String
 
 /** Platform-appropriate default URL for the collab (Hocuspocus) server. */
 expect fun defaultCollabWsUrl(): String
+
+/** Platform-appropriate default URL for the board sync (tldraw rooms) server. */
+expect fun defaultBoardSyncWsUrl(): String

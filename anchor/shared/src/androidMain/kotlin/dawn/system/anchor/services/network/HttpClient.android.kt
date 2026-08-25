@@ -11,3 +11,5 @@ actual fun defaultBaseUrl(): String = "http://10.0.2.2:8000"
 actual fun defaultWebBaseUrl(): String = "http://10.0.2.2:4173"
 
 actual fun defaultCollabWsUrl(): String = "ws://10.0.2.2:3501"
+
+actual fun defaultBoardSyncWsUrl(): String = "ws://10.0.2.2:3502"
