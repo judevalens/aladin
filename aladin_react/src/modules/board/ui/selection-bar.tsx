@@ -7,13 +7,15 @@ import { useBoardToasts } from "../domain/board-toasts";
 import { DOCK_PATHS, DockIcon } from "./dock-icons";
 
 /**
- * The floating bar at the top of the board while something is selected.
+ * The floating bar at the top of the board while something is selected — compact, centred,
+ * actions only (the caption it once carried duplicated what the selected object already
+ * shows; owner cut it 2026-08-24).
  *
- * One object: title + meta, the host's actions (Ask / Open), a "…" overflow with the
- * arrange verbs a long-press would otherwise carry (long-press means insert here), and
- * Remove. Several: the count, Group/Ungroup, Remove. Buttons appear only when the host can
- * honor them; Remove always works — it removes the WINDOW(S), never the artifact (rule 2),
- * and says so with an Undo.
+ * One object: the host's actions (Ask / Open), a "…" overflow with the arrange verbs a
+ * long-press would otherwise carry (long-press means insert here), and Remove. Several: a
+ * small count, Group/Ungroup, Remove. Buttons appear only when the host can honor them;
+ * Remove always works — it removes the WINDOW(S), never the artifact (rule 2), and says so
+ * with an Undo.
  */
 export function SelectionBar() {
   const editor = useEditor();
@@ -58,20 +60,13 @@ export function SelectionBar() {
     const groups = shapes.filter((s) => s.type === "group").length;
     return (
       <Bar>
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-board-title text-ink">{shapes.length} objects</div>
-          <div className="mt-0.5 truncate font-mono text-board-meta text-ink-4">
-            drag to move together · pinch on the selection to scale
-          </div>
-        </div>
-        <div className="flex shrink-0 gap-2">
-          {groups > 0 ? (
-            <TextAction label="Ungroup" onClick={() => editor.ungroupShapes(ids)} />
-          ) : (
-            <TextAction label="Group" onClick={() => editor.groupShapes(ids)} />
-          )}
-          <RemoveButton onClick={remove} />
-        </div>
+        <span className="px-2 font-mono text-board-meta text-ink-3">{shapes.length} objects</span>
+        {groups > 0 ? (
+          <TextAction label="Ungroup" onClick={() => editor.ungroupShapes(ids)} />
+        ) : (
+          <TextAction label="Group" onClick={() => editor.groupShapes(ids)} />
+        )}
+        <RemoveButton onClick={remove} />
       </Bar>
     );
   }
@@ -82,19 +77,7 @@ export function SelectionBar() {
 
   return (
     <Bar>
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-board-title text-ink">{summary.title}</div>
-        <div className="mt-0.5 flex items-center gap-2">
-          {summary.cited ? (
-            <span className="shrink-0 rounded-full bg-for/10 px-2 py-0.5 font-mono text-board-meta uppercase tracking-wider text-for">
-              cited
-            </span>
-          ) : null}
-          <span className="truncate font-mono text-board-meta text-ink-4">{summary.meta}</span>
-        </div>
-      </div>
-      <div className="relative flex shrink-0 gap-2">
-        {host.onAskAbout ? (
+      {host.onAskAbout ? (
           <button
             type="button"
             onClick={() =>
@@ -125,50 +108,49 @@ export function SelectionBar() {
         >
           <DockIcon d={DOCK_PATHS.more} size={19} strokeWidth={2.2} />
         </button>
-        <RemoveButton onClick={remove} />
-        {moreOpen ? (
-          <div
-            role="menu"
-            className="board-island board-island--popover absolute right-0 top-[calc(100%+10px)] flex w-60 flex-col overflow-hidden py-1"
-          >
-            <MenuRow
-              label="Duplicate"
-              onPick={() => {
-                setMoreOpen(false);
-                editor.duplicateShapes(ids, { x: 24, y: 24 });
-              }}
-            />
-            <MenuRow
-              label="Bring to front"
-              onPick={() => {
-                setMoreOpen(false);
-                editor.bringToFront(ids);
-              }}
-            />
-            <MenuRow
-              label="Send to back"
-              onPick={() => {
-                setMoreOpen(false);
-                editor.sendToBack(ids);
-              }}
-            />
-            <MenuRow
-              label={locked ? "Unlock" : "Lock in place"}
-              onPick={() => {
-                setMoreOpen(false);
-                editor.toggleLock(ids);
-              }}
-            />
-          </div>
-        ) : null}
-      </div>
+      <RemoveButton onClick={remove} />
+      {moreOpen ? (
+        <div
+          role="menu"
+          className="board-island board-island--popover absolute right-0 top-[calc(100%+10px)] flex w-60 flex-col overflow-hidden py-1"
+        >
+          <MenuRow
+            label="Duplicate"
+            onPick={() => {
+              setMoreOpen(false);
+              editor.duplicateShapes(ids, { x: 24, y: 24 });
+            }}
+          />
+          <MenuRow
+            label="Bring to front"
+            onPick={() => {
+              setMoreOpen(false);
+              editor.bringToFront(ids);
+            }}
+          />
+          <MenuRow
+            label="Send to back"
+            onPick={() => {
+              setMoreOpen(false);
+              editor.sendToBack(ids);
+            }}
+          />
+          <MenuRow
+            label={locked ? "Unlock" : "Lock in place"}
+            onPick={() => {
+              setMoreOpen(false);
+              editor.toggleLock(ids);
+            }}
+          />
+        </div>
+      ) : null}
     </Bar>
   );
 }
 
 function Bar({ children }: { children: React.ReactNode }) {
   return (
-    <div className="board-island board-edge-top pointer-events-auto absolute inset-x-5.5 flex items-center gap-3.5 rounded-board-card py-2 pl-4 pr-2">
+    <div className="board-island board-edge-top pointer-events-auto absolute left-1/2 flex max-w-[calc(100vw-24px)] -translate-x-1/2 items-center gap-2 rounded-board-card p-1.5">
       {children}
     </div>
   );
