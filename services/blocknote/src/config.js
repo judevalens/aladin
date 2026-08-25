@@ -8,6 +8,18 @@ export const config = {
   // separate servers avoids the in-process socket version mismatch).
   collabPort: Number.parseInt(process.env.COLLAB_PORT ?? "3501", 10),
 
+  // Board sync: the tldraw multiplayer room server (ws@8, its own listener for
+  // the same reason collab has one). Room truth = per-board SQLite files under
+  // boardSyncDataDir (disposable — a lost file re-seeds from artifacts.content);
+  // the projection debounce mirrors the page projection's discipline.
+  boardSyncPort: Number.parseInt(process.env.BOARD_SYNC_PORT ?? "3502", 10),
+  boardSyncDataDir:
+    process.env.BOARD_SYNC_DATA_DIR ?? new URL("../.data/board-rooms", import.meta.url).pathname,
+  boardSyncProjectionDebounceMs: Number.parseInt(
+    process.env.BOARD_SYNC_PROJECTION_DEBOUNCE_MS ?? "2000",
+    10,
+  ),
+
   // M8b: Hocuspocus collab.
   // Postgres holding the canonical page_ydoc state. Default targets the
   // host-mapped port for `node server.js`; docker-compose overrides with the

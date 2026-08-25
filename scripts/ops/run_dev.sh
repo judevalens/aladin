@@ -47,7 +47,7 @@ ports_for() {
   case "$1" in
     api) echo 8000 ;;
     mcp) echo 8090 ;;
-    blocknote) echo 3500 3501 ;;
+    blocknote) echo 3500 3501 3502 ;;
     copilot-agent) echo 3550 ;;
     web) echo 4173 ;;
     *) echo "" ;;

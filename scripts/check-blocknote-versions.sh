@@ -45,6 +45,15 @@ const SHARED = [
   "y-protocols",
   "@hocuspocus/server",
   "@hocuspocus/provider",
+  // Board sync: the tldraw client (aladin_react) and the room server
+  // (services/blocknote) validate the same records — schema drift here is a
+  // refused connection at best and INVALID_RECORD data loss at worst.
+  "tldraw",
+  "@tldraw/sync",
+  "@tldraw/sync-core",
+  "@tldraw/tlschema",
+  "@tldraw/store",
+  "@tldraw/validate",
 ];
 
 function resolved(lockPath) {

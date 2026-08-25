@@ -27,6 +27,7 @@ import { healthz } from "./src/handlers/health.js";
 import { createCollabAdminHandlers } from "./src/handlers/collab-admin.js";
 import { requireAdminSecret } from "./src/middleware/admin-auth.js";
 import { createAuthResolver } from "./src/services/auth.js";
+import { createBoardSyncServer } from "./src/services/board-sync.js";
 import { createCollabServer } from "./src/services/collab.js";
 
 installProcessHandlers();
@@ -37,9 +38,11 @@ const pool = new pg.Pool({ connectionString: config.databaseUrl });
 // --- Collaboration (Hocuspocus, :COLLAB_PORT) ------------------------------
 // Created before the HTTP routes so the MCP admin bridge can call into the
 // live Y.Docs in-process.
+const resolveToken = createAuthResolver(config.authResolveUrl);
+
 const collab = createCollabServer({
   pool,
-  resolveToken: createAuthResolver(config.authResolveUrl),
+  resolveToken,
   port: config.collabPort,
   debounceMs: config.storeDebounceMs,
   maxDebounceMs: config.storeMaxDebounceMs,
@@ -48,6 +51,15 @@ const collab = createCollabServer({
   projectionSweepMs: config.projectionSweepMs,
 });
 const collabAdmin = createCollabAdminHandlers(collab);
+
+// --- Board sync (tldraw rooms, :BOARD_SYNC_PORT) ---------------------------
+const boardSync = createBoardSyncServer({
+  pool,
+  resolveToken,
+  port: config.boardSyncPort,
+  dataDir: config.boardSyncDataDir,
+  projectionDebounceMs: config.boardSyncProjectionDebounceMs,
+});
 
 // The admin bridge is only as safe as its shared secret. The default exists so
 // `make backend` + MCP work out of the box on localhost; warn loudly so it is
@@ -63,7 +75,7 @@ const app = express();
 app.use(express.json({ limit: config.jsonLimit }));
 app.use(trace);
 
-app.get("/healthz", healthz);
+app.get("/healthz", healthz(boardSync));
 app.post("/md-to-blocks", wrap(converter.mdToBlocks));
 app.post("/blocks-to-md", wrap(converter.blocksToMd));
 app.post("/blocks-to-md-batch", wrap(converter.blocksToMdBatch));
@@ -83,12 +95,20 @@ const httpServer = app.listen(config.port, "0.0.0.0", () => {
 await collab.listen();
 console.log(`blocknote collab (Hocuspocus) listening on :${config.collabPort}`);
 
+await boardSync.listen();
+console.log(`blocknote board sync (tldraw rooms) listening on :${config.boardSyncPort}`);
+
 async function shutdown(signal) {
   console.log(`blocknote service received ${signal}, shutting down`);
   try {
     await collab.destroy(); // flushes pending stores + closes connections
   } catch (err) {
     console.error("collab shutdown error:", err);
+  }
+  try {
+    await boardSync.destroy(); // flushes projections + closes rooms
+  } catch (err) {
+    console.error("board sync shutdown error:", err);
   }
   try {
     await pool.end();

@@ -99,6 +99,7 @@ http_ok http://127.0.0.1:8090/healthz && ok "mcp /healthz" "8090" || warn "mcp" 
 http_ok http://127.0.0.1:3500/healthz && ok "blocknote" "3500 · collab 3501" \
   || warn "blocknote" "3500 no answer"
 port_open 3501 && ok "collab ws" "3501 listening" || warn "collab ws" "3501 not listening"
+port_open 3502 && ok "board sync ws" "3502 listening" || warn "board sync ws" "3502 not listening"
 if cop=$(curl -fsS -m 3 http://127.0.0.1:3550/healthz 2>/dev/null); then
   # COPILOT_AUTH=subscription rides the local Claude Code login and ignores the API key,
   # so a missing key is only a fault in the other mode.

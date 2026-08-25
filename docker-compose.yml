@@ -76,9 +76,13 @@ services:
     ports:
       - "3500:3500"   # converter (HTTP)
       - "3501:3501"   # collab (Hocuspocus WS)
+      - "3502:3502"   # board sync (tldraw rooms WS)
     environment:
       PORT: 3500
       COLLAB_PORT: 3501
+      # Room SQLite files are container-ephemeral by design: a fresh container
+      # re-seeds every room from artifacts.content (the projection).
+      BOARD_SYNC_PORT: 3502
       # In-network Postgres for Hocuspocus page_ydoc persistence.
       BLOCKNOTE_DATABASE_URL: postgres://aladin:password@postgres:5432/aladin
       # Go API runs on the host (make backend), not in compose — reach it via
