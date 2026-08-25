@@ -13,7 +13,9 @@ A desktop research workspace. **Dual-store architecture:**
 - **Backend** — `backend_v2/` — **Go 1.25** + **Postgres** (canonical store) + Redis
   (Asynq queue) + Neo4j (graph). Migrations are embedded **goose**, applied on boot.
 - **Collab sidecar** — `services/blocknote/` — Node; Yjs/Hocuspocus realtime page
-  editing. Page content lives in Postgres `page_ydoc` + webview IndexedDB.
+  editing (page content in Postgres `page_ydoc` + webview IndexedDB) **and the board
+  sync room server** (tldraw multiplayer on :3502 dev / :3512 prod; room truth = per-board
+  SQLite files, projected back into `artifacts.content`).
 - **Copilot agent sidecar** — `services/copilot-agent/` — Node; runs the Claude
   Agent SDK per copilot turn (needs `ANTHROPIC_API_KEY`), consuming tools from the
   Go MCP server (:8090) with the caller's bearer and streaming NDJSON back to the
@@ -72,7 +74,7 @@ start/stop it for routine verification — use the sandbox.
 same code, straight out of the working tree, no releases or backups:
 
 ```bash
-make dev-up        # api :8000 · mcp :8090 · blocknote :3500/:3501 · copilot :3550 · worker · web :4173
+make dev-up        # api :8000 · mcp :8090 · blocknote :3500/:3501/:3502 · copilot :3550 · worker · web :4173
 make dev-status    # what's up, and whether these targets started it
 make dev-logs      # SERVICE=api to scope; logs live in .dev/logs/
 make dev-restart   # rebuild the Go binaries from the tree and start over

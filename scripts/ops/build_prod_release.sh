@@ -263,7 +263,7 @@ emit_run worker   ''  "$PREFIX/data"  api  '"$HERE/bin/worker"'
 emit_run mcp      ''  "$PREFIX/data"  api  '"$HERE/bin/mcp"'
 # PORT is set per-process: both sidecars read process.env.PORT, so it cannot
 # live in the shared env file without one of them stealing the other's port.
-emit_run blocknote      'PORT=3510 COLLAB_PORT=3511' '' api "\"$NODE_BIN\" \"\$HERE/services/blocknote/server.js\""
+emit_run blocknote      'PORT=3510 COLLAB_PORT=3511 BOARD_SYNC_PORT=3512' '' api "\"$NODE_BIN\" \"\$HERE/services/blocknote/server.js\""
 # copilot-agent keeps the inherited cwd ON PURPOSE: the Claude CLI keys its
 # per-project state (trust, onboarding) off the working directory, and moving it
 # to a fresh path reintroduces the "MCP stuck pending" failure this release

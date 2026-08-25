@@ -125,7 +125,8 @@ echo; bold "health"
 http_ok http://127.0.0.1:8080/healthz && ok "api /healthz" "8080" || { bad "api /healthz" "8080 no answer"; fix "make prod-run"; }
 http_ok http://127.0.0.1:8080/readyz  && ok "api /readyz"  "db reachable from api" || bad "api /readyz" "api up but not ready"
 port_open 8091 && ok "mcp" "8091 listening" || warn "mcp" "8091 not listening"
-http_ok http://127.0.0.1:3510/healthz && ok "blocknote" "3510 · collab 3511" || warn "blocknote" "3510 no answer"
+http_ok http://127.0.0.1:3510/healthz && ok "blocknote" "3510 · collab 3511 · board sync 3512" || warn "blocknote" "3510 no answer"
+port_open 3512 && ok "board sync ws" "3512 listening" || warn "board sync ws" "3512 not listening"
 if cop=$(curl -fsS -m 3 http://127.0.0.1:3560/healthz 2>/dev/null); then
   grep -q '"anthropicKey":true' <<<"$cop" && ok "copilot-agent" "3560 · key loaded" || {
     warn "copilot-agent" "3560 up but no ANTHROPIC_API_KEY"

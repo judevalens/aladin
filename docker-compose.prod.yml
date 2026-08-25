@@ -200,6 +200,7 @@ services:
     ports:
       - "3510:3500"          # converter (dev 3500)
       - "3511:3501"          # Hocuspocus collab WS (dev 3501) — desktop app connects here
+      - "3512:3502"          # board sync WS (tldraw rooms; dev 3502)
     depends_on:
       api:                   # needs the schema (page_ydoc) migrated + api auth up
         condition: service_healthy

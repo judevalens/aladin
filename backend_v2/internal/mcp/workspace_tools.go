@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -9,6 +10,7 @@ import (
 	"aladin/backend_v2/internal/service"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	"sort"
 )
 
 // Workspace tools — the read/light-write surface the copilot (and any MCP
@@ -420,6 +422,11 @@ func (t workspaceToolServer) getArtifact(ctx context.Context, _ *sdkmcp.CallTool
 		if text, terr := blocknote.ExtractText(art.Blocks); terr == nil && strings.TrimSpace(text) != "" {
 			body = text
 		}
+	}
+	// A board's Content is a tldraw snapshot (projected by the sync room) — summarize its
+	// structure instead of dumping shape JSON at the model.
+	if art.Type == "board" {
+		body = summarizeBoardContent(art.Content)
 	}
 	out := getArtifactOutput{
 		ID: art.ID, Title: art.Title, Type: art.Type,
@@ -923,4 +930,75 @@ func citationKindForArtifact(t string) string {
 		return "shard"
 	}
 	return "page"
+}
+
+// summarizeBoardContent renders a board's tldraw snapshot as a line of structure — shape
+// counts by kind and the texts a model could act on (tasks, cards, excerpts) — instead of
+// the raw record JSON, which is noise at best and context-flooding at worst.
+func summarizeBoardContent(content string) string {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return "an empty board"
+	}
+	var snapshot struct {
+		Document struct {
+			Store map[string]struct {
+				TypeName string `json:"typeName"`
+				Type     string `json:"type"`
+				Props    struct {
+					Text  string `json:"text"`
+					Front string `json:"front"`
+					Back  string `json:"back"`
+					Title string `json:"title"`
+				} `json:"props"`
+			} `json:"store"`
+		} `json:"document"`
+	}
+	if err := json.Unmarshal([]byte(trimmed), &snapshot); err != nil || len(snapshot.Document.Store) == 0 {
+		return "a board (snapshot unreadable)"
+	}
+	counts := map[string]int{}
+	var lines []string
+	for _, record := range snapshot.Document.Store {
+		if record.TypeName != "shape" {
+			continue
+		}
+		counts[record.Type]++
+		switch record.Type {
+		case "aladin-task":
+			if record.Props.Text != "" {
+				lines = append(lines, "task: "+record.Props.Text)
+			}
+		case "aladin-card":
+			if record.Props.Front != "" {
+				lines = append(lines, "card: "+record.Props.Front+" / "+record.Props.Back)
+			}
+		case "aladin-excerpt":
+			if record.Props.Text != "" {
+				lines = append(lines, "excerpt: "+record.Props.Text)
+			}
+		case "aladin-doc":
+			if record.Props.Title != "" {
+				lines = append(lines, "live window: "+record.Props.Title)
+			}
+		}
+	}
+	if len(counts) == 0 {
+		return "an empty board"
+	}
+	kinds := make([]string, 0, len(counts))
+	for kind := range counts {
+		kinds = append(kinds, kind)
+	}
+	sort.Strings(kinds)
+	parts := make([]string, 0, len(kinds))
+	for _, kind := range kinds {
+		parts = append(parts, fmt.Sprintf("%d %s", counts[kind], strings.TrimPrefix(kind, "aladin-")))
+	}
+	summary := "board with " + strings.Join(parts, ", ")
+	sort.Strings(lines)
+	if len(lines) > 0 {
+		summary += "\n" + strings.Join(lines, "\n")
+	}
+	return summary
 }

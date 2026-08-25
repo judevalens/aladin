@@ -39,7 +39,7 @@ die() { printf 'run: %s\n' "$*" >&2; exit 1; }
 port_for() {
   case "$1" in
     api) echo 8080 ;; mcp) echo 8091 ;;
-    blocknote) echo 3510 ;; copilot-agent) echo 3560 ;;  # 3560: dev owns 3550
+    blocknote) echo 3510 3511 3512 ;; copilot-agent) echo 3560 ;;  # 3560: dev owns 3550
     *) echo "" ;;
   esac
 }

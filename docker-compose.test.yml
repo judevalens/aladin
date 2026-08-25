@@ -65,7 +65,8 @@ services:
     profiles: ["collab"]
     ports:
       - "3600:3500"   # converter (HTTP)
-      - "3601:3501"   # collab (Hocuspocus WS)
+      - "3601:3501"
+      - "3602:3502"   # collab (Hocuspocus WS)
     environment:
       PORT: 3500
       COLLAB_PORT: 3501

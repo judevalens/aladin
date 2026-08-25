@@ -456,6 +456,12 @@ func (s *DefaultArtifactService) Update(ctx context.Context, id string, patch Ar
 	if current.Type == "page" && patch.Content != nil {
 		return ArtifactResponse{}, BadRequest("page content is edited collaboratively, not via the artifact API")
 	}
+	// The board room server (blocknote sidecar) owns board content now — it projects the
+	// room's snapshot into this column itself. A client PATCH here would be a stale writer
+	// racing the room (the pre-multiplayer path); refuse it the way pages do.
+	if current.Type == "board" && patch.Content != nil {
+		return ArtifactResponse{}, BadRequest("board content is edited via the board sync room, not the artifact API")
+	}
 
 	if patch.FolderID != nil {
 		if err := s.repo.UpdateArtifactNodeParent(ctx, id, patch.FolderID); err != nil {
