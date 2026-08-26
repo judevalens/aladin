@@ -1,7 +1,19 @@
 # PRD — Study (a surface that carries the method of self-learning)
 
-> **Status:** draft — **rev 1 (2026-08-25)**. Not locked. Nothing here is settled until the
-> owner marks it so.
+> **Status:** draft — **rev 1.1 (2026-08-25)**. Not locked. Nothing here is settled until
+> the owner marks it so.
+>
+> **MVP BUILT (2026-08-25, commits 47be5d41..92ec5f79) — loop-first, container deferred.**
+> Shipped: S-A wormhole (both platforms — desktop `openArtifactAt` + reader page-jump +
+> copilot citations with pages; iPad via the resurrected full reader + ReaderSeeks), S-B
+> capture (desktop: reader selection → cited excerpt → the active board's inbox), S-C paper
+> (paged boards + "Work this" spawn-with-cite), and quiz-me (grounded brief + cites in the
+> MCP board summary + quiz conduct in the system prompt). **§3's `study` node kind was
+> DELIBERATELY DEFERRED**, resolving the conflict with TUTOR_PRD §D-K explicitly: the MVP
+> uses a plain folder + its board as the container (board doc-windows are the per-material
+> position store, so the board is the interim control plane). A week of real use decides
+> whether the typed kind + Overview earn their ~30-40 files. Still unbuilt from this doc:
+> the plan object, open-questions store, resurfacing, distill, video (S-D/E-partial/F/G).
 >
 > **Audience:** whoever builds the next slice of Aladin's learning surface — and the owner,
 > deciding what this is before any of it is built.
