@@ -1,0 +1,40 @@
+-- The synced reading position: "you are at page N of this document", one row per
+-- artifact (the frame's entity id IS the artifact id — the feed is user-scoped).
+--
+-- `seq` is the per-entity staleness guard, `is_deleted` the standard tombstone
+-- (nothing deletes positions today; kept for spine symmetry). `updated_at` is the
+-- SERVER's unix-ms stamp carried in the frame data — not a device clock — so the
+-- reader can play newer-of against its own session memory consistently.
+
+CREATE TABLE reading_position (
+    id         TEXT    NOT NULL PRIMARY KEY,
+    page       INTEGER NOT NULL DEFAULT 1,
+    seq        INTEGER NOT NULL DEFAULT 0,
+    is_deleted INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL DEFAULT 0
+);
+
+storedSeq:
+SELECT seq FROM reading_position WHERE id = :id;
+
+selectLiveById:
+SELECT * FROM reading_position WHERE id = :id AND is_deleted = 0;
+
+upsert:
+INSERT INTO reading_position(id, page, seq, is_deleted, updated_at)
+VALUES (:id, :page, :seq, 0, :updatedAt)
+ON CONFLICT(id) DO UPDATE SET
+    page = excluded.page,
+    seq = excluded.seq,
+    is_deleted = 0,
+    updated_at = excluded.updated_at;
+
+softDelete:
+INSERT INTO reading_position(id, page, seq, is_deleted, updated_at)
+VALUES (:id, 1, :seq, 1, 0)
+ON CONFLICT(id) DO UPDATE SET
+    seq = excluded.seq,
+    is_deleted = 1;
+
+deleteAll:
+DELETE FROM reading_position;

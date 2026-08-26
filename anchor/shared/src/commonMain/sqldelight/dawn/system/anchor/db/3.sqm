@@ -1,0 +1,10 @@
+-- v3 → v4: the reading_position replica joins the cache — the `reading_position`
+-- synced kind ("continue where any device left off"). A cache table like `node`,
+-- fed only by frames; `updated_at` is the server's unix-ms stamp from the frame.
+CREATE TABLE reading_position (
+    id         TEXT    NOT NULL PRIMARY KEY,
+    page       INTEGER NOT NULL DEFAULT 1,
+    seq        INTEGER NOT NULL DEFAULT 0,
+    is_deleted INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL DEFAULT 0
+);

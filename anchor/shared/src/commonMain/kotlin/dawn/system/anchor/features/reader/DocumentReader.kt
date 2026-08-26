@@ -22,11 +22,15 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.debounce
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -69,6 +73,7 @@ import dawn.system.anchor.services.platform.NativePdfReader
  * lands. Reading position, zoom and the rail survive recycling via [ReaderPositions], and
  * the study loop's wormhole lands through [ReaderSeeks].
  */
+@OptIn(FlowPreview::class)
 @Composable
 fun DocumentReader(
     artifactId: String,
@@ -78,6 +83,14 @@ fun DocumentReader(
     contentType: String?,
     document: IngestedDocument?,
     modifier: Modifier = Modifier,
+    /** The synced cross-device position (page, server unix-ms stamp) — null = none known. */
+    syncedPage: Int? = null,
+    syncedAt: Long = 0,
+    /** True once the synced position has been LOOKED UP (present or absent) — gates both
+     *  the apply-at-open decision and the reporter, so the mount-time page can't win races. */
+    syncResolved: Boolean = false,
+    /** The (already debounce-tolerant) position report sink; null = don't report. */
+    onPageViewed: ((Int) -> Unit)? = null,
 ) {
     val c = AnchorTheme.colors
 
@@ -85,6 +98,11 @@ fun DocumentReader(
     // else, so everything worth keeping has to live outside the composition. That snapshot
     // is the whole contract — reopening a 300-page paper at page 1 is the fastest way to
     // make a reader useless.
+    //
+    // `sessionAtOpen` is the entry as it stood BEFORE this mount starts re-stamping it —
+    // the newer-of comparison against the synced position must not race the persist effect
+    // below, which would otherwise make the session look freshly written at mount.
+    val sessionAtOpen = remember(artifactId) { ReaderPositions.entry(artifactId) }
     val restored = remember(artifactId) { ReaderPositions.of(artifactId) }
     var page by remember(artifactId) { mutableStateOf(restored.page) }
     var pageCount by remember(artifactId) { mutableStateOf(0) }
@@ -92,7 +110,47 @@ fun DocumentReader(
     var railOpen by remember(artifactId) { mutableStateOf(restored.railOpen) }
 
     LaunchedEffect(artifactId, page, zoom, railOpen) {
-        ReaderPositions.remember(artifactId, ReaderPosition(page, zoom, railOpen))
+        ReaderPositions.remember(artifactId, ReaderPosition(page, zoom, railOpen, at = nowMs()))
+    }
+
+    // APPLY-AT-OPEN: once the synced position resolves, land on newer-of(session, synced) —
+    // exactly once, so a frame arriving later never yanks the page mid-read. An explicit
+    // seek (the effect below) always outranks the restore; page-1 positions aren't worth a
+    // jump. `lastReported` doubles as the reporter's baseline: the restored page itself is
+    // never reported back (the page-1-at-mount stomp, see the desktop's position-reporter).
+    var lastReported by remember(artifactId) { mutableStateOf<Int?>(null) }
+    LaunchedEffect(artifactId, syncResolved) {
+        if (!syncResolved || lastReported != null) return@LaunchedEffect
+        val sessionAt = sessionAtOpen?.at ?: 0L
+        if (
+            ReaderSeeks.current(artifactId) == null &&
+            syncedPage != null && syncedPage > 1 &&
+            (sessionAtOpen == null || syncedAt > sessionAt)
+        ) {
+            page = syncedPage
+        }
+        lastReported = page
+    }
+
+    // The reporter: real page changes (settled for a beat) flow out; the value the reader
+    // opened on does not. PDFKit's onPageChanged fires per page while a long seek settles —
+    // the debounce absorbs that. Leaving the reader flushes a still-pending change.
+    LaunchedEffect(artifactId, lastReported != null) {
+        if (lastReported == null || onPageViewed == null) return@LaunchedEffect
+        snapshotFlow { page }
+            .debounce(REPORT_DEBOUNCE_MILLIS)
+            .collect { p ->
+                if (p != lastReported) {
+                    lastReported = p
+                    onPageViewed(p)
+                }
+            }
+    }
+    DisposableEffect(artifactId) {
+        onDispose {
+            val last = lastReported
+            if (onPageViewed != null && last != null && page != last) onPageViewed(page)
+        }
     }
 
     // The wormhole: a cite (board excerpt, worksheet header) asked this document to open
@@ -151,14 +209,18 @@ private data class ReaderPosition(
     val zoom: Float = 1f,
     /** Whether the contents rail was open — a preference, and one you notice losing. */
     val railOpen: Boolean = true,
+    /** Device wall-clock ms of the last update — compared against the synced position's
+     *  server stamp at open (newer-of). Zero on the default entry. */
+    val at: Long = 0,
 )
 
 /**
  * The snapshot store for recycled readers.
  *
- * Process-scoped and in memory: this exists so unmounting a reader is free, not to survive
- * a relaunch. Persisting across launches is a separate, larger question — losing your place
- * mid-session is the one that actually bites.
+ * Process-scoped and in memory: this exists so unmounting a reader is free. Surviving a
+ * relaunch — and a different device — is the synced `reading_position` row's job; at open
+ * the reader takes whichever of the two is newer. Zoom and the rail stay session-local:
+ * they are per-device preferences the sync deliberately does not carry.
  */
 private object ReaderPositions {
     private val byArtifact = mutableMapOf<String, ReaderPosition>()
@@ -168,7 +230,15 @@ private object ReaderPositions {
     }
 
     fun of(artifactId: String): ReaderPosition = byArtifact[artifactId] ?: ReaderPosition()
+
+    /** The raw entry, or null if this document was never open this session. */
+    fun entry(artifactId: String): ReaderPosition? = byArtifact[artifactId]
 }
+
+@OptIn(kotlin.time.ExperimentalTime::class)
+private fun nowMs(): Long = kotlin.time.Clock.System.now().toEpochMilliseconds()
+
+private const val REPORT_DEBOUNCE_MILLIS = 2_000L
 
 /**
  * The contents rail. Its active row is **a position, not a link you clicked**: the last

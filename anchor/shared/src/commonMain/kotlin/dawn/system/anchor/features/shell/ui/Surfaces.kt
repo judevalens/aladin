@@ -227,6 +227,10 @@ private fun DocumentPage(document: OpenDocument.Standalone) {
                 contentType = bytes.contentType,
                 document = document.document,
                 modifier = Modifier.fillMaxSize(),
+                syncedPage = document.syncedPage,
+                syncedAt = document.syncedAt,
+                syncResolved = document.syncResolved,
+                onPageViewed = document.onPageViewed,
             )
         }
 

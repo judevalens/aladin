@@ -3,6 +3,9 @@ package dawn.system.anchor.sync
 import dawn.system.anchor.domain.WorkspaceNode
 import dawn.system.anchor.services.data.NodeChange
 import dawn.system.anchor.services.data.NodeStore
+import dawn.system.anchor.services.data.ReadingPositionChange
+import dawn.system.anchor.services.data.ReadingPositionRow
+import dawn.system.anchor.services.data.ReadingPositionStore
 import dawn.system.anchor.services.data.SyncStateStore
 import dawn.system.anchor.services.sync.Frame
 import dawn.system.anchor.services.sync.FrameEntity
@@ -65,6 +68,22 @@ class SyncPullerTest {
         override suspend fun clear() { cleared = true }
     }
 
+    private class RecordingPositionStore : ReadingPositionStore {
+        val applied = mutableListOf<Pair<String, Long>>()
+        private val seqs = mutableMapOf<String, Long>()
+
+        override suspend fun of(artifactId: String): ReadingPositionRow? = null
+        override suspend fun applyAll(changes: List<ReadingPositionChange>): Int =
+            changes.count { change ->
+                if (change.seq <= (seqs[change.id] ?: 0L)) return@count false
+                seqs[change.id] = change.seq
+                applied += change.id to change.seq
+                true
+            }
+
+        override suspend fun clear() = Unit
+    }
+
     private class FakeSyncState : SyncStateStore {
         var value = 0L
         override suspend fun cursor(): Long = value
@@ -92,8 +111,12 @@ class SyncPullerTest {
         data = JsonObject(emptyMap()),
     )
 
-    private fun puller(api: SyncApi, store: RecordingStore, state: FakeSyncState) =
-        SyncPuller(api, SyncEngine.tree(store), store, state)
+    private fun puller(
+        api: SyncApi,
+        store: RecordingStore,
+        state: FakeSyncState,
+        positions: ReadingPositionStore = RecordingPositionStore(),
+    ) = SyncPuller(api, SyncEngine.tree(store, positions), store, state)
 
     @Test
     fun applies_frames_advances_cursor_and_is_idempotent() = runTest {
@@ -184,6 +207,44 @@ class SyncPullerTest {
             // The point: nothing was applied, so the cursor must not have moved.
         }
         assertEquals(11, state.value)
+    }
+
+    @Test
+    fun a_reading_position_applies_but_never_joins_the_node_replace_set() = runTest {
+        val store = RecordingStore()
+        val positions = RecordingPositionStore()
+        val state = FakeSyncState()
+        // A position's entity id IS an artifact id: "f2" here has no node in the snapshot
+        // (deleted on the server) but still has a position row — it must not be retained.
+        val api = ScriptedApi(
+            mutableListOf(
+                SyncPullResult(
+                    frames = listOf(
+                        Frame(
+                            listOf(
+                                upsert("f1", 9),
+                                FrameEntity(
+                                    "reading_position", "f2", 3, "upsert",
+                                    JsonObject(emptyMap()),
+                                ),
+                            ),
+                        ),
+                    ),
+                    cursor = 20,
+                    mode = "snapshot",
+                ),
+            ),
+        )
+
+        val applied = puller(api, store, state, positions).pullAndApply()
+
+        assertEquals(2, applied, "both kinds applied")
+        assertEquals(listOf("f2" to 3L), positions.applied)
+        assertEquals(
+            listOf("f1"),
+            store.retained?.toList(),
+            "REPLACE is nodes-scoped — the position's artifact id must not rescue a deleted node",
+        )
     }
 
     @Test

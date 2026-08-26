@@ -48,7 +48,12 @@ class SyncPuller(
             }
 
             if (result.isSnapshot) {
-                val ids = result.frames.flatMap { frame -> frame.entities.map { it.entityId } }
+                // REPLACE is NODES-scoped: only tree kinds join the retain set. Other kinds
+                // (reading_position) are merge-only on snapshot — and a position's entity id
+                // IS an artifact id, so letting it in would rescue deleted nodes from REPLACE.
+                val ids = result.frames.flatMap { frame ->
+                    frame.entities.filter { it.entityKind in NODE_KINDS }.map { it.entityId }
+                }
                 nodes.retainOnly(ids)
             }
 
@@ -58,5 +63,10 @@ class SyncPuller(
             // server that keeps returning the same page.
             if (result.cursor <= cursor) return total
         }
+    }
+
+    private companion object {
+        /** The kinds that live in the node table — the only ones snapshot REPLACE governs. */
+        val NODE_KINDS = setOf("folder", "research", "artifact")
     }
 }

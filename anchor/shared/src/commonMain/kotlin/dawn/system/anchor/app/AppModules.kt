@@ -13,7 +13,11 @@ import dawn.system.anchor.services.data.SqlDelightSyncStateStore
 import dawn.system.anchor.services.data.SyncStateStore
 import dawn.system.anchor.services.data.DocumentStore
 import dawn.system.anchor.services.data.KtorDocumentStore
+import dawn.system.anchor.services.data.KtorReadingPositionWriter
 import dawn.system.anchor.services.data.KtorWorkspaceWriter
+import dawn.system.anchor.services.data.ReadingPositionStore
+import dawn.system.anchor.services.data.ReadingPositionWriter
+import dawn.system.anchor.services.data.SqlDelightReadingPositionStore
 import dawn.system.anchor.services.data.WorkspaceWriter
 import dawn.system.anchor.services.database.createDatabase
 import dawn.system.anchor.services.network.ApiConfig
@@ -71,15 +75,21 @@ val dataModule: Module = module {
     single<DocumentStore> { KtorDocumentStore(get()) }
     // Writes proxy to Go and apply the committed result under the same seq guard.
     single<WorkspaceWriter> { KtorWorkspaceWriter(client = get(), nodes = get()) }
+    // Reading positions: the replica the reader consults at open, and the reporter
+    // that PUTs the current page (committed row applied through the same guard).
+    single<ReadingPositionStore> { SqlDelightReadingPositionStore(get(), get(named(DB_WRITER))) }
+    single<ReadingPositionWriter> { KtorReadingPositionWriter(client = get(), store = get()) }
 }
 
 /** The client half of the sync spine: frames in, store updated, UI observes the store. */
 val syncModule: Module = module {
     single<SyncApi> { KtorSyncApi(get()) }
-    single { SyncEngine.tree(get()) }
+    single { SyncEngine.tree(get(), get()) }
     single { SyncPuller(api = get(), engine = get(), nodes = get(), syncState = get()) }
     single { SyncLive(client = get(), config = get(), engine = get(), json = anchorJson) }
-    single { SyncRunner(puller = get(), nodes = get(), syncState = get(), live = get()) }
+    single {
+        SyncRunner(puller = get(), nodes = get(), readingPositions = get(), syncState = get(), live = get())
+    }
 }
 
 /** The Circuit, assembled from every registered screen's factories. */

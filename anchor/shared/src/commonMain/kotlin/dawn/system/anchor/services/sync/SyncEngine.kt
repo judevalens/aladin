@@ -2,6 +2,8 @@ package dawn.system.anchor.services.sync
 
 import dawn.system.anchor.services.data.NodeChange
 import dawn.system.anchor.services.data.NodeStore
+import dawn.system.anchor.services.data.ReadingPositionChange
+import dawn.system.anchor.services.data.ReadingPositionStore
 
 /**
  * Routes a frame's entities to the store that owns each kind.
@@ -36,16 +38,19 @@ class SyncEngine(private val handlers: Map<String, EntityHandler>) {
 
     companion object {
         /**
-         * The tree kinds — folder, research and artifact all live in one table, mirroring
-         * the desktop registry. `watchlist` joins when Markets needs it.
+         * The registry: the tree kinds (folder, research, artifact — one table, mirroring
+         * the desktop registry) plus `reading_position`. `watchlist` joins when Markets
+         * needs it. A kind missing here means its frames are SILENTLY dropped — register
+         * the handler in the same change that adds the server's SyncSource.
          */
-        fun tree(nodes: NodeStore): SyncEngine {
+        fun tree(nodes: NodeStore, readingPositions: ReadingPositionStore): SyncEngine {
             val handler = NodeEntityHandler(nodes)
             return SyncEngine(
                 mapOf(
                     "folder" to handler,
                     "research" to handler,
                     "artifact" to handler,
+                    "reading_position" to ReadingPositionEntityHandler(readingPositions),
                 ),
             )
         }
@@ -67,6 +72,21 @@ internal class NodeEntityHandler(private val nodes: NodeStore) : EntityHandler {
         entities.map { entity ->
             NodeChange(
                 kind = entity.entityKind,
+                id = entity.entityId,
+                seq = entity.seq,
+                op = entity.op,
+                data = entity.data,
+            )
+        },
+    )
+}
+
+internal class ReadingPositionEntityHandler(
+    private val store: ReadingPositionStore,
+) : EntityHandler {
+    override suspend fun applyAll(entities: List<FrameEntity>): Int = store.applyAll(
+        entities.map { entity ->
+            ReadingPositionChange(
                 id = entity.entityId,
                 seq = entity.seq,
                 op = entity.op,

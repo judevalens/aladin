@@ -1,6 +1,7 @@
 package dawn.system.anchor.services.sync
 
 import dawn.system.anchor.services.data.NodeStore
+import dawn.system.anchor.services.data.ReadingPositionStore
 import dawn.system.anchor.services.data.SyncStateStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -29,6 +30,7 @@ import kotlinx.coroutines.launch
 class SyncRunner(
     private val puller: SyncPuller,
     private val nodes: NodeStore,
+    private val readingPositions: ReadingPositionStore,
     private val syncState: SyncStateStore,
     private val live: SyncLive,
 ) {
@@ -99,6 +101,7 @@ class SyncRunner(
         scope = null
         _status.value = SyncStatus.Idle
         nodes.clear()
+        readingPositions.clear()
         syncState.clear()
     }
 

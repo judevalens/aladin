@@ -14,9 +14,14 @@ import dawn.system.anchor.domain.OpenTab
 import dawn.system.anchor.domain.TabKey
 import dawn.system.anchor.domain.artifactKind
 import dawn.system.anchor.domain.IngestedDocument
+import androidx.compose.runtime.rememberCoroutineScope
 import dawn.system.anchor.services.data.ArtifactResourceStore
 import dawn.system.anchor.services.data.DocumentStore
 import dawn.system.anchor.services.data.NodeStore
+import dawn.system.anchor.services.data.ReadingPositionRow
+import dawn.system.anchor.services.data.ReadingPositionStore
+import dawn.system.anchor.services.data.ReadingPositionWriter
+import kotlinx.coroutines.launch
 
 /**
  * Where a file's bytes are.
@@ -54,6 +59,14 @@ sealed interface OpenDocument {
         val artifactType: String? = null,
         /** Status/outline/page count from ingestion; null = not ingested (still readable). */
         val document: IngestedDocument? = null,
+        /** The synced cross-device position, once looked up; null = none known. */
+        val syncedPage: Int? = null,
+        /** The synced position's server unix-ms stamp (0 when none). */
+        val syncedAt: Long = 0,
+        /** True once the replica has been consulted — the reader's writer arms on this. */
+        val syncResolved: Boolean = false,
+        /** The (remembered, stable) position report sink. */
+        val onPageViewed: ((Int) -> Unit)? = null,
     ) : Standalone
 
     /**
@@ -102,6 +115,8 @@ class DocumentStateProducer(
     private val nodes: NodeStore,
     private val resources: ArtifactResourceStore,
     private val documents: DocumentStore,
+    private val readingPositions: ReadingPositionStore,
+    private val positionWriter: ReadingPositionWriter,
 ) {
 
     @Composable
@@ -112,6 +127,11 @@ class DocumentStateProducer(
         // The ingested half (outline, page count) per open file — resolved beside the
         // bytes, never blocking them: a PDF with no outline still reads.
         val ingested = remember { mutableStateMapOf<String, IngestedDocument?>() }
+        // The synced reading position per open file, consulted ONCE at open (apply-at-open:
+        // a frame landing later must not yank the page under a reader mid-session). Key
+        // presence = "looked up", which is what arms the reader's position writer.
+        val restores = remember { mutableStateMapOf<String, ReadingPositionRow?>() }
+        val reportScope = rememberCoroutineScope()
 
         // EVERY open document is resolved, not just the visible one, because every one of them
         // becomes a page and stays composed. A document you switch to must already have its
@@ -167,12 +187,34 @@ class DocumentStateProducer(
                             }
                         }
 
+                        LaunchedEffect(id) {
+                            if (!restores.containsKey(id)) {
+                                restores[id] = runCatching { readingPositions.of(id) }.getOrNull()
+                            }
+                        }
+                        // Remembered so the Pdf value stays equal across recompositions —
+                        // a fresh lambda per pass would re-render every open reader.
+                        val onPageViewed = remember(id) {
+                            { page: Int ->
+                                reportScope.launch {
+                                    // A failed report is just lost; the next one heals it.
+                                    runCatching { positionWriter.report(id, page) }
+                                }
+                                Unit
+                            }
+                        }
+
+                        val restore = restores[id]
                         OpenDocument.Pdf(
                             key = tab,
                             title = title,
                             bytes = seeded,
                             artifactType = node.artifactType,
                             document = ingested[id],
+                            syncedPage = restore?.page,
+                            syncedAt = restore?.updatedAt ?: 0,
+                            syncResolved = restores.containsKey(id),
+                            onPageViewed = onPageViewed,
                         )
                     }
 
