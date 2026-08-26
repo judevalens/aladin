@@ -244,10 +244,17 @@ as outbox frames → `data_event` → `DataEvents` → the local store → `useS
 - optimistic local patching
 - an "invalidation" Subject that components subscribe to in order to re-fetch
 
-If a surface needs to stay live, it subscribes to the synced local model. Copy the existing
-`signal`/tree paths. The client sync engine is in **Rust** (`src-tauri/src/sync/`), and the
-local SQLite is a **rebuildable replica** — it self-heals (`Db::open_or_recover`), so never
-treat it as authoritative.
+If a surface needs to stay live, it subscribes to the synced local model. To ADD a synced
+kind, copy the existing templates (the `signal` kind is gone — it was the claim layer):
+**`shard_kv`** for the per-key entity shape (Go `repo/shard_kv_postgres.go`, Rust
+`db/repo/watchlists.rs`-style apply, migration `00044`) and **`watchlist`** for the clean
+REST resource + typed service + TS store; `reading_position` is the newest full example on
+all three clients. The registration lines that silently drop frames when missed: Go
+`app/wiring.go` `NewSyncService(...)`, Rust `sync/engine.rs` registry, anchor
+`SyncEngine.tree(...)` + `SyncRunner.stopAndClear`. Snapshot REPLACE (`retain_only`) is
+NODES-scoped on both clients — other kinds are merge-only. The client sync engine is in
+**Rust** (`src-tauri/src/sync/`), and the local SQLite is a **rebuildable replica** — it
+self-heals (`Db::open_or_recover`), so never treat it as authoritative.
 
 ## 8. Traps that have actually bitten
 
