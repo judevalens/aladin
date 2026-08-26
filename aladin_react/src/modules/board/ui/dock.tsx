@@ -46,6 +46,7 @@ export function Dock({
   onAddInk,
   onAddTask,
   onAddCard,
+  onQuizMe,
 }: {
   tool: BoardTool;
   subTool: PencilSubTool;
@@ -68,6 +69,8 @@ export function Dock({
   onAddInk: () => void;
   onAddTask: () => void;
   onAddCard: () => void;
+  /** "Quiz" appears only when a copilot host exists (desktop today). */
+  onQuizMe?: () => void;
 }) {
   const islandRef = useRef<HTMLDivElement>(null);
   const headRef = useRef<HTMLDivElement>(null);
@@ -146,6 +149,12 @@ export function Dock({
           <TextButton label="Ink" onClick={onAddInk} />
           <TextButton label="Task" onClick={onAddTask} />
           <TextButton label="Card" onClick={onAddCard} />
+          {onQuizMe ? (
+            <>
+              <Divider />
+              <TextButton label="Quiz" onClick={onQuizMe} />
+            </>
+          ) : null}
         </>
       ) : null}
 

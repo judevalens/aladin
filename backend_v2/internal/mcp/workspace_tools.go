@@ -953,10 +953,14 @@ func summarizeBoardContent(content string) string {
 				TypeName string `json:"typeName"`
 				Type     string `json:"type"`
 				Props    struct {
-					Text  string `json:"text"`
-					Front string `json:"front"`
-					Back  string `json:"back"`
-					Title string `json:"title"`
+					Text             string `json:"text"`
+					Front            string `json:"front"`
+					Back             string `json:"back"`
+					Title            string `json:"title"`
+					ArtifactID       string `json:"artifactId"`
+					SourceArtifactID string `json:"sourceArtifactId"`
+					SourceTitle      string `json:"sourceTitle"`
+					Page             int    `json:"page"`
 				} `json:"props"`
 			} `json:"store"`
 		} `json:"document"`
@@ -982,11 +986,23 @@ func summarizeBoardContent(content string) string {
 			}
 		case "aladin-excerpt":
 			if record.Props.Text != "" {
-				lines = append(lines, "excerpt: "+record.Props.Text)
+				line := "excerpt: " + record.Props.Text
+				// The cite is what makes the excerpt quizzable: the copilot reads the
+				// source around it (read_document) and checks answers against the text.
+				if record.Props.SourceArtifactID != "" && record.Props.Page > 0 {
+					line += fmt.Sprintf(" [cite: %s p.%d, artifact %s]",
+						record.Props.SourceTitle, record.Props.Page, record.Props.SourceArtifactID)
+				}
+				lines = append(lines, line)
 			}
 		case "aladin-doc":
 			if record.Props.Title != "" {
-				lines = append(lines, "live window: "+record.Props.Title)
+				line := "live window: " + record.Props.Title
+				if record.Props.ArtifactID != "" {
+					line += fmt.Sprintf(" [artifact %s, open at p.%d]",
+						record.Props.ArtifactID, record.Props.Page)
+				}
+				lines = append(lines, line)
 			}
 		}
 	}

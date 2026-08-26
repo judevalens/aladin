@@ -406,6 +406,16 @@ export function BoardChrome() {
 
   const inserted = () => host.haptic?.("light");
 
+  // M5: the study loop's oral exam. The canned brief keeps the copilot inside the Tutor
+  // rules — grounded in the user's own objects, pointer over paraphrase on a miss. The
+  // desktop dock already reports this board as the current surface, so "this board" binds.
+  const quizMe = () =>
+    host.onAskAbout?.({
+      title:
+        "Quiz me on this board. One question at a time, only from my excerpts, cards and tasks, " +
+        "checked against their cited sources; when I miss, point me at the source page instead of re-explaining.",
+    });
+
   // The moment finger≠pencil is in force, say so — a panning finger reads as broken to
   // anyone who has not been told the rule. Paper skips the 100% line (it isn't true there).
   const hintText =
@@ -627,6 +637,7 @@ export function BoardChrome() {
           addCard(editor);
           inserted();
         }}
+        onQuizMe={host.onAskAbout ? quizMe : undefined}
       />
       <StatusPill />
       <BoardToastView />
