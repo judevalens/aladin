@@ -13,7 +13,9 @@ import dawn.system.anchor.domain.Nav
 import dawn.system.anchor.domain.OpenTab
 import dawn.system.anchor.domain.TabKey
 import dawn.system.anchor.domain.artifactKind
+import dawn.system.anchor.domain.IngestedDocument
 import dawn.system.anchor.services.data.ArtifactResourceStore
+import dawn.system.anchor.services.data.DocumentStore
 import dawn.system.anchor.services.data.NodeStore
 
 /**
@@ -25,7 +27,7 @@ import dawn.system.anchor.services.data.NodeStore
  */
 sealed interface Fetch {
     data object Pending : Fetch
-    data class Ready(val path: String) : Fetch
+    data class Ready(val path: String, val contentType: String? = null) : Fetch
     data class Failed(val reason: String) : Fetch
 }
 
@@ -43,11 +45,15 @@ sealed interface OpenDocument {
      */
     sealed interface Standalone : OpenDocument
 
-    /** A PDF, and whether its bytes have landed. */
+    /** A file for the reader: its bytes, its server-said type, and its ingested half. */
     data class Pdf(
         override val key: TabKey,
         override val title: String,
         val bytes: Fetch,
+        /** The artifact's type string — picks the glyph on the unsupported-file card. */
+        val artifactType: String? = null,
+        /** Status/outline/page count from ingestion; null = not ingested (still readable). */
+        val document: IngestedDocument? = null,
     ) : Standalone
 
     /**
@@ -95,6 +101,7 @@ data class DocumentSlice(
 class DocumentStateProducer(
     private val nodes: NodeStore,
     private val resources: ArtifactResourceStore,
+    private val documents: DocumentStore,
 ) {
 
     @Composable
@@ -102,6 +109,9 @@ class DocumentStateProducer(
         // Fetches are keyed by artifact and outlive any one page, so switching away from a
         // download does not abandon it.
         val fetches = remember { mutableStateMapOf<String, Fetch>() }
+        // The ingested half (outline, page count) per open file — resolved beside the
+        // bytes, never blocking them: a PDF with no outline still reads.
+        val ingested = remember { mutableStateMapOf<String, IngestedDocument?>() }
 
         // EVERY open document is resolved, not just the visible one, because every one of them
         // becomes a page and stays composed. A document you switch to must already have its
@@ -131,13 +141,13 @@ class DocumentStateProducer(
                         // fetched before paints on frame one. Only a genuine first open is
                         // ever Pending.
                         val seeded = fetches[id]
-                            ?: resources.cached(id)?.let { Fetch.Ready(it.path) }
+                            ?: resources.cached(id)?.let { Fetch.Ready(it.path, it.contentType) }
                             ?: Fetch.Pending
 
                         LaunchedEffect(id) {
                             if (fetches[id] !is Fetch.Ready && resources.cached(id) == null) {
                                 fetches[id] = runCatching { resources.resource(id) }.fold(
-                                    onSuccess = { Fetch.Ready(it.path) },
+                                    onSuccess = { Fetch.Ready(it.path, it.contentType) },
                                     // The server's own words where there are any. "Couldn't
                                     // open it" alone leaves nothing to act on, and silence
                                     // leaves a spinner that never resolves.
@@ -151,7 +161,19 @@ class DocumentStateProducer(
                             }
                         }
 
-                        OpenDocument.Pdf(tab, title, seeded)
+                        LaunchedEffect(id) {
+                            if (!ingested.containsKey(id)) {
+                                ingested[id] = runCatching { documents.document(id) }.getOrNull()
+                            }
+                        }
+
+                        OpenDocument.Pdf(
+                            key = tab,
+                            title = title,
+                            bytes = seeded,
+                            artifactType = node.artifactType,
+                            document = ingested[id],
+                        )
                     }
 
                     else -> OpenDocument.Unsupported(tab, title, kind)

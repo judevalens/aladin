@@ -34,14 +34,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import dawn.system.anchor.domain.DocumentStatus
+import androidx.compose.runtime.mutableStateMapOf
 import dawn.system.anchor.domain.IngestedDocument
 import dawn.system.anchor.domain.OutlineEntry
 import dawn.system.anchor.domain.OutlineSource
-import dawn.system.anchor.domain.WorkspaceNode
-import dawn.system.anchor.services.data.ArtifactResourceStore
-import dawn.system.anchor.services.data.CachedResource
-import dawn.system.anchor.services.data.DocumentStore
 import dawn.system.anchor.services.design.AnchorShape
 import dawn.system.anchor.services.design.AnchorTheme
 import dawn.system.anchor.services.design.ChevronDirection
@@ -66,77 +62,55 @@ import dawn.system.anchor.services.platform.NativePdfReader
  * Three parts, left to right: a contents rail, a chrome bar, and the page stage. The rail
  * and the chrome are Compose; the stage is PDFKit, which gives real text selection, search
  * and tiled rendering of a 400-page document for free.
+ *
+ * **Value-driven** (adopted into the rev-2 shell, 2026-08-25): the bytes and the ingested
+ * half arrive as values from DocumentStateProducer — no service reaches this layer. A PDF
+ * always renders, ingested or not; the rail simply has nothing to show until the outline
+ * lands. Reading position, zoom and the rail survive recycling via [ReaderPositions], and
+ * the study loop's wormhole lands through [ReaderSeeks].
  */
 @Composable
 fun DocumentReader(
-    node: WorkspaceNode,
-    resources: ArtifactResourceStore,
-    documents: DocumentStore,
+    artifactId: String,
+    title: String,
+    artifactType: String?,
+    filePath: String,
+    contentType: String?,
+    document: IngestedDocument?,
     modifier: Modifier = Modifier,
 ) {
     val c = AnchorTheme.colors
-    // Seeded from the cache SYNCHRONOUSLY. Starting at Loading and resolving in an effect
-    // paints a full-pane "Fetching…" over a file that is already on disk — one frame, but a
-    // frame on every fresh composition, which is exactly what switching pages causes.
-    var state by remember(node.id) {
-        mutableStateOf<ReaderState>(
-            resources.cached(node.id)?.let(ReaderState::Ready) ?: ReaderState.Loading,
-        )
-    }
-    var document by remember(node.id) { mutableStateOf<IngestedDocument?>(null) }
 
     // This reader is a RECYCLED surface: it is unmounted as soon as you look at something
     // else, so everything worth keeping has to live outside the composition. That snapshot
     // is the whole contract — reopening a 300-page paper at page 1 is the fastest way to
-    // make a reader useless, and it is what holding the view resident used to buy.
-    val restored = remember(node.id) { ReaderPositions.of(node.id) }
-    var page by remember(node.id) { mutableStateOf(restored.page) }
-    var pageCount by remember(node.id) { mutableStateOf(0) }
-    var zoom by remember(node.id) { mutableStateOf(restored.zoom) }
-    var railOpen by remember(node.id) { mutableStateOf(restored.railOpen) }
+    // make a reader useless.
+    val restored = remember(artifactId) { ReaderPositions.of(artifactId) }
+    var page by remember(artifactId) { mutableStateOf(restored.page) }
+    var pageCount by remember(artifactId) { mutableStateOf(0) }
+    var zoom by remember(artifactId) { mutableStateOf(restored.zoom) }
+    var railOpen by remember(artifactId) { mutableStateOf(restored.railOpen) }
 
-    LaunchedEffect(node.id) {
-        if (state is ReaderState.Ready) return@LaunchedEffect // already on disk
-        state = try {
-            ReaderState.Ready(resources.resource(node.id))
-        } catch (failure: Throwable) {
-            ReaderState.Failed(failure.message ?: "could not fetch the file")
-        }
+    LaunchedEffect(artifactId, page, zoom, railOpen) {
+        ReaderPositions.remember(artifactId, ReaderPosition(page, zoom, railOpen))
     }
 
-    // The ingested half is fetched alongside, not before: a PDF with no outline still
-    // reads, so the stage must never wait on this.
-    LaunchedEffect(node.id) {
-        document = runCatching { documents.document(node.id) }.getOrNull()
+    // The wormhole: a cite (board excerpt, worksheet header) asked this document to open
+    // at a page. Nonce-keyed so citing the same page twice still jumps.
+    val seek = ReaderSeeks.current(artifactId)
+    LaunchedEffect(seek?.nonce) {
+        seek?.let { page = it.page.coerceAtLeast(1) }
     }
 
-    LaunchedEffect(node.id, page, zoom, railOpen) {
-        ReaderPositions.remember(node.id, ReaderPosition(page, zoom, railOpen))
-    }
-
-    val current = state
-    val status = document?.status ?: DocumentStatus.Ready
+    val isPdf = contentType?.startsWith("application/pdf") == true ||
+        filePath.endsWith(".pdf", ignoreCase = true) ||
+        contentType == null // benefit of the doubt: PDFKit fails loudly, a card hides quietly
 
     Box(modifier.fillMaxSize().background(c.rail)) {
         when {
-            current is ReaderState.Loading -> ReaderNotice(
-                title = "Fetching…",
-                detail = "Downloading ${node.title.ifBlank { "the file" }}.",
-            )
+            !isPdf -> UnsupportedFileCard(title, artifactType, contentType)
 
-            current is ReaderState.Failed -> ReaderNotice(
-                title = "Couldn't load the file",
-                detail = current.message,
-            )
-
-            current is ReaderState.Ready && !current.resource.isPdf ->
-                UnsupportedFileCard(node, current.resource)
-
-            // A stalled or failed ingestion hides the chrome entirely: an outline rail
-            // over a document that has no outline yet is furniture, not navigation.
-            !status.isReadable -> StatusNotice(status, document?.error)
-
-            current is ReaderState.Ready -> Row(Modifier.fillMaxSize()) {
+            else -> Row(Modifier.fillMaxSize()) {
                 if (railOpen) {
                     ContentsRail(
                         document = document,
@@ -158,7 +132,7 @@ fun DocumentReader(
                         onZoom = { zoom = it },
                     )
                     NativePdfReader(
-                        filePath = current.resource.path,
+                        filePath = filePath,
                         page = page,
                         zoom = zoom,
                         onDocumentLoaded = { pageCount = it },
@@ -382,36 +356,24 @@ private fun ChromeButton(
 }
 
 /**
- * What happened to the ingestion, and what to do about it.
- *
- * Every state names an action, because the alternative — a status word on its own — leaves
- * the user with a file they can see is broken and no idea whose problem it is.
+ * The wormhole's landing pad: per-artifact "open at this page" requests, written by the
+ * bridge (a board excerpt's Open source, a worksheet's cite) and observed by whichever
+ * reader shows that document. A compose state map, so an ALREADY-OPEN reader jumps too.
+ * Nonce-keyed so the same page re-fires. The iPad twin of the desktop's
+ * `pendingDocLocations`.
  */
-@Composable
-private fun StatusNotice(status: DocumentStatus, error: String?) {
-    val (title, detail) = when (status) {
-        DocumentStatus.Pending -> "Queued" to
-            "This file is waiting for the ingestion worker to pick it up."
+object ReaderSeeks {
+    data class Seek(val page: Int, val nonce: Int)
 
-        DocumentStatus.Ingesting -> "Reading…" to
-            "The worker is extracting this document's text and structure."
+    private val requests = mutableStateMapOf<String, Seek>()
 
-        DocumentStatus.Unsupported -> "No text to extract" to
-            "This is almost certainly a scan. Run it through OCR and re-upload it from " +
-                "the desktop app."
-
-        DocumentStatus.Failed -> "Couldn't read this file" to
-            (error ?: "Extraction failed. Retry it from the desktop app.")
-
-        DocumentStatus.Ready -> "Ready" to ""
+    fun request(artifactId: String, page: Int) {
+        val nonce = (requests[artifactId]?.nonce ?: 0) + 1
+        requests[artifactId] = Seek(page, nonce)
     }
-    ReaderNotice(title = title, detail = detail)
-}
 
-private sealed interface ReaderState {
-    data object Loading : ReaderState
-    data class Ready(val resource: CachedResource) : ReaderState
-    data class Failed(val message: String) : ReaderState
+    /** Read inside composition — the reader recomposes when its document's seek changes. */
+    fun current(artifactId: String): Seek? = requests[artifactId]
 }
 
 /**
@@ -419,7 +381,7 @@ private sealed interface ReaderState {
  * pretending: the file *is* downloaded by this point, so the honest thing is to name it.
  */
 @Composable
-private fun UnsupportedFileCard(node: WorkspaceNode, resource: CachedResource) {
+private fun UnsupportedFileCard(title: String, artifactType: String?, contentType: String?) {
     val c = AnchorTheme.colors
 
     Column(
@@ -436,19 +398,19 @@ private fun UnsupportedFileCard(node: WorkspaceNode, resource: CachedResource) {
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             artifactKindIcon(
-                artifactType = node.artifactType,
+                artifactType = artifactType,
                 isContainer = false,
                 tint = c.ink3,
                 size = FileGlyphSize,
             )
             Column(Modifier.weight(1f)) {
                 Text(
-                    node.title.ifBlank { "Untitled file" },
+                    title.ifBlank { "Untitled file" },
                     style = MaterialTheme.typography.titleMedium,
                     color = c.ink,
                 )
                 Spacer(Modifier.height(4.dp))
-                Text(resource.contentType ?: "unknown type", style = MetaStyle, color = c.ink4)
+                Text(contentType ?: "unknown type", style = MetaStyle, color = c.ink4)
             }
         }
         Spacer(Modifier.height(12.dp))

@@ -28,10 +28,11 @@ import dawn.system.anchor.features.shell.state.Fetch
 import dawn.system.anchor.domain.TabKey
 import dawn.system.anchor.features.shell.state.NavEvent
 import dawn.system.anchor.features.shell.state.OpenDocument
+import dawn.system.anchor.features.reader.DocumentReader
+import dawn.system.anchor.features.reader.ReaderSeeks
 import dawn.system.anchor.features.note.WebPane
 import dawn.system.anchor.features.note.WebSurfacePage
 import dawn.system.anchor.features.note.rememberWebSurfaceHost
-import dawn.system.anchor.services.platform.PdfViewer
 import dawn.system.anchor.services.design.AnchorShape
 import dawn.system.anchor.services.design.AnchorTheme
 import dawn.system.anchor.services.design.CloseIcon
@@ -69,7 +70,12 @@ internal fun SurfaceHost(state: ShellScreen.State, modifier: Modifier = Modifier
     val webHost = rememberWebSurfaceHost(
         state.editor,
         enabled = webDocs.isNotEmpty(),
-        onOpenArtifact = { id -> state.nav.handle(NavEvent.OpenDoc(TabKey.Artifact(id))) },
+        onOpenArtifact = { id, page ->
+            // The wormhole: a cited page seeds the reader's seek BEFORE (or while) it is
+            // open — ReaderSeeks is compose state, so an already-open reader jumps too.
+            if (page != null) ReaderSeeks.request(id, page)
+            state.nav.handle(NavEvent.OpenDoc(TabKey.Artifact(id)))
+        },
         onAskAbout = { if (!state.chrome.copilotOpen) state.chrome.handle(ChromeEvent.ToggleCopilot) },
     )
 
@@ -211,10 +217,15 @@ private fun DocumentPage(document: OpenDocument.Standalone) {
             // Said out loud rather than left spinning: a failure that looks like a slow
             // success is a surface that waits forever.
             is Fetch.Failed -> Placeholder(document.title, "Couldn't open it — ${bytes.reason}.")
-            is Fetch.Ready -> PdfViewer(
+            // The full reader: contents rail, chrome, position memory, and the wormhole's
+            // ReaderSeeks — everything the bare PdfViewer (page 0, no re-seek) could not do.
+            is Fetch.Ready -> DocumentReader(
+                artifactId = document.key.nodeId,
+                title = document.title,
+                artifactType = document.artifactType,
                 filePath = bytes.path,
-                page = 0,
-                onPageChanged = {},
+                contentType = bytes.contentType,
+                document = document.document,
                 modifier = Modifier.fillMaxSize(),
             )
         }

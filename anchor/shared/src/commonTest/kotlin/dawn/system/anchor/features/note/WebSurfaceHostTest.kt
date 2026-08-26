@@ -140,10 +140,23 @@ class WebSurfaceHostTest {
     // ── web → native ──
 
     @Test
-    fun `openArtifact parses to its id`() {
+    fun `openArtifact parses to its id, with or without a wormhole page`() {
         assertEquals(
             HostMessage.OpenArtifact("a-123"),
             parseHostMessage("""{"type":"openArtifact","id":"a-123"}"""),
+        )
+        assertEquals(
+            HostMessage.OpenArtifact("a-123", 94),
+            parseHostMessage("""{"type":"openArtifact","id":"a-123","page":94}"""),
+        )
+        // A null or nonsense page is a plain open, never a rejection.
+        assertEquals(
+            HostMessage.OpenArtifact("a-123"),
+            parseHostMessage("""{"type":"openArtifact","id":"a-123","page":null}"""),
+        )
+        assertEquals(
+            HostMessage.OpenArtifact("a-123"),
+            parseHostMessage("""{"type":"openArtifact","id":"a-123","page":0}"""),
         )
     }
 

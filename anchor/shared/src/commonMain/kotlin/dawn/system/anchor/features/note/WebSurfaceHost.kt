@@ -118,7 +118,7 @@ data class EditorSession(
 fun rememberWebSurfaceHost(
     session: EditorSession?,
     enabled: Boolean,
-    onOpenArtifact: (String) -> Unit = {},
+    onOpenArtifact: (String, Int?) -> Unit = { _, _ -> },
     onAskAbout: (HostMessage.AskAbout) -> Unit = {},
     onHaptic: (Haptic) -> Unit = ::performHaptic,
 ): WebSurfaceHost? {
@@ -157,7 +157,7 @@ fun rememberWebSurfaceHost(
         ),
         onMessage = { raw ->
             when (val message = parseHostMessage(raw)) {
-                is HostMessage.OpenArtifact -> onOpenArtifact(message.id)
+                is HostMessage.OpenArtifact -> onOpenArtifact(message.id, message.page)
                 is HostMessage.AskAbout -> onAskAbout(message)
                 is HostMessage.Haptic -> onHaptic(message.kind)
                 is HostMessage.WebError -> println("anchor embed error: ${message.message}")
@@ -253,8 +253,11 @@ sealed interface HostMessage {
     /** The page's React root mounted and drained the queued state. */
     data object Ready : HostMessage
 
-    /** The board's selection bar: "Open in folder" — navigate to this artifact. */
-    data class OpenArtifact(val id: String) : HostMessage
+    /**
+     * The board's selection bar: "Open in folder" / "Open source" — navigate to this
+     * artifact; [page] is the wormhole's landing spot (a cite), null for a plain open.
+     */
+    data class OpenArtifact(val id: String, val page: Int? = null) : HostMessage
 
     /**
      * The board's selection bar: "Ask about this" — open the copilot with the object as
@@ -283,7 +286,13 @@ internal fun parseHostMessage(raw: String): HostMessage? = runCatching {
         "ready" -> HostMessage.Ready
         "openArtifact" -> obj["id"]?.jsonPrimitive?.content
             ?.takeIf { it.isNotBlank() }
-            ?.let(HostMessage::OpenArtifact)
+            ?.let { id ->
+                val page = obj["page"]
+                    ?.takeIf { it !is JsonNull }
+                    ?.jsonPrimitive?.content?.toIntOrNull()
+                    ?.takeIf { it >= 1 }
+                HostMessage.OpenArtifact(id, page)
+            }
         "askAbout" -> obj["title"]?.jsonPrimitive?.content
             ?.takeIf { it.isNotBlank() }
             ?.let { title ->

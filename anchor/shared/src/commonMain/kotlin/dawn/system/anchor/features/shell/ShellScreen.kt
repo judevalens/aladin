@@ -162,7 +162,7 @@ class ShellPresenter(
 val shellModule: Module = module {
     single { NavStateProducer(get()) }
     single { BrowserStateProducer(get()) }
-    single { DocumentStateProducer(get(), get()) }
+    single { DocumentStateProducer(get(), get(), get()) }
     single { WriteStateProducer(get(), get()) }
     single { TreeStateProducer(get()) }
 
