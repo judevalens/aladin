@@ -107,6 +107,9 @@ type Citation struct {
 	Kind  string `json:"kind"` // ticker | company | person | entity | page | shard
 	ID    string `json:"id"`
 	Title string `json:"title"`
+	// Page anchors a document citation; the client opens the source at it. 0 = none.
+	// Dedup is by kind|id, so a turn that read several spans keeps the last one's page.
+	Page int `json:"page,omitempty"`
 }
 
 type CopilotThread struct {

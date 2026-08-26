@@ -17,7 +17,10 @@ export function DesktopBoardPane({ boardId, title }: { boardId: string; title?: 
 
   const host = useMemo<BoardHost>(
     () => ({
-      onOpenArtifact: (artifactId) => useAppStore.getState().openArtifact(artifactId),
+      onOpenArtifact: (artifactId, at) =>
+        at?.page != null
+          ? useAppStore.getState().openArtifactAt(artifactId, at.page)
+          : useAppStore.getState().openArtifact(artifactId),
       onAskAbout: ({ title: objectTitle, text }) =>
         useAppStore.getState().queueCopilotText(text ? `${objectTitle} — ${text}` : objectTitle),
     }),

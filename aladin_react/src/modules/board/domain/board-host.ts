@@ -14,7 +14,8 @@ export type BoardHaptic = "light" | "medium" | "select";
  * - Spike: none — the buttons simply do not render.
  */
 export interface BoardHost {
-  onOpenArtifact?: (artifactId: string) => void;
+  /** Open the artifact — at a page when the object carries a cite (the wormhole). */
+  onOpenArtifact?: (artifactId: string, at?: { page?: number }) => void;
   onAskAbout?: (ctx: { artifactId?: string; title: string; text?: string }) => void;
   /** Tool change, object insert, snap, flip — a tap that changed something. */
   haptic?: (kind: BoardHaptic) => void;

@@ -5,6 +5,8 @@ export interface CopilotCitation {
   kind: string; // ticker | company | person | entity | page | shard
   id: string;
   title: string;
+  /** Document citations carry the page the model grounded on — the wormhole opens there. */
+  page?: number;
 }
 
 /** Per-assistant-turn metadata: what the turn did and what it cost. */

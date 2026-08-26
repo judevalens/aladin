@@ -11,6 +11,7 @@ import type { CopilotCitation } from "@/app/state/copilot-slice";
 export function useCitationNav() {
   const navigate = useNavigate();
   const openArtifact = useAppStore((s) => s.openArtifact);
+  const openArtifactAt = useAppStore((s) => s.openArtifactAt);
   const openTicker = useAppStore((s) => s.openTicker);
 
   return useCallback(
@@ -18,12 +19,14 @@ export function useCitationNav() {
       if (citation.kind === "ticker") {
         openTicker(citation.title || citation.id);
       } else if (citation.kind === "page" || citation.kind === "shard") {
-        openArtifact(citation.id);
+        // A cited page is the wormhole: the reader opens where the model grounded.
+        if (citation.page) openArtifactAt(citation.id, citation.page);
+        else openArtifact(citation.id);
         navigate("/folders");
       } else {
         navigate(`/entity/${citation.id}`);
       }
     },
-    [navigate, openArtifact, openTicker],
+    [navigate, openArtifact, openArtifactAt, openTicker],
   );
 }

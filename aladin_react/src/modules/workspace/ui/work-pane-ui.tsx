@@ -1,4 +1,5 @@
 import { FlaskConical, LineChart, Search, SlidersHorizontal, Star } from "lucide-react";
+import { useAppStore } from "@/app/state/store";
 import { Icon } from "@/components/ui/icon";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -196,6 +197,8 @@ function TabPane({ entry, hidden }: { entry: WorkPaneTab; hidden: boolean }) {
  */
 function ArtifactTabPane({ artifactId, hidden }: { artifactId: string; hidden: boolean }) {
   const artifact = useArtifact(artifactId);
+  // The wormhole's landing pad: a cite asked this artifact's reader to open at a page.
+  const targetLocation = useAppStore((s) => s.pendingDocLocations[artifactId]);
   if (!artifact) {
     // The tab is open but its artifact hasn't arrived from the replica yet.
     return <PlaceholderPane title="Loading…" body="" className="h-full" />;
@@ -233,7 +236,9 @@ function ArtifactTabPane({ artifactId, hidden }: { artifactId: string; hidden: b
   // An ingested PDF opens as a document (INGESTION_PRD §6); every other file keeps the
   // download card.
   if (artifact.kind === "file") {
-    return <FileArtifactPaneUI artifact={artifact} fallback={downloadCard} />;
+    return (
+      <FileArtifactPaneUI artifact={artifact} fallback={downloadCard} targetLocation={targetLocation} />
+    );
   }
   return downloadCard;
 }

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Eyebrow } from "@/components/ui/eyebrow";
 import { Icon } from "@/components/ui/icon";
 import { FileWarning, Loader2, Minus, PanelLeft, Plus, ScanLine } from "lucide-react";
@@ -28,7 +28,19 @@ import type { Artifact } from "@/shared/api/models";
  * tables and equations do not survive the flattening. `useDocument` keeps its `withText`
  * parameter (other callers pass false too), so bringing a text view back is a UI change only.
  */
-export function DocumentViewerUI({ artifact }: { artifact: Artifact }) {
+/** A cite's landing request: the page, nonce-keyed so repeats re-fire. */
+export interface DocTargetLocation {
+  page: number;
+  nonce: number;
+}
+
+export function DocumentViewerUI({
+  artifact,
+  targetLocation,
+}: {
+  artifact: Artifact;
+  targetLocation?: DocTargetLocation;
+}) {
   const { document, loading, error } = useDocument(artifact.id, false);
   const { url, loading: resourceLoading } = useArtifactResource(artifact);
 
@@ -52,17 +64,21 @@ export function DocumentViewerUI({ artifact }: { artifact: Artifact }) {
 
   return (
     <DocumentReader
+      artifactId={artifact.id}
       title={artifact.title}
       pageCount={document.pageCount}
       outline={outline}
       outlineRecovered={authored.length === 0 && outline.length > 0}
       url={url}
       resourceLoading={resourceLoading}
+      targetLocation={targetLocation}
     />
   );
 }
 
 export interface DocumentReaderProps {
+  /** For building cites (capture) — absent in the bare harness mount. */
+  artifactId?: string;
   title: string;
   pageCount: number;
   outline: OutlineEntry[];
@@ -70,6 +86,8 @@ export interface DocumentReaderProps {
   outlineRecovered: boolean;
   url: string | null;
   resourceLoading: boolean;
+  /** The wormhole's ask: land on this page. Nonce-keyed; the reader stays prop-only. */
+  targetLocation?: DocTargetLocation;
 }
 
 /**
@@ -78,12 +96,14 @@ export interface DocumentReaderProps {
  * finished. Everything it needs arrives as props.
  */
 export function DocumentReader({
+  artifactId,
   title,
   pageCount,
   outline,
   outlineRecovered,
   url,
   resourceLoading,
+  targetLocation,
 }: DocumentReaderProps) {
   const [outlineOpen, setOutlineOpen] = useState(true);
   const [zoom, setZoom] = useState(1);
@@ -106,6 +126,13 @@ export function DocumentReader({
     setTargetPage(page);
     setCurrentPage(page);
   };
+
+  // A cite landed while (or before) this reader was up — go there. Nonce in the deps so
+  // citing the same page twice still re-scrolls.
+  useEffect(() => {
+    if (targetLocation) jumpTo(targetLocation.page);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetLocation?.nonce]);
 
   return (
     // One separator, not two. An outer `gap` *plus* the nav's border gave a strip of a
@@ -335,14 +362,16 @@ function Notice({
 export function FileArtifactPaneUI({
   artifact,
   fallback,
+  targetLocation,
 }: {
   artifact: Artifact;
   fallback: React.ReactNode;
+  targetLocation?: DocTargetLocation;
 }) {
   const { document, loading } = useDocument(artifact.id, false);
 
   if (document && document.status === "ready") {
-    return <DocumentViewerUI artifact={artifact} />;
+    return <DocumentViewerUI artifact={artifact} targetLocation={targetLocation} />;
   }
 
   // A PDF with NO document row at all is the state that used to lie: it rendered

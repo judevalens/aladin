@@ -11,6 +11,8 @@ export interface SelectionSummary {
   cited: boolean;
   /** Artifact behind the object, when there is one. */
   artifactId: string | null;
+  /** Where in the artifact — the wormhole's page. Null when the object has no anchor. */
+  page: number | null;
   /** Label for the open action — the handoff: doc/voice open in folder, others open source. */
   openLabel: "Open in folder" | "Open source" | null;
 }
@@ -24,6 +26,7 @@ export function describeShape(editor: Editor, shape: TLShape): SelectionSummary 
         meta: `page ${props.page} / ${props.pageCount} · live window, two-way`,
         cited: false,
         artifactId: props.artifactId || null,
+        page: props.page || null,
         openLabel: props.artifactId ? "Open in folder" : null,
       };
     }
@@ -34,6 +37,7 @@ export function describeShape(editor: Editor, shape: TLShape): SelectionSummary 
         meta: props.page != null ? `${props.sourceTitle} · p. ${props.page}` : props.sourceTitle,
         cited: props.page != null,
         artifactId: props.sourceArtifactId,
+        page: props.page,
         openLabel: props.sourceArtifactId ? "Open source" : null,
       };
     }
@@ -44,6 +48,7 @@ export function describeShape(editor: Editor, shape: TLShape): SelectionSummary 
         meta: props.checked ? "done" : props.meta,
         cited: false,
         artifactId: null,
+        page: null,
         openLabel: null,
       };
     }
@@ -54,6 +59,7 @@ export function describeShape(editor: Editor, shape: TLShape): SelectionSummary 
         meta: props.cite,
         cited: false,
         artifactId: null,
+        page: null,
         openLabel: null,
       };
     }
@@ -66,15 +72,16 @@ export function describeShape(editor: Editor, shape: TLShape): SelectionSummary 
         meta: "ink · your handwriting is the legend",
         cited: false,
         artifactId: null,
+        page: null,
         openLabel: null,
       };
     }
     case "draw":
     case "highlight":
-      return { title: "Ink", meta: "pencil stroke", cited: false, artifactId: null, openLabel: null };
+      return { title: "Ink", meta: "pencil stroke", cited: false, artifactId: null, page: null, openLabel: null };
     case "arrow":
-      return { title: "Link", meta: "connects two objects", cited: false, artifactId: null, openLabel: null };
+      return { title: "Link", meta: "connects two objects", cited: false, artifactId: null, page: null, openLabel: null };
     default:
-      return { title: "Object", meta: shape.type, cited: false, artifactId: null, openLabel: null };
+      return { title: "Object", meta: shape.type, cited: false, artifactId: null, page: null, openLabel: null };
   }
 }

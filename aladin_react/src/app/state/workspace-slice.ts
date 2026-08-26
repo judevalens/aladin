@@ -22,6 +22,16 @@ export interface WorkspaceSlice {
   openTicker: (symbol: string) => void;
   closeTicker: () => void;
   openArtifact: (artifactId: string) => void;
+  /**
+   * The wormhole: open (or re-activate) an artifact's tab AND ask its reader to land on a
+   * page. The page must not enter the tab identity (a tab per page would break
+   * re-activation), so it rides here — a per-artifact location the reader watches. Entries
+   * are keyed by a nonce so citing the same page twice re-fires, and they are kept rather
+   * than consumed: reopening the tab returns to the last cited page, which doubles as a
+   * poor man's "continue".
+   */
+  openArtifactAt: (artifactId: string, page: number) => void;
+  pendingDocLocations: Record<string, { page: number; nonce: number }>;
   /** Opens (or re-activates) a research view tab — §11's contextId arm of the union. */
   openResearchTab: (contextId: string, view: ResearchView) => void;
   activateTab: (key: string) => void;
@@ -70,6 +80,16 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice, [], [], Workspac
   openTicker: (symbol) => set({ openTickerSymbol: symbol }),
   closeTicker: () => set({ openTickerSymbol: null }),
   openArtifact: (artifactId) => openTab({ kind: "artifact", artifactId }, set),
+  pendingDocLocations: {},
+  openArtifactAt: (artifactId, page) => {
+    openTab({ kind: "artifact", artifactId }, set);
+    set((state) => ({
+      pendingDocLocations: {
+        ...state.pendingDocLocations,
+        [artifactId]: { page, nonce: (state.pendingDocLocations[artifactId]?.nonce ?? 0) + 1 },
+      },
+    }));
+  },
   openResearchTab: (contextId, view) => openTab({ kind: "research", contextId, view }, set),
   activateTab: (key) =>
     set((state) => ({

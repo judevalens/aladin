@@ -26,6 +26,9 @@ type citationOut struct {
 	Kind  string `json:"kind"`
 	ID    string `json:"id"`
 	Title string `json:"title,omitempty"`
+	// Page anchors the citation inside the artifact (a document page). The client's
+	// wormhole opens the source there; zero means "no anchor".
+	Page int `json:"page,omitempty"`
 }
 
 // workspaceToolServer carries the deps the workspace tools need. snapshots and
@@ -608,7 +611,7 @@ func (t workspaceToolServer) readDocument(ctx context.Context, _ *sdkmcp.CallToo
 	out := readDocumentOutput{
 		ID: art.ID, Title: art.Title, FromPage: from, ToPage: to,
 		PageCount: doc.PageCount, Text: text,
-		Citations: []citationOut{{Kind: citationKindForArtifact(art.Type), ID: art.ID, Title: art.Title}},
+		Citations: []citationOut{{Kind: citationKindForArtifact(art.Type), ID: art.ID, Title: art.Title, Page: from}},
 	}
 	switch {
 	case truncated:
@@ -640,6 +643,10 @@ func (t workspaceToolServer) searchDocument(ctx context.Context, _ *sdkmcp.CallT
 	}
 	for _, hit := range hits {
 		out.Hits = append(out.Hits, documentHitOut{Page: hit.Page, Snippet: hit.Snippet})
+	}
+	if len(hits) > 0 {
+		// The chip lands on the best hit's page — the reader opens where the answer is.
+		out.Citations[0].Page = hits[0].Page
 	}
 	if len(out.Hits) == 0 {
 		out.Note = "No matches. Try different wording — this is keyword search over the document's text, not semantic."

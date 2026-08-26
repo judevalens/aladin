@@ -94,7 +94,12 @@ export function SelectionBar() {
         {summary.openLabel && summary.artifactId && host.onOpenArtifact ? (
           <TextAction
             label={summary.openLabel}
-            onClick={() => host.onOpenArtifact?.(summary.artifactId as string)}
+            onClick={() =>
+              host.onOpenArtifact?.(
+                summary.artifactId as string,
+                summary.page != null ? { page: summary.page } : undefined,
+              )
+            }
           />
         ) : null}
         <button
