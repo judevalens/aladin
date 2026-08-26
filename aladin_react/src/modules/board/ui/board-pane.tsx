@@ -24,10 +24,11 @@ import {
   BoardFolderContext,
   createBoardContentSource,
 } from "../domain/board-content";
-import { BoardHostContext, type BoardHost } from "../domain/board-host";
+import { BoardHostContext, useBoardHost, type BoardHost } from "../domain/board-host";
 import { BoardStatusContext, type BoardStatus } from "../domain/board-status";
 import { BoardToastContext, createToastStore } from "../domain/board-toasts";
 import { addExcerpt } from "../domain/board-objects";
+import { useBoardToasts } from "../domain/board-toasts";
 import { BoardLassoTool } from "../tools/lasso-tool";
 import { CardShapeUtil } from "../shapes/card-shape";
 import { DocWindowShapeUtil } from "../shapes/doc-window-shape";
@@ -266,6 +267,7 @@ function BoardCanvas({
   active,
   zoomToFitOnMount = false,
 }: {
+
   store?: ReturnType<typeof useSync> extends infer R
     ? R extends { status: "synced-remote"; store: infer S }
       ? S
@@ -277,12 +279,42 @@ function BoardCanvas({
   zoomToFitOnMount?: boolean;
 }) {
   const [editor, setEditor] = useState<Editor | null>(null);
+  const host = useBoardHost();
+  const toasts = useBoardToasts();
 
   // Off screen: give up focus (no key handling, no pointer capture). The socket lives on.
   useEffect(() => {
     if (!editor) return;
     editor.updateInstanceState({ isFocused: active });
   }, [editor, active]);
+
+  // The capture inbox: while this board is the active one, reader excerpts land here as
+  // cited excerpt objects. Drains on front AND on every new capture while fronted.
+  useEffect(() => {
+    const captures = host.captures;
+    if (!captures || !editor || !active) return;
+    const drain = () => {
+      const items = captures.take();
+      if (items.length === 0) return;
+      for (const item of items) {
+        addExcerpt(editor, {
+          text: item.text,
+          sourceArtifactId: item.sourceArtifactId,
+          sourceTitle: item.sourceTitle,
+          page: item.page,
+        });
+      }
+      host.haptic?.("light");
+      toasts.show({
+        text:
+          items.length === 1
+            ? `Excerpt landed — ${items[0].sourceTitle} · p. ${items[0].page}`
+            : `${items.length} excerpts landed`,
+      });
+    };
+    drain();
+    return captures.subscribe(drain);
+  }, [host, editor, active, toasts]);
 
   function handleMount(mounted: Editor) {
     setEditor(mounted);

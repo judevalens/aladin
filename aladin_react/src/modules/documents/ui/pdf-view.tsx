@@ -5,6 +5,7 @@ import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 import { cn } from "@/lib/utils";
+import { selectionExcerpt } from "../domain/selection-excerpt";
 
 import "./pdf-text-layer.css";
 
@@ -34,6 +35,8 @@ export interface PdfViewProps {
   targetPage?: number | null;
   /** Fires as the reader scrolls, so chrome outside can follow along. */
   onVisiblePageChange?: (page: number) => void;
+  /** Capture: called when the floating chip over a text selection is tapped. */
+  onExcerpt?: (excerpt: { text: string; page: number }) => void;
   zoom?: number;
   className?: string;
 }
@@ -49,7 +52,7 @@ const MAX_PAGE_WIDTH = 980;
  */
 const STAGE_PADDING = 40;
 
-export function PdfView({ url, targetPage, onVisiblePageChange, zoom = 1, className }: PdfViewProps) {
+export function PdfView({ url, targetPage, onVisiblePageChange, onExcerpt, zoom = 1, className }: PdfViewProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const docRef = useRef<PDFDocumentProxy | null>(null);
   const [pageCount, setPageCount] = useState(0);
@@ -157,6 +160,41 @@ export function PdfView({ url, targetPage, onVisiblePageChange, zoom = 1, classN
     };
   }, [onVisiblePageChange, pageCount]);
 
+  // ── Capture chip: floats over a text selection inside one page; tap → onExcerpt ──
+  const [chip, setChip] = useState<{ x: number; y: number; text: string; page: number } | null>(
+    null,
+  );
+  useEffect(() => {
+    if (!onExcerpt) return;
+    let timer = 0;
+    const onSelection = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        const root = scrollRef.current;
+        if (!root) return;
+        const found = selectionExcerpt(window.getSelection(), root);
+        if (!found) {
+          setChip(null);
+          return;
+        }
+        // Rect is viewport coords; the chip lives in the scroll CONTENT's space so it
+        // rides along when the page scrolls under it.
+        const box = root.getBoundingClientRect();
+        setChip({
+          x: found.rect.right - box.left + root.scrollLeft,
+          y: found.rect.top - box.top + root.scrollTop,
+          text: found.text,
+          page: found.page,
+        });
+      }, 150);
+    };
+    document.addEventListener("selectionchange", onSelection);
+    return () => {
+      document.removeEventListener("selectionchange", onSelection);
+      window.clearTimeout(timer);
+    };
+  }, [onExcerpt]);
+
   useEffect(() => {
     if (!targetPage || !scrollRef.current) return;
     scrollRef.current
@@ -173,7 +211,21 @@ export function PdfView({ url, targetPage, onVisiblePageChange, zoom = 1, classN
   }
 
   return (
-    <div ref={scrollRef} className={cn("overflow-auto bg-rail", className)}>
+    <div ref={scrollRef} className={cn("relative overflow-auto bg-rail", className)}>
+      {chip && onExcerpt ? (
+        <button
+          type="button"
+          onClick={() => {
+            onExcerpt({ text: chip.text, page: chip.page });
+            window.getSelection()?.removeAllRanges();
+            setChip(null);
+          }}
+          className="absolute z-10 flex h-9 -translate-y-full items-center gap-1.5 rounded-control border border-amber-line bg-amber-soft px-3 text-small font-medium text-amber shadow-toast backdrop-blur"
+          style={{ left: Math.max(8, chip.x - 40), top: Math.max(36, chip.y - 6) }}
+        >
+          Excerpt · p.{chip.page}
+        </button>
+      ) : null}
       <div
         className="flex flex-col items-center gap-6"
         style={{ paddingInline: STAGE_PADDING, paddingBlock: STAGE_PADDING - 8 }}

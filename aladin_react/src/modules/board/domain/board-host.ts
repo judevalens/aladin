@@ -1,5 +1,13 @@
 import { createContext, useContext } from "react";
 
+/** One excerpt captured from a reader, waiting for a board to place it. */
+export interface CapturedExcerpt {
+  text: string;
+  sourceArtifactId: string;
+  sourceTitle: string;
+  page: number;
+}
+
 /** The three haptic weights the board asks for. Never fired per stroke. */
 export type BoardHaptic = "light" | "medium" | "select";
 
@@ -19,6 +27,14 @@ export interface BoardHost {
   onAskAbout?: (ctx: { artifactId?: string; title: string; text?: string }) => void;
   /** Tool change, object insert, snap, flip — a tap that changed something. */
   haptic?: (kind: BoardHaptic) => void;
+  /**
+   * The capture inbox (desktop): the ACTIVE board drains excerpts pulled while reading.
+   * `take` returns-and-clears; `subscribe` fires on any inbox change.
+   */
+  captures?: {
+    take: () => CapturedExcerpt[];
+    subscribe: (onChange: () => void) => () => void;
+  };
 }
 
 export const BoardHostContext = createContext<BoardHost>({});

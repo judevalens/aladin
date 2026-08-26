@@ -1,5 +1,13 @@
 import type { StateCreator } from "zustand";
 import type { VoiceCaptureDraft } from "@/shared/api/models";
+
+/** One excerpt captured from a reader, en route to a board. */
+export interface CapturedExcerpt {
+  text: string;
+  sourceArtifactId: string;
+  sourceTitle: string;
+  page: number;
+}
 import {
   initialWorkspaceShellState,
   promoteMru,
@@ -32,6 +40,16 @@ export interface WorkspaceSlice {
    */
   openArtifactAt: (artifactId: string, page: number) => void;
   pendingDocLocations: Record<string, { page: number; nonce: number }>;
+  /**
+   * Capture inbox: excerpts pulled while reading, waiting for a board to catch them. The
+   * ACTIVE board tab drains it (via BoardHost.captures) — capture-first, so selecting text
+   * works before any board is open; the next board you front receives the backlog.
+   * Bounded to the newest 10 so a forgotten session can't dump a wall of cards.
+   */
+  queuedExcerpts: CapturedExcerpt[];
+  queueExcerpt: (excerpt: CapturedExcerpt) => void;
+  /** Drains (returns and clears) the inbox. Imperative — called by the active board pane. */
+  takeQueuedExcerpts: () => CapturedExcerpt[];
   /** Opens (or re-activates) a research view tab — §11's contextId arm of the union. */
   openResearchTab: (contextId: string, view: ResearchView) => void;
   activateTab: (key: string) => void;
@@ -80,6 +98,17 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice, [], [], Workspac
   openTicker: (symbol) => set({ openTickerSymbol: symbol }),
   closeTicker: () => set({ openTickerSymbol: null }),
   openArtifact: (artifactId) => openTab({ kind: "artifact", artifactId }, set),
+  queuedExcerpts: [],
+  queueExcerpt: (excerpt) =>
+    set((state) => ({ queuedExcerpts: [...state.queuedExcerpts, excerpt].slice(-10) })),
+  takeQueuedExcerpts: () => {
+    let taken: CapturedExcerpt[] = [];
+    set((state) => {
+      taken = state.queuedExcerpts;
+      return state.queuedExcerpts.length ? { queuedExcerpts: [] } : {};
+    });
+    return taken;
+  },
   pendingDocLocations: {},
   openArtifactAt: (artifactId, page) => {
     openTab({ kind: "artifact", artifactId }, set);

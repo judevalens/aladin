@@ -14,6 +14,17 @@ import type { BoardHost } from "../domain/board-host";
  */
 export function DesktopBoardPane({ boardId, title }: { boardId: string; title?: string }) {
   const { runtime } = useAppComposition();
+  // Only the frontmost board catches reader excerpts — two mounted boards must not both
+  // drain the inbox. Also feeds focus (background boards drop key handling).
+  const isActiveTab = useAppStore((s) => s.workspace.activeTabKey === boardId);
+
+  const captures = useMemo<NonNullable<BoardHost["captures"]>>(
+    () => ({
+      take: () => useAppStore.getState().takeQueuedExcerpts(),
+      subscribe: (onChange) => useAppStore.subscribe(onChange),
+    }),
+    [],
+  );
 
   const host = useMemo<BoardHost>(
     () => ({
@@ -23,8 +34,9 @@ export function DesktopBoardPane({ boardId, title }: { boardId: string; title?: 
           : useAppStore.getState().openArtifact(artifactId),
       onAskAbout: ({ title: objectTitle, text }) =>
         useAppStore.getState().queueCopilotText(text ? `${objectTitle} — ${text}` : objectTitle),
+      captures,
     }),
-    [],
+    [captures],
   );
 
   const sync = useMemo<BoardSyncConfig | null>(() => {
@@ -34,6 +46,13 @@ export function DesktopBoardPane({ boardId, title }: { boardId: string; title?: 
   }, [runtime]);
 
   return (
-    <BoardPane boardId={boardId} title={title} client={runtime.apiClient} host={host} sync={sync} />
+    <BoardPane
+      boardId={boardId}
+      title={title}
+      client={runtime.apiClient}
+      host={host}
+      sync={sync}
+      active={isActiveTab}
+    />
   );
 }

@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect } from "react";
+import { useAppStore } from "@/app/state/store";
 import { Eyebrow } from "@/components/ui/eyebrow";
 import { Icon } from "@/components/ui/icon";
 import { FileWarning, Loader2, Minus, PanelLeft, Plus, ScanLine } from "lucide-react";
@@ -42,6 +43,7 @@ export function DocumentViewerUI({
   targetLocation?: DocTargetLocation;
 }) {
   const { document, loading, error } = useDocument(artifact.id, false);
+  const queueExcerpt = useAppStore((s) => s.queueExcerpt);
   const { url, loading: resourceLoading } = useArtifactResource(artifact);
 
   // Authored structure beats inferred structure (§5), so the recovered tree is a FALLBACK.
@@ -72,6 +74,14 @@ export function DocumentViewerUI({
       url={url}
       resourceLoading={resourceLoading}
       targetLocation={targetLocation}
+      onExcerpt={(sel) =>
+        queueExcerpt({
+          text: sel.text,
+          sourceArtifactId: artifact.id,
+          sourceTitle: artifact.title,
+          page: sel.page,
+        })
+      }
     />
   );
 }
@@ -88,6 +98,8 @@ export interface DocumentReaderProps {
   resourceLoading: boolean;
   /** The wormhole's ask: land on this page. Nonce-keyed; the reader stays prop-only. */
   targetLocation?: DocTargetLocation;
+  /** Capture: a selection's Excerpt chip was tapped. Absent = the chip never shows. */
+  onExcerpt?: (excerpt: { text: string; page: number }) => void;
 }
 
 /**
@@ -104,6 +116,7 @@ export function DocumentReader({
   url,
   resourceLoading,
   targetLocation,
+  onExcerpt,
 }: DocumentReaderProps) {
   const [outlineOpen, setOutlineOpen] = useState(true);
   const [zoom, setZoom] = useState(1);
@@ -241,6 +254,7 @@ export function DocumentReader({
         {url ? (
           <PdfView
             url={url}
+            onExcerpt={onExcerpt}
             targetPage={targetPage}
             onVisiblePageChange={setCurrentPage}
             zoom={zoom}
