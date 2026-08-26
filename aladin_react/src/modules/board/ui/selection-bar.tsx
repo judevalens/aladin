@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useEditor, useValue } from "tldraw";
 
+import { useBoardContent, useBoardFolder } from "../domain/board-content";
 import { useBoardHost } from "../domain/board-host";
 import { describeShape } from "../domain/board-selection";
 import { useBoardToasts } from "../domain/board-toasts";
@@ -21,6 +22,8 @@ export function SelectionBar() {
   const editor = useEditor();
   const host = useBoardHost();
   const toasts = useBoardToasts();
+  const contentSource = useBoardContent();
+  const folderId = useBoardFolder();
   const shapes = useValue("selected", () => editor.getSelectedShapes(), [editor]);
   const editing = useValue("editing-any", () => editor.getEditingShapeId() !== null, [editor]);
   const [moreOpen, setMoreOpen] = useState(false);
@@ -90,6 +93,34 @@ export function SelectionBar() {
           >
             Ask about this
           </button>
+        ) : null}
+        {shape.type === "aladin-doc" &&
+        summary.artifactId &&
+        contentSource?.createWorksheet &&
+        host.onOpenArtifact ? (
+          <TextAction
+            label="Work this"
+            onClick={() => {
+              const cite = {
+                artifactId: summary.artifactId as string,
+                page: summary.page ?? 1,
+                title: summary.title,
+              };
+              void contentSource
+                .createWorksheet?.({
+                  folderId,
+                  title: `Worksheet — ${summary.title} · p. ${cite.page}`,
+                  cite,
+                })
+                .then((id) => {
+                  host.haptic?.("light");
+                  host.onOpenArtifact?.(id);
+                })
+                .catch(() => {
+                  toasts.show({ text: "Couldn't create the worksheet — try again" });
+                });
+            }}
+          />
         ) : null}
         {summary.openLabel && summary.artifactId && host.onOpenArtifact ? (
           <TextAction

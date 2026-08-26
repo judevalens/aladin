@@ -15,6 +15,7 @@ import { TAP_SLOP_PX, boardCameraOptions, pencilCameraOptions } from "../domain/
 import { useBoardContent, useBoardFolder, type PickerArtifact } from "../domain/board-content";
 import { createTapTracker } from "../domain/board-gestures";
 import { useBoardHost } from "../domain/board-host";
+import { useBoardPaper } from "../domain/board-paper";
 import { addCard, addDocWindow, addExcerpt, addTask, boardArtifactIds } from "../domain/board-objects";
 import {
   browserPrefsStorage,
@@ -35,6 +36,7 @@ import {
   type PencilSubTool,
 } from "../domain/board-tools";
 import { BackToContent } from "./back-to-content";
+import { CitePill } from "./cite-pill";
 import { BoardToastView } from "./board-toast";
 import { Dock } from "./dock";
 import { DOCK_PATHS, DockIcon } from "./dock-icons";
@@ -60,6 +62,7 @@ export function BoardChrome() {
   const editor = useEditor();
   const host = useBoardHost();
   const toasts = useBoardToasts();
+  const paper = useBoardPaper();
   const toolId = useValue("toolId", () => editor.getCurrentToolId(), [editor]);
   const { tool, subTool: activeSubTool } = boardToolFromTldraw(toolId);
   const canUndo = useValue("canUndo", () => editor.getCanUndo(), [editor]);
@@ -172,11 +175,17 @@ export function BoardChrome() {
   const inkRef = useRef({ inkColor, weight });
   inkRef.current = { inkColor, weight };
   const prePencilZoom = useRef<number | null>(null);
+  const pagedRef = useRef(paper.paged);
+  pagedRef.current = paper.paged;
   useEffect(() => {
+    // Paper owns its own camera (fixed-width constraints in BoardCanvas); rule 3's 1:1
+    // snap is a plane behaviour — on paper the column IS the scale.
     if (tool === "pencil") {
-      if (prePencilZoom.current === null) prePencilZoom.current = editor.getZoomLevel();
-      setCameraZoomAboutCenter(editor, 1);
-      editor.setCameraOptions(pencilCameraOptions);
+      if (!pagedRef.current) {
+        if (prePencilZoom.current === null) prePencilZoom.current = editor.getZoomLevel();
+        setCameraZoomAboutCenter(editor, 1);
+        editor.setCameraOptions(pencilCameraOptions);
+      }
       editor.setStyleForNextShapes(DefaultColorStyle, inkRef.current.inkColor);
       editor.setStyleForNextShapes(
         DefaultSizeStyle,
@@ -184,10 +193,12 @@ export function BoardChrome() {
       );
     } else {
       setStyleOpen(false);
-      editor.setCameraOptions(boardCameraOptions);
-      const back = prePencilZoom.current;
-      prePencilZoom.current = null;
-      if (back !== null && Math.abs(back - 1) > 0.001) setCameraZoomAboutCenter(editor, back);
+      if (!pagedRef.current) {
+        editor.setCameraOptions(boardCameraOptions);
+        const back = prePencilZoom.current;
+        prePencilZoom.current = null;
+        if (back !== null && Math.abs(back - 1) > 0.001) setCameraZoomAboutCenter(editor, back);
+      }
       if (tool === "arrow") {
         editor.setStyleForNextShapes(DefaultColorStyle, "link");
         editor.setStyleForNextShapes(DefaultSizeStyle, "s");
@@ -395,6 +406,15 @@ export function BoardChrome() {
 
   const inserted = () => host.haptic?.("light");
 
+  // The moment finger≠pencil is in force, say so — a panning finger reads as broken to
+  // anyone who has not been told the rule. Paper skips the 100% line (it isn't true there).
+  const hintText =
+    wantPenMode && subTool === "pen"
+      ? "The Pencil draws — a finger pans. “Finger draws” lives in the style tile"
+      : paper.paged && subTool === "pen"
+        ? "Paper — it grows a page whenever you near the end"
+        : PENCIL_HINTS[subTool];
+
   // Select-mode "Ink": a Caveat text label, editing immediately. Real drawn ink is strokes
   // via the pencil — this is the heading/legend affordance.
   const addInk = (at?: VecLike) => {
@@ -571,8 +591,8 @@ export function BoardChrome() {
       }`}
     >
       <SelectionBar />
-      <BackToContent />
-      <EmptyHint />
+      {paper.paged ? <CitePill /> : <BackToContent />}
+      {paper.paged ? null : <EmptyHint />}
       <Dock
         tool={tool}
         subTool={subTool}
@@ -615,13 +635,7 @@ export function BoardChrome() {
       {tool === "pencil" ? (
         styleOpen ? null : (
           <HintPill
-            text={
-              // The moment finger≠pencil is in force, say so — a panning finger reads as
-              // broken to anyone who has not been told the rule.
-              wantPenMode && subTool === "pen"
-                ? "The Pencil draws — a finger pans. “Finger draws” lives in the style tile"
-                : PENCIL_HINTS[subTool]
-            }
+            text={hintText}
           />
         )
       ) : (

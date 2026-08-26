@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useEffect as useLayoutOrderedEffect } from "react";
 import {
   Tldraw,
   defaultShapeUtils,
+  useValue,
   getUserPreferences,
   inlineBase64AssetStore,
   registerColorsFromThemes,
@@ -28,6 +29,15 @@ import { BoardHostContext, useBoardHost, type BoardHost } from "../domain/board-
 import { BoardStatusContext, type BoardStatus } from "../domain/board-status";
 import { BoardToastContext, createToastStore } from "../domain/board-toasts";
 import { addExcerpt } from "../domain/board-objects";
+import {
+  BoardPaperContext,
+  PLAIN_PAPER,
+  paperCameraOptions,
+  paperPageCount,
+  parsePaperConfig,
+  useBoardPaper,
+  type PaperConfig,
+} from "../domain/board-paper";
 import { useBoardToasts } from "../domain/board-toasts";
 import { BoardLassoTool } from "../tools/lasso-tool";
 import { CardShapeUtil } from "../shapes/card-shape";
@@ -35,11 +45,17 @@ import { DocWindowShapeUtil } from "../shapes/doc-window-shape";
 import { ExcerptShapeUtil } from "../shapes/excerpt-shape";
 import { TaskShapeUtil } from "../shapes/task-shape";
 import { BoardChrome } from "./board-chrome";
+import { PaperPages } from "./paper-pages";
 
 // Everything handed to <Tldraw> AND useSync must be identity-stable: a fresh object or
 // array makes Tldraw recreate the editor (dropping unsaved work), and makes useSync tear
 // down and redial the socket (the schema sits in its connection effect's deps).
-const BOARD_COMPONENTS: TLComponents = { InFrontOfTheCanvas: BoardChrome };
+const BOARD_COMPONENTS: TLComponents = {
+  InFrontOfTheCanvas: BoardChrome,
+  // Always present, renders null on a plane — switching the components object would
+  // recreate the editor (the identity trap).
+  OnTheCanvas: PaperPages,
+};
 const BOARD_TOOLS: TLStateNodeConstructor[] = [BoardLassoTool];
 const BOARD_SHAPES = [DocWindowShapeUtil, ExcerptShapeUtil, TaskShapeUtil, CardShapeUtil];
 // The sync store's schema is all-or-nothing: supply shapeUtils and you get ONLY what you
@@ -118,14 +134,20 @@ export function BoardPane({
   const content = useMemo(() => createBoardContentSource(client), [client]);
   const toasts = useMemo(createToastStore, []);
   const [folderId, setFolderId] = useState<string | null>(null);
+  const [paper, setPaper] = useState<PaperConfig>(PLAIN_PAPER);
 
-  // The board's folder feeds the picker; metadata only — content never rides REST here.
+  // The board's folder feeds the picker, its metadata decides plane vs paper — metadata
+  // only; content never rides REST here.
   useEffect(() => {
     let alive = true;
     client
-      .fetch<{ folderId?: string | null }>(`/api/artifacts/${encodeURIComponent(boardId)}`)
+      .fetch<{ folderId?: string | null; metadata?: unknown }>(
+        `/api/artifacts/${encodeURIComponent(boardId)}`,
+      )
       .then((record) => {
-        if (alive) setFolderId(record.folderId ?? null);
+        if (!alive) return;
+        setFolderId(record.folderId ?? null);
+        setPaper(parsePaperConfig(record.metadata));
       })
       .catch(() => {
         if (alive) setFolderId(null);
@@ -152,6 +174,7 @@ export function BoardPane({
       ) : null}
       <div className="relative min-h-0 flex-1">
         <BoardHostContext.Provider value={host}>
+          <BoardPaperContext.Provider value={paper}>
           <BoardStatusContext.Provider value={status}>
             <BoardToastContext.Provider value={toasts}>
               <BoardContentContext.Provider value={content}>
@@ -159,6 +182,7 @@ export function BoardPane({
               </BoardContentContext.Provider>
             </BoardToastContext.Provider>
           </BoardStatusContext.Provider>
+          </BoardPaperContext.Provider>
         </BoardHostContext.Provider>
       </div>
     </div>
@@ -281,6 +305,41 @@ function BoardCanvas({
   const [editor, setEditor] = useState<Editor | null>(null);
   const host = useBoardHost();
   const toasts = useBoardToasts();
+  const paper = useBoardPaper();
+
+  // Paper: the camera follows the ink — bounds cover the pages (content + one blank),
+  // recomputed as the extent grows. Signal-driven (useValue), not store.listen: the
+  // listener flush rides rAF, which background panes throttle.
+  const paperPages = useValue(
+    "paper-page-count",
+    () => {
+      if (!editor || !paper.paged) return 0;
+      const bounds = editor.getCurrentPageBounds();
+      return paperPageCount(bounds ? bounds.maxY : 0);
+    },
+    [editor, paper.paged],
+  );
+  // A hidden pane reports a zero-size viewport; a fit computed against it is garbage
+  // (negative zoom). Wait for real geometry — the signal flips when the pane fronts.
+  const viewportReady = useValue(
+    "viewport-ready",
+    () => (editor ? editor.getViewportScreenBounds().w > 10 : false),
+    [editor],
+  );
+  const paperInitRef = useRef(false);
+  useEffect(() => {
+    if (!editor || !paper.paged || paperPages === 0) return;
+    editor.setCameraOptions(paperCameraOptions(paperPages));
+    if (!paperInitRef.current && viewportReady) {
+      // First time the paper costume lands (metadata arrives async, after mount): snap to
+      // the top of page one at fit width, pencil in hand. Once — later growth must never
+      // yank the camera mid-stroke.
+      paperInitRef.current = true;
+      editor.resetZoom();
+      editor.setCamera({ ...editor.getCamera(), y: 32 });
+      editor.setCurrentTool("draw");
+    }
+  }, [editor, paper.paged, paperPages, viewportReady]);
 
   // Off screen: give up focus (no key handling, no pointer capture). The socket lives on.
   useEffect(() => {
@@ -321,6 +380,8 @@ function BoardCanvas({
     if (import.meta.env.DEV) {
       (window as unknown as { __boardEditor?: Editor }).__boardEditor = mounted;
     }
+    // Plane defaults; the paper effect overrides once the metadata lands (it arrives
+    // async, so a mount-time branch would race it).
     mounted.setCameraOptions(boardCameraOptions);
     // ⌘V / system paste of text lands as an excerpt at the paste point (intake door 3).
     mounted.registerExternalContentHandler("text", (info) => {

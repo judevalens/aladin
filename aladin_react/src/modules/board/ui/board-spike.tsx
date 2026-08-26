@@ -67,7 +67,18 @@ function createSpikeApiClient(): ApiClient {
 
       if (url.pathname === `/api/artifacts/${SPIKE_BOARD_ID}`) {
         if (method === "GET") {
-          return Promise.resolve(spikeArtifact("") as T);
+          // `/spike/board?paper=1` walks the paged (worksheet) regime without a backend.
+          const paper = new URLSearchParams(window.location.search).get("paper") === "1";
+          const record = spikeArtifact("");
+          if (paper) {
+            record.metadata = {
+              board: {
+                paper: "paged",
+                cite: { artifactId: "a_opt", page: 96, title: "Option Strategies" },
+              },
+            };
+          }
+          return Promise.resolve(record as T);
         }
         if (method === "PATCH") {
           const body = JSON.parse(String(init?.body ?? "{}")) as { content?: string };

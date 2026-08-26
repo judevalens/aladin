@@ -38,6 +38,16 @@ export interface BoardContentSource {
   listFolderArtifacts(folderId: string | null): Promise<PickerArtifact[]>;
   /** The picker's "then everywhere": the workspace search, narrowed to insertable kinds. */
   searchArtifacts(query: string): Promise<PickerArtifact[]>;
+  /**
+   * "Work this": create a paged worksheet (a board wearing the paper costume) in the
+   * study's folder, born citing its exercise. Returns the new artifact id. Optional —
+   * hosts without a writable workspace (the spike) simply hide the affordance.
+   */
+  createWorksheet?(opts: {
+    folderId: string | null;
+    title: string;
+    cite: { artifactId: string; page: number; title: string };
+  }): Promise<string>;
 }
 
 export const BoardContentContext = createContext<BoardContentSource | null>(null);
@@ -217,6 +227,19 @@ export function createBoardContentSource(client: ApiClient): BoardContentSource 
           title: hit.title,
           meta: hit.subtitle || (hit.kind === "page" ? "note" : hit.kind),
         }));
+    },
+    async createWorksheet({ folderId, title, cite }) {
+      const record = await client.fetch<UserArtifact>(`/api/artifacts/`, {
+        method: "POST",
+        body: JSON.stringify({
+          type: "board",
+          folderId,
+          title,
+          content: "",
+          metadata: { board: { paper: "paged", cite } },
+        }),
+      });
+      return record.id;
     },
     async listFolderArtifacts(folderId) {
       const query = folderId ? `?folderId=${encodeURIComponent(folderId)}` : "";
