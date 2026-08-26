@@ -71,6 +71,8 @@ type Dependencies interface {
 	Instruments() coreservice.InstrumentService
 	// Watchlist backs the Markets surface: the tickers a user is tracking.
 	Watchlist() coreservice.WatchlistService
+	// ReadingPositions records where the user is in a document (synced across devices).
+	ReadingPositions() coreservice.ReadingPositionService
 	// Search is the global command-box search: federates instruments + entities + artifacts.
 	Search() coreservice.SearchService
 	// Bars is the OHLCV history store behind the ticker chart.
@@ -127,6 +129,7 @@ type StaticDependencies struct {
 	GraphReaderSvc         coreservice.GraphReader
 	InstrumentsSvc         coreservice.InstrumentService
 	WatchlistSvc           coreservice.WatchlistService
+	ReadingPositionsSvc    coreservice.ReadingPositionService
 	SearchSvc              coreservice.SearchService
 	BarsSvc                coreservice.BarService
 	QuoteSnapshotsSvc      coreservice.QuoteSnapshotSource
@@ -209,6 +212,9 @@ func (d StaticDependencies) Instruments() coreservice.InstrumentService {
 func (d StaticDependencies) Watchlist() coreservice.WatchlistService {
 	return d.WatchlistSvc
 }
+func (d StaticDependencies) ReadingPositions() coreservice.ReadingPositionService {
+	return d.ReadingPositionsSvc
+}
 func (d StaticDependencies) Search() coreservice.SearchService {
 	return d.SearchSvc
 }
@@ -269,6 +275,7 @@ type wiring struct {
 	graphReader         coreservice.GraphReader
 	instruments         coreservice.InstrumentService
 	watchlist           coreservice.WatchlistService
+	readingPositions    coreservice.ReadingPositionService
 	search              coreservice.SearchService
 	bars                coreservice.BarService
 	quoteSnapshots      coreservice.QuoteSnapshotSource
@@ -324,6 +331,9 @@ func (w wiring) EntityList() coreservice.EntityListService {
 func (w wiring) GraphReader() coreservice.GraphReader       { return w.graphReader }
 func (w wiring) Instruments() coreservice.InstrumentService { return w.instruments }
 func (w wiring) Watchlist() coreservice.WatchlistService    { return w.watchlist }
+func (w wiring) ReadingPositions() coreservice.ReadingPositionService {
+	return w.readingPositions
+}
 func (w wiring) Search() coreservice.SearchService          { return w.search }
 func (w wiring) Bars() coreservice.BarService               { return w.bars }
 func (w wiring) QuoteSnapshots() coreservice.QuoteSnapshotSource {
@@ -372,7 +382,7 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 	}
 	providerConnectionRepo := repo.NewProviderConnectionPostgres(pool)
 	syncRepo := repo.NewSyncPostgres(pool)
-	syncSvc := coreservice.NewSyncService(syncRepo, repo.NewTreeSyncSource(pool), repo.NewWatchlistSyncSource(pool), repo.NewShardKVSyncSource(pool))
+	syncSvc := coreservice.NewSyncService(syncRepo, repo.NewTreeSyncSource(pool), repo.NewWatchlistSyncSource(pool), repo.NewShardKVSyncSource(pool), repo.NewReadingPositionSyncSource(pool))
 	realtimeKeys := coreservice.NewSubscriptionKeyResolver()
 	realtime := coreservice.NewInMemoryRealtimeEventService(realtimeKeys)
 	outboxDrainer := coreservice.NewOutboxDrainer(syncRepo, realtime, coreservice.DefaultDrainInterval)
@@ -525,6 +535,7 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		graphReader:         graphReader,
 		instruments:         instrumentsSvc,
 		watchlist:           watchlistSvc,
+		readingPositions:    coreservice.NewReadingPositionService(repo.NewReadingPositionPostgres(pool)),
 		search:              searchSvc,
 		bars:                barsSvc,
 		quoteSnapshots:      snapshotSource,
