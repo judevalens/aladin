@@ -4,7 +4,7 @@ use std::sync::Arc;
 use rusqlite::Connection;
 
 use crate::api::sync::{Frame, FrameEntity};
-use crate::db::repo::{nodes, shard_kv, watchlists};
+use crate::db::repo::{nodes, reading_position, shard_kv, watchlists};
 use crate::db::DbResult;
 use crate::events::DataEvent;
 
@@ -73,6 +73,22 @@ impl EntityHandler for ShardKvHandler {
     }
 }
 
+/// The reading-position handler: "you are at page N" rows ("reading_position"
+/// kind, entity id = artifact id) live in `reading_positions`.
+struct ReadingPositionHandler;
+
+impl EntityHandler for ReadingPositionHandler {
+    fn apply(&self, conn: &Connection, entity: &FrameEntity) -> DbResult<Option<DataEvent>> {
+        reading_position::apply(
+            conn,
+            &entity.entity_id,
+            entity.seq as i64,
+            &entity.op,
+            entity.data.as_ref(),
+        )
+    }
+}
+
 /// Routes frame entities to handlers by entity kind.
 pub struct Registry {
     handlers: HashMap<String, Arc<dyn EntityHandler>>,
@@ -94,6 +110,10 @@ impl Registry {
         handlers.insert("research".to_string(), tree);
         handlers.insert("watchlist".to_string(), Arc::new(WatchlistHandler));
         handlers.insert("shard_kv".to_string(), Arc::new(ShardKvHandler));
+        handlers.insert(
+            "reading_position".to_string(),
+            Arc::new(ReadingPositionHandler),
+        );
         Self { handlers }
     }
 

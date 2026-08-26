@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { useAppStore } from "@/app/state/store";
 import { Eyebrow } from "@/components/ui/eyebrow";
 import { Icon } from "@/components/ui/icon";
@@ -8,6 +8,10 @@ import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useArtifactResource } from "@/modules/artifacts/hooks/use-artifact-resource";
 import { useDocument, useDocumentOutline } from "@/modules/documents/hooks/use-document";
+import {
+  useReadingPosition,
+  useReadingPositionReporter,
+} from "@/modules/documents/hooks/use-reading-position";
 import type { OutlineEntry } from "@/modules/documents/hooks/use-document";
 import { PdfView } from "@/modules/documents/ui/pdf-view";
 import type { DocumentStatus, IngestedDocument } from "@/repos/documents/document-repo";
@@ -46,6 +50,25 @@ export function DocumentViewerUI({
   const queueExcerpt = useAppStore((s) => s.queueExcerpt);
   const { url, loading: resourceLoading } = useArtifactResource(artifact);
 
+  // Cross-device position: apply-at-open only. The restored page is FROZEN at
+  // first load — later frames update the stream but never yank the page under a
+  // reader mid-session. An explicit cite (targetLocation) always wins.
+  const restore = useReadingPosition(artifact.id);
+  const reporter = useReadingPositionReporter(artifact.id);
+  const restoredPageRef = useRef<number | null | undefined>(undefined);
+  if (restore.loaded && restoredPageRef.current === undefined) {
+    restoredPageRef.current = restore.page;
+  }
+  useEffect(() => {
+    // Arm the writer only once the restore resolved — see position-reporter.ts
+    // (the observer's mount-time "page 1" must not clobber the synced position).
+    if (restore.loaded && reporter) reporter.arm(restoredPageRef.current ?? null);
+  }, [restore.loaded, reporter]);
+  const restoredPage = restoredPageRef.current;
+  const openLocation =
+    targetLocation ??
+    (restoredPage != null && restoredPage > 1 ? { page: restoredPage, nonce: 0 } : undefined);
+
   // Authored structure beats inferred structure (§5), so the recovered tree is a FALLBACK.
   // It is also the common case: the MIT thesis carries zero bookmarks across 280 pages.
   const authored = document?.sections ?? [];
@@ -73,7 +96,8 @@ export function DocumentViewerUI({
       outlineRecovered={authored.length === 0 && outline.length > 0}
       url={url}
       resourceLoading={resourceLoading}
-      targetLocation={targetLocation}
+      targetLocation={openLocation}
+      onPageChange={reporter ? reporter.notePage : undefined}
       onExcerpt={(sel) =>
         queueExcerpt({
           text: sel.text,
@@ -98,6 +122,8 @@ export interface DocumentReaderProps {
   resourceLoading: boolean;
   /** The wormhole's ask: land on this page. Nonce-keyed; the reader stays prop-only. */
   targetLocation?: DocTargetLocation;
+  /** The visible page changed (observer tick, outline click, jump) — the position writer listens. */
+  onPageChange?: (page: number) => void;
   /** Capture: a selection's Excerpt chip was tapped. Absent = the chip never shows. */
   onExcerpt?: (excerpt: { text: string; page: number }) => void;
 }
@@ -116,6 +142,7 @@ export function DocumentReader({
   url,
   resourceLoading,
   targetLocation,
+  onPageChange,
   onExcerpt,
 }: DocumentReaderProps) {
   const [outlineOpen, setOutlineOpen] = useState(true);
@@ -135,9 +162,14 @@ export function DocumentReader({
 
   const hasOutline = outline.length > 0;
 
+  const noteCurrent = (page: number) => {
+    setCurrentPage(page);
+    onPageChange?.(page);
+  };
+
   const jumpTo = (page: number) => {
     setTargetPage(page);
-    setCurrentPage(page);
+    noteCurrent(page);
   };
 
   // A cite landed while (or before) this reader was up — go there. Nonce in the deps so
@@ -256,7 +288,7 @@ export function DocumentReader({
             url={url}
             onExcerpt={onExcerpt}
             targetPage={targetPage}
-            onVisiblePageChange={setCurrentPage}
+            onVisiblePageChange={noteCurrent}
             zoom={zoom}
             className="min-h-0 flex-1"
           />

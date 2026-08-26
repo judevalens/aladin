@@ -56,7 +56,14 @@ pub fn pull_and_apply(
             for frame in &result.frames {
                 if is_snapshot {
                     for e in &frame.entities {
-                        snapshot_ids.push(e.entity_id.clone());
+                        // retain_only is NODES-scoped: only tree kinds join the
+                        // REPLACE set. Other kinds (watchlist, shard_kv,
+                        // reading_position) are merge-only on snapshot — their
+                        // tombstones ride the frames, and reading_position ids
+                        // are artifact ids that must not skew the node set.
+                        if matches!(e.entity_kind.as_str(), "folder" | "artifact" | "research") {
+                            snapshot_ids.push(e.entity_id.clone());
+                        }
                     }
                 }
                 emit.extend(engine::apply_frame(tx, &registry, frame)?);
@@ -223,6 +230,55 @@ mod tests {
             assert!(nodes::get_node(c, "f3")?.is_some(), "f3 added");
             assert!(nodes::get_node(c, "f2")?.is_none(), "f2 removed by REPLACE");
             assert_eq!(nodes::get_cursor(c)?, 20);
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    // The registry routes reading_position frames (a missed registration drops
+    // them silently), and a snapshot's position ids do NOT join the node REPLACE
+    // set: a position's entity id IS an artifact id, so an orphaned position for
+    // a deleted artifact must not rescue that node from REPLACE.
+    #[test]
+    fn reading_position_applies_and_never_rescues_a_node_from_replace() {
+        let db = test_db("pull_reading_position");
+        let events = DataEventHub::default();
+        let api = ScriptedApi::new(vec![SyncPullResult {
+            frames: vec![Frame {
+                entities: vec![upsert("f1", 1, "One"), upsert("f2", 1, "Two")],
+            }],
+            cursor: 5,
+            mode: "delta".to_string(),
+        }]);
+        pull_and_apply(&db, &events, &config(), &api).unwrap();
+
+        // Snapshot: tree carries only f1; positions carry f2 (whose node the
+        // server no longer has). f2's node must still be REPLACEd away.
+        let position = |id: &str| FrameEntity {
+            entity_kind: "reading_position".to_string(),
+            entity_id: id.to_string(),
+            seq: 3,
+            op: "upsert".to_string(),
+            data: Some(serde_json::json!({
+                "artifactId": id, "page": 87, "updatedAt": 1000
+            })),
+        };
+        let api2 = ScriptedApi::new(vec![SyncPullResult {
+            frames: vec![Frame {
+                entities: vec![upsert("f1", 9, "One!"), position("f2")],
+            }],
+            cursor: 20,
+            mode: "snapshot".to_string(),
+        }]);
+        pull_and_apply(&db, &events, &config(), &api2).unwrap();
+        db.with_conn(|c| {
+            assert!(nodes::get_node(c, "f1")?.is_some(), "f1 kept");
+            assert!(
+                nodes::get_node(c, "f2")?.is_none(),
+                "f2 removed — its position id must not join the node retain set"
+            );
+            let pos = crate::db::repo::reading_position::get_reading_position(c, "f2")?.unwrap();
+            assert_eq!((pos.page, pos.updated_at), (87, 1000), "the position itself applied");
             Ok(())
         })
         .unwrap();

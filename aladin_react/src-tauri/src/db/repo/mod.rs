@@ -2,6 +2,7 @@ pub mod artifacts;
 pub mod browser;
 pub mod nodes;
 pub mod pages;
+pub mod reading_position;
 pub mod shard_kv;
 pub mod watchlists;
 pub mod workspace;

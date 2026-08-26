@@ -4,6 +4,7 @@ use serde::Serialize;
 use tauri::ipc::Channel;
 
 use crate::db::repo::nodes::NodeRow;
+use crate::db::repo::reading_position::ReadingPositionRow;
 use crate::db::repo::shard_kv::ShardKvRow;
 use crate::db::repo::watchlists::WatchlistRow;
 
@@ -20,6 +21,8 @@ pub enum DataEvent {
     WatchlistDeleted(EntityDeletedEvent),
     ShardKvUpserted(ShardKvRow),
     ShardKvDeleted(EntityDeletedEvent),
+    ReadingPositionUpserted(ReadingPositionRow),
+    ReadingPositionDeleted(EntityDeletedEvent),
 }
 
 #[derive(Debug, Clone, Serialize)]

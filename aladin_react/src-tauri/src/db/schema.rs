@@ -2,7 +2,7 @@ use rusqlite::Connection;
 
 use super::DbResult;
 
-const CURRENT_VERSION: i32 = 17;
+const CURRENT_VERSION: i32 = 18;
 
 /// Migrate the local cache schema. ATOMIC: every pending block AND the `user_version` stamp run in
 /// ONE transaction, so a mid-migration failure rolls back cleanly — the version is never advanced
@@ -69,6 +69,9 @@ pub fn migrate(conn: &mut Connection) -> DbResult<()> {
     if version < 17 {
         tx.execute_batch(MIGRATION_V17)?;
     }
+    if version < 18 {
+        tx.execute_batch(MIGRATION_V18)?;
+    }
     tx.execute_batch(&format!("PRAGMA user_version = {CURRENT_VERSION};"))?;
     tx.commit()?;
     Ok(())
@@ -131,6 +134,21 @@ CREATE TABLE IF NOT EXISTS shard_kv (
     updated_at INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS shard_kv_shard_key ON shard_kv (shard_id, key);
+";
+
+// Reading position ("reading_position" kind): the synced "you are at page N of this
+// document" row — one row per artifact (the entity id IS the artifact id; the feed is
+// user-scoped). updated_at is the SERVER's unix-ms stamp carried in the frame data, so
+// the reader can play newer-of against its own session memory. Merge-only on snapshot
+// REPLACE (positions are never server-deleted; pull's retain_only stays nodes-scoped).
+const MIGRATION_V18: &str = "
+CREATE TABLE IF NOT EXISTS reading_positions (
+    id         TEXT PRIMARY KEY,
+    page       INTEGER NOT NULL DEFAULT 1,
+    seq        INTEGER NOT NULL DEFAULT 0,
+    is_deleted INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL DEFAULT 0
+);
 ";
 
 // Claim layer removed — the "signal" kind is gone from the sync spine, so its local read

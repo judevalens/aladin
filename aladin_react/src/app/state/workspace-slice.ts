@@ -131,10 +131,14 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice, [], [], Workspac
   closeTab: (key) =>
     set((state) => {
       const openTabs = state.workspace.openTabs.filter((tab) => tabKey(tab) !== key);
+      // Drop the closed tab's cite landing (artifact tab keys ARE artifact ids) so a
+      // later reopen restores from the synced reading position, not a stale cite.
+      const { [key]: _dropped, ...pendingDocLocations } = state.pendingDocLocations;
       // The fallback stays "rightmost survivor" deliberately. Now that an MRU list exists,
       // "most recent survivor" would be better, but that is a behaviour change the switcher
       // PRD does not ask for — worth proposing separately, not smuggling in here.
       return {
+        pendingDocLocations,
         workspace: {
           ...state.workspace,
           openTabs,

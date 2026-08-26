@@ -1,7 +1,8 @@
 /**
  * The wormhole's store half: `openArtifactAt` opens the tab AND parks a nonce-keyed page
- * the reader watches. Nonces make the same page re-fire; entries persist (reopening a tab
- * returns to the last cited page — the poor man's "continue").
+ * the reader watches. Nonces make the same page re-fire; entries persist while the tab is
+ * open, but CLOSING the tab drops its entry — "continue" is now the synced reading
+ * position, and a stale cite must not outrank it on reopen.
  */
 import { describe, expect, it } from "vitest";
 import { create } from "zustand";
@@ -41,6 +42,16 @@ describe("openArtifactAt", () => {
     ]);
     expect(s.pendingDocLocations).toEqual({
       "doc-1": { page: 12, nonce: 1 },
+      "doc-2": { page: 3, nonce: 1 },
+    });
+  });
+
+  it("closing the tab drops its parked location (synced position wins on reopen)", () => {
+    const store = makeStore();
+    store.getState().openArtifactAt("doc-1", 94);
+    store.getState().openArtifactAt("doc-2", 3);
+    store.getState().closeTab("doc-1");
+    expect(store.getState().pendingDocLocations).toEqual({
       "doc-2": { page: 3, nonce: 1 },
     });
   });

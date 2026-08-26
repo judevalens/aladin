@@ -14,6 +14,9 @@ import { createInstrumentsRepo } from "@/repos/instruments/instruments-repo";
 import { createWatchlistRepo } from "@/repos/watchlist/watchlist-repo";
 import { createSearchRepo } from "@/repos/search/search-repo";
 import { createLocalWatchlistsRepo } from "@/repos/watchlist/local-watchlist-repo";
+import { createReadingPositionRepo } from "@/repos/reading-position/reading-position-repo";
+import { createLocalReadingPositionRepo } from "@/repos/reading-position/local-reading-position-repo";
+import { ReadingPositionService } from "@/services/reading-position/reading-position-service";
 import { createPropertyQueryRepo } from "@/repos/artifacts/property-query-repo";
 import { createIntegrationRepo } from "@/repos/integrations/integration-repo";
 import { createPageAttributionRepo } from "@/repos/pages/page-attribution-repo";
@@ -108,6 +111,7 @@ export function createAppComposition() {
     instruments: createInstrumentsRepo(apiClient),
     watchlist: createWatchlistRepo(apiClient),
     localWatchlists: createLocalWatchlistsRepo(dataEvents),
+    readingPositions: createReadingPositionRepo(apiClient),
     search: createSearchRepo(apiClient),
     market: createMarketRepo(apiClient),
     copilot: createCopilotRepo(apiClient),
@@ -117,6 +121,14 @@ export function createAppComposition() {
 
   const authSession = new AuthSessionService(repos.auth, desktopSession);
   const workspaceSync = new WorkspaceSyncService(repos.workspace, repos.artifacts);
+  // Reading positions: replica reads on desktop (the sync engine feeds the local
+  // table), one-shot REST seed on web; reports PUT to Go on both.
+  const readingPositions = new ReadingPositionService(
+    repos.readingPositions,
+    typeof window !== "undefined" && "__TAURI_INTERNALS__" in window
+      ? createLocalReadingPositionRepo()
+      : null,
+  );
   const workspace = new WorkspaceService(
     repos.workspace,
     repos.artifacts,
@@ -141,6 +153,14 @@ export function createAppComposition() {
     }
     if (event.type === "nodeDeleted") {
       workspaceSync.handleNodeChanged();
+      return;
+    }
+    if (event.type === "readingPositionUpserted") {
+      readingPositions.handleUpserted(event.payload);
+      return;
+    }
+    if (event.type === "readingPositionDeleted") {
+      readingPositions.handleDeleted(event.payload.id);
       return;
     }
   });
@@ -204,6 +224,7 @@ export function createAppComposition() {
     workspace,
     sources: sourcesCatalog,
     integrations: integrationService,
+    readingPositions,
   };
 
   return {
