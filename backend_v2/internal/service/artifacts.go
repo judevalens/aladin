@@ -26,6 +26,7 @@ type ArtifactService interface {
 	Get(context.Context, string) (ArtifactResponse, error)
 	Create(context.Context, ArtifactPayload) (ArtifactCreateResponse, error)
 	Update(context.Context, string, ArtifactPatch) (ArtifactResponse, error)
+	MoveArtifact(context.Context, string, *string) (ArtifactResponse, error)
 	Delete(context.Context, string) (NodeDeleteResult, error)
 	Upload(context.Context, ArtifactUploadInput, io.Reader) (ArtifactResponse, error)
 	Resource(context.Context, string) (ArtifactResource, error)
@@ -484,6 +485,34 @@ func (s *DefaultArtifactService) Update(ctx context.Context, id string, patch Ar
 	}
 	// Stamp the post-write version so the caller can apply the rename locally
 	// under the seq guard.
+	node, err := s.repo.LightNode(ctx, id)
+	if err != nil {
+		return ArtifactResponse{}, err
+	}
+	updated.Seq = node.Seq
+	return updated, nil
+}
+
+func (s *DefaultArtifactService) MoveArtifact(ctx context.Context, id string, folderID *string) (ArtifactResponse, error) {
+	if err := RequireScope(ctx, ScopeArtifactsWrite); err != nil {
+		return ArtifactResponse{}, err
+	}
+	if strings.TrimSpace(id) == "" {
+		return ArtifactResponse{}, ErrNotFound
+	}
+	folderID = TrimStringPtr(folderID)
+	if folderID != nil {
+		if _, err := s.repo.GetContainer(ctx, *folderID); err != nil {
+			return ArtifactResponse{}, err
+		}
+	}
+	if err := s.repo.UpdateArtifactNodeParent(ctx, id, folderID); err != nil {
+		return ArtifactResponse{}, err
+	}
+	updated, err := s.repo.GetArtifact(ctx, id)
+	if err != nil {
+		return ArtifactResponse{}, err
+	}
 	node, err := s.repo.LightNode(ctx, id)
 	if err != nil {
 		return ArtifactResponse{}, err

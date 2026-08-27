@@ -1139,6 +1139,13 @@ func (f *fakeArtifactService) Update(context.Context, string, artifactservice.Ar
 	return artifactservice.ArtifactResponse{}, artifactservice.ErrNotFound
 }
 
+func (f *fakeArtifactService) MoveArtifact(context.Context, string, *string) (artifactservice.ArtifactResponse, error) {
+	if f.err != nil {
+		return artifactservice.ArtifactResponse{}, f.err
+	}
+	return artifactservice.ArtifactResponse{}, artifactservice.ErrNotFound
+}
+
 func (f *fakeArtifactService) Delete(context.Context, string) (artifactservice.NodeDeleteResult, error) {
 	if f.err != nil {
 		return artifactservice.NodeDeleteResult{}, f.err

@@ -34,6 +34,13 @@ Editing workflow:
 Prefer block-level operations for surgical edits. update_page wipes ids,
 breaks downstream references, and triggers a full re-index — use sparingly.
 
+Folder workflow:
+  - get_browser_tree or list_folders to inspect current structure
+  - create_folder(title, parent_id?) to add a root or nested folder
+  - rename_folder(id, title) to rename a folder
+  - move_artifact(artifact_id, folder_id?) to move a page/app/file/link/voice;
+    omit folder_id or pass null to move it to the root
+
 Notes:
   - update_block accepts markdown that may parse into multiple blocks (e.g.
     a bullet list with three items becomes three blocks). The original id

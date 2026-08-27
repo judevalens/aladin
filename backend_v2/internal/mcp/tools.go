@@ -41,6 +41,18 @@ func registerTools(server *sdkmcp.Server, artifacts service.ArtifactService, pag
 		Description: "List immediate child folders for a parent folder, or root folders when omitted.",
 	}, tools.listFolders)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
+		Name:        "create_folder",
+		Description: "Create a folder. Omit parent_id or pass null to create it at the root.",
+	}, tools.createFolder)
+	sdkmcp.AddTool(server, &sdkmcp.Tool{
+		Name:        "rename_folder",
+		Description: "Rename an existing folder by id.",
+	}, tools.renameFolder)
+	sdkmcp.AddTool(server, &sdkmcp.Tool{
+		Name:        "move_artifact",
+		Description: "Move an artifact/page/app/file/link/voice item to a folder. Omit folder_id or pass null to move it to the root.",
+	}, tools.moveArtifact)
+	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "create_page",
 		Description: "Create an Aladin page. The body is supplied as markdown and stored as BlockNote blocks; the server handles the conversion.",
 	}, tools.createPage)
@@ -78,6 +90,21 @@ type emptyInput struct{}
 
 type listFoldersInput struct {
 	ParentID *string `json:"parent_id,omitempty"`
+}
+
+type createFolderInput struct {
+	Title    string  `json:"title"`
+	ParentID *string `json:"parent_id,omitempty"`
+}
+
+type renameFolderInput struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+}
+
+type moveArtifactInput struct {
+	ArtifactID string  `json:"artifact_id"`
+	FolderID   *string `json:"folder_id,omitempty"`
 }
 
 type createPageInput struct {
@@ -178,6 +205,21 @@ type folderOutput struct {
 	ID       string  `json:"id"`
 	Title    string  `json:"title"`
 	ParentID *string `json:"parent_id,omitempty"`
+	Seq      uint64  `json:"seq,string,omitempty"`
+}
+
+type folderActionOutput struct {
+	Folder folderOutput `json:"folder"`
+}
+
+type movedArtifactOutput struct {
+	ID        string        `json:"id"`
+	Title     string        `json:"title"`
+	Type      string        `json:"type"`
+	FolderID  *string       `json:"folder_id,omitempty"`
+	UpdatedAt string        `json:"updated_at"`
+	Seq       uint64        `json:"seq,string,omitempty"`
+	Citations []citationOut `json:"citations,omitempty"`
 }
 
 type createUpdatePageOutput struct {
@@ -254,13 +296,47 @@ func (t toolServer) listFolders(ctx context.Context, _ *sdkmcp.CallToolRequest, 
 	}
 	out := make([]folderOutput, 0, len(folders))
 	for _, folder := range folders {
-		out = append(out, folderOutput{
-			ID:       folder.ID,
-			Title:    folder.Title,
-			ParentID: folder.ParentID,
-		})
+		out = append(out, toFolderOutput(folder))
 	}
 	return nil, foldersOutput{Folders: out}, nil
+}
+
+func (t toolServer) createFolder(ctx context.Context, _ *sdkmcp.CallToolRequest, input createFolderInput) (*sdkmcp.CallToolResult, folderActionOutput, error) {
+	folder, err := t.artifacts.CreateFolder(ctx, input.Title, input.ParentID)
+	if err != nil {
+		return nil, folderActionOutput{}, err
+	}
+	return nil, folderActionOutput{Folder: toFolderOutput(folder)}, nil
+}
+
+func (t toolServer) renameFolder(ctx context.Context, _ *sdkmcp.CallToolRequest, input renameFolderInput) (*sdkmcp.CallToolResult, folderActionOutput, error) {
+	if strings.TrimSpace(input.ID) == "" {
+		return nil, folderActionOutput{}, service.ErrNotFound
+	}
+	folder, err := t.artifacts.UpdateFolder(ctx, input.ID, service.FolderPatch{Title: &input.Title})
+	if err != nil {
+		return nil, folderActionOutput{}, err
+	}
+	return nil, folderActionOutput{Folder: toFolderOutput(folder)}, nil
+}
+
+func (t toolServer) moveArtifact(ctx context.Context, _ *sdkmcp.CallToolRequest, input moveArtifactInput) (*sdkmcp.CallToolResult, movedArtifactOutput, error) {
+	if strings.TrimSpace(input.ArtifactID) == "" {
+		return nil, movedArtifactOutput{}, service.ErrNotFound
+	}
+	rec, err := t.artifacts.MoveArtifact(ctx, input.ArtifactID, input.FolderID)
+	if err != nil {
+		return nil, movedArtifactOutput{}, err
+	}
+	return nil, movedArtifactOutput{
+		ID:        rec.ID,
+		Title:     rec.Title,
+		Type:      rec.Type,
+		FolderID:  rec.FolderID,
+		UpdatedAt: rec.UpdatedAt,
+		Seq:       rec.Seq,
+		Citations: []citationOut{{Kind: citationKindForArtifact(rec.Type), ID: rec.ID, Title: rec.Title}},
+	}, nil
 }
 
 func (t toolServer) createPage(ctx context.Context, _ *sdkmcp.CallToolRequest, input createPageInput) (*sdkmcp.CallToolResult, createUpdatePageOutput, error) {
@@ -598,6 +674,15 @@ func requirePage(rec service.ArtifactResponse) error {
 		return service.BadRequest("artifact is not a page")
 	}
 	return nil
+}
+
+func toFolderOutput(folder service.FolderNode) folderOutput {
+	return folderOutput{
+		ID:       folder.ID,
+		Title:    folder.Title,
+		ParentID: folder.ParentID,
+		Seq:      folder.Seq,
+	}
 }
 
 func flattenBrowserTree(nodes []service.BrowserTreeNode) []browserTreeNodeOutput {

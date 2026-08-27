@@ -452,6 +452,98 @@ func TestSearchPagesValidatesAndClampsLimit(t *testing.T) {
 	}
 }
 
+func TestFolderToolsCreateRenameAndMoveArtifact(t *testing.T) {
+	t.Parallel()
+
+	parentID := "folder-parent"
+	targetID := "folder-target"
+	artifacts := &fakeArtifactService{
+		createFolderResult: service.FolderNode{ID: "folder-created", ParentID: &parentID, Title: "Planning", Seq: 2},
+		updateFolderResult: service.FolderNode{ID: targetID, Title: "Docs", Seq: 3},
+		moveArtifactResult: service.ArtifactResponse{
+			ID:        "artifact-1",
+			Type:      "app",
+			Title:     "Dashboard",
+			FolderID:  &targetID,
+			UpdatedAt: "2026-08-27T00:00:00Z",
+			Seq:       4,
+		},
+	}
+	tools := newToolServer(artifacts)
+	writeCtx := contextWithScopes(service.ScopeArtifactsRead, service.ScopeArtifactsWrite)
+
+	_, created, err := tools.createFolder(writeCtx, nil, createFolderInput{Title: "Planning", ParentID: &parentID})
+	if err != nil {
+		t.Fatalf("createFolder: %v", err)
+	}
+	if created.Folder.ID != "folder-created" || created.Folder.ParentID == nil || *created.Folder.ParentID != parentID {
+		t.Fatalf("created folder = %#v, want parent %q", created.Folder, parentID)
+	}
+	if artifacts.createFolderTitle != "Planning" || artifacts.createFolderParentID == nil || *artifacts.createFolderParentID != parentID {
+		t.Fatalf("create folder args title=%q parent=%v", artifacts.createFolderTitle, artifacts.createFolderParentID)
+	}
+
+	_, renamed, err := tools.renameFolder(writeCtx, nil, renameFolderInput{ID: targetID, Title: "Docs"})
+	if err != nil {
+		t.Fatalf("renameFolder: %v", err)
+	}
+	if renamed.Folder.ID != targetID || renamed.Folder.Title != "Docs" {
+		t.Fatalf("renamed folder = %#v, want %q/Docs", renamed.Folder, targetID)
+	}
+	if artifacts.updateFolderID != targetID || artifacts.updateFolderPatch.Title == nil || *artifacts.updateFolderPatch.Title != "Docs" {
+		t.Fatalf("rename args id=%q patch=%#v", artifacts.updateFolderID, artifacts.updateFolderPatch)
+	}
+
+	_, moved, err := tools.moveArtifact(writeCtx, nil, moveArtifactInput{ArtifactID: "artifact-1", FolderID: &targetID})
+	if err != nil {
+		t.Fatalf("moveArtifact: %v", err)
+	}
+	if moved.ID != "artifact-1" || moved.FolderID == nil || *moved.FolderID != targetID || moved.Citations[0].Kind != "shard" {
+		t.Fatalf("moved artifact = %#v, want artifact in %q with shard citation", moved, targetID)
+	}
+	if artifacts.moveArtifactID != "artifact-1" || artifacts.moveArtifactFolderID == nil || *artifacts.moveArtifactFolderID != targetID {
+		t.Fatalf("move args id=%q folder=%v", artifacts.moveArtifactID, artifacts.moveArtifactFolderID)
+	}
+}
+
+func TestMoveArtifactCanMoveToRoot(t *testing.T) {
+	t.Parallel()
+
+	artifacts := &fakeArtifactService{
+		moveArtifactResult: service.ArtifactResponse{ID: "artifact-1", Type: "page", Title: "Doc", UpdatedAt: "2026-08-27T00:00:00Z"},
+	}
+	tools := newToolServer(artifacts)
+	writeCtx := contextWithScopes(service.ScopeArtifactsWrite)
+
+	_, out, err := tools.moveArtifact(writeCtx, nil, moveArtifactInput{ArtifactID: "artifact-1"})
+	if err != nil {
+		t.Fatalf("moveArtifact root: %v", err)
+	}
+	if out.FolderID != nil {
+		t.Fatalf("folder id = %v, want root", out.FolderID)
+	}
+	if artifacts.moveArtifactID != "artifact-1" || artifacts.moveArtifactFolderID != nil {
+		t.Fatalf("move args id=%q folder=%v, want nil folder", artifacts.moveArtifactID, artifacts.moveArtifactFolderID)
+	}
+}
+
+func TestFolderToolsEnforceWriteScope(t *testing.T) {
+	t.Parallel()
+
+	tools := newToolServer(&fakeArtifactService{})
+	readOnlyCtx := contextWithScopes(service.ScopeArtifactsRead)
+
+	if _, _, err := tools.createFolder(readOnlyCtx, nil, createFolderInput{Title: "Docs"}); !errors.Is(err, service.ErrForbidden) {
+		t.Fatalf("createFolder read-only error = %v, want forbidden", err)
+	}
+	if _, _, err := tools.renameFolder(readOnlyCtx, nil, renameFolderInput{ID: "folder-1", Title: "Docs"}); !errors.Is(err, service.ErrForbidden) {
+		t.Fatalf("renameFolder read-only error = %v, want forbidden", err)
+	}
+	if _, _, err := tools.moveArtifact(readOnlyCtx, nil, moveArtifactInput{ArtifactID: "artifact-1"}); !errors.Is(err, service.ErrForbidden) {
+		t.Fatalf("moveArtifact read-only error = %v, want forbidden", err)
+	}
+}
+
 func testPrincipal(scopes ...string) service.Principal {
 	return service.Principal{
 		UserID:    "user-1",
@@ -471,17 +563,26 @@ func stringPtr(value string) *string {
 }
 
 type fakeArtifactService struct {
-	list          []service.ArtifactResponse
-	searchResults []service.ArtifactResponse
-	browserTree   []service.BrowserTreeNode
-	folders       []service.FolderNode
-	getResult     service.ArtifactResponse
-	createResult  service.ArtifactCreateResponse
-	updateResult  service.ArtifactResponse
-	createPayload service.ArtifactPayload
-	updatePatch   service.ArtifactPatch
-	searchParams  *service.PageSearchParams
-	err           error
+	list                 []service.ArtifactResponse
+	searchResults        []service.ArtifactResponse
+	browserTree          []service.BrowserTreeNode
+	folders              []service.FolderNode
+	getResult            service.ArtifactResponse
+	createResult         service.ArtifactCreateResponse
+	updateResult         service.ArtifactResponse
+	createFolderResult   service.FolderNode
+	updateFolderResult   service.FolderNode
+	moveArtifactResult   service.ArtifactResponse
+	createPayload        service.ArtifactPayload
+	updatePatch          service.ArtifactPatch
+	updateFolderPatch    service.FolderPatch
+	searchParams         *service.PageSearchParams
+	createFolderTitle    string
+	createFolderParentID *string
+	updateFolderID       string
+	moveArtifactID       string
+	moveArtifactFolderID *string
+	err                  error
 }
 
 func (f *fakeArtifactService) QueryByProperty(context.Context, service.PropertyQuery) ([]service.ArtifactResponse, error) {
@@ -557,6 +658,20 @@ func (f *fakeArtifactService) Update(ctx context.Context, _ string, patch servic
 	return f.getResult, f.err
 }
 
+func (f *fakeArtifactService) MoveArtifact(ctx context.Context, id string, folderID *string) (service.ArtifactResponse, error) {
+	if err := service.RequireScope(ctx, service.ScopeArtifactsWrite); err != nil {
+		return service.ArtifactResponse{}, err
+	}
+	f.moveArtifactID = id
+	f.moveArtifactFolderID = folderID
+	if f.moveArtifactResult.ID != "" {
+		return f.moveArtifactResult, f.err
+	}
+	rec := f.getResult
+	rec.FolderID = folderID
+	return rec, f.err
+}
+
 func (f *fakeArtifactService) Delete(context.Context, string) (service.NodeDeleteResult, error) {
 	return service.NodeDeleteResult{}, service.ErrForbidden
 }
@@ -580,12 +695,32 @@ func (f *fakeArtifactService) FolderTree(context.Context) ([]service.FolderTreeN
 	return nil, nil
 }
 
-func (f *fakeArtifactService) CreateFolder(context.Context, string, *string) (service.FolderNode, error) {
-	return service.FolderNode{}, service.ErrForbidden
+func (f *fakeArtifactService) CreateFolder(ctx context.Context, title string, parentID *string) (service.FolderNode, error) {
+	if err := service.RequireScope(ctx, service.ScopeArtifactsWrite); err != nil {
+		return service.FolderNode{}, err
+	}
+	f.createFolderTitle = title
+	f.createFolderParentID = parentID
+	if f.createFolderResult.ID != "" {
+		return f.createFolderResult, f.err
+	}
+	return service.FolderNode{ID: "folder-created", ParentID: parentID, Title: title, Seq: 1}, f.err
 }
 
-func (f *fakeArtifactService) UpdateFolder(context.Context, string, service.FolderPatch) (service.FolderNode, error) {
-	return service.FolderNode{}, service.ErrForbidden
+func (f *fakeArtifactService) UpdateFolder(ctx context.Context, id string, patch service.FolderPatch) (service.FolderNode, error) {
+	if err := service.RequireScope(ctx, service.ScopeArtifactsWrite); err != nil {
+		return service.FolderNode{}, err
+	}
+	f.updateFolderID = id
+	f.updateFolderPatch = patch
+	if f.updateFolderResult.ID != "" {
+		return f.updateFolderResult, f.err
+	}
+	title := ""
+	if patch.Title != nil {
+		title = *patch.Title
+	}
+	return service.FolderNode{ID: id, Title: title, Seq: 1}, f.err
 }
 
 func (f *fakeArtifactService) GetFolder(context.Context, string) (service.FolderNode, error) {

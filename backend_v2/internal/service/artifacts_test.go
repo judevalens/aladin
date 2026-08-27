@@ -134,6 +134,9 @@ func TestArtifactServiceReadOnlyTokenCannotWrite(t *testing.T) {
 	if _, err := svc.CreateFolder(ctx, "Folder", nil); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("CreateFolder read-only error = %v, want ErrForbidden", err)
 	}
+	if _, err := svc.MoveArtifact(ctx, "artifact-1", nil); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("MoveArtifact read-only error = %v, want ErrForbidden", err)
+	}
 }
 
 func TestArtifactServiceSearchPagesValidatesAndClamps(t *testing.T) {
@@ -159,6 +162,42 @@ func TestArtifactServiceSearchPagesValidatesAndClamps(t *testing.T) {
 	}
 	if repo.searchParams == nil || repo.searchParams.Query != "memo" || repo.searchParams.Limit != 50 {
 		t.Fatalf("search params = %#v, want trimmed query and clamped limit", repo.searchParams)
+	}
+}
+
+func TestArtifactServiceMoveArtifactCanMoveToFolderAndRoot(t *testing.T) {
+	t.Parallel()
+
+	initialFolder := "folder-old"
+	targetFolder := "folder-new"
+	repo := &fakeArtifactRepository{
+		artifactByID: map[string]ArtifactResponse{
+			"artifact-1": {ID: "artifact-1", Type: "page", FolderID: &initialFolder, Title: "Doc"},
+		},
+		containers: map[string]FolderNode{
+			targetFolder: {ID: targetFolder, Title: "Docs"},
+		},
+	}
+	svc := NewArtifactService(repo, &fakeArtifactFiles{})
+	ctx := testPrincipalContext()
+
+	moved, err := svc.MoveArtifact(ctx, "artifact-1", &targetFolder)
+	if err != nil {
+		t.Fatalf("MoveArtifact to folder error: %v", err)
+	}
+	if moved.FolderID == nil || *moved.FolderID != targetFolder {
+		t.Fatalf("folder = %v, want %q", moved.FolderID, targetFolder)
+	}
+	if moved.Seq != 1 {
+		t.Fatalf("seq = %d, want 1", moved.Seq)
+	}
+
+	rooted, err := svc.MoveArtifact(ctx, "artifact-1", nil)
+	if err != nil {
+		t.Fatalf("MoveArtifact to root error: %v", err)
+	}
+	if rooted.FolderID != nil {
+		t.Fatalf("folder = %v, want root", rooted.FolderID)
 	}
 }
 
@@ -275,6 +314,7 @@ type fakeArtifactRepository struct {
 	createdArtifacts []ArtifactResponse
 	pagesByID        map[string]*fakePageStore
 	folders          []FolderNode
+	containers       map[string]FolderNode
 	browserNodes     []BrowserTreeFlatNode
 	searchResults    []ArtifactResponse
 	propertyQuery    *PropertyQuery
@@ -435,7 +475,16 @@ func (f *fakeArtifactRepository) NextNodePosition(context.Context, *string) (int
 }
 func (f *fakeArtifactRepository) CreateTreeNode(context.Context, TreeNodeRecord) error { return nil }
 func (f *fakeArtifactRepository) DeleteBrowserNode(context.Context, string) error      { return nil }
-func (f *fakeArtifactRepository) UpdateArtifactNodeParent(context.Context, string, *string) error {
+func (f *fakeArtifactRepository) UpdateArtifactNodeParent(_ context.Context, id string, parentID *string) error {
+	if f.artifactByID == nil {
+		return ErrNotFound
+	}
+	rec, ok := f.artifactByID[id]
+	if !ok {
+		return ErrNotFound
+	}
+	rec.FolderID = parentID
+	f.artifactByID[id] = rec
 	return nil
 }
 func (f *fakeArtifactRepository) UpdateFolderTitle(context.Context, string, string) error {
@@ -445,7 +494,12 @@ func (f *fakeArtifactRepository) GetFolder(context.Context, string) (FolderNode,
 	return FolderNode{}, ErrNotFound
 }
 
-func (f *fakeArtifactRepository) GetContainer(context.Context, string) (FolderNode, error) {
+func (f *fakeArtifactRepository) GetContainer(_ context.Context, id string) (FolderNode, error) {
+	if f.containers != nil {
+		if rec, ok := f.containers[id]; ok {
+			return rec, nil
+		}
+	}
 	return FolderNode{}, ErrNotFound
 }
 func (f *fakeArtifactRepository) FolderBreadcrumbs(context.Context, string) ([]BreadcrumbItem, error) {
