@@ -57,6 +57,11 @@ export interface WorkspaceSlice {
   toggleInspector: (artifactId: string) => void;
   toggleFolder: (folderId: string) => void;
   expandFolders: (folderIds: string[]) => void;
+  /** ⌘-click: toggles a browser row in/out of the multi-selection and re-anchors ⇧-ranges on it. */
+  toggleRowSelection: (rowKey: string) => void;
+  /** ⇧-click (and retargeting): replaces the selection wholesale. Anchor kept unless given. */
+  setRowSelection: (rowKeys: string[], anchorKey?: string) => void;
+  clearRowSelection: () => void;
   setBrowserScrollTop: (scrollTop: number) => void;
   setFocusedFolder: (folderId: string | null) => void;
   startRename: (draft: RenameDraft) => void;
@@ -81,6 +86,9 @@ function openTab(tab: WorkTab, set: (fn: (state: any) => any) => void) {
         ...state.workspace,
         activeTabKey: key,
         focusedFolderId: null,
+        // Opening something is a plain-click gesture — it always dissolves the multi-selection.
+        selectedRowKeys: [],
+        selectionAnchorKey: null,
         openTabs: exists ? state.workspace.openTabs : [...state.workspace.openTabs, tab],
         tabMru: promoteMru(state.workspace.tabMru, key),
       },
@@ -169,6 +177,32 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice, [], [], Workspac
         expandedFolderIds: state.workspace.expandedFolderIds.includes(folderId)
           ? state.workspace.expandedFolderIds.filter((id) => id !== folderId)
           : [...state.workspace.expandedFolderIds, folderId],
+      },
+    })),
+  toggleRowSelection: (rowKey) =>
+    set((state) => ({
+      workspace: {
+        ...state.workspace,
+        selectedRowKeys: state.workspace.selectedRowKeys.includes(rowKey)
+          ? state.workspace.selectedRowKeys.filter((key) => key !== rowKey)
+          : [...state.workspace.selectedRowKeys, rowKey],
+        selectionAnchorKey: rowKey,
+      },
+    })),
+  setRowSelection: (rowKeys, anchorKey) =>
+    set((state) => ({
+      workspace: {
+        ...state.workspace,
+        selectedRowKeys: rowKeys,
+        selectionAnchorKey: anchorKey ?? state.workspace.selectionAnchorKey,
+      },
+    })),
+  clearRowSelection: () =>
+    set((state) => ({
+      workspace: {
+        ...state.workspace,
+        selectedRowKeys: [],
+        selectionAnchorKey: null,
       },
     })),
   expandFolders: (folderIds) =>

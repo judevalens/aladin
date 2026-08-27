@@ -128,6 +128,14 @@ export interface WorkspaceShellState {
   expandedFolderIds: string[];
   activeRename: RenameDraft | null;
   activeVoiceDraft: VoiceCaptureDraft | null;
+  /**
+   * Multi-select overlay on the browser tree (row ids, not artifact ids — a row's id is
+   * the browser node id, stable across the tree). Empty = no selection, the tree behaves
+   * exactly as before. A plain click always clears it; only ⌘/⇧-clicks grow it.
+   */
+  selectedRowKeys: string[];
+  /** The row the next ⇧-click ranges from. Set by the last ⌘-click or retarget. */
+  selectionAnchorKey: string | null;
 }
 
 export const initialWorkspaceShellState: WorkspaceShellState = {
@@ -140,6 +148,8 @@ export const initialWorkspaceShellState: WorkspaceShellState = {
   expandedFolderIds: [],
   activeRename: null,
   activeVoiceDraft: null,
+  selectedRowKeys: [],
+  selectionAnchorKey: null,
 };
 
 export interface BrowserTreeRow {
@@ -348,6 +358,79 @@ export function nextArtifactTitle(
 function getFolderScopedNodes(tree: BrowserTreeNode[], folderId: string | null): BrowserTreeNode[] {
   if (folderId === null) return tree;
   return findFolderChildren(tree, folderId) ?? [];
+}
+
+/**
+ * Rows that can enter a multi-selection: real tree nodes only. Research SLOT rows are
+ * derived (they exist because the kind guarantees them), so there is nothing to delete —
+ * modifier-clicks on them fall through to plain behaviour.
+ */
+export function isSelectableRow(row: BrowserTreeRow): boolean {
+  return row.kind !== "research-view";
+}
+
+/**
+ * The ⇧-click range: every selectable row between the anchor and the target, inclusive,
+ * in RENDERED order — ranges must match what the eye sees, so this walks the row list the
+ * pane actually painted, not the tree. A missing anchor (collapsed away, deleted) degrades
+ * to just the target.
+ */
+export function rowRangeKeys(
+  rows: BrowserTreeRow[],
+  anchorKey: string | null,
+  targetKey: string,
+): string[] {
+  const anchorIndex = rows.findIndex((row) => row.id === anchorKey);
+  const targetIndex = rows.findIndex((row) => row.id === targetKey);
+  if (targetIndex === -1) return [];
+  if (anchorIndex === -1) return [targetKey];
+  const [from, to] = anchorIndex < targetIndex ? [anchorIndex, targetIndex] : [targetIndex, anchorIndex];
+  return rows.slice(from, to + 1).filter(isSelectableRow).map((row) => row.id);
+}
+
+/** What a bulk delete acts on. Structurally identical to the confirm dialog's DeleteTarget. */
+export interface SelectionDeleteTarget {
+  kind: "folder" | "research" | "artifact";
+  id: string;
+  title: string;
+  childCount?: number;
+}
+
+/**
+ * Turns a selection into delete targets, COALESCED: a row whose ancestor folder is also
+ * selected is folded into that folder — the server's delete is recursive, so deleting the
+ * child separately would double-delete, and the count the user confirms must match what
+ * actually happens. Keys not in the current rows (collapsed or already gone) are dropped.
+ */
+export function selectionDeleteTargets(
+  rows: BrowserTreeRow[],
+  selectedKeys: string[],
+): SelectionDeleteTarget[] {
+  const selected = new Set(selectedKeys);
+  const selectedRows = rows.filter((row) => selected.has(row.id) && isSelectableRow(row));
+  const selectedFolderIds = new Set(
+    selectedRows.filter((row) => isContainerKind(row.kind)).map((row) => row.id),
+  );
+  return selectedRows.flatMap((row): SelectionDeleteTarget[] => {
+    // A folder row's ancestorFolderIds includes itself — exclude it when asking whether
+    // a selected ancestor already covers this row.
+    const ancestors = isContainerKind(row.kind)
+      ? row.ancestorFolderIds.slice(0, -1)
+      : row.ancestorFolderIds;
+    if (ancestors.some((id) => selectedFolderIds.has(id))) return [];
+    if (isContainerKind(row.kind) && row.folderId) {
+      return [{
+        kind: row.kind === "research" ? ("research" as const) : ("folder" as const),
+        id: row.folderId,
+        title: row.title,
+        childCount: row.childCount,
+      }];
+    }
+    if (row.kind === "artifact" && row.artifactId) {
+      return [{ kind: "artifact" as const, id: row.artifactId, title: row.title }];
+    }
+    return [];
+  });
 }
 
 function nextTitled(baseTitle: string, existingTitles: Set<string>) {

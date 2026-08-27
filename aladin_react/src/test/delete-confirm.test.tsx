@@ -9,14 +9,15 @@ import {
 // Delete is the one destructive thing the tree can do, and tree rows are small and close
 // together — a right-click landing one row off is easy. These pin the parts that make the
 // confirmation trustworthy: it names the thing, it says how much goes with it, and it does
-// NOT close on failure (a dialog that closes reads as success).
+// NOT close on failure (a dialog that closes reads as success). A bulk delete additionally
+// lists its manifest and calls out folder recursion — the one surprise a batch can hide.
 
 const folder: DeleteTarget = { kind: "folder", id: "f1", title: "Semis cycle", childCount: 4 };
 const artifact: DeleteTarget = { kind: "artifact", id: "a1", title: "Momentum notes" };
 
-function setup(target: DeleteTarget | null, onConfirm = vi.fn().mockResolvedValue(undefined)) {
+function setup(targets: DeleteTarget[] | null, onConfirm = vi.fn().mockResolvedValue(undefined)) {
   const onCancel = vi.fn();
-  render(<DeleteConfirmDialog target={target} onCancel={onCancel} onConfirm={onConfirm} />);
+  render(<DeleteConfirmDialog targets={targets} onCancel={onCancel} onConfirm={onConfirm} />);
   return { onConfirm, onCancel };
 }
 
@@ -26,45 +27,50 @@ describe("DeleteConfirmDialog", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  it("is closed for an empty target list", () => {
+    setup([]);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
   it("names the thing being deleted and how much goes with it", () => {
-    setup(folder);
+    setup([folder]);
     expect(screen.getByText("Delete folder?")).toBeInTheDocument();
     expect(screen.getByText("Semis cycle")).toBeInTheDocument();
     expect(screen.getByText(/4 items/)).toBeInTheDocument();
   });
 
   it("uses the singular for a single child", () => {
-    setup({ ...folder, childCount: 1 });
+    setup([{ ...folder, childCount: 1 }]);
     expect(screen.getByText(/1 item\b/)).toBeInTheDocument();
     expect(screen.queryByText(/1 items/)).not.toBeInTheDocument();
   });
 
   it("omits the count for an empty folder rather than saying '0 items'", () => {
-    setup({ ...folder, childCount: 0 });
+    setup([{ ...folder, childCount: 0 }]);
     expect(screen.queryByText(/0 item/)).not.toBeInTheDocument();
     expect(screen.getByText(/will be removed from your workspace/)).toBeInTheDocument();
   });
 
   it("calls the research folder a research folder", () => {
-    setup({ ...folder, kind: "research" });
+    setup([{ ...folder, kind: "research" }]);
     expect(screen.getByText("Delete research folder?")).toBeInTheDocument();
   });
 
   it("does not promise permanence — the server tombstones and keeps the body", () => {
-    setup(artifact);
+    setup([artifact]);
     const dialog = screen.getByRole("dialog");
     expect(dialog.textContent).toContain("removed from your workspace");
     expect(dialog.textContent).not.toMatch(/permanent|cannot be undone|forever/i);
   });
 
-  it("confirms with the target", async () => {
-    const { onConfirm } = setup(artifact);
+  it("confirms with the targets", async () => {
+    const { onConfirm } = setup([artifact]);
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-    await waitFor(() => expect(onConfirm).toHaveBeenCalledWith(artifact));
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledWith([artifact]));
   });
 
   it("cancels without deleting", () => {
-    const { onConfirm, onCancel } = setup(artifact);
+    const { onConfirm, onCancel } = setup([artifact]);
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(onConfirm).not.toHaveBeenCalled();
     expect(onCancel).toHaveBeenCalled();
@@ -72,7 +78,7 @@ describe("DeleteConfirmDialog", () => {
 
   it("stays open and shows the reason when the delete fails", async () => {
     const onConfirm = vi.fn().mockRejectedValue(new Error("Network unreachable"));
-    const { onCancel } = setup(artifact, onConfirm);
+    const { onCancel } = setup([artifact], onConfirm);
 
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 
@@ -84,12 +90,48 @@ describe("DeleteConfirmDialog", () => {
 
   it("re-enables the button after a failure so it can be retried", async () => {
     const onConfirm = vi.fn().mockRejectedValue(new Error("nope"));
-    setup(artifact, onConfirm);
+    setup([artifact], onConfirm);
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     await screen.findByText("nope");
     const button = screen.getByRole("button", { name: "Delete" });
     expect(button).not.toBeDisabled();
     fireEvent.click(button);
     await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(2));
+  });
+
+  // ——— bulk variant ———
+
+  it("counts the batch in the title and on the button", () => {
+    setup([folder, artifact]);
+    expect(screen.getByText("Delete 2 items?")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete 2 items" })).toBeInTheDocument();
+  });
+
+  it("lists the manifest by name, folders with their blast radius", () => {
+    setup([folder, artifact]);
+    expect(screen.getByText("Semis cycle")).toBeInTheDocument();
+    expect(screen.getByText("Momentum notes")).toBeInTheDocument();
+    expect(screen.getByText(/folder · 4 items inside/)).toBeInTheDocument();
+  });
+
+  it("collapses a long manifest into '+ N more'", () => {
+    const many = Array.from({ length: 9 }, (_, i) => ({
+      kind: "artifact" as const,
+      id: `a${i}`,
+      title: `Note ${i}`,
+    }));
+    setup(many);
+    expect(screen.getByText("+ 3 more")).toBeInTheDocument();
+    expect(screen.queryByText("Note 8")).not.toBeInTheDocument();
+  });
+
+  it("calls out folder recursion when the batch includes folders", () => {
+    setup([folder, artifact]);
+    expect(screen.getByText(/everything inside it is deleted too/)).toBeInTheDocument();
+  });
+
+  it("stays quiet about recursion for an artifacts-only batch", () => {
+    setup([artifact, { ...artifact, id: "a2", title: "Sizing scratch" }]);
+    expect(screen.queryByText(/deleted too/)).not.toBeInTheDocument();
   });
 });

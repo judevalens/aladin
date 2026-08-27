@@ -6,6 +6,8 @@ import {
   flattenFolderOptions,
   nextArtifactTitle,
   nextFolderTitle,
+  rowRangeKeys,
+  selectionDeleteTargets,
 } from "@/modules/workspace/domain";
 
 const tree: BrowserTreeNode[] = [
@@ -183,5 +185,81 @@ describe("research folders are containers", () => {
 
   it("resolves as an ancestor when scoping to a descendant", () => {
     expect(ancestorFolderIds(researchTree, "research-pead")).toEqual(["folder-root", "research-pead"]);
+  });
+});
+
+// ——— multi-select helpers ———
+// The selection is an overlay of ROW ids; ranges follow rendered order (what the eye sees),
+// and a delete batch is coalesced so the count the user confirms matches what the server's
+// recursive delete actually does.
+
+describe("row selection helpers", () => {
+  const expanded = ["folder-root", "folder-nested"];
+  const rows = () => buildBrowserRows(tree, expanded);
+  const researchTree: BrowserTreeNode[] = [
+    {
+      id: "folder-root",
+      kind: "folder",
+      title: "Ideas",
+      children: [
+        {
+          id: "research-pead",
+          kind: "research",
+          title: "PEAD semis",
+          research: { runState: "idle", execMode: "event", sourceKind: "authored" },
+          children: [],
+        },
+      ],
+    },
+  ];
+
+  it("ranges over the visible rows between anchor and target, either direction", () => {
+    expect(rowRangeKeys(rows(), "artifact-1", "artifact-2")).toEqual([
+      "artifact-1",
+      "folder-nested",
+      "artifact-2",
+    ]);
+    expect(rowRangeKeys(rows(), "artifact-2", "artifact-1")).toEqual([
+      "artifact-1",
+      "folder-nested",
+      "artifact-2",
+    ]);
+  });
+
+  it("degrades to just the target when the anchor is gone", () => {
+    expect(rowRangeKeys(rows(), "collapsed-away", "artifact-1")).toEqual(["artifact-1"]);
+    expect(rowRangeKeys(rows(), null, "artifact-1")).toEqual(["artifact-1"]);
+  });
+
+  it("excludes research slot rows from a range — they are derived, not deletable", () => {
+    const slotRows = buildBrowserRows(researchTree, ["folder-root", "research-pead"]);
+    const keys = rowRangeKeys(slotRows, slotRows[0].id, slotRows[slotRows.length - 1].id);
+    expect(keys.some((key) => key.startsWith("research:"))).toBe(false);
+  });
+
+  it("coalesces a selected child into its selected ancestor folder", () => {
+    const targets = selectionDeleteTargets(rows(), ["folder-root", "artifact-2", "folder-nested"]);
+    expect(targets).toEqual([
+      { kind: "folder", id: "folder-root", title: "Root", childCount: 2 },
+    ]);
+  });
+
+  it("keeps independent targets, artifacts resolving to their artifact id", () => {
+    const targets = selectionDeleteTargets(rows(), ["folder-nested", "artifact-1"]);
+    expect(targets).toEqual([
+      { kind: "artifact", id: "artifact-1", title: "Existing" },
+      { kind: "folder", id: "folder-nested", title: "Nested", childCount: 1 },
+    ]);
+  });
+
+  it("drops keys that are not in the rendered rows", () => {
+    expect(selectionDeleteTargets(rows(), ["ghost"])).toEqual([]);
+  });
+
+  it("types a research folder as research", () => {
+    const researchRows = buildBrowserRows(researchTree, ["folder-root"]);
+    expect(selectionDeleteTargets(researchRows, ["research-pead"])).toEqual([
+      { kind: "research", id: "research-pead", title: "PEAD semis", childCount: 0 },
+    ]);
   });
 });

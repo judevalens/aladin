@@ -244,7 +244,6 @@ function MillerRow({
         selected ? "bg-amber-soft text-ink" : "text-ink-2 hover:bg-hover hover:text-ink",
       )}
     >
-      {selected ? <span className="absolute left-0 top-[5px] bottom-[5px] w-0.5 rounded-tap bg-amber" /> : null}
       <Icon as={Glyph} className={cn("shrink-0", isFolder && selected ? "text-amber" : isFolder ? "text-ink-2" : "text-ink-3")} />
       <span className={cn("min-w-0 flex-1 truncate text-small", isFolder ? "font-medium" : "font-normal", selected && "font-semibold")}>
         {name}

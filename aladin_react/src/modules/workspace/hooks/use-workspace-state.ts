@@ -15,8 +15,11 @@ import {
   activeArtifactIdOf,
   flattenFolderOptions,
   isContainerKind,
+  rowRangeKeys,
+  selectionDeleteTargets,
   tabKey,
   RESEARCH_VIEW_LABEL,
+  type SelectionDeleteTarget,
 } from "@/modules/workspace/domain";
 import {
   buildWorkspaceRows,
@@ -89,6 +92,23 @@ export interface BrowserPaneState {
   /** Deletes a folder or research folder. Server-authoritative; the tree updates off the frame. */
   onDeleteFolder: (folderId: string) => Promise<void>;
   onDeleteArtifact: (artifactId: string) => Promise<void>;
+  /** Multi-selection, intersected with the rendered rows so collapsed/deleted keys don't count. */
+  selectedRowKeys: string[];
+  /** ⌘-click: toggle one row and re-anchor ranges on it. */
+  onToggleRowSelected: (rowKey: string) => void;
+  /** ⇧-click: add the visible anchor→row range to the selection. */
+  onSelectRangeTo: (rowKey: string) => void;
+  onClearSelection: () => void;
+  /** Right-click on an unselected row while a selection exists: the selection becomes that row. */
+  onRetargetSelection: (rowKey: string) => void;
+  /** The selection as coalesced delete targets (a selected child of a selected folder folds in). */
+  selectionTargets: SelectionDeleteTarget[];
+  /**
+   * Deletes targets sequentially against the one-node endpoint. Partial failure throws after
+   * the loop, naming what failed — successes are already gone and their rows leave via the
+   * sync frame; the confirm dialog stays open on the throw.
+   */
+  onDeleteTargets: (targets: SelectionDeleteTarget[]) => Promise<void>;
 }
 
 export interface WorkPaneCrumb {
@@ -275,6 +295,9 @@ export function useBrowserPane(): BrowserPaneState {
   const expandFolders = useAppStore((state) => state.expandFolders);
   const setBrowserScrollTop = useAppStore((state) => state.setBrowserScrollTop);
   const startRename = useAppStore((state) => state.startRename);
+  const toggleRowSelection = useAppStore((state) => state.toggleRowSelection);
+  const setRowSelection = useAppStore((state) => state.setRowSelection);
+  const clearRowSelection = useAppStore((state) => state.clearRowSelection);
 
   const treeLoadable = useObservableState(services.workspace.tree());
 
@@ -283,6 +306,19 @@ export function useBrowserPane(): BrowserPaneState {
   const rows = useMemo(
     () => buildWorkspaceRows(tree, workspace.expandedFolderIds, null),
     [tree, workspace.expandedFolderIds],
+  );
+
+  // The stored selection is an overlay; what the pane (and the delete) act on is its
+  // intersection with the rows actually rendered — a key collapsed out of view or already
+  // tombstoned by a sync frame stops counting without anyone having to prune the store.
+  const selectedRowKeys = useMemo(() => {
+    if (workspace.selectedRowKeys.length === 0) return workspace.selectedRowKeys;
+    const visible = new Set(rows.map((row) => row.id));
+    return workspace.selectedRowKeys.filter((key) => visible.has(key));
+  }, [rows, workspace.selectedRowKeys]);
+  const selectionTargets = useMemo(
+    () => selectionDeleteTargets(rows, selectedRowKeys),
+    [rows, selectedRowKeys],
   );
 
   return {
@@ -363,6 +399,40 @@ export function useBrowserPane(): BrowserPaneState {
     onDeleteArtifact: async (artifactId: string) => {
       await services.workspace.deleteArtifact(artifactId);
       useAppStore.getState().closeTab(artifactId);
+    },
+    selectedRowKeys,
+    onToggleRowSelected: toggleRowSelection,
+    onSelectRangeTo: (rowKey: string) => {
+      const range = rowRangeKeys(rows, workspace.selectionAnchorKey, rowKey);
+      setRowSelection(Array.from(new Set([...selectedRowKeys, ...range])));
+    },
+    onClearSelection: clearRowSelection,
+    onRetargetSelection: (rowKey: string) => setRowSelection([rowKey], rowKey),
+    selectionTargets,
+    onDeleteTargets: async (targets: SelectionDeleteTarget[]) => {
+      const failures: string[] = [];
+      for (const target of targets) {
+        try {
+          if (target.kind === "artifact") {
+            await services.workspace.deleteArtifact(target.id);
+            useAppStore.getState().closeTab(target.id);
+          } else {
+            await services.workspace.deleteFolder(target.id);
+            closeTabsForContext(target.id);
+          }
+        } catch {
+          failures.push(target.title);
+        }
+      }
+      if (failures.length > 0) {
+        const kept = failures.map((title) => `"${title}"`).join(", ");
+        throw new Error(
+          failures.length === targets.length
+            ? `Couldn't delete ${kept}.`
+            : `Couldn't delete ${kept}. Everything else was deleted.`,
+        );
+      }
+      clearRowSelection();
     },
   };
 }
