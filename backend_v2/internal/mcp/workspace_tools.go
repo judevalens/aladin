@@ -2,7 +2,6 @@ package mcpserver
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -940,86 +939,30 @@ func citationKindForArtifact(t string) string {
 }
 
 // summarizeBoardContent renders a board's tldraw snapshot as a line of structure — shape
-// counts by kind and the texts a model could act on (tasks, cards, excerpts) — instead of
-// the raw record JSON, which is noise at best and context-flooding at worst.
+// counts by kind and the texts a model could act on (tasks, cards, excerpts, links, ink
+// labels) — instead of the raw record JSON, which is noise at best and context-flooding
+// at worst. Parsing lives in service.ParseBoardContent, the SAME parser the content-index
+// projector uses, so what the copilot reads and what search retrieves can never drift.
 func summarizeBoardContent(content string) string {
-	trimmed := strings.TrimSpace(content)
-	if trimmed == "" {
+	parsed := service.ParseBoardContent(content)
+	if len(parsed.Counts) == 0 {
 		return "an empty board"
 	}
-	var snapshot struct {
-		Document struct {
-			Store map[string]struct {
-				TypeName string `json:"typeName"`
-				Type     string `json:"type"`
-				Props    struct {
-					Text             string `json:"text"`
-					Front            string `json:"front"`
-					Back             string `json:"back"`
-					Title            string `json:"title"`
-					ArtifactID       string `json:"artifactId"`
-					SourceArtifactID string `json:"sourceArtifactId"`
-					SourceTitle      string `json:"sourceTitle"`
-					Page             int    `json:"page"`
-				} `json:"props"`
-			} `json:"store"`
-		} `json:"document"`
-	}
-	if err := json.Unmarshal([]byte(trimmed), &snapshot); err != nil || len(snapshot.Document.Store) == 0 {
-		return "a board (snapshot unreadable)"
-	}
-	counts := map[string]int{}
-	var lines []string
-	for _, record := range snapshot.Document.Store {
-		if record.TypeName != "shape" {
-			continue
-		}
-		counts[record.Type]++
-		switch record.Type {
-		case "aladin-task":
-			if record.Props.Text != "" {
-				lines = append(lines, "task: "+record.Props.Text)
-			}
-		case "aladin-card":
-			if record.Props.Front != "" {
-				lines = append(lines, "card: "+record.Props.Front+" / "+record.Props.Back)
-			}
-		case "aladin-excerpt":
-			if record.Props.Text != "" {
-				line := "excerpt: " + record.Props.Text
-				// The cite is what makes the excerpt quizzable: the copilot reads the
-				// source around it (read_document) and checks answers against the text.
-				if record.Props.SourceArtifactID != "" && record.Props.Page > 0 {
-					line += fmt.Sprintf(" [cite: %s p.%d, artifact %s]",
-						record.Props.SourceTitle, record.Props.Page, record.Props.SourceArtifactID)
-				}
-				lines = append(lines, line)
-			}
-		case "aladin-doc":
-			if record.Props.Title != "" {
-				line := "live window: " + record.Props.Title
-				if record.Props.ArtifactID != "" {
-					line += fmt.Sprintf(" [artifact %s, open at p.%d]",
-						record.Props.ArtifactID, record.Props.Page)
-				}
-				lines = append(lines, line)
-			}
-		}
-	}
-	if len(counts) == 0 {
-		return "an empty board"
-	}
-	kinds := make([]string, 0, len(counts))
-	for kind := range counts {
+	kinds := make([]string, 0, len(parsed.Counts))
+	for kind := range parsed.Counts {
 		kinds = append(kinds, kind)
 	}
 	sort.Strings(kinds)
 	parts := make([]string, 0, len(kinds))
 	for _, kind := range kinds {
-		parts = append(parts, fmt.Sprintf("%d %s", counts[kind], strings.TrimPrefix(kind, "aladin-")))
+		parts = append(parts, fmt.Sprintf("%d %s", parsed.Counts[kind], kind))
 	}
-	summary := "board with " + strings.Join(parts, ", ")
+	lines := make([]string, 0, len(parsed.Lines))
+	for _, line := range parsed.Lines {
+		lines = append(lines, line.Text)
+	}
 	sort.Strings(lines)
+	summary := "board with " + strings.Join(parts, ", ")
 	if len(lines) > 0 {
 		summary += "\n" + strings.Join(lines, "\n")
 	}

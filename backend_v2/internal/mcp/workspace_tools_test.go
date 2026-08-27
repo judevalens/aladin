@@ -502,3 +502,25 @@ func TestGetPositionsCitesEachHolding(t *testing.T) {
 		t.Fatalf("output = %#v, want one NVDA position + citation", out)
 	}
 }
+
+func TestSummarizeBoardContentIncludesLinks(t *testing.T) {
+	snapshot := `{"document":{"store":{
+		"shape:l1":{"typeName":"shape","type":"aladin-link","props":{
+			"url":"https://ssrn.com/momentum","title":"Momentum Crashes","domain":"ssrn.com",
+			"description":"Momentum strategies crash in panic states.","status":"ready"}},
+		"shape:l2":{"typeName":"shape","type":"aladin-link","props":{
+			"url":"https://example.com/raw","title":"","domain":"example.com","status":"failed"}},
+		"shape:t1":{"typeName":"shape","type":"aladin-task","props":{"text":"read §4"}}
+	}}}`
+	got := summarizeBoardContent(snapshot)
+	if !strings.Contains(got, "2 link") {
+		t.Fatalf("counts missing links: %q", got)
+	}
+	if !strings.Contains(got, "link: Momentum Crashes — https://ssrn.com/momentum [ssrn.com] :: Momentum strategies crash in panic states.") {
+		t.Fatalf("unfurled link line missing: %q", got)
+	}
+	// A link that never unfurled still surfaces by URL — the agent can follow it.
+	if !strings.Contains(got, "link: https://example.com/raw [example.com]") {
+		t.Fatalf("bare link line missing: %q", got)
+	}
+}

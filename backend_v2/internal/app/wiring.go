@@ -75,6 +75,11 @@ type Dependencies interface {
 	ReadingPositions() coreservice.ReadingPositionService
 	// Search is the global command-box search: federates instruments + entities + artifacts.
 	Search() coreservice.SearchService
+	// Unfurl resolves an external URL's preview metadata for board link objects.
+	Unfurl() coreservice.UnfurlService
+	// ContentIndex is the readable-workspace projection (READABLE_WORKSPACE R1): the
+	// worker sweeps it fresh; federated search reads it.
+	ContentIndex() coreservice.ContentIndexService
 	// Bars is the OHLCV history store behind the ticker chart.
 	Bars() coreservice.BarService
 	// QuoteSnapshots is the live-quote snapshot source (nil without market-data keys).
@@ -131,6 +136,8 @@ type StaticDependencies struct {
 	WatchlistSvc           coreservice.WatchlistService
 	ReadingPositionsSvc    coreservice.ReadingPositionService
 	SearchSvc              coreservice.SearchService
+	UnfurlSvc              coreservice.UnfurlService
+	ContentIndexSvc        coreservice.ContentIndexService
 	BarsSvc                coreservice.BarService
 	QuoteSnapshotsSvc      coreservice.QuoteSnapshotSource
 	MarketInfoSvc          coreservice.MarketInfoService
@@ -218,6 +225,12 @@ func (d StaticDependencies) ReadingPositions() coreservice.ReadingPositionServic
 func (d StaticDependencies) Search() coreservice.SearchService {
 	return d.SearchSvc
 }
+func (d StaticDependencies) Unfurl() coreservice.UnfurlService {
+	return d.UnfurlSvc
+}
+func (d StaticDependencies) ContentIndex() coreservice.ContentIndexService {
+	return d.ContentIndexSvc
+}
 func (d StaticDependencies) Bars() coreservice.BarService {
 	return d.BarsSvc
 }
@@ -277,6 +290,8 @@ type wiring struct {
 	watchlist           coreservice.WatchlistService
 	readingPositions    coreservice.ReadingPositionService
 	search              coreservice.SearchService
+	unfurl              coreservice.UnfurlService
+	contentIndex        coreservice.ContentIndexService
 	bars                coreservice.BarService
 	quoteSnapshots      coreservice.QuoteSnapshotSource
 	marketInfo          coreservice.MarketInfoService
@@ -335,6 +350,8 @@ func (w wiring) ReadingPositions() coreservice.ReadingPositionService {
 	return w.readingPositions
 }
 func (w wiring) Search() coreservice.SearchService          { return w.search }
+func (w wiring) Unfurl() coreservice.UnfurlService          { return w.unfurl }
+func (w wiring) ContentIndex() coreservice.ContentIndexService { return w.contentIndex }
 func (w wiring) Bars() coreservice.BarService               { return w.bars }
 func (w wiring) QuoteSnapshots() coreservice.QuoteSnapshotSource {
 	return w.quoteSnapshots
@@ -430,10 +447,13 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 	}
 	entityTagsSvc := coreservice.NewEntityTagService(entityTagRepo, entities.Normalize)
 	artifactRefsSvc := coreservice.NewArtifactRefService(artifactRefRepo)
+	contentIndexSvc := coreservice.NewContentIndexService(repo.NewContentIndexPostgres(pool))
 	searchSvc := coreservice.NewSearchService(
 		coreservice.NewInstrumentSearchProvider(instrumentsSvc),
 		coreservice.NewEntitySearchProvider(entityTagsSvc),
 		coreservice.NewArtifactSearchProvider(artifactRefsSvc),
+		// Body hits across every readable kind, after title hits (dedupe keeps titles).
+		coreservice.NewContentSearchProvider(contentIndexSvc),
 	)
 
 	// Live market data: the quote hub publishes upstream Alpaca ticks to the outbox (broadcast
@@ -537,6 +557,8 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		watchlist:           watchlistSvc,
 		readingPositions:    coreservice.NewReadingPositionService(repo.NewReadingPositionPostgres(pool)),
 		search:              searchSvc,
+		unfurl:              coreservice.NewUnfurlService(),
+		contentIndex:        contentIndexSvc,
 		bars:                barsSvc,
 		quoteSnapshots:      snapshotSource,
 		marketInfo:          marketInfo,

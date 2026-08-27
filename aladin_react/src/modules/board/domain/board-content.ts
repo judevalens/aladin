@@ -3,6 +3,8 @@ import { createContext, useContext } from "react";
 import { ApiError, type ApiClient } from "@/shared/api/client";
 import type { SearchResponse, UserArtifact } from "@/shared/api/models";
 
+import type { UnfurlResult } from "./board-links";
+
 /**
  * The read-live content plane for doc windows and the picker.
  *
@@ -38,6 +40,11 @@ export interface BoardContentSource {
   listFolderArtifacts(folderId: string | null): Promise<PickerArtifact[]>;
   /** The picker's "then everywhere": the workspace search, narrowed to insertable kinds. */
   searchArtifacts(query: string): Promise<PickerArtifact[]>;
+  /**
+   * Resolve an external URL's preview (server-side — CORS + SSRF live there). Optional:
+   * hosts without a backend leave link objects at their bare-URL rendering.
+   */
+  unfurl?(url: string): Promise<UnfurlResult>;
   /**
    * "Work this": create a paged worksheet (a board wearing the paper costume) in the
    * study's folder, born citing its exercise. Returns the new artifact id. Optional —
@@ -227,6 +234,12 @@ export function createBoardContentSource(client: ApiClient): BoardContentSource 
           title: hit.title,
           meta: hit.subtitle || (hit.kind === "page" ? "note" : hit.kind),
         }));
+    },
+    async unfurl(url) {
+      return client.fetch<UnfurlResult>(`/api/unfurl`, {
+        method: "POST",
+        body: JSON.stringify({ url }),
+      });
     },
     async createWorksheet({ folderId, title, cite }) {
       const record = await client.fetch<UserArtifact>(`/api/artifacts/`, {

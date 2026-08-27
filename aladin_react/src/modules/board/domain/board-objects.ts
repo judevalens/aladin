@@ -5,8 +5,10 @@ import {
   CARD_DEFAULTS,
   DOC_WINDOW_DEFAULTS,
   EXCERPT_DEFAULTS,
+  LINK_DEFAULTS,
   TASK_DEFAULTS,
 } from "../shapes/shape-types";
+import { linkDomain } from "./board-links";
 
 /**
  * Object creation — every insert lands selected, in the select tool, so the selection bar
@@ -65,7 +67,7 @@ export function freePoint(editor: Editor, w: number, h: number): VecLike {
 
 function insert(
   editor: Editor,
-  type: "aladin-doc" | "aladin-excerpt" | "aladin-task" | "aladin-card",
+  type: "aladin-doc" | "aladin-excerpt" | "aladin-task" | "aladin-card" | "aladin-link",
   at: VecLike | undefined,
   props: Record<string, unknown>,
 ): TLShapeId {
@@ -94,6 +96,15 @@ export function addExcerpt(
     sourceArtifactId: opts.sourceArtifactId ?? null,
     sourceTitle: opts.sourceTitle ?? EXCERPT_DEFAULTS.sourceTitle,
     page: opts.page ?? null,
+  });
+}
+
+/** A link object lands `pending` showing its domain; the caller starts the unfurl. */
+export function addLink(editor: Editor, opts: { url: string; at?: VecLike }): TLShapeId {
+  return insert(editor, "aladin-link", opts.at, {
+    ...LINK_DEFAULTS,
+    url: opts.url,
+    domain: linkDomain(opts.url),
   });
 }
 

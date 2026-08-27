@@ -26,6 +26,7 @@ import (
 	"aladin/backend_v2/internal/pipeline/workers"
 	"aladin/backend_v2/internal/ratelimit"
 	"aladin/backend_v2/internal/repo"
+	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/safego"
 	"aladin/backend_v2/internal/search"
 	isync "aladin/backend_v2/internal/sync"
@@ -146,6 +147,28 @@ func main() {
 					slog.Error("ingestion: sweep failed", "component", "ingestion", "err", err)
 				} else if n > 0 {
 					slog.Info("ingestion: swept", "component", "ingestion", "documents", n)
+				}
+			}
+		}
+	})
+
+	// Content-index sweeper (READABLE_WORKSPACE R1) — projects stale artifacts into
+	// content_index. A sweep, not an event consumer, because boards and page bodies are
+	// written by the sidecar with direct SQL: no outbox frame ever fires for them, so the
+	// three source clocks in repo.StaleArtifacts are the only truthful freshness signal.
+	contentIndex := coreservice.NewContentIndexService(repo.NewContentIndexPostgres(pool))
+	safego.Loop(ctx, "worker.contentindex", func(ctx context.Context) {
+		ticker := time.NewTicker(20 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if n, err := contentIndex.Sweep(ctx, 50); err != nil {
+					slog.Error("contentindex: sweep failed", "component", "contentindex", "err", err)
+				} else if n > 0 {
+					slog.Info("contentindex: projected", "component", "contentindex", "artifacts", n)
 				}
 			}
 		}

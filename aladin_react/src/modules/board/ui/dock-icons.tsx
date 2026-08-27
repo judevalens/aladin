@@ -53,4 +53,5 @@ export const DOCK_PATHS = {
   close: "M18 6L6 18M6 6l12 12",
   more: "M5 12h.01M12 12h.01M19 12h.01",
   clipboard: "M8 8h13v13H8zM16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3",
+  open: "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3",
 } as const;

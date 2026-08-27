@@ -109,6 +109,28 @@ function createSpikeApiClient(): ApiClient {
         } as T);
       }
 
+      if (url.pathname === "/api/unfurl" && method === "POST") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as { url?: string };
+        const target = new URL(body.url ?? "https://example.com");
+        // A slow-ish fake so the pending state is visible in the spike.
+        return new Promise((resolve) =>
+          setTimeout(
+            () =>
+              resolve({
+                url: target.toString(),
+                domain: target.hostname.replace(/^www\./, ""),
+                title: `${target.hostname} — spike preview`,
+                description:
+                  "A faked unfurl so the link object's ready state renders without a backend.",
+                siteName: "Spike",
+                imageUrl: "",
+                faviconUrl: "",
+              } as T),
+            600,
+          ),
+        );
+      }
+
       if (url.pathname === "/api/artifacts/" && method === "GET") {
         return Promise.resolve(
           SPIKE_FOLDER.map((a) => ({

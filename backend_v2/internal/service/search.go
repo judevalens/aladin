@@ -33,10 +33,13 @@ const (
 // SearchHit is one result row. Kind is the fine row type (drives the client's icon + route);
 // the section it lands in is decided by its provider, not by Kind.
 type SearchHit struct {
-	Kind     string  `json:"kind"` // ticker | company | person | entity | page | shard
+	Kind     string  `json:"kind"` // ticker | company | person | entity | page | shard | file | board | link
 	ID       string  `json:"id"`
 	Title    string  `json:"title"`
 	Subtitle string  `json:"subtitle,omitempty"`
+	// Locator points into the artifact ("page:12", "shape:<id>") when the hit came from
+	// content rather than a title — the citable deep-open (READABLE_WORKSPACE L3).
+	Locator  string  `json:"locator,omitempty"`
 	Score    float64 `json:"score"`
 }
 
@@ -106,9 +109,18 @@ func (s *defaultSearchService) Search(ctx context.Context, userID, query string,
 	sections := make([]SearchSection, 0, len(searchSectionOrder))
 	for _, sec := range searchSectionOrder {
 		var hits []SearchHit
+		seen := map[string]bool{}
 		for i, p := range s.providers {
 			if p.Section() == sec.key {
-				hits = append(hits, results[i]...)
+				for _, hit := range results[i] {
+					// One artifact can match on title AND body (two providers) — keep
+					// the earlier provider's row, which carries the higher-priority form.
+					if seen[hit.ID] {
+						continue
+					}
+					seen[hit.ID] = true
+					hits = append(hits, hit)
+				}
 			}
 		}
 		if len(hits) > 0 {
@@ -166,9 +178,38 @@ func (p EntitySearchProvider) Search(ctx context.Context, userID, query string, 
 	return out, nil
 }
 
-// ArtifactSearchProvider federates page + shard search into the Artifacts section. (Broader
-// artifact kinds — links, notes, files — are a follow-up; ArtifactRefService.Search covers
-// pages + shards today.)
+// ContentSearchProvider federates the content index into the Artifacts section — body
+// hits across every readable kind (pages, files, boards, links), each carrying the
+// locator that makes it citable. Registered AFTER ArtifactSearchProvider so title
+// matches outrank body matches and dedupe keeps the title row.
+type ContentSearchProvider struct{ svc ContentIndexService }
+
+func NewContentSearchProvider(svc ContentIndexService) ContentSearchProvider {
+	return ContentSearchProvider{svc: svc}
+}
+func (p ContentSearchProvider) Section() string { return SearchSectionArtifact }
+func (p ContentSearchProvider) Search(ctx context.Context, userID, query string, limit int) ([]SearchHit, error) {
+	hits, err := p.svc.Search(ctx, userID, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]SearchHit, 0, len(hits))
+	for i, h := range hits {
+		kind := h.Kind
+		if kind == "app" {
+			kind = "shard" // the client's route vocabulary (ArtifactRef does the same)
+		}
+		out = append(out, SearchHit{
+			Kind: kind, ID: h.ArtifactID, Title: h.Title,
+			Subtitle: h.Snippet, Locator: h.Locator, Score: scoreAt(i),
+		})
+	}
+	return out, nil
+}
+
+// ArtifactSearchProvider federates page + shard TITLE search into the Artifacts section
+// (ArtifactRefService is the `#`-picker's source of truth and stays scoped to pages +
+// shards; body hits across all kinds come from ContentSearchProvider above).
 type ArtifactSearchProvider struct{ svc ArtifactRefService }
 
 func NewArtifactSearchProvider(svc ArtifactRefService) ArtifactSearchProvider {

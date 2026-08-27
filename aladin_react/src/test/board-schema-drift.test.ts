@@ -17,10 +17,12 @@ import {
   CARD_DEFAULTS,
   DOC_WINDOW_DEFAULTS,
   EXCERPT_DEFAULTS,
+  LINK_DEFAULTS,
   TASK_DEFAULTS,
   cardProps,
   docWindowProps,
   excerptProps,
+  linkProps,
   taskProps,
 } from "@/modules/board/shapes/shape-types";
 
@@ -31,6 +33,7 @@ const clientProps: Record<string, Validators> = {
   "aladin-excerpt": excerptProps as unknown as Validators,
   "aladin-task": taskProps as unknown as Validators,
   "aladin-card": cardProps as unknown as Validators,
+  "aladin-link": linkProps as unknown as Validators,
 };
 
 const defaults: Record<string, Record<string, unknown>> = {
@@ -38,6 +41,7 @@ const defaults: Record<string, Record<string, unknown>> = {
   "aladin-excerpt": EXCERPT_DEFAULTS as unknown as Record<string, unknown>,
   "aladin-task": TASK_DEFAULTS as unknown as Record<string, unknown>,
   "aladin-card": CARD_DEFAULTS as unknown as Record<string, unknown>,
+  "aladin-link": LINK_DEFAULTS as unknown as Record<string, unknown>,
 };
 
 /** Per-field probes: values a correct validator must accept/reject identically. */

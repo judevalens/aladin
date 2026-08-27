@@ -16,7 +16,9 @@ import { useBoardContent, useBoardFolder, type PickerArtifact } from "../domain/
 import { createTapTracker } from "../domain/board-gestures";
 import { useBoardHost } from "../domain/board-host";
 import { useBoardPaper } from "../domain/board-paper";
-import { addCard, addDocWindow, addExcerpt, addTask, boardArtifactIds } from "../domain/board-objects";
+import { addCard, addDocWindow, addExcerpt, addLink, addTask, boardArtifactIds } from "../domain/board-objects";
+import { pastedUrl } from "../domain/board-links";
+import { resolveLinkInto } from "../domain/board-link-flow";
 import {
   browserPrefsStorage,
   loadBoardPrefs,
@@ -456,7 +458,12 @@ export function BoardChrome() {
     setPickerOpen(false);
     try {
       const text = (await navigator.clipboard.readText()).trim();
-      if (text) {
+      const url = pastedUrl(text);
+      if (url) {
+        const id = addLink(editor, { url });
+        resolveLinkInto(editor, contentSource, id, url);
+        inserted();
+      } else if (text) {
         addExcerpt(editor, { text });
         inserted();
       } else {

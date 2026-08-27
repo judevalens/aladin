@@ -1,4 +1,4 @@
-// The board's record schema, server-side — the same four shapes the web client's
+// The board's record schema, server-side — the same five shapes the web client's
 // `aladin_react/src/modules/board/shapes/shape-types.ts` defines, expressed without React
 // so the sync room can validate every record it stores.
 //
@@ -62,6 +62,17 @@ export const boardShapeProps = {
     cite: T.string,
     flipped: T.boolean,
   },
+  "aladin-link": {
+    w: T.nonZeroNumber,
+    h: T.nonZeroNumber,
+    url: T.string,
+    title: T.string,
+    description: T.string,
+    domain: T.string,
+    image: T.string,
+    favicon: T.string,
+    status: T.literalEnum("pending", "ready", "failed"),
+  },
 };
 
 /**
@@ -90,6 +101,7 @@ export function createBoardSchema() {
       "aladin-excerpt": { props: boardShapeProps["aladin-excerpt"] },
       "aladin-task": { props: boardShapeProps["aladin-task"] },
       "aladin-card": { props: boardShapeProps["aladin-card"] },
+      "aladin-link": { props: boardShapeProps["aladin-link"] },
     },
     bindings: defaultBindingSchemas,
   });

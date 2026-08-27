@@ -1,7 +1,7 @@
 import { renderPlaintextFromRichText } from "tldraw";
 import type { Editor, TLShape } from "tldraw";
 
-import type { CardProps, DocWindowProps, ExcerptProps, TaskProps } from "../shapes/shape-types";
+import type { CardProps, DocWindowProps, ExcerptProps, LinkProps, TaskProps } from "../shapes/shape-types";
 
 /** What the selection bar shows for one selected object. */
 export interface SelectionSummary {
@@ -61,6 +61,17 @@ export function describeShape(editor: Editor, shape: TLShape): SelectionSummary 
         artifactId: null,
         page: null,
         openLabel: null,
+      };
+    }
+    case "aladin-link": {
+      const props = shape.props as LinkProps;
+      return {
+        title: props.title || props.url || "Link",
+        meta: props.status === "pending" ? "fetching preview…" : props.domain || "external link",
+        cited: false,
+        artifactId: null,
+        page: null,
+        openLabel: null, // the shape's own ↗ opens the URL; Open verbs are for artifacts
       };
     }
     case "text": {

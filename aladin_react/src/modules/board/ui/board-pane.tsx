@@ -24,11 +24,13 @@ import {
   BoardContentContext,
   BoardFolderContext,
   createBoardContentSource,
+  useBoardContent,
 } from "../domain/board-content";
 import { BoardHostContext, useBoardHost, type BoardHost } from "../domain/board-host";
 import { BoardStatusContext, type BoardStatus } from "../domain/board-status";
 import { BoardToastContext, createToastStore } from "../domain/board-toasts";
-import { addExcerpt } from "../domain/board-objects";
+import { addExcerpt, addLink } from "../domain/board-objects";
+import { resolveLinkInto } from "../domain/board-link-flow";
 import {
   BoardPaperContext,
   PLAIN_PAPER,
@@ -43,6 +45,7 @@ import { BoardLassoTool } from "../tools/lasso-tool";
 import { CardShapeUtil } from "../shapes/card-shape";
 import { DocWindowShapeUtil } from "../shapes/doc-window-shape";
 import { ExcerptShapeUtil } from "../shapes/excerpt-shape";
+import { LinkShapeUtil } from "../shapes/link-shape";
 import { TaskShapeUtil } from "../shapes/task-shape";
 import { BoardChrome } from "./board-chrome";
 import { PaperPages } from "./paper-pages";
@@ -57,7 +60,7 @@ const BOARD_COMPONENTS: TLComponents = {
   OnTheCanvas: PaperPages,
 };
 const BOARD_TOOLS: TLStateNodeConstructor[] = [BoardLassoTool];
-const BOARD_SHAPES = [DocWindowShapeUtil, ExcerptShapeUtil, TaskShapeUtil, CardShapeUtil];
+const BOARD_SHAPES = [DocWindowShapeUtil, ExcerptShapeUtil, TaskShapeUtil, CardShapeUtil, LinkShapeUtil];
 // The sync store's schema is all-or-nothing: supply shapeUtils and you get ONLY what you
 // supply — so the defaults ride along explicitly. (<Tldraw> adds defaults by itself.)
 export const SYNC_SHAPE_UTILS = [...defaultShapeUtils, ...BOARD_SHAPES];
@@ -306,6 +309,7 @@ function BoardCanvas({
   const host = useBoardHost();
   const toasts = useBoardToasts();
   const paper = useBoardPaper();
+  const content = useBoardContent();
 
   // Paper: the camera follows the ink — bounds cover the pages (content + one blank),
   // recomputed as the extent grows. Signal-driven (useValue), not store.listen: the
@@ -387,6 +391,12 @@ function BoardCanvas({
     mounted.registerExternalContentHandler("text", (info) => {
       const text = info.text.trim();
       if (text) addExcerpt(mounted, { text, at: info.point });
+    });
+    // A pasted/dropped URL becomes a link object (replacing tldraw's stock bookmark):
+    // lands `pending` at the point, then the unfurl patches the preview in.
+    mounted.registerExternalContentHandler("url", (info) => {
+      const id = addLink(mounted, { url: info.url, at: info.point });
+      resolveLinkInto(mounted, content, id, info.url);
     });
     // Session state (camera) is per-device and starts fresh on a synced board — frame the
     // content once so the board opens showing itself.
