@@ -1,4 +1,4 @@
-import { ArrowUp, ChevronDown, Plus, Search, Sparkles, Square, X } from "lucide-react";
+import { ArrowUp, ChevronDown, LoaderCircle, Plus, Search, Sparkles, Square, X } from "lucide-react";
 import { Icon } from "@/components/ui/icon";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
@@ -131,7 +131,7 @@ export function CopilotDockUI() {
   useEffect(() => {
     const el = scrollRef.current;
     if (el && pinnedRef.current) el.scrollTop = el.scrollHeight;
-  }, [messages, streaming, activeTool, open]);
+  }, [messages, streaming, activeTool, toolTrail, proposals, open]);
   const onTranscriptScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
@@ -190,10 +190,10 @@ export function CopilotDockUI() {
   const surfaceScope = scopeForSurface(surface, surfaceLabel);
 
   return (
-    <div className="shrink-0 overflow-hidden" style={{ width: open ? DOCK_WIDTH : 0 }}>
+    <div className="shrink-0 overflow-hidden" style={{ width: open ? DOCK_WIDTH : 0, maxWidth: "100vw" }}>
       <aside
         className="flex h-full flex-col border-l border-line bg-panel"
-        style={{ width: DOCK_WIDTH }}
+        style={{ width: DOCK_WIDTH, maxWidth: "100vw" }}
         aria-label="Copilot"
       >
         {/* Header */}
@@ -280,6 +280,7 @@ export function CopilotDockUI() {
           role="log"
           aria-label="Copilot transcript"
           aria-live="polite"
+          aria-busy={busy}
           className="relative min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-4"
         >
           {messages.length === 0 && !streaming ? (
@@ -309,18 +310,24 @@ export function CopilotDockUI() {
 
           {busy && toolTrail.length > 0 ? <ActivityTimeline trail={toolTrail} /> : null}
 
-          {awaitingApproval ? (
-            <p className="font-mono text-meta text-amber">waiting for your approval…</p>
-          ) : thinking ? (
-            <p className="animate-pulse font-mono text-meta text-ink-4">reasoning…</p>
-          ) : status === "sending" ? (
-            <p className="animate-pulse font-mono text-meta text-ink-4">thinking…</p>
-          ) : null}
-
           <CopilotErrorBanner error={error} code={errorCode} onContinue={() => void send("continue")} />
         </div>
 
         <LatestTranscriptButton visible={unpinned && busy} onClick={repin} />
+
+        {busy || awaitingApproval ? (
+          <div
+            role="status"
+            aria-label="Copilot progress"
+            className={cn(
+              "flex min-h-7 shrink-0 items-center gap-1.5 px-3 pb-2 font-mono text-meta",
+              awaitingApproval ? "text-amber" : "text-ink-3",
+            )}
+          >
+            {!awaitingApproval ? <Icon as={LoaderCircle} size="inline" mark className="animate-spin motion-reduce:animate-none" /> : null}
+            <span>{awaitingApproval ? "waiting for your approval…" : thinking ? "reasoning…" : status === "sending" ? "thinking…" : "working…"}</span>
+          </div>
+        ) : null}
 
         {/* Composer */}
         <div className="shrink-0 border-t border-line p-2.5">

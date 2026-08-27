@@ -16,17 +16,26 @@ import { createTurn, getTurn, endTurn } from "./src/turns.js";
 import { resolveApproval } from "./src/approvals.js";
 import { runTurn } from "./src/agent.js";
 import { probeMcpCached } from "./src/health.js";
+import { providerCatalog } from "./src/providers/index.js";
 
 if (config.agentSharedSecret === "local-dev-agent-secret") {
   console.warn(
     `[warn] copilot-agent is using the default shared secret — set COPILOT_AGENT_SHARED_SECRET before exposing :${config.port} beyond localhost`,
   );
 }
+if (config.provider === "openai" && !process.env.OPENAI_API_KEY) {
+  console.warn("[warn] OPENAI_API_KEY is not set — OpenAI copilot turns will fail");
+}
+if (config.provider === "codex") {
+  console.log(
+    `[copilot-agent] COPILOT_PROVIDER=codex — using Codex app-server (${config.codexCommand}) in ${config.codexCwd}`,
+  );
+}
 if (config.authMode === "subscription") {
   console.log(
     "[copilot-agent] COPILOT_AUTH=subscription — using the local Claude Code login (~/.claude); API key ignored",
   );
-} else if (!process.env.ANTHROPIC_API_KEY) {
+} else if (config.provider === "claude" && !process.env.ANTHROPIC_API_KEY) {
   console.warn(
     "[warn] ANTHROPIC_API_KEY is not set — turns will ride the local Claude Code login if one exists (set COPILOT_AUTH=subscription to make that intentional), and fail otherwise",
   );
@@ -40,6 +49,10 @@ app.get("/healthz", async (_req, res) => {
     ok: true,
     authMode: config.authMode,
     anthropicKey: Boolean(process.env.ANTHROPIC_API_KEY),
+    openaiKey: Boolean(process.env.OPENAI_API_KEY),
+    codexCommand: config.codexCommand,
+    codexCwd: config.codexCwd,
+    catalog: providerCatalog(),
     // Reported, not gating — the per-turn fatal-init guard is the hard stop.
     mcp: await probeMcpCached(config.mcpUrl),
   });
@@ -114,5 +127,5 @@ app.post("/turn/:turnId/approvals/:approvalId", (req, res) => {
 });
 
 app.listen(config.port, () => {
-  console.log(`[copilot-agent] listening on :${config.port} (mcp: ${config.mcpUrl}, model: ${config.model}, effort: ${config.effort})`);
+  console.log(`[copilot-agent] listening on :${config.port} (mcp: ${config.mcpUrl}, provider: ${config.provider}, model: ${config.model}, effort: ${config.effort})`);
 });

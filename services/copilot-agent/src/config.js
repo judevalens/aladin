@@ -10,6 +10,12 @@ const authMode = process.env.COPILOT_AUTH === "subscription" ? "subscription" : 
 if (authMode === "subscription") {
   delete process.env.ANTHROPIC_API_KEY;
 }
+const provider = process.env.COPILOT_PROVIDER ?? "claude";
+const defaultModelByProvider = {
+  claude: "claude-opus-5",
+  openai: "gpt-5.1",
+  codex: "gpt-5.6-terra",
+};
 
 export const config = {
   authMode,
@@ -29,7 +35,12 @@ export const config = {
 
   // Model + loop bounds. COPILOT_MODEL mirrors the Go-side default so either
   // process can pin it.
-  model: process.env.COPILOT_MODEL ?? "claude-opus-5",
+  provider,
+  model: process.env.COPILOT_MODEL ?? defaultModelByProvider[provider] ?? defaultModelByProvider.claude,
+  openAIModel: process.env.OPENAI_MODEL ?? "gpt-5.1",
+  codexModel: process.env.CODEX_MODEL ?? "gpt-5.6-terra",
+  codexCommand: process.env.CODEX_COMMAND ?? "codex",
+  codexCwd: process.env.CODEX_WORKSPACE_CWD ?? process.env.ALADIN_WORKSPACE_CWD ?? process.env.INIT_CWD ?? process.cwd(),
   // Reasoning effort. The Go API passes this per turn; this is only a sidecar
   // fallback for direct/local calls.
   effort: process.env.COPILOT_EFFORT ?? "high",

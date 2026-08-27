@@ -58,6 +58,7 @@ func registerTools(server *sdkmcp.Server, artifacts service.ArtifactService, pag
 	}, tools.createPage)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "update_page",
+		Annotations: destructiveTool("Update page"),
 		Description: "Full-document update of an Aladin page. Provide markdown to replace all blocks (wipes block ids — prefer update_block / insert_blocks / delete_block for surgical edits).",
 	}, tools.updatePage)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
@@ -82,6 +83,7 @@ func registerTools(server *sdkmcp.Server, artifacts service.ArtifactService, pag
 	}, tools.insertBlocks)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "delete_block",
+		Annotations: destructiveTool("Delete block"),
 		Description: "Delete a block by id. Refuses to remove the last block on a page.",
 	}, tools.deleteBlock)
 }

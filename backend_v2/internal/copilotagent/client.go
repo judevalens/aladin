@@ -32,6 +32,7 @@ type TurnRequest struct {
 	SystemPrompt    string   `json:"systemPrompt"`
 	Prompt          string   `json:"prompt"`
 	HistoryFallback string   `json:"historyFallback,omitempty"`
+	Provider        string   `json:"provider,omitempty"`
 	Model           string   `json:"model,omitempty"`
 	Effort          string   `json:"effort,omitempty"`
 	GatedTools      []string `json:"gatedTools,omitempty"`
@@ -176,9 +177,44 @@ func (c *Client) ResolveApproval(ctx context.Context, turnID, approvalID string,
 
 // Health is the sidecar's /healthz report.
 type Health struct {
-	OK       bool   `json:"ok"`
-	AuthMode string `json:"authMode"`
-	MCP      bool   `json:"mcp"`
+	OK           bool    `json:"ok"`
+	AuthMode     string  `json:"authMode"`
+	AnthropicKey bool    `json:"anthropicKey"`
+	OpenAIKey    bool    `json:"openaiKey"`
+	CodexCommand string  `json:"codexCommand,omitempty"`
+	CodexCwd     string  `json:"codexCwd,omitempty"`
+	MCP          bool    `json:"mcp"`
+	Catalog      Catalog `json:"catalog,omitzero"`
+}
+
+type Catalog struct {
+	DefaultProvider string            `json:"defaultProvider,omitempty"`
+	DefaultModel    string            `json:"defaultModel,omitempty"`
+	Providers       []ProviderCatalog `json:"providers,omitempty"`
+}
+
+type ProviderCatalog struct {
+	ID            string                 `json:"id"`
+	Label         string                 `json:"label"`
+	DefaultModel  string                 `json:"defaultModel,omitempty"`
+	DefaultEffort string                 `json:"defaultEffort,omitempty"`
+	Capabilities  map[string]bool        `json:"capabilities,omitempty"`
+	Models        []ProviderModelOption  `json:"models,omitempty"`
+	Efforts       []ProviderEffortOption `json:"efforts,omitempty"`
+}
+
+type ProviderModelOption struct {
+	ID          string `json:"id"`
+	Provider    string `json:"provider,omitempty"`
+	Model       string `json:"model,omitempty"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+}
+
+type ProviderEffortOption struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
 }
 
 func (c *Client) Healthz(ctx context.Context) (Health, error) {

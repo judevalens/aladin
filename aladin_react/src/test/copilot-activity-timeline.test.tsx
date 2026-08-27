@@ -4,6 +4,18 @@ import { ActivityTimeline } from "@/modules/copilot/ui/copilot-transcript";
 import type { CopilotToolRun } from "@/app/state/copilot-slice";
 
 describe("ActivityTimeline", () => {
+  it.each([
+    ["running", "error"], ["error", "running"], ["running", "ok"],
+  ] as const)("keeps a %s/%s group active until all calls settle", (first, second) => {
+    const { rerender } = render(<ActivityTimeline trail={[tool("search", "Searching", first), tool("search", "Searching", second)]} />);
+    expect(screen.getByRole("img", { name: "In progress" })).toBeTruthy();
+    rerender(<ActivityTimeline trail={[tool("search", "Searching", "ok"), tool("search", "Searching", "error")]} />);
+    expect(screen.queryByRole("img", { name: "In progress" })).toBeNull();
+    expect(screen.getByRole("img", { name: "Failed" })).toBeTruthy();
+    rerender(<ActivityTimeline trail={[tool("search", "Searching", "ok"), tool("search", "Searching", "ok")]} />);
+    expect(screen.getByRole("img", { name: "Completed" })).toBeTruthy();
+  });
+
   it("groups consecutive runs and renders expandable summaries", () => {
     render(
       <ActivityTimeline

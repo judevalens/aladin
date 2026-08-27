@@ -131,6 +131,7 @@ func registerWorkspaceTools(server *sdkmcp.Server, t workspaceToolServer) {
 	}, t.getPositions)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "create_alert",
+		Annotations: destructiveTool("Create alert"),
 		Description: "Create a recurring price alert on a symbol. direction is \"above\" or \"below\", threshold is the price. It fires when the price crosses the level with confirming momentum, then self-re-arms after a genuine pullback (so it won't spam on jitter). The result surfaces as a notification. This asks the user to approve before it's created.",
 	}, t.createAlert)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{

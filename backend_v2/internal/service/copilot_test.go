@@ -308,8 +308,8 @@ loop:
 	}
 
 	// The SDK session id was persisted for the next turn to resume.
-	if store.sdkSession(res.ThreadID) != "sdk-1" {
-		t.Errorf("sdk session = %q, want sdk-1", store.sdkSession(res.ThreadID))
+	if store.sdkSession(res.ThreadID) != "claude:sdk-1" {
+		t.Errorf("sdk session = %q, want claude:sdk-1", store.sdkSession(res.ThreadID))
 	}
 
 	// Persisted: user turn + final assistant turn.
@@ -338,7 +338,7 @@ func TestCopilotSendPassesSelectedModel(t *testing.T) {
 		Principal: Principal{UserID: userID},
 		Bearer:    "tok",
 		Text:      "use sonnet",
-		Model:     "claude-sonnet-5",
+		Model:     "claude:claude-sonnet-5",
 	})
 	if err != nil {
 		t.Fatalf("send: %v", err)
@@ -348,8 +348,71 @@ func TestCopilotSendPassesSelectedModel(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("timed out waiting for copilot turn to start")
 	}
-	if got := agent.request().Model; got != "claude-sonnet-5" {
-		t.Fatalf("turn request model = %q, want claude-sonnet-5", got)
+	if got := agent.request().Model; got != "claude:claude-sonnet-5" {
+		t.Fatalf("turn request model = %q, want claude:claude-sonnet-5", got)
+	}
+	if got := agent.request().Provider; got != "claude" {
+		t.Fatalf("turn request provider = %q, want claude", got)
+	}
+}
+
+func TestCopilotSendPassesOpenAIProviderModel(t *testing.T) {
+	const userID = "11111111-1111-1111-1111-111111111111"
+	agent := &fakeAgent{events: []copilotagent.Event{{Type: "done"}}, started: make(chan struct{})}
+	svc := NewCopilotService(CopilotDeps{Store: newFakeStore(), Agent: agent})
+
+	_, err := svc.SendMessage(context.Background(), CopilotSendInput{
+		Principal: Principal{UserID: userID},
+		Bearer:    "tok",
+		Text:      "use openai",
+		Model:     "openai:gpt-5.1",
+	})
+	if err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	select {
+	case <-agent.started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for copilot turn to start")
+	}
+	if got := agent.request().Provider; got != "openai" {
+		t.Fatalf("turn request provider = %q, want openai", got)
+	}
+	if got := agent.request().Model; got != "openai:gpt-5.1" {
+		t.Fatalf("turn request model = %q, want openai:gpt-5.1", got)
+	}
+}
+
+func TestCopilotSendDoesNotResumeDifferentProviderSession(t *testing.T) {
+	const userID = "11111111-1111-1111-1111-111111111111"
+	store := newFakeStore()
+	threadID := "thread-1"
+	if err := store.CreateThread(context.Background(), threadID, userID, "thread"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetThreadSDKSession(context.Background(), threadID, "claude:sdk-old"); err != nil {
+		t.Fatal(err)
+	}
+	agent := &fakeAgent{events: []copilotagent.Event{{Type: "done"}}, started: make(chan struct{})}
+	svc := NewCopilotService(CopilotDeps{Store: store, Agent: agent})
+
+	_, err := svc.SendMessage(context.Background(), CopilotSendInput{
+		Principal: Principal{UserID: userID},
+		Bearer:    "tok",
+		ThreadID:  threadID,
+		Text:      "switch providers",
+		Model:     "openai:gpt-5.1",
+	})
+	if err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	select {
+	case <-agent.started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for copilot turn to start")
+	}
+	if got := agent.request().ResumeSessionID; got != "" {
+		t.Fatalf("resume session = %q, want empty for provider switch", got)
 	}
 }
 
@@ -396,8 +459,8 @@ func TestCopilotSendNormalizesLegacyModelID(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("timed out waiting for copilot turn to start")
 	}
-	if got := agent.request().Model; got != "claude-opus-5" {
-		t.Fatalf("turn request model = %q, want claude-opus-5", got)
+	if got := agent.request().Model; got != "claude:claude-opus-5" {
+		t.Fatalf("turn request model = %q, want claude:claude-opus-5", got)
 	}
 }
 
@@ -436,8 +499,8 @@ func TestCopilotStatusReportsModelCatalog(t *testing.T) {
 
 	status := svc.Status(context.Background())
 
-	if status.DefaultModel != "claude-sonnet-5" {
-		t.Fatalf("default model = %q, want claude-sonnet-5", status.DefaultModel)
+	if status.DefaultModel != "claude:claude-sonnet-5" {
+		t.Fatalf("default model = %q, want claude:claude-sonnet-5", status.DefaultModel)
 	}
 	if status.DefaultEffort != "high" {
 		t.Fatalf("default effort = %q, want high", status.DefaultEffort)
@@ -448,7 +511,7 @@ func TestCopilotStatusReportsModelCatalog(t *testing.T) {
 	if len(status.Efforts) != 5 {
 		t.Fatalf("expected effort options, got %+v", status.Efforts)
 	}
-	if status.Models[0].ID != "claude-opus-5" || status.Models[0].Label != "Opus 5" {
+	if status.Models[0].ID != "claude:claude-opus-5" || status.Models[0].Label != "Claude Opus 5" {
 		t.Fatalf("model catalog should expose API ids with friendly labels, got %+v", status.Models[0])
 	}
 }
@@ -537,6 +600,13 @@ func TestCopilotToolSummariesAreBoundedAndRedacted(t *testing.T) {
 func TestCopilotSystemPromptAdvertisesRichDirectives(t *testing.T) {
 	prompt := (&defaultCopilotService{}).systemPrompt(CopilotSurface{})
 	for _, want := range []string{
+		":aladin-ticker[NVDA]",
+		":aladin-artifact[Research note]",
+		":aladin-entity[NVIDIA]",
+		"Inline references use ONE colon",
+		"Block references use TWO colons",
+		"rich directives are block-only",
+		"Do not wrap a directive in a markdown link",
 		"::aladin-artifact",
 		"::aladin-activity",
 		"::aladin-actions",

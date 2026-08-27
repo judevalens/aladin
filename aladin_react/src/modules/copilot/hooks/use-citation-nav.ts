@@ -18,7 +18,7 @@ export function useCitationNav() {
     (citation: CopilotCitation) => {
       if (citation.kind === "ticker") {
         openTicker(citation.title || citation.id);
-      } else if (citation.kind === "page" || citation.kind === "shard") {
+      } else if (["page", "shard", "document", "artifact"].includes(citation.kind)) {
         // A cited page is the wormhole: the reader opens where the model grounded.
         if (citation.page) openArtifactAt(citation.id, citation.page);
         else openArtifact(citation.id);

@@ -74,6 +74,8 @@ export interface CopilotModelOption {
   id: string;
   label: string;
   description?: string;
+  provider?: string;
+  model?: string;
 }
 
 export interface CopilotEffortOption {

@@ -23,11 +23,24 @@ import { Icon } from "@/components/ui/icon";
 import { useCitationNav } from "@/modules/copilot/hooks/use-citation-nav";
 import { cn } from "@/lib/utils";
 
-type DirectiveSegment = { kind: "directive"; name: string; attrs: Record<string, string>; body: string };
+const inlineDirectiveNames = new Set(["aladin-artifact", "aladin-ticker", "aladin-entity"]);
+
+type DirectiveSegment = {
+  kind: "directive";
+  name: string;
+  attrs: Record<string, string>;
+  body: string;
+  mode: "inline" | "block";
+  label: string;
+  source: string;
+};
 type AladinDirectiveProps = {
   directiveName?: unknown;
   directiveAttrs?: unknown;
   directiveBody?: unknown;
+  directiveMode?: unknown;
+  directiveLabel?: unknown;
+  directiveSource?: unknown;
 };
 
 /**
@@ -43,11 +56,11 @@ export const CopilotMarkdown = memo(function CopilotMarkdown({
 }) {
   const navCitation = useCitationNav();
   return (
-    <div className="text-body leading-relaxed text-ink-2">
+    <div className="min-w-0 max-w-full text-body leading-relaxed text-ink-2 [overflow-wrap:anywhere]">
       <MarkdownText
         text={normalizeLegacyDirectives(text)}
         onDirective={(segment) => (
-          <DirectiveBlock
+          <Directive
             segment={segment}
             onNavigate={(kind, id, title) => navCitation({ kind, id, title })}
             onPrompt={onPrompt}
@@ -72,13 +85,16 @@ function MarkdownText({
       components={{
         ...{
           // remarkAladinDirectives maps directive AST nodes into this synthetic tag.
-          "aladin-directive": ({ directiveName, directiveAttrs, directiveBody }: AladinDirectiveProps) =>
+          "aladin-directive": ({ directiveName, directiveAttrs, directiveBody, directiveMode, directiveLabel, directiveSource }: AladinDirectiveProps) =>
             onDirective ? (
               onDirective({
                 kind: "directive",
                 name: String(directiveName ?? ""),
                 attrs: parseDirectiveProperties(String(directiveAttrs ?? "{}")),
                 body: String(directiveBody ?? ""),
+                mode: directiveMode === "inline" ? "inline" : "block",
+                label: String(directiveLabel ?? ""),
+                source: String(directiveSource ?? ""),
               })
             ) : null,
         },
@@ -96,7 +112,7 @@ function MarkdownText({
           </a>
         ),
         ul: ({ children }) => <ul className="mb-2 ml-4 list-disc space-y-1 last:mb-0">{children}</ul>,
-        ol: ({ children }) => <ol className="mb-2 ml-4 list-decimal space-y-1 last:mb-0">{children}</ol>,
+        ol: ({ children, start }) => <ol start={start} className="mb-2 ml-4 list-decimal space-y-1 last:mb-0">{children}</ol>,
         li: ({ children }) => <li className="marker:text-ink-4">{children}</li>,
         h1: ({ children }) => <h1 className="mb-1.5 mt-1 font-display text-lead font-semibold text-ink">{children}</h1>,
         h2: ({ children }) => <h2 className="mb-1.5 mt-1 font-display text-lead font-semibold text-ink">{children}</h2>,
@@ -105,25 +121,19 @@ function MarkdownText({
           <blockquote className="my-2 border-l-2 border-amber-line pl-2.5 text-ink-3">{children}</blockquote>
         ),
         hr: () => <hr className="my-3 border-line-2" />,
-        code: ({ className, children }) => {
-          const isBlock = /language-/.test(className ?? "");
-          if (isBlock) {
-            return <code className="font-mono text-small text-ink">{children}</code>;
-          }
-          return (
-            <code className="rounded-tap bg-raise px-1 py-0.5 font-mono text-small text-ink">{children}</code>
-          );
-        },
+        code: ({ className, children }) => (
+          <code className={cn("rounded-tap bg-raise px-1 py-0.5 font-mono text-small text-ink", className)}>{children}</code>
+        ),
         pre: ({ children }) => (
-          <pre className="my-2 overflow-x-auto rounded-card border border-line bg-field p-2.5">{children}</pre>
+          <pre className="my-2 max-w-full overflow-x-auto whitespace-pre rounded-card border border-line bg-field p-2.5 [&>code]:rounded-none [&>code]:bg-transparent [&>code]:p-0">{children}</pre>
         ),
         table: ({ children }) => (
-          <div className="my-2 overflow-x-auto">
+          <div className="my-2 max-w-full overflow-x-auto">
             <table className="w-full border-collapse text-small">{children}</table>
           </div>
         ),
-        th: ({ children }) => <th className="border border-line px-2 py-1 text-left font-semibold text-ink">{children}</th>,
-        td: ({ children }) => <td className="border border-line px-2 py-1 text-ink-2">{children}</td>,
+        th: ({ children, style }) => <th style={style} className="border border-line px-2 py-1 text-left font-semibold text-ink">{children}</th>,
+        td: ({ children, style }) => <td style={style} className="border border-line px-2 py-1 text-ink-2">{children}</td>,
       }}
     >
       {text}
@@ -131,7 +141,7 @@ function MarkdownText({
   );
 }
 
-function DirectiveBlock({
+function Directive({
   segment,
   onNavigate,
   onPrompt,
@@ -140,10 +150,11 @@ function DirectiveBlock({
   onNavigate: (kind: string, id: string, title: string) => void;
   onPrompt?: (prompt: string) => void;
 }) {
+  if (segment.mode === "inline") return <DirectiveInline segment={segment} onNavigate={onNavigate} />;
   switch (segment.name) {
     case "aladin-artifact": {
       const id = segment.attrs.id;
-      const title = segment.attrs.title || id;
+      const title = segment.label || segment.attrs.title || id;
       const kind = segment.attrs.kind || "artifact";
       if (!id || !title) return <MarkdownText text={directiveFallback(segment)} />;
       const citationKind = kind === "app" ? "shard" : kind;
@@ -180,7 +191,7 @@ function DirectiveBlock({
     }
     case "aladin-entity": {
       const id = segment.attrs.id;
-      const title = segment.attrs.title || id;
+      const title = segment.label || segment.attrs.title || id;
       const kind = segment.attrs.kind || "entity";
       if (!id || !title) return <MarkdownText text={directiveFallback(segment)} />;
       return (
@@ -436,7 +447,39 @@ function DirectiveBlock({
   }
 }
 
+function DirectiveInline({
+  segment,
+  onNavigate,
+}: {
+  segment: DirectiveSegment;
+  onNavigate: (kind: string, id: string, title: string) => void;
+}) {
+  let id = segment.attrs.id;
+  let kind = safeArtifactKind(segment.attrs.kind || "artifact");
+  let title = segment.label || segment.attrs.title || id;
+  if (segment.name === "aladin-ticker") {
+    id = segment.attrs.symbol?.trim().toUpperCase();
+    if (!id || !isSafeSymbol(id)) return <span>{segment.source || directiveFallback(segment)}</span>;
+    kind = "ticker";
+    title = id;
+  } else if (segment.name === "aladin-entity") {
+    kind = "entity";
+  }
+  if (!id || !title) return <span>{segment.source || directiveFallback(segment)}</span>;
+  return (
+    <button
+      type="button"
+      onClick={() => onNavigate(kind, id, title)}
+      title={`Open ${title}`}
+      className="inline max-w-full whitespace-normal rounded-tap p-0 align-baseline text-left font-medium text-amber underline decoration-amber-line underline-offset-2 hover:decoration-amber focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber"
+    >
+      {segment.label || title}
+    </button>
+  );
+}
+
 function directiveFallback(segment: DirectiveSegment): string {
+  if (segment.source) return segment.source;
   const attrs = Object.entries(segment.attrs)
     .map(([k, v]) => `${k}="${v}"`)
     .join(" ");
@@ -445,12 +488,12 @@ function directiveFallback(segment: DirectiveSegment): string {
 }
 
 function remarkAladinDirectives() {
-  return (tree: unknown) => {
-    visitDirectiveNodes(tree);
+  return (tree: unknown, file: { value?: unknown }) => {
+    visitDirectiveNodes(tree, String(file.value ?? ""));
   };
 }
 
-function visitDirectiveNodes(node: unknown) {
+function visitDirectiveNodes(node: unknown, source: string, insideLink = false) {
   if (!node || typeof node !== "object") return;
   const item = node as {
     type?: string;
@@ -458,12 +501,15 @@ function visitDirectiveNodes(node: unknown) {
     attributes?: Record<string, unknown>;
     children?: unknown[];
     data?: Record<string, unknown>;
+    value?: string;
+    position?: { start: { offset?: number }; end: { offset?: number } };
   };
   const directive =
     item.type === "textDirective" ||
     item.type === "leafDirective" ||
     item.type === "containerDirective";
-  if (directive && item.name?.startsWith("aladin-")) {
+  const inline = item.type === "textDirective";
+  if (directive && item.name?.startsWith("aladin-") && (!inline || (inlineDirectiveNames.has(item.name) && !insideLink))) {
     item.data = {
       ...(item.data ?? {}),
       hName: "aladin-directive",
@@ -471,11 +517,35 @@ function visitDirectiveNodes(node: unknown) {
         directiveName: item.name,
         directiveAttrs: JSON.stringify(item.attributes ?? {}),
         directiveBody: item.type === "containerDirective" ? directiveBodyText(item.children ?? []) : "",
+        directiveMode: inline ? "inline" : "block",
+        directiveLabel: inline || item.type === "leafDirective" ? mdastText(item) : "",
+        directiveSource: source.slice(item.position?.start.offset, item.position?.end.offset),
       },
     };
     return;
   }
-  for (const child of item.children ?? []) visitDirectiveNodes(child);
+  if (directive) {
+    // remark-directive also recognizes ordinary text such as :22 in 10:22.
+    // Restore unsupported syntax verbatim instead of letting it become a div.
+    const start = item.position?.start.offset;
+    const end = item.position?.end.offset;
+    if (start != null && end != null) {
+      const value = source.slice(start, end);
+      if (item.type === "textDirective") {
+        item.type = "text";
+        item.value = value;
+        delete item.children;
+      } else {
+        item.type = "paragraph";
+        item.children = [{ type: "text", value }];
+      }
+      delete item.name;
+      delete item.attributes;
+      delete item.data;
+    }
+    return;
+  }
+  for (const child of item.children ?? []) visitDirectiveNodes(child, source, insideLink || item.type === "link" || item.type === "linkReference");
 }
 
 function directiveBodyText(children: unknown[]): string {

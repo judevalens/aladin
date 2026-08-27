@@ -4,6 +4,7 @@ import type {
   CopilotMessageView,
   CopilotProposal,
   CopilotThreadView,
+  CopilotToolRun,
 } from "@/app/state/copilot-slice";
 import type { CopilotSurface } from "@/repos/copilot/copilot-repo";
 import { CopilotDockUI } from "@/modules/copilot/ui/copilot-dock-ui";
@@ -70,10 +71,39 @@ describe("CopilotDockUI integration", () => {
     transcript.scrollTop = 100;
 
     fireEvent.scroll(transcript);
+    expect(screen.getByRole("status", { name: "Copilot progress" })).toBeTruthy();
+    expect(transcript.contains(screen.getByRole("status", { name: "Copilot progress" }))).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: /latest/i }));
 
     expect(screen.queryByRole("button", { name: /latest/i })).toBeNull();
     expect(transcript.scrollTop).toBe(1000);
+  });
+
+  it("keeps progress visible through quiet streaming, reasoning, tools, and final persistence", () => {
+    const { rerender } = render(<CopilotDockUI />);
+    expect(screen.queryByRole("status", { name: "Copilot progress" })).toBeNull();
+    const states: [Partial<CopilotHookState>, string][] = [
+      [{ status: "sending" }, "thinking…"],
+      [{ status: "streaming" }, "working…"],
+      [{ status: "streaming", thinking: true }, "reasoning…"],
+      [{ status: "streaming", toolTrail: [{ name: "search", label: "Searching", status: "running" }] }, "working…"],
+      [{ status: "streaming", toolTrail: [{ name: "search", label: "Searching", status: "ok" }] }, "working…"],
+      [{ status: "streaming", streaming: "An answer." }, "working…"],
+      [{ status: "streaming", messages: [assistantMessage("m1", "An answer.")] }, "working…"],
+      [{ status: "streaming", thinking: true, proposals: [proposal("t-active", "Publish")] }, "waiting for your approval…"],
+    ];
+    for (const [state, label] of states) {
+      mockedCopilot.current = makeCopilotState(state);
+      rerender(<CopilotDockUI />);
+      expect(screen.getByRole("status", { name: "Copilot progress" }).textContent).toBe(label);
+      expect(screen.getByRole("log", { name: "Copilot transcript" }).getAttribute("aria-busy")).toBe("true");
+    }
+    for (const state of [{ status: "idle" as const }, { status: "idle" as const, error: "Disconnected" }]) {
+      mockedCopilot.current = makeCopilotState({ ...state, thinking: true });
+      rerender(<CopilotDockUI />);
+      expect(screen.queryByRole("status", { name: "Copilot progress" })).toBeNull();
+      expect(screen.getByRole("log", { name: "Copilot transcript" }).getAttribute("aria-busy")).toBe("false");
+    }
   });
 
   it("renders the model switcher and changes the selected model", () => {
@@ -163,7 +193,7 @@ type CopilotHookState = {
   streaming: string;
   status: "idle" | "sending" | "streaming";
   activeTool: string | null;
-  toolTrail: [];
+  toolTrail: CopilotToolRun[];
   thinking: boolean;
   error: string | null;
   errorCode: string | null;

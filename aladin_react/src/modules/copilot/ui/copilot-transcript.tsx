@@ -68,8 +68,8 @@ export function AssistantBubble({
     return true;
   });
   return (
-    <div className="flex flex-col gap-1.5">
-      <div>
+    <div className="flex min-w-0 max-w-full flex-col gap-1.5">
+      <div className="min-w-0">
         <CopilotMarkdown text={content} onPrompt={onPrompt} />
         {streaming ? <StreamCaret /> : null}
       </div>
@@ -111,8 +111,9 @@ export function ActivityTimeline({ trail }: { trail: CopilotToolRun[] }) {
     const last = groups[groups.length - 1];
     if (last && last.label === run.label) {
       last.count += 1;
-      // A group's status is its worst/latest interesting state.
-      last.status = run.status === "running" ? "running" : run.status === "error" ? "error" : last.status;
+      // A finished sibling must not hide a call that is still running.
+      last.status = last.status === "running" || run.status === "running" ? "running"
+        : last.status === "error" || run.status === "error" ? "error" : "ok";
       last.inputSummary = run.inputSummary ?? last.inputSummary;
       last.resultSummary = run.resultSummary ?? last.resultSummary;
     } else {
@@ -140,6 +141,8 @@ export function ActivityTimeline({ trail }: { trail: CopilotToolRun[] }) {
           const row = (
             <div className="flex items-center gap-2 text-small text-ink-2">
               <span
+                role="img"
+                aria-label={g.status === "running" ? "In progress" : g.status === "error" ? "Failed" : "Completed"}
                 className={cn(
                   "size-1.5 shrink-0 rounded-full",
                   g.status === "running" && "animate-pulse bg-amber",

@@ -61,6 +61,8 @@ type CopilotModelOption struct {
 	ID          string `json:"id"`
 	Label       string `json:"label"`
 	Description string `json:"description,omitempty"`
+	Provider    string `json:"provider,omitempty"`
+	Model       string `json:"model,omitempty"`
 }
 
 // CopilotEffortOption is one reasoning-effort level the dock may select for the next turn.
@@ -208,7 +210,7 @@ type CopilotDeps struct {
 
 const (
 	copilotResourceKind  = "copilot"
-	defaultCopilotModel  = "claude-opus-5"
+	defaultCopilotModel  = "claude:claude-opus-5"
 	defaultCopilotEffort = "high"
 	// Authoring a shard/page is multi-step (create → write → build → fix → build → preview),
 	// so the loop needs real headroom; a Q&A answers in 1–3 and stops on its own. A
@@ -232,29 +234,86 @@ const (
 
 var copilotModelCatalog = []CopilotModelOption{
 	{
-		ID:          "claude-opus-5",
-		Label:       "Opus 5",
+		ID:          "claude:claude-opus-5",
+		Provider:    "claude",
+		Model:       "claude-opus-5",
+		Label:       "Claude Opus 5",
 		Description: "Best reasoning for shard authoring and hard workspace tasks.",
 	},
 	{
-		ID:          "claude-sonnet-5",
-		Label:       "Sonnet 5",
+		ID:          "claude:claude-sonnet-5",
+		Provider:    "claude",
+		Model:       "claude-sonnet-5",
+		Label:       "Claude Sonnet 5",
 		Description: "Fast everyday coding and research assistant work.",
 	},
 	{
-		ID:          "claude-fable-5",
-		Label:       "Fable 5",
+		ID:          "claude:claude-fable-5",
+		Provider:    "claude",
+		Model:       "claude-fable-5",
+		Label:       "Claude Fable 5",
 		Description: "Quick lightweight answers when speed matters most.",
+	},
+	{
+		ID:          "openai:gpt-5.1",
+		Provider:    "openai",
+		Model:       "gpt-5.1",
+		Label:       "GPT-5.1",
+		Description: "General-purpose OpenAI agent for workspace tasks.",
+	},
+	{
+		ID:          "openai:gpt-5.1-codex",
+		Provider:    "openai",
+		Model:       "gpt-5.1-codex",
+		Label:       "GPT-5.1 Codex",
+		Description: "OpenAI coding-oriented agent model for implementation-heavy turns.",
+	},
+	{
+		ID:          "openai:gpt-5-mini",
+		Provider:    "openai",
+		Model:       "gpt-5-mini",
+		Label:       "GPT-5 Mini",
+		Description: "Faster OpenAI agent model for lightweight turns.",
+	},
+	{
+		ID:          "codex:gpt-5.6-terra",
+		Provider:    "codex",
+		Model:       "gpt-5.6-terra",
+		Label:       "GPT-5.6 Terra",
+		Description: "Balanced Codex harness for everyday workspace and coding turns.",
+	},
+	{
+		ID:          "codex:gpt-5.6-sol",
+		Provider:    "codex",
+		Model:       "gpt-5.6-sol",
+		Label:       "GPT-5.6 Sol",
+		Description: "Frontier Codex harness for the hardest agentic coding turns.",
+	},
+	{
+		ID:          "codex:gpt-5.6-luna",
+		Provider:    "codex",
+		Model:       "gpt-5.6-luna",
+		Label:       "GPT-5.6 Luna",
+		Description: "Fast Codex harness for lightweight agentic turns.",
 	},
 }
 
 var legacyCopilotModelIDs = map[string]string{
-	"opus":    "claude-opus-5",
-	"opus5":   "claude-opus-5",
-	"sonnet":  "claude-sonnet-5",
-	"sonnet5": "claude-sonnet-5",
-	"fable":   "claude-fable-5",
-	"fable5":  "claude-fable-5",
+	"opus":            "claude:claude-opus-5",
+	"opus5":           "claude:claude-opus-5",
+	"sonnet":          "claude:claude-sonnet-5",
+	"sonnet5":         "claude:claude-sonnet-5",
+	"fable":           "claude:claude-fable-5",
+	"fable5":          "claude:claude-fable-5",
+	"claude-opus-5":   "claude:claude-opus-5",
+	"claude-sonnet-5": "claude:claude-sonnet-5",
+	"claude-fable-5":  "claude:claude-fable-5",
+	"gpt-5.1":         "openai:gpt-5.1",
+	"gpt-5.1-codex":   "openai:gpt-5.1-codex",
+	"gpt-5-mini":      "openai:gpt-5-mini",
+	"gpt-5.6-terra":   "codex:gpt-5.6-terra",
+	"gpt-5.6-sol":     "codex:gpt-5.6-sol",
+	"gpt-5.6-luna":    "codex:gpt-5.6-luna",
 }
 
 var copilotEffortCatalog = []CopilotEffortOption{
@@ -306,6 +365,9 @@ func (s *defaultCopilotService) Configured() bool { return s.Agent != nil }
 
 func (s *defaultCopilotService) defaultModel() string {
 	if model := strings.TrimSpace(s.Model); model != "" {
+		if normalized, ok := normalizeCopilotModelID(model); ok {
+			return normalized
+		}
 		return model
 	}
 	return defaultCopilotModel
@@ -332,6 +394,8 @@ func (s *defaultCopilotService) modelOptions() []CopilotModelOption {
 		options = append([]CopilotModelOption{{
 			ID:          configured,
 			Label:       configured,
+			Provider:    copilotModelProvider(configured),
+			Model:       copilotModelLocal(configured),
 			Description: "Configured backend default.",
 		}}, options...)
 	}
@@ -339,12 +403,12 @@ func (s *defaultCopilotService) modelOptions() []CopilotModelOption {
 }
 
 func (s *defaultCopilotService) normalizeModel(model string) (string, bool) {
-	model = strings.TrimSpace(model)
-	if model == "" {
-		return s.defaultModel(), true
+	model, ok := normalizeCopilotModelID(model)
+	if !ok {
+		return "", false
 	}
-	if normalized, ok := legacyCopilotModelIDs[model]; ok {
-		model = normalized
+	if model == "" {
+		model = s.defaultModel()
 	}
 	for _, option := range s.modelOptions() {
 		if model == option.ID {
@@ -352,6 +416,65 @@ func (s *defaultCopilotService) normalizeModel(model string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+func normalizeCopilotModelID(model string) (string, bool) {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return "", true
+	}
+	if normalized, ok := legacyCopilotModelIDs[model]; ok {
+		return normalized, true
+	}
+	if strings.Contains(model, ":") {
+		return model, true
+	}
+	return "", false
+}
+
+func copilotModelProvider(model string) string {
+	i := strings.Index(model, ":")
+	if i <= 0 {
+		return "claude"
+	}
+	return model[:i]
+}
+
+func copilotModelLocal(model string) string {
+	i := strings.Index(model, ":")
+	if i < 0 || i == len(model)-1 {
+		return model
+	}
+	return model[i+1:]
+}
+
+func prefixedSDKSession(provider, sessionID string) string {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return ""
+	}
+	if i := strings.Index(sessionID, ":"); i > 0 {
+		return sessionID
+	}
+	return provider + ":" + sessionID
+}
+
+func resumeSDKSessionForProvider(stored, provider string) string {
+	stored = strings.TrimSpace(stored)
+	if stored == "" {
+		return ""
+	}
+	i := strings.Index(stored, ":")
+	if i < 0 {
+		if provider == "claude" {
+			return stored
+		}
+		return ""
+	}
+	if stored[:i] != provider {
+		return ""
+	}
+	return stored[i+1:]
 }
 
 func normalizeCopilotEffort(effort string) (string, bool) {
@@ -392,7 +515,56 @@ func (s *defaultCopilotService) Status(ctx context.Context) CopilotStatusReport 
 	}
 	base.Sidecar = h.OK
 	base.MCP = h.MCP
+	if models, efforts, defaultModel, defaultEffort, ok := copilotCatalogFromHealth(h.Catalog); ok {
+		base.Models = models
+		base.Efforts = efforts
+		base.DefaultModel = defaultModel
+		base.DefaultEffort = defaultEffort
+	}
 	return base
+}
+
+func copilotCatalogFromHealth(catalog copilotagent.Catalog) ([]CopilotModelOption, []CopilotEffortOption, string, string, bool) {
+	if len(catalog.Providers) == 0 {
+		return nil, nil, "", "", false
+	}
+	models := []CopilotModelOption{}
+	efforts := []CopilotEffortOption{}
+	defaultModel := strings.TrimSpace(catalog.DefaultModel)
+	defaultEffort := ""
+	defaultProvider := strings.TrimSpace(catalog.DefaultProvider)
+	seenEfforts := map[string]bool{}
+	for _, provider := range catalog.Providers {
+		for _, model := range provider.Models {
+			if strings.TrimSpace(model.ID) == "" {
+				continue
+			}
+			models = append(models, CopilotModelOption{
+				ID: model.ID, Label: model.Label, Description: model.Description,
+				Provider: model.Provider, Model: model.Model,
+			})
+		}
+		if defaultModel == "" && provider.ID == defaultProvider {
+			defaultModel = strings.TrimSpace(provider.DefaultModel)
+		}
+		if defaultEffort == "" && provider.ID == defaultProvider {
+			defaultEffort = strings.TrimSpace(provider.DefaultEffort)
+		}
+		for _, effort := range provider.Efforts {
+			if effort.ID == "" || seenEfforts[effort.ID] {
+				continue
+			}
+			seenEfforts[effort.ID] = true
+			efforts = append(efforts, CopilotEffortOption{ID: effort.ID, Label: effort.Label, Description: effort.Description})
+		}
+	}
+	if defaultModel == "" && len(models) > 0 {
+		defaultModel = models[0].ID
+	}
+	if defaultEffort == "" && len(efforts) > 0 {
+		defaultEffort = efforts[0].ID
+	}
+	return models, efforts, defaultModel, defaultEffort, len(models) > 0
 }
 
 // Cancel stops the in-flight turn for sessionID if it belongs to userID. Idempotent:
@@ -672,11 +844,12 @@ func (s *defaultCopilotService) runAgent(ctx context.Context, release func(), pr
 	events, err := s.Agent.StartTurn(ctx, copilotagent.TurnRequest{
 		TurnID:          sessionID,
 		ThreadID:        threadID,
-		ResumeSessionID: thread.SDKSessionID,
+		ResumeSessionID: resumeSDKSessionForProvider(thread.SDKSessionID, copilotModelProvider(model)),
 		UserBearer:      bearer,
 		SystemPrompt:    sysPrompt,
 		Prompt:          prompt,
 		HistoryFallback: historyFallback(history),
+		Provider:        copilotModelProvider(model),
 		Model:           model,
 		Effort:          effort,
 		GatedTools:      gatedToolNames(),
@@ -696,7 +869,7 @@ func (s *defaultCopilotService) runAgent(ctx context.Context, release func(), pr
 		switch ev.Type {
 		case "session":
 			if ev.SessionID != "" {
-				_ = s.Store.SetThreadSDKSession(ctx, threadID, ev.SessionID)
+				_ = s.Store.SetThreadSDKSession(ctx, threadID, prefixedSDKSession(copilotModelProvider(model), ev.SessionID))
 			}
 		case "token":
 			s.publish(userID, threadID, "token", copilotTokenPayload{sessionID, threadID, ev.Delta})
@@ -760,7 +933,7 @@ func (s *defaultCopilotService) runAgent(ctx context.Context, release func(), pr
 			meta.OutputTokens = ev.Usage.OutputTokens
 			meta.CostUSD = ev.CostUSD
 			if ev.SessionID != "" {
-				_ = s.Store.SetThreadSDKSession(ctx, threadID, ev.SessionID)
+				_ = s.Store.SetThreadSDKSession(ctx, threadID, prefixedSDKSession(copilotModelProvider(model), ev.SessionID))
 			}
 		}
 	}
@@ -803,6 +976,9 @@ func (s *defaultCopilotService) fail(userID, threadID, sessionID, msg string) {
 }
 
 func (s *defaultCopilotService) publish(userID, threadID, op string, payload any) {
+	if s.Realtime == nil {
+		return
+	}
 	_ = s.Realtime.Publish(context.Background(), PublishTarget{
 		TenantID:     userID,
 		Stream:       WorkspaceStream,
@@ -1168,10 +1344,16 @@ If the tools return nothing relevant, say so plainly rather than guessing.
 If a tool returns an error, tell the user the EXACT error message verbatim and what you were trying to do — never vaguely say "a technical issue" or claim the action is impossible. The capability exists; a specific error means something is misconfigured (e.g. a service is down) and the exact text helps fix it.
 Quiz conduct — when the user asks to be quizzed on a board, worksheet, or study material: ask ONE question at a time and wait for the answer before the next. Draw questions ONLY from the user's own objects (get_artifact on a board lists its excerpts, cards and tasks with their source cites) and from the cited sources (read_document / search_document around the cited pages). Check answers against the cited source text, not your own knowledge of the topic. When the user misses or is unsure, do NOT re-teach: point at where it is explained — name the source and page, and call read_document there so your citation carries the page and the app can open the reader on it. The source teaches; you check and point.
 
-You may enrich final answers with Aladin markdown directives. These directives are declarative data only: never put HTML, JavaScript, CSS, external URLs, or secrets in them. Keep ordinary prose readable before/after the block, and use a directive only when it helps the user inspect or act on workspace state.
-Supported directives:
+You may enrich final answers with Aladin markdown directives. These directives are declarative data only: never put HTML, JavaScript, CSS, external URLs, or secrets in them. Keep ordinary prose readable, and use a directive only when it helps the user inspect or act on workspace state.
+Inline references use ONE colon and stay within sentences, headings, lists, and table cells. Prefer inline references for ordinary mentions instead of a separate card for every ticker or object. The [label] is optional; without it, the symbol or title is displayed. Do not wrap a directive in a markdown link.
+- :aladin-ticker[NVDA]{symbol="NVDA"} for tickers you fetched; example: :aladin-ticker{symbol="NVDA"} led the move.
+- :aladin-artifact[Research note]{id="artifact_id" kind="page|shard|document|artifact" title="Title"} for workspace objects you fetched or created.
+- :aladin-entity[NVIDIA]{id="entity_id" title="NVIDIA"} for entities you fetched.
+Block references use TWO colons on their own line, separated from prose by blank lines. Use them when a standalone card is useful:
 - ::aladin-artifact{id="artifact_id" kind="page|shard|document|artifact" title="Title"} for workspace objects you fetched or created.
 - ::aladin-ticker{symbol="NVDA"} for tickers you fetched.
+- ::aladin-entity{id="entity_id" title="NVIDIA"} for entities you fetched.
+The following rich directives are block-only: use THREE colons on their own lines, with a fenced body. Never embed them in a sentence, heading, or table cell.
 - :::aladin-activity ... ::: with a fenced JSON body: [{"label":"Read shard files","status":"ok|running|error","detail":"optional","inputSummary":"optional","resultSummary":"optional"}].
 - :::aladin-actions ... ::: with a fenced JSON body: [{"label":"Continue","action":"continue"},{"label":"Retry","action":"retry","prompt":"try again"},{"label":"Open shard","action":"open_artifact","artifactId":"...","kind":"shard"},{"label":"Open NVDA","action":"open_ticker","symbol":"NVDA"}].
 - :::aladin-approval ... ::: with a fenced JSON body: {"action":"Publish shard","target":"Shard title","status":"pending|approved|rejected|expired","risk":"what changes","details":["exact action"]} when summarizing a pending or completed gated action.

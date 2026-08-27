@@ -141,6 +141,7 @@ func registerDocSurfaceTools(server *sdkmcp.Server, artifacts service.ArtifactSe
 	}, t.editFile)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "delete_file",
+		Annotations: destructiveTool("Delete file"),
 		Description: "Delete a file from a Doc Surface page directory. Like write_file, a draft build runs afterwards and its diagnostics come back in `build`.",
 	}, t.deleteFile)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
@@ -161,6 +162,7 @@ func registerDocSurfaceTools(server *sdkmcp.Server, artifacts service.ArtifactSe
 	}, t.verifyAppTool)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "publish_app",
+		Annotations: destructiveTool("Publish app"),
 		Description: "Publish a shard: builds the published channel, VERIFIES it (every declared route mounts, throws nothing, and contains its declared anchors; every anchors.json ref resolves), records the markdown summary, and marks the page live. Publish is REFUSED if verification fails — run verify_app for the detail, fix, and retry. Refs that exist but whose kind emits no change events publish with a warning (they render but never update live). If no renderer is available it publishes UNVERIFIED and returns a warning.",
 	}, t.publishApp)
 
