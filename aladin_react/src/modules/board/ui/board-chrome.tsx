@@ -46,7 +46,6 @@ import { EmptyHint } from "./empty-hint";
 import { PickerPanel, type PickerNote } from "./picker-panel";
 import { SelectionBar } from "./selection-bar";
 import { StatusPill } from "./status-pill";
-import { ZoomPill } from "./zoom-pill";
 
 const INKING_TOOLS = new Set(["draw", "highlight", "eraser"]);
 /** How long the chrome stays faded after the pen lifts. */
@@ -69,6 +68,7 @@ export function BoardChrome() {
   const canRedo = useValue("canRedo", () => editor.getCanRedo(), [editor]);
   const viewport = useValue("viewport", () => editor.getViewportScreenBounds(), [editor]);
   const penMode = useValue("penMode", () => editor.getInstanceState().isPenMode, [editor]);
+  const zoom = useValue("zoom", () => editor.getZoomLevel(), [editor]);
 
   // A stray shortcut (f/n/r/h/k…) put tldraw into a tool the board does not model — snap
   // back to select rather than show a lit Select button over a frame tool.
@@ -85,6 +85,7 @@ export function BoardChrome() {
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [styleOpen, setStyleOpen] = useState(false);
+  const [zoomOpen, setZoomOpen] = useState(false);
   const [hold, setHold] = useState<{ page: VecLike; viewport: VecLike } | null>(null);
   const [holdRing, setHoldRing] = useState<VecLike | null>(null);
   const [inking, setInking] = useState(false);
@@ -227,6 +228,7 @@ export function BoardChrome() {
         setHold(null);
         setPickerOpen(false);
         setStyleOpen(false);
+        setZoomOpen(false);
         const currentTool = editor.getCurrentToolId();
         if (inkingTimer.current !== null) window.clearTimeout(inkingTimer.current);
         setInking(INKING_TOOLS.has(currentTool) && !editor.inputs.getIsPinching());
@@ -284,6 +286,8 @@ export function BoardChrome() {
   useEffect(() => {
     if (!INKING_TOOLS.has(toolId)) setInking(false);
   }, [toolId]);
+  // Switching tools moves (or removes) the zoom tile — its popover must not hang mid-air.
+  useEffect(() => setZoomOpen(false), [tool]);
 
   // ── Multi-finger taps (undo / redo) and the one-finger pan in pen mode ──
   // Touch listeners on tldraw's container, parallel to its pointer handling: tldraw drops a
@@ -611,6 +615,8 @@ export function BoardChrome() {
         drawWithFinger={drawWithFinger}
         insertOpen={pickerOpen}
         styleOpen={styleOpen}
+        zoomPct={tool === "pencil" ? null : Math.round(zoom * 100)}
+        zoomOpen={zoomOpen}
         canUndo={canUndo}
         canRedo={canRedo}
         onUndo={() => editor.undo()}
@@ -626,7 +632,17 @@ export function BoardChrome() {
         }}
         onToggleStyle={() => {
           setPickerOpen(false);
+          setZoomOpen(false);
           setStyleOpen((open) => !open);
+        }}
+        onToggleZoom={() => {
+          setPickerOpen(false);
+          setStyleOpen(false);
+          setZoomOpen((open) => !open);
+        }}
+        onPickZoom={(pct) => {
+          setZoomOpen(false);
+          setCameraZoomAboutCenter(editor, pct / 100);
         }}
         onAddInk={() => addInk()}
         onAddTask={() => {
@@ -642,16 +658,9 @@ export function BoardChrome() {
       <StatusPill />
       <BoardToastView />
       {/* The style popover shares the hint's row above the dock and IS the pencil context
-          while it is open — the hint yields to it. */}
-      {tool === "pencil" ? (
-        styleOpen ? null : (
-          <HintPill
-            text={hintText}
-          />
-        )
-      ) : (
-        <ZoomPill />
-      )}
+          while it is open — the hint yields to it. (Zoom lives in the dock now; the old
+          bottom-right zoom pill is gone — pinch is the real zoom control.) */}
+      {tool === "pencil" && !styleOpen ? <HintPill text={hintText} /> : null}
       {pickerOpen ? (
         <PickerPanel
           query={query}
