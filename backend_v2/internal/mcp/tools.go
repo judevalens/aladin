@@ -205,7 +205,7 @@ type folderOutput struct {
 	ID       string  `json:"id"`
 	Title    string  `json:"title"`
 	ParentID *string `json:"parent_id,omitempty"`
-	Seq      uint64  `json:"seq,string,omitempty"`
+	Seq      uint64  `json:"seq,omitempty"`
 }
 
 type folderActionOutput struct {
@@ -218,7 +218,7 @@ type movedArtifactOutput struct {
 	Type      string        `json:"type"`
 	FolderID  *string       `json:"folder_id,omitempty"`
 	UpdatedAt string        `json:"updated_at"`
-	Seq       uint64        `json:"seq,string,omitempty"`
+	Seq       uint64        `json:"seq,omitempty"`
 	Citations []citationOut `json:"citations,omitempty"`
 }
 

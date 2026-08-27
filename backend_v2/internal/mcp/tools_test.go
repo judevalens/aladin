@@ -506,6 +506,31 @@ func TestFolderToolsCreateRenameAndMoveArtifact(t *testing.T) {
 	}
 }
 
+func TestFolderToolOutputsEncodeSeqAsNumber(t *testing.T) {
+	t.Parallel()
+
+	payloads := []any{
+		folderActionOutput{Folder: folderOutput{ID: "folder-1", Title: "Docs", Seq: 2}},
+		movedArtifactOutput{ID: "artifact-1", Title: "Doc", Type: "page", UpdatedAt: "2026-08-27T00:00:00Z", Seq: 3},
+	}
+	for _, payload := range payloads {
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatalf("marshal payload: %v", err)
+		}
+		var decoded map[string]any
+		if err := json.Unmarshal(raw, &decoded); err != nil {
+			t.Fatalf("unmarshal payload: %v", err)
+		}
+		if folder, ok := decoded["folder"].(map[string]any); ok {
+			decoded = folder
+		}
+		if _, ok := decoded["seq"].(float64); !ok {
+			t.Fatalf("seq encoded as %T in %s, want JSON number", decoded["seq"], raw)
+		}
+	}
+}
+
 func TestMoveArtifactCanMoveToRoot(t *testing.T) {
 	t.Parallel()
 
