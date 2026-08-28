@@ -135,7 +135,14 @@ async function runCodexTurn(body, turn, writeEvent, deps = {}) {
         sandboxPolicy: { type: "readOnly" },
       });
 
-      await translator.completed;
+      if (client.failed) {
+        await Promise.race([
+          translator.completed,
+          client.failed.then((error) => { throw error; }),
+        ]);
+      } else {
+        await translator.completed;
+      }
     };
     await Promise.race([execute(), abortPromise(turn.abortController.signal)]);
     if (finalText) emit({ type: "message", text: finalText });
@@ -480,12 +487,18 @@ class JsonRpcClient {
     this.pending = new Map();
     this.messageHandler = async () => {};
     this.exited = false;
+    this.failure = null;
+    // Resolves with an error, so an early process exit cannot produce an
+    // unhandled rejection before the turn starts awaiting completion.
+    this.failed = new Promise((resolve) => { this.resolveFailure = resolve; });
   }
 
   async start(onMessage) {
     this.messageHandler = onMessage;
     const rl = createInterface({ input: this.child.stdout });
     rl.on("line", (line) => this.onLine(line));
+    rl.on("error", (error) => this.fail(error));
+    rl.once("close", () => this.fail(new Error("Codex app-server output stream closed.")));
     this.child.stderr?.on("data", (chunk) => {
       const text = String(chunk).trim();
       if (text) console.warn(`[codex app-server] ${text}`);
@@ -493,16 +506,12 @@ class JsonRpcClient {
     this.child.on("exit", (code, signal) => {
       this.exited = true;
       const status = signal || (code ?? "unknown");
-      const err = new Error(`Codex app-server exited (${status})`);
-      for (const { reject } of this.pending.values()) reject(err);
-      this.pending.clear();
+      this.fail(new Error(`Codex app-server exited (${status})`));
     });
-    const fail = (err) => {
-      for (const { reject } of this.pending.values()) reject(err);
-      this.pending.clear();
-    };
+    const fail = (err) => this.fail(err);
     this.child.on("error", fail);
     this.child.stdin.on("error", fail);
+    this.child.stdout.on("error", fail);
     await this.request("initialize", {
       clientInfo: { name: "aladin-copilot", title: "Aladin Copilot", version: "0.1.0" },
       capabilities: { experimentalApi: true, requestAttestation: false },
@@ -541,7 +550,16 @@ class JsonRpcClient {
   }
 
   send(msg) {
+    if (this.failure) throw this.failure;
     this.child.stdin.write(`${JSON.stringify(msg)}\n`);
+  }
+
+  fail(error) {
+    if (this.failure) return;
+    this.failure = error;
+    this.resolveFailure(error);
+    for (const { reject } of this.pending.values()) reject(error);
+    this.pending.clear();
   }
 
   onLine(line) {
@@ -564,6 +582,7 @@ class JsonRpcClient {
     }
     Promise.resolve(this.messageHandler(msg, this)).catch((err) => {
       console.warn(`[codex app-server] handler failed: ${err?.message ?? err}`);
+      this.fail(err);
     });
   }
 }

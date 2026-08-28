@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
+import { PassThrough, Writable } from "node:stream";
 import { createTurn, endTurn } from "../src/turns.js";
 import { codexProvider } from "../src/providers/codex.js";
 
@@ -17,6 +19,47 @@ const createTools = async () => ({
   url: "http://127.0.0.1:12345/mcp", token: "bridge-token",
   tools: [{ name: "get_quote" }, { name: "publish_app" }], close: async () => {},
 });
+
+// Exercise the actual JSON-RPC adapter with no pending request when it dies.
+// Previously only pending RPCs were rejected, leaving the active turn hung.
+function failingChild(failure) {
+  const child = new EventEmitter();
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  child.kill = () => { child.stdout.end(); return true; };
+  child.stdin = new Writable({
+    write(chunk, _encoding, callback) {
+      const message = JSON.parse(String(chunk));
+      if (!Object.hasOwn(message, "id")) { callback(); return; }
+      let result = {};
+      if (message.method === "thread/start") result = { thread: { id: "child-thread" } };
+      if (message.method === "mcpServerStatus/list") result = { data: [{ name: "aladin", tools: { get_quote: {} } }] };
+      child.stdout.write(`${JSON.stringify({ id: message.id, result })}\n`);
+      if (message.method === "turn/start") {
+        child.stdout.write(`${JSON.stringify({ method: "turn/started", params: {} })}\n`);
+        setImmediate(() => {
+          if (failure === "exit") child.emit("exit", 7, null);
+          else if (failure === "stdout") child.stdout.end();
+          else child.stdin.emit("error", new Error("Codex pipe failed"));
+        });
+      }
+      callback();
+    },
+  });
+  return child;
+}
+
+for (const failure of ["exit", "stdout", "stdin"]) {
+  test(`Codex ${failure} failure after turn/start ends the turn promptly`, { timeout: 2_000 }, async () => {
+    const events = await run({ ...baseBody, turnId: `codex-child-${failure}` }, undefined, {
+      spawnFn: () => failingChild(failure),
+    });
+    assert.ok(events.some((event) => event.type === "thinking"));
+    assert.match(events.find((event) => event.type === "error")?.message ?? "", /exited \(7\)|output stream closed|pipe failed/);
+    assert.equal(events.filter((event) => event.type === "done").length, 1);
+    assert.equal(events.at(-1).type, "done");
+  });
+}
 
 class FakeCodexClient {
   constructor(script = {}) {

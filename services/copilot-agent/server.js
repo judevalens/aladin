@@ -17,6 +17,7 @@ import { resolveApproval } from "./src/approvals.js";
 import { runTurn } from "./src/agent.js";
 import { probeMcpCached } from "./src/health.js";
 import { providerCatalog } from "./src/providers/index.js";
+import { createEventStream } from "./src/event-stream.js";
 
 if (config.agentSharedSecret === "local-dev-agent-secret") {
   console.warn(
@@ -90,11 +91,7 @@ app.post("/turn", async (req, res) => {
   res.setHeader("Cache-Control", "no-cache");
   res.flushHeaders();
 
-  const writeEvent = (ev) => {
-    if (!res.writableEnded) {
-      res.write(`${JSON.stringify(ev)}\n`);
-    }
-  };
+  const { writeEvent, dispose } = createEventStream(res);
   // The Go API dropping the stream (its ctx timed out, the process died)
   // cancels the turn.
   res.on("close", () => endTurn(body.turnId));
@@ -102,6 +99,7 @@ app.post("/turn", async (req, res) => {
   try {
     await runTurn(body, turn, writeEvent);
   } finally {
+    dispose();
     endTurn(body.turnId);
     res.end();
   }
