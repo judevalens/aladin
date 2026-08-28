@@ -48,11 +48,6 @@ const (
 	ScopeAll         = "*"
 )
 
-// ContentTokenTTL bounds a shard document credential's life. Long enough that a
-// working session never re-mints mid-view, short enough that a leaked frame URL
-// stops working the same day.
-const ContentTokenTTL = 12 * time.Hour
-
 type CurrentUser struct {
 	ID    string `json:"id"`
 	Email string `json:"email"`
@@ -64,6 +59,8 @@ type Principal struct {
 	ActorID   string
 	Email     string
 	Scopes    []string
+	// Internal identity of the issuing login session, never a raw bearer or API field.
+	SessionTokenHash string `json:"-"`
 }
 
 type AuthService interface {
@@ -75,7 +72,7 @@ type AuthService interface {
 	ListIntegrationTokens(context.Context) ([]IntegrationToken, error)
 	RevokeIntegrationToken(context.Context, string) error
 	ResolveBearerToken(context.Context, string) (Principal, error)
-	// MintContentToken issues a short-lived, content-only credential for the
+	// MintContentToken issues a session-bound, content-only credential for the
 	// calling user — what the app puts in a shard iframe's URL instead of the
 	// session bearer. Requires a real user session (a content token cannot mint
 	// another).
@@ -96,7 +93,8 @@ type AuthRepository interface {
 	GetIntegrationTokenByHash(context.Context, string, time.Time) (IntegrationTokenPrincipalRecord, error)
 	TouchIntegrationToken(context.Context, string) error
 	// Content tokens: the scoped credential a shard iframe carries in its URL.
-	CreateContentToken(ctx context.Context, tokenHash, userID string, expiresAt time.Time) error
+	// CreateContentToken checks the issuing session and returns its expiry.
+	CreateContentToken(ctx context.Context, tokenHash, userID, sessionTokenHash string, now time.Time) (time.Time, error)
 	GetContentTokenUser(ctx context.Context, tokenHash string, now time.Time) (CurrentUser, error)
 	DeleteExpiredContentTokens(ctx context.Context, now time.Time) error
 }
@@ -303,7 +301,9 @@ func (s *AuthServiceImpl) ResolveBearerToken(ctx context.Context, token string) 
 	user, err := s.repo.GetUserBySessionTokenHash(ctx, tokenHash, s.now().UTC())
 	if err == nil {
 		_ = s.repo.TouchSession(ctx, tokenHash)
-		return NewUserSessionPrincipal(user), nil
+		principal := NewUserSessionPrincipal(user)
+		principal.SessionTokenHash = tokenHash
+		return principal, nil
 	}
 	if err != nil && !errors.Is(err, ErrUnauthenticated) {
 		return Principal{}, err
@@ -344,16 +344,18 @@ func (s *AuthServiceImpl) MintContentToken(ctx context.Context) (ContentToken, e
 	if err != nil {
 		return ContentToken{}, err
 	}
+	if principal.SessionTokenHash == "" {
+		return ContentToken{}, ErrUnauthenticated
+	}
 	token, err := randomToken()
 	if err != nil {
 		return ContentToken{}, err
 	}
-	expiresAt := s.now().UTC().Add(ContentTokenTTL)
-	if err := s.repo.CreateContentToken(ctx, hashSessionToken(token), principal.UserID, expiresAt); err != nil {
+	expiresAt, err := s.repo.CreateContentToken(ctx, hashSessionToken(token), principal.UserID, principal.SessionTokenHash, s.now().UTC())
+	if err != nil {
 		return ContentToken{}, err
 	}
-	// Opportunistic cleanup — these are short-lived and never listed anywhere,
-	// so nothing else would ever reap them.
+	// Reap tokens whose issuing sessions expired or were revoked.
 	_ = s.repo.DeleteExpiredContentTokens(ctx, s.now().UTC())
 	return ContentToken{Token: token, ExpiresAt: expiresAt.Format(time.RFC3339)}, nil
 }

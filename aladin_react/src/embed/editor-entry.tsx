@@ -197,9 +197,9 @@ function useShardPlanes(config: EmbedConfig) {
       api,
       kv: createShardKVPort(api, null),
       hub: createShardDataHub(api),
-      contentTokens: createContentTokenStore(client),
+      contentTokens: createContentTokenStore(client, { getToken: () => config.token }),
     };
-  }, [client]);
+  }, [client, config.token]);
 }
 
 // The companion's board host: everything rides the native bridge as JSON-string verbs.

@@ -909,12 +909,13 @@ func (f *fakeAuthService) RevokeIntegrationToken(context.Context, string) error 
 }
 
 func (f *fakeAuthService) ResolveBearerToken(_ context.Context, token string) (artifactservice.Principal, error) {
-	if token == "desktop-valid" {
+	if token == "desktop-valid" || token == "valid" {
 		return artifactservice.Principal{
-			UserID:    "user-1",
-			ActorType: artifactservice.ActorTypeUserSession,
-			ActorID:   "user-1",
-			Email:     "user@example.com",
+			UserID:           "user-1",
+			ActorType:        artifactservice.ActorTypeUserSession,
+			ActorID:          "user-1",
+			Email:            "user@example.com",
+			SessionTokenHash: "session-hash",
 		}, nil
 	}
 	if token == "content-valid" {
@@ -930,7 +931,11 @@ func (f *fakeAuthService) ResolveBearerToken(_ context.Context, token string) (a
 	return artifactservice.Principal{}, artifactservice.ErrUnauthenticated
 }
 
-func (f *fakeAuthService) MintContentToken(context.Context) (artifactservice.ContentToken, error) {
+func (f *fakeAuthService) MintContentToken(ctx context.Context) (artifactservice.ContentToken, error) {
+	principal, err := artifactservice.RequireUserSession(ctx)
+	if err != nil || principal.SessionTokenHash == "" {
+		return artifactservice.ContentToken{}, artifactservice.ErrUnauthenticated
+	}
 	return artifactservice.ContentToken{Token: "content-valid", ExpiresAt: "2026-01-01T00:00:00Z"}, nil
 }
 

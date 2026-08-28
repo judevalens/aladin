@@ -230,15 +230,24 @@ func (r *PostgresAuthRepository) TouchIntegrationToken(ctx context.Context, toke
 	return nil
 }
 
-func (r *PostgresAuthRepository) CreateContentToken(ctx context.Context, tokenHash, userID string, expiresAt time.Time) error {
-	_, err := r.pool.Exec(ctx, `
-		INSERT INTO content_tokens (token_hash, user_id, expires_at)
-		VALUES ($1, $2::uuid, $3)
-	`, tokenHash, userID, expiresAt)
+func (r *PostgresAuthRepository) CreateContentToken(ctx context.Context, tokenHash, userID, sessionTokenHash string, now time.Time) (time.Time, error) {
+	var expiresAt time.Time
+	// Re-check at mint time: authentication and insertion can straddle logout.
+	err := r.pool.QueryRow(ctx, `
+		INSERT INTO content_tokens (token_hash, user_id, expires_at, session_token_hash)
+		SELECT $1, s.user_id, s.expires_at, s.token_hash
+		  FROM user_sessions s
+		 WHERE s.token_hash = $3 AND s.user_id = $2::uuid
+		   AND s.revoked_at IS NULL AND s.expires_at > $4
+		RETURNING expires_at
+	`, tokenHash, userID, sessionTokenHash, now).Scan(&expiresAt)
 	if err != nil {
-		return fmt.Errorf("Auth CreateContentToken: %w", err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return time.Time{}, coreservice.ErrUnauthenticated
+		}
+		return time.Time{}, fmt.Errorf("Auth CreateContentToken: %w", err)
 	}
-	return nil
+	return expiresAt, nil
 }
 
 func (r *PostgresAuthRepository) GetContentTokenUser(ctx context.Context, tokenHash string, now time.Time) (coreservice.CurrentUser, error) {
@@ -246,9 +255,11 @@ func (r *PostgresAuthRepository) GetContentTokenUser(ctx context.Context, tokenH
 	err := r.pool.QueryRow(ctx, `
 		SELECT u.id::text, u.email
 		  FROM content_tokens t
+		  JOIN user_sessions s ON s.token_hash = t.session_token_hash AND s.user_id = t.user_id
 		  JOIN users u ON u.id = t.user_id
 		 WHERE t.token_hash = $1
-		   AND t.expires_at > $2
+		   AND s.revoked_at IS NULL
+		   AND s.expires_at > $2
 	`, tokenHash, now).Scan(&user.ID, &user.Email)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -260,7 +271,13 @@ func (r *PostgresAuthRepository) GetContentTokenUser(ctx context.Context, tokenH
 }
 
 func (r *PostgresAuthRepository) DeleteExpiredContentTokens(ctx context.Context, now time.Time) error {
-	_, err := r.pool.Exec(ctx, `DELETE FROM content_tokens WHERE expires_at <= $1`, now)
+	_, err := r.pool.Exec(ctx, `
+		DELETE FROM content_tokens t WHERE NOT EXISTS (
+			SELECT 1 FROM user_sessions s
+			 WHERE s.token_hash = t.session_token_hash AND s.user_id = t.user_id
+			   AND s.revoked_at IS NULL AND s.expires_at > $1
+		)
+	`, now)
 	if err != nil {
 		return fmt.Errorf("Auth DeleteExpiredContentTokens: %w", err)
 	}

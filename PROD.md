@@ -80,6 +80,19 @@ dev app (`com.aladin.react`).
 Register a login the first time from the app (desktop register flow) — the prod
 Postgres starts empty.
 
+### Shard credentials
+
+Shard URLs carry content-only credentials, never the login bearer. New credentials
+inherit the issuing login session's expiry and stop working when that session is
+revoked or deleted; there is no separate 12-hour shard timeout. Other login sessions
+for the same account are unaffected by a logout.
+
+Migration `00050` retires legacy, unbound shard credentials because their issuing
+session cannot be recovered. It preserves logins and shard data. Deploy the backend
+and updated desktop client, then fully quit and reopen Aladin to clear cached legacy
+URLs. As with other migrations, use the backed-up `make prod-update` flow; the
+frontend ships separately through `make prod-app`.
+
 ## Day-to-day
 
 ```bash

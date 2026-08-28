@@ -173,3 +173,27 @@ func TestContentTokenInitialLoadAuthFailure(t *testing.T) {
 		})
 	}
 }
+
+func TestCookieSessionMintsBoundContentToken(t *testing.T) {
+	server := contentTokenServer()
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/content-token", nil)
+	req.AddCookie(&http.Cookie{Name: artifactservice.SessionCookieName, Value: "valid"})
+	rec := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("cookie session lost identity when minting: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestContentTokenCannotAuthenticateAsSessionCookie(t *testing.T) {
+	server := contentTokenServer()
+	for _, path := range []string{"/api/auth/me", "/content/artifact-shard/"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.AddCookie(&http.Cookie{Name: artifactservice.SessionCookieName, Value: "content-valid"})
+		rec := httptest.NewRecorder()
+		server.httpServer.Handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("scoped cookie elevated to a session on %s: %d", path, rec.Code)
+		}
+	}
+}

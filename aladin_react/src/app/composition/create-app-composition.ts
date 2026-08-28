@@ -73,7 +73,7 @@ export function createAppComposition() {
   const shardApi = createShardApi(apiClient);
   // Scoped credential for shard iframe URLs (never the session bearer — shard
   // JS can read its own URL).
-  const contentTokens = createContentTokenStore(apiClient);
+  const contentTokens = createContentTokenStore(apiClient, desktopSession);
   const apis = {
     artifacts: createArtifactApi(apiClient),
     shards: shardApi,

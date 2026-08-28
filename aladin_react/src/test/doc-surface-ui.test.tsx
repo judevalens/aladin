@@ -16,10 +16,11 @@ let now = Date.parse("2026-08-26T19:44:50-07:00");
 const TTL = 12 * 60 * 60 * 1000;
 const fetch = vi.fn<ApiClient["fetch"]>();
 const client: ApiClient = { fetch: fetch as ApiClient["fetch"], fetchBlob: vi.fn(), resolveUrl: (path) => path };
+const desktopSession = { getToken: () => "session-secret-never-in-url" };
 const runtime = {
   config: { apiBaseUrl: "https://api.example.test" },
-  desktopSession: { getToken: () => "session-secret-never-in-url" },
-  contentTokens: createContentTokenStore(client, () => now),
+  desktopSession,
+  contentTokens: createContentTokenStore(client, desktopSession, () => now),
   apis: { shards: { getBuildState: vi.fn().mockResolvedValue(null) } },
 };
 const artifact: Artifact = { id: "shard-1", title: "Research", kind: "app", content: "", updatedLabel: "Today" };
@@ -30,7 +31,7 @@ beforeEach(() => {
     token: `content-${fetch.mock.calls.length}`,
     expiresAt: new Date(now + TTL).toISOString(),
   }));
-  runtime.contentTokens = createContentTokenStore(client, () => now);
+  runtime.contentTokens = createContentTokenStore(client, desktopSession, () => now);
   useAppStore.setState({ shardBuilds: {}, theme: "dark" });
 });
 

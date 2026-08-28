@@ -199,9 +199,11 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 		}
 		cookie, err := r.Cookie(coreservice.SessionCookieName)
 		if err == nil && strings.TrimSpace(cookie.Value) != "" {
-			user, authErr := s.deps.Auth().CurrentUser(r.Context(), cookie.Value)
-			if authErr == nil {
-				next.ServeHTTP(w, r.WithContext(coreservice.WithPrincipal(r.Context(), coreservice.NewUserSessionPrincipal(user))))
+			// Preserve the session identity for content-token minting. A scoped
+			// bearer placed in a cookie must never be promoted to a full session.
+			principal, authErr := s.deps.Auth().ResolveBearerToken(r.Context(), cookie.Value)
+			if authErr == nil && principal.ActorType == coreservice.ActorTypeUserSession {
+				next.ServeHTTP(w, r.WithContext(coreservice.WithPrincipal(r.Context(), principal)))
 				return
 			}
 		}
