@@ -237,12 +237,13 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		// A browser landing here is almost always a shard whose link navigated the
-		// frame off its token-carrying URL; raw JSON tells that person nothing.
+		// Browser loads need a readable auth error, whether the token expired or
+		// an in-shard link dropped it. API callers still receive JSON.
 		if isBrowserNavigation(r) {
 			w.Header().Set("Referrer-Policy", "no-referrer")
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.Header().Set("Cache-Control", "no-store")
 			w.WriteHeader(http.StatusUnauthorized)
 			_, _ = w.Write([]byte(docsurface.LostCredentialHTML()))
 			return

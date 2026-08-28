@@ -6,46 +6,32 @@ import { shardBuildFromWire, shardBuildKey } from "@/app/state/shard-build-slice
 import type { ShardChannel } from "@/app/state/shard-build-slice";
 import { createBridgeHost } from "@/modules/doc-surface/bridge/bridge-host";
 import type { BridgeHost } from "@/modules/doc-surface/bridge/bridge-host";
+import { useShardContentToken } from "@/modules/doc-surface/hooks/use-shard-content-token";
+import { ShardAccessNotice } from "@/modules/doc-surface/ui/shard-access-notice";
 import { cn } from "@/lib/utils";
 
 // useServedUrl resolves the content-origin URL for a Doc Surface page. In web dev
 // apiBaseUrl is "" so this is relative (/content/...) and goes through the vite
 // proxy (same origin); in the desktop app it is the absolute API origin.
 //
-// The desktop app authenticates with a bearer token and sets no cookie, and an
-// iframe can send neither — so the session token is passed as ?access_token (the
-// same scheme the realtime WebSocket uses). The serve route propagates it onto
-// the page's sub-resource URLs.
+// Both web and desktop use bearer sessions. The iframe URL must carry a separate
+// content-only credential, NEVER the session bearer that shard JS could steal.
 //
 // channel selects the published (default) or draft build; nonce (a build id) is
 // appended so a fresh build reloads the iframe by changing its src.
-function useServedUrl(pageId: string, channel: ShardChannel, nonce?: string): string | null {
+function useServedUrl(pageId: string, channel: ShardChannel, nonce?: string) {
   const { runtime } = useAppComposition();
-  const needsToken = runtime.desktopSession.getToken() !== null;
-  // The desktop iframe authenticates with a token in its URL — and shard JS can
-  // read that URL, so it must be the CONTENT token (scoped to /content), never
-  // the session bearer. Minted asynchronously; until it arrives we render no
-  // iframe rather than one that would 401.
-  const [contentToken, setContentToken] = useState<string | null>(() =>
-    runtime.contentTokens.peek(),
+  const { token: contentToken, error, retry } = useShardContentToken(
+    runtime.contentTokens,
+    JSON.stringify([runtime.config.apiBaseUrl, pageId, channel, nonce]),
   );
-  useEffect(() => {
-    if (!needsToken || contentToken) return;
-    let alive = true;
-    void runtime.contentTokens.get().then((t) => {
-      if (alive) setContentToken(t);
-    });
-    return () => {
-      alive = false;
-    };
-  }, [runtime, needsToken, contentToken]);
 
   // Memoized so the iframe reloads ONLY on channel/build/token changes. The
   // theme is deliberately read non-reactively (getState): it stamps data-theme
   // for a correct FIRST paint; live switches ride the bridge push with no
   // reload, and the next natural reload picks up the then-current theme.
-  return useMemo(() => {
-    if (needsToken && !contentToken) return null;
+  const src = useMemo(() => {
+    if (!contentToken) return null;
     const base = runtime.config.apiBaseUrl;
     const params = new URLSearchParams();
     if (contentToken) params.set("access_token", contentToken);
@@ -60,7 +46,8 @@ function useServedUrl(pageId: string, channel: ShardChannel, nonce?: string): st
     }
     const q = params.toString();
     return `${base}/content/${pageId}/${q ? `?${q}` : ""}`;
-  }, [runtime, pageId, channel, nonce, needsToken, contentToken]);
+  }, [runtime, pageId, channel, nonce, contentToken]);
+  return { src, error, retry };
 }
 
 // useShardBuild seeds the draft build state for a page (one fetch on mount) and
@@ -148,7 +135,7 @@ export function DocSurfaceUI({ artifact, hidden = false }: { artifact: Artifact;
 
   const hasDraftBuild = draftNonce !== "";
   const channel: ShardChannel = hasDraftBuild ? "draft" : "published";
-  const src = useServedUrl(artifact.id, channel, hasDraftBuild ? draftNonce : undefined);
+  const { src, error: accessError, retry } = useServedUrl(artifact.id, channel, hasDraftBuild ? draftNonce : undefined);
 
   const status = draft?.status;
   const showChip = status === "building" || status === "ok" || status === "failed";
@@ -183,9 +170,7 @@ export function DocSurfaceUI({ artifact, hidden = false }: { artifact: Artifact;
 
   return (
     <div className={cn("relative h-full w-full", hidden && "hidden")}>
-      {/* src is null only while the content token is being minted (desktop);
-          mounting the frame without it would just 401. */}
-      {src && (
+      {src ? (
         <iframe
           ref={iframeRef}
           title={artifact.title}
@@ -193,7 +178,7 @@ export function DocSurfaceUI({ artifact, hidden = false }: { artifact: Artifact;
           sandbox="allow-scripts"
           className="h-full w-full border-0 bg-bg"
         />
-      )}
+      ) : <ShardAccessNotice error={accessError} retry={retry} />}
       {showChip && status && <BuildStatusChip status={status} />}
       {showError && <BuildErrorOverlay log={draft?.errors ?? ""} />}
     </div>

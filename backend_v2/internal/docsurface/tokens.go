@@ -314,24 +314,21 @@ func PreviewHTML(title, tokensCSS, bundleCSS, bundleJS, csp string, im ImportMap
 
 // LostCredentialHTML is what a BROWSER gets instead of {"error":"Unauthenticated"}.
 //
-// A served shard lives at /content/{id}/?access_token=… and that query token is
-// its entire credential (an <iframe> can carry neither header nor cookie). Any
-// non-fragment link inside the shard navigates the frame to a URL without the
-// token, and the shard is replaced by a raw JSON error with no hint of why. This
-// page says what happened, in the one place the person actually sees it.
+// An initial load with an expired/missing token and a link that drops the token
+// both land here. Do not assume a navigation bug from an authentication failure.
 func LostCredentialHTML() string {
 	return `<!doctype html><html><head><meta charset="utf-8"><title>Signed out of this view</title>` +
 		`<meta name="referrer" content="no-referrer"><style>` + TokensCSS +
 		`body{padding:32px;font-family:var(--font-sans);color:var(--ink-2);line-height:1.6}` +
 		`h1{font-family:var(--font-display);font-size:15px;color:var(--ink);margin:0 0 8px}` +
 		`code{font-family:var(--font-mono);font-size:12px;color:var(--ink-3)}</style></head>` +
-		`<body><h1>This view lost its credential</h1>` +
-		`<p>A shard is authenticated by the URL it was opened with, so a link that ` +
-		`navigates away from that URL lands here.</p>` +
-		`<p>Shards are one app with client-side hash routing — links must be ` +
+		`<body><h1>This view could not authenticate</h1>` +
+		`<p>The credential in this shard's URL is missing, expired, or no longer valid. ` +
+		`Close and reopen the shard to request a fresh credential. If it still fails, ` +
+		`restart Aladin and sign in again.</p>` +
+		`<p>If this happened after following a link inside the shard, its links must use ` +
 		`<code>href="#/section"</code> (or the kit's <code>Link</code> / ` +
-		`<code>AppShell</code>), never <code>href="/section"</code>. Reopen the shard ` +
-		`to get back.</p></body></html>`
+		`<code>AppShell</code>), not <code>href="/section"</code>.</p></body></html>`
 }
 
 // NotBuiltHTML is shown when a page has no built bundle yet.

@@ -7,16 +7,15 @@ import type { ApiClient } from "@/shared/api/client";
 // full API access. A content token authenticates the same user for /content and
 // is rejected everywhere else (see contentTokenAllowed in the Go middleware).
 //
-// Minted on demand and refreshed ahead of expiry, so a long-lived pane never
-// serves an iframe a token that dies mid-session. Failure is non-fatal: the
-// caller falls back to no token, and web (cookie) mode never needs one.
+// Refreshed on demand before the next document load, not on a timer that would
+// reload a live shard. Callers must wait for get() on each load or rebuild.
 
 const REFRESH_AT = 0.8; // refresh once 80% of the TTL has elapsed
 
 export interface ContentTokenStore {
   /** Cached token, refreshed when stale. Null when unavailable. */
   get(): Promise<string | null>;
-  /** Last known token without a network call (for synchronous URL building). */
+  /** Fresh cached token only; null once a refresh is due. */
   peek(): string | null;
 }
 
@@ -30,25 +29,27 @@ export function createContentTokenStore(client: ApiClient, now: () => number = D
       const res = await client.fetch<{ token: string; expiresAt: string }>("/api/auth/content-token", {
         method: "POST",
       });
-      const expiresAt = Date.parse(res.expiresAt);
-      const ttl = Number.isFinite(expiresAt) ? expiresAt - now() : 0;
+      const receivedAt = now();
+      const ttl = Date.parse(res.expiresAt) - receivedAt;
+      if (!res.token?.trim() || !Number.isFinite(ttl) || ttl <= 0) {
+        token = null;
+        return null;
+      }
       token = res.token;
-      // A malformed/short TTL still yields a usable token; just re-mint sooner.
-      refreshAfter = now() + Math.max(ttl * REFRESH_AT, 60_000);
+      refreshAfter = receivedAt + ttl * REFRESH_AT;
       return token;
     } catch {
+      token = null;
       return null;
-    } finally {
-      inFlight = null;
     }
   }
 
   return {
     get() {
       if (token && now() < refreshAfter) return Promise.resolve(token);
-      if (!inFlight) inFlight = mint();
+      if (!inFlight) inFlight = mint().finally(() => { inFlight = null; });
       return inFlight;
     },
-    peek: () => token,
+    peek: () => now() < refreshAfter ? token : null,
   };
 }

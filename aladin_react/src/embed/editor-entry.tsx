@@ -9,6 +9,8 @@ import { BlockNotePageEditorDriver } from "@/modules/pages/editor/page-editor-dr
 import { createApiClient, type ApiClient } from "@/shared/api/client";
 import { createShardApi } from "@/shared/api/shard-api";
 import { createContentTokenStore } from "@/shared/runtime/content-token-store";
+import { useShardContentToken } from "@/modules/doc-surface/hooks/use-shard-content-token";
+import { ShardAccessNotice } from "@/modules/doc-surface/ui/shard-access-notice";
 import { createBridgeHost } from "@/modules/doc-surface/bridge/bridge-host";
 import { createShardDataHub } from "@/modules/doc-surface/bridge/shard-data-hub";
 import { createShardKVPort } from "@/modules/doc-surface/bridge/shard-kv-port";
@@ -272,20 +274,10 @@ function BoardHostPane({
 function ShardPane({ pane, config }: { pane: HostPane; config: EmbedConfig }) {
   const planes = useShardPlanes(config);
   const frameRef = useRef<HTMLIFrameElement>(null);
-  const [contentToken, setContentToken] = useState<string | null>(
-    () => planes?.contentTokens.peek() ?? null,
+  const { token: contentToken, error, retry } = useShardContentToken(
+    planes?.contentTokens ?? null,
+    JSON.stringify([config.apiBaseUrl, pane.id]),
   );
-
-  useEffect(() => {
-    if (!planes || contentToken) return;
-    let alive = true;
-    void planes.contentTokens.get().then((t) => {
-      if (alive) setContentToken(t);
-    });
-    return () => {
-      alive = false;
-    };
-  }, [planes, contentToken]);
 
   // One host per pane, attached for as long as the pane exists — not for as long as it is
   // visible. A hidden shard keeps answering, which is what lets it re-surface with its state
@@ -322,7 +314,7 @@ function ShardPane({ pane, config }: { pane: HostPane; config: EmbedConfig }) {
       </ShardNotice>
     );
   }
-  if (!src) return <ShardNotice title={pane.title}>Minting a content token…</ShardNotice>;
+  if (!src) return <ShardAccessNotice error={error} retry={retry} />;
 
   return (
     <iframe

@@ -148,3 +148,28 @@ func TestContentTokenMintRoute(t *testing.T) {
 		t.Fatalf("mint response missing the token: %s", rec.Body.String())
 	}
 }
+
+func TestContentTokenInitialLoadAuthFailure(t *testing.T) {
+	for _, query := range []string{"", "?access_token=expired-credential"} {
+		t.Run(query, func(t *testing.T) {
+			server := contentTokenServer()
+			req := httptest.NewRequest(http.MethodGet, "/content/artifact-shard/"+query, nil)
+			req.Header.Set("Accept", "text/html")
+			rec := httptest.NewRecorder()
+			server.httpServer.Handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("status = %d, want 401", rec.Code)
+			}
+			body := rec.Body.String()
+			if !strings.Contains(body, "missing, expired, or no longer valid") || !strings.Contains(body, "Close and reopen") {
+				t.Fatalf("missing initial-load recovery guidance: %s", body)
+			}
+			if strings.Contains(body, "expired-credential") {
+				t.Fatal("error page echoed a credential")
+			}
+			if rec.Header().Get("Cache-Control") != "no-store" || rec.Header().Get("Referrer-Policy") != "no-referrer" {
+				t.Fatal("auth error must not be cached or send referrers")
+			}
+		})
+	}
+}
