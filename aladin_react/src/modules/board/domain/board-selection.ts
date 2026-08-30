@@ -87,6 +87,8 @@ export function describeShape(editor: Editor, shape: TLShape): SelectionSummary 
         openLabel: null,
       };
     }
+    case "note":
+      return { title: renderPlaintextFromRichText(editor, shape.props.richText) || "Note", meta: "sticky note", cited: false, artifactId: null, page: null, openLabel: null };
     case "draw":
     case "highlight":
       return { title: "Ink", meta: "pencil stroke", cited: false, artifactId: null, page: null, openLabel: null };

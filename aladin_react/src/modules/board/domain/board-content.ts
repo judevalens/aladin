@@ -34,7 +34,7 @@ export interface PickerArtifact {
 
 export interface BoardContentSource {
   /** Subscribe to (artifactId, page); useSyncExternalStore-compatible. */
-  subscribe(artifactId: string, page: number, onChange: () => void): () => void;
+  subscribe(artifactId: string, page: number, onChange: () => void, kind?: string): () => void;
   get(artifactId: string, page: number): DocPageContent;
   /** The board's folder siblings, insertable as live windows. */
   listFolderArtifacts(folderId: string | null): Promise<PickerArtifact[]>;
@@ -113,11 +113,14 @@ export function sectionForPage(meta: DocumentMeta, page: number): string {
   return best ?? `p. ${page}`;
 }
 
-// Insertable as live windows today: PDFs (ingested docs) and notes (blocks projection).
-// Links/voice get their own window bodies later — listing them would insert tombstones.
+// Rich artifacts retain their IDs and open through the host, not demo-only objects.
 const ARTIFACT_TYPE_TO_KIND: Record<string, string> = {
   file: "file",
   page: "note",
+  note: "note",
+  app: "app",
+  link: "link",
+  voice: "voice",
 };
 
 export function createBoardContentSource(client: ApiClient): BoardContentSource {
@@ -160,7 +163,15 @@ export function createBoardContentSource(client: ApiClient): BoardContentSource 
     return meta;
   }
 
-  async function resolve(artifactId: string, page: number): Promise<DocPageContent> {
+  async function resolve(artifactId: string, page: number, kind?: string): Promise<DocPageContent> {
+    if (kind === "app" || kind === "link" || kind === "voice") {
+      const artifact = await client.fetch<UserArtifact>(`/api/artifacts/${encodeURIComponent(artifactId)}`);
+      return {
+        state: "ready", pageCount: 1,
+        sourceLine: kind === "app" ? "Aladin instrument" : kind === "voice" ? "Voice note" : "Saved link",
+        excerpt: (artifact.summary || artifact.sourceUrl || (kind === "app" ? "Open this instrument from the board to use it." : artifact.content || "Open the source to explore it.")).slice(0, EXCERPT_LIMIT),
+      };
+    }
     const meta = await documentMeta(artifactId);
     if (meta) {
       const clamped = Math.max(1, Math.min(meta.pageCount || 1, page));
@@ -181,17 +192,17 @@ export function createBoardContentSource(client: ApiClient): BoardContentSource 
     );
     return {
       state: "ready",
-      sourceLine: "note · edits sync both ways",
+      sourceLine: "Workspace note",
       excerpt: flattenBlocks(pageDoc.blocks).slice(0, EXCERPT_LIMIT),
       pageCount: 1,
     };
   }
 
-  function fetchInto(key: string, artifactId: string, page: number) {
+  function fetchInto(key: string, artifactId: string, page: number, kind?: string) {
     const e = entry(key);
     if (e.inflight) return;
     e.inflight = true;
-    resolve(artifactId, page)
+    resolve(artifactId, page, kind)
       .then((value) => publish(key, value))
       .catch((error: unknown) => {
         if (error instanceof ApiError && error.status === 404) {
@@ -207,11 +218,11 @@ export function createBoardContentSource(client: ApiClient): BoardContentSource 
   }
 
   return {
-    subscribe(artifactId, page, onChange) {
+    subscribe(artifactId, page, onChange, kind) {
       const key = `${artifactId}:${page}`;
       const e = entry(key);
       e.listeners.add(onChange);
-      if (Date.now() - e.fetchedAt > TTL_MS) fetchInto(key, artifactId, page);
+      if (Date.now() - e.fetchedAt > TTL_MS) fetchInto(key, artifactId, page, kind);
       return () => {
         e.listeners.delete(onChange);
       };

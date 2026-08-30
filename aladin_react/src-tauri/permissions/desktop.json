@@ -1,0 +1,28 @@
+{
+  "permission": [
+    {
+      "identifier": "desktop-commands",
+      "description": "Aladin workspace and terminal commands for the trusted desktop frontend.",
+      "commands": {
+        "allow": [
+          "db_list_artifacts", "db_get_artifact", "db_get_artifacts", "db_upsert_artifact",
+          "db_create_artifact", "db_rename_artifact", "db_delete_artifact",
+          "db_update_artifact_properties", "db_query_artifacts_by_property",
+          "db_artifact_property_facets", "db_list_artifact_entities",
+          "db_attach_artifact_entity", "db_detach_artifact_entity", "db_sync_artifact_mentions",
+          "db_list_browser_nodes", "db_get_browser_node", "db_upsert_browser_node",
+          "db_create_browser_node", "db_rename_browser_node", "db_delete_browser_node",
+          "db_list_nodes", "db_get_node", "db_list_watchlists", "db_list_shard_kv",
+          "db_get_reading_position", "db_get_page_metadata", "db_upsert_page_metadata",
+          "db_clear_workspace", "sync_subscribe_data_events", "sync_set_session", "sync_pull_now",
+          "terminal_open", "terminal_write", "terminal_resize", "terminal_close"
+        ]
+      }
+    },
+    {
+      "identifier": "bootstrap-local-frontend",
+      "description": "Transfer legacy origin preferences to the local frontend during startup.",
+      "commands": { "allow": ["finish_local_frontend_bootstrap"] }
+    }
+  ]
+}

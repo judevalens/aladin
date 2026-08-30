@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useRef } from "react";
-import type { Editor } from "tldraw";
+import type { Editor, TLShape } from "tldraw";
 
 /** Rounded-rect indicator path — the amber selection outline tldraw draws around a shape.
  *  The radius is the same `--radius-board-card` the objects draw with. */
-export const BOARD_CARD_RADIUS = 18;
+export const BOARD_CARD_RADIUS = 10;
+
+/** Cosmetic metadata is supported by the existing record schema on both clients/server. */
+export function boardObjectClass(shape: TLShape) {
+  const tint = ["butter", "sage", "lilac"].includes(String(shape.meta.boardTint)) ? shape.meta.boardTint : "neutral";
+  return "board-object rs-tint--" + tint;
+}
 
 export function roundedIndicator(w: number, h: number, radius = BOARD_CARD_RADIUS): Path2D {
   const path = new Path2D();

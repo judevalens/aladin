@@ -2,7 +2,7 @@ import { BaseBoxShapeUtil, HTMLContainer, useValue } from "tldraw";
 import type { TLIndicatorPath } from "tldraw";
 
 import { CARD_DEFAULTS, cardProps, type CardShape } from "./shape-types";
-import { ShapeTextArea, roundedIndicator } from "./shape-shared";
+import { ShapeTextArea, boardObjectClass, roundedIndicator } from "./shape-shared";
 
 /**
  * Flashcard. The first tap selects (like every object); a tap on the SELECTED card flips
@@ -51,7 +51,7 @@ export class CardShapeUtil extends BaseBoxShapeUtil<CardShape> {
 
     return (
       <HTMLContainer>
-        <div className="board-object board-object--card flex flex-col px-4.5 py-4">
+        <div className={boardObjectClass(shape) + " board-object--card flex flex-col px-4.5 py-4"}>
           <div className="flex items-center gap-2">
             <span className="text-board-learn font-mono text-board-meta uppercase tracking-wider">
               {face}

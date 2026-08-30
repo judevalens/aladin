@@ -2,6 +2,7 @@ mod api;
 mod commands;
 mod db;
 mod events;
+mod local_frontend;
 mod realtime;
 mod sync;
 mod terminal;
@@ -58,6 +59,7 @@ pub fn run() {
             app.manage(sync);
             app.manage(workspace);
             app.manage(TerminalManager::default());
+            local_frontend::open(app)?;
             Ok(())
         })
         // Local vendored-deps cache: `vendor://deps/<sha>` is served from a local
@@ -67,6 +69,7 @@ pub fn run() {
             crate::vendor_cache::handle(ctx, request, responder);
         })
         .invoke_handler(tauri::generate_handler![
+            local_frontend::finish_local_frontend_bootstrap,
             artifact_cmd::db_list_artifacts,
             artifact_cmd::db_get_artifact,
             artifact_cmd::db_get_artifacts,

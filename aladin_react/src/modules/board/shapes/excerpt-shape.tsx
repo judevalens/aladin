@@ -2,7 +2,7 @@ import { BaseBoxShapeUtil, HTMLContainer, useValue } from "tldraw";
 import type { TLIndicatorPath } from "tldraw";
 
 import { EXCERPT_DEFAULTS, excerptProps, type ExcerptShape } from "./shape-types";
-import { ShapeTextArea, roundedIndicator } from "./shape-shared";
+import { ShapeTextArea, boardObjectClass, roundedIndicator } from "./shape-shared";
 
 /** A frozen quote: serif italic + `frozen` chip + citation. Double-tap edits the text. */
 export class ExcerptShapeUtil extends BaseBoxShapeUtil<ExcerptShape> {
@@ -34,7 +34,7 @@ export class ExcerptShapeUtil extends BaseBoxShapeUtil<ExcerptShape> {
 
     return (
       <HTMLContainer>
-        <div className="board-object px-4.5 py-4">
+        <div className={boardObjectClass(shape) + " px-4.5 py-4"}>
           <div className="font-serif text-board-quote italic text-ink">
             {isEditing ? (
               <ShapeTextArea
@@ -59,7 +59,7 @@ export class ExcerptShapeUtil extends BaseBoxShapeUtil<ExcerptShape> {
           </div>
           <div className="mt-3.5 flex items-center gap-2">
             <span className="rounded-chip bg-field px-2 py-0.5 font-mono text-board-meta text-ink-3">
-              frozen
+              excerpt
             </span>
             <span className="truncate font-mono text-board-meta text-ink-4">{cite}</span>
           </div>

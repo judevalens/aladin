@@ -1,5 +1,3 @@
-import { useLayoutEffect, useRef, useState } from "react";
-
 import {
   BOARD_INK_SWATCHES,
   BOARD_WEIGHTS,
@@ -13,7 +11,6 @@ import type { BoardInkColor } from "../domain/board-theme";
  * target; the chosen swatch wears the handoff's double ring.
  */
 export function StylePopover({
-  centerX,
   inkColor,
   weight,
   drawWithFinger,
@@ -21,8 +18,6 @@ export function StylePopover({
   onPickWeight,
   onToggleDrawWithFinger,
 }: {
-  /** The style tile's centre, in the dock's coordinate space. */
-  centerX: number;
   inkColor: BoardInkColor;
   weight: BoardWeightIndex;
   drawWithFinger: boolean;
@@ -30,29 +25,11 @@ export function StylePopover({
   onPickWeight: (weight: BoardWeightIndex) => void;
   onToggleDrawWithFinger: () => void;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [left, setLeft] = useState(centerX);
-
-  // Centre on the tile, but never past the viewport's edge — the tile sits at the dock's
-  // far right, which on a portrait iPad is the screen's far right.
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const dockLeft = el.offsetParent?.getBoundingClientRect().left ?? 0;
-    const half = el.offsetWidth / 2;
-    const vw = window.innerWidth;
-    const min = 8 + half - dockLeft;
-    const max = vw - 8 - half - dockLeft;
-    setLeft(Math.max(min, Math.min(centerX, max)));
-  }, [centerX]);
-
   return (
     <div
-      ref={ref}
       role="group"
       aria-label="Ink colour and weight"
-      className="board-island board-island--popover absolute bottom-[calc(100%+10px)] flex -translate-x-1/2 items-center gap-0.5 p-1.5"
-      style={{ left }}
+      className="board-island board-island--popover absolute bottom-[calc(100%+10px)] right-0 flex items-center gap-0.5 p-1.5"
     >
       {BOARD_INK_SWATCHES.map((swatch) => (
         <button

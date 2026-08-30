@@ -15,6 +15,9 @@ import { useSync } from "@tldraw/sync";
 import { ClientWebSocketAdapter } from "@tldraw/sync-core";
 import {
   DefaultColorStyle,
+  NoteShapeUtil,
+  FrameShapeUtil,
+  toRichText,
   inlineBase64AssetStore,
   registerColorsFromThemes,
   resolveThemes,
@@ -24,7 +27,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // eslint-disable-next-line import/no-relative-packages -- the E2E spans both packages on purpose
 import { createBoardSyncServer } from "../../../services/blocknote/src/services/board-sync.js";
 import { SYNC_SHAPE_UTILS } from "@/modules/board/ui/board-pane";
-import { buildBoardTheme } from "@/modules/board/domain/board-theme";
+import { buildBoardStudioTheme } from "@/modules/board/domain/board-appearance";
 import { TASK_DEFAULTS } from "@/modules/board/shapes/shape-types";
 
 const OWNER = "00000000-0000-0000-0000-0000000000aa";
@@ -55,7 +58,7 @@ function stubPool() {
 let server: ReturnType<typeof createBoardSyncServer>;
 let pool: ReturnType<typeof stubPool>;
 let base = "";
-const themes = { default: buildBoardTheme(() => "#c9925a") };
+const themes = { default: buildBoardStudioTheme() };
 
 beforeAll(async () => {
   (globalThis as { WebSocket?: unknown }).WebSocket = NodeWebSocket;
@@ -135,7 +138,7 @@ describe("board multiplayer end to end", () => {
       rotation: 0,
       isLocked: false,
       opacity: 1,
-      meta: {},
+      meta: { boardTint: "sage" },
       props: { ...TASK_DEFAULTS, text: "made on A" },
     };
     const ink = {
@@ -166,12 +169,23 @@ describe("board multiplayer end to end", () => {
       },
     };
     expect(DefaultColorStyle.values, "client registry lost the board colours").toContain("learn");
-    storeA.put([task, ink]);
+    const note = {
+      ...task, type: "note", id: "shape:e2e-note", index: "a4", meta: {},
+      props: { ...NoteShapeUtil.prototype.getDefaultProps(), color: "yellow", richText: toRichText("Research hypothesis") },
+    };
+    const frame = {
+      ...task, type: "frame", id: "shape:e2e-frame", index: "a5", meta: {},
+      props: { ...FrameShapeUtil.prototype.getDefaultProps(), name: "Method and evidence" },
+    };
+    storeA.put([task, ink, note, frame]);
 
     await waitFor(
       () => {
         expect(storeB.get("shape:e2e-task"), "task did not arrive on B").toBeTruthy();
         expect(storeB.get("shape:e2e-ink"), "learn-coloured ink did not arrive on B").toBeTruthy();
+        expect(storeB.get(note.id)).toEqual(note);
+        expect(storeB.get(frame.id)).toEqual(frame);
+        expect(storeB.get(task.id)).toMatchObject({ meta: { boardTint: "sage" } });
       },
       { timeout: 8000 },
     );
@@ -187,5 +201,13 @@ describe("board multiplayer end to end", () => {
 
     a.unmount();
     b.unmount();
+
+    const reopened = client("session-reopened");
+    await waitFor(() => expect(reopened.result.current.status).toBe("synced-remote"), { timeout: 8000 });
+    const restored = (reopened.result.current as { store: { get(id: string): unknown } }).store;
+    expect(restored.get(note.id)).toEqual(note);
+    expect(restored.get(frame.id)).toEqual(frame);
+    expect(restored.get(task.id)).toMatchObject({ meta: { boardTint: "sage" } });
+    reopened.unmount();
   }, 30000);
 });

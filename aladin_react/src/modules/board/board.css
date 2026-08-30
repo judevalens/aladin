@@ -126,18 +126,6 @@
   color: var(--board-learn);
 }
 
-/* ── Focus while inking ─────────────────────────────────────────────────────────────────
-   While a stroke is down the chrome fades to almost nothing and comes back a beat after
-   the lift (Freeform's "auto-minimise while writing", default-on here). Opacity only —
-   every hit area stays live, so a tap on a faded tile still lands. */
-.board-chrome > * {
-  transition: opacity 260ms ease-out;
-}
-.board-chrome--inking > * {
-  opacity: 0.12;
-  transition: opacity 140ms ease-out;
-}
-
 /* The hold-to-insert ring: grows under the finger from 120ms so the 400ms hold reads as
    "registering", then the popover takes over with its own ring. */
 .board-hold-ring {

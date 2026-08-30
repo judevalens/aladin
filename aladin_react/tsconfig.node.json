@@ -2,6 +2,7 @@
   "compilerOptions": {
     "target": "ES2023",
     "lib": ["ES2023"],
+    "types": ["node"],
     "module": "ESNext",
     "skipLibCheck": true,
     "moduleResolution": "Bundler",
@@ -20,6 +21,7 @@
     "vite.config.ts",
     "vitest.config.ts",
     "playwright.config.ts",
-    "tailwind.config.ts"
+    "tailwind.config.ts",
+    "src/test/e2e/local-frontend.spec.ts"
   ]
 }

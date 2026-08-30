@@ -8,7 +8,7 @@ export function BoardToastView() {
   return (
     <div
       role="status"
-      className="board-island board-island--popover board-edge-above-dock pointer-events-auto absolute left-1/2 flex h-12 -translate-x-1/2 items-center gap-3 pl-4 pr-1.5 text-board-row text-ink"
+      className="board-toast board-island board-island--popover board-edge-above-dock pointer-events-auto absolute left-1/2 flex h-12 -translate-x-1/2 items-center gap-3 pl-4 pr-1.5 text-board-row text-ink"
     >
       <span className="whitespace-nowrap">{toast.text}</span>
       {toast.action ? (

@@ -18,9 +18,9 @@ export function EmptyHint() {
       type="button"
       onClick={() => setDismissed(true)}
       aria-label="Dismiss hint"
-      className="pointer-events-auto absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap px-4 py-3 text-center text-board-row text-ink-4"
+      className="pointer-events-auto absolute left-1/2 top-1/2 w-[min(340px,70%)] -translate-x-1/2 -translate-y-1/2 px-4 py-3 text-center text-small text-ink-4"
     >
-      Hold the board, or tap ＋ — a PDF, a note, a task, a card
+      Add a thought, drop a link, or bring something from your library.
     </button>
   );
 }

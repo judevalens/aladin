@@ -3,7 +3,7 @@ import type { TLIndicatorPath } from "tldraw";
 
 import { DOCK_PATHS, DockIcon } from "../ui/dock-icons";
 import { LINK_DEFAULTS, linkProps, type LinkShape } from "./shape-types";
-import { roundedIndicator, tappable } from "./shape-shared";
+import { boardObjectClass, roundedIndicator, tappable } from "./shape-shared";
 
 /**
  * An external link with its unfurled preview — the board-native replacement for tldraw's
@@ -31,7 +31,7 @@ export class LinkShapeUtil extends BaseBoxShapeUtil<LinkShape> {
 
     return (
       <HTMLContainer>
-        <div className="board-object flex flex-col overflow-hidden">
+        <article aria-label={"Link: " + (title || domain || url)} className={boardObjectClass(shape) + " rs-object board-link-object"}>
           {image ? (
             <div className="h-[124px] w-full shrink-0 overflow-hidden border-b border-line bg-field">
               {/* External URL by design — previews aren't workspace assets. draggable=false
@@ -47,8 +47,8 @@ export class LinkShapeUtil extends BaseBoxShapeUtil<LinkShape> {
               />
             </div>
           ) : null}
-          <div className="flex min-h-0 flex-1 flex-col px-4.5 py-3.5">
-            <div className="flex items-center gap-2">
+          <div className="rs-object-content">
+            <div className="rs-object-meta">
               {favicon ? (
                 <img
                   src={favicon}
@@ -60,34 +60,34 @@ export class LinkShapeUtil extends BaseBoxShapeUtil<LinkShape> {
                   }}
                 />
               ) : null}
-              <span className="truncate font-mono text-board-meta uppercase text-ink-4">
+              <span>
                 {domain || "link"}
               </span>
               <a
-                href={url}
+                href={/^https?:\/\//i.test(url) ? url : undefined}
                 target="_blank"
                 rel="noreferrer noopener"
                 aria-label="Open link"
                 {...tappable(this.editor, () => {})}
-                className="ml-auto grid h-8 w-8 shrink-0 place-items-center rounded-tap text-ink-3 hover:bg-hover hover:text-ink"
+                className="board-source-open"
               >
                 <DockIcon d={DOCK_PATHS.open} size={15} strokeWidth={2} />
               </a>
             </div>
-            <div className="mt-1.5 line-clamp-2 text-board-row font-medium text-ink">
+            <h2 className="line-clamp-2">
               {status === "pending" && !title ? (
                 <span className="text-ink-4">fetching preview…</span>
               ) : (
                 title || url
               )}
-            </div>
+            </h2>
             {description ? (
-              <div className="mt-1 line-clamp-2 text-board-meta leading-relaxed text-ink-3">
+              <p className="line-clamp-3">
                 {description}
-              </div>
+              </p>
             ) : null}
           </div>
-        </div>
+        </article>
       </HTMLContainer>
     );
   }

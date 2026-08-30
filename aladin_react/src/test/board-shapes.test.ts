@@ -12,7 +12,6 @@ import {
 } from "@/modules/board/shapes/shape-types";
 import {
   BOARD_WEIGHTS,
-  PENCIL_HINTS,
   boardToolFromTldraw,
   tldrawToolId,
 } from "@/modules/board/domain/board-tools";
@@ -67,8 +66,7 @@ describe("board tool mapping", () => {
     expect(boardToolFromTldraw("zoom").tool).toBe("select");
   });
 
-  it("has a hint and a weight for everything the dock offers", () => {
-    expect(Object.keys(PENCIL_HINTS).sort()).toEqual(["eraser", "highlighter", "lasso", "pen"]);
+  it("has the three supported stroke weights", () => {
     expect(BOARD_WEIGHTS.map((w) => w.size)).toEqual(["s", "m", "l"]);
   });
 });

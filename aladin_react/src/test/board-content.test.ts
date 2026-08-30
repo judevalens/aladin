@@ -119,7 +119,18 @@ describe("createBoardContentSource", () => {
     ]);
     const source = createBoardContentSource(client);
     const rows = await source.listFolderArtifacts("folder-1");
-    expect(rows.map((r) => r.id)).toEqual(["f1", "p1"]);
+    expect(rows.map((r) => r.id)).toEqual(["f1", "p1", "l1"]);
     expect(rows[1]).toMatchObject({ kind: "note", meta: "note" });
+  });
+
+  it("resolves an instrument from real artifact metadata, not the notes/PDF endpoints", async () => {
+    const client = clientOf(() => ({ type: "app", title: "Spread explorer", summary: "A workspace instrument", content: "do not render source code" }));
+    const source = createBoardContentSource(client);
+    const changed = vi.fn();
+    source.subscribe("app-1", 1, changed, "app");
+    await vi.waitFor(() => expect(changed).toHaveBeenCalled());
+    expect(source.get("app-1", 1)).toMatchObject({ state: "ready", excerpt: "A workspace instrument", sourceLine: "Aladin instrument" });
+    expect(client.fetch).toHaveBeenCalledWith("/api/artifacts/app-1");
+    expect(client.fetch).toHaveBeenCalledTimes(1);
   });
 });

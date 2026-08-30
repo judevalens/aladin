@@ -1,232 +1,85 @@
 import { useEffect, useState } from "react";
-import { useEditor, useValue } from "tldraw";
-
+import { Copy, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { useEditor, useValue, type TLDefaultColorStyle } from "tldraw";
 import { useBoardContent, useBoardFolder } from "../domain/board-content";
 import { useBoardHost } from "../domain/board-host";
 import { describeShape } from "../domain/board-selection";
 import { useBoardToasts } from "../domain/board-toasts";
-import { DOCK_PATHS, DockIcon } from "./dock-icons";
+import { BoardButton } from "./board-button";
 
-/**
- * The floating bar at the top of the board while something is selected — compact, centred,
- * actions only (the caption it once carried duplicated what the selected object already
- * shows; owner cut it 2026-08-24).
- *
- * One object: the host's actions (Ask / Open), a "…" overflow with the arrange verbs a
- * long-press would otherwise carry (long-press means insert here), and Remove. Several: a
- * small count, Group/Ungroup, Remove. Buttons appear only when the host can honor them;
- * Remove always works — it removes the WINDOW(S), never the artifact (rule 2), and says so
- * with an Undo.
- */
-export function SelectionBar() {
+const TINTS = [
+  { id: "neutral", color: "white" },
+  { id: "butter", color: "yellow" },
+  { id: "sage", color: "light-green" },
+  { id: "lilac", color: "light-violet" },
+] as const;
+
+/** Selection-local actions. Nothing remains pinned after deselection or during a drag. */
+export function SelectionBar({ hidden = false }: { hidden?: boolean }) {
   const editor = useEditor();
   const host = useBoardHost();
   const toasts = useBoardToasts();
-  const contentSource = useBoardContent();
+  const content = useBoardContent();
   const folderId = useBoardFolder();
   const shapes = useValue("selected", () => editor.getSelectedShapes(), [editor]);
   const editing = useValue("editing-any", () => editor.getEditingShapeId() !== null, [editor]);
+  const idle = useValue("selection-idle", () => editor.isIn("select.idle"), [editor]);
+  const viewport = useValue("selection-viewport", () => editor.getViewportScreenBounds(), [editor]);
+  const anchor = useValue("selection-position", () => {
+    const bounds = editor.getSelectionPageBounds();
+    return bounds ? editor.pageToViewport({ x: bounds.midX, y: bounds.minY }) : null;
+  }, [editor]);
   const [moreOpen, setMoreOpen] = useState(false);
-
-  // The overflow closes with the selection and on any tap on the plane.
+  const selectionKey = shapes.map((shape) => shape.id).join(",");
+  useEffect(() => { setMoreOpen(false); }, [selectionKey, hidden]);
   useEffect(() => {
-    if (!moreOpen) return;
-    const close = (info: { name: string }) => {
-      if (info.name === "pointer_down") setMoreOpen(false);
-    };
-    editor.on("event", close);
-    return () => {
-      editor.off("event", close);
-    };
-  }, [editor, moreOpen]);
-  useEffect(() => {
-    setMoreOpen(false);
-  }, [shapes.length]);
+    const dismiss = (event: { name: string }) => { if (event.name === "pointer_down") setMoreOpen(false); };
+    editor.on("event", dismiss);
+    return () => { editor.off("event", dismiss); };
+  }, [editor]);
+  if (hidden || !idle || editing || !anchor || !shapes.length) return null;
 
-  if (shapes.length === 0 || editing) return null;
-  const ids = shapes.map((s) => s.id);
-
+  const ids = shapes.map((shape) => shape.id);
+  const shape = shapes.length === 1 ? shapes[0] : null;
+  const summary = shape ? describeShape(editor, shape) : null;
+  const editable = shape && editor.getShapeUtil(shape).canEdit(shape, { type: "unknown" });
+  const canTint = shape && (shape.type === "note" || shape.type.startsWith("aladin-"));
+  const perform = (label: string, action: () => void) => {
+    editor.markHistoryStoppingPoint(label); action(); setMoreOpen(false);
+  };
   const remove = () => {
     const mark = editor.markHistoryStoppingPoint("remove-from-board");
     editor.deleteShapes(ids);
     host.haptic?.("light");
-    toasts.show({
-      text:
-        ids.length === 1
-          ? "Removed from the board — the artifact stays in its folder"
-          : `Removed ${ids.length} objects from the board — artifacts stay in their folders`,
-      action: { label: "Undo", onPress: () => editor.bailToMark(mark) },
-    });
+    toasts.show({ text: "Removed from board", action: { label: "Undo", onPress: () => editor.bailToMark(mark) } });
   };
-
-  if (shapes.length > 1) {
-    const groups = shapes.filter((s) => s.type === "group").length;
-    return (
-      <Bar>
-        <span className="px-2 font-mono text-board-meta text-ink-3">{shapes.length} objects</span>
-        {groups > 0 ? (
-          <TextAction label="Ungroup" onClick={() => editor.ungroupShapes(ids)} />
-        ) : (
-          <TextAction label="Group" onClick={() => editor.groupShapes(ids)} />
-        )}
-        <RemoveButton onClick={remove} />
-      </Bar>
-    );
-  }
-
-  const shape = shapes[0];
-  const summary = describeShape(editor, shape);
-  const locked = editor.getShape(shape.id)?.isLocked ?? false;
-
-  return (
-    <Bar>
-      {host.onAskAbout ? (
-          <button
-            type="button"
-            onClick={() =>
-              host.onAskAbout?.({
-                artifactId: summary.artifactId ?? undefined,
-                title: summary.title,
-              })
-            }
-            className="board-tile h-11 rounded-control border border-amber-line bg-amber-soft px-3.5 text-board-row font-semibold text-amber"
-          >
-            Ask about this
-          </button>
-        ) : null}
-        {shape.type === "aladin-doc" &&
-        summary.artifactId &&
-        contentSource?.createWorksheet &&
-        host.onOpenArtifact ? (
-          <TextAction
-            label="Work this"
-            onClick={() => {
-              const cite = {
-                artifactId: summary.artifactId as string,
-                page: summary.page ?? 1,
-                title: summary.title,
-              };
-              void contentSource
-                .createWorksheet?.({
-                  folderId,
-                  title: `Worksheet — ${summary.title} · p. ${cite.page}`,
-                  cite,
-                })
-                .then((id) => {
-                  host.haptic?.("light");
-                  host.onOpenArtifact?.(id);
-                })
-                .catch(() => {
-                  toasts.show({ text: "Couldn't create the worksheet — try again" });
-                });
-            }}
-          />
-        ) : null}
-        {summary.openLabel && summary.artifactId && host.onOpenArtifact ? (
-          <TextAction
-            label={summary.openLabel}
-            onClick={() =>
-              host.onOpenArtifact?.(
-                summary.artifactId as string,
-                summary.page != null ? { page: summary.page } : undefined,
-              )
-            }
-          />
-        ) : null}
-        <button
-          type="button"
-          aria-label="More"
-          aria-expanded={moreOpen}
-          onClick={() => setMoreOpen((open) => !open)}
-          className={`board-tile grid h-11 w-11 place-items-center rounded-control ${
-            moreOpen ? "bg-sel text-ink" : "text-ink-3 hover:bg-hover hover:text-ink"
-          }`}
-        >
-          <DockIcon d={DOCK_PATHS.more} size={19} strokeWidth={2.2} />
-        </button>
-      <RemoveButton onClick={remove} />
-      {moreOpen ? (
-        <div
-          role="menu"
-          className="board-island board-island--popover absolute right-0 top-[calc(100%+10px)] flex w-60 flex-col overflow-hidden py-1"
-        >
-          <MenuRow
-            label="Duplicate"
-            onPick={() => {
-              setMoreOpen(false);
-              editor.duplicateShapes(ids, { x: 24, y: 24 });
-            }}
-          />
-          <MenuRow
-            label="Bring to front"
-            onPick={() => {
-              setMoreOpen(false);
-              editor.bringToFront(ids);
-            }}
-          />
-          <MenuRow
-            label="Send to back"
-            onPick={() => {
-              setMoreOpen(false);
-              editor.sendToBack(ids);
-            }}
-          />
-          <MenuRow
-            label={locked ? "Unlock" : "Lock in place"}
-            onPick={() => {
-              setMoreOpen(false);
-              editor.toggleLock(ids);
-            }}
-          />
-        </div>
-      ) : null}
-    </Bar>
-  );
-}
-
-function Bar({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="board-island board-edge-top pointer-events-auto absolute left-1/2 flex max-w-[calc(100vw-24px)] -translate-x-1/2 items-center gap-2 rounded-board-card p-1.5">
-      {children}
-    </div>
-  );
-}
-
-function TextAction({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="board-tile h-11 rounded-control border border-line px-3.5 text-board-row text-ink-2 hover:text-ink"
-    >
-      {label}
-    </button>
-  );
-}
-
-function RemoveButton({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      aria-label="Remove from board"
-      title="Remove from board — the artifact stays in its folder"
-      onClick={onClick}
-      className="board-tile grid h-11 w-11 place-items-center rounded-control text-ink-3 hover:bg-hover hover:text-against"
-    >
-      <DockIcon d={DOCK_PATHS.trash} size={17} strokeWidth={1.9} />
-    </button>
-  );
-}
-
-function MenuRow({ label, onPick }: { label: string; onPick: () => void }) {
-  return (
-    <button
-      type="button"
-      role="menuitem"
-      onClick={onPick}
-      className="flex h-11 w-full items-center px-4 text-left text-board-row text-ink hover:bg-hover active:bg-sel"
-    >
-      {label}
-    </button>
-  );
+  return <div className="rs-selection rs-surface board-selection" role="toolbar" aria-label="Object actions" style={{
+    left: Math.max(Math.min(190, viewport.w / 2), Math.min(viewport.w - Math.min(190, viewport.w / 2), anchor.x)),
+    top: Math.max(60, Math.min(viewport.h - 110, anchor.y - 52)),
+  }}>
+    {editable && <button className="rs-selection-edit" onClick={() => { editor.setCurrentTool("select"); editor.setEditingShape(shape.id); }}><Pencil size={15} />{shape.type === "note" ? "Edit note" : "Edit"}</button>}
+    {summary?.artifactId && host.onOpenArtifact && <button className="rs-selection-edit" onClick={() => host.onOpenArtifact?.(summary.artifactId!, summary.page != null ? { page: summary.page } : undefined)}>Open</button>}
+    {shape?.type === "aladin-link" && /^https?:\/\//i.test(shape.props.url) && <a className="rs-selection-edit" href={shape.props.url} target="_blank" rel="noopener noreferrer">Open source</a>}
+    {canTint && <>{TINTS.map((tint) => <button key={tint.id} type="button" className={"rs-tint-dot rs-tint--" + tint.id} aria-label={tint.id + " card"} aria-pressed={shape.type === "note" ? shape.props.color === tint.color : (shape.meta.boardTint ?? "neutral") === tint.id} onClick={() => perform("change card colour", () => {
+      if (shape.type === "note") editor.updateShape({ id: shape.id, type: "note", props: { color: tint.color as TLDefaultColorStyle } });
+      else editor.updateShape({ id: shape.id, type: shape.type, meta: { ...shape.meta, boardTint: tint.id } });
+    })} />)}<span className="rs-divider" /></>}
+    {shapes.length > 1 && <button className="rs-selection-edit" onClick={() => perform("group objects", () => editor.groupShapes(ids))}>Group {shapes.length}</button>}
+    {shapes.some((item) => item.type === "group") && <button className="rs-selection-edit" onClick={() => perform("ungroup objects", () => editor.ungroupShapes(ids))}>Ungroup</button>}
+    <BoardButton label="Duplicate selection" icon={Copy} onClick={() => perform("duplicate selection", () => editor.duplicateShapes(ids, { x: 24, y: 24 }))} />
+    <BoardButton label="More" icon={MoreHorizontal} aria-expanded={moreOpen} onClick={() => setMoreOpen(!moreOpen)} />
+    <BoardButton label="Remove from board" icon={Trash2} onClick={remove} />
+    {moreOpen && <div className="board-selection-menu rs-surface" role="menu">
+      {summary && host.onAskAbout && <button role="menuitem" onClick={() => { host.onAskAbout?.({ artifactId: summary.artifactId ?? undefined, title: summary.title }); setMoreOpen(false); }}>Ask about this</button>}
+      {shape?.type === "aladin-doc" && summary?.artifactId && content?.createWorksheet && host.onOpenArtifact && <button role="menuitem" onClick={() => {
+        setMoreOpen(false);
+        void content.createWorksheet?.({ folderId, title: "Worksheet — " + summary.title, cite: { artifactId: summary.artifactId!, page: summary.page ?? 1, title: summary.title } })
+          .then((id) => host.onOpenArtifact?.(id))
+          .catch(() => toasts.show({ text: "Couldn't create the worksheet — try again" }));
+      }}>Create worksheet</button>}
+      <button role="menuitem" onClick={() => perform("bring to front", () => editor.bringToFront(ids))}>Bring to front</button>
+      <button role="menuitem" onClick={() => perform("send to back", () => editor.sendToBack(ids))}>Send to back</button>
+      <button role="menuitem" onClick={() => perform("toggle lock", () => editor.toggleLock(ids))}>{shape?.isLocked ? "Unlock" : "Lock in place"}</button>
+    </div>}
+  </div>;
 }

@@ -49,6 +49,7 @@ export function DesktopBoardPane({ boardId, title }: { boardId: string; title?: 
     <BoardPane
       boardId={boardId}
       title={title}
+      chrome="plane"
       client={runtime.apiClient}
       host={host}
       sync={sync}

@@ -1,22 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DefaultColorStyle,
+  DefaultDashStyle,
+  DefaultFontStyle,
   DefaultSizeStyle,
   createShapeId,
   toRichText,
   useEditor,
   useValue,
-  type Editor,
   type TLEventInfo,
   type VecLike,
 } from "tldraw";
 
-import { TAP_SLOP_PX, boardCameraOptions, pencilCameraOptions } from "../domain/board-camera";
+import { TAP_SLOP_PX, boardCameraOptions } from "../domain/board-camera";
+import { useBoardAppearance } from "../domain/board-appearance";
 import { useBoardContent, useBoardFolder, type PickerArtifact } from "../domain/board-content";
 import { createTapTracker } from "../domain/board-gestures";
 import { useBoardHost } from "../domain/board-host";
 import { useBoardPaper } from "../domain/board-paper";
-import { addCard, addDocWindow, addExcerpt, addLink, addTask, boardArtifactIds } from "../domain/board-objects";
+import { addCard, addDocWindow, addExcerpt, addLink, addStickyNote, addTask, boardArtifactIds } from "../domain/board-objects";
 import { pastedUrl } from "../domain/board-links";
 import { resolveLinkInto } from "../domain/board-link-flow";
 import {
@@ -29,7 +31,6 @@ import type { BoardInkColor } from "../domain/board-theme";
 import { useBoardToasts } from "../domain/board-toasts";
 import {
   BOARD_WEIGHTS,
-  PENCIL_HINTS,
   boardToolFromTldraw,
   isBoardToolId,
   tldrawToolId,
@@ -42,16 +43,11 @@ import { CitePill } from "./cite-pill";
 import { BoardToastView } from "./board-toast";
 import { Dock } from "./dock";
 import { DOCK_PATHS, DockIcon } from "./dock-icons";
-import { HintPill } from "./hint-pill";
 import { InsertPopover, type InsertRow } from "./insert-popover";
 import { EmptyHint } from "./empty-hint";
 import { PickerPanel, type PickerNote } from "./picker-panel";
 import { SelectionBar } from "./selection-bar";
 import { StatusPill } from "./status-pill";
-
-const INKING_TOOLS = new Set(["draw", "highlight", "eraser"]);
-/** How long the chrome stays faded after the pen lifts. */
-const INKING_LINGER_MS = 600;
 
 /**
  * The board's floating chrome, mounted via `components.InFrontOfTheCanvas` so it lives
@@ -64,6 +60,7 @@ export function BoardChrome() {
   const host = useBoardHost();
   const toasts = useBoardToasts();
   const paper = useBoardPaper();
+  const { appearance, toggle: toggleAppearance } = useBoardAppearance();
   const toolId = useValue("toolId", () => editor.getCurrentToolId(), [editor]);
   const { tool, subTool: activeSubTool } = boardToolFromTldraw(toolId);
   const canUndo = useValue("canUndo", () => editor.getCanUndo(), [editor]);
@@ -72,8 +69,7 @@ export function BoardChrome() {
   const penMode = useValue("penMode", () => editor.getInstanceState().isPenMode, [editor]);
   const zoom = useValue("zoom", () => editor.getZoomLevel(), [editor]);
 
-  // A stray shortcut (f/n/r/h/k…) put tldraw into a tool the board does not model — snap
-  // back to select rather than show a lit Select button over a frame tool.
+  // Unsupported stock tools return to selection; every active tool has a rail control.
   useEffect(() => {
     if (!isBoardToolId(toolId)) editor.setCurrentTool("select");
   }, [toolId, editor]);
@@ -86,11 +82,10 @@ export function BoardChrome() {
   const subTool = activeSubTool ?? prefs.subTool;
 
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [pencilMenuOpen, setPencilMenuOpen] = useState(false);
   const [styleOpen, setStyleOpen] = useState(false);
-  const [zoomOpen, setZoomOpen] = useState(false);
   const [hold, setHold] = useState<{ page: VecLike; viewport: VecLike } | null>(null);
   const [holdRing, setHoldRing] = useState<VecLike | null>(null);
-  const [inking, setInking] = useState(false);
 
   // Picker data: the board's folder siblings, refreshed each time the panel (or the hold
   // popover, which shares the list) opens; a query also reaches the whole workspace.
@@ -148,18 +143,40 @@ export function BoardChrome() {
     if (!pickerOpen) setQuery("");
   }, [pickerOpen]);
 
-  // ⌘K / Ctrl+K opens the picker — the popover footer promises it, desktop expects it.
+  // Only this active editor handles shortcuts; hidden keep-alive boards never react.
   useEffect(() => {
-    const doc = editor.getContainer().ownerDocument;
+    const container = editor.getContainer();
     const onKey = (e: KeyboardEvent) => {
+      if (!editor.getInstanceState().isFocused || e.defaultPrevented) return;
+      if (e.key === "Escape") {
+        setPencilMenuOpen(false); setPickerOpen(false); setStyleOpen(false);
+        setHold(null); setHoldRing(null);
+        editor.setCurrentTool("select").selectNone(); return;
+      }
+      if ((e.target as HTMLElement).closest("input, textarea, [contenteditable='true']")) return;
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k" && !e.defaultPrevented) {
         e.preventDefault();
+        setPencilMenuOpen(false);
         setStyleOpen(false);
         setPickerOpen((open) => !open);
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault(); if (e.shiftKey) editor.redo(); else editor.undo(); return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const shortcuts: Record<string, string> = { v: "select", h: "hand", p: "draw", a: "arrow", t: "text", f: "frame" };
+      if (shortcuts[e.key.toLowerCase()]) {
+        setPencilMenuOpen(false); setPickerOpen(false); setStyleOpen(false);
+        editor.setCurrentTool(shortcuts[e.key.toLowerCase()]);
+      }
+      if (e.key.toLowerCase() === "n") addStickyNote(editor);
+      if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault(); editor.markHistoryStoppingPoint("delete selection"); editor.deleteShapes(editor.getSelectedShapeIds());
       }
     };
-    doc.addEventListener("keydown", onKey);
-    return () => doc.removeEventListener("keydown", onKey);
+    container.addEventListener("keydown", onKey);
+    return () => container.removeEventListener("keydown", onKey);
   }, [editor]);
 
   const applyInkStyles = useCallback(
@@ -170,25 +187,13 @@ export function BoardChrome() {
     [editor],
   );
 
-  // ── Rule 3: the pencil owns the camera — and gives it back ──
-  // Entering a pencil sub-tool snaps to 1:1 about the viewport center and clamps the zoom
-  // steps, so pinch is a no-op while two-finger pan keeps working. Leaving restores the
-  // zoom you came from, about wherever you are now (you may have panned while inking).
-  // Styles ride the same seam: pencil asserts the ink color/weight, arrow the link style.
+  // Tools change styles, never the plane's camera. Paper retains its host constraints.
   const inkRef = useRef({ inkColor, weight });
   inkRef.current = { inkColor, weight };
-  const prePencilZoom = useRef<number | null>(null);
-  const pagedRef = useRef(paper.paged);
-  pagedRef.current = paper.paged;
   useEffect(() => {
-    // Paper owns its own camera (fixed-width constraints in BoardCanvas); rule 3's 1:1
-    // snap is a plane behaviour — on paper the column IS the scale.
+    if (!paper.paged) editor.setCameraOptions(boardCameraOptions);
+    editor.setStyleForNextShapes(DefaultDashStyle, "solid");
     if (tool === "pencil") {
-      if (!pagedRef.current) {
-        if (prePencilZoom.current === null) prePencilZoom.current = editor.getZoomLevel();
-        setCameraZoomAboutCenter(editor, 1);
-        editor.setCameraOptions(pencilCameraOptions);
-      }
       editor.setStyleForNextShapes(DefaultColorStyle, inkRef.current.inkColor);
       editor.setStyleForNextShapes(
         DefaultSizeStyle,
@@ -196,18 +201,12 @@ export function BoardChrome() {
       );
     } else {
       setStyleOpen(false);
-      if (!pagedRef.current) {
-        editor.setCameraOptions(boardCameraOptions);
-        const back = prePencilZoom.current;
-        prePencilZoom.current = null;
-        if (back !== null && Math.abs(back - 1) > 0.001) setCameraZoomAboutCenter(editor, back);
-      }
-      if (tool === "arrow") {
-        editor.setStyleForNextShapes(DefaultColorStyle, "link");
-        editor.setStyleForNextShapes(DefaultSizeStyle, "s");
-      }
+      setPencilMenuOpen(false);
+      editor.setStyleForNextShapes(DefaultColorStyle, tool === "arrow" ? "link" : tool === "note" ? "yellow" : "black");
+      editor.setStyleForNextShapes(DefaultSizeStyle, "s");
+      editor.setStyleForNextShapes(DefaultFontStyle, tool === "note" ? "draw" : "sans");
     }
-  }, [tool, editor]);
+  }, [tool, editor, paper.paged]);
 
   // ── Finger ≠ Pencil ──
   // tldraw flips `isPenMode` on by itself at the first direct-Pencil touch and then drops
@@ -221,19 +220,16 @@ export function BoardChrome() {
     if (penMode !== wantPenMode) editor.updateInstanceState({ isPenMode: wantPenMode });
   }, [editor, penMode, wantPenMode]);
 
-  // ── Events from the plane: hold ring, hold-to-insert, dismissals, inking fade ──
-  const inkingTimer = useRef<number | null>(null);
+  // ── Events from the plane: hold ring, hold-to-insert, dismissals ──
   useEffect(() => {
     function onEvent(info: TLEventInfo) {
       if (info.name === "pointer_down") {
         if ("isPen" in info && info.isPen) setPenSeen(true);
         setHold(null);
         setPickerOpen(false);
+        setPencilMenuOpen(false);
         setStyleOpen(false);
-        setZoomOpen(false);
         const currentTool = editor.getCurrentToolId();
-        if (inkingTimer.current !== null) window.clearTimeout(inkingTimer.current);
-        setInking(INKING_TOOLS.has(currentTool) && !editor.inputs.getIsPinching());
         if (
           currentTool === "select" &&
           "target" in info &&
@@ -255,10 +251,6 @@ export function BoardChrome() {
       }
       if (info.name === "pointer_up" || info.name === "cancel" || info.name === "complete") {
         setHoldRing(null);
-        if (inkingRef.current) {
-          if (inkingTimer.current !== null) window.clearTimeout(inkingTimer.current);
-          inkingTimer.current = window.setTimeout(() => setInking(false), INKING_LINGER_MS);
-        }
         return;
       }
       if (
@@ -277,19 +269,10 @@ export function BoardChrome() {
     editor.on("event", onEvent);
     return () => {
       editor.off("event", onEvent);
-      if (inkingTimer.current !== null) window.clearTimeout(inkingTimer.current);
     };
   }, [editor]);
   const holdRingRef = useRef(holdRing);
   holdRingRef.current = holdRing;
-  const inkingRef = useRef(inking);
-  inkingRef.current = inking;
-  // A tool change mid-stroke (shortcut, dock) ends the fade; nothing else would.
-  useEffect(() => {
-    if (!INKING_TOOLS.has(toolId)) setInking(false);
-  }, [toolId]);
-  // Switching tools moves (or removes) the zoom tile — its popover must not hang mid-air.
-  useEffect(() => setZoomOpen(false), [tool]);
 
   // ── Multi-finger taps (undo / redo) and the one-finger pan in pen mode ──
   // Touch listeners on tldraw's container, parallel to its pointer handling: tldraw drops a
@@ -382,13 +365,23 @@ export function BoardChrome() {
   }, [editor, host]);
 
   const pickTool = (next: BoardTool) => {
+    setHold(null); setHoldRing(null);
+    if (next === "pencil" && tool === "pencil") {
+      setPencilMenuOpen(!pencilMenuOpen);
+      if (pencilMenuOpen) setStyleOpen(false);
+      setPickerOpen(false);
+      return;
+    }
     if (next !== tool) host.haptic?.("select");
+    setPickerOpen(false);
+    setPencilMenuOpen(next === "pencil");
     editor.setCurrentTool(tldrawToolId(next, subTool));
   };
 
   const pickSubTool = (next: PencilSubTool) => {
     if (next !== subTool) host.haptic?.("select");
     setPrefs((p) => ({ ...p, subTool: next }));
+    setPencilMenuOpen(false);
     setStyleOpen(false);
     editor.setCurrentTool(tldrawToolId("pencil", next));
   };
@@ -411,25 +404,6 @@ export function BoardChrome() {
   };
 
   const inserted = () => host.haptic?.("light");
-
-  // M5: the study loop's oral exam. The canned brief keeps the copilot inside the Tutor
-  // rules — grounded in the user's own objects, pointer over paraphrase on a miss. The
-  // desktop dock already reports this board as the current surface, so "this board" binds.
-  const quizMe = () =>
-    host.onAskAbout?.({
-      title:
-        "Quiz me on this board. One question at a time, only from my excerpts, cards and tasks, " +
-        "checked against their cited sources; when I miss, point me at the source page instead of re-explaining.",
-    });
-
-  // The moment finger≠pencil is in force, say so — a panning finger reads as broken to
-  // anyone who has not been told the rule. Paper skips the 100% line (it isn't true there).
-  const hintText =
-    wantPenMode && subTool === "pen"
-      ? "The Pencil draws — a finger pans. “Finger draws” lives in the style tile"
-      : paper.paged && subTool === "pen"
-        ? "Paper — it grows a page whenever you near the end"
-        : PENCIL_HINTS[subTool];
 
   // Select-mode "Ink": a Caveat text label, editing immediately. Real drawn ink is strokes
   // via the pencil — this is the heading/legend affordance.
@@ -607,11 +581,10 @@ export function BoardChrome() {
 
   return (
     <div
-      className={`board-chrome pointer-events-none absolute inset-0 font-display ${
-        inking ? "board-chrome--inking" : ""
-      }`}
+      onPointerDown={(event) => event.stopPropagation()}
+      className="board-chrome rs-chrome pointer-events-none absolute inset-0"
     >
-      <SelectionBar />
+      <SelectionBar hidden={pickerOpen || pencilMenuOpen || hold !== null} />
       {paper.paged ? <CitePill /> : <BackToContent />}
       {paper.paged ? null : <EmptyHint />}
       <Dock
@@ -621,9 +594,12 @@ export function BoardChrome() {
         weight={weight}
         drawWithFinger={drawWithFinger}
         insertOpen={pickerOpen}
+        pencilMenuOpen={pencilMenuOpen}
         styleOpen={styleOpen}
-        zoomPct={tool === "pencil" ? null : Math.round(zoom * 100)}
-        zoomOpen={zoomOpen}
+        zoomPct={Math.round(zoom * 100)}
+        zoomLocked={paper.paged}
+        appearance={appearance}
+        onToggleAppearance={toggleAppearance}
         canUndo={canUndo}
         canRedo={canRedo}
         onUndo={() => editor.undo()}
@@ -634,40 +610,23 @@ export function BoardChrome() {
         onPickWeight={pickWeight}
         onToggleDrawWithFinger={toggleDrawWithFinger}
         onToggleInsert={() => {
+          setHold(null); setHoldRing(null);
+          setPencilMenuOpen(false);
           setStyleOpen(false);
           setPickerOpen((open) => !open);
         }}
         onToggleStyle={() => {
           setPickerOpen(false);
-          setZoomOpen(false);
           setStyleOpen((open) => !open);
         }}
-        onToggleZoom={() => {
-          setPickerOpen(false);
-          setStyleOpen(false);
-          setZoomOpen((open) => !open);
-        }}
-        onPickZoom={(pct) => {
-          setZoomOpen(false);
-          setCameraZoomAboutCenter(editor, pct / 100);
-        }}
-        onAddInk={() => addInk()}
-        onAddTask={() => {
-          addTask(editor);
-          inserted();
-        }}
-        onAddCard={() => {
-          addCard(editor);
-          inserted();
-        }}
-        onQuizMe={host.onAskAbout ? quizMe : undefined}
+        onZoomIn={() => editor.zoomIn()}
+        onZoomOut={() => editor.zoomOut()}
+        onResetZoom={() => editor.resetZoom()}
+        onFit={() => { const bounds = editor.getCurrentPageBounds(); if (bounds) editor.zoomToBounds(bounds, { inset: 90, animation: { duration: 250 } }); }}
+        onAddNote={() => { setPickerOpen(false); setPencilMenuOpen(false); setHold(null); setHoldRing(null); addStickyNote(editor); inserted(); }}
       />
       <StatusPill />
       <BoardToastView />
-      {/* The style popover shares the hint's row above the dock and IS the pencil context
-          while it is open — the hint yields to it. (Zoom lives in the dock now; the old
-          bottom-right zoom pill is gone — pinch is the real zoom control.) */}
-      {tool === "pencil" && !styleOpen ? <HintPill text={hintText} /> : null}
       {pickerOpen ? (
         <PickerPanel
           query={query}
@@ -676,6 +635,9 @@ export function BoardChrome() {
           note={pickerNote}
           onPaste={() => void pasteAsExcerpt()}
           onClose={() => setPickerOpen(false)}
+          onAddLink={(url) => { setPickerOpen(false); const id = addLink(editor, { url }); resolveLinkInto(editor, contentSource, id, url); inserted(); }}
+          onAddTask={() => { setPickerOpen(false); addTask(editor); inserted(); }}
+          onAddCard={() => { setPickerOpen(false); addCard(editor); inserted(); }}
         />
       ) : null}
       {holdRing && !hold ? (
@@ -692,15 +654,5 @@ export function BoardChrome() {
         />
       ) : null}
     </div>
-  );
-}
-
-/** Zoom to `z` keeping whatever is at the viewport's centre there. */
-function setCameraZoomAboutCenter(editor: Editor, z: number) {
-  const { w, h } = editor.getViewportScreenBounds();
-  const center = editor.getViewportPageBounds().center;
-  editor.setCamera(
-    { x: w / (2 * z) - center.x, y: h / (2 * z) - center.y, z },
-    { animation: { duration: 150 } },
   );
 }

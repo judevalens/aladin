@@ -5,7 +5,7 @@ import type { TLIndicatorPath } from "tldraw";
 import { useBoardContent, type DocPageContent } from "../domain/board-content";
 import { DOCK_PATHS, DockIcon } from "../ui/dock-icons";
 import { DOC_WINDOW_DEFAULTS, docWindowProps, type DocWindowShape } from "./shape-types";
-import { roundedIndicator, tappable } from "./shape-shared";
+import { boardObjectClass, roundedIndicator, tappable } from "./shape-shared";
 
 const KIND_ICONS: Record<string, string> = {
   file: DOCK_PATHS.file,
@@ -34,7 +34,7 @@ export class DocWindowShapeUtil extends BaseBoxShapeUtil<DocWindowShape> {
     const source = useBoardContent();
     const { artifactId, page } = shape.props;
     const content = useSyncExternalStore<DocPageContent | null>(
-      (onChange) => (source ? source.subscribe(artifactId, page, onChange) : () => {}),
+      (onChange) => (source ? source.subscribe(artifactId, page, onChange, shape.props.artifactKind) : () => {}),
       () => (source ? source.get(artifactId, page) : null),
     );
     const pageCount =
@@ -63,62 +63,28 @@ export class DocWindowShapeUtil extends BaseBoxShapeUtil<DocWindowShape> {
       });
     };
 
+    const kind = shape.props.artifactKind;
+    const kindLabel = kind === "file" ? "Document" : kind === "app" ? "Aladin instrument" : kind === "link" ? "Saved link" : kind === "voice" ? "Voice note" : "Workspace note";
     return (
       <HTMLContainer>
-        <div className="board-object flex flex-col overflow-hidden">
-          <div className="flex items-center gap-2.5 border-b border-line-2 px-4 py-3">
-            <span className="shrink-0 text-ink-3">
-              <DockIcon d={KIND_ICONS[shape.props.artifactKind] ?? KIND_ICONS.file} size={17} strokeWidth={1.75} />
-            </span>
-            <span className="min-w-0 truncate text-board-row text-ink-2">{shape.props.title}</span>
-            <span className="ml-auto flex shrink-0 items-center gap-1.5 rounded-chip bg-amber-soft px-2 py-0.5 font-mono text-board-meta text-amber">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber" />
-              live
-            </span>
+        <article className={boardObjectClass(shape) + " rs-object board-source-object " + (kind === "file" ? "rs-object--paper" : "rs-object--document")} aria-label={kindLabel + ": " + shape.props.title}>
+          <div className="rs-object-content">
+            <div className="rs-object-meta">
+              <span className="rs-kind-icon"><DockIcon d={KIND_ICONS[kind] ?? KIND_ICONS.file} size={14} strokeWidth={1.65} /></span>
+              <span>{kindLabel}</span>
+            </div>
+            <h2>{shape.props.title || kindLabel}</h2>
+            {content?.state === "ready" ? <>
+              <div className="board-source-section">{content.sourceLine}</div>
+              <p className="board-source-excerpt">{content.excerpt}</p>
+            </> : <p>{content?.state === "missing" ? "This source is unavailable. Your board reference stays here." : "Loading source…"}</p>}
+            {pageCount > 1 && <div className="board-document-pages">
+              <button type="button" aria-label="Previous page" {...tappable(this.editor, () => setPage(page - 1))} disabled={page <= 1}><DockIcon d={DOCK_PATHS.chevronLeft} size={14} /></button>
+              <span>Page {page} / {pageCount}</span>
+              <button type="button" aria-label="Next page" {...tappable(this.editor, () => setPage(page + 1))} disabled={page >= pageCount}><DockIcon d={DOCK_PATHS.chevronRight} size={14} /></button>
+            </div>}
           </div>
-          <div className="min-h-0 flex-1 overflow-hidden px-4 py-3.5">
-            {content?.state === "ready" ? (
-              <>
-                <div className="font-mono text-board-meta uppercase tracking-wider text-ink-4">
-                  {content.sourceLine}
-                </div>
-                <p className="mt-2 font-serif text-board-row leading-[1.65] text-ink-2">
-                  {content.excerpt}
-                </p>
-              </>
-            ) : (
-              <div className="font-mono text-small text-ink-4">
-                {content?.state === "missing"
-                  ? "the artifact is gone — the window stays"
-                  : "live window — resolving…"}
-              </div>
-            )}
-          </div>
-          <div className="flex items-center gap-0.5 px-1.5 pb-1 font-mono text-board-meta text-ink-4">
-            <button
-              type="button"
-              aria-label="Previous page"
-              {...tappable(this.editor, () => setPage(page - 1))}
-              className="board-tile grid h-11 w-11 place-items-center rounded-control text-ink-3 hover:bg-hover disabled:text-ink-4"
-              disabled={page <= 1}
-            >
-              <DockIcon d={DOCK_PATHS.chevronLeft} size={15} strokeWidth={2} />
-            </button>
-            <span>
-              page {page} / {pageCount}
-            </span>
-            <button
-              type="button"
-              aria-label="Next page"
-              {...tappable(this.editor, () => setPage(page + 1))}
-              className="board-tile grid h-11 w-11 place-items-center rounded-control text-ink-3 hover:bg-hover disabled:text-ink-4"
-              disabled={page >= pageCount}
-            >
-              <DockIcon d={DOCK_PATHS.chevronRight} size={15} strokeWidth={2} />
-            </button>
-            <span className="ml-auto pr-2.5">this window's own page</span>
-          </div>
-        </div>
+        </article>
       </HTMLContainer>
     );
   }

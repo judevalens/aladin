@@ -16,9 +16,10 @@ import {
 import { useSync } from "@tldraw/sync";
 import "tldraw/tldraw.css";
 import "../board.css";
+import "./board-studio.css";
 
 import type { ApiClient } from "@/shared/api/client";
-import { buildBoardTheme } from "../domain/board-theme";
+import { buildBoardStudioTheme as buildBoardTheme, BoardAppearanceContext, useSavedBoardAppearance, useBoardAppearance, useBoardThemeSync } from "../domain/board-appearance";
 import { boardCameraOptions } from "../domain/board-camera";
 import {
   BoardContentContext,
@@ -64,8 +65,7 @@ const BOARD_SHAPES = [DocWindowShapeUtil, ExcerptShapeUtil, TaskShapeUtil, CardS
 // The sync store's schema is all-or-nothing: supply shapeUtils and you get ONLY what you
 // supply — so the defaults ride along explicitly. (<Tldraw> adds defaults by itself.)
 export const SYNC_SHAPE_UTILS = [...defaultShapeUtils, ...BOARD_SHAPES];
-// Double-tap on the plane must never spawn a text shape (rule 4: pure plane).
-const BOARD_OPTIONS = { longPressDurationMs: 400, createTextOnCanvasDoubleClick: false };
+const BOARD_OPTIONS = { longPressDurationMs: 400, createTextOnCanvasDoubleClick: true };
 const NO_HOST: BoardHost = {};
 
 /** How the pane reaches the board sync room server. Hosts build this identity-stable. */
@@ -83,9 +83,9 @@ export interface BoardUser {
 }
 
 /**
- * How much of its own frame the pane draws. `full` = header bar with the title (desktop,
- * spike). `plane` = just the plane and its floating chrome (the iPad shell's tab strip
- * already names the board).
+ * How much of its own frame the pane draws. `full` = header bar with the title (standalone
+ * spike). `plane` = just the plane and its floating chrome (the desktop workspace header
+ * and iPad shell's tab strip already name the board).
  */
 export type BoardChromeMode = "full" | "plane";
 
@@ -134,6 +134,7 @@ export function BoardPane({
 
   // Built once per mount (token values read from the live CSS vars at that moment).
   const themes = useMemo(() => ({ default: buildBoardTheme() }), []);
+  const boardAppearance = useSavedBoardAppearance();
   const content = useMemo(() => createBoardContentSource(client), [client]);
   const toasts = useMemo(createToastStore, []);
   const [folderId, setFolderId] = useState<string | null>(null);
@@ -166,14 +167,10 @@ export function BoardPane({
   const retry = useCallback(() => setEpoch((n) => n + 1), []);
 
   const frame = (status: BoardStatus, canvas: React.ReactNode) => (
-    <div className="flex h-full w-full flex-col bg-bg">
+    <BoardAppearanceContext.Provider value={boardAppearance}>
+    <div className="research-studio research-studio--embedded flex h-full w-full flex-col" data-appearance={boardAppearance.appearance}>
       {chrome === "full" ? (
-        <div className="flex h-9 shrink-0 items-center gap-3 border-b border-line bg-panel px-3">
-          <div className="min-w-0 flex-1 truncate font-display text-body font-medium text-ink">
-            {title || "Board"}
-          </div>
-          <div className="font-mono text-meta uppercase text-ink-4">{headerLabel(status)}</div>
-        </div>
+        <div className="board-standalone-title">{title || "Board"}</div>
       ) : null}
       <div className="relative min-h-0 flex-1">
         <BoardHostContext.Provider value={host}>
@@ -189,6 +186,7 @@ export function BoardPane({
         </BoardHostContext.Provider>
       </div>
     </div>
+    </BoardAppearanceContext.Provider>
   );
 
   if (sync) {
@@ -306,10 +304,13 @@ function BoardCanvas({
   zoomToFitOnMount?: boolean;
 }) {
   const [editor, setEditor] = useState<Editor | null>(null);
+  const { appearance } = useBoardAppearance();
   const host = useBoardHost();
   const toasts = useBoardToasts();
   const paper = useBoardPaper();
   const content = useBoardContent();
+
+  useBoardThemeSync(editor, appearance);
 
   // Paper: the camera follows the ink — bounds cover the pages (content + one blank),
   // recomputed as the extent grows. Signal-driven (useValue), not store.listen: the
@@ -409,7 +410,6 @@ function BoardCanvas({
     <Tldraw
       hideUi
       themes={themes}
-      colorScheme="dark"
       components={BOARD_COMPONENTS}
       tools={BOARD_TOOLS}
       shapeUtils={BOARD_SHAPES}
@@ -419,20 +419,6 @@ function BoardCanvas({
       onMount={handleMount}
     />
   );
-}
-
-function headerLabel(status: BoardStatus): string {
-  if (status.mode === "local") return "Local";
-  switch (status.state) {
-    case "loading":
-      return "Joining";
-    case "online":
-      return "Live";
-    case "offline":
-      return "Offline";
-    case "error":
-      return "Not connected";
-  }
 }
 
 /** Maps tldraw's terminal close reasons to something a person can act on. */

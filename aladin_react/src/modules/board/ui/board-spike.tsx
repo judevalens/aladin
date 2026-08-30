@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 
 import { ApiError, type ApiClient } from "@/shared/api/client";
 import type { UserArtifact } from "@/shared/api/models";
@@ -180,18 +180,6 @@ function createSpikeApiClient(): ApiClient {
 
 export function BoardSpike() {
   const client = useMemo(createSpikeApiClient, []);
-
-
-  // The spike renders outside the auth shell, which is what normally stamps the theme.
-  useEffect(() => {
-    const html = document.documentElement;
-    const previous = html.dataset.theme;
-    html.dataset.theme = "dark";
-    return () => {
-      if (previous) html.dataset.theme = previous;
-      else delete html.dataset.theme;
-    };
-  }, []);
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-bg">

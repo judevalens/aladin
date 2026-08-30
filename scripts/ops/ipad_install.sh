@@ -95,6 +95,20 @@ echo ">> device   $UDID"
 echo ">> app      $APP_NAME ($BUNDLE_ID)"
 echo ">> stack    $MODE — api http://$HOST:$API_PORT · collab ws://$HOST:$COLLAB_PORT"
 
+# A device build cannot be installed without an Apple Development certificate.
+# Fail before the Kotlin/Xcode build so a missing Xcode login is immediately clear.
+if ! security find-identity -v -p codesigning 2>/dev/null | grep -Eq '[1-9][0-9]* valid identities found'; then
+  cat >&2 <<'EOF'
+error: no valid Apple Development signing identity is available on this Mac.
+
+Open Xcode > Settings > Accounts, sign in with the Apple ID for team DZM6752AZ4,
+then use Manage Certificates to create or download an Apple Development
+certificate. Re-run this command afterward; Xcode will create/download the
+device provisioning profile automatically.
+EOF
+  exit 1
+fi
+
 # --- build (generic destination: the device need only be present for the install) -----
 xcodebuild build \
   -project "$PROJECT" \

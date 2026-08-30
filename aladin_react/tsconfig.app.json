@@ -22,7 +22,10 @@
     // Cross-package tests (they import the room server out of services/blocknote and use
     // node builtins) — type-safety comes from running them; vitest executes, tsc skips.
     "src/test/board-sync-e2e.test.ts",
-    "src/test/board-schema-drift.test.ts"
+    "src/test/board-schema-drift.test.ts",
+    "src/test/local-frontend-storage.test.ts",
+    // Packaged-app Playwright checks run in Node and are checked by tsconfig.node.json.
+    "src/test/e2e/local-frontend.spec.ts"
   ],
   "include": ["src"],
 }

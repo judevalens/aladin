@@ -3,7 +3,7 @@ import type { TLIndicatorPath } from "tldraw";
 
 import { DOCK_PATHS, DockIcon } from "../ui/dock-icons";
 import { TASK_DEFAULTS, taskProps, type TaskShape } from "./shape-types";
-import { ShapeTextArea, roundedIndicator, tappable } from "./shape-shared";
+import { ShapeTextArea, boardObjectClass, roundedIndicator, tappable } from "./shape-shared";
 
 /** Task: 30px checkbox + Caveat line. The checkbox is always tappable; double-tap edits. */
 export class TaskShapeUtil extends BaseBoxShapeUtil<TaskShape> {
@@ -32,7 +32,7 @@ export class TaskShapeUtil extends BaseBoxShapeUtil<TaskShape> {
 
     return (
       <HTMLContainer>
-        <div className="board-object flex items-start gap-3.5 px-4.5 py-4">
+        <div className={boardObjectClass(shape) + " flex items-start gap-3.5 px-4.5 py-4"}>
           {/* 44pt hit box around the 30px mark — a finger's target, the design's size. */}
           <span
             role="checkbox"

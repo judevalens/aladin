@@ -1,4 +1,4 @@
-import { Box, createShapeId } from "tldraw";
+import { Box, createShapeId, toRichText } from "tldraw";
 import type { Editor, TLShapeId, VecLike } from "tldraw";
 
 import {
@@ -111,6 +111,18 @@ export function addLink(editor: Editor, opts: { url: string; at?: VecLike }): TL
 export function addTask(editor: Editor, at?: VecLike): TLShapeId {
   const id = insert(editor, "aladin-task", at, { ...TASK_DEFAULTS });
   editor.setEditingShape(id);
+  return id;
+}
+
+/** Uses the native, already-synced note schema: no migration or demo records. */
+export function addStickyNote(editor: Editor, at?: VecLike): TLShapeId {
+  const id = createShapeId();
+  const point = at ?? freePoint(editor, 200, 200);
+  editor.markHistoryStoppingPoint("add sticky note");
+  editor.createShape({ id, type: "note", x: point.x, y: point.y, props: {
+    color: "yellow", font: "draw", size: "m", richText: toRichText("New thought"),
+  } });
+  editor.setCurrentTool("select").select(id);
   return id;
 }
 
