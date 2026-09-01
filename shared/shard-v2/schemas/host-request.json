@@ -1,0 +1,686 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "target": {
+      "type": "object",
+      "properties": {
+        "shardId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "environment": {
+          "enum": [
+            "draft",
+            "published"
+          ]
+        },
+        "contractHash": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "shardId",
+        "environment",
+        "contractHash"
+      ],
+      "additionalProperties": false
+    },
+    "request": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "aladin": {
+              "const": "bridge/2"
+            },
+            "type": {
+              "const": "request"
+            },
+            "id": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "method": {
+              "const": "hello"
+            },
+            "params": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "aladin",
+            "type",
+            "id",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "aladin": {
+              "const": "bridge/2"
+            },
+            "type": {
+              "const": "request"
+            },
+            "id": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "method": {
+              "const": "theme.get"
+            },
+            "params": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "aladin",
+            "type",
+            "id",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "aladin": {
+              "const": "bridge/2"
+            },
+            "type": {
+              "const": "request"
+            },
+            "id": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "method": {
+              "const": "resource.describe"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "binding": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+                },
+                "inputs": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "binding"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "aladin",
+            "type",
+            "id",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "aladin": {
+              "const": "bridge/2"
+            },
+            "type": {
+              "const": "request"
+            },
+            "id": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "method": {
+              "const": "resource.read"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "binding": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+                },
+                "inputs": {
+                  "type": "object"
+                },
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              },
+              "required": [
+                "binding"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "aladin",
+            "type",
+            "id",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "aladin": {
+              "const": "bridge/2"
+            },
+            "type": {
+              "const": "request"
+            },
+            "id": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "method": {
+              "const": "resource.query"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "binding": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+                },
+                "inputs": {
+                  "type": "object"
+                },
+                "query": {
+                  "type": "object",
+                  "properties": {
+                    "where": {
+                      "$ref": "#/$defs/predicate"
+                    },
+                    "orderBy": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string",
+                            "pattern": "^(?:/(?:[^~/]|~[01])*)+$",
+                            "maxLength": 1024
+                          },
+                          "direction": {
+                            "enum": [
+                              "asc",
+                              "desc"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "field",
+                          "direction"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 32
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 500
+                    },
+                    "cursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 4096
+                    }
+                  },
+                  "required": [],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "binding",
+                "query"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "aladin",
+            "type",
+            "id",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "aladin": {
+              "const": "bridge/2"
+            },
+            "type": {
+              "const": "request"
+            },
+            "id": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "method": {
+              "const": "resource.subscribe"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "binding": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+                },
+                "inputs": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "binding"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "aladin",
+            "type",
+            "id",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "aladin": {
+              "const": "bridge/2"
+            },
+            "type": {
+              "const": "request"
+            },
+            "id": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "method": {
+              "const": "resource.unsubscribe"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "subscriptionId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              },
+              "required": [
+                "subscriptionId"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "aladin",
+            "type",
+            "id",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "aladin": {
+              "const": "bridge/2"
+            },
+            "type": {
+              "const": "request"
+            },
+            "id": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "method": {
+              "const": "resource.insert"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "binding": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+                },
+                "inputs": {
+                  "type": "object"
+                },
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "requestId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "data": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "binding",
+                "requestId",
+                "data"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "aladin",
+            "type",
+            "id",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "aladin": {
+              "const": "bridge/2"
+            },
+            "type": {
+              "const": "request"
+            },
+            "id": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "method": {
+              "const": "resource.update"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "binding": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+                },
+                "inputs": {
+                  "type": "object"
+                },
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "requestId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "data": {
+                  "type": "object"
+                },
+                "baseRevision": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              },
+              "required": [
+                "binding",
+                "requestId",
+                "data",
+                "id",
+                "baseRevision"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "aladin",
+            "type",
+            "id",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "aladin": {
+              "const": "bridge/2"
+            },
+            "type": {
+              "const": "request"
+            },
+            "id": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "method": {
+              "const": "resource.delete"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "binding": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+                },
+                "inputs": {
+                  "type": "object"
+                },
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "requestId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "baseRevision": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              },
+              "required": [
+                "binding",
+                "requestId",
+                "id",
+                "baseRevision"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "aladin",
+            "type",
+            "id",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "required": [
+    "target",
+    "request"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "predicate": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "and": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/predicate"
+              },
+              "minItems": 1,
+              "maxItems": 32
+            }
+          },
+          "required": [
+            "and"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "or": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/predicate"
+              },
+              "minItems": 1,
+              "maxItems": 32
+            }
+          },
+          "required": [
+            "or"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "field": {
+              "type": "string",
+              "pattern": "^(?:/(?:[^~/]|~[01])*)+$",
+              "maxLength": 1024
+            },
+            "op": {
+              "enum": [
+                "eq",
+                "gt",
+                "gte",
+                "lt",
+                "lte"
+              ]
+            },
+            "value": {
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field",
+            "op",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "field": {
+              "type": "string",
+              "pattern": "^(?:/(?:[^~/]|~[01])*)+$",
+              "maxLength": 1024
+            },
+            "op": {
+              "const": "in"
+            },
+            "value": {
+              "type": "array",
+              "items": {
+                "type": [
+                  "string",
+                  "number",
+                  "boolean",
+                  "null"
+                ]
+              },
+              "minItems": 1,
+              "maxItems": 100
+            }
+          },
+          "required": [
+            "field",
+            "op",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "field": {
+              "type": "string",
+              "pattern": "^(?:/(?:[^~/]|~[01])*)+$",
+              "maxLength": 1024
+            },
+            "op": {
+              "const": "exists"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "field",
+            "op",
+            "value"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}

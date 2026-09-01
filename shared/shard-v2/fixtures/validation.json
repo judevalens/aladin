@@ -1,0 +1,4541 @@
+{
+  "providers": {
+    "shard.documents": {
+      "version": 1,
+      "operations": [
+        "snapshot",
+        "query",
+        "insert",
+        "update",
+        "delete"
+      ],
+      "observation": "refresh-snapshots",
+      "owned": true,
+      "paramsSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    "workspace.nodes": {
+      "version": 1,
+      "operations": [
+        "snapshot"
+      ],
+      "observation": "refresh-snapshots",
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "test.records": {
+      "version": 1,
+      "operations": [
+        "snapshot",
+        "query",
+        "insert",
+        "update",
+        "delete"
+      ],
+      "observation": "ordered-changes",
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "account": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "cases": [
+    {
+      "name": "owned collection",
+      "kind": "contract",
+      "valid": true,
+      "value": {
+        "version": 2,
+        "intent": "Fixture app",
+        "resources": {
+          "items": {
+            "uri": "shard://self/resources/items",
+            "kind": "collection",
+            "meaning": "Example records",
+            "schemaVersion": 1,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "profile": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "secret": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "title"
+              ],
+              "additionalProperties": false
+            },
+            "source": {
+              "provider": "shard.documents",
+              "dataset": "items"
+            },
+            "operations": [
+              "snapshot",
+              "query",
+              "insert",
+              "update",
+              "delete"
+            ],
+            "observe": {
+              "mode": "changes",
+              "protocol": "shard-data/1"
+            },
+            "exposure": {
+              "app": [
+                "snapshot",
+                "query",
+                "insert",
+                "update",
+                "delete",
+                "observe"
+              ],
+              "agent": [
+                "snapshot",
+                "query"
+              ]
+            },
+            "query": {
+              "filterFields": [
+                "/title",
+                "/value"
+              ],
+              "sortFields": [
+                "/title",
+                "/value"
+              ],
+              "maxLimit": 500
+            }
+          }
+        },
+        "bindings": {
+          "itemsView": {
+            "resource": "items",
+            "query": {
+              "limit": 100
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "unknown operation",
+      "kind": "contract",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "intent": "Fixture app",
+        "resources": {
+          "items": {
+            "uri": "shard://self/resources/items",
+            "kind": "collection",
+            "meaning": "Example records",
+            "schemaVersion": 1,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "profile": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "secret": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "title"
+              ],
+              "additionalProperties": false
+            },
+            "source": {
+              "provider": "shard.documents",
+              "dataset": "items"
+            },
+            "operations": [
+              "snapshot",
+              "query",
+              "insert",
+              "update",
+              "delete",
+              "patch"
+            ],
+            "observe": {
+              "mode": "changes",
+              "protocol": "shard-data/1"
+            },
+            "exposure": {
+              "app": [
+                "snapshot",
+                "query",
+                "insert",
+                "update",
+                "delete",
+                "observe"
+              ],
+              "agent": [
+                "snapshot",
+                "query"
+              ]
+            },
+            "query": {
+              "filterFields": [
+                "/title",
+                "/value"
+              ],
+              "sortFields": [
+                "/title",
+                "/value"
+              ],
+              "maxLimit": 500
+            }
+          }
+        },
+        "bindings": {
+          "itemsView": {
+            "resource": "items",
+            "query": {
+              "limit": 100
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "forged authority",
+      "kind": "contract",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "intent": "Fixture app",
+        "resources": {
+          "items": {
+            "uri": "shard://someone-else/resources/items",
+            "kind": "collection",
+            "meaning": "Example records",
+            "schemaVersion": 1,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "profile": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "secret": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "title"
+              ],
+              "additionalProperties": false
+            },
+            "source": {
+              "provider": "shard.documents",
+              "dataset": "items"
+            },
+            "operations": [
+              "snapshot",
+              "query",
+              "insert",
+              "update",
+              "delete"
+            ],
+            "observe": {
+              "mode": "changes",
+              "protocol": "shard-data/1"
+            },
+            "exposure": {
+              "app": [
+                "snapshot",
+                "query",
+                "insert",
+                "update",
+                "delete",
+                "observe"
+              ],
+              "agent": [
+                "snapshot",
+                "query"
+              ]
+            },
+            "query": {
+              "filterFields": [
+                "/title",
+                "/value"
+              ],
+              "sortFields": [
+                "/title",
+                "/value"
+              ],
+              "maxLimit": 500
+            }
+          }
+        },
+        "bindings": {
+          "itemsView": {
+            "resource": "items",
+            "query": {
+              "limit": 100
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "resource uri mismatch",
+      "kind": "contract",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "intent": "Fixture app",
+        "resources": {
+          "items": {
+            "uri": "shard://self/resources/other",
+            "kind": "collection",
+            "meaning": "Example records",
+            "schemaVersion": 1,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "profile": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "secret": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "title"
+              ],
+              "additionalProperties": false
+            },
+            "source": {
+              "provider": "shard.documents",
+              "dataset": "items"
+            },
+            "operations": [
+              "snapshot",
+              "query",
+              "insert",
+              "update",
+              "delete"
+            ],
+            "observe": {
+              "mode": "changes",
+              "protocol": "shard-data/1"
+            },
+            "exposure": {
+              "app": [
+                "snapshot",
+                "query",
+                "insert",
+                "update",
+                "delete",
+                "observe"
+              ],
+              "agent": [
+                "snapshot",
+                "query"
+              ]
+            },
+            "query": {
+              "filterFields": [
+                "/title",
+                "/value"
+              ],
+              "sortFields": [
+                "/title",
+                "/value"
+              ],
+              "maxLimit": 500
+            }
+          }
+        },
+        "bindings": {
+          "itemsView": {
+            "resource": "items",
+            "query": {
+              "limit": 100
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "unsafe schema number",
+      "kind": "contract",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "intent": "Fixture app",
+        "resources": {
+          "items": {
+            "uri": "shard://self/resources/items",
+            "kind": "collection",
+            "meaning": "Example records",
+            "schemaVersion": 1,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "maximum": 9007199254740992
+                },
+                "profile": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "secret": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "title"
+              ],
+              "additionalProperties": false
+            },
+            "source": {
+              "provider": "shard.documents",
+              "dataset": "items"
+            },
+            "operations": [
+              "snapshot",
+              "query",
+              "insert",
+              "update",
+              "delete"
+            ],
+            "observe": {
+              "mode": "changes",
+              "protocol": "shard-data/1"
+            },
+            "exposure": {
+              "app": [
+                "snapshot",
+                "query",
+                "insert",
+                "update",
+                "delete",
+                "observe"
+              ],
+              "agent": [
+                "snapshot",
+                "query"
+              ]
+            },
+            "query": {
+              "filterFields": [
+                "/title",
+                "/value"
+              ],
+              "sortFields": [
+                "/title",
+                "/value"
+              ],
+              "maxLimit": 500
+            }
+          }
+        },
+        "bindings": {
+          "itemsView": {
+            "resource": "items",
+            "query": {
+              "limit": 100
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "unknown source",
+      "kind": "contract",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "intent": "Fixture app",
+        "resources": {
+          "items": {
+            "uri": "shard://self/resources/items",
+            "kind": "collection",
+            "meaning": "Example records",
+            "schemaVersion": 1,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "profile": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "secret": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "title"
+              ],
+              "additionalProperties": false
+            },
+            "source": {
+              "provider": "arbitrary.url",
+              "dataset": "items"
+            },
+            "operations": [
+              "snapshot",
+              "query",
+              "insert",
+              "update",
+              "delete"
+            ],
+            "observe": {
+              "mode": "changes",
+              "protocol": "shard-data/1"
+            },
+            "exposure": {
+              "app": [
+                "snapshot",
+                "query",
+                "insert",
+                "update",
+                "delete",
+                "observe"
+              ],
+              "agent": [
+                "snapshot",
+                "query"
+              ]
+            },
+            "query": {
+              "filterFields": [
+                "/title",
+                "/value"
+              ],
+              "sortFields": [
+                "/title",
+                "/value"
+              ],
+              "maxLimit": 500
+            }
+          }
+        },
+        "bindings": {
+          "itemsView": {
+            "resource": "items",
+            "query": {
+              "limit": 100
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "no owned dataset",
+      "kind": "contract",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "intent": "Fixture app",
+        "resources": {
+          "items": {
+            "uri": "shard://self/resources/items",
+            "kind": "collection",
+            "meaning": "Example records",
+            "schemaVersion": 1,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "profile": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "secret": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "title"
+              ],
+              "additionalProperties": false
+            },
+            "source": {
+              "provider": "shard.documents"
+            },
+            "operations": [
+              "snapshot",
+              "query",
+              "insert",
+              "update",
+              "delete"
+            ],
+            "observe": {
+              "mode": "changes",
+              "protocol": "shard-data/1"
+            },
+            "exposure": {
+              "app": [
+                "snapshot",
+                "query",
+                "insert",
+                "update",
+                "delete",
+                "observe"
+              ],
+              "agent": [
+                "snapshot",
+                "query"
+              ]
+            },
+            "query": {
+              "filterFields": [
+                "/title",
+                "/value"
+              ],
+              "sortFields": [
+                "/title",
+                "/value"
+              ],
+              "maxLimit": 500
+            }
+          }
+        },
+        "bindings": {
+          "itemsView": {
+            "resource": "items",
+            "query": {
+              "limit": 100
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "unknown bound resource",
+      "kind": "contract",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "intent": "Fixture app",
+        "resources": {
+          "items": {
+            "uri": "shard://self/resources/items",
+            "kind": "collection",
+            "meaning": "Example records",
+            "schemaVersion": 1,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "profile": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "secret": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "title"
+              ],
+              "additionalProperties": false
+            },
+            "source": {
+              "provider": "shard.documents",
+              "dataset": "items"
+            },
+            "operations": [
+              "snapshot",
+              "query",
+              "insert",
+              "update",
+              "delete"
+            ],
+            "observe": {
+              "mode": "changes",
+              "protocol": "shard-data/1"
+            },
+            "exposure": {
+              "app": [
+                "snapshot",
+                "query",
+                "insert",
+                "update",
+                "delete",
+                "observe"
+              ],
+              "agent": [
+                "snapshot",
+                "query"
+              ]
+            },
+            "query": {
+              "filterFields": [
+                "/title",
+                "/value"
+              ],
+              "sortFields": [
+                "/title",
+                "/value"
+              ],
+              "maxLimit": 500
+            }
+          }
+        },
+        "bindings": {
+          "itemsView": {
+            "resource": "missing",
+            "query": {
+              "limit": 100
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "unknown projected field",
+      "kind": "contract",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "intent": "Fixture app",
+        "resources": {
+          "items": {
+            "uri": "shard://self/resources/items",
+            "kind": "collection",
+            "meaning": "Example records",
+            "schemaVersion": 1,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "profile": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "secret": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "title"
+              ],
+              "additionalProperties": false
+            },
+            "source": {
+              "provider": "shard.documents",
+              "dataset": "items"
+            },
+            "operations": [
+              "snapshot",
+              "query",
+              "insert",
+              "update",
+              "delete"
+            ],
+            "observe": {
+              "mode": "changes",
+              "protocol": "shard-data/1"
+            },
+            "exposure": {
+              "app": [
+                "snapshot",
+                "query",
+                "insert",
+                "update",
+                "delete",
+                "observe"
+              ],
+              "agent": [
+                "snapshot",
+                "query"
+              ]
+            },
+            "query": {
+              "filterFields": [
+                "/title",
+                "/value"
+              ],
+              "sortFields": [
+                "/title",
+                "/value"
+              ],
+              "maxLimit": 500
+            }
+          }
+        },
+        "bindings": {
+          "itemsView": {
+            "resource": "items",
+            "query": {
+              "limit": 100
+            },
+            "select": [
+              "/secret"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "overlapping projection",
+      "kind": "contract",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "intent": "Fixture app",
+        "resources": {
+          "items": {
+            "uri": "shard://self/resources/items",
+            "kind": "collection",
+            "meaning": "Example records",
+            "schemaVersion": 1,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "profile": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "secret": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "title"
+              ],
+              "additionalProperties": false
+            },
+            "source": {
+              "provider": "shard.documents",
+              "dataset": "items"
+            },
+            "operations": [
+              "snapshot",
+              "query",
+              "insert",
+              "update",
+              "delete"
+            ],
+            "observe": {
+              "mode": "changes",
+              "protocol": "shard-data/1"
+            },
+            "exposure": {
+              "app": [
+                "snapshot",
+                "query",
+                "insert",
+                "update",
+                "delete",
+                "observe"
+              ],
+              "agent": [
+                "snapshot",
+                "query"
+              ]
+            },
+            "query": {
+              "filterFields": [
+                "/title",
+                "/value"
+              ],
+              "sortFields": [
+                "/title",
+                "/value"
+              ],
+              "maxLimit": 500
+            }
+          }
+        },
+        "bindings": {
+          "itemsView": {
+            "resource": "items",
+            "query": {
+              "limit": 100
+            },
+            "select": [
+              "/profile",
+              "/profile/name"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "unknown input",
+      "kind": "contract",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "intent": "Fixture app",
+        "resources": {
+          "items": {
+            "uri": "shard://self/resources/items",
+            "kind": "collection",
+            "meaning": "Example records",
+            "schemaVersion": 1,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "profile": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "secret": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "title"
+              ],
+              "additionalProperties": false
+            },
+            "source": {
+              "provider": "shard.documents",
+              "dataset": "items"
+            },
+            "operations": [
+              "snapshot",
+              "query",
+              "insert",
+              "update",
+              "delete"
+            ],
+            "observe": {
+              "mode": "changes",
+              "protocol": "shard-data/1"
+            },
+            "exposure": {
+              "app": [
+                "snapshot",
+                "query",
+                "insert",
+                "update",
+                "delete",
+                "observe"
+              ],
+              "agent": [
+                "snapshot",
+                "query"
+              ]
+            },
+            "query": {
+              "filterFields": [
+                "/title",
+                "/value"
+              ],
+              "sortFields": [
+                "/title",
+                "/value"
+              ],
+              "maxLimit": 500
+            }
+          }
+        },
+        "bindings": {
+          "itemsView": {
+            "resource": "items",
+            "query": {
+              "limit": 100
+            },
+            "params": {
+              "account": {
+                "input": "account"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "collection dependency",
+      "kind": "contract",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "intent": "Fixture app",
+        "resources": {
+          "items": {
+            "uri": "shard://self/resources/items",
+            "kind": "collection",
+            "meaning": "Example records",
+            "schemaVersion": 1,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "profile": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "secret": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "title"
+              ],
+              "additionalProperties": false
+            },
+            "source": {
+              "provider": "shard.documents",
+              "dataset": "items"
+            },
+            "operations": [
+              "snapshot",
+              "query",
+              "insert",
+              "update",
+              "delete"
+            ],
+            "observe": {
+              "mode": "changes",
+              "protocol": "shard-data/1"
+            },
+            "exposure": {
+              "app": [
+                "snapshot",
+                "query",
+                "insert",
+                "update",
+                "delete",
+                "observe"
+              ],
+              "agent": [
+                "snapshot",
+                "query"
+              ]
+            },
+            "query": {
+              "filterFields": [
+                "/title",
+                "/value"
+              ],
+              "sortFields": [
+                "/title",
+                "/value"
+              ],
+              "maxLimit": 500
+            }
+          }
+        },
+        "bindings": {
+          "itemsView": {
+            "resource": "items",
+            "query": {
+              "limit": 100
+            },
+            "params": {
+              "account": {
+                "binding": "itemsView",
+                "pointer": "/data/title"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "unsupported query field",
+      "kind": "contract",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "intent": "Fixture app",
+        "resources": {
+          "items": {
+            "uri": "shard://self/resources/items",
+            "kind": "collection",
+            "meaning": "Example records",
+            "schemaVersion": 1,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "profile": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "secret": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "title"
+              ],
+              "additionalProperties": false
+            },
+            "source": {
+              "provider": "shard.documents",
+              "dataset": "items"
+            },
+            "operations": [
+              "snapshot",
+              "query",
+              "insert",
+              "update",
+              "delete"
+            ],
+            "observe": {
+              "mode": "changes",
+              "protocol": "shard-data/1"
+            },
+            "exposure": {
+              "app": [
+                "snapshot",
+                "query",
+                "insert",
+                "update",
+                "delete",
+                "observe"
+              ],
+              "agent": [
+                "snapshot",
+                "query"
+              ]
+            },
+            "query": {
+              "filterFields": [
+                "/profile"
+              ],
+              "sortFields": [
+                "/title",
+                "/value"
+              ],
+              "maxLimit": 500
+            }
+          }
+        },
+        "bindings": {
+          "itemsView": {
+            "resource": "items",
+            "query": {
+              "limit": 100
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "host authority in source",
+      "kind": "contract",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "intent": "Fixture app",
+        "resources": {
+          "items": {
+            "uri": "shard://self/resources/items",
+            "kind": "collection",
+            "meaning": "Example records",
+            "schemaVersion": 1,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "profile": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "secret": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "title"
+              ],
+              "additionalProperties": false
+            },
+            "source": {
+              "provider": "shard.documents",
+              "dataset": "items",
+              "tenantId": "other"
+            },
+            "operations": [
+              "snapshot",
+              "query",
+              "insert",
+              "update",
+              "delete"
+            ],
+            "observe": {
+              "mode": "changes",
+              "protocol": "shard-data/1"
+            },
+            "exposure": {
+              "app": [
+                "snapshot",
+                "query",
+                "insert",
+                "update",
+                "delete",
+                "observe"
+              ],
+              "agent": [
+                "snapshot",
+                "query"
+              ]
+            },
+            "query": {
+              "filterFields": [
+                "/title",
+                "/value"
+              ],
+              "sortFields": [
+                "/title",
+                "/value"
+              ],
+              "maxLimit": 500
+            }
+          }
+        },
+        "bindings": {
+          "itemsView": {
+            "resource": "items",
+            "query": {
+              "limit": 100
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "nested projection",
+      "kind": "contract",
+      "valid": true,
+      "value": {
+        "version": 2,
+        "intent": "Fixture app",
+        "resources": {
+          "items": {
+            "uri": "shard://self/resources/items",
+            "kind": "collection",
+            "meaning": "Example records",
+            "schemaVersion": 1,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "profile": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "secret": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "title"
+              ],
+              "additionalProperties": false
+            },
+            "source": {
+              "provider": "shard.documents",
+              "dataset": "items"
+            },
+            "operations": [
+              "snapshot",
+              "query",
+              "insert",
+              "update",
+              "delete"
+            ],
+            "observe": {
+              "mode": "changes",
+              "protocol": "shard-data/1"
+            },
+            "exposure": {
+              "app": [
+                "snapshot",
+                "query",
+                "insert",
+                "update",
+                "delete",
+                "observe"
+              ],
+              "agent": [
+                "snapshot",
+                "query"
+              ]
+            },
+            "query": {
+              "filterFields": [
+                "/title",
+                "/value"
+              ],
+              "sortFields": [
+                "/title",
+                "/value"
+              ],
+              "maxLimit": 500
+            }
+          }
+        },
+        "bindings": {
+          "itemsView": {
+            "resource": "items",
+            "query": {
+              "limit": 100
+            },
+            "select": [
+              "/title",
+              "/profile/name"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "omitted exposure grants nothing",
+      "kind": "contract",
+      "valid": true,
+      "value": {
+        "version": 2,
+        "intent": "Fixture app",
+        "resources": {
+          "items": {
+            "uri": "shard://self/resources/items",
+            "kind": "collection",
+            "meaning": "Example records",
+            "schemaVersion": 1,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "profile": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "secret": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "title"
+              ],
+              "additionalProperties": false
+            },
+            "source": {
+              "provider": "shard.documents",
+              "dataset": "items"
+            },
+            "operations": [
+              "snapshot",
+              "query",
+              "insert",
+              "update",
+              "delete"
+            ],
+            "observe": {
+              "mode": "changes",
+              "protocol": "shard-data/1"
+            },
+            "exposure": {},
+            "query": {
+              "filterFields": [
+                "/title",
+                "/value"
+              ],
+              "sortFields": [
+                "/title",
+                "/value"
+              ],
+              "maxLimit": 500
+            }
+          }
+        },
+        "bindings": {
+          "itemsView": {
+            "resource": "items",
+            "query": {
+              "limit": 100
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "binding cycle",
+      "kind": "contract",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "intent": "Fixture app",
+        "resources": {
+          "items": {
+            "uri": "shard://self/resources/items",
+            "kind": "singleton",
+            "meaning": "Example records",
+            "schemaVersion": 1,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "profile": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "secret": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "title"
+              ],
+              "additionalProperties": false
+            },
+            "source": {
+              "provider": "test.records"
+            },
+            "operations": [
+              "snapshot",
+              "query",
+              "insert",
+              "update",
+              "delete"
+            ],
+            "observe": {
+              "mode": "changes",
+              "protocol": "shard-data/1"
+            },
+            "exposure": {
+              "app": [
+                "snapshot",
+                "query",
+                "insert",
+                "update",
+                "delete",
+                "observe"
+              ],
+              "agent": [
+                "snapshot",
+                "query"
+              ]
+            },
+            "query": {
+              "filterFields": [
+                "/title",
+                "/value"
+              ],
+              "sortFields": [
+                "/title",
+                "/value"
+              ],
+              "maxLimit": 500
+            }
+          }
+        },
+        "bindings": {
+          "itemsView": {
+            "resource": "items",
+            "query": {
+              "limit": 100
+            },
+            "params": {
+              "account": {
+                "binding": "itemsView",
+                "pointer": "/data/title"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "singleton dependency",
+      "kind": "contract",
+      "valid": true,
+      "value": {
+        "version": 2,
+        "intent": "Fixture app",
+        "resources": {
+          "items": {
+            "uri": "shard://self/resources/items",
+            "kind": "collection",
+            "meaning": "Example records",
+            "schemaVersion": 1,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "profile": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "secret": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "title"
+              ],
+              "additionalProperties": false
+            },
+            "source": {
+              "provider": "test.records"
+            },
+            "operations": [
+              "snapshot",
+              "query",
+              "insert",
+              "update",
+              "delete"
+            ],
+            "observe": {
+              "mode": "changes",
+              "protocol": "shard-data/1"
+            },
+            "exposure": {
+              "app": [
+                "snapshot",
+                "query",
+                "insert",
+                "update",
+                "delete",
+                "observe"
+              ],
+              "agent": [
+                "snapshot",
+                "query"
+              ]
+            },
+            "query": {
+              "filterFields": [
+                "/title",
+                "/value"
+              ],
+              "sortFields": [
+                "/title",
+                "/value"
+              ],
+              "maxLimit": 500
+            }
+          },
+          "preferences": {
+            "uri": "shard://self/resources/preferences",
+            "kind": "singleton",
+            "meaning": "Example records",
+            "schemaVersion": 1,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "profile": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "secret": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "title"
+              ],
+              "additionalProperties": false
+            },
+            "source": {
+              "provider": "shard.documents",
+              "dataset": "prefs"
+            },
+            "operations": [
+              "snapshot",
+              "query",
+              "insert",
+              "update",
+              "delete"
+            ],
+            "observe": {
+              "mode": "changes",
+              "protocol": "shard-data/1"
+            },
+            "exposure": {
+              "app": [
+                "snapshot",
+                "query",
+                "insert",
+                "update",
+                "delete",
+                "observe"
+              ],
+              "agent": [
+                "snapshot",
+                "query"
+              ]
+            },
+            "query": {
+              "filterFields": [
+                "/title",
+                "/value"
+              ],
+              "sortFields": [
+                "/title",
+                "/value"
+              ],
+              "maxLimit": 500
+            }
+          }
+        },
+        "bindings": {
+          "itemsView": {
+            "resource": "items",
+            "query": {
+              "limit": 100
+            },
+            "params": {
+              "account": {
+                "binding": "preferences",
+                "pointer": "/data/title"
+              }
+            }
+          },
+          "preferences": {
+            "resource": "preferences"
+          }
+        }
+      }
+    },
+    {
+      "name": "read only observable source",
+      "kind": "contract",
+      "valid": true,
+      "value": {
+        "version": 2,
+        "intent": "Fixture app",
+        "resources": {
+          "items": {
+            "uri": "shard://self/resources/items",
+            "kind": "collection",
+            "meaning": "Example records",
+            "schemaVersion": 1,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "profile": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "secret": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "title"
+              ],
+              "additionalProperties": false
+            },
+            "source": {
+              "provider": "workspace.nodes",
+              "params": {
+                "ids": [
+                  "artifact-allowed"
+                ]
+              }
+            },
+            "operations": [
+              "snapshot"
+            ],
+            "observe": {
+              "mode": "changes",
+              "protocol": "shard-data/1"
+            },
+            "exposure": {
+              "app": [
+                "snapshot",
+                "observe"
+              ],
+              "agent": [
+                "snapshot"
+              ]
+            }
+          }
+        },
+        "bindings": {
+          "itemsView": {
+            "resource": "items",
+            "query": {
+              "limit": 100
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "provider cannot write",
+      "kind": "contract",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "intent": "Fixture app",
+        "resources": {
+          "items": {
+            "uri": "shard://self/resources/items",
+            "kind": "collection",
+            "meaning": "Example records",
+            "schemaVersion": 1,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "profile": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "secret": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "title"
+              ],
+              "additionalProperties": false
+            },
+            "source": {
+              "provider": "workspace.nodes",
+              "params": {
+                "ids": [
+                  "artifact-allowed"
+                ]
+              }
+            },
+            "operations": [
+              "snapshot",
+              "update"
+            ],
+            "observe": {
+              "mode": "changes",
+              "protocol": "shard-data/1"
+            },
+            "exposure": {
+              "app": [
+                "snapshot",
+                "observe"
+              ],
+              "agent": [
+                "snapshot"
+              ]
+            }
+          }
+        },
+        "bindings": {
+          "itemsView": {
+            "resource": "items",
+            "query": {
+              "limit": 100
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "nested schema",
+      "kind": "schema",
+      "valid": true,
+      "value": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "value": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "profile": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "secret": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "local schema definition",
+      "kind": "schema",
+      "valid": true,
+      "value": {
+        "type": "object",
+        "$defs": {
+          "title": {
+            "type": "string"
+          }
+        },
+        "properties": {
+          "title": {
+            "$ref": "#/$defs/title"
+          }
+        }
+      }
+    },
+    {
+      "name": "unsupported default",
+      "kind": "schema",
+      "valid": false,
+      "value": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "value": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "profile": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "secret": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "additionalProperties": false,
+        "default": {}
+      }
+    },
+    {
+      "name": "unsupported pattern",
+      "kind": "schema",
+      "valid": false,
+      "value": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "value": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "profile": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "secret": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "additionalProperties": false,
+        "pattern": ".*"
+      }
+    },
+    {
+      "name": "unsupported oneOf",
+      "kind": "schema",
+      "valid": false,
+      "value": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "value": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "profile": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "secret": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "type": "object"
+          }
+        ]
+      }
+    },
+    {
+      "name": "unsupported unknown",
+      "kind": "schema",
+      "valid": false,
+      "value": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "value": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "profile": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "secret": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "additionalProperties": false,
+        "unknown": true
+      }
+    },
+    {
+      "name": "remote schema ref",
+      "kind": "schema",
+      "valid": false,
+      "value": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "$ref": "https://example.com/schema"
+          }
+        }
+      }
+    },
+    {
+      "name": "recursive schema",
+      "kind": "schema",
+      "valid": false,
+      "value": {
+        "type": "object",
+        "$defs": {
+          "node": {
+            "type": "object",
+            "properties": {
+              "next": {
+                "$ref": "#/$defs/node"
+              }
+            }
+          }
+        },
+        "properties": {
+          "root": {
+            "$ref": "#/$defs/node"
+          }
+        }
+      }
+    },
+    {
+      "name": "unresolved schema ref",
+      "kind": "schema",
+      "valid": false,
+      "value": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "$ref": "#/$defs/missing"
+          }
+        }
+      }
+    },
+    {
+      "name": "invalid schema keyword type",
+      "kind": "schema",
+      "valid": false,
+      "value": {
+        "type": "object",
+        "required": "title"
+      }
+    },
+    {
+      "name": "schema root array",
+      "kind": "schema",
+      "valid": false,
+      "value": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "nullable present",
+      "kind": "data",
+      "valid": true,
+      "value": {
+        "title": "a",
+        "value": null
+      },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "value": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "profile": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "secret": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "missing optional",
+      "kind": "data",
+      "valid": true,
+      "value": {
+        "title": "a"
+      },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "value": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "profile": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "secret": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "missing required",
+      "kind": "data",
+      "valid": false,
+      "value": {
+        "value": 2
+      },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "value": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "profile": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "secret": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "extra field",
+      "kind": "data",
+      "valid": false,
+      "value": {
+        "title": "a",
+        "password": "no"
+      },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "value": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "profile": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "secret": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "unicode length",
+      "kind": "data",
+      "valid": true,
+      "value": {
+        "emoji": "\ud83d\ude00"
+      },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "emoji": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "safe integer edge",
+      "kind": "data",
+      "valid": true,
+      "value": {
+        "title": "a",
+        "value": 9007199254740991
+      },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "value": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "profile": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "secret": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "unsafe integer",
+      "kind": "data",
+      "valid": false,
+      "value": {
+        "title": "a",
+        "value": 9007199254740992
+      },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "value": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "profile": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "secret": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "numeric range",
+      "kind": "query",
+      "valid": true,
+      "value": {
+        "where": {
+          "field": "/value",
+          "op": "gte",
+          "value": 10
+        }
+      },
+      "resource": {
+        "uri": "shard://self/resources/items",
+        "kind": "collection",
+        "meaning": "Example records",
+        "schemaVersion": 1,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "profile": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "secret": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "title"
+          ],
+          "additionalProperties": false
+        },
+        "source": {
+          "provider": "shard.documents",
+          "dataset": "items"
+        },
+        "operations": [
+          "snapshot",
+          "query",
+          "insert",
+          "update",
+          "delete"
+        ],
+        "observe": {
+          "mode": "changes",
+          "protocol": "shard-data/1"
+        },
+        "exposure": {
+          "app": [
+            "snapshot",
+            "query",
+            "insert",
+            "update",
+            "delete",
+            "observe"
+          ],
+          "agent": [
+            "snapshot",
+            "query"
+          ]
+        },
+        "query": {
+          "filterFields": [
+            "/title",
+            "/value"
+          ],
+          "sortFields": [
+            "/title",
+            "/value"
+          ],
+          "maxLimit": 500
+        }
+      }
+    },
+    {
+      "name": "explicit null",
+      "kind": "query",
+      "valid": true,
+      "value": {
+        "where": {
+          "field": "/value",
+          "op": "eq",
+          "value": null
+        }
+      },
+      "resource": {
+        "uri": "shard://self/resources/items",
+        "kind": "collection",
+        "meaning": "Example records",
+        "schemaVersion": 1,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "profile": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "secret": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "title"
+          ],
+          "additionalProperties": false
+        },
+        "source": {
+          "provider": "shard.documents",
+          "dataset": "items"
+        },
+        "operations": [
+          "snapshot",
+          "query",
+          "insert",
+          "update",
+          "delete"
+        ],
+        "observe": {
+          "mode": "changes",
+          "protocol": "shard-data/1"
+        },
+        "exposure": {
+          "app": [
+            "snapshot",
+            "query",
+            "insert",
+            "update",
+            "delete",
+            "observe"
+          ],
+          "agent": [
+            "snapshot",
+            "query"
+          ]
+        },
+        "query": {
+          "filterFields": [
+            "/title",
+            "/value"
+          ],
+          "sortFields": [
+            "/title",
+            "/value"
+          ],
+          "maxLimit": 500
+        }
+      }
+    },
+    {
+      "name": "missing field",
+      "kind": "query",
+      "valid": true,
+      "value": {
+        "where": {
+          "field": "/value",
+          "op": "exists",
+          "value": false
+        }
+      },
+      "resource": {
+        "uri": "shard://self/resources/items",
+        "kind": "collection",
+        "meaning": "Example records",
+        "schemaVersion": 1,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "profile": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "secret": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "title"
+          ],
+          "additionalProperties": false
+        },
+        "source": {
+          "provider": "shard.documents",
+          "dataset": "items"
+        },
+        "operations": [
+          "snapshot",
+          "query",
+          "insert",
+          "update",
+          "delete"
+        ],
+        "observe": {
+          "mode": "changes",
+          "protocol": "shard-data/1"
+        },
+        "exposure": {
+          "app": [
+            "snapshot",
+            "query",
+            "insert",
+            "update",
+            "delete",
+            "observe"
+          ],
+          "agent": [
+            "snapshot",
+            "query"
+          ]
+        },
+        "query": {
+          "filterFields": [
+            "/title",
+            "/value"
+          ],
+          "sortFields": [
+            "/title",
+            "/value"
+          ],
+          "maxLimit": 500
+        }
+      }
+    },
+    {
+      "name": "wrong field type",
+      "kind": "query",
+      "valid": false,
+      "value": {
+        "where": {
+          "field": "/title",
+          "op": "eq",
+          "value": 10
+        }
+      },
+      "resource": {
+        "uri": "shard://self/resources/items",
+        "kind": "collection",
+        "meaning": "Example records",
+        "schemaVersion": 1,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "profile": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "secret": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "title"
+          ],
+          "additionalProperties": false
+        },
+        "source": {
+          "provider": "shard.documents",
+          "dataset": "items"
+        },
+        "operations": [
+          "snapshot",
+          "query",
+          "insert",
+          "update",
+          "delete"
+        ],
+        "observe": {
+          "mode": "changes",
+          "protocol": "shard-data/1"
+        },
+        "exposure": {
+          "app": [
+            "snapshot",
+            "query",
+            "insert",
+            "update",
+            "delete",
+            "observe"
+          ],
+          "agent": [
+            "snapshot",
+            "query"
+          ]
+        },
+        "query": {
+          "filterFields": [
+            "/title",
+            "/value"
+          ],
+          "sortFields": [
+            "/title",
+            "/value"
+          ],
+          "maxLimit": 500
+        }
+      }
+    },
+    {
+      "name": "string range",
+      "kind": "query",
+      "valid": false,
+      "value": {
+        "where": {
+          "field": "/title",
+          "op": "gte",
+          "value": "a"
+        }
+      },
+      "resource": {
+        "uri": "shard://self/resources/items",
+        "kind": "collection",
+        "meaning": "Example records",
+        "schemaVersion": 1,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "profile": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "secret": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "title"
+          ],
+          "additionalProperties": false
+        },
+        "source": {
+          "provider": "shard.documents",
+          "dataset": "items"
+        },
+        "operations": [
+          "snapshot",
+          "query",
+          "insert",
+          "update",
+          "delete"
+        ],
+        "observe": {
+          "mode": "changes",
+          "protocol": "shard-data/1"
+        },
+        "exposure": {
+          "app": [
+            "snapshot",
+            "query",
+            "insert",
+            "update",
+            "delete",
+            "observe"
+          ],
+          "agent": [
+            "snapshot",
+            "query"
+          ]
+        },
+        "query": {
+          "filterFields": [
+            "/title",
+            "/value"
+          ],
+          "sortFields": [
+            "/title",
+            "/value"
+          ],
+          "maxLimit": 500
+        }
+      }
+    },
+    {
+      "name": "unknown field",
+      "kind": "query",
+      "valid": false,
+      "value": {
+        "where": {
+          "field": "/secret",
+          "op": "eq",
+          "value": 1
+        }
+      },
+      "resource": {
+        "uri": "shard://self/resources/items",
+        "kind": "collection",
+        "meaning": "Example records",
+        "schemaVersion": 1,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "profile": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "secret": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "title"
+          ],
+          "additionalProperties": false
+        },
+        "source": {
+          "provider": "shard.documents",
+          "dataset": "items"
+        },
+        "operations": [
+          "snapshot",
+          "query",
+          "insert",
+          "update",
+          "delete"
+        ],
+        "observe": {
+          "mode": "changes",
+          "protocol": "shard-data/1"
+        },
+        "exposure": {
+          "app": [
+            "snapshot",
+            "query",
+            "insert",
+            "update",
+            "delete",
+            "observe"
+          ],
+          "agent": [
+            "snapshot",
+            "query"
+          ]
+        },
+        "query": {
+          "filterFields": [
+            "/title",
+            "/value"
+          ],
+          "sortFields": [
+            "/title",
+            "/value"
+          ],
+          "maxLimit": 500
+        }
+      }
+    },
+    {
+      "name": "limit too large",
+      "kind": "query",
+      "valid": false,
+      "value": {
+        "limit": 501
+      },
+      "resource": {
+        "uri": "shard://self/resources/items",
+        "kind": "collection",
+        "meaning": "Example records",
+        "schemaVersion": 1,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "profile": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "secret": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "title"
+          ],
+          "additionalProperties": false
+        },
+        "source": {
+          "provider": "shard.documents",
+          "dataset": "items"
+        },
+        "operations": [
+          "snapshot",
+          "query",
+          "insert",
+          "update",
+          "delete"
+        ],
+        "observe": {
+          "mode": "changes",
+          "protocol": "shard-data/1"
+        },
+        "exposure": {
+          "app": [
+            "snapshot",
+            "query",
+            "insert",
+            "update",
+            "delete",
+            "observe"
+          ],
+          "agent": [
+            "snapshot",
+            "query"
+          ]
+        },
+        "query": {
+          "filterFields": [
+            "/title",
+            "/value"
+          ],
+          "sortFields": [
+            "/title",
+            "/value"
+          ],
+          "maxLimit": 500
+        }
+      }
+    },
+    {
+      "name": "zero limit",
+      "kind": "query",
+      "valid": false,
+      "value": {
+        "limit": 0
+      },
+      "resource": {
+        "uri": "shard://self/resources/items",
+        "kind": "collection",
+        "meaning": "Example records",
+        "schemaVersion": 1,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "profile": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "secret": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "title"
+          ],
+          "additionalProperties": false
+        },
+        "source": {
+          "provider": "shard.documents",
+          "dataset": "items"
+        },
+        "operations": [
+          "snapshot",
+          "query",
+          "insert",
+          "update",
+          "delete"
+        ],
+        "observe": {
+          "mode": "changes",
+          "protocol": "shard-data/1"
+        },
+        "exposure": {
+          "app": [
+            "snapshot",
+            "query",
+            "insert",
+            "update",
+            "delete",
+            "observe"
+          ],
+          "agent": [
+            "snapshot",
+            "query"
+          ]
+        },
+        "query": {
+          "filterFields": [
+            "/title",
+            "/value"
+          ],
+          "sortFields": [
+            "/title",
+            "/value"
+          ],
+          "maxLimit": 500
+        }
+      }
+    },
+    {
+      "name": "group query",
+      "kind": "query",
+      "valid": true,
+      "value": {
+        "where": {
+          "and": [
+            {
+              "field": "/value",
+              "op": "gte",
+              "value": 10
+            },
+            {
+              "field": "/title",
+              "op": "exists",
+              "value": true
+            }
+          ]
+        }
+      },
+      "resource": {
+        "uri": "shard://self/resources/items",
+        "kind": "collection",
+        "meaning": "Example records",
+        "schemaVersion": 1,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "profile": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "secret": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "title"
+          ],
+          "additionalProperties": false
+        },
+        "source": {
+          "provider": "shard.documents",
+          "dataset": "items"
+        },
+        "operations": [
+          "snapshot",
+          "query",
+          "insert",
+          "update",
+          "delete"
+        ],
+        "observe": {
+          "mode": "changes",
+          "protocol": "shard-data/1"
+        },
+        "exposure": {
+          "app": [
+            "snapshot",
+            "query",
+            "insert",
+            "update",
+            "delete",
+            "observe"
+          ],
+          "agent": [
+            "snapshot",
+            "query"
+          ]
+        },
+        "query": {
+          "filterFields": [
+            "/title",
+            "/value"
+          ],
+          "sortFields": [
+            "/title",
+            "/value"
+          ],
+          "maxLimit": 500
+        }
+      }
+    },
+    {
+      "name": "query too deep",
+      "kind": "query",
+      "valid": false,
+      "value": {
+        "where": {
+          "and": [
+            {
+              "and": [
+                {
+                  "and": [
+                    {
+                      "and": [
+                        {
+                          "and": [
+                            {
+                              "and": [
+                                {
+                                  "and": [
+                                    {
+                                      "and": [
+                                        {
+                                          "field": "/title",
+                                          "op": "eq",
+                                          "value": "x"
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "resource": {
+        "uri": "shard://self/resources/items",
+        "kind": "collection",
+        "meaning": "Example records",
+        "schemaVersion": 1,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "profile": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "secret": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "title"
+          ],
+          "additionalProperties": false
+        },
+        "source": {
+          "provider": "shard.documents",
+          "dataset": "items"
+        },
+        "operations": [
+          "snapshot",
+          "query",
+          "insert",
+          "update",
+          "delete"
+        ],
+        "observe": {
+          "mode": "changes",
+          "protocol": "shard-data/1"
+        },
+        "exposure": {
+          "app": [
+            "snapshot",
+            "query",
+            "insert",
+            "update",
+            "delete",
+            "observe"
+          ],
+          "agent": [
+            "snapshot",
+            "query"
+          ]
+        },
+        "query": {
+          "filterFields": [
+            "/title",
+            "/value"
+          ],
+          "sortFields": [
+            "/title",
+            "/value"
+          ],
+          "maxLimit": 500
+        }
+      }
+    },
+    {
+      "name": "snapshot",
+      "kind": "event",
+      "valid": true,
+      "value": {
+        "protocol": "shard-data/1",
+        "subscriptionId": "s1",
+        "resource": "shard://artifact-example/resources/items?view=v1",
+        "epoch": "e1",
+        "seq": "0",
+        "op": "snapshot",
+        "records": [
+          {
+            "id": "a",
+            "revision": "1",
+            "schemaVersion": 1,
+            "data": {
+              "title": "before",
+              "value": 2
+            }
+          }
+        ],
+        "complete": true
+      },
+      "resource": {
+        "uri": "shard://self/resources/items",
+        "kind": "collection",
+        "meaning": "Example records",
+        "schemaVersion": 1,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "profile": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "secret": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "title"
+          ],
+          "additionalProperties": false
+        },
+        "source": {
+          "provider": "shard.documents",
+          "dataset": "items"
+        },
+        "operations": [
+          "snapshot",
+          "query",
+          "insert",
+          "update",
+          "delete"
+        ],
+        "observe": {
+          "mode": "changes",
+          "protocol": "shard-data/1"
+        },
+        "exposure": {
+          "app": [
+            "snapshot",
+            "query",
+            "insert",
+            "update",
+            "delete",
+            "observe"
+          ],
+          "agent": [
+            "snapshot",
+            "query"
+          ]
+        },
+        "query": {
+          "filterFields": [
+            "/title",
+            "/value"
+          ],
+          "sortFields": [
+            "/title",
+            "/value"
+          ],
+          "maxLimit": 500
+        }
+      }
+    },
+    {
+      "name": "empty snapshot",
+      "kind": "event",
+      "valid": true,
+      "value": {
+        "protocol": "shard-data/1",
+        "subscriptionId": "s1",
+        "resource": "shard://artifact-example/resources/items?view=v1",
+        "epoch": "e1",
+        "seq": "0",
+        "op": "snapshot",
+        "records": [],
+        "complete": true
+      },
+      "resource": {
+        "uri": "shard://self/resources/items",
+        "kind": "collection",
+        "meaning": "Example records",
+        "schemaVersion": 1,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "profile": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "secret": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "title"
+          ],
+          "additionalProperties": false
+        },
+        "source": {
+          "provider": "shard.documents",
+          "dataset": "items"
+        },
+        "operations": [
+          "snapshot",
+          "query",
+          "insert",
+          "update",
+          "delete"
+        ],
+        "observe": {
+          "mode": "changes",
+          "protocol": "shard-data/1"
+        },
+        "exposure": {
+          "app": [
+            "snapshot",
+            "query",
+            "insert",
+            "update",
+            "delete",
+            "observe"
+          ],
+          "agent": [
+            "snapshot",
+            "query"
+          ]
+        },
+        "query": {
+          "filterFields": [
+            "/title",
+            "/value"
+          ],
+          "sortFields": [
+            "/title",
+            "/value"
+          ],
+          "maxLimit": 500
+        }
+      }
+    },
+    {
+      "name": "duplicate snapshot record",
+      "kind": "event",
+      "valid": false,
+      "value": {
+        "protocol": "shard-data/1",
+        "subscriptionId": "s1",
+        "resource": "shard://artifact-example/resources/items?view=v1",
+        "epoch": "e1",
+        "seq": "0",
+        "op": "snapshot",
+        "records": [
+          {
+            "id": "a",
+            "revision": "1",
+            "schemaVersion": 1,
+            "data": {
+              "title": "before",
+              "value": 2
+            }
+          },
+          {
+            "id": "a",
+            "revision": "1",
+            "schemaVersion": 1,
+            "data": {
+              "title": "before",
+              "value": 2
+            }
+          }
+        ],
+        "complete": true
+      },
+      "resource": {
+        "uri": "shard://self/resources/items",
+        "kind": "collection",
+        "meaning": "Example records",
+        "schemaVersion": 1,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "profile": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "secret": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "title"
+          ],
+          "additionalProperties": false
+        },
+        "source": {
+          "provider": "shard.documents",
+          "dataset": "items"
+        },
+        "operations": [
+          "snapshot",
+          "query",
+          "insert",
+          "update",
+          "delete"
+        ],
+        "observe": {
+          "mode": "changes",
+          "protocol": "shard-data/1"
+        },
+        "exposure": {
+          "app": [
+            "snapshot",
+            "query",
+            "insert",
+            "update",
+            "delete",
+            "observe"
+          ],
+          "agent": [
+            "snapshot",
+            "query"
+          ]
+        },
+        "query": {
+          "filterFields": [
+            "/title",
+            "/value"
+          ],
+          "sortFields": [
+            "/title",
+            "/value"
+          ],
+          "maxLimit": 500
+        }
+      }
+    },
+    {
+      "name": "full replacement",
+      "kind": "event",
+      "valid": true,
+      "value": {
+        "protocol": "shard-data/1",
+        "subscriptionId": "s1",
+        "resource": "shard://artifact-example/resources/items?view=v1",
+        "epoch": "e1",
+        "seq": "1",
+        "op": "update",
+        "record": {
+          "id": "a",
+          "revision": "2",
+          "schemaVersion": 1,
+          "data": {
+            "title": "after"
+          }
+        }
+      },
+      "resource": {
+        "uri": "shard://self/resources/items",
+        "kind": "collection",
+        "meaning": "Example records",
+        "schemaVersion": 1,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "profile": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "secret": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "title"
+          ],
+          "additionalProperties": false
+        },
+        "source": {
+          "provider": "shard.documents",
+          "dataset": "items"
+        },
+        "operations": [
+          "snapshot",
+          "query",
+          "insert",
+          "update",
+          "delete"
+        ],
+        "observe": {
+          "mode": "changes",
+          "protocol": "shard-data/1"
+        },
+        "exposure": {
+          "app": [
+            "snapshot",
+            "query",
+            "insert",
+            "update",
+            "delete",
+            "observe"
+          ],
+          "agent": [
+            "snapshot",
+            "query"
+          ]
+        },
+        "query": {
+          "filterFields": [
+            "/title",
+            "/value"
+          ],
+          "sortFields": [
+            "/title",
+            "/value"
+          ],
+          "maxLimit": 500
+        }
+      }
+    },
+    {
+      "name": "left view",
+      "kind": "event",
+      "valid": true,
+      "value": {
+        "protocol": "shard-data/1",
+        "subscriptionId": "s1",
+        "resource": "shard://artifact-example/resources/items?view=v1",
+        "epoch": "e1",
+        "seq": "2",
+        "op": "delete",
+        "id": "a",
+        "reason": "left-view"
+      },
+      "resource": {
+        "uri": "shard://self/resources/items",
+        "kind": "collection",
+        "meaning": "Example records",
+        "schemaVersion": 1,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "profile": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "secret": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "title"
+          ],
+          "additionalProperties": false
+        },
+        "source": {
+          "provider": "shard.documents",
+          "dataset": "items"
+        },
+        "operations": [
+          "snapshot",
+          "query",
+          "insert",
+          "update",
+          "delete"
+        ],
+        "observe": {
+          "mode": "changes",
+          "protocol": "shard-data/1"
+        },
+        "exposure": {
+          "app": [
+            "snapshot",
+            "query",
+            "insert",
+            "update",
+            "delete",
+            "observe"
+          ],
+          "agent": [
+            "snapshot",
+            "query"
+          ]
+        },
+        "query": {
+          "filterFields": [
+            "/title",
+            "/value"
+          ],
+          "sortFields": [
+            "/title",
+            "/value"
+          ],
+          "maxLimit": 500
+        }
+      }
+    },
+    {
+      "name": "unsafe sequence number",
+      "kind": "event",
+      "valid": false,
+      "value": {
+        "protocol": "shard-data/1",
+        "subscriptionId": "s1",
+        "resource": "shard://artifact-example/resources/items?view=v1",
+        "epoch": "e1",
+        "seq": 9007199254740992,
+        "op": "delete",
+        "id": "a",
+        "reason": "deleted"
+      },
+      "resource": {
+        "uri": "shard://self/resources/items",
+        "kind": "collection",
+        "meaning": "Example records",
+        "schemaVersion": 1,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "profile": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "secret": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "title"
+          ],
+          "additionalProperties": false
+        },
+        "source": {
+          "provider": "shard.documents",
+          "dataset": "items"
+        },
+        "operations": [
+          "snapshot",
+          "query",
+          "insert",
+          "update",
+          "delete"
+        ],
+        "observe": {
+          "mode": "changes",
+          "protocol": "shard-data/1"
+        },
+        "exposure": {
+          "app": [
+            "snapshot",
+            "query",
+            "insert",
+            "update",
+            "delete",
+            "observe"
+          ],
+          "agent": [
+            "snapshot",
+            "query"
+          ]
+        },
+        "query": {
+          "filterFields": [
+            "/title",
+            "/value"
+          ],
+          "sortFields": [
+            "/title",
+            "/value"
+          ],
+          "maxLimit": 500
+        }
+      }
+    },
+    {
+      "name": "large string sequence",
+      "kind": "event",
+      "valid": true,
+      "value": {
+        "protocol": "shard-data/1",
+        "subscriptionId": "s1",
+        "resource": "shard://artifact-example/resources/items?view=v1",
+        "epoch": "e1",
+        "seq": "9007199254740993",
+        "op": "delete",
+        "id": "a",
+        "reason": "deleted"
+      },
+      "resource": {
+        "uri": "shard://self/resources/items",
+        "kind": "collection",
+        "meaning": "Example records",
+        "schemaVersion": 1,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "profile": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "secret": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "title"
+          ],
+          "additionalProperties": false
+        },
+        "source": {
+          "provider": "shard.documents",
+          "dataset": "items"
+        },
+        "operations": [
+          "snapshot",
+          "query",
+          "insert",
+          "update",
+          "delete"
+        ],
+        "observe": {
+          "mode": "changes",
+          "protocol": "shard-data/1"
+        },
+        "exposure": {
+          "app": [
+            "snapshot",
+            "query",
+            "insert",
+            "update",
+            "delete",
+            "observe"
+          ],
+          "agent": [
+            "snapshot",
+            "query"
+          ]
+        },
+        "query": {
+          "filterFields": [
+            "/title",
+            "/value"
+          ],
+          "sortFields": [
+            "/title",
+            "/value"
+          ],
+          "maxLimit": 500
+        }
+      }
+    },
+    {
+      "name": "unknown event op",
+      "kind": "event",
+      "valid": false,
+      "value": {
+        "protocol": "shard-data/1",
+        "subscriptionId": "s1",
+        "resource": "shard://artifact-example/resources/items?view=v1",
+        "epoch": "e1",
+        "seq": "0",
+        "op": "patch",
+        "id": "a"
+      },
+      "resource": {
+        "uri": "shard://self/resources/items",
+        "kind": "collection",
+        "meaning": "Example records",
+        "schemaVersion": 1,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "profile": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "secret": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "title"
+          ],
+          "additionalProperties": false
+        },
+        "source": {
+          "provider": "shard.documents",
+          "dataset": "items"
+        },
+        "operations": [
+          "snapshot",
+          "query",
+          "insert",
+          "update",
+          "delete"
+        ],
+        "observe": {
+          "mode": "changes",
+          "protocol": "shard-data/1"
+        },
+        "exposure": {
+          "app": [
+            "snapshot",
+            "query",
+            "insert",
+            "update",
+            "delete",
+            "observe"
+          ],
+          "agent": [
+            "snapshot",
+            "query"
+          ]
+        },
+        "query": {
+          "filterFields": [
+            "/title",
+            "/value"
+          ],
+          "sortFields": [
+            "/title",
+            "/value"
+          ],
+          "maxLimit": 500
+        }
+      }
+    },
+    {
+      "name": "bridge subscribe",
+      "kind": "bridge-request",
+      "valid": true,
+      "value": {
+        "aladin": "bridge/2",
+        "type": "request",
+        "id": 17,
+        "method": "resource.subscribe",
+        "params": {
+          "binding": "itemsView",
+          "inputs": {}
+        }
+      }
+    },
+    {
+      "name": "bridge forged environment",
+      "kind": "bridge-request",
+      "valid": false,
+      "value": {
+        "aladin": "bridge/2",
+        "type": "request",
+        "id": 17,
+        "method": "resource.subscribe",
+        "params": {
+          "binding": "itemsView",
+          "environment": "published"
+        }
+      }
+    },
+    {
+      "name": "guarded command",
+      "kind": "command",
+      "valid": true,
+      "value": {
+        "op": "update",
+        "resource": "items",
+        "id": "a",
+        "baseRevision": "1",
+        "requestId": "request-1",
+        "contractHash": "hash",
+        "data": {
+          "title": "after"
+        }
+      }
+    },
+    {
+      "name": "unguarded command",
+      "kind": "command",
+      "valid": false,
+      "value": {
+        "op": "update",
+        "resource": "items",
+        "id": "a",
+        "requestId": "request-1",
+        "contractHash": "hash",
+        "data": {
+          "title": "after"
+        }
+      }
+    },
+    {
+      "kind": "bridge-response",
+      "name": "success envelope",
+      "valid": true,
+      "value": {
+        "aladin": "bridge/2",
+        "type": "response",
+        "id": 1,
+        "ok": true,
+        "data": {}
+      }
+    },
+    {
+      "kind": "bridge-response",
+      "name": "failure missing code",
+      "valid": false,
+      "value": {
+        "aladin": "bridge/2",
+        "type": "response",
+        "id": 1,
+        "ok": false,
+        "error": "oops"
+      }
+    },
+    {
+      "kind": "bridge-response",
+      "name": "unsafe response ID",
+      "valid": false,
+      "value": {
+        "aladin": "bridge/2",
+        "type": "response",
+        "id": 9007199254740992,
+        "ok": true,
+        "data": {}
+      }
+    },
+    {
+      "kind": "subscription",
+      "name": "canonical identity",
+      "valid": true,
+      "value": {
+        "subscriptionId": "s",
+        "epoch": "e",
+        "resource": "shard://shard1/resources/items?view=v1"
+      }
+    },
+    {
+      "kind": "subscription",
+      "name": "self is not a canonical view without view token",
+      "valid": false,
+      "value": {
+        "subscriptionId": "s",
+        "epoch": "e",
+        "resource": "shard://self/resources/items"
+      }
+    },
+    {
+      "kind": "snapshot",
+      "name": "freshness is supplied by the source",
+      "valid": true,
+      "value": {
+        "resource": "shard://shard1/resources/items?view=v1",
+        "records": [],
+        "complete": true,
+        "sourceUpdatedAt": "2026-08-30T00:00:00Z"
+      }
+    },
+    {
+      "kind": "descriptor",
+      "name": "bounded snapshot-only resource",
+      "valid": true,
+      "value": {
+        "kind": "collection",
+        "schemaVersion": 1,
+        "schema": {
+          "type": "object"
+        },
+        "capabilities": [
+          "snapshot"
+        ],
+        "delivery": "snapshots",
+        "limit": 100
+      }
+    },
+    {
+      "kind": "descriptor",
+      "name": "unbounded descriptor",
+      "valid": false,
+      "value": {
+        "kind": "collection",
+        "schemaVersion": 1,
+        "schema": {
+          "type": "object"
+        },
+        "capabilities": [
+          "snapshot"
+        ],
+        "delivery": "snapshots",
+        "limit": 501
+      }
+    }
+  ]
+}

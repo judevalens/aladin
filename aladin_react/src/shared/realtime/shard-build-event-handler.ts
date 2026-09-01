@@ -8,6 +8,14 @@ import type { ShardBuildWire } from "@/app/state/shard-build-slice";
 // ephemeral UI state, not a data-layer entity.
 export function createShardBuildEventHandler() {
   return function handle(event: AppEventEnvelope) {
+    if (event.type === "artifact.published") {
+      const wire = event.payload as { page_id?: unknown; protocol?: unknown; buildId?: unknown; contractHash?: unknown } | null;
+      if (wire?.page_id !== event.subscriptionKey.resourceId || typeof wire.page_id !== "string" || !wire.page_id ||
+        wire.protocol !== "bridge/2" || typeof wire.buildId !== "string" || !wire.buildId ||
+        typeof wire.contractHash !== "string" || !wire.contractHash) return;
+      useAppStore.getState().setShardPublication({ pageId: wire.page_id, eventId: event.eventId, protocol: wire.protocol, buildId: wire.buildId, contractHash: wire.contractHash });
+      return;
+    }
     if (event.type !== "artifact.build-status") return;
     const wire = event.payload as ShardBuildWire | null;
     if (!wire?.page_id) return;

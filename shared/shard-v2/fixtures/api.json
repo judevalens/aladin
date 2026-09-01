@@ -1,0 +1,62 @@
+{
+  "version": "1.0.0",
+  "http": {
+    "method": "POST",
+    "path": "/api/shards/{id}/v2/{environment}/request",
+    "environment": [
+      "draft",
+      "published"
+    ],
+    "releaseHeader": "X-Shard-Contract",
+    "requestSchema": "bridge-request",
+    "responseSchema": "bridge-response",
+    "methods": [
+      "hello",
+      "resource.describe",
+      "resource.read",
+      "resource.query",
+      "resource.insert",
+      "resource.update",
+      "resource.delete"
+    ]
+  },
+  "websocket": {
+    "path": "/api/shards/{id}/v2/{environment}/ws",
+    "releaseQueryParameter": "contractHash",
+    "requestSchema": "bridge-request",
+    "responseSchema": "bridge-response",
+    "methods": [
+      "resource.subscribe",
+      "resource.unsubscribe"
+    ],
+    "pushChannels": [
+      "resource.event",
+      "resource.error"
+    ],
+    "maxSubscriptions": 32
+  },
+  "release": {
+    "method": "GET",
+    "path": "/api/shards/{id}/release",
+    "channel": [
+      "draft",
+      "published"
+    ],
+    "authority": "protected active build and contract"
+  },
+  "sharedWebsocket": {
+    "path": "/api/shard-resources/ws",
+    "requestSchema": "host-request",
+    "responseSchema": "bridge-response",
+    "methods": [
+      "resource.subscribe",
+      "resource.unsubscribe"
+    ],
+    "pushChannels": [
+      "resource.event",
+      "resource.error"
+    ],
+    "maxSubscriptions": 128,
+    "maxSubscriptionsPerFrame": 32
+  }
+}

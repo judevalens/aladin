@@ -1,0 +1,199 @@
+{
+  "resource": {
+    "uri": "shard://self/resources/items",
+    "kind": "collection",
+    "meaning": "Example records",
+    "schemaVersion": 1,
+    "schema": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "value": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "profile": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "secret": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "additionalProperties": false
+    },
+    "source": {
+      "provider": "shard.documents",
+      "dataset": "items"
+    },
+    "operations": [
+      "snapshot",
+      "query",
+      "insert",
+      "update",
+      "delete"
+    ],
+    "observe": {
+      "mode": "changes",
+      "protocol": "shard-data/1"
+    },
+    "exposure": {
+      "app": [
+        "snapshot",
+        "query",
+        "insert",
+        "update",
+        "delete",
+        "observe"
+      ],
+      "agent": [
+        "snapshot",
+        "query"
+      ]
+    },
+    "query": {
+      "filterFields": [
+        "/title",
+        "/value"
+      ],
+      "sortFields": [
+        "/title",
+        "/value"
+      ],
+      "maxLimit": 500
+    }
+  },
+  "route": {
+    "protocol": "shard-data/1",
+    "subscriptionId": "s1",
+    "resource": "shard://artifact-example/resources/items?view=v1",
+    "epoch": "e1",
+    "seq": "0"
+  },
+  "events": [
+    {
+      "protocol": "shard-data/1",
+      "subscriptionId": "s1",
+      "resource": "shard://artifact-example/resources/items?view=v1",
+      "epoch": "e1",
+      "seq": "0",
+      "op": "snapshot",
+      "records": [
+        {
+          "id": "a",
+          "revision": "1",
+          "schemaVersion": 1,
+          "data": {
+            "title": "before",
+            "value": 2
+          }
+        }
+      ],
+      "complete": true
+    },
+    {
+      "protocol": "shard-data/1",
+      "subscriptionId": "s1",
+      "resource": "shard://artifact-example/resources/items?view=v1",
+      "epoch": "e1",
+      "seq": "1",
+      "op": "update",
+      "record": {
+        "id": "a",
+        "revision": "2",
+        "schemaVersion": 1,
+        "data": {
+          "title": "after"
+        }
+      }
+    },
+    {
+      "protocol": "shard-data/1",
+      "subscriptionId": "s1",
+      "resource": "shard://artifact-example/resources/items?view=v1",
+      "epoch": "e1",
+      "seq": "1",
+      "op": "update",
+      "record": {
+        "id": "a",
+        "revision": "2",
+        "schemaVersion": 1,
+        "data": {
+          "title": "after"
+        }
+      }
+    },
+    {
+      "protocol": "shard-data/1",
+      "subscriptionId": "s1",
+      "resource": "shard://artifact-example/resources/items?view=v1",
+      "epoch": "retired",
+      "seq": "2",
+      "op": "delete",
+      "id": "a",
+      "reason": "deleted"
+    },
+    {
+      "protocol": "shard-data/1",
+      "subscriptionId": "s1",
+      "resource": "shard://artifact-example/resources/items?view=v1",
+      "epoch": "e1",
+      "seq": "3",
+      "op": "delete",
+      "id": "a",
+      "reason": "left-view"
+    }
+  ],
+  "expected": [
+    {
+      "ids": [
+        "a"
+      ],
+      "seq": "0",
+      "stale": false
+    },
+    {
+      "ids": [
+        "a"
+      ],
+      "seq": "1",
+      "stale": false
+    },
+    {
+      "ids": [
+        "a"
+      ],
+      "seq": "1",
+      "stale": false
+    },
+    {
+      "ids": [
+        "a"
+      ],
+      "seq": "1",
+      "stale": false
+    },
+    {
+      "ids": [
+        "a"
+      ],
+      "seq": "1",
+      "stale": true
+    }
+  ]
+}

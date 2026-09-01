@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "aladin": {
+          "const": "bridge/2"
+        },
+        "type": {
+          "const": "response"
+        },
+        "id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "ok": {
+          "const": true
+        },
+        "data": {}
+      },
+      "required": [
+        "aladin",
+        "type",
+        "id",
+        "ok",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "aladin": {
+          "const": "bridge/2"
+        },
+        "type": {
+          "const": "response"
+        },
+        "id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "ok": {
+          "const": false
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "error": {
+          "type": "string"
+        },
+        "data": {}
+      },
+      "required": [
+        "aladin",
+        "type",
+        "id",
+        "ok",
+        "code",
+        "error"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

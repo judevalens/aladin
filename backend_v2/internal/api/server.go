@@ -181,7 +181,7 @@ func cors(next http.Handler) http.Handler {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 		}
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Shard-Contract")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -296,7 +296,14 @@ func isPublicRoute(r *http.Request) bool {
 }
 
 func isRealtimeWebSocketRoute(r *http.Request) bool {
-	return r.Method == http.MethodGet && r.URL.Path == "/api/events/ws"
+	if r.Method != http.MethodGet {
+		return false
+	}
+	if r.URL.Path == "/api/events/ws" || r.URL.Path == "/api/shard-resources/ws" {
+		return true
+	}
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	return len(parts) == 6 && parts[0] == "api" && parts[1] == "shards" && parts[2] != "" && parts[3] == "v2" && (parts[4] == "draft" || parts[4] == "published") && parts[5] == "ws"
 }
 
 func isContentRoute(r *http.Request) bool {

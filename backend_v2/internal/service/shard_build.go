@@ -51,18 +51,33 @@ type ShardBuildService interface {
 }
 
 type shardBuildService struct {
-	runtime WorkspaceRuntime
-	store   ShardBuildStore
+	runtime  WorkspaceRuntime
+	store    ShardBuildStore
+	releases ShardReleaseService
 }
 
-func NewShardBuildService(runtime WorkspaceRuntime, store ShardBuildStore) ShardBuildService {
-	return &shardBuildService{runtime: runtime, store: store}
+func NewShardBuildService(runtime WorkspaceRuntime, store ShardBuildStore, releases ...ShardReleaseService) ShardBuildService {
+	s := &shardBuildService{runtime: runtime, store: store}
+	if len(releases) > 0 {
+		s.releases = releases[0]
+	}
+	return s
 }
 
 func (s *shardBuildService) Build(ctx context.Context, pageID string, channel BuildChannel) (BuildResult, error) {
 	s.record(ctx, ShardBuildState{PageID: pageID, Channel: channel, Status: ShardBuildBuilding})
 
 	res, err := s.runtime.Build(ctx, pageID, channel)
+	if err == nil && res.OK && len(res.Contract) > 0 {
+		if s.releases == nil {
+			err = ResourceFailure("unsupported-capability", "V2 release activation is disabled")
+		} else {
+			err = s.releases.Stage(ctx, pageID, channel, res)
+			if err == nil && channel == ChannelDraft {
+				err = s.releases.Activate(ctx, pageID, channel, res.BuildID)
+			}
+		}
+	}
 	if err != nil {
 		s.record(ctx, ShardBuildState{PageID: pageID, Channel: channel, Status: ShardBuildFailed, Errors: err.Error()})
 		return res, err

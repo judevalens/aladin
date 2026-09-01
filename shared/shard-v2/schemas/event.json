@@ -1,0 +1,236 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "protocol": {
+          "const": "shard-data/1"
+        },
+        "subscriptionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "resource": {
+          "type": "string",
+          "pattern": "^shard://[A-Za-z0-9_-]+/resources/[A-Za-z][A-Za-z0-9_-]{0,63}\\?view=[A-Za-z0-9_-]+$",
+          "maxLength": 1024
+        },
+        "epoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "seq": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$",
+          "maxLength": 128
+        },
+        "sourceUpdatedAt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "op": {
+          "const": "snapshot"
+        },
+        "records": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "revision": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "schemaVersion": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "data": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "id",
+              "revision",
+              "schemaVersion",
+              "data"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 500
+        },
+        "complete": {
+          "const": true
+        },
+        "nextCursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "protocol",
+        "subscriptionId",
+        "resource",
+        "epoch",
+        "seq",
+        "op",
+        "records",
+        "complete"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "protocol": {
+          "const": "shard-data/1"
+        },
+        "subscriptionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "resource": {
+          "type": "string",
+          "pattern": "^shard://[A-Za-z0-9_-]+/resources/[A-Za-z][A-Za-z0-9_-]{0,63}\\?view=[A-Za-z0-9_-]+$",
+          "maxLength": 1024
+        },
+        "epoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "seq": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$",
+          "maxLength": 128
+        },
+        "sourceUpdatedAt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "op": {
+          "enum": [
+            "insert",
+            "update"
+          ]
+        },
+        "record": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "revision": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "schemaVersion": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "data": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "id",
+            "revision",
+            "schemaVersion",
+            "data"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "protocol",
+        "subscriptionId",
+        "resource",
+        "epoch",
+        "seq",
+        "op",
+        "record"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "protocol": {
+          "const": "shard-data/1"
+        },
+        "subscriptionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "resource": {
+          "type": "string",
+          "pattern": "^shard://[A-Za-z0-9_-]+/resources/[A-Za-z][A-Za-z0-9_-]{0,63}\\?view=[A-Za-z0-9_-]+$",
+          "maxLength": 1024
+        },
+        "epoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "seq": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$",
+          "maxLength": 128
+        },
+        "sourceUpdatedAt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "op": {
+          "const": "delete"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "reason": {
+          "enum": [
+            "deleted",
+            "left-view"
+          ]
+        }
+      },
+      "required": [
+        "protocol",
+        "subscriptionId",
+        "resource",
+        "epoch",
+        "seq",
+        "op",
+        "id",
+        "reason"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

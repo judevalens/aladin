@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { FlaskConical } from "lucide-react";
 import type { Artifact } from "@/shared/api/models";
 import { useAppComposition } from "@/app/composition/app-composition";
 import { useAppStore } from "@/app/state/store";
@@ -6,6 +8,10 @@ import { shardBuildFromWire, shardBuildKey } from "@/app/state/shard-build-slice
 import type { ShardChannel } from "@/app/state/shard-build-slice";
 import { createBridgeHost } from "@/modules/doc-surface/bridge/bridge-host";
 import type { BridgeHost } from "@/modules/doc-surface/bridge/bridge-host";
+import { createBridgeV2Host } from "../bridge/bridge-v2-host";
+import { useShardRelease } from "../hooks/use-shard-release";
+import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import { useShardContentToken } from "@/modules/doc-surface/hooks/use-shard-content-token";
 import { ShardAccessNotice } from "@/modules/doc-surface/ui/shard-access-notice";
 import { cn } from "@/lib/utils";
@@ -19,11 +25,11 @@ import { cn } from "@/lib/utils";
 //
 // channel selects the published (default) or draft build; nonce (a build id) is
 // appended so a fresh build reloads the iframe by changing its src.
-function useServedUrl(pageId: string, channel: ShardChannel, nonce?: string) {
+function useServedUrl(pageId: string, channel: ShardChannel, nonce?: string, buildId?: string, enabled = true) {
   const { runtime } = useAppComposition();
   const { token: contentToken, error, retry } = useShardContentToken(
-    runtime.contentTokens,
-    JSON.stringify([runtime.config.apiBaseUrl, pageId, channel, nonce]),
+    enabled ? runtime.contentTokens : null,
+    JSON.stringify([runtime.config.apiBaseUrl, pageId, channel, nonce, buildId]),
   );
 
   // Memoized so the iframe reloads ONLY on channel/build/token changes. The
@@ -31,12 +37,13 @@ function useServedUrl(pageId: string, channel: ShardChannel, nonce?: string) {
   // for a correct FIRST paint; live switches ride the bridge push with no
   // reload, and the next natural reload picks up the then-current theme.
   const src = useMemo(() => {
-    if (!contentToken) return null;
+    if (!enabled || !contentToken) return null;
     const base = runtime.config.apiBaseUrl;
     const params = new URLSearchParams();
     if (contentToken) params.set("access_token", contentToken);
     if (channel === "draft") params.set("channel", "draft");
     if (nonce) params.set("v", nonce);
+    if (buildId) params.set("build_id", buildId);
     const theme = useAppStore.getState().theme;
     if (theme) params.set("theme", theme);
     // In the desktop app, signal the serve route to emit vendor://deps/<sha> import
@@ -46,57 +53,31 @@ function useServedUrl(pageId: string, channel: ShardChannel, nonce?: string) {
     }
     const q = params.toString();
     return `${base}/content/${pageId}/${q ? `?${q}` : ""}`;
-  }, [runtime, pageId, channel, nonce, contentToken]);
+  }, [runtime, pageId, channel, nonce, buildId, contentToken, enabled]);
   return { src, error, retry };
 }
 
-// useShardBuild seeds the draft build state for a page (one fetch on mount) and
+// useShardBuild seeds a channel's build state for a page (one fetch on mount) and
 // returns the live entry from the store (updated by realtime build-status events).
-function useShardBuild(pageId: string) {
+function useShardBuild(pageId: string, channel: ShardChannel) {
   const { runtime } = useAppComposition();
   const setShardBuild = useAppStore((s) => s.setShardBuild);
-  const draft = useAppStore((s) => s.shardBuilds[shardBuildKey(pageId, "draft")]);
+  const build = useAppStore((s) => s.shardBuilds[shardBuildKey(pageId, channel)]);
 
   useEffect(() => {
     let cancelled = false;
     void runtime.apis.shards
-      .getBuildState(pageId, "draft")
+      .getBuildState(pageId, channel)
       .then((wire) => {
         if (!cancelled && wire?.page_id) setShardBuild(shardBuildFromWire(wire));
       })
-      .catch(() => undefined); // no draft yet / offline — fine, stays unseeded
+      .catch(() => undefined); // no build yet / offline — fine, stays unseeded
     return () => {
       cancelled = true;
     };
-  }, [pageId, runtime, setShardBuild]);
+  }, [pageId, channel, runtime, setShardBuild]);
 
-  return draft;
-}
-
-function BuildStatusChip({ status }: { status: "building" | "ok" | "failed" }) {
-  const label = status === "building" ? "Building…" : status === "ok" ? "Built" : "Build failed";
-  const tone =
-    status === "building"
-      ? "text-amber border-amber-line"
-      : status === "failed"
-        ? "text-against border-against/40"
-        : "text-ink-3 border-line";
-  return (
-    <div
-      className={cn(
-        "pointer-events-none absolute right-3 top-3 z-10 flex items-center gap-1.5 rounded-chip border bg-panel/90 px-2.5 py-1 text-meta font-mono shadow-panel backdrop-blur",
-        tone,
-      )}
-    >
-      <span
-        className={cn(
-          "h-1.5 w-1.5 rounded-full",
-          status === "building" ? "bg-amber animate-pulse" : status === "failed" ? "bg-against" : "bg-for",
-        )}
-      />
-      {label}
-    </div>
-  );
+  return build;
 }
 
 function BuildErrorOverlay({ log }: { log: string }) {
@@ -117,36 +98,85 @@ function BuildErrorOverlay({ log }: { log: string }) {
  * has an opaque origin and cannot reach Aladin's DOM/cookies/storage. The only
  * channel back is the source-window-checked bridge/1 host (bridge-host.ts).
  *
- * Live build view: once a successful DRAFT build exists, the iframe serves the
- * draft channel and reloads on each new build; a status chip reflects the live
- * build state and a failed build replaces the (stale) frame with its diagnostics.
+ * Published code and data are the normal view. Draft builds only reload an
+ * explicit preview (or an unpublished app); publishing exits that preview.
  */
-export function DocSurfaceUI({ artifact, hidden = false }: { artifact: Artifact; hidden?: boolean }) {
+export function DocSurfaceUI({ artifact, hidden = false, controlsTarget }: { artifact: Artifact; hidden?: boolean; controlsTarget?: HTMLElement | null }) {
+  return <ShardSurface key={artifact.id} artifact={artifact} hidden={hidden} controlsTarget={controlsTarget} />;
+}
+
+function ShardSurface({ artifact, hidden, controlsTarget }: { artifact: Artifact; hidden: boolean; controlsTarget?: HTMLElement | null }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const draft = useShardBuild(artifact.id);
+  const previewDescriptionId = useId();
+  const draft = useShardBuild(artifact.id, "draft");
+  const publishedBuild = useShardBuild(artifact.id, "published");
+  const publication = useAppStore((s) => s.shardPublications[artifact.id]);
   const theme = useAppStore((s) => s.theme);
 
-  // Serve draft only once a successful draft build exists; reload on its build id.
-  // Until then, serve the published build (the default, always-valid view).
+  // Retain the last usable draft while an author is building the next one.
   const [draftNonce, setDraftNonce] = useState<string>("");
+  const [publishedNonce, setPublishedNonce] = useState<string>("");
   useEffect(() => {
     if (draft?.status === "ok" && draft.buildId) setDraftNonce(draft.buildId);
   }, [draft?.status, draft?.buildId]);
+  useEffect(() => {
+    if (publishedBuild?.status === "ok" && publishedBuild.buildId) setPublishedNonce(publishedBuild.buildId);
+  }, [publishedBuild?.status, publishedBuild?.buildId]);
 
-  const hasDraftBuild = draftNonce !== "";
-  const channel: ShardChannel = hasDraftBuild ? "draft" : "published";
-  const { src, error: accessError, retry } = useServedUrl(artifact.id, channel, hasDraftBuild ? draftNonce : undefined);
+  const draftRelease = useShardRelease(artifact.id, "draft", draftNonce);
+  const legacyBuildNonce = draftRelease.available && draftRelease.value?.protocol === "bridge/1" ? publishedNonce : "";
+  const publishedRelease = useShardRelease(artifact.id, "published", legacyBuildNonce, publication);
+  const [preview, setPreview] = useState<{ publication?: string }>();
+  const publicationIdentity = publication?.eventId ?? (publishedRelease.value?.protocol === "bridge/1" ? publishedNonce : undefined);
+  // Selecting preview is local to this tab and this publication. A committed
+  // publication returns normal use to its published records immediately.
+  const explicitPreview = preview !== undefined && preview.publication === publicationIdentity;
+  const unpublished = publishedRelease.value !== undefined && !publishedRelease.available;
+  const channel: ShardChannel = explicitPreview || unpublished ? "draft" : "published";
+  const selected = channel === "draft" ? draftRelease : publishedRelease;
+  const release = selected.available ? selected.value : undefined;
+  const { runtime } = useAppComposition();
+  const nonce = channel === "draft" ? draftNonce : release?.protocol === "bridge/1" ? publishedNonce : undefined;
+  const { src, error: accessError, retry } = useServedUrl(artifact.id, channel, nonce, release?.protocol === "bridge/2" ? release.buildId : undefined, !!release);
 
   const status = draft?.status;
-  const showChip = status === "building" || status === "ok" || status === "failed";
-  const showError = status === "failed";
+  const showError = channel === "draft" && status === "failed";
+  const draftWarning = release?.protocol === "bridge/1" ? "Saved data is shared with published." : "Separate test data; not visible through MCP.";
+  const controlLabel = channel === "draft" ? publishedRelease.available ? "Back to published" : "Draft preview" : "Preview draft";
+  const controlDescription = channel === "draft"
+    ? `${unpublished ? "Unpublished · " : ""}Draft preview. ${draftWarning}${status === "building" ? " Building…" : status === "failed" ? " Build failed." : ""}`
+    : "Published. Preview draft to test changes without affecting published data.";
+  const control = (
+    <span className="inline-flex" title={controlDescription}>
+      <Button
+        size="icon-xs"
+        variant="ghost"
+        aria-label={controlLabel}
+        aria-pressed={channel === "draft"}
+        aria-describedby={previewDescriptionId}
+        title={`${controlDescription}${channel === "draft" && publishedRelease.available ? " Back to published." : ""}`}
+        disabled={channel === "draft" ? !publishedRelease.available : !draftRelease.available && status !== "failed"}
+        onClick={() => setPreview(channel === "draft" ? undefined : { publication: publicationIdentity })}
+        className={cn("h-6 w-6 rounded-tap", channel === "draft" ? "bg-amber-soft text-amber hover:text-amber" : "text-ink-3 hover:text-ink", showError && "text-against", channel === "draft" && status === "building" && "animate-pulse")}
+      >
+        <Icon as={FlaskConical} />
+      </Button>
+      <span id={previewDescriptionId} className="sr-only">{channel === "draft" ? draftWarning : controlDescription}</span>
+    </span>
+  );
 
   // One bridge host per iframe: answers the kit's bridge/1 requests (source-
   // window checked), proxies shard local state, and pushes theme switches.
-  const { runtime } = useAppComposition();
   const hostRef = useRef<BridgeHost | null>(null);
-  useEffect(() => {
-    const host = createBridgeHost({
+  useLayoutEffect(() => {
+    if (!release) return;
+    const host = release.protocol === "bridge/2" ? createBridgeV2Host({
+      target: { shardId: artifact.id, environment: channel, contractHash: release.contractHash },
+      buildId: release.buildId,
+      getWindow: () => iframeRef.current?.contentWindow,
+      getTheme: () => useAppStore.getState().theme,
+      hub: runtime.apis.shardResources,
+    }) : createBridgeHost({
       pageId: artifact.id,
       getWindow: () => iframeRef.current?.contentWindow,
       getTheme: () => useAppStore.getState().theme,
@@ -160,7 +190,7 @@ export function DocSurfaceUI({ artifact, hidden = false }: { artifact: Artifact;
       host.detach();
       hostRef.current = null;
     };
-  }, [artifact.id, runtime]);
+  }, [artifact.id, channel, runtime, release, src]);
 
   // Live theme sync — pushed even while this frame is CSS-hidden in the
   // keep-alive set, so it re-surfaces already in the right theme.
@@ -170,7 +200,12 @@ export function DocSurfaceUI({ artifact, hidden = false }: { artifact: Artifact;
 
   return (
     <div className={cn("relative h-full w-full", hidden && "hidden")}>
-      {src ? (
+      {/* Only the active kept-alive pane owns the top-bar control. Portalling it
+          leaves preview state and the iframe lifetime with this shard. */}
+      {!hidden && (controlsTarget ? createPortal(control, controlsTarget) : (
+        <div className="absolute right-3 top-3 z-30">{control}</div>
+      ))}
+      {src && release ? (
         <iframe
           ref={iframeRef}
           title={artifact.title}
@@ -178,8 +213,9 @@ export function DocSurfaceUI({ artifact, hidden = false }: { artifact: Artifact;
           sandbox="allow-scripts"
           className="h-full w-full border-0 bg-bg"
         />
-      ) : <ShardAccessNotice error={accessError} retry={retry} />}
-      {showChip && status && <BuildStatusChip status={status} />}
+      ) : selected.value && !selected.available ? (
+        <div role="status" className="flex h-full items-center justify-center px-6 text-small text-ink-3">This shard has not been built yet.</div>
+      ) : <ShardAccessNotice error={accessError || selected.error} retry={() => { retry(); selected.retry(); }} />}
       {showError && <BuildErrorOverlay log={draft?.errors ?? ""} />}
     </div>
   );

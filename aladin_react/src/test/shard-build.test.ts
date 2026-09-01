@@ -42,7 +42,7 @@ describe("shardBuildFromWire", () => {
 
 describe("shard build event handler", () => {
   beforeEach(() => {
-    useAppStore.setState({ shardBuilds: {} });
+    useAppStore.setState({ shardBuilds: {}, shardPublications: {} });
   });
 
   it("routes build-status events into the slice keyed by page+channel", () => {
@@ -61,5 +61,21 @@ describe("shard build event handler", () => {
     handle(buildStatusEvent(null));
     handle(buildStatusEvent({ status: "ok" })); // no page_id
     expect(Object.keys(useAppStore.getState().shardBuilds)).toHaveLength(0);
+  });
+
+  it("keeps committed publication separate from successful staging and rejects mismatched targets", () => {
+    const handle = createShardBuildEventHandler();
+    handle(buildStatusEvent({ page_id: "shard-1", channel: "published", status: "ok", build_id: "staged" }));
+    expect(useAppStore.getState().shardPublications).toEqual({});
+    const event = { ...buildStatusEvent({ page_id: "shard-1", protocol: "bridge/2", buildId: "active", contractHash: "hash" }), type: "artifact.published" };
+    handle(event);
+    expect(useAppStore.getState().shardPublications["shard-1"]).toMatchObject({ buildId: "active", contractHash: "hash" });
+    const state = useAppStore.getState();
+    handle(event);
+    expect(useAppStore.getState()).toBe(state);
+    handle({ ...event, payload: { ...event.payload as object, page_id: "another-shard" } });
+    handle({ ...event, payload: null });
+    handle({ ...event, payload: { page_id: "shard-1" } });
+    expect(useAppStore.getState()).toBe(state);
   });
 });

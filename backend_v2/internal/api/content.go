@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -91,18 +92,38 @@ func (s *Server) handleContentServe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	store := s.deps.DocSurfaceStore()
-	bundleJS, err := store.ReadFile(ctx, pageID, distRel+"/bundle.js")
+	var release *coreservice.ShardRelease
+	if releases := s.deps.ShardReleases(); releases != nil {
+		active, activeErr := releases.Active(ctx, pageID, docsurface.ParseChannel(r.URL.Query().Get("channel")))
+		if activeErr == nil {
+			release = &active
+		} else if !errors.Is(activeErr, coreservice.ErrNotFound) {
+			writeAPIError(w, r, http.StatusServiceUnavailable, categoryInternal, "Release unavailable", activeErr)
+			return
+		}
+	}
+	if requested := r.URL.Query().Get("build_id"); requested != "" && (release == nil || release.BuildID != requested) {
+		writeAPIError(w, r, http.StatusConflict, categoryBadRequest, "Release changed; reload the shard", nil)
+		return
+	}
+	readOutput := func(name string) ([]byte, error) {
+		if release != nil {
+			return release.Files[name], nil
+		}
+		return store.ReadFile(ctx, pageID, distRel+"/"+name)
+	}
+	bundleJS, err := readOutput("bundle.js")
 	if err != nil {
 		w.Header().Set("Content-Security-Policy", docsurface.CSP)
 		_, _ = w.Write([]byte(docsurface.NotBuiltHTML(rec.Title)))
 		return
 	}
-	bundleCSS, _ := store.ReadFile(ctx, pageID, distRel+"/bundle.css")
+	bundleCSS, _ := readOutput("bundle.css")
 
 	// Optional import map: present for ESM builds with vendored deps. Its presence
 	// switches the doc to <script type=module>; its absence is the legacy inline path.
 	var im docsurface.ImportMap
-	if data, derr := store.ReadFile(ctx, pageID, distRel+"/importmap.json"); derr == nil {
+	if data, derr := readOutput("importmap.json"); derr == nil {
 		_ = json.Unmarshal(data, &im)
 		if im.Imports == nil {
 			im.Imports = map[string]string{}
@@ -123,8 +144,13 @@ func (s *Server) handleContentServe(w http.ResponseWriter, r *http.Request) {
 			csp = docsurface.CSPWithVendor(origin)
 		}
 	}
+	html := docsurface.EntryHTML(rec.Title, docsurface.TokensCSS, string(bundleCSS), string(bundleJS), im, theme)
+	if release != nil {
+		csp = docsurface.CSPForBridgeVersion(csp, "bridge/2")
+		html = docsurface.BootstrapV2(html, release.ResourceRelease)
+	}
 	w.Header().Set("Content-Security-Policy", csp)
-	_, _ = w.Write([]byte(docsurface.EntryHTML(rec.Title, docsurface.TokensCSS, string(bundleCSS), string(bundleJS), im, theme)))
+	_, _ = w.Write([]byte(html))
 }
 
 // contentReadContext lets a content-token principal actually serve its document.

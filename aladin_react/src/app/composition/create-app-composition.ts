@@ -33,6 +33,7 @@ import * as integrationService from "@/services/integrations/integration-service
 import { WorkspaceSyncService } from "@/services/workspace/workspace-sync-service";
 import { createRealtimeBoot } from "@/app/composition/realtime-boot";
 import { createShardApi } from "@/shared/api/shard-api";
+import { createResourceHostHub } from "@/modules/doc-surface/bridge/resource-host-hub";
 import { createLocalShardKVRepo } from "@/repos/shard-kv/local-shard-kv-repo";
 import { createShardKVPort } from "@/modules/doc-surface/bridge/shard-kv-port";
 import { createShardDataHub, createShardFrameHandler } from "@/modules/doc-surface/bridge/shard-data-hub";
@@ -77,6 +78,7 @@ export function createAppComposition() {
   const apis = {
     artifacts: createArtifactApi(apiClient),
     shards: shardApi,
+    shardResources: createResourceHostHub(apiClient, eventsWebSocketUrl(config).replace("/api/events/ws", "/api/shard-resources/ws"), () => desktopSession.getToken()),
     // The bridge host's storage port for shard local state: replica reads +
     // live per-key changes on desktop (the sync engine), REST fallback on web;
     // REST writes everywhere (published channel — the host owns the channel).

@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "enum": [
+        "collection",
+        "singleton"
+      ]
+    },
+    "schemaVersion": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "schema": {
+      "type": "object"
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "snapshot",
+          "query",
+          "insert",
+          "update",
+          "delete",
+          "observe"
+        ]
+      },
+      "uniqueItems": true,
+      "maxItems": 6
+    },
+    "observation": {
+      "enum": [
+        "ordered-changes",
+        "refresh-snapshots"
+      ]
+    },
+    "delivery": {
+      "enum": [
+        "deltas",
+        "snapshots"
+      ]
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 500
+    }
+  },
+  "required": [
+    "kind",
+    "schemaVersion",
+    "schema",
+    "capabilities",
+    "delivery",
+    "limit"
+  ],
+  "additionalProperties": false
+}

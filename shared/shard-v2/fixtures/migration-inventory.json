@@ -1,0 +1,281 @@
+{
+  "observedAt": "2026-08-30",
+  "source": "Aladin read-only app listing and index.tsx/build-marker reads",
+  "scope": "10 visible app artifacts; root files only. Not a backup or complete persistence audit.",
+  "shards": [
+    {
+      "id": "artifact-a76995f4-e1c6-43f2-9894-c7df3a4f0af2",
+      "title": "3 Great Stock Strategies — Interactive Guide",
+      "reviewStatus": "inventory-only",
+      "savedKVRows": "not-audited",
+      "importClosure": "not-audited",
+      "rootSourceSignals": [],
+      "literalKeys": [],
+      "builds": [
+        {
+          "path": "dist/.build-meta.json",
+          "page_id": "artifact-a76995f4-e1c6-43f2-9894-c7df3a4f0af2",
+          "built_at": "2026-08-12T23:40:23Z",
+          "bundle_bytes": 38533,
+          "build_id": "cecaa7afc1cbcf74ad39e2a2528c9a7ece5700d1a001bac7af056fe9fa4a65b3"
+        },
+        {
+          "path": "dist/draft/.build-meta.json",
+          "page_id": "artifact-a76995f4-e1c6-43f2-9894-c7df3a4f0af2",
+          "built_at": "2026-08-12T23:40:21Z",
+          "bundle_bytes": 166881,
+          "build_id": "83207bb0d3218b118be2c1bbfcae09aa74aa0f5ab287cbaa4ea2f5b30cb8e2d6"
+        }
+      ]
+    },
+    {
+      "id": "artifact-61c5f933-c431-4e31-bce0-97eaa6676df1",
+      "title": "AI & Machine Learning in Trading — Interactive Guide",
+      "reviewStatus": "inventory-only",
+      "savedKVRows": "not-audited",
+      "importClosure": "not-audited",
+      "rootSourceSignals": [],
+      "literalKeys": [],
+      "builds": [
+        {
+          "path": "dist/.build-meta.json",
+          "page_id": "artifact-61c5f933-c431-4e31-bce0-97eaa6676df1",
+          "built_at": "2026-08-14T04:18:19Z",
+          "bundle_bytes": 40069,
+          "build_id": "e32f56e54f69cec0a53c33e2a453bb5128c3e0b0ec9f9e2b630e80d6abc6f774"
+        },
+        {
+          "path": "dist/draft/.build-meta.json",
+          "page_id": "artifact-61c5f933-c431-4e31-bce0-97eaa6676df1",
+          "built_at": "2026-08-14T04:18:21Z",
+          "bundle_bytes": 174045,
+          "build_id": "0ac81db6d5449ee3a52e1aae65c0e1e0b5de2096b25d4350688004ab9b978359"
+        }
+      ]
+    },
+    {
+      "id": "artifact-1f9d1724-8686-47ab-85e6-93713b84d343",
+      "title": "Test Shard 2",
+      "reviewStatus": "inventory-only",
+      "savedKVRows": "not-audited",
+      "importClosure": "not-audited",
+      "rootSourceSignals": [
+        "stateKey"
+      ],
+      "literalKeys": [],
+      "builds": [
+        {
+          "path": "dist/.build-meta.json",
+          "page_id": "artifact-1f9d1724-8686-47ab-85e6-93713b84d343",
+          "built_at": "2026-08-14T04:53:05Z",
+          "bundle_bytes": 2304,
+          "build_id": "f8b374e861cd9fa8f19f491f077ab5573f81f578c4e42c2546da1fdeff987fc3"
+        },
+        {
+          "path": "dist/draft/.build-meta.json",
+          "page_id": "artifact-1f9d1724-8686-47ab-85e6-93713b84d343",
+          "built_at": "2026-08-28T05:29:33Z",
+          "bundle_bytes": 70593,
+          "build_id": "fcb1f1bbc65494da19fa80181c93fb15b2910ee4d13dce45ca6373bcf0923931"
+        }
+      ]
+    },
+    {
+      "id": "artifact-61ecf19c-c67f-4a26-a22b-8ea787754b93",
+      "title": "Test Shard 3",
+      "reviewStatus": "inventory-only",
+      "savedKVRows": "not-audited",
+      "importClosure": "not-audited",
+      "rootSourceSignals": [
+        "useKV"
+      ],
+      "literalKeys": [
+        "items/"
+      ],
+      "builds": [
+        {
+          "path": "dist/.build-meta.json",
+          "page_id": "artifact-61ecf19c-c67f-4a26-a22b-8ea787754b93",
+          "built_at": "2026-08-14T05:04:43Z",
+          "bundle_bytes": 3446,
+          "build_id": "5585c76eb7494d139293af19c885869e00f2465174cae7b21d1441a2d3396d71"
+        },
+        {
+          "path": "dist/draft/.build-meta.json",
+          "page_id": "artifact-61ecf19c-c67f-4a26-a22b-8ea787754b93",
+          "built_at": "2026-08-14T05:04:26Z",
+          "bundle_bytes": 15936,
+          "build_id": "3922a85dfd328af7f7abab4b7a9dfb50e5fb83984abf18c4ab55f0df65cb20c4"
+        }
+      ]
+    },
+    {
+      "id": "artifact-818fb15c-13e7-4309-a1f8-e18bd7e203f6",
+      "title": "Ticker Match — Memory Game",
+      "reviewStatus": "inventory-only",
+      "savedKVRows": "not-audited",
+      "importClosure": "not-audited",
+      "rootSourceSignals": [
+        "useShardState"
+      ],
+      "literalKeys": [
+        "best-moves"
+      ],
+      "builds": [
+        {
+          "path": "dist/.build-meta.json",
+          "page_id": "artifact-818fb15c-13e7-4309-a1f8-e18bd7e203f6",
+          "built_at": "2026-08-16T06:18:52Z",
+          "bundle_bytes": 3529,
+          "build_id": "a876453001cbe8e362fc6df915c1b48353ea88758bd27646d22599d0df840d1f"
+        },
+        {
+          "path": "dist/draft/.build-meta.json",
+          "page_id": "artifact-818fb15c-13e7-4309-a1f8-e18bd7e203f6",
+          "built_at": "2026-08-15T06:23:54Z",
+          "bundle_bytes": 17326,
+          "build_id": "6df60289cf17e8db62b6c5f733b44b223b193e3f678ec2232037a42109c72813"
+        }
+      ]
+    },
+    {
+      "id": "artifact-9c42e09a-cf96-405b-a681-ba8ff2ecc07d",
+      "title": "Statistics for Algo Trading — A Rebuild-From-Scratch Course",
+      "reviewStatus": "inventory-only",
+      "savedKVRows": "not-audited",
+      "importClosure": "not-audited",
+      "rootSourceSignals": [],
+      "literalKeys": [],
+      "builds": [
+        {
+          "path": "dist/.build-meta.json",
+          "page_id": "artifact-9c42e09a-cf96-405b-a681-ba8ff2ecc07d",
+          "built_at": "2026-08-21T00:40:57Z",
+          "bundle_bytes": 177952,
+          "build_id": "807139c539fc8360e043800700106826324d44559bf34437caa5495288b7a6da"
+        },
+        {
+          "path": "dist/draft/.build-meta.json",
+          "page_id": "artifact-9c42e09a-cf96-405b-a681-ba8ff2ecc07d",
+          "built_at": "2026-08-21T00:40:59Z",
+          "bundle_bytes": 759179,
+          "build_id": "171b96d6cabf9e3ef3bcff609923cba1ce0d93c735f549cd24158810f0390cd2"
+        }
+      ]
+    },
+    {
+      "id": "artifact-ff443508-b268-402b-94c1-ea1b299c12a8",
+      "title": "United States — Interactive Wiki",
+      "reviewStatus": "inventory-only",
+      "savedKVRows": "not-audited",
+      "importClosure": "not-audited",
+      "rootSourceSignals": [
+        "stateKey"
+      ],
+      "literalKeys": [],
+      "builds": [
+        {
+          "path": "dist/.build-meta.json",
+          "page_id": "artifact-ff443508-b268-402b-94c1-ea1b299c12a8",
+          "built_at": "2026-08-28T05:52:55Z",
+          "bundle_bytes": 11430,
+          "build_id": "50b9e621a2ca3bedb7af4c111cb636f0efcf49fce748731c3e95646f333f3652"
+        },
+        {
+          "path": "dist/draft/.build-meta.json",
+          "page_id": "artifact-ff443508-b268-402b-94c1-ea1b299c12a8",
+          "built_at": "2026-08-28T05:52:55Z",
+          "bundle_bytes": 44763,
+          "build_id": "f4436a9a5bb8059d8b092de49ae88a18ac166a309a3da73041b98a3f9cc45822"
+        }
+      ]
+    },
+    {
+      "id": "artifact-74eadf5c-76c5-4e79-ad99-c44e2bdeb0d8",
+      "title": "Codex Task Tracker",
+      "reviewStatus": "inventory-only",
+      "savedKVRows": "not-audited",
+      "importClosure": "not-audited",
+      "rootSourceSignals": [
+        "useKV",
+        "useShardState"
+      ],
+      "literalKeys": [
+        "tasks/",
+        "tracker/focus",
+        "tracker/bootstrapped",
+        "tracker/filter"
+      ],
+      "builds": [
+        {
+          "path": "dist/.build-meta.json",
+          "page_id": "artifact-74eadf5c-76c5-4e79-ad99-c44e2bdeb0d8",
+          "built_at": "2026-08-29T01:31:37Z",
+          "bundle_bytes": 10541,
+          "build_id": "391fd16f00ad4c148934bd4e075aba76c4635279e9d53bb02f42425d312b80e2"
+        },
+        {
+          "path": "dist/draft/.build-meta.json",
+          "page_id": "artifact-74eadf5c-76c5-4e79-ad99-c44e2bdeb0d8",
+          "built_at": "2026-08-29T01:31:30Z",
+          "bundle_bytes": 50218,
+          "build_id": "81adcb0b9fa7e58ad0ff695dc34b729f8c8c9fb492070c7f875cf6819760fbc6"
+        }
+      ]
+    },
+    {
+      "id": "artifact-dcae7e90-f2bb-43c3-b508-dd0f978c4a55",
+      "title": "Shards as Hosted MCP Apps — Design Review",
+      "reviewStatus": "inventory-only",
+      "savedKVRows": "not-audited",
+      "importClosure": "not-audited",
+      "rootSourceSignals": [
+        "useShardState"
+      ],
+      "literalKeys": [
+        "design-review/v1"
+      ],
+      "builds": [
+        {
+          "path": "dist/.build-meta.json",
+          "page_id": "artifact-dcae7e90-f2bb-43c3-b508-dd0f978c4a55",
+          "built_at": "2026-08-29T03:02:56Z",
+          "bundle_bytes": 29306,
+          "build_id": "e0c981b14a93f4566e855104d8ea9aa4ea4429e7fe5e3aef9870d7d6e9e162e2"
+        },
+        {
+          "path": "dist/draft/.build-meta.json",
+          "page_id": "artifact-dcae7e90-f2bb-43c3-b508-dd0f978c4a55",
+          "built_at": "2026-08-29T03:02:57Z",
+          "bundle_bytes": 109455,
+          "build_id": "54c0a282cc03de344b8ef9e197d21e64d0d9f874175f1a2a14d48cbacd37018d"
+        }
+      ]
+    },
+    {
+      "id": "artifact-c66fee99-59b8-4400-98f1-2dbdfd545a7d",
+      "title": "Shard v2 — Declarative Bridge & Data Resources",
+      "reviewStatus": "inventory-only",
+      "savedKVRows": "not-audited",
+      "importClosure": "not-audited",
+      "rootSourceSignals": [],
+      "literalKeys": [],
+      "builds": [
+        {
+          "path": "dist/.build-meta.json",
+          "page_id": "artifact-c66fee99-59b8-4400-98f1-2dbdfd545a7d",
+          "built_at": "2026-08-30T18:21:23Z",
+          "bundle_bytes": 98627,
+          "build_id": "6d411de54bafbeb8295cc2a099389eaaf55f4b05f650d87468a232aee9f36bb0"
+        },
+        {
+          "path": "dist/draft/.build-meta.json",
+          "page_id": "artifact-c66fee99-59b8-4400-98f1-2dbdfd545a7d",
+          "built_at": "2026-08-30T18:21:25Z",
+          "bundle_bytes": 310526,
+          "build_id": "c9677b1d28d70b512dfeade241d8e5d2c627af4c4ddf620b6c1fd0e75cfe6070"
+        }
+      ]
+    }
+  ]
+}

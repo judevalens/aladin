@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "resource": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "contractHash": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "op": {
+          "const": "insert"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "data": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "resource",
+        "requestId",
+        "contractHash",
+        "op",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "resource": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "contractHash": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "op": {
+          "const": "update"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "data": {
+          "type": "object"
+        },
+        "baseRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "resource",
+        "requestId",
+        "contractHash",
+        "op",
+        "data",
+        "id",
+        "baseRevision"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "resource": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "contractHash": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "op": {
+          "const": "delete"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "baseRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "resource",
+        "requestId",
+        "contractHash",
+        "op",
+        "id",
+        "baseRevision"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

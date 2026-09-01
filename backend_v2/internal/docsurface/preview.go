@@ -32,6 +32,7 @@ import (
 	page "github.com/chromedp/cdproto/page"
 	cdpruntime "github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
+	"github.com/google/uuid"
 )
 
 const (
@@ -64,15 +65,19 @@ type PreviewOptions struct {
 	// preview build records shard_build_state and emits a build-status event
 	// like any other build. Without it Open falls back to the raw runtime and
 	// the work pane's status chip goes stale while an agent iterates.
-	Builder service.ShardBuildService
+	Builder   service.ShardBuildService
+	Resources service.ShardResourceService
+	Releases  service.ShardReleaseService
 }
 
 // PreviewSessions is the service.PreviewService impl. One manager owns a shared
 // browser (ExecAllocator) and a tab per (userID, pageID).
 type PreviewSessions struct {
-	store   service.DocSurfaceStore
-	runtime service.WorkspaceRuntime
-	builder service.ShardBuildService // optional; see PreviewOptions.Builder
+	store     service.DocSurfaceStore
+	runtime   service.WorkspaceRuntime
+	builder   service.ShardBuildService // optional; see PreviewOptions.Builder
+	resources service.ShardResourceService
+	releases  service.ShardReleaseService
 
 	idleTTL      time.Duration
 	maxSessions  int
@@ -112,7 +117,10 @@ type previewSession struct {
 	consoleErrors []string
 	exceptions    []string
 
-	lastUsed time.Time
+	lastUsed       time.Time
+	resourceMu     sync.Mutex
+	resourceQueue  chan string
+	resourceCancel context.CancelFunc
 }
 
 // NewPreviewSessions constructs the manager and starts the idle reaper. It does
@@ -135,6 +143,8 @@ func NewPreviewSessions(store service.DocSurfaceStore, runtime service.Workspace
 		store:        store,
 		runtime:      runtime,
 		builder:      opts.Builder,
+		resources:    opts.Resources,
+		releases:     opts.Releases,
 		idleTTL:      opts.IdleTTL,
 		maxSessions:  opts.MaxSessions,
 		tickInterval: tick,
@@ -155,7 +165,12 @@ func (m *PreviewSessions) Open(ctx context.Context, pageID string, channel servi
 	// Rebuild on every open so the tab always reflects the agent's latest edits.
 	// Through the build SERVICE when available, so the status the work pane
 	// shows tracks what the agent is previewing.
-	res, err := m.build(ctx, pageID, channel)
+	var res service.BuildResult
+	if opts.Build != nil {
+		res = *opts.Build
+	} else {
+		res, err = m.build(ctx, pageID, channel)
+	}
 	if err != nil {
 		return service.PreviewState{}, err
 	}
@@ -167,22 +182,40 @@ func (m *PreviewSessions) Open(ctx context.Context, pageID string, channel servi
 		theme = ""
 	}
 	distRel := DistDir(channel)
-	bundleJS, err := m.store.ReadFile(ctx, pageID, distRel+"/bundle.js")
+	var bundleJS, bundleCSS []byte
+	if len(res.Contract) > 0 {
+		if m.resources == nil || m.releases == nil {
+			return service.PreviewState{}, service.BadRequest("V2 preview resources unavailable")
+		}
+		// Preview is always a real draft sandbox, including verification of a
+		// staged published build. It can never write published records.
+		if err := m.releases.Stage(ctx, pageID, service.ChannelDraft, res); err != nil {
+			return service.PreviewState{}, err
+		}
+		if err := m.releases.Activate(ctx, pageID, service.ChannelDraft, res.BuildID); err != nil {
+			return service.PreviewState{}, err
+		}
+		bundleJS, bundleCSS = res.Files["bundle.js"], res.Files["bundle.css"]
+	} else {
+		bundleJS, err = m.store.ReadFile(ctx, pageID, distRel+"/bundle.js")
+		bundleCSS, _ = m.store.ReadFile(ctx, pageID, distRel+"/bundle.css")
+	}
 	if err != nil {
 		return service.PreviewState{}, err
 	}
-	bundleCSS, _ := m.store.ReadFile(ctx, pageID, distRel+"/bundle.css")
-	html, err := m.previewHTML(ctx, pageID, distRel, string(bundleCSS), string(bundleJS), theme)
+	html, err := m.previewHTML(ctx, pageID, distRel, string(bundleCSS), string(bundleJS), theme, &res)
 	if err != nil {
 		return service.PreviewState{}, err
 	}
 
 	// Load into a tab. If the browser/tab died under us (crash, external kill),
+	nonce := uuid.NewString()
+	html = strings.ReplaceAll(html, "__PREVIEW_RESOURCE_NONCE__", nonce)
 	// self-heal once: reset the dead browser and retry on a fresh one. Combined
 	// with the liveness checks in ensureAllocLocked/getOrCreate, this means a
 	// crashed renderer recovers on the next preview_open — no mcp restart.
 	for attempt := 0; ; attempt++ {
-		st, err := m.openOnce(key, pageID, html)
+		st, err := m.openOnce(key, pageID, html, func(s *previewSession) error { return m.configureResourcePreview(ctx, s, pageID, res, nonce) })
 		if err == nil {
 			return st, nil
 		}
@@ -205,7 +238,7 @@ func (m *PreviewSessions) build(ctx context.Context, pageID string, channel serv
 
 // openOnce performs one load attempt: (re)acquire the tab, warm up the browser
 // on first use, then replace the document and wait for mount.
-func (m *PreviewSessions) openOnce(key, pageID, html string) (service.PreviewState, error) {
+func (m *PreviewSessions) openOnce(key, pageID, html string, setup ...func(*previewSession) error) (service.PreviewState, error) {
 	s, err := m.getOrCreate(key)
 	if err != nil {
 		return service.PreviewState{}, err
@@ -233,6 +266,11 @@ func (m *PreviewSessions) openOnce(key, pageID, html string) (service.PreviewSta
 
 	opCtx, cancel := context.WithTimeout(s.tabCtx, openTimeout)
 	defer cancel()
+	if len(setup) > 0 {
+		if err := setup[0](s); err != nil {
+			return service.PreviewState{}, err
+		}
+	}
 	if err := chromedp.Run(opCtx,
 		setDocContent(html),
 		waitMount(mountTimeout),
@@ -491,10 +529,18 @@ func (m *PreviewSessions) CloseAll(ctx context.Context) error {
 // previewHTML builds the preview document. For an ESM build (importmap.json
 // present), it absolutizes the /vendor URLs to the local vendor server and widens
 // the meta-CSP to that origin; otherwise it serves the legacy inline doc.
-func (m *PreviewSessions) previewHTML(ctx context.Context, pageID, distRel, css, js, theme string) (string, error) {
+func (m *PreviewSessions) previewHTML(ctx context.Context, pageID, distRel, css, js, theme string, builds ...*service.BuildResult) (string, error) {
 	var im ImportMap
 	csp := CSP
-	if data, derr := m.store.ReadFile(ctx, pageID, distRel+"/importmap.json"); derr == nil {
+	var build *service.BuildResult
+	if len(builds) > 0 && len(builds[0].Contract) > 0 {
+		build = builds[0]
+	}
+	data, derr := m.store.ReadFile(ctx, pageID, distRel+"/importmap.json")
+	if build != nil {
+		data, derr = build.Files["importmap.json"], nil
+	}
+	if derr == nil {
 		if json.Unmarshal(data, &im) == nil {
 			if im.Imports == nil {
 				im.Imports = map[string]string{}
@@ -512,6 +558,12 @@ func (m *PreviewSessions) previewHTML(ctx context.Context, pageID, distRel, css,
 				csp = CSPWithVendor(base)
 			}
 		}
+	}
+	if build != nil {
+		csp = CSPForBridgeVersion(csp, "bridge/2")
+		html := PreviewHTML(pageID, TokensCSS, css, js, csp, im, theme)
+		html = strings.Replace(html, breakInlineClosers(previewBridgeEmulatorJS), previewResourceBridgeJS, 1)
+		return BootstrapV2(html, previewResourceRelease(*build)), nil
 	}
 	return PreviewHTML(pageID, TokensCSS, css, js, csp, im, theme), nil
 }
@@ -733,6 +785,21 @@ func (m *PreviewSessions) captureState(opCtx context.Context, s *previewSession,
 
 func (s *previewSession) onEvent(ev any) {
 	switch e := ev.(type) {
+	case *cdpruntime.EventBindingCalled:
+		if e.Name != "aladinPreviewResource" {
+			return
+		}
+		s.resourceMu.Lock()
+		if s.resourceQueue != nil {
+			select {
+			case s.resourceQueue <- e.Payload:
+			default:
+				if s.resourceCancel != nil {
+					s.resourceCancel()
+				}
+			}
+		}
+		s.resourceMu.Unlock()
 	case *cdpruntime.EventConsoleAPICalled:
 		line := string(e.Type) + ": " + formatConsoleArgs(e.Args)
 		s.logMu.Lock()

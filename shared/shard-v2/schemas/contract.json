@@ -1,0 +1,479 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "version": {
+      "const": 2
+    },
+    "intent": {
+      "type": "string",
+      "minLength": 1
+    },
+    "resources": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "uri": {
+            "type": "string",
+            "pattern": "^shard://self/resources/[A-Za-z][A-Za-z0-9_-]{0,63}$"
+          },
+          "kind": {
+            "enum": [
+              "collection",
+              "singleton"
+            ]
+          },
+          "meaning": {
+            "type": "string",
+            "minLength": 1
+          },
+          "schemaVersion": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "schema": {
+            "type": "object"
+          },
+          "source": {
+            "type": "object",
+            "properties": {
+              "provider": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "version": {
+                "const": 1
+              },
+              "dataset": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+              },
+              "params": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "provider"
+            ],
+            "additionalProperties": false
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "snapshot",
+                "query",
+                "insert",
+                "update",
+                "delete"
+              ]
+            },
+            "uniqueItems": true,
+            "minItems": 1,
+            "maxItems": 5
+          },
+          "observe": {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "const": "changes"
+              },
+              "protocol": {
+                "const": "shard-data/1"
+              }
+            },
+            "required": [
+              "mode",
+              "protocol"
+            ],
+            "additionalProperties": false
+          },
+          "exposure": {
+            "type": "object",
+            "properties": {
+              "app": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "snapshot",
+                    "query",
+                    "insert",
+                    "update",
+                    "delete",
+                    "observe"
+                  ]
+                },
+                "uniqueItems": true,
+                "maxItems": 6
+              },
+              "agent": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "snapshot",
+                    "query",
+                    "insert",
+                    "update",
+                    "delete",
+                    "observe"
+                  ]
+                },
+                "uniqueItems": true,
+                "maxItems": 6
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "query": {
+            "type": "object",
+            "properties": {
+              "filterFields": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^(?:/(?:[^~/]|~[01])*)+$",
+                  "maxLength": 1024
+                },
+                "uniqueItems": true,
+                "maxItems": 64
+              },
+              "sortFields": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^(?:/(?:[^~/]|~[01])*)+$",
+                  "maxLength": 1024
+                },
+                "uniqueItems": true,
+                "maxItems": 64
+              },
+              "maxLimit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 500
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "uri",
+          "kind",
+          "meaning",
+          "schemaVersion",
+          "schema",
+          "source",
+          "operations"
+        ],
+        "additionalProperties": false
+      },
+      "minProperties": 1,
+      "maxProperties": 32
+    },
+    "bindings": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "resource": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+          },
+          "params": {
+            "type": "object",
+            "additionalProperties": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "input": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+                    }
+                  },
+                  "required": [
+                    "input"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "binding": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+                    },
+                    "pointer": {
+                      "type": "string",
+                      "pattern": "^/data(?:/(?:[^~/]|~[01])*)*$"
+                    }
+                  },
+                  "required": [
+                    "binding",
+                    "pointer"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "literal": {}
+                  },
+                  "required": [
+                    "literal"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": [
+                    "string",
+                    "number",
+                    "boolean",
+                    "null",
+                    "array"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "input"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "binding"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "literal"
+                        ]
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "inputsSchema": {
+            "type": "object"
+          },
+          "query": {
+            "type": "object",
+            "properties": {
+              "where": {
+                "$ref": "#/$defs/predicate"
+              },
+              "orderBy": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "field": {
+                      "type": "string",
+                      "pattern": "^(?:/(?:[^~/]|~[01])*)+$",
+                      "maxLength": 1024
+                    },
+                    "direction": {
+                      "enum": [
+                        "asc",
+                        "desc"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "field",
+                    "direction"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 32
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 500
+              },
+              "cursor": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "minLength": 1,
+                "maxLength": 4096
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "select": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^(?:/(?:[^~/]|~[01])*)+$",
+              "maxLength": 1024
+            },
+            "minItems": 1,
+            "uniqueItems": true,
+            "maxItems": 64
+          }
+        },
+        "required": [
+          "resource"
+        ],
+        "additionalProperties": false
+      },
+      "maxProperties": 128
+    }
+  },
+  "required": [
+    "version",
+    "intent",
+    "resources",
+    "bindings"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "predicate": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "and": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/predicate"
+              },
+              "minItems": 1,
+              "maxItems": 32
+            }
+          },
+          "required": [
+            "and"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "or": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/predicate"
+              },
+              "minItems": 1,
+              "maxItems": 32
+            }
+          },
+          "required": [
+            "or"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "field": {
+              "type": "string",
+              "pattern": "^(?:/(?:[^~/]|~[01])*)+$",
+              "maxLength": 1024
+            },
+            "op": {
+              "enum": [
+                "eq",
+                "gt",
+                "gte",
+                "lt",
+                "lte"
+              ]
+            },
+            "value": {
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "field",
+            "op",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "field": {
+              "type": "string",
+              "pattern": "^(?:/(?:[^~/]|~[01])*)+$",
+              "maxLength": 1024
+            },
+            "op": {
+              "const": "in"
+            },
+            "value": {
+              "type": "array",
+              "items": {
+                "type": [
+                  "string",
+                  "number",
+                  "boolean",
+                  "null"
+                ]
+              },
+              "minItems": 1,
+              "maxItems": 100
+            }
+          },
+          "required": [
+            "field",
+            "op",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "field": {
+              "type": "string",
+              "pattern": "^(?:/(?:[^~/]|~[01])*)+$",
+              "maxLength": 1024
+            },
+            "op": {
+              "const": "exists"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "field",
+            "op",
+            "value"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}

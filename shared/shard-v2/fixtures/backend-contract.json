@@ -1,0 +1,28 @@
+{
+  "version": 2,
+  "intent": "Persisted task data and preferences for backend conformance",
+  "resources": {
+    "tasks": {
+      "uri": "shard://self/resources/tasks", "kind": "collection", "meaning": "Tasks owned by this shard", "schemaVersion": 1,
+      "schema": {"type": "object", "properties": {"title": {"type": "string"}, "score": {"type": ["number", "null"]}, "done": {"type": "boolean"}, "private": {"type": "string"}}, "required": ["title"], "additionalProperties": false},
+      "source": {"provider": "shard.documents", "dataset": "tasks"},
+      "operations": ["snapshot", "query", "insert", "update", "delete"],
+      "observe": {"mode": "changes", "protocol": "shard-data/1"},
+      "exposure": {"app": ["snapshot", "query", "observe", "insert", "update", "delete"], "agent": ["snapshot", "query", "observe", "insert", "update", "delete"]},
+      "query": {"filterFields": ["/title", "/score", "/done"], "sortFields": ["/title", "/score", "/done"], "maxLimit": 500}
+    },
+    "preferences": {
+      "uri": "shard://self/resources/preferences", "kind": "singleton", "meaning": "Shard preferences", "schemaVersion": 1,
+      "schema": {"type": "object", "properties": {"theme": {"type": "string"}}, "required": ["theme"], "additionalProperties": false},
+      "source": {"provider": "shard.documents", "dataset": "preferences"},
+      "operations": ["snapshot", "insert", "update", "delete"],
+      "exposure": {"app": ["snapshot", "insert", "update", "delete"], "agent": ["snapshot"]}
+    }
+  },
+  "bindings": {
+    "tasks": {"resource": "tasks"},
+    "publicTasks": {"resource": "tasks", "select": ["/title"]},
+    "openTasks": {"resource": "tasks", "query": {"where": {"field": "/done", "op": "eq", "value": false}}},
+    "preferences": {"resource": "preferences"}
+  }
+}

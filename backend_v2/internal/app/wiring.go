@@ -14,6 +14,7 @@ import (
 	"aladin/backend_v2/internal/market/alpaca"
 	"aladin/backend_v2/internal/repo"
 	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/shardv2"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -44,7 +45,11 @@ type Dependencies interface {
 	Preview() coreservice.PreviewService
 	// ShardBuild runs builds while recording status + emitting build-status events.
 	ShardBuild() coreservice.ShardBuildService
-	// ShardKV is the per-shard key/value document store (shard local state).
+	// ShardResources is the opt-in v2 resource service (nil when disabled).
+	ShardResources() coreservice.ShardResourceService
+	ShardReleases() coreservice.ShardReleaseService
+	ShardCatalog() coreservice.ShardCatalogService
+	// ShardKV is the v1 per-shard key/value document store.
 	ShardKV() coreservice.ShardKVService
 	// ShardBridge serves the workspace plane to shards under the manifest grant.
 	ShardBridge() coreservice.ShardBridgeService
@@ -121,6 +126,9 @@ type StaticDependencies struct {
 	WorkspaceRuntimeSvc    coreservice.WorkspaceRuntime
 	PreviewSvc             coreservice.PreviewService
 	ShardBuildSvc          coreservice.ShardBuildService
+	ShardResourceSvc       coreservice.ShardResourceService
+	ShardReleaseSvc        coreservice.ShardReleaseService
+	ShardCatalogSvc        coreservice.ShardCatalogService
 	ShardKVSvc             coreservice.ShardKVService
 	ShardBridgeSvc         coreservice.ShardBridgeService
 	RelationshipsSvc       coreservice.RelationshipService
@@ -184,6 +192,11 @@ func (d StaticDependencies) Preview() coreservice.PreviewService {
 }
 func (d StaticDependencies) ShardBuild() coreservice.ShardBuildService {
 	return d.ShardBuildSvc
+}
+func (d StaticDependencies) ShardCatalog() coreservice.ShardCatalogService  { return d.ShardCatalogSvc }
+func (d StaticDependencies) ShardReleases() coreservice.ShardReleaseService { return d.ShardReleaseSvc }
+func (d StaticDependencies) ShardResources() coreservice.ShardResourceService {
+	return d.ShardResourceSvc
 }
 func (d StaticDependencies) ShardKV() coreservice.ShardKVService {
 	return d.ShardKVSvc
@@ -275,6 +288,9 @@ type wiring struct {
 	workspaceRuntime    coreservice.WorkspaceRuntime
 	preview             coreservice.PreviewService
 	shardBuild          coreservice.ShardBuildService
+	shardResources      coreservice.ShardResourceService
+	shardReleases       coreservice.ShardReleaseService
+	shardCatalog        coreservice.ShardCatalogService
 	shardKV             coreservice.ShardKVService
 	shardBridge         coreservice.ShardBridgeService
 	relationships       coreservice.RelationshipService
@@ -323,20 +339,23 @@ func (w wiring) Realtime() coreservice.RealtimeEventService {
 func (w wiring) RealtimeKeyResolver() coreservice.SubscriptionKeyResolver {
 	return w.rtKeys
 }
-func (w wiring) Sync() coreservice.SyncService                  { return w.sync }
-func (w wiring) OutboxDrainer() *coreservice.OutboxDrainer      { return w.outboxDrainer }
-func (w wiring) DocSurfaceStore() coreservice.DocSurfaceStore   { return w.docSurfaceStore }
-func (w wiring) WorkspaceRuntime() coreservice.WorkspaceRuntime { return w.workspaceRuntime }
-func (w wiring) Preview() coreservice.PreviewService            { return w.preview }
-func (w wiring) ShardBuild() coreservice.ShardBuildService      { return w.shardBuild }
-func (w wiring) ShardKV() coreservice.ShardKVService            { return w.shardKV }
-func (w wiring) ShardBridge() coreservice.ShardBridgeService    { return w.shardBridge }
-func (w wiring) Relationships() coreservice.RelationshipService { return w.relationships }
-func (w wiring) GraphPane() coreservice.GraphPaneService        { return w.graphPane }
-func (w wiring) Research() coreservice.ResearchService          { return w.research }
-func (w wiring) Documents() coreservice.DocumentService         { return w.documents }
-func (w wiring) EntityTags() coreservice.EntityTagService       { return w.entityTags }
-func (w wiring) ArtifactRefs() coreservice.ArtifactRefService   { return w.artifactRefs }
+func (w wiring) Sync() coreservice.SyncService                    { return w.sync }
+func (w wiring) OutboxDrainer() *coreservice.OutboxDrainer        { return w.outboxDrainer }
+func (w wiring) DocSurfaceStore() coreservice.DocSurfaceStore     { return w.docSurfaceStore }
+func (w wiring) WorkspaceRuntime() coreservice.WorkspaceRuntime   { return w.workspaceRuntime }
+func (w wiring) Preview() coreservice.PreviewService              { return w.preview }
+func (w wiring) ShardBuild() coreservice.ShardBuildService        { return w.shardBuild }
+func (w wiring) ShardCatalog() coreservice.ShardCatalogService    { return w.shardCatalog }
+func (w wiring) ShardReleases() coreservice.ShardReleaseService   { return w.shardReleases }
+func (w wiring) ShardResources() coreservice.ShardResourceService { return w.shardResources }
+func (w wiring) ShardKV() coreservice.ShardKVService              { return w.shardKV }
+func (w wiring) ShardBridge() coreservice.ShardBridgeService      { return w.shardBridge }
+func (w wiring) Relationships() coreservice.RelationshipService   { return w.relationships }
+func (w wiring) GraphPane() coreservice.GraphPaneService          { return w.graphPane }
+func (w wiring) Research() coreservice.ResearchService            { return w.research }
+func (w wiring) Documents() coreservice.DocumentService           { return w.documents }
+func (w wiring) EntityTags() coreservice.EntityTagService         { return w.entityTags }
+func (w wiring) ArtifactRefs() coreservice.ArtifactRefService     { return w.artifactRefs }
 func (w wiring) EntityContext() coreservice.EntityContextService {
 	return w.entityContext
 }
@@ -349,10 +368,10 @@ func (w wiring) Watchlist() coreservice.WatchlistService    { return w.watchlist
 func (w wiring) ReadingPositions() coreservice.ReadingPositionService {
 	return w.readingPositions
 }
-func (w wiring) Search() coreservice.SearchService          { return w.search }
-func (w wiring) Unfurl() coreservice.UnfurlService          { return w.unfurl }
+func (w wiring) Search() coreservice.SearchService             { return w.search }
+func (w wiring) Unfurl() coreservice.UnfurlService             { return w.unfurl }
 func (w wiring) ContentIndex() coreservice.ContentIndexService { return w.contentIndex }
-func (w wiring) Bars() coreservice.BarService               { return w.bars }
+func (w wiring) Bars() coreservice.BarService                  { return w.bars }
 func (w wiring) QuoteSnapshots() coreservice.QuoteSnapshotSource {
 	return w.quoteSnapshots
 }
@@ -374,11 +393,19 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 	artifactRepo := repo.NewArtifactsPostgres(pool)
 	artifactFiles := NewArtifactFileStore()
 	docStore := docsurface.NewStore(dataVolumePath)
-	docRuntime := docsurface.NewBuilder(docStore, filepath.Join(dataVolumePath, "cache", "esm"))
-	shardBuild := coreservice.NewShardBuildService(docRuntime, repo.NewShardBuildPostgres(pool))
+	var profiles shardv2.Registry
+	var releaseSvc coreservice.ShardReleaseService
+	storage := repo.NewShardResourcePostgres(pool, repo.ShardResourceLimits{})
+	// Keep protected release lookup available even when v2 execution is disabled.
+	// Existing v2 shards must fail closed, never silently serve legacy dist.
+	releaseSvc = coreservice.NewShardReleaseService(storage, nil)
+	if os.Getenv("SHARD_V2_ENABLED") == "1" {
+		profiles = shardv2.Registry{"shard.documents": storage.Profile(), "workspace.nodes": coreservice.NewWorkspaceResourceProvider(nil).Profile()}
+	}
+	docRuntime := docsurface.NewBuilder(docStore, filepath.Join(dataVolumePath, "cache", "esm"), profiles)
 	// Preview rebuilds ride the build service too, so an agent's preview_open
 	// updates the same build-status the work pane shows.
-	docPreview := docsurface.NewPreviewSessions(docStore, docRuntime, docsurface.PreviewOptions{Builder: shardBuild})
+
 	shardKVRepo := repo.NewShardKVPostgres(pool)
 	researchSvc := coreservice.NewResearchService(repo.NewResearchPostgres(pool))
 	feedRepo := repo.NewFeedPostgres(pool)
@@ -515,6 +542,26 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		Watchlist: watchlistSvc,
 	})
 
+	// V2 stays opt-in. No active releases are created by enabling this flag;
+	// only the protected build/publish path may populate their pointers.
+	var resourceSvc coreservice.ShardResourceService
+	var catalogSvc coreservice.ShardCatalogService
+	if os.Getenv("SHARD_V2_ENABLED") == "1" {
+		workspace := coreservice.NewWorkspaceResourceProvider(coreservice.NewEntityRegistry(
+			coreservice.NewArtifactEntityService(artifactsSvc), coreservice.NewRecordEntityService(recordRepo),
+			coreservice.NewWatchlistEntityService(watchlistSvc), coreservice.NewResearchEntityService(researchSvc),
+		))
+		releaseSvc = coreservice.NewShardReleaseService(storage, profiles, workspace.(coreservice.ResourceStageValidator))
+		resourceSvc = coreservice.NewShardResourceService(artifactsSvc, storage, map[string]coreservice.ResourceProvider{
+			"shard.documents": storage, "workspace.nodes": workspace,
+		}, coreservice.ResourceServiceOptions{})
+	}
+
+	if resourceSvc != nil {
+		catalogSvc = coreservice.NewShardCatalogService(storage, resourceSvc)
+	}
+	shardBuild := coreservice.NewShardBuildService(docRuntime, repo.NewShardBuildPostgres(pool), releaseSvc)
+	docPreview := docsurface.NewPreviewSessions(docStore, docRuntime, docsurface.PreviewOptions{Builder: shardBuild, Resources: resourceSvc, Releases: releaseSvc})
 	return wiring{
 		auth:                coreservice.NewAuthService(authRepo, coreservice.NewPasswordHasher()),
 		system:              coreservice.NewSystemService(systemRepo),
@@ -535,6 +582,9 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		workspaceRuntime:    docRuntime,
 		preview:             docPreview,
 		shardBuild:          shardBuild,
+		shardResources:      resourceSvc,
+		shardReleases:       releaseSvc,
+		shardCatalog:        catalogSvc,
 		shardKV:             coreservice.NewShardKVService(artifactsSvc, shardKVRepo),
 		// The workspace plane: refs-as-grant over the launch entity kinds.
 		shardBridge: coreservice.NewShardBridgeService(artifactsSvc, docStore,
@@ -544,29 +594,29 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 				coreservice.NewWatchlistEntityService(watchlistSvc),
 				coreservice.NewResearchEntityService(researchSvc),
 			)),
-		relationships:       coreservice.NewRelationshipService(relationshipRepo),
-		graphPane:           coreservice.NewGraphPaneService(graphPaneRepo),
-		research:            researchSvc,
-		documents:           coreservice.NewDocumentService(repo.NewDocumentPostgres(pool, artifactFiles)),
-		entityTags:          entityTagsSvc,
-		artifactRefs:        artifactRefsSvc,
-		entityContext:       entityContextSvc,
-		entityList:          coreservice.NewEntityListService(repo.NewEntityListPostgres(pool)),
-		graphReader:         graphReader,
-		instruments:         instrumentsSvc,
-		watchlist:           watchlistSvc,
-		readingPositions:    coreservice.NewReadingPositionService(repo.NewReadingPositionPostgres(pool)),
-		search:              searchSvc,
-		unfurl:              coreservice.NewUnfurlService(),
-		contentIndex:        contentIndexSvc,
-		bars:                barsSvc,
-		quoteSnapshots:      snapshotSource,
-		marketInfo:          marketInfo,
-		alerts:              alertsSvc,
-		notifications:       notificationsSvc,
-		alertEngine:         alertEngine,
-		marketData:          marketDataSvc,
-		copilot:             copilotSvc,
+		relationships:    coreservice.NewRelationshipService(relationshipRepo),
+		graphPane:        coreservice.NewGraphPaneService(graphPaneRepo),
+		research:         researchSvc,
+		documents:        coreservice.NewDocumentService(repo.NewDocumentPostgres(pool, artifactFiles)),
+		entityTags:       entityTagsSvc,
+		artifactRefs:     artifactRefsSvc,
+		entityContext:    entityContextSvc,
+		entityList:       coreservice.NewEntityListService(repo.NewEntityListPostgres(pool)),
+		graphReader:      graphReader,
+		instruments:      instrumentsSvc,
+		watchlist:        watchlistSvc,
+		readingPositions: coreservice.NewReadingPositionService(repo.NewReadingPositionPostgres(pool)),
+		search:           searchSvc,
+		unfurl:           coreservice.NewUnfurlService(),
+		contentIndex:     contentIndexSvc,
+		bars:             barsSvc,
+		quoteSnapshots:   snapshotSource,
+		marketInfo:       marketInfo,
+		alerts:           alertsSvc,
+		notifications:    notificationsSvc,
+		alertEngine:      alertEngine,
+		marketData:       marketDataSvc,
+		copilot:          copilotSvc,
 	}
 }
 

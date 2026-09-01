@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "resource": {
+      "type": "string",
+      "pattern": "^shard://[A-Za-z0-9_-]+/resources/[A-Za-z][A-Za-z0-9_-]{0,63}\\?view=[A-Za-z0-9_-]+$",
+      "maxLength": 1024
+    },
+    "records": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "revision": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "schemaVersion": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "data": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "schemaVersion",
+          "data"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 500
+    },
+    "complete": {
+      "const": true
+    },
+    "nextCursor": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "sourceUpdatedAt": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    }
+  },
+  "required": [
+    "resource",
+    "records",
+    "complete"
+  ],
+  "additionalProperties": false
+}

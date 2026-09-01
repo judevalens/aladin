@@ -44,12 +44,26 @@ export function shardBuildFromWire(w: ShardBuildWire): ShardBuildInfo {
 export interface ShardBuildSlice {
   shardBuilds: Record<string, ShardBuildInfo>;
   setShardBuild: (info: ShardBuildInfo) => void;
+  shardPublications: Record<string, ShardPublication>;
+  setShardPublication: (publication: ShardPublication) => void;
+}
+
+export interface ShardPublication {
+  pageId: string;
+  eventId: string;
+  protocol: "bridge/2";
+  buildId: string;
+  contractHash: string;
 }
 
 export const createShardBuildSlice: StateCreator<ShardBuildSlice, [], [], ShardBuildSlice> = (
   set,
 ) => ({
   shardBuilds: {},
+  shardPublications: {},
+  setShardPublication: (publication) => set((state) => state.shardPublications[publication.pageId]?.eventId === publication.eventId ? state : ({
+    shardPublications: { ...state.shardPublications, [publication.pageId]: publication },
+  })),
   setShardBuild: (info) =>
     set((state) => ({
       shardBuilds: {

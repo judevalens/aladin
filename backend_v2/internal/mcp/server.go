@@ -53,122 +53,45 @@ interactive React app you author as files, build, and publish; it renders in a
 sandboxed iframe. Use this (not create_page) when the user wants an interactive
 widget, dashboard, visualization, calculator, or mini-tool.
 
-@aladin/kit — the DEFAULT way to author. create_app seeds a kit-composed
-index.tsx + an anchors.json manifest. Import from "@aladin/kit":
-  - Region({anchor, kind, children}) — wrap any ADDRESSABLE surface; it stamps
-    the anchor so the region can be referenced for feedback, deep links, and the
-    knowledge graph. To make something addressable, wrap it in a Region AND
-    declare it in anchors.json.
-  - Page / Section / Panel / Toolbar — layout + chrome.
-  - HashRouter / Route / Link / useRoute — multi-view shards (opaque-origin-safe
-    hash routing; never pushState).
-  - For / Against / Catalyst / Echo — semantic hues.
-  - Generic UI (token-styled, no extra deps) — use the EXACT props shown, don't guess:
-    Button({variant: primary|outline|ghost|danger, size: sm|md, ...native}), Card, Divider,
-    Input, Textarea (native input/textarea props), Field({label, hint, htmlFor}),
-    Badge({tone: neutral|amber|for|against}), Callout({tone: info|warn|for|against, title}),
-    Stat({label, value, sub}), Tabs({tabs: [{id, label, content}], initialId}),
-    Dialog({open, onClose, title}). Note: Tabs takes "tabs" (not "items"); Stat uses "sub";
-    Badge has no "muted" tone. Reach for these before hand-rolling buttons/cards/inputs.
-  - bridge + useNode(id) / useNodes(ids) — read live workspace/graph data over the
-    host bridge (a shard is sandboxed; this postMessage channel is its only data
-    path). useNode returns {node, loading, error}; declare the entity ids in each
-    region's anchors.json refs. In preview a built-in emulator returns stub nodes so
-    data-wired shards render; the live app's host serves real workspace data.
-  - tok(name) + chartSeries() + chartAxis()/chartGrid()/chartTooltip() — chart/SVG
-    theming. IMPORTANT: var(--color-*) is INERT inside SVG presentation attributes
-    (stroke="…"/fill="…"), which is how recharts and <svg> set colors — so resolve
-    a token with tok("--color-amber") before passing it as an attribute, pick
-    series colors from chartSeries(), and spread chartAxis()/chartGrid()/
-    chartTooltip() into recharts <XAxis>/<CartesianGrid>/<Tooltip>. Don't hardcode
-    hex and don't put var(--…) in an SVG attribute.
-Style with Tailwind classes + Aladin token utilities (bg-bg, bg-panel, text-ink,
-text-ink-2, bg-amber, border-line, rounded-card, font-display/font-mono). Tailwind
-is compiled live in the shard — just use classes; no build/config step. Raw React
-+ inline styles still work, but the kit makes the conventions the default path.
+Shard capabilities are discovered, not assumed: call get_authoring_guide before
+answering what can be built. Without page_id it describes new shards on this
+backend; with page_id it describes the supported APIs for that specific shard.
+Use those enabled capabilities directly; do not ask the user to choose a runtime
+version or infer a shard data source from unrelated workspace/market tools.
 
-anchors.json (the manifest) is the canonical identity layer — declare each
-addressable region: {id, kind, route, source, refs, meaning}. refs are graph
-entity ids the region depends on. Keep it in sync as you add/rename regions;
-write meaning + the top-level intent so another agent could rebuild the idea. A
-malformed manifest fails the build.
+Authoring loop:
+  1. For a NEW shard, create_app seeds the files/data configuration enabled here
+     and returns authoring_guide, current_index_tsx and any data contract.
+     For an EXISTING shard, call get_authoring_guide(page_id), then read its files.
+     Preserve its saved data and storage API; do not migrate during a routine edit.
+  2. Compose React components from @aladin/kit using the guide's exact props and
+     Aladin theme tokens. Keep Region anchors and their declarations in sync.
+     Entry point: index.tsx, mounting #root via createRoot from react-dom/client.
+  3. write_file creates files; overwrite:true is required to replace an existing
+     file. Prefer edit_file for targeted changes. Previous bytes go to .history/.
+     Writes auto-build draft and return diagnostics; fix errors until build.ok.
+     For bulk writes use build:false, then build once.
+  4. install_lib(page_id,name) installs compatible dependencies through esm.sh,
+     e.g. recharts or d3. Import them normally; never load remote runtime scripts.
+  5. build_app compiles publishable code. preview_open, preview_navigate,
+     preview_snapshot/screenshot, preview_click and preview_console exercise it.
+     Preview execution can write draft data; never treat emulator values as user
+     data. Use the target's guide for exact persistence/observation guarantees.
+  6. verify_app checks anchors, source declarations, routes and rendering.
+     Fix reported failures. publish_app performs the target's required checks
+     and makes the verified artifact live. Renderer requirements come from the
+     current guide; a successful build alone is not evidence of correct rendering.
 
-Authoring loop (like a normal dev):
-  1. create_app(title)        → makes the shard + seeds a kit-composed index.tsx
-     and anchors.json; returns its id
-  2. write_file / edit_file   → author index.tsx + components, composing
-     @aladin/kit (above); mount onto #root via createRoot from "react-dom/client".
-     EVERY write auto-runs a DRAFT build and returns diagnostics inline — read
-     them. Use edit_file (exact old_string→new_string) for surgical edits.
-     write_file only CREATES: replacing an existing file needs overwrite:true,
-     and the previous bytes are snapshotted under .history/ first. (Pass
-     build:false to skip the auto-build for bulk multi-file writes, then build once.)
-  3. install_lib(page_id, name) → add a dependency (e.g. "recharts", "d3");
-     import it normally. It is bundled from esm.sh at build time.
-  4. build_app(page_id)        → compiles. On {ok:false}, read log, fix, rebuild.
-  5. preview_open(page_id)      → build + open a LIVE headless tab. Verify it
-     actually RUNS (compiling != working): expect mounted:true and an empty
-     exceptions list. Walk every route and inspect before publishing.
-  6. verify_app(page_id)        → the full pass in one call: manifest validity,
-     refs resolve, and per route mounted / declared anchors present in the DOM /
-     exceptions / console errors. Fix everything it reports.
-  7. publish_app(page_id, summary) → builds the published channel, re-runs that
-     same verification (publish is REFUSED if it fails), records a markdown
-     summary (the knowledge-graph spine — describe what the app shows), and
-     marks it live.
+Use hash routing (kit Route/Link/AppShell, or HashRouter), never pushState or
+BrowserRouter. Every internal link must retain the document URL and credential
+through a fragment (#/section); relative navigation breaks authentication and is
+rejected by verification. When computing chart/SVG colors, use tok/chartSeries
+and the chartAxis/chartGrid/chartTooltip helpers rather than hardcoded colors.
 
-Multi-page docs — ONE app, HASH routing:
-  A Doc is a single React app. "Pages"/nested sections are CLIENT-SIDE HASH
-  routes (#/, #/section, #/section/sub) navigated in-place — never reload, and
-  never use pushState/history routing (the page is served at an opaque origin and
-  would break on reload). Lightest pattern, no dependency:
-
-    import { useState, useEffect } from "react";
-    function useRoute() {
-      const [h, setH] = useState(location.hash || "#/");
-      useEffect(() => {
-        const on = () => setH(location.hash || "#/");
-        addEventListener("hashchange", on);
-        return () => removeEventListener("hashchange", on);
-      }, []);
-      return h;
-    }
-    // render: const route = useRoute(); switch on route; links are <a href="#/sub">.
-    // Wrap each view in <div id="view-root" data-route={route}> so navigation settles.
-
-  For richer nested routing, install_lib("react-router-dom") and use HashRouter
-  (NOT BrowserRouter).
-
-  EVERY link must be a fragment link. The served shard's whole credential is the
-  ?access_token in its own URL, so <a href="/section"> (or any relative href)
-  navigates the frame off that URL and replaces your app with an auth error —
-  even though the route renders perfectly in preview, which runs from
-  about:blank. verify_app/publish_app now REFUSE a build with such a link. Use
-  the kit's Link/AppShell (they emit "#/..." whichever way you spell the nav target) or
-  write href="#/section" by hand.
-
-Inspecting (do this before publish):
-  - preview_open → confirm mounted:true and exceptions empty.
-  - preview_navigate(page_id, "#/route") → go to each route, then preview_snapshot
-    / preview_screenshot to confirm the right view rendered, preview_eval to read
-    app state, preview_click(selector) to exercise flows (menus, in-app links).
-  - preview_console → confirm no uncaught exceptions accumulated.
-  - verify_app → the one call that checks everything publish will check,
-    including the two things preview alone can't tell you: whether each anchor
-    you DECLARED in anchors.json is actually in the DOM on its route, and
-    whether every ref resolves. Run it last, before publish_app.
-  - Found a bug? edit_file the fix, then preview_open again (it rebuilds + reloads
-    the same tab). Only publish_app once verify_app is clean.
-  - "renderer unavailable" means no headless browser is present — that is NOT a
-    build failure; fall back to build_app + reading the log.
-
-Notes:
-  - read_file / list_dir to inspect; write_file creates (overwrite:true to
-    replace); delete_file removes one (a draft build runs after each
-    write/delete). Replaced/deleted bytes are kept under .history/ — read_file
-    one to recover, write_file it back.
-  - The runtime is isolated: no network at runtime, no access to Aladin. Keep all
-    state in-app. Entry point is always index.tsx at the page root.
+The iframe is isolated from Aladin's DOM/session. Workspace access uses the
+host-authorized API described by the guide. External HTTPS/WSS requests are
+subject to browser/CORS restrictions; they confer no workspace permissions and
+must not contain private credentials. Remote code uses the build/vendor pipeline.
 
 Workspace tools — ground answers in the user's Aladin data:
   - search(query) FIRST to find ids: tickers, entities (companies/people),
@@ -211,7 +134,8 @@ func New(addr string, deps app.Dependencies, pages service.PageDocumentService, 
 		Instructions: mcpInstructions,
 	})
 	registerTools(server, deps.Artifacts(), pages, converter, bridge, deps.EntityTags(), deps.ArtifactRefs())
-	registerDocSurfaceTools(server, deps.Artifacts(), deps.DocSurfaceStore(), deps.ShardBuild(), deps.Preview(), deps.ShardBridge())
+	registerShardResourceTools(server, deps.ShardResources(), deps.ShardCatalog())
+	registerDocSurfaceTools(server, deps.Artifacts(), deps.DocSurfaceStore(), deps.ShardBuild(), deps.Preview(), deps.ShardBridge(), deps.ShardReleases())
 	registerWorkspaceTools(server, workspaceToolServer{
 		search:      deps.Search(),
 		entities:    deps.EntityContext(),

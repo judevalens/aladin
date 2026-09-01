@@ -26,8 +26,8 @@ import { Page, Section, Region } from "@aladin/kit";
 
 // The three levers most shards want (get_authoring_guide has the full reference):
 //   theme  — automatic; only call useTheme() where you compute a color at render
-//   memory — useShardState("settings", initial) for one value, useKV("items/") for a collection
-//   data   — declare ids in an anchor's "refs" in anchors.json, then useNode(id)
+//   memory — use the storage API described in the returned authoring guide
+//   data   — declare sources using the files and examples returned by create_app
 
 function App() {
   return (
@@ -67,42 +67,6 @@ const starterAnchorsJSON = `{
 }
 `
 
-// kitAuthoringGuide is the @aladin/kit reference, returned from create_app so
-// an agent writes VALID code (the usual failure is guessing components/props it
-// doesn't know). Distilled from the kit source — keep it accurate.
-const kitAuthoringGuide = `A shard is a REACT app written in TypeScript/TSX. It already has a working, buildable index.tsx (returned as current_index_tsx) — write_file a COMPLETE, valid index.tsx that EXTENDS it: a full module with the React imports at the top, your <App/> component, and the createRoot render at the bottom. Never write a fragment, markdown, or prose into a .tsx file. Import components from "@aladin/kit". Style with Tailwind + Aladin tokens ONLY — never arbitrary hex.
-
-index.tsx MUST be a complete module and end with:
-  import { createRoot } from "react-dom/client";
-  createRoot(document.getElementById("root")!).render(<App />);
-
-@aladin/kit exports (all token-styled, self-contained):
-- Layout: <Page>, <Section> (centered, max-w-3xl), <Panel>, <Card>, <Toolbar>, <Divider/>
-- Regions (wrap each addressable part; add a matching entry in anchors.json): <Region anchor="intro" kind="narrative|metric|chart|collection|control">…</Region>
-- Routing (hash, for multi-view shards): <Route path="/x">…</Route>, <Link to="/x">…</Link>, useRoute()
-- UI: <Button variant="primary|outline|ghost|danger" size="sm|md">, <Badge tone="neutral|amber|for|against">, <Callout tone="info|warn|for|against" title="…">, <Stat label={…} value={…} sub={…}/>, <Tabs tabs={[{id,label,content}]}/>, <Dialog open onClose title>, <Input>, <Textarea>, <Field label hint>
-- Semantic colored text: <For>, <Against>, <Catalyst>, <Echo>
-- Data display: <DataTable columns={[{key,label,render?,align?,width?}]} rows={…} rowKey={r=>r.id} onRowClick? empty?/>, <KeyValue items={[{label,value,hint?}]}/>, <MetricRow metrics={[{label,value,delta?,hint?}]}/>, <Sparkline points={[1,2,3]} tone?/>, <Delta value={-2.5} suffix?/>, <ProgressBar value max? label?/>
-- App chrome + forms: <AppShell title nav={[{id,label,to}]} footer?>…</AppShell> (hash-routed sidebar), <SearchInput value onChange/>, <Select options={[{value,label}]} value onChange/>, <Checkbox checked onChange label?/>, <RadioGroup name options value onChange/>, <EmptyState title hint? action?/>, <LoadingState label?/>, useToast().show(msg, "neutral|for|against") with a single <Toasts/> mounted near the root
-- Interactive/stateful — each takes an OPTIONAL stateKey; with it the component persists (survives reload, follows the user across clients), without it state is in-memory: <Quiz questions={[{id,prompt,choices:[{id,text}],answerId,explanation?}]} stateKey? onComplete?/>, <Flashcards cards={[{id,front,back}]} stateKey?/>, <Timer seconds label? stateKey? onComplete?/> (persists the target timestamp, so a running timer resumes correctly), <Checklist items={[{id,label}]} stateKey? onChange?/>, <Stepper steps={[{id,title,content}]} stateKey?/>
-
-Shard-local storage (the shard's own little database — persists per user, survives reload, syncs across the user's clients):
-  const [value, setValue] = useShardState<T>("settings", initial)  // one key; setValue takes a value or (prev)=>next and retries safely if another client wrote first
-  const { entries, put, remove, loading } = useKV("expenses/")     // a LIVE view of every key under a prefix — this is how a mini-app holds a collection
-  Keys are stable paths: "settings", "filters", "layout/main", "scenario/base", "expenses/2026-08-01". A prefix IS a collection. Values are small JSON (16KiB max per key, 1MiB per shard). Use it for app/UI data — filters, layouts, entries, progress — never for knowledge that belongs in the workspace.
-
-Theme: shards follow the app's theme automatically (utilities + tokens re-resolve on switch). Only when you compute a color at render time (tok(), chart colors, hand-drawn SVG) call useTheme() in that component so it re-renders on a switch.
-
-Workspace data (read-only, opt-in): declare the entity ids a region depends on in that anchor's "refs" in anchors.json, then const { node } = useNode("artifact-…") / useNodes([...]). Refs are the GRANT — a read of anything undeclared is refused, and publish fails if a ref doesn't resolve. Id forms: "artifact-…", "record-…", "research-…", and "watchlist:<uuid>" for kinds whose ids are bare uuids.
-
-Tokens (Tailwind classes): surfaces bg-bg/bg-panel/bg-card/bg-raise/bg-field; ink text-ink/text-ink-2/text-ink-3/text-ink-4; accent text-amber, border-amber-line; lines border-line; radius rounded-card/rounded-chip/rounded-modal; fonts font-display/font-mono/font-sans.
-
-Charts: run install_lib "recharts" first, import from "recharts", theme via the kit: <XAxis {...chartAxis()}/>, <CartesianGrid {...chartGrid()}/>, <Tooltip {...chartTooltip()}/>, and series colors from chartSeries()[i]. (import { chartAxis, chartGrid, chartTooltip, chartSeries } from "@aladin/kit")
-
-Animations: Tailwind (transition-*, hover:*, animate-pulse) or your own CSS keyframes in a .css file you write_file and import.
-
-Loop: after each write_file/edit_file, READ the returned build log — if it has errors, fix the exact file and write again until build.ok is true. Then verify_app (it checks that every anchor you declared is really in the DOM on its route, that refs resolve, and that nothing threw) before publish_app. Keep components small and valid; prefer kit primitives over hand-rolled markup.`
-
 // docToolServer carries the deps the Doc Surface tools need. The artifact
 // service scopes every Get/Create/Update to the caller's principal; the store
 // scopes file IO to the same principal. Together they enforce ownership.
@@ -113,15 +77,19 @@ type docToolServer struct {
 	preview   service.PreviewService
 	// bridge audits the manifest's refs at publish (nil in tests that don't
 	// exercise the workspace plane).
-	bridge service.ShardBridgeService
+	bridge   service.ShardBridgeService
+	releases service.ShardReleaseService
 }
 
-func registerDocSurfaceTools(server *sdkmcp.Server, artifacts service.ArtifactService, store service.DocSurfaceStore, build service.ShardBuildService, preview service.PreviewService, bridge service.ShardBridgeService) {
+func registerDocSurfaceTools(server *sdkmcp.Server, artifacts service.ArtifactService, store service.DocSurfaceStore, build service.ShardBuildService, preview service.PreviewService, bridge service.ShardBridgeService, releases ...service.ShardReleaseService) {
 	t := docToolServer{artifacts: artifacts, store: store, build: build, preview: preview, bridge: bridge}
+	if len(releases) > 0 {
+		t.releases = releases[0]
+	}
 
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "create_app",
-		Description: "Create a Doc Surface page (an interactive React app rendered in a sandboxed iframe). Seeds index.tsx. Then write_file to author, build_app to compile, publish_app to make it live. NOTE: distinct from create_page (which makes a BlockNote document).",
+		Description: "Create a Doc Surface page (an interactive React app rendered in a sandboxed iframe). Seeds index.tsx and the data configuration enabled on this backend. Follow its returned authoring_guide; no runtime-version choice is needed. Then write_file to author, build_app to compile, publish_app to make it live. NOTE: distinct from create_page (which makes a BlockNote document).",
 	}, t.createApp)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "list_dir",
@@ -154,16 +122,16 @@ func registerDocSurfaceTools(server *sdkmcp.Server, artifacts service.ArtifactSe
 	}, t.buildApp)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "get_authoring_guide",
-		Description: "The @aladin/kit reference: every component with its props, the token classes, shard-local storage (useShardState/useKV), theming, and how to declare workspace refs. Call this BEFORE editing an existing shard — create_app returns the same guide, so an edit is the one path that would otherwise have no reference. With page_id it also returns that shard's file list, anchors.json, and current index.tsx.",
+		Description: "Read the currently available shard building capabilities and @aladin/kit reference. Call this before answering capability questions or editing a shard. Without page_id it describes new shards on this backend. With page_id it selects the supported APIs for that existing shard and returns its files, anchors, contract when present, and current index.tsx. Use the returned capabilities directly; no runtime-version choice is needed.",
 	}, t.getAuthoringGuide)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "verify_app",
-		Description: "Verify a shard WITHOUT publishing: validates anchors.json, checks every declared ref resolves, then drives each declared route through the live preview and reports per route whether it mounted, which declared anchors are actually in the DOM, uncaught exceptions (unhandled promise rejections included), and console errors. Defaults to the draft channel; pass strict_console=true to treat console errors as failures. Run this before publish_app — publish applies the same checks, but this shows you the whole report while you can still fix it.",
+		Description: "Verify a shard WITHOUT publishing: validates its manifest and data declarations, then drives each declared route through the live preview and reports per route whether it mounted, which declared anchors are actually in the DOM, uncaught exceptions (unhandled promise rejections included), and console errors. Defaults to the draft channel; pass strict_console=true to treat console errors as failures. Run this before publish_app — this shows you the report while you can still fix it. Follow get_authoring_guide(page_id) for this shard's data and renderer requirements.",
 	}, t.verifyAppTool)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "publish_app",
 		Annotations: destructiveTool("Publish app"),
-		Description: "Publish a shard: builds the published channel, VERIFIES it (every declared route mounts, throws nothing, and contains its declared anchors; every anchors.json ref resolves), records the markdown summary, and marks the page live. Publish is REFUSED if verification fails — run verify_app for the detail, fix, and retry. Refs that exist but whose kind emits no change events publish with a warning (they render but never update live). If no renderer is available it publishes UNVERIFIED and returns a warning.",
+		Description: "Publish a shard: builds the published channel, verifies declared routes, anchors and data sources, records the markdown summary, and marks the page live. Publication is refused when required verification fails — run verify_app for the detail, fix, and retry. Follow get_authoring_guide(page_id) for this shard's renderer and data requirements; do not assume renderer verification can be skipped.",
 	}, t.publishApp)
 
 	// --- interactive preview (headless inspection session) -----------------
@@ -220,6 +188,7 @@ type createAppOutput struct {
 	// code that EXTENDS the seeded module instead of guessing components/props.
 	AuthoringGuide  string        `json:"authoring_guide"`
 	CurrentIndexTSX string        `json:"current_index_tsx"`
+	ContractJSON    string        `json:"contract_json,omitempty"`
 	Citations       []citationOut `json:"citations,omitempty"`
 }
 
@@ -358,6 +327,7 @@ type authoringGuideOutput struct {
 	Files          []string `json:"files,omitempty"`
 	Anchors        string   `json:"anchors_json,omitempty"`
 	IndexTSX       string   `json:"current_index_tsx,omitempty"`
+	ContractJSON   string   `json:"contract_json,omitempty"`
 }
 
 type verifyAppInput struct {
@@ -449,10 +419,20 @@ func (t docToolServer) createApp(ctx context.Context, _ *sdkmcp.CallToolRequest,
 		_, _ = t.artifacts.Delete(ctx, id)
 		return nil, createAppOutput{}, err
 	}
+	resources := t.resourceAuthoringEnabled()
+	contract := ""
+	if resources {
+		contract = starterResourceContractJSON
+		if err := t.store.WriteFile(ctx, id, "contract.json", []byte(contract)); err != nil {
+			_, _ = t.artifacts.Delete(ctx, id)
+			return nil, createAppOutput{}, err
+		}
+	}
 	return nil, createAppOutput{
+		ContractJSON:    contract,
 		ID:              id,
 		Title:           created.Artifact.Title,
-		AuthoringGuide:  kitAuthoringGuide,
+		AuthoringGuide:  shardAuthoringGuide(resources),
 		CurrentIndexTSX: starterIndexTSX,
 		Citations:       []citationOut{{Kind: "shard", ID: id, Title: created.Artifact.Title}},
 	}, nil
@@ -681,13 +661,18 @@ func (t docToolServer) buildApp(ctx context.Context, _ *sdkmcp.CallToolRequest, 
 // reach. With a page_id it also returns that shard's current files, manifest,
 // and index.tsx, which is the context an edit actually needs.
 func (t docToolServer) getAuthoringGuide(ctx context.Context, _ *sdkmcp.CallToolRequest, in authoringGuideInput) (*sdkmcp.CallToolResult, authoringGuideOutput, error) {
-	out := authoringGuideOutput{AuthoringGuide: kitAuthoringGuide}
+	out := authoringGuideOutput{AuthoringGuide: shardAuthoringGuide(t.resourceAuthoringEnabled())}
 	if strings.TrimSpace(in.PageID) == "" {
 		return nil, out, nil
 	}
 	if err := t.requireApp(ctx, in.PageID); err != nil {
 		return nil, authoringGuideOutput{}, err
 	}
+	guide, contract, err := t.existingShardAuthoringGuide(ctx, in.PageID)
+	if err != nil {
+		return nil, authoringGuideOutput{}, err
+	}
+	out.AuthoringGuide, out.ContractJSON = guide, contract
 	if entries, err := t.store.ListDir(ctx, in.PageID, ""); err == nil {
 		for _, e := range entries {
 			if e.Name == historyDir || e.Name == "dist" {
@@ -711,8 +696,8 @@ func (t docToolServer) getAuthoringGuide(ctx context.Context, _ *sdkmcp.CallTool
 }
 
 // verifyAppTool is the agent-facing verification pass: the full structured
-// report (manifest, refs, per-route mount/anchors/exceptions/console) with no
-// side effects. Run it before publish_app — publish applies the same checks,
+// report (manifest, refs, per-route mount/anchors/exceptions/console) without
+// publishing. Previewed code may mutate draft resources. Run it before publish_app,
 // but this one tells you exactly what is wrong while you can still fix it.
 func (t docToolServer) verifyAppTool(ctx context.Context, _ *sdkmcp.CallToolRequest, in verifyAppInput) (*sdkmcp.CallToolResult, verifyReport, error) {
 	if err := t.requireApp(ctx, in.PageID); err != nil {
@@ -754,6 +739,7 @@ func (t docToolServer) publishApp(ctx context.Context, _ *sdkmcp.CallToolRequest
 	// write auto-builds the DRAFT channel — so a shard edited after its last
 	// build_app could publish stale bytes that no check ever saw. Building now
 	// makes "what was verified" and "what goes live" the same artifact.
+	var staged *service.BuildResult
 	if t.build != nil {
 		res, berr := t.build.Build(ctx, in.PageID, service.ChannelPublished)
 		if berr != nil {
@@ -762,6 +748,7 @@ func (t docToolServer) publishApp(ctx context.Context, _ *sdkmcp.CallToolRequest
 		if !res.OK {
 			return nil, publishAppOutput{}, service.BadRequest("publish blocked — the published build failed:\n" + res.Log)
 		}
+		staged = &res
 	} else if _, err := t.store.ReadFile(ctx, in.PageID, docsurface.BuildMetaPath); err != nil {
 		return nil, publishAppOutput{}, service.BadRequest("no successful build found — run build_app first")
 	}
@@ -769,7 +756,7 @@ func (t docToolServer) publishApp(ctx context.Context, _ *sdkmcp.CallToolRequest
 	// no uncaught exceptions/rejections, and every declared anchor present.
 	// Hard-fails when the renderer is available; soft-warns (publishes
 	// UNVERIFIED) only when there's no renderer to verify with.
-	report, err := t.verifyApp(ctx, in.PageID, service.ChannelPublished, false)
+	report, err := t.verifyApp(ctx, in.PageID, service.ChannelPublished, false, staged)
 	if err != nil {
 		return nil, publishAppOutput{}, err
 	}
@@ -777,12 +764,15 @@ func (t docToolServer) publishApp(ctx context.Context, _ *sdkmcp.CallToolRequest
 		return nil, publishAppOutput{}, service.BadRequest("publish blocked — verification failed:\n  - " + problems +
 			"\nRun verify_app for the full report, fix, then publish_app again.")
 	}
+	if staged != nil && len(staged.Contract) > 0 && !report.RendererAvailable {
+		return nil, publishAppOutput{}, service.BadRequest("Resource-backed publication requires renderer verification; previous release remains active")
+	}
 	verified, warning := report.RendererAvailable, report.Warning
 	// Gate on the manifest's REFS too: a shard that declares data it can't read
 	// renders an empty region for the user with no error anywhere. A missing or
 	// unknown-kind ref is a hard refusal; a ref whose kind emits no sync frames
 	// publishes with a warning (renderable, but the region can never go live).
-	if t.bridge != nil {
+	if t.bridge != nil && (staged == nil || len(staged.Contract) == 0) {
 		refs, rerr := t.bridge.CheckRefs(ctx, in.PageID)
 		if rerr != nil {
 			return nil, publishAppOutput{}, rerr
@@ -807,6 +797,14 @@ func (t docToolServer) publishApp(ctx context.Context, _ *sdkmcp.CallToolRequest
 			} else {
 				warning += "; " + unobservable
 			}
+		}
+	}
+	if staged != nil && len(staged.Contract) > 0 {
+		if t.releases == nil {
+			return nil, publishAppOutput{}, service.BadRequest("Resource release activation unavailable")
+		}
+		if err := t.releases.Activate(ctx, in.PageID, service.ChannelPublished, staged.BuildID); err != nil {
+			return nil, publishAppOutput{}, err
 		}
 	}
 	summary := strings.TrimSpace(in.Summary)
@@ -842,20 +840,28 @@ func (t docToolServer) publishApp(ctx context.Context, _ *sdkmcp.CallToolRequest
 //
 // The report is the shared truth: verify_app returns it as-is, and publish
 // turns it into a refusal.
-func (t docToolServer) verifyApp(ctx context.Context, pageID string, channel service.BuildChannel, strictConsole bool) (verifyReport, error) {
+func (t docToolServer) verifyApp(ctx context.Context, pageID string, channel service.BuildChannel, strictConsole bool, builds ...*service.BuildResult) (verifyReport, error) {
 	report := verifyReport{Channel: string(channel)}
+	var built *service.BuildResult
+	if len(builds) > 0 {
+		built = builds[0]
+	}
+	data, readErr := t.store.ReadFile(ctx, pageID, docsurface.ManifestFileName)
+	if built != nil && len(built.Contract) > 0 {
+		data, readErr = built.Files["anchors.json"], nil
+	}
 
 	// Structure first: a manifest that doesn't parse can't be checked against,
 	// and must never silently degrade to "just check the root".
-	if data, err := t.store.ReadFile(ctx, pageID, docsurface.ManifestFileName); err == nil {
+	if readErr == nil {
 		report.ManifestProblems = docsurface.ValidateManifestBytes(data)
 		if len(report.ManifestProblems) > 0 {
 			return report, nil // no point driving a browser against a broken manifest
 		}
 	}
-	byRoute, routes := t.manifestAnchorsByRoute(ctx, pageID)
+	byRoute, routes := t.manifestAnchorsByRoute(ctx, pageID, data)
 
-	first, err := t.preview.Open(ctx, pageID, channel, service.PreviewOpenOptions{})
+	first, err := t.preview.Open(ctx, pageID, channel, service.PreviewOpenOptions{Build: built})
 	if err != nil {
 		if docsurface.IsRendererUnavailable(err) {
 			report.RendererAvailable = false
@@ -977,8 +983,11 @@ func routeOf(url string) string {
 // manifestAnchorsByRoute groups declared anchor ids by their route, and returns
 // the distinct routes in declaration order. Falls back to just "#/" when there
 // is no manifest — the root must at least mount.
-func (t docToolServer) manifestAnchorsByRoute(ctx context.Context, pageID string) (map[string][]string, []string) {
+func (t docToolServer) manifestAnchorsByRoute(ctx context.Context, pageID string, snapshots ...[]byte) (map[string][]string, []string) {
 	data, err := t.store.ReadFile(ctx, pageID, docsurface.ManifestFileName)
+	if len(snapshots) > 0 {
+		data, err = snapshots[0], nil
+	}
 	if err != nil {
 		return nil, []string{"#/"}
 	}

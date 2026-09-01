@@ -17,10 +17,13 @@ const kitSpec = "@aladin/kit"
 //go:embed kit.tsx
 var kitSource string
 
+//go:embed resource-client.generated.js
+var resourceClientSource string
+
 // kitSourceHash keys the kit in the vendor cache, so a rebuilt binary with
 // changed kit source re-vendors (the served file stays content-addressed).
 func kitSourceHash() string {
-	sum := sha256.Sum256([]byte(kitSource))
+	sum := sha256.Sum256([]byte(kitSource + "\x00" + resourceClientSource))
 	return hex.EncodeToString(sum[:])
 }
 
@@ -42,7 +45,7 @@ func (b *builder) buildKit() ([]byte, error) {
 		JSX:              esbuild.JSXAutomatic,
 		MinifyWhitespace: true,
 		MinifySyntax:     true,
-		Plugins:          []esbuild.Plugin{externalReactPlugin()},
+		Plugins:          []esbuild.Plugin{externalReactPlugin(), embeddedResourceClientPlugin()},
 		LogLevel:         esbuild.LogLevelSilent,
 	})
 	if len(res.Errors) > 0 {
@@ -52,6 +55,17 @@ func (b *builder) buildKit() ([]byte, error) {
 		return nil, fmt.Errorf("kit build produced no output")
 	}
 	return res.OutputFiles[0].Contents, nil
+}
+
+func embeddedResourceClientPlugin() esbuild.Plugin {
+	return esbuild.Plugin{Name: "embedded-resource-client", Setup: func(build esbuild.PluginBuild) {
+		build.OnResolve(esbuild.OnResolveOptions{Filter: `^\./resource-client\.generated\.js$`}, func(a esbuild.OnResolveArgs) (esbuild.OnResolveResult, error) {
+			return esbuild.OnResolveResult{Path: a.Path, Namespace: "resource-client"}, nil
+		})
+		build.OnLoad(esbuild.OnLoadOptions{Filter: ".*", Namespace: "resource-client"}, func(a esbuild.OnLoadArgs) (esbuild.OnLoadResult, error) {
+			return esbuild.OnLoadResult{Contents: &resourceClientSource, Loader: esbuild.LoaderJS}, nil
+		})
+	}}
 }
 
 // externalReactPlugin marks the react family external (react, react-dom,

@@ -597,6 +597,18 @@ func TestCopilotToolSummariesAreBoundedAndRedacted(t *testing.T) {
 	}
 }
 
+func TestCopilotShardGuidanceUsesCapabilityDiscovery(t *testing.T) {
+	prompt := (&defaultCopilotService{}).systemPrompt(CopilotSurface{})
+	if !strings.Contains(prompt, "get_authoring_guide") || !strings.Contains(prompt, "page_id") {
+		t.Fatal("Copilot must discover both new and existing shard capabilities")
+	}
+	for _, staleAPI := range []string{"useKV", "useShardState", "useNode", "useResource", "bridge/1", "bridge/2"} {
+		if strings.Contains(prompt, staleAPI) {
+			t.Fatalf("static prompt duplicates capability-specific guidance: %s", staleAPI)
+		}
+	}
+}
+
 func TestCopilotSystemPromptAdvertisesRichDirectives(t *testing.T) {
 	prompt := (&defaultCopilotService{}).systemPrompt(CopilotSurface{})
 	for _, want := range []string{

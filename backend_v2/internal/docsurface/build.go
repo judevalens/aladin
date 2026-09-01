@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/shardv2"
 
 	esbuild "github.com/evanw/esbuild/pkg/api"
 )
@@ -60,6 +62,7 @@ type builder struct {
 	cacheDir string
 	client   *http.Client
 	vendor   *vendorStore
+	profiles shardv2.Registry
 	// builds serializes concurrent Build() calls per pageID so two agents
 	// can't race on the same dist/bundle.js and corrupt it.
 	builds sync.Map // pageID -> *sync.Mutex
@@ -74,8 +77,11 @@ func (b *builder) lockPage(pageID string) func() {
 
 // NewBuilder returns a WorkspaceRuntime. cacheDir is the shared content-addressed
 // cache for fetched CDN modules (one copy per url across all users/pages).
-func NewBuilder(store service.DocSurfaceStore, cacheDir string) service.WorkspaceRuntime {
+func NewBuilder(store service.DocSurfaceStore, cacheDir string, profiles ...shardv2.Registry) service.WorkspaceRuntime {
 	b := &builder{store: store, cacheDir: cacheDir, client: &http.Client{Timeout: 30 * time.Second}}
+	if len(profiles) > 0 {
+		b.profiles = profiles[0]
+	}
 	// Vendored libs live next to the esm cache (e.g. <data>/cache/vendor), shared
 	// across all users/pages and across the api + mcp processes.
 	b.vendor = newVendorStore(b, filepath.Join(filepath.Dir(cacheDir), vendorDirName))
@@ -116,6 +122,31 @@ func (b *builder) Build(ctx context.Context, pageID string, channel service.Buil
 	if _, err := os.Stat(filepath.Join(dir, "index.tsx")); err != nil {
 		return service.BuildResult{OK: false, Log: "index.tsx not found at page root"}, nil
 	}
+	var contract []byte
+	var anchors []byte
+	if data, readErr := b.store.ReadFile(ctx, pageID, "contract.json"); readErr == nil {
+		if b.profiles == nil {
+			return service.BuildResult{Log: "Shard v2 is disabled on this server"}, nil
+		}
+		compiled, err := CompileContractV2(data, b.profiles)
+		if err != nil {
+			return service.BuildResult{Log: "contract.json: " + err.Error()}, nil
+		}
+		anchors, err = b.store.ReadFile(ctx, pageID, ManifestFileName)
+		if err != nil {
+			return service.BuildResult{Log: "V2 requires anchors.json"}, nil
+		}
+		var manifest Manifest
+		if err := json.Unmarshal(anchors, &manifest); err != nil {
+			return service.BuildResult{Log: "anchors.json: " + err.Error()}, nil
+		}
+		if problems := ValidateManifestBindingsV2(manifest, compiled); len(problems) > 0 {
+			return service.BuildResult{Log: strings.Join(problems, "\n")}, nil
+		}
+		contract = data
+	} else if !os.IsNotExist(readErr) && !errors.Is(readErr, service.ErrNotFound) {
+		return service.BuildResult{}, readErr
+	}
 	// Anchor manifest: schema-validate when present (hard, both channels). Absent
 	// is fine in v1 — the manifest becomes required only at the publish gate.
 	if data, merr := b.store.ReadFile(ctx, pageID, ManifestFileName); merr == nil {
@@ -139,7 +170,7 @@ func (b *builder) Build(ctx context.Context, pageID string, channel service.Buil
 		EntryPoints:   []string{"index.tsx"},
 		Outfile:       filepath.Join(dir, distRel, "bundle.js"),
 		Bundle:        true,
-		Write:         true,
+		Write:         len(contract) == 0,
 		Metafile:      true, // discover which deps were left external (vendored)
 		Format:        esbuild.FormatESModule,
 		Platform:      esbuild.PlatformBrowser,
@@ -176,6 +207,21 @@ func (b *builder) Build(ctx context.Context, pageID string, channel service.Buil
 	im, vlog, ok := b.resolveImportMap(ctx, result.Metafile, pins)
 	if !ok {
 		return service.BuildResult{OK: false, Log: vlog}, nil
+	}
+	if len(contract) > 0 {
+		files := map[string][]byte{"anchors.json": anchors}
+		for _, file := range result.OutputFiles {
+			files[filepath.Base(file.Path)] = file.Contents
+		}
+		files["importmap.json"], err = json.Marshal(im)
+		if err != nil {
+			return service.BuildResult{}, err
+		}
+		served := "/content/" + pageID + "/"
+		if draft {
+			served += "?channel=draft"
+		}
+		return service.BuildResult{OK: true, ServedURL: served, Log: formatMessages(result.Warnings), BuildID: service.ShardBuildIdentity(contract, files), Contract: contract, Files: files}, nil
 	}
 	if err := b.writeImportMap(ctx, pageID, distRel, im); err != nil {
 		return service.BuildResult{}, err

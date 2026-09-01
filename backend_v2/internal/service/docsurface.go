@@ -35,6 +35,9 @@ type BuildResult struct {
 	// identifies exactly which build produced the served artifact — recorded in
 	// the build-status event and (later) embedded for the inspect runtime.
 	BuildID string `json:"build_id,omitempty"`
+	// V2 outputs are staged by the build service, never written to mutable dist.
+	Contract []byte            `json:"-"`
+	Files    map[string][]byte `json:"-"`
 }
 
 // BuildChannel selects which artifact a build produces. The two channels coexist
@@ -110,6 +113,8 @@ type PreviewState struct {
 // can run in any of the app's themes; empty = default dark.
 type PreviewOpenOptions struct {
 	Theme string
+	// Exact already-built release to verify; prevents a second build racing publish.
+	Build *BuildResult
 }
 
 type PreviewService interface {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -12,6 +13,10 @@ import (
 )
 
 func (s *Server) registerShardRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/shard-resources/ws", s.handleShardResourceSocket)
+	mux.HandleFunc("GET /api/shards/{id}/release", s.handleShardRelease)
+	mux.HandleFunc("POST /api/shards/{id}/v2/{environment}/request", s.handleShardResourceRequest)
+	mux.HandleFunc("GET /api/shards/{id}/v2/{environment}/ws", s.handleShardResourceSocket)
 	// Build status for the live work-pane view. Authed (authMiddleware) + ownership
 	// scoped via Artifacts().Get; the realtime build-status events seed/update the
 	// same shape live, this GET seeds it when a shard tab first opens.
@@ -31,6 +36,38 @@ func (s *Server) registerShardRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/shards/{id}/kv/{key...}", s.handleShardKVGet)
 	mux.HandleFunc("PUT /api/shards/{id}/kv/{key...}", s.handleShardKVSet)
 	mux.HandleFunc("DELETE /api/shards/{id}/kv/{key...}", s.handleShardKVDelete)
+}
+
+func (s *Server) handleShardRelease(w http.ResponseWriter, r *http.Request) {
+	if !s.ownedShard(w, r, r.PathValue("id")) {
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	if releases := s.deps.ShardReleases(); releases != nil {
+		release, err := releases.Active(r.Context(), r.PathValue("id"), docsurface.ParseChannel(r.URL.Query().Get("channel")))
+		if err == nil {
+			writeJSON(w, http.StatusOK, map[string]any{"protocol": "bridge/2", "buildId": release.BuildID, "contractHash": release.Hash})
+			return
+		}
+		if !errors.Is(err, service.ErrNotFound) {
+			writeAPIError(w, r, http.StatusServiceUnavailable, categoryInternal, "Release unavailable", err)
+			return
+		}
+	}
+	// No protected release does not imply a usable legacy build. In particular,
+	// a new resource app has no published content until activation succeeds.
+	entries, err := s.deps.DocSurfaceStore().ListDir(r.Context(), r.PathValue("id"), docsurface.DistDir(docsurface.ParseChannel(r.URL.Query().Get("channel"))))
+	if err != nil && !errors.Is(err, service.ErrNotFound) && !os.IsNotExist(err) {
+		writeAPIError(w, r, http.StatusServiceUnavailable, categoryInternal, "Release unavailable", err)
+		return
+	}
+	available := false
+	for _, entry := range entries {
+		if entry.Name == "bundle.js" && !entry.IsDir {
+			available = true
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"protocol": "bridge/1", "available": available})
 }
 
 // ownedShard verifies the path id names an "app" artifact owned by the principal,
@@ -208,6 +245,15 @@ func (s *Server) handleShardManifest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data, err := s.deps.DocSurfaceStore().ReadFile(r.Context(), pageID, docsurface.ManifestFileName)
+	if releases := s.deps.ShardReleases(); releases != nil {
+		active, activeErr := releases.Active(r.Context(), pageID, docsurface.ParseChannel(r.URL.Query().Get("channel")))
+		if activeErr == nil {
+			data, err = active.Files[docsurface.ManifestFileName], nil
+		} else if !errors.Is(activeErr, service.ErrNotFound) {
+			writeAPIError(w, r, http.StatusServiceUnavailable, categoryInternal, "Release unavailable", activeErr)
+			return
+		}
+	}
 	if err != nil {
 		writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "no manifest", nil)
 		return

@@ -16,6 +16,7 @@ export type WorkspaceEventType =
   | "artifact.updated"
   | "artifact.deleted"
   | "artifact.build-status"
+  | "artifact.published"
   | "folder.created"
   | "folder.updated"
   | "folder.deleted"
@@ -26,6 +27,7 @@ export const KNOWN_WORKSPACE_EVENT_TYPES: ReadonlySet<WorkspaceEventType> = new 
   "artifact.updated",
   "artifact.deleted",
   "artifact.build-status",
+  "artifact.published",
   "folder.created",
   "folder.updated",
   "folder.deleted",

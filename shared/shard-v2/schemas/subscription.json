@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "subscriptionId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "resource": {
+      "type": "string",
+      "pattern": "^shard://[A-Za-z0-9_-]+/resources/[A-Za-z][A-Za-z0-9_-]{0,63}\\?view=[A-Za-z0-9_-]+$",
+      "maxLength": 1024
+    },
+    "epoch": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    }
+  },
+  "required": [
+    "subscriptionId",
+    "resource",
+    "epoch"
+  ],
+  "additionalProperties": false
+}

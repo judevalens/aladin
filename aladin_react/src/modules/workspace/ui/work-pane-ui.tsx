@@ -30,6 +30,7 @@ export function WorkPaneUI() {
     onJumpToFolder,
   } = useWorkPane();
   const [graphOpen, setGraphOpen] = useState(false);
+  const [shardControlsTarget, setShardControlsTarget] = useState<HTMLDivElement | null>(null);
 
   // Tabs used to be a switch on the ACTIVE artifact, so switching away unmounted the pane and
   // threw away its scroll position, editor selection and PDF page. Now every tab in the
@@ -137,6 +138,7 @@ export function WorkPaneUI() {
           onToggleGraph={() => setGraphOpen((open) => !open)}
           onToggleInspector={onToggleInspector}
           onJumpToFolder={onJumpToFolder}
+          shardControlsRef={activeArtifact.kind === "app" ? setShardControlsTarget : undefined}
         />
       ) : null}
       <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -159,7 +161,7 @@ export function WorkPaneUI() {
                 aria-hidden={entry.key !== activeTab?.key}
                 inert={entry.key !== activeTab?.key ? true : undefined}
               >
-                <TabPane entry={entry} hidden={entry.key !== activeTab?.key} />
+                <TabPane entry={entry} hidden={entry.key !== activeTab?.key} shardControlsTarget={shardControlsTarget} />
               </div>
             ))
           )}
@@ -180,11 +182,11 @@ export function WorkPaneUI() {
  * `hidden` is passed down rather than inferred: a shard iframe needs to know it is off screen
  * so it can stop doing work, and CSS visibility isn't observable from inside the component.
  */
-function TabPane({ entry, hidden }: { entry: WorkPaneTab; hidden: boolean }) {
+function TabPane({ entry, hidden, shardControlsTarget }: { entry: WorkPaneTab; hidden: boolean; shardControlsTarget: HTMLElement | null }) {
   if (entry.tab.kind === "research") {
     return <ResearchPaneUI contextId={entry.tab.contextId} view={entry.tab.view} />;
   }
-  return <ArtifactTabPane artifactId={entry.tab.artifactId} hidden={hidden} />;
+  return <ArtifactTabPane artifactId={entry.tab.artifactId} hidden={hidden} shardControlsTarget={shardControlsTarget} />;
 }
 
 /**
@@ -195,7 +197,7 @@ function TabPane({ entry, hidden }: { entry: WorkPaneTab; hidden: boolean }) {
  * artifact for a frame is a pane that unmounts: pdf.js document destroyed, Yjs socket dropped,
  * shard iframe rebuilt. A pane's data should depend on its own id and nothing else.
  */
-function ArtifactTabPane({ artifactId, hidden }: { artifactId: string; hidden: boolean }) {
+function ArtifactTabPane({ artifactId, hidden, shardControlsTarget }: { artifactId: string; hidden: boolean; shardControlsTarget: HTMLElement | null }) {
   const artifact = useArtifact(artifactId);
   // The wormhole's landing pad: a cite asked this artifact's reader to open at a page.
   const targetLocation = useAppStore((s) => s.pendingDocLocations[artifactId]);
@@ -204,7 +206,7 @@ function ArtifactTabPane({ artifactId, hidden }: { artifactId: string; hidden: b
     return <PlaceholderPane title="Loading…" body="" className="h-full" />;
   }
   if (artifact.kind === "note") return <PageEditorUI pageId={artifact.id} />;
-  if (artifact.kind === "app") return <DocSurfaceUI artifact={artifact} hidden={hidden} />;
+  if (artifact.kind === "app") return <DocSurfaceUI artifact={artifact} hidden={hidden} controlsTarget={shardControlsTarget} />;
   if (artifact.kind === "board") {
     return <DesktopBoardPane boardId={artifact.id} title={artifact.title} />;
   }
@@ -251,6 +253,7 @@ function WorkPaneStatusBar({
   onToggleGraph,
   onToggleInspector,
   onJumpToFolder,
+  shardControlsRef,
 }: {
   folders: WorkPaneCrumb[];
   artifactTitle: string | null;
@@ -259,6 +262,7 @@ function WorkPaneStatusBar({
   onToggleGraph: () => void;
   onToggleInspector: () => void;
   onJumpToFolder: (folderId: string) => void;
+  shardControlsRef?: (element: HTMLDivElement | null) => void;
 }) {
   return (
     <div className="flex items-center gap-3 border-b border-line bg-panel px-3.5 py-1.5">
@@ -284,6 +288,7 @@ function WorkPaneStatusBar({
         ) : null}
       </nav>
       <div className="flex items-center gap-0.5">
+        {shardControlsRef && <div ref={shardControlsRef} className="contents" />}
         <StatusUtilityIcon ariaLabel="Search document" onClick={() => undefined}>
           <Icon as={Search} />
         </StatusUtilityIcon>

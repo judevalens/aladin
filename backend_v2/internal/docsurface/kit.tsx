@@ -11,6 +11,8 @@
 // content-addressed at /vendor/<sha>; agents `import { … } from "@aladin/kit"`.
 
 import { useEffect, useState, useSyncExternalStore } from "react";
+export { useResource, queryResource, resourceRequestId } from "./resource-client.generated.js";
+import { allocateBridgeRequestID } from "./resource-client.generated.js";
 import type {
   ReactNode,
   ButtonHTMLAttributes,
@@ -1146,7 +1148,7 @@ export function Stepper({
 // emulator answers with stub nodes so data-wired shards still render. Messages are
 // namespaced { aladin: "bridge/1" }; everything else is ignored.
 
-const BRIDGE = "bridge/1";
+const BRIDGE = typeof document !== "undefined" && document.getElementById("aladin-resource-bootstrap") ? "bridge/2" : "bridge/1";
 
 // Node is a workspace/graph entity a shard depends on (declared in anchors.json
 // `refs`). Shape is intentionally generic; `data` carries the entity payload.
@@ -1218,7 +1220,7 @@ function ensureWired() {
 function post(method: string, params: Record<string, unknown>): Promise<unknown> {
   if (typeof window === "undefined") return Promise.reject(new Error("bridge: no window"));
   ensureWired();
-  const id = ++_seq;
+  const id = BRIDGE === "bridge/2" ? allocateBridgeRequestID(window) : ++_seq;
   return new Promise((resolve, reject) => {
     _pending.set(id, { resolve, reject });
     (window.parent || window).postMessage({ aladin: BRIDGE, type: "request", id, method, params }, "*");
