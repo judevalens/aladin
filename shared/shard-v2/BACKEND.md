@@ -1,18 +1,53 @@
 # Shard v2 backend and operating constraints
 
+## Datastore and authored-runtime update (2026-08-31)
+
+PostgreSQL remains the control plane for immutable builds, active draft/published
+pointers and workspace authority. The default owned-data direction is MongoDB.
+`SHARD_DATASTORE=postgres` retains the first JSONB adapter; `mongo` requires a URI.
+Mongo namespaces are opaque physical collections derived from user, shard and
+environment. Dataset, generation and contract identity remain server-owned fields.
+
+Mongo implements transactions, conditional revisions, durable idempotency receipts,
+tombstones, declared indexes, null-versus-missing predicates, stable cursor binding,
+ordered change-stream invalidation, namespace quotas, migration fencing and portable
+record/event export/restore. Change streams trigger bounded authoritative snapshots,
+so driver resume tokens never become part of the public shard protocol.
+
+Release activation uses that same Mongo namespace fence as a cross-datastore
+linearization point. Activation freezes and drains Mongo writers, changes the
+protected pointer in PostgreSQL, then reopens the namespace. A process failure can
+leave the namespace safely frozen; retrying the activation completes recovery.
+
+An optional Node service (`SHARD_RUNTIME_URL`, `SHARD_RUNTIME_SECRET`) runs authored
+GraphQL resolvers. Builds compile declared TypeScript into `resolver.bundle.mjs` and
+capture it with `schema.graphql` and `runtime-manifest.json` under the same release
+hash as browser code. Candidate workers import and validate the schema, every
+persisted operation, resolver export and lambda export before activation. A switch
+is atomic inside the runtime; in-flight work on the old worker drains.
+
+The browser API accepts only query or mutation operation IDs declared in the immutable contract:
+`POST /api/shards/{id}/v2/{environment}/graphql`. Manual lambda invocation uses
+`.../lambdas/{name}`. The host bridge exposes `executeGraphQL` and `invokeLambda`.
+Resolver capability calls return through a private Go endpoint using a signed,
+short-lived scope. Go reconstructs user, shard, environment, audience and release;
+authored input can select only a declared binding operation. Workers have no raw
+database credential and cannot choose another namespace.
+
 ## Decision and current status
 
-The user approved continuing with the existing PostgreSQL KV storage foundation,
-without requiring Mongo. V2 keeps JSON documents and conditional revision writes
-but stores them in separate `shard_resource_*` tables. This prevents existing
-v1 KV endpoints from bypassing v2 validation, quotas, resource permissions or
-receipt handling. The old `shard_kv` table, API and replica are unchanged.
+The first adapter used the existing PostgreSQL KV storage foundation and remains
+available for compatibility. Mongo now implements the preferred ad hoc owned-data
+model behind the same resource provider contract. Both are isolated from v1 KV
+endpoints, so v2 validation, quotas, resource permissions and receipt handling
+cannot be bypassed. The old `shard_kv` table, API and replica are unchanged.
 
 The new backend works through an isolated integration test:
 
 ```
-bridge/2 HTTP command → resource service → PostgreSQL transaction
-                     → periodic authorized snapshot → WebSocket push
+bridge/2 / GraphQL operation → Go authority → provider capability
+                             → Mongo transaction/change stream
+                             → reconciled snapshot → WebSocket push
 ```
 
 `SHARD_V2_ENABLED=1` enables the backend service. The default is off. Enabling it
@@ -63,24 +98,25 @@ remain content-addressed files and must be retained/backed up separately.
   params, separate app/agent capabilities, server-side output projection and
   full replacement writes. Incoming query filters narrow the authored binding's
   filter rather than removing it; projected-out fields cannot be queried.
-- `shard.documents`: persistent JSONB records, server-generated IDs stabilized by
-  request ID, create-if-absent, guarded replace, deletion tombstones and explicit
-  errors. Tombstones retain record data for future authorized export/recovery.
-  Replacing a missing or tombstoned record fails. Tombstone IDs cannot be
-  reused by insert.
+- `shard.documents`: owned documents in the configured adapter (MongoDB by
+  default, PostgreSQL JSONB for compatibility), with server-generated IDs
+  stabilized by request ID, create-if-absent, guarded replace, deletion
+  tombstones and explicit errors. Tombstones retain record data for future
+  authorized export/recovery. Replacing a missing or tombstoned record fails;
+  tombstone IDs cannot be reused by insert.
 - Per-actor command receipts bind the request ID to namespace, release, target
   and payload. Successful and business-rejected storage commands retain their
   outcomes for 24 hours. Retries return the original outcome; different payload
   reuse conflicts. Authorization is checked again before any replay is returned.
-- Data, receipt and metadata-only audit/outbox entry commit in one PostgreSQL
-  transaction. Failure to persist the receipt rolls back the record. The outbox
-  lock is acquired before writes, preserving the existing sync ordering rule.
-- Atomic active-byte quota admission under a namespace transaction lock.
+- Data, receipt and metadata-only event commit in one provider transaction.
+  Failure to persist the receipt rolls back the record. PostgreSQL preserves its
+  outbox lock ordering; Mongo mutations serialize through the namespace fence.
+- Atomic active-byte quota admission under a namespace transaction/fence.
   Additional caps bound records (including tombstones), receipts and cursors.
-- Parameterized SQL for filters, boolean groups, scalar equality/in/existence,
-  numeric ranges, scalar sorts, and ID tie-breaking. Missing is distinct from
-  JSON null; both sort last. String/ID order uses the C collation. Mixed non-null
-  scalar sort types are rejected. No data scan runs in the client.
+- Adapter-native bounded filters support boolean groups, scalar
+  equality/in/existence, ranges, scalar sorts and ID tie-breaking. Missing is
+  distinct from JSON null and both sort last. No data scan runs in the client;
+  Mongo creates declared-field indexes during release use.
 - Random cursor tokens are bound to principal, view, generation, contract and
   query through the resolved view hash. They expire after 15 minutes. Pages are
   **read-current**, using bounded offsets; concurrent writes may affect page
@@ -89,9 +125,9 @@ remain content-addressed files and must be retained/backed up separately.
   entity services. Dynamic ID lists can only narrow fixed IDs in the protected
   release. Unsupported observation is rejected. Source values are not copied
   into owned storage.
-- Generic `refresh-snapshots` subscriptions for both providers. Default interval
-  is one second, active only while subscribed. Unchanged snapshots emit no new
-  event; changes emit complete replacement views with consecutive string seqs.
+- Mongo uses ordered change-stream invalidation; PostgreSQL compatibility and
+  observable workspace sources use `refresh-snapshots`. Both reconcile through
+  authoritative complete snapshots with consecutive public string sequences.
   A new subscription always starts at seq 0 with a fresh epoch.
 - Refreshes recheck ownership, release and capabilities. A slow consumer retires
   the subscription instead of skipping frames or growing queues. Missed outbox
@@ -163,6 +199,9 @@ Discovery projects current published metadata and reauthorizes each result;
 records are read directly from the provider. Missing/revoked candidates are skipped;
 availability/rate failures are surfaced instead of appearing as an empty catalog.
 There is no per-shard MCP server and no MCP Apps rendering protocol here.
+When the authored runtime is configured, `execute_shard_operation` invokes only a
+named persisted GraphQL operation with agent exposure. It resolves the current
+published hash when omitted and never accepts raw GraphQL source.
 
 ## Limits and operating constraints
 

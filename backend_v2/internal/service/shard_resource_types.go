@@ -130,6 +130,13 @@ type ResourceProvider interface {
 	Mutate(context.Context, ResourceView, shardv2.Command) (ResourceMutationResult, error)
 }
 
+// ResourceChangeObserver is optional. Providers with a durable ordered event
+// source use it to trigger reconciled snapshots without leaking datastore
+// resume tokens into the public shard protocol.
+type ResourceChangeObserver interface {
+	ObserveChanges(context.Context, ResourceView) (<-chan error, error)
+}
+
 type ResourceSubscriptionIdentity struct {
 	SubscriptionID string `json:"subscriptionId"`
 	Resource       string `json:"resource"`

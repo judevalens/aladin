@@ -98,6 +98,9 @@ services:
     environment:
       API_ADDR: ":8000"
       DATA_VOLUME_PATH: /data
+      # Enable only with the `shards` profile and matching .env.prod values.
+      # SHARD_MONGODB_URI=mongodb://mongo:27017/?replicaSet=shard-rs
+      # SHARD_RUNTIME_URL=http://shard-runtime:8092
       # The copilot-agent sidecar (profile `copilot`). Without that profile the
       # copilot dock errors on send; unset COPILOT_AGENT_URL in .env.prod to
       # disable the copilot cleanly instead.
@@ -115,6 +118,51 @@ services:
       timeout: 5s
       retries: 10
     restart: unless-stopped
+
+  # --- Shard v2 owned data and authored resolver runtime -------------------
+  mongo:
+    image: mongo:8.0.16
+    container_name: aladin-prod-shard-mongo
+    profiles: ["shards"]
+    command: ["mongod", "--replSet", "shard-rs", "--bind_ip_all"]
+    volumes:
+      - prod_shard_mongo_data:/data/db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mongo-init:
+    image: mongo:8.0.16
+    profiles: ["shards"]
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: "no"
+    command: ["mongosh", "mongodb://mongo:27017/admin", "--quiet", "--eval", "try { rs.status().ok } catch (e) { rs.initiate({_id:'shard-rs',members:[{_id:0,host:'mongo:27017'}]}) }"]
+
+  shard-runtime:
+    build: ./services/shard-runtime
+    image: aladin-shard-runtime:prod
+    container_name: aladin-prod-shard-runtime
+    profiles: ["shards"]
+    env_file: [backend_v2/.env.prod]
+    environment:
+      PORT: 8092
+      HOST: 0.0.0.0
+      SHARD_CAPABILITY_URL: http://api:8000/internal/shard-runtime/capability
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    mem_limit: 1g
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8092/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
 
   # --- enrichment worker (entities/claims/insights/graph + syncers) ---------
   worker:
@@ -220,3 +268,4 @@ volumes:
   prod_neo4j_data:
   prod_app_data:
   prod_copilot_sessions:
+  prod_shard_mongo_data:

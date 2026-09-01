@@ -80,6 +80,35 @@ func Compile(data []byte, providers Registry) (*Compiled, error) {
 			return at(err)
 		}
 	}
+	validateHandler := func(kind, id string, handler RuntimeHandler) error {
+		for _, capability := range handler.Capabilities {
+			parts := strings.SplitN(capability, ":", 2)
+			binding, ok := c.Bindings[parts[0]]
+			resource := c.Resources[binding.Resource]
+			if !ok || len(parts) != 2 || !slices.Contains(resource.Operations, parts[1]) {
+				return fmt.Errorf("%s.%s: capability %s is not declared by a binding", kind, id, capability)
+			}
+		}
+		return nil
+	}
+	if c.GraphQL != nil {
+		for id, handler := range c.GraphQL.Resolvers {
+			if err := validateHandler("graphql.resolvers", id, handler); err != nil {
+				return nil, err
+			}
+		}
+		for id, operation := range c.GraphQL.Operations {
+			document := strings.TrimSpace(operation.Document)
+			if !strings.HasPrefix(document, "query ") && !strings.HasPrefix(document, "mutation ") {
+				return nil, fmt.Errorf("graphql.operations.%s: document must be a named query or mutation", id)
+			}
+		}
+	}
+	for id, lambda := range c.Lambdas {
+		if err := validateHandler("lambdas", id, lambda.RuntimeHandler); err != nil {
+			return nil, err
+		}
+	}
 	out := &Compiled{Contract: c, Source: append([]byte(nil), data...), OutputSchemas: map[string]Schema{}}
 	dependencies := map[string][]string{}
 	for id, b := range c.Bindings {
@@ -243,23 +272,33 @@ func EffectiveCapabilities(r Resource, audience string, allowed []string) []stri
 	return out
 }
 
-func ValidateQuery(r Resource, q Query) error {
+func NormalizeQuery(q Query) (Query, error) {
 	raw, err := json.Marshal(q)
 	if err != nil {
-		return err
+		return Query{}, err
 	}
 	v, err := DecodeJSON(raw)
 	if err != nil {
-		return err
+		return Query{}, err
 	}
 	if err := ValidateProtocol("query", v); err != nil {
-		return err
+		return Query{}, err
 	}
+	var normalized Query
+	if err := json.Unmarshal(raw, &normalized); err != nil {
+		return Query{}, err
+	}
+	return normalized, nil
+}
+
+func ValidateQuery(r Resource, q Query) error {
 	// Normalize typed Go callers (for example []string and int operands) to the
 	// same JSON value domain used by decoded bridge requests before traversal.
-	if err := json.Unmarshal(raw, &q); err != nil {
+	normalized, err := NormalizeQuery(q)
+	if err != nil {
 		return err
 	}
+	q = normalized
 	limit := q.Limit
 	if limit == 0 {
 		limit = DefaultLimit

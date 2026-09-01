@@ -193,6 +193,12 @@ func cors(next http.Handler) http.Handler {
 
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The resolver worker authenticates with its dedicated shared secret and
+		// presents a signed, release-scoped capability token in the request body.
+		if r.URL.Path == "/internal/shard-runtime/capability" {
+			next.ServeHTTP(w, r)
+			return
+		}
 		if s.deps.Auth() == nil {
 			next.ServeHTTP(w, r)
 			return

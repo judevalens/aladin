@@ -112,6 +112,26 @@ Queues are bounded by both count (1000) and bytes (4 MiB), including the pre-ack
 queue. Sorted/filtered views use replacement snapshots; raw deltas cannot safely
 infer window membership. Client subscription creation unwinds on failure.
 
+## GraphQL and lambdas
+
+Persisted GraphQL queries/mutations and manual lambdas use the protected host bridge:
+
+```ts
+import { executeGraphQL, invokeLambda } from "@aladin/kit";
+
+const graph = await executeGraphQL<{ project: { open: number } }>(
+  "projectExecutionGraph",
+  { projectId },
+);
+await invokeLambda("dailyRollup", { day: "2026-08-31" });
+```
+
+The client cannot send raw GraphQL text. The operation ID, exposure, schema,
+resolver code and capabilities all come from the pinned release. A release mismatch
+returns `contract-changed` and requires a reload. Live data uses
+`subscribeResource`; persisted GraphQL subscriptions are not exposed by this
+transport.
+
 ## Querying and pagination
 
 ```ts

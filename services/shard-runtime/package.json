@@ -1,0 +1,13 @@
+{
+  "name": "aladin-shard-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "graphql": "16.14.0"
+  }
+}

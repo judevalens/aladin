@@ -40,6 +40,18 @@ export interface Contract {
   intent: string;
   resources: Record<string, Resource>;
   bindings: Record<string, Binding>;
+  graphql?: {
+    schema: string;
+    operations: Record<string, { document: string; exposure: ("app" | "agent")[] }>;
+    resolvers: Record<string, RuntimeHandler>;
+  };
+  lambdas?: Record<string, RuntimeHandler & { trigger: { kind: "manual" } }>;
+}
+export interface RuntimeHandler {
+  file: string;
+  export: string;
+  capabilities: string[];
+  budget: { maxOperations: number; maxDocuments: number; timeoutMs: number; memoryMiB: number };
 }
 export interface ProviderProfile {
   version: number;

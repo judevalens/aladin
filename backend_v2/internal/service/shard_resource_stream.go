@@ -26,8 +26,8 @@ func (s *shardResourceService) Subscribe(ctx context.Context, target ResourceTar
 	if err != nil {
 		return ResourceSubscription{}, err
 	}
-	if provider.Profile().Observation != "refresh-snapshots" {
-		return ResourceSubscription{}, ResourceFailure("unsupported-capability", "This hub requires refresh-snapshots observation")
+	if provider.Profile().Observation != "refresh-snapshots" && provider.Profile().Observation != "ordered-changes" {
+		return ResourceSubscription{}, ResourceFailure("unsupported-capability", "Provider cannot be observed")
 	}
 	key := view.Namespace.ActorKey
 	s.mu.Lock()
@@ -54,6 +54,14 @@ func (s *shardResourceService) Subscribe(ctx context.Context, target ResourceTar
 	// A single unread snapshot is enough: overflow retires the generation, it
 	// never silently drops a sequence number or grows a per-client queue.
 	events := make(chan ResourceStreamMessage, 1)
+	var changes <-chan error
+	if observer, ok := provider.(ResourceChangeObserver); ok {
+		changes, err = observer.ObserveChanges(streamCtx, view)
+		if err != nil {
+			closeSubscription()
+			return ResourceSubscription{}, err
+		}
+	}
 	initial, err := s.snapshot(streamCtx, view, provider)
 	if err != nil {
 		closeSubscription()
@@ -74,6 +82,10 @@ func (s *shardResourceService) Subscribe(ctx context.Context, target ResourceTar
 		defer closeSubscription()
 		ticker := time.NewTicker(s.options.RefreshInterval)
 		defer ticker.Stop()
+		refresh := ticker.C
+		if changes != nil {
+			refresh = nil
+		}
 		last := resourceHash(initial)
 		var seq uint64
 		fail := func(err error) {
@@ -92,7 +104,15 @@ func (s *shardResourceService) Subscribe(ctx context.Context, target ResourceTar
 			select {
 			case <-streamCtx.Done():
 				return
-			case <-ticker.C:
+			case <-refresh:
+			case changeErr, open := <-changes:
+				if !open || changeErr != nil {
+					if changeErr == nil {
+						changeErr = ResourceFailure("source-unavailable", "Resource change stream closed")
+					}
+					fail(changeErr)
+					return
+				}
 			}
 			nextView, _, nextProvider, err := s.resolve(streamCtx, target, request, "observe")
 			if err != nil {

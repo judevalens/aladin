@@ -340,6 +340,211 @@
         "additionalProperties": false
       },
       "maxProperties": 128
+    },
+    "graphql": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "type": "string",
+          "pattern": "^graphql/[A-Za-z0-9_./-]+\\.graphql$",
+          "maxLength": 256
+        },
+        "operations": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "document": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 65536
+              },
+              "exposure": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "app",
+                    "agent"
+                  ]
+                },
+                "uniqueItems": true,
+                "minItems": 1,
+                "maxItems": 2
+              }
+            },
+            "required": [
+              "document",
+              "exposure"
+            ],
+            "additionalProperties": false
+          },
+          "maxProperties": 128
+        },
+        "resolvers": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}(?:\\.[A-Za-z_][A-Za-z0-9_]{0,63})?$",
+            "maxLength": 129
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "file": {
+                "type": "string",
+                "pattern": "^(?:resolvers|lambdas)/[A-Za-z0-9_./-]+\\.tsx?$",
+                "maxLength": 256
+              },
+              "export": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+              },
+              "capabilities": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}:(?:snapshot|query|insert|update|delete)$"
+                },
+                "uniqueItems": true,
+                "maxItems": 64
+              },
+              "budget": {
+                "type": "object",
+                "properties": {
+                  "maxOperations": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 64
+                  },
+                  "maxDocuments": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 5000
+                  },
+                  "timeoutMs": {
+                    "type": "integer",
+                    "minimum": 10,
+                    "maximum": 30000
+                  },
+                  "memoryMiB": {
+                    "type": "integer",
+                    "minimum": 16,
+                    "maximum": 256
+                  }
+                },
+                "required": [
+                  "maxOperations",
+                  "maxDocuments",
+                  "timeoutMs",
+                  "memoryMiB"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "file",
+              "export",
+              "capabilities",
+              "budget"
+            ],
+            "additionalProperties": false
+          },
+          "maxProperties": 64
+        }
+      },
+      "required": [
+        "schema",
+        "operations",
+        "resolvers"
+      ],
+      "additionalProperties": false
+    },
+    "lambdas": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string",
+            "pattern": "^(?:resolvers|lambdas)/[A-Za-z0-9_./-]+\\.tsx?$",
+            "maxLength": 256
+          },
+          "export": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}:(?:snapshot|query|insert|update|delete)$"
+            },
+            "uniqueItems": true,
+            "maxItems": 64
+          },
+          "budget": {
+            "type": "object",
+            "properties": {
+              "maxOperations": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 64
+              },
+              "maxDocuments": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 5000
+              },
+              "timeoutMs": {
+                "type": "integer",
+                "minimum": 10,
+                "maximum": 30000
+              },
+              "memoryMiB": {
+                "type": "integer",
+                "minimum": 16,
+                "maximum": 256
+              }
+            },
+            "required": [
+              "maxOperations",
+              "maxDocuments",
+              "timeoutMs",
+              "memoryMiB"
+            ],
+            "additionalProperties": false
+          },
+          "trigger": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "manual"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "file",
+          "export",
+          "capabilities",
+          "budget",
+          "trigger"
+        ],
+        "additionalProperties": false
+      },
+      "maxProperties": 32
     }
   },
   "required": [

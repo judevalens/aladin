@@ -33,3 +33,15 @@ export async function queryResource<T extends Data = Data>(binding: string, quer
   ensureSession();
   return transport!.query<T>({ binding, inputs }, query, signal);
 }
+
+/** Execute a release-pinned persisted GraphQL operation. Raw query text is not accepted. */
+export async function executeGraphQL<T = unknown>(operationId: string, variables: Data = {}, signal?: AbortSignal): Promise<{ data?: T; errors?: { message: string }[] }> {
+  ensureSession();
+  return transport!.executeGraphQL<T>(operationId, variables, signal);
+}
+
+/** Invoke a manual lambda from the same immutable runtime release. */
+export async function invokeLambda<T = unknown>(name: string, input: Data = {}, signal?: AbortSignal): Promise<T> {
+  ensureSession();
+  return transport!.invokeLambda<T>(name, input, signal);
+}

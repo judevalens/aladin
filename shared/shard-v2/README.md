@@ -1,14 +1,16 @@
 # Shard v2 implementation
 
-Implements the contract, client library, protected host bridge, PostgreSQL document
-adapter, immutable publication and shared MCP access for **Shard v2 — Implementation
+Implements the contract, client library, protected host bridge, MongoDB and PostgreSQL
+document adapters, immutable publication, persisted GraphQL operations, hot-swappable
+TypeScript resolvers, manual lambdas and shared MCP access for **Shard v2 — Implementation
 Specification** (Aladin artifact `artifact-45ec2ecd-7e92-4ff9-986d-830a1ab297a6`,
 design revision 1.0).
 
 V2 is behind `SHARD_V2_ENABLED=1`, off by default. Existing shards remain on
-bridge/1. Migrations 00051 and 00052 add isolated v2 tables; verification used only
-`aladin-test` on port 5444. No existing shard was converted or production release
-activated. PostgreSQL is the approved initial storage engine; Mongo is optional.
+bridge/1. PostgreSQL remains the release/control plane and compatibility datastore.
+MongoDB is the default owned-data engine and requires `SHARD_MONGODB_URI` (plus an
+optional `SHARD_MONGODB_DATABASE`). Set `SHARD_DATASTORE=postgres` explicitly for
+the compatibility adapter. No existing shard is converted automatically.
 
 Copilot and MCP clients discover capabilities through `get_authoring_guide`.
 New apps automatically receive the configured data API and starter files; guides
@@ -30,8 +32,10 @@ operator concern, not an authoring question presented to the user.
   event/query validation. Provider profiles are injected by the caller.
 - `backend_v2/internal/service/shard_resources.go`: shared authorization,
   parameter resolution, projection and read/write entry points.
-- `backend_v2/internal/repo/shard_resource_*.go`: PostgreSQL document storage,
-  guarded mutations, receipts, queries, protected builds and archive recovery.
+- `backend_v2/internal/repo/shard_resource_*.go`: MongoDB/PostgreSQL document
+  storage, guarded mutations, receipts, queries, protected builds and recovery.
+- `services/shard-runtime`: release-scoped Node workers that validate GraphQL,
+  run compiled TypeScript resolvers/lambdas, enforce budgets and drain old releases.
 - `backend_v2/internal/api/shard_resources.go`: HTTP/WS using the shared bridge
   envelopes; `fixtures/api.json` freezes the transport mapping.
 - `backend_v2/internal/docsurface`: opt-in contract/anchor checks, embedded kit
@@ -118,8 +122,10 @@ changes (requires installed frontend dependencies). It bundles the tested client
 into the Go-embedded kit asset; it does not copy frontend public assets. The kit
 vendor hash includes this generated asset. Do not edit generated JS by hand.
 
-UI and MCP call the same authorized service. Owned records stay in isolated
-PostgreSQL JSONB namespaces; registered external sources execute in the backend.
+UI, authored resolvers and MCP call the same authorized service. Owned records use
+opaque per-user/shard/environment MongoDB collections when Mongo is configured;
+registered external sources execute in the backend. Resolver workers receive
+signed capabilities and never receive database credentials or namespace selectors.
 Neither authors nor iframe requests choose credentials, backend endpoints,
 environment, or release grants. Complex analytics require another registered
 backend provider; this release does not offer arbitrary SQL or arbitrary URLs.

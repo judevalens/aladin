@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -65,6 +66,47 @@ func TestSharedValidationFixtures(t *testing.T) {
 				t.Fatalf("want valid=%v, got %v", tc.Valid, err)
 			}
 		})
+	}
+}
+
+func TestCompileRejectsPersistedGraphQLSubscriptions(t *testing.T) {
+	data, err := os.ReadFile(fixturesPath(t, "fixtures/validation.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var corpus struct {
+		Providers Registry
+		Cases     []struct {
+			Kind, Name string
+			Valid      bool
+			Value      json.RawMessage
+		}
+	}
+	if err := json.Unmarshal(data, &corpus); err != nil {
+		t.Fatal(err)
+	}
+	var contract map[string]any
+	for _, tc := range corpus.Cases {
+		if tc.Kind == "contract" && tc.Valid {
+			if err := json.Unmarshal(tc.Value, &contract); err != nil {
+				t.Fatal(err)
+			}
+			break
+		}
+	}
+	contract["graphql"] = map[string]any{
+		"schema": "graphql/schema.graphql",
+		"operations": map[string]any{
+			"watch": map[string]any{"document": "subscription Watch { value }", "exposure": []any{"app"}},
+		},
+		"resolvers": map[string]any{},
+	}
+	raw, err := json.Marshal(contract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Compile(raw, corpus.Providers); err == nil || !strings.Contains(err.Error(), "named query or mutation") {
+		t.Fatalf("Compile() error = %v, want persisted subscription rejection", err)
 	}
 }
 

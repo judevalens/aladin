@@ -1,9 +1,17 @@
 # Shard v2 verification and rollout gates
 
-Status as of 2026-08-30: the implementation and sandbox pilot are working on
-`codex/shard-v2`. V2 remains default-off. No production enablement, migration or
-v1 retirement has been performed. This report does not declare the full locked
-specification complete.
+Status as of 2026-08-31: the MongoDB + GraphQL datastore/runtime implementation is
+working on `codex/shard-datastore-runtime`. V2 remains default-off. No production
+enablement, existing-shard migration or v1 retirement has been performed.
+
+New verification covers a real MongoDB 8.0 single-node replica set: namespace
+isolation, CRUD, schema checks, null/missing filters, sorting, cursor pagination,
+CAS, concurrent idempotent replay, tombstones, ordered change signals, freeze
+fencing and export/restore. Node tests cover candidate failure, add/change/remove,
+release pinning, per-request audience scope, same-hash tenant isolation, worker
+environment isolation, budgets, timeout cleanup, manual lambdas and in-flight drain
+during an atomic runtime switch. Go build tests prove server code/schema/manifests are inside
+the immutable release identity and undeclared or Node builtin imports are rejected.
 
 ## Work-package status
 
@@ -11,24 +19,27 @@ specification complete.
 | --- | --- | --- |
 | WP01 | Shared schemas, generated Go map, cross-language fixtures, profile limits | Keep fixtures synchronized as contracts evolve |
 | WP02 | Authorized registry/service, params, projection, capabilities, conditional writes | Broader provider/security review |
-| WP03 | Approved PostgreSQL adapter, receipts, quotas, archive restore conformance | Operational retention/recovery tooling, crash/load evidence |
+| WP03 | PostgreSQL compatibility plus Mongo default adapter, receipts, quotas, ordered changes and fenced archive restore | Operational retention/recovery tooling, crash/load evidence |
 | WP04 | Deterministic client reducer, shared subscriptions, bounded recovery | Sustained memory/throughput soak at default caps |
 | WP05 | Kit exports, protected bootstrap, actual web host, one shared socket | Native WKWebView/vendor-scheme pilot and complete lifecycle matrix |
-| WP06 | Owned documents and real workspace source; honest refresh snapshots | Event-triggered refresh optimization; full credential/fault matrix |
-| WP07 | Published catalog and five MCP tools using the same service | Staging operational monitoring/visibility |
+| WP06 | Owned documents, Mongo event-triggered reconciliation and real workspace source | Full credential/fault matrix and broader provider coverage |
+| WP07 | Published catalog, five resource MCP tools and optional persisted-operation execution | Staging operational monitoring/visibility |
 | WP08 | Immutable code+contract+anchors, exact-build verification, atomic pointer, stage quotas | Per-field index/query-plan staging, reviewed inactive-build cleanup tooling |
 | WP09 | Persisted/live/third-resource pilot, MCP JSON-RPC, two real web iframes, reconnect/revocation | Native and deployed staging pilots; sustained performance/fault matrix |
 | WP10 | Read-only inventory and migration procedure | Actual saved-row/import audit, reviewed mappings, freeze/drain/cutover runner, authorization and individual migrations |
 
-Mongo is not a dependency: the user approved PostgreSQL as the initial document
-engine. The user also approved AJV's v2-only `unsafe-eval` relaxation. Neither
-choice removes authorization, bounded views or atomic publication requirements.
+MongoDB is the preferred owned-data engine; PostgreSQL remains a supported adapter
+and the release/control plane. GraphQL is the stable app boundary. TypeScript/Node
+allows validated resolver add/change/remove without restarting the Go authority
+service. These choices do not remove authorization, bounded views or atomic
+publication requirements.
 
 ## Final verification result
 
-All six affected Go package suites pass with the race detector. The eight focused
-frontend/legacy compatibility files pass (134 tests); TypeScript, the production
-frontend build and `go vet ./...` pass. Schemas, manifest, embedded Go schema map
+The complete Go suite passes with the race detector, including the real Mongo
+replica-set tests. All 76 frontend test files pass (511 tests), as do the nine
+Node resolver-runtime tests; TypeScript, the production frontend build and
+`go vet ./...` pass. Schemas, manifest, embedded Go schema map
 and kit client bundle regenerate deterministically. The frontend build still
 reports PDF dynamic-import and large-chunk warnings in the existing app build;
 these are not test failures. Native-host and broad-rollout gaps below remain.
@@ -43,6 +54,9 @@ these are not test failures. Native-host and broad-rollout gaps below remain.
 - PostgreSQL tests: isolation, restart persistence, concurrent CAS, duplicate
   request IDs, receipt failure rollback, quotas, tombstones, projection, numeric/
   null/missing query semantics, cursor scope, release compatibility and retention.
+- Mongo tests: physical namespace isolation, concurrent idempotency, CAS,
+  declared filters/sorts, null versus missing, cursor scope, change streams,
+  expired receipt reuse and transactionally fenced export/restore.
 - Archive tests: tombstone/receipt round trip, checksum verification, corrupted
   import rollback and refusal to overwrite accepted writes.
 - API tests: real HTTP/WS with PostgreSQL, content-token rejection, default-off
@@ -96,13 +110,15 @@ node shared/shard-v2/bundle-client.mjs
 
 # backend_v2
 # If Chrome is not discoverable, set DOCSURFACE_CHROME_PATH.
-env -u DATABASE_URL TEST_DATABASE_URL=postgres://aladin:password@localhost:5444/aladin GOCACHE="$PWD/.gocache" go test -race -p 1 ./internal/shardv2 ./internal/service ./internal/repo ./internal/api ./internal/docsurface ./internal/mcp
+TEST_MONGODB_URI='mongodb://127.0.0.1:27029/?replicaSet=rs0&directConnection=true' go test -race -p 1 ./...
 GOCACHE="$PWD/.gocache" go vet ./...
 
 # aladin_react
-npm test -- --run src/test/shard-v2-contract.test.ts src/test/shard-v2-provider.test.ts src/test/shard-v2-bridge.test.ts src/test/shard-v2-host.test.ts src/test/bridge-host.test.ts src/test/shard-build.test.ts src/test/shard-content-token.test.tsx src/test/shard-data-hub.test.ts
-node_modules/.bin/tsc --noEmit -p tsconfig.app.json
+npm test
 npm run build
+
+# services/shard-runtime
+npm test
 ```
 
 Regeneration should produce identical schemas/manifest and client bundle on a

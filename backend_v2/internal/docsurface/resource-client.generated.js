@@ -810,23 +810,23 @@ var n = Object.create, r = Object.defineProperty, i = Object.getOwnPropertyDescr
 		for (let n in t) e[n] = (e[n] || 0) - (t[n] || 0);
 	}
 	function N(e) {
-		return typeof e == "boolean" || typeof e == "number" || e === null ? !e : (0, t._)`!${z(e)}`;
+		return typeof e == "boolean" || typeof e == "number" || e === null ? !e : (0, t._)`!${R(e)}`;
 	}
 	e.not = N;
-	var P = R(e.operators.AND);
+	var P = L(e.operators.AND);
 	function F(...e) {
 		return e.reduce(P);
 	}
 	e.and = F;
-	var I = R(e.operators.OR);
-	function L(...e) {
-		return e.reduce(I);
+	var ee = L(e.operators.OR);
+	function I(...e) {
+		return e.reduce(ee);
 	}
-	e.or = L;
+	e.or = I;
+	function L(e) {
+		return (n, r) => n === t.nil ? r : r === t.nil ? n : (0, t._)`${R(n)} ${e} ${R(r)}`;
+	}
 	function R(e) {
-		return (n, r) => n === t.nil ? r : r === t.nil ? n : (0, t._)`${z(n)} ${e} ${z(r)}`;
-	}
-	function z(e) {
 		return e instanceof t.Name ? e : (0, t._)`(${e})`;
 	}
 })), v = /* @__PURE__ */ l(((e) => {
@@ -1729,7 +1729,7 @@ var n = Object.create, r = Object.defineProperty, i = Object.getOwnPropertyDescr
 	function S(e) {
 		let { schema: t, opts: n, gen: r } = e;
 		m(e, () => {
-			n.$comment && t.$comment && V(e), R(e), r.let(l.default.vErrors, null), r.let(l.default.errors, 0), n.unevaluated && E(e), I(e), H(e);
+			n.$comment && t.$comment && B(e), L(e), r.let(l.default.vErrors, null), r.let(l.default.errors, 0), n.unevaluated && E(e), ee(e), V(e);
 		});
 	}
 	function E(e) {
@@ -1757,34 +1757,34 @@ var n = Object.create, r = Object.defineProperty, i = Object.getOwnPropertyDescr
 	}
 	function P(e, t) {
 		let { schema: n, gen: r, opts: i } = e;
-		i.$comment && n.$comment && V(e), z(e), B(e);
+		i.$comment && n.$comment && B(e), R(e), z(e);
 		let a = r.const("_errs", l.default.errors);
-		I(e, a), r.var(t, (0, c._)`${a} === ${l.default.errors}`);
+		ee(e, a), r.var(t, (0, c._)`${a} === ${l.default.errors}`);
 	}
 	function F(e) {
-		(0, d.checkUnknownRules)(e), L(e);
+		(0, d.checkUnknownRules)(e), I(e);
 	}
-	function I(e, t) {
-		if (e.opts.jtd) return U(e, [], !1, t);
+	function ee(e, t) {
+		if (e.opts.jtd) return H(e, [], !1, t);
 		let r = (0, n.getSchemaTypes)(e.schema);
-		U(e, r, !(0, n.coerceAndCheckDataType)(e, r), t);
+		H(e, r, !(0, n.coerceAndCheckDataType)(e, r), t);
 	}
-	function L(e) {
+	function I(e) {
 		let { schema: t, errSchemaPath: n, opts: r, self: i } = e;
 		t.$ref && r.ignoreKeywordsWithRef && (0, d.schemaHasRulesButRef)(t, i.RULES) && i.logger.warn(`$ref: keywords ignored in schema at path "${n}"`);
 	}
-	function R(e) {
+	function L(e) {
 		let { schema: t, opts: n } = e;
 		t.default !== void 0 && n.useDefaults && n.strictSchema && (0, d.checkStrictMode)(e, "default is ignored in the schema root");
 	}
-	function z(e) {
+	function R(e) {
 		let t = e.schema[e.opts.schemaId];
 		t && (e.baseId = (0, u.resolveUrl)(e.opts.uriResolver, e.baseId, t));
 	}
-	function B(e) {
+	function z(e) {
 		if (e.schema.$async && !e.schemaEnv.$async) throw Error("async schema in sync schema");
 	}
-	function V({ gen: e, schemaEnv: t, schema: n, errSchemaPath: r, opts: i }) {
+	function B({ gen: e, schemaEnv: t, schema: n, errSchemaPath: r, opts: i }) {
 		let a = n.$comment;
 		if (i.$comment === !0) e.code((0, c._)`${l.default.self}.logger.log(${a})`);
 		else if (typeof i.$comment == "function") {
@@ -1792,14 +1792,14 @@ var n = Object.create, r = Object.defineProperty, i = Object.getOwnPropertyDescr
 			e.code((0, c._)`${l.default.self}.opts.$comment(${a}, ${n}, ${i}.schema)`);
 		}
 	}
-	function H(e) {
+	function V(e) {
 		let { gen: t, schemaEnv: n, validateName: r, ValidationError: i, opts: a } = e;
-		n.$async ? t.if((0, c._)`${l.default.errors} === 0`, () => t.return(l.default.data), () => t.throw((0, c._)`new ${i}(${l.default.vErrors})`)) : (t.assign((0, c._)`${r}.errors`, l.default.vErrors), a.unevaluated && ee(e), t.return((0, c._)`${l.default.errors} === 0`));
+		n.$async ? t.if((0, c._)`${l.default.errors} === 0`, () => t.return(l.default.data), () => t.throw((0, c._)`new ${i}(${l.default.vErrors})`)) : (t.assign((0, c._)`${r}.errors`, l.default.vErrors), a.unevaluated && te(e), t.return((0, c._)`${l.default.errors} === 0`));
 	}
-	function ee({ gen: e, evaluated: t, props: n, items: r }) {
+	function te({ gen: e, evaluated: t, props: n, items: r }) {
 		n instanceof c.Name && e.assign((0, c._)`${t}.props`, n), r instanceof c.Name && e.assign((0, c._)`${t}.items`, r);
 	}
-	function U(e, t, n, a) {
+	function H(e, t, n, a) {
 		let { gen: o, schema: s, data: u, allErrors: f, opts: p, self: m } = e, { RULES: h } = m;
 		if (s.$ref && (p.ignoreKeywordsWithRef || !(0, d.schemaHasRulesButRef)(s, h))) {
 			o.block(() => ue(e, "$ref", h.all.$ref.definition));
@@ -1810,17 +1810,17 @@ var n = Object.create, r = Object.defineProperty, i = Object.getOwnPropertyDescr
 			g(h.post);
 		});
 		function g(d) {
-			(0, r.shouldUseGroup)(s, d) && (d.type ? (o.if((0, i.checkDataType)(d.type, u, p.strictNumbers)), te(e, d), t.length === 1 && t[0] === d.type && n && (o.else(), (0, i.reportTypeError)(e)), o.endIf()) : te(e, d), f || o.if((0, c._)`${l.default.errors} === ${a || 0}`));
+			(0, r.shouldUseGroup)(s, d) && (d.type ? (o.if((0, i.checkDataType)(d.type, u, p.strictNumbers)), U(e, d), t.length === 1 && t[0] === d.type && n && (o.else(), (0, i.reportTypeError)(e)), o.endIf()) : U(e, d), f || o.if((0, c._)`${l.default.errors} === ${a || 0}`));
 		}
 	}
-	function te(e, t) {
+	function U(e, t) {
 		let { gen: n, schema: i, opts: { useDefaults: o } } = e;
 		o && (0, a.assignDefaults)(e, t.type), n.block(() => {
 			for (let n of t.rules) (0, r.shouldUseRule)(i, n) && ue(e, n.keyword, n.definition, t.type);
 		});
 	}
 	function ne(e, t) {
-		e.schemaEnv.meta || !e.opts.strictTypes || (re(e, t), e.opts.allowUnionTypes || ie(e, t), ae(e, e.dataTypes));
+		e.schemaEnv.meta || !e.opts.strictTypes || (re(e, t), e.opts.allowUnionTypes || W(e, t), ie(e, e.dataTypes));
 	}
 	function re(e, t) {
 		if (t.length) {
@@ -1829,35 +1829,35 @@ var n = Object.create, r = Object.defineProperty, i = Object.getOwnPropertyDescr
 				return;
 			}
 			t.forEach((t) => {
-				se(e.dataTypes, t) || W(e, `type "${t}" not allowed by context "${e.dataTypes.join(",")}"`);
-			}), ce(e, t);
+				oe(e.dataTypes, t) || ce(e, `type "${t}" not allowed by context "${e.dataTypes.join(",")}"`);
+			}), se(e, t);
 		}
 	}
-	function ie(e, t) {
-		t.length > 1 && !(t.length === 2 && t.includes("null")) && W(e, "use allowUnionTypes to allow union type keyword");
+	function W(e, t) {
+		t.length > 1 && !(t.length === 2 && t.includes("null")) && ce(e, "use allowUnionTypes to allow union type keyword");
 	}
-	function ae(e, t) {
+	function ie(e, t) {
 		let n = e.self.RULES.all;
 		for (let i in n) {
 			let a = n[i];
 			if (typeof a == "object" && (0, r.shouldUseRule)(e.schema, a)) {
 				let { type: n } = a.definition;
-				n.length && !n.some((e) => oe(t, e)) && W(e, `missing type "${n.join(",")}" for keyword "${i}"`);
+				n.length && !n.some((e) => ae(t, e)) && ce(e, `missing type "${n.join(",")}" for keyword "${i}"`);
 			}
 		}
 	}
-	function oe(e, t) {
+	function ae(e, t) {
 		return e.includes(t) || t === "number" && e.includes("integer");
 	}
-	function se(e, t) {
+	function oe(e, t) {
 		return e.includes(t) || t === "integer" && e.includes("number");
 	}
-	function ce(e, t) {
+	function se(e, t) {
 		let n = [];
-		for (let r of e.dataTypes) se(t, r) ? n.push(r) : t.includes("integer") && r === "number" && n.push("integer");
+		for (let r of e.dataTypes) oe(t, r) ? n.push(r) : t.includes("integer") && r === "number" && n.push("integer");
 		e.dataTypes = n;
 	}
-	function W(e, t) {
+	function ce(e, t) {
 		let n = e.schemaEnv.baseId + e.errSchemaPath;
 		t += ` at "${n}" (strictTypes)`, (0, d.checkStrictMode)(e, t, e.opts.strictTypes);
 	}
@@ -2167,27 +2167,27 @@ var n = Object.create, r = Object.defineProperty, i = Object.getOwnPropertyDescr
 			baseId: t
 		}), o.schema !== o.root.schema) return o;
 	}
-})), I = /* @__PURE__ */ u({
-	$id: () => L,
+})), ee = /* @__PURE__ */ u({
+	$id: () => I,
 	additionalProperties: () => !1,
-	default: () => H,
-	description: () => R,
-	properties: () => V,
-	required: () => B,
-	type: () => z
-}), L, R, z, B, V, H, ee = c((() => {
-	L = "https://raw.githubusercontent.com/ajv-validator/ajv/master/lib/refs/data.json#", R = "Meta-schema for $data reference (JSON AnySchema extension proposal)", z = "object", B = ["$data"], V = { $data: {
+	default: () => V,
+	description: () => L,
+	properties: () => B,
+	required: () => z,
+	type: () => R
+}), I, L, R, z, B, V, te = c((() => {
+	I = "https://raw.githubusercontent.com/ajv-validator/ajv/master/lib/refs/data.json#", L = "Meta-schema for $data reference (JSON AnySchema extension proposal)", R = "object", z = ["$data"], B = { $data: {
 		type: "string",
 		anyOf: [{ format: "relative-json-pointer" }, { format: "json-pointer" }]
-	} }, H = {
-		$id: L,
-		description: R,
-		type: z,
-		required: B,
-		properties: V,
+	} }, V = {
+		$id: I,
+		description: L,
+		type: R,
+		required: z,
+		properties: B,
 		additionalProperties: !1
 	};
-})), U = /* @__PURE__ */ l(((e, t) => {
+})), H = /* @__PURE__ */ l(((e, t) => {
 	var n = RegExp.prototype.test.bind(/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/iu), r = RegExp.prototype.test.bind(/^(?:(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)$/u), i = RegExp.prototype.test.bind(/^[\da-f]{2}$/iu), a = RegExp.prototype.test.bind(/^[\da-z\-._~]$/iu), o = RegExp.prototype.test.bind(/^[\da-z\-._~!$&'()*+,;=:@/]$/iu);
 	function s(e) {
 		let t = "", n = 0, r = 0;
@@ -2399,8 +2399,8 @@ var n = Object.create, r = Object.defineProperty, i = Object.getOwnPropertyDescr
 		normalizeIPv6: f,
 		stringArrayToHexStripped: s
 	};
-})), te = /* @__PURE__ */ l(((e, t) => {
-	var { isUUID: n } = U(), r = /([\da-z][\d\-a-z]{0,31}):((?:[\w!$'()*+,\-.:;=@]|%[\da-f]{2})+)/iu, i = [
+})), U = /* @__PURE__ */ l(((e, t) => {
+	var { isUUID: n } = H(), r = /([\da-z][\d\-a-z]{0,31}):((?:[\w!$'()*+,\-.:;=@]|%[\da-f]{2})+)/iu, i = [
 		"http",
 		"https",
 		"ws",
@@ -2506,7 +2506,7 @@ var n = Object.create, r = Object.defineProperty, i = Object.getOwnPropertyDescr
 		getSchemeHandler: y
 	};
 })), ne = /* @__PURE__ */ l(((e, t) => {
-	var { normalizeIPv6: n, removeDotSegments: r, recomposeAuthority: i, normalizePercentEncoding: a, normalizePathEncoding: o, escapePreservingEscapes: s, reescapeHostDelimiters: c, isIPv4: l, nonSimpleDomain: u } = U(), { SCHEMES: d, getSchemeHandler: f } = te();
+	var { normalizeIPv6: n, removeDotSegments: r, recomposeAuthority: i, normalizePercentEncoding: a, normalizePathEncoding: o, escapePreservingEscapes: s, reescapeHostDelimiters: c, isIPv4: l, nonSimpleDomain: u } = H(), { SCHEMES: d, getSchemeHandler: f } = U();
 	function p(e, t) {
 		return typeof e == "string" ? e = S(e, t) : typeof e == "object" && (e = x(_(e, t), t)), e;
 	}
@@ -2624,7 +2624,7 @@ var n = Object.create, r = Object.defineProperty, i = Object.getOwnPropertyDescr
 	Object.defineProperty(e, "__esModule", { value: !0 });
 	var t = ne();
 	t.code = "require(\"ajv/dist/runtime/uri\").default", e.default = t;
-})), ie = /* @__PURE__ */ l(((e) => {
+})), W = /* @__PURE__ */ l(((e) => {
 	Object.defineProperty(e, "__esModule", { value: !0 }), e.CodeGen = e.Name = e.nil = e.stringify = e.str = e._ = e.KeywordCxt = void 0;
 	var t = M();
 	Object.defineProperty(e, "KeywordCxt", {
@@ -2665,7 +2665,7 @@ var n = Object.create, r = Object.defineProperty, i = Object.getOwnPropertyDescr
 			return n.CodeGen;
 		}
 	});
-	var r = N(), i = P(), a = S(), o = F(), s = _(), c = j(), l = w(), u = v(), d = (ee(), p(I).default), f = re(), m = (e, t) => new RegExp(e, t);
+	var r = N(), i = P(), a = S(), o = F(), s = _(), c = j(), l = w(), u = v(), d = (te(), p(ee).default), f = re(), m = (e, t) => new RegExp(e, t);
 	m.code = "new RegExp";
 	var h = [
 		"removeAdditional",
@@ -2748,9 +2748,9 @@ var n = Object.create, r = Object.defineProperty, i = Object.getOwnPropertyDescr
 				prefixes: g,
 				es5: t,
 				lines: n
-			}), this.logger = z(e.logger);
+			}), this.logger = R(e.logger);
 			let r = e.validateFormats;
-			e.validateFormats = !1, this.RULES = (0, a.getRules)(), E.call(this, y, e, "NOT SUPPORTED"), E.call(this, b, e, "DEPRECATED", "warn"), this._metaOpts = L.call(this), e.formats && k.call(this), this._addVocabularies(), this._addDefaultMetaSchema(), e.keywords && A.call(this, e.keywords), typeof e.meta == "object" && this.addMetaSchema(e.meta), O.call(this), e.validateFormats = r;
+			e.validateFormats = !1, this.RULES = (0, a.getRules)(), E.call(this, y, e, "NOT SUPPORTED"), E.call(this, b, e, "DEPRECATED", "warn"), this._metaOpts = I.call(this), e.formats && k.call(this), this._addVocabularies(), this._addDefaultMetaSchema(), e.keywords && A.call(this, e.keywords), typeof e.meta == "object" && this.addMetaSchema(e.meta), O.call(this), e.validateFormats = r;
 		}
 		_addVocabularies() {
 			this.addKeyword("$async");
@@ -2880,14 +2880,14 @@ var n = Object.create, r = Object.defineProperty, i = Object.getOwnPropertyDescr
 			else if (typeof e == "object" && t === void 0) {
 				if (t = e, n = t.keyword, Array.isArray(n) && !n.length) throw Error("addKeywords: keyword must be string or non-empty array");
 			} else throw Error("invalid addKeywords parameters");
-			if (V.call(this, n, t), !t) return (0, u.eachItem)(n, (e) => H.call(this, e)), this;
-			te.call(this, t);
+			if (B.call(this, n, t), !t) return (0, u.eachItem)(n, (e) => V.call(this, e)), this;
+			U.call(this, t);
 			let r = {
 				...t,
 				type: (0, l.getJSONTypes)(t.type),
 				schemaType: (0, l.getJSONTypes)(t.schemaType)
 			};
-			return (0, u.eachItem)(n, r.type.length === 0 ? (e) => H.call(this, e, r) : (e) => r.type.forEach((t) => H.call(this, e, r, t))), this;
+			return (0, u.eachItem)(n, r.type.length === 0 ? (e) => V.call(this, e, r) : (e) => r.type.forEach((t) => V.call(this, e, r, t))), this;
 		}
 		getKeyword(e) {
 			let t = this.RULES.all[e];
@@ -2918,7 +2918,7 @@ var n = Object.create, r = Object.defineProperty, i = Object.getOwnPropertyDescr
 					let t = n[e];
 					if (typeof t != "object") continue;
 					let { $data: r } = t.definition, a = i[e];
-					r && a && (i[e] = ie(a));
+					r && a && (i[e] = W(a));
 				}
 			}
 			return e;
@@ -2996,31 +2996,31 @@ var n = Object.create, r = Object.defineProperty, i = Object.getOwnPropertyDescr
 			n.keyword ||= t, this.addKeyword(n);
 		}
 	}
-	function L() {
+	function I() {
 		let e = { ...this.opts };
 		for (let t of h) delete e[t];
 		return e;
 	}
-	var R = {
+	var L = {
 		log() {},
 		warn() {},
 		error() {}
 	};
-	function z(e) {
-		if (e === !1) return R;
+	function R(e) {
+		if (e === !1) return L;
 		if (e === void 0) return console;
 		if (e.log && e.warn && e.error) return e;
 		throw Error("logger must implement log, warn and error methods");
 	}
-	var B = /^[a-z_$][a-z0-9_$:-]*$/i;
-	function V(e, t) {
+	var z = /^[a-z_$][a-z0-9_$:-]*$/i;
+	function B(e, t) {
 		let { RULES: n } = this;
 		if ((0, u.eachItem)(e, (e) => {
 			if (n.keywords[e]) throw Error(`Keyword ${e} is already defined`);
-			if (!B.test(e)) throw Error(`Keyword ${e} has invalid name`);
+			if (!z.test(e)) throw Error(`Keyword ${e} has invalid name`);
 		}), t && t.$data && !("code" in t || "validate" in t)) throw Error("$data keyword must have \"code\" or \"validate\" function");
 	}
-	function H(e, t, n) {
+	function V(e, t, n) {
 		var r;
 		let i = t?.post;
 		if (n && i) throw Error("keyword with \"post\" flag cannot have \"type\"");
@@ -3037,28 +3037,28 @@ var n = Object.create, r = Object.defineProperty, i = Object.getOwnPropertyDescr
 				schemaType: (0, l.getJSONTypes)(t.schemaType)
 			}
 		};
-		t.before ? U.call(this, o, s, t.before) : o.rules.push(s), a.all[e] = s, (r = t.implements) == null || r.forEach((e) => this.addKeyword(e));
+		t.before ? H.call(this, o, s, t.before) : o.rules.push(s), a.all[e] = s, (r = t.implements) == null || r.forEach((e) => this.addKeyword(e));
 	}
-	function U(e, t, n) {
+	function H(e, t, n) {
 		let r = e.rules.findIndex((e) => e.keyword === n);
 		r >= 0 ? e.rules.splice(r, 0, t) : (e.rules.push(t), this.logger.warn(`rule ${n} is not defined`));
 	}
-	function te(e) {
+	function U(e) {
 		let { metaSchema: t } = e;
-		t !== void 0 && (e.$data && this.opts.$data && (t = ie(t)), e.validateSchema = this.compile(t, !0));
+		t !== void 0 && (e.$data && this.opts.$data && (t = W(t)), e.validateSchema = this.compile(t, !0));
 	}
 	var ne = { $ref: "https://raw.githubusercontent.com/ajv-validator/ajv/master/lib/refs/data.json#" };
-	function ie(e) {
+	function W(e) {
 		return { anyOf: [e, ne] };
 	}
-})), ae = /* @__PURE__ */ l(((e) => {
+})), ie = /* @__PURE__ */ l(((e) => {
 	Object.defineProperty(e, "__esModule", { value: !0 }), e.default = {
 		keyword: "id",
 		code() {
 			throw Error("NOT SUPPORTED: keyword \"id\", use \"$id\" for schema ID");
 		}
 	};
-})), oe = /* @__PURE__ */ l(((e) => {
+})), ae = /* @__PURE__ */ l(((e) => {
 	Object.defineProperty(e, "__esModule", { value: !0 }), e.callRef = e.getValidate = void 0;
 	var t = P(), n = E(), r = _(), i = y(), a = F(), o = v(), s = {
 		keyword: "$ref",
@@ -3133,9 +3133,9 @@ var n = Object.create, r = Object.defineProperty, i = Object.getOwnPropertyDescr
 		}
 	}
 	e.callRef = l, e.default = s;
-})), se = /* @__PURE__ */ l(((e) => {
+})), oe = /* @__PURE__ */ l(((e) => {
 	Object.defineProperty(e, "__esModule", { value: !0 });
-	var t = ae(), n = oe();
+	var t = ie(), n = ae();
 	e.default = [
 		"$schema",
 		"$id",
@@ -3146,7 +3146,7 @@ var n = Object.create, r = Object.defineProperty, i = Object.getOwnPropertyDescr
 		t.default,
 		n.default
 	];
-})), ce = /* @__PURE__ */ l(((e) => {
+})), se = /* @__PURE__ */ l(((e) => {
 	Object.defineProperty(e, "__esModule", { value: !0 });
 	var t = _(), n = t.operators, r = {
 		maximum: {
@@ -3184,7 +3184,7 @@ var n = Object.create, r = Object.defineProperty, i = Object.getOwnPropertyDescr
 			e.fail$data((0, t._)`${i} ${r[n].fail} ${a} || isNaN(${i})`);
 		}
 	};
-})), W = /* @__PURE__ */ l(((e) => {
+})), ce = /* @__PURE__ */ l(((e) => {
 	Object.defineProperty(e, "__esModule", { value: !0 });
 	var t = _();
 	e.default = {
@@ -3436,7 +3436,7 @@ var n = Object.create, r = Object.defineProperty, i = Object.getOwnPropertyDescr
 	};
 })), ye = /* @__PURE__ */ l(((e) => {
 	Object.defineProperty(e, "__esModule", { value: !0 });
-	var t = ce(), n = W(), r = ue(), i = de(), a = fe(), o = pe(), s = me(), c = ge(), l = _e(), u = ve();
+	var t = se(), n = ce(), r = ue(), i = de(), a = fe(), o = pe(), s = me(), c = ge(), l = _e(), u = ve();
 	e.default = [
 		t.default,
 		n.default,
@@ -3995,7 +3995,7 @@ var n = Object.create, r = Object.defineProperty, i = Object.getOwnPropertyDescr
 	e.default = _;
 })), Le = /* @__PURE__ */ l(((e) => {
 	Object.defineProperty(e, "__esModule", { value: !0 }), e.dynamicAnchor = void 0;
-	var t = _(), n = y(), r = F(), i = oe(), a = {
+	var t = _(), n = y(), r = F(), i = ae(), a = {
 		keyword: "$dynamicAnchor",
 		schemaType: "string",
 		code: (e) => o(e, e.schema)
@@ -4021,7 +4021,7 @@ var n = Object.create, r = Object.defineProperty, i = Object.getOwnPropertyDescr
 	e.default = a;
 })), Re = /* @__PURE__ */ l(((e) => {
 	Object.defineProperty(e, "__esModule", { value: !0 }), e.dynamicRef = void 0;
-	var t = _(), n = y(), r = oe(), i = {
+	var t = _(), n = y(), r = ae(), i = {
 		keyword: "$dynamicRef",
 		schemaType: "string",
 		code: (e) => a(e, e.schema)
@@ -4284,7 +4284,7 @@ var n = Object.create, r = Object.defineProperty, i = Object.getOwnPropertyDescr
 	];
 })), Qe = /* @__PURE__ */ l(((e) => {
 	Object.defineProperty(e, "__esModule", { value: !0 });
-	var t = se(), n = ye(), r = Ie(), i = Ve(), a = Ge(), o = Je(), s = Xe(), c = Ze();
+	var t = oe(), n = ye(), r = Ie(), i = Ve(), a = Ge(), o = Je(), s = Xe(), c = Ze();
 	e.default = [
 		i.default,
 		t.default,
@@ -4758,7 +4758,7 @@ var n = Object.create, r = Object.defineProperty, i = Object.getOwnPropertyDescr
 	e.default = u;
 })), Pn = new (/* @__PURE__ */ f((/* @__PURE__ */ l(((e, t) => {
 	Object.defineProperty(e, "__esModule", { value: !0 }), e.MissingRefError = e.ValidationError = e.CodeGen = e.Name = e.nil = e.stringify = e.str = e._ = e.KeywordCxt = e.Ajv2020 = void 0;
-	var n = ie(), r = Qe(), i = et(), a = Nn(), o = "https://json-schema.org/draft/2020-12/schema", s = class extends n.default {
+	var n = W(), r = Qe(), i = et(), a = Nn(), o = "https://json-schema.org/draft/2020-12/schema", s = class extends n.default {
 		constructor(e = {}) {
 			super({
 				...e,
@@ -4844,7 +4844,7 @@ function G(e, t) {
 	if (n || (n = Pn.compile(e), Fn.set(e, n), Pn.removeSchema(e)), !n(t)) throw Error(Pn.errorsText(n.errors));
 }
 //#endregion
-//#region aladin_react/src/modules/doc-surface/data/types.ts
+//#region ../../aladin_react/src/modules/doc-surface/data/types.ts
 var K = Object.freeze({
 	jsonBytes: 1 << 20,
 	jsonDepth: 64,
@@ -5141,7 +5141,7 @@ var Wn = {
 	]
 };
 //#endregion
-//#region aladin_react/src/modules/doc-surface/data/event-validation.ts
+//#region ../../aladin_react/src/modules/doc-surface/data/event-validation.ts
 function Gn(e, t, n) {
 	X(e), G(Wn, e), Y(new TextEncoder().encode(JSON.stringify(e)).byteLength <= K.jsonBytes, "event exceeds byte limit");
 	let r = e, i = r.op === "snapshot" ? r.records : "record" in r ? [r.record] : [];
@@ -5151,7 +5151,7 @@ function Gn(e, t, n) {
 	return Y(t.kind !== "singleton" || r.op !== "delete" || r.id === "value", "invalid singleton ID"), r;
 }
 //#endregion
-//#region aladin_react/src/modules/doc-surface/data/resource-store.ts
+//#region ../../aladin_react/src/modules/doc-surface/data/resource-store.ts
 var Kn = Object.freeze({
 	records: Object.freeze([]),
 	seq: null,
@@ -5254,7 +5254,7 @@ function Jn(e, t, n, r) {
 	});
 }
 //#endregion
-//#region aladin_react/src/modules/doc-surface/data/resource-client.ts
+//#region ../../aladin_react/src/modules/doc-surface/data/resource-client.ts
 var Yn = [
 	"snapshot",
 	"query",
@@ -6018,6 +6018,72 @@ var $n = class {
 				"params"
 			],
 			additionalProperties: !1
+		},
+		{
+			type: "object",
+			properties: {
+				aladin: { const: "bridge/2" },
+				type: { const: "request" },
+				id: {
+					type: "integer",
+					minimum: 0,
+					maximum: 9007199254740991
+				},
+				method: { const: "graphql.execute" },
+				params: {
+					type: "object",
+					properties: {
+						operationId: {
+							type: "string",
+							pattern: "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+						},
+						variables: { type: "object" }
+					},
+					required: ["operationId"],
+					additionalProperties: !1
+				}
+			},
+			required: [
+				"aladin",
+				"type",
+				"id",
+				"method",
+				"params"
+			],
+			additionalProperties: !1
+		},
+		{
+			type: "object",
+			properties: {
+				aladin: { const: "bridge/2" },
+				type: { const: "request" },
+				id: {
+					type: "integer",
+					minimum: 0,
+					maximum: 9007199254740991
+				},
+				method: { const: "lambda.invoke" },
+				params: {
+					type: "object",
+					properties: {
+						name: {
+							type: "string",
+							pattern: "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+						},
+						input: { type: "object" }
+					},
+					required: ["name"],
+					additionalProperties: !1
+				}
+			},
+			required: [
+				"aladin",
+				"type",
+				"id",
+				"method",
+				"params"
+			],
+			additionalProperties: !1
 		}
 	],
 	$defs: { predicate: { oneOf: [
@@ -6299,13 +6365,13 @@ var $n = class {
 	additionalProperties: !1
 };
 //#endregion
-//#region aladin_react/src/modules/doc-surface/data/request-id.ts
+//#region ../../aladin_react/src/modules/doc-surface/data/request-id.ts
 function or() {
 	let e = new Uint8Array(16);
 	return crypto.getRandomValues(e), Array.from(e, (e) => e.toString(16).padStart(2, "0")).join("");
 }
 //#endregion
-//#region aladin_react/src/modules/doc-surface/data/bridge-transport.ts
+//#region ../../aladin_react/src/modules/doc-surface/data/bridge-transport.ts
 var sr = /* @__PURE__ */ new WeakMap();
 function cr(e) {
 	let t = (sr.get(e) ?? 0) + 1;
@@ -6369,21 +6435,21 @@ var lr = class {
 		} catch (e) {
 			return Promise.reject(e);
 		}
-		return n?.aborted ? Promise.reject(new DOMException("Aborted", "AbortError")) : new Promise((e, t) => {
-			let a = (i, a) => {
-				this.pending.delete(r) && (clearTimeout(s), n?.removeEventListener("abort", o), i ? t(i) : e(a));
-			}, o = () => a(new DOMException("Aborted", "AbortError")), s = setTimeout(() => a({
+		return n?.aborted ? Promise.reject(new DOMException("Aborted", "AbortError")) : new Promise((t, a) => {
+			let o = (e, i) => {
+				this.pending.delete(r) && (clearTimeout(c), n?.removeEventListener("abort", s), e ? a(e) : t(i));
+			}, s = () => o(new DOMException("Aborted", "AbortError")), c = setTimeout(() => o({
 				code: "source-unavailable",
 				message: "Bridge request timed out; mutation outcome may be unknown"
-			}), 8e3);
+			}), e === "graphql.execute" || e === "lambda.invoke" ? 35e3 : 8e3);
 			this.pending.set(r, {
-				resolve: (e) => a(null, e),
-				reject: (e) => a(e)
-			}), n?.addEventListener("abort", o, { once: !0 });
+				resolve: (e) => o(null, e),
+				reject: (e) => o(e)
+			}), n?.addEventListener("abort", s, { once: !0 });
 			try {
 				this.parent.postMessage(i, "*");
 			} catch (e) {
-				a(e);
+				o(e);
 			}
 		});
 	}
@@ -6563,9 +6629,27 @@ var lr = class {
 		};
 		return Q(s);
 	}
+	async executeGraphQL(e, t = {}, n) {
+		await this.ready();
+		let r = await this.bridge.call("graphql.execute", {
+			operationId: e,
+			variables: t
+		}, n);
+		if (!q(r) || r.data === void 0 && !Array.isArray(r.errors)) throw {
+			code: "source-unavailable",
+			message: "Invalid GraphQL response"
+		};
+		return Q(r);
+	}
+	async invokeLambda(e, t = {}, n) {
+		return await this.ready(), Q(await this.bridge.call("lambda.invoke", {
+			name: e,
+			input: t
+		}, n));
+	}
 };
 //#endregion
-//#region aladin_react/src/modules/doc-surface/data/use-resource.ts
+//#region ../../aladin_react/src/modules/doc-surface/data/use-resource.ts
 function dr(n) {
 	return function(r, i = {}) {
 		let a = In(i), o = e(() => n.resource(r, JSON.parse(a)), [r, a]);
@@ -6579,7 +6663,7 @@ function dr(n) {
 	};
 }
 //#endregion
-//#region aladin_react/src/modules/doc-surface/data/kit-resource.ts
+//#region ../../aladin_react/src/modules/doc-surface/data/kit-resource.ts
 var fr, $;
 function pr() {
 	if (!fr) {
@@ -6607,5 +6691,11 @@ async function hr(e, t, n = {}, r) {
 		inputs: n
 	}, t, r);
 }
+async function gr(e, t = {}, n) {
+	return pr(), $.executeGraphQL(e, t, n);
+}
+async function _r(e, t = {}, n) {
+	return pr(), $.invokeLambda(e, t, n);
+}
 //#endregion
-export { cr as allocateBridgeRequestID, hr as queryResource, or as resourceRequestId, mr as useResource };
+export { cr as allocateBridgeRequestID, gr as executeGraphQL, _r as invokeLambda, hr as queryResource, or as resourceRequestId, mr as useResource };

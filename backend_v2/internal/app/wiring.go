@@ -1,6 +1,8 @@
 package app
 
 import (
+	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +19,8 @@ import (
 	"aladin/backend_v2/internal/shardv2"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 type Dependencies interface {
@@ -47,6 +51,7 @@ type Dependencies interface {
 	ShardBuild() coreservice.ShardBuildService
 	// ShardResources is the opt-in v2 resource service (nil when disabled).
 	ShardResources() coreservice.ShardResourceService
+	ShardGraphQL() coreservice.ShardGraphQLService
 	ShardReleases() coreservice.ShardReleaseService
 	ShardCatalog() coreservice.ShardCatalogService
 	// ShardKV is the v1 per-shard key/value document store.
@@ -127,6 +132,7 @@ type StaticDependencies struct {
 	PreviewSvc             coreservice.PreviewService
 	ShardBuildSvc          coreservice.ShardBuildService
 	ShardResourceSvc       coreservice.ShardResourceService
+	ShardGraphQLSvc        coreservice.ShardGraphQLService
 	ShardReleaseSvc        coreservice.ShardReleaseService
 	ShardCatalogSvc        coreservice.ShardCatalogService
 	ShardKVSvc             coreservice.ShardKVService
@@ -198,6 +204,7 @@ func (d StaticDependencies) ShardReleases() coreservice.ShardReleaseService { re
 func (d StaticDependencies) ShardResources() coreservice.ShardResourceService {
 	return d.ShardResourceSvc
 }
+func (d StaticDependencies) ShardGraphQL() coreservice.ShardGraphQLService { return d.ShardGraphQLSvc }
 func (d StaticDependencies) ShardKV() coreservice.ShardKVService {
 	return d.ShardKVSvc
 }
@@ -289,6 +296,7 @@ type wiring struct {
 	preview             coreservice.PreviewService
 	shardBuild          coreservice.ShardBuildService
 	shardResources      coreservice.ShardResourceService
+	shardGraphQL        coreservice.ShardGraphQLService
 	shardReleases       coreservice.ShardReleaseService
 	shardCatalog        coreservice.ShardCatalogService
 	shardKV             coreservice.ShardKVService
@@ -348,6 +356,7 @@ func (w wiring) ShardBuild() coreservice.ShardBuildService        { return w.sha
 func (w wiring) ShardCatalog() coreservice.ShardCatalogService    { return w.shardCatalog }
 func (w wiring) ShardReleases() coreservice.ShardReleaseService   { return w.shardReleases }
 func (w wiring) ShardResources() coreservice.ShardResourceService { return w.shardResources }
+func (w wiring) ShardGraphQL() coreservice.ShardGraphQLService    { return w.shardGraphQL }
 func (w wiring) ShardKV() coreservice.ShardKVService              { return w.shardKV }
 func (w wiring) ShardBridge() coreservice.ShardBridgeService      { return w.shardBridge }
 func (w wiring) Relationships() coreservice.RelationshipService   { return w.relationships }
@@ -396,11 +405,30 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 	var profiles shardv2.Registry
 	var releaseSvc coreservice.ShardReleaseService
 	storage := repo.NewShardResourcePostgres(pool, repo.ShardResourceLimits{})
+	var ownedStorage coreservice.ResourceProvider = storage
 	// Keep protected release lookup available even when v2 execution is disabled.
 	// Existing v2 shards must fail closed, never silently serve legacy dist.
 	releaseSvc = coreservice.NewShardReleaseService(storage, nil)
 	if os.Getenv("SHARD_V2_ENABLED") == "1" {
-		profiles = shardv2.Registry{"shard.documents": storage.Profile(), "workspace.nodes": coreservice.NewWorkspaceResourceProvider(nil).Profile()}
+		engine := strings.ToLower(strings.TrimSpace(os.Getenv("SHARD_DATASTORE")))
+		mongoURI := strings.TrimSpace(os.Getenv("SHARD_MONGODB_URI"))
+		if engine == "" {
+			engine = "mongo"
+		}
+		if engine == "mongo" {
+			if mongoURI == "" {
+				panic("SHARD_DATASTORE=mongo requires SHARD_MONGODB_URI")
+			}
+			client, err := mongo.Connect(options.Client().ApplyURI(mongoURI))
+			if err != nil {
+				panic(fmt.Sprintf("configure shard MongoDB: %v", err))
+			}
+			ownedStorage = repo.NewShardResourceMongo(client, os.Getenv("SHARD_MONGODB_DATABASE"), repo.ShardResourceLimits{})
+			slog.Info("shard v2: configured owned datastore", "engine", "mongo")
+		} else if engine != "" && engine != "postgres" {
+			panic("SHARD_DATASTORE must be mongo or postgres")
+		}
+		profiles = shardv2.Registry{"shard.documents": ownedStorage.Profile(), "workspace.nodes": coreservice.NewWorkspaceResourceProvider(nil).Profile()}
 	}
 	docRuntime := docsurface.NewBuilder(docStore, filepath.Join(dataVolumePath, "cache", "esm"), profiles)
 	// Preview rebuilds ride the build service too, so an agent's preview_open
@@ -551,10 +579,21 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 			coreservice.NewArtifactEntityService(artifactsSvc), coreservice.NewRecordEntityService(recordRepo),
 			coreservice.NewWatchlistEntityService(watchlistSvc), coreservice.NewResearchEntityService(researchSvc),
 		))
-		releaseSvc = coreservice.NewShardReleaseService(storage, profiles, workspace.(coreservice.ResourceStageValidator))
+		validators := []coreservice.ResourceStageValidator{workspace.(coreservice.ResourceStageValidator)}
+		if validator, ok := ownedStorage.(coreservice.ResourceStageValidator); ok {
+			validators = append(validators, validator)
+		}
+		releaseSvc = coreservice.NewShardReleaseService(storage, profiles, validators...)
 		resourceSvc = coreservice.NewShardResourceService(artifactsSvc, storage, map[string]coreservice.ResourceProvider{
-			"shard.documents": storage, "workspace.nodes": workspace,
+			"shard.documents": ownedStorage, "workspace.nodes": workspace,
 		}, coreservice.ResourceServiceOptions{})
+	}
+	var graphQLSvc coreservice.ShardGraphQLService
+	if runtimeURL, runtimeSecret := strings.TrimSpace(os.Getenv("SHARD_RUNTIME_URL")), os.Getenv("SHARD_RUNTIME_SECRET"); resourceSvc != nil && runtimeURL != "" {
+		graphQLSvc = coreservice.NewShardGraphQLService(releaseSvc, resourceSvc, runtimeURL, runtimeSecret)
+		if !graphQLSvc.Enabled() {
+			panic("SHARD_RUNTIME_SECRET must contain at least 32 bytes")
+		}
 	}
 
 	if resourceSvc != nil {
@@ -583,6 +622,7 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		preview:             docPreview,
 		shardBuild:          shardBuild,
 		shardResources:      resourceSvc,
+		shardGraphQL:        graphQLSvc,
 		shardReleases:       releaseSvc,
 		shardCatalog:        catalogSvc,
 		shardKV:             coreservice.NewShardKVService(artifactsSvc, shardKVRepo),

@@ -79,12 +79,13 @@ type docToolServer struct {
 	// exercise the workspace plane).
 	bridge   service.ShardBridgeService
 	releases service.ShardReleaseService
+	graphql  service.ShardGraphQLService
 }
 
-func registerDocSurfaceTools(server *sdkmcp.Server, artifacts service.ArtifactService, store service.DocSurfaceStore, build service.ShardBuildService, preview service.PreviewService, bridge service.ShardBridgeService, releases ...service.ShardReleaseService) {
-	t := docToolServer{artifacts: artifacts, store: store, build: build, preview: preview, bridge: bridge}
-	if len(releases) > 0 {
-		t.releases = releases[0]
+func registerDocSurfaceTools(server *sdkmcp.Server, artifacts service.ArtifactService, store service.DocSurfaceStore, build service.ShardBuildService, preview service.PreviewService, bridge service.ShardBridgeService, releases service.ShardReleaseService, graphql ...service.ShardGraphQLService) {
+	t := docToolServer{artifacts: artifacts, store: store, build: build, preview: preview, bridge: bridge, releases: releases}
+	if len(graphql) > 0 {
+		t.graphql = graphql[0]
 	}
 
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
@@ -432,7 +433,7 @@ func (t docToolServer) createApp(ctx context.Context, _ *sdkmcp.CallToolRequest,
 		ContractJSON:    contract,
 		ID:              id,
 		Title:           created.Artifact.Title,
-		AuthoringGuide:  shardAuthoringGuide(resources),
+		AuthoringGuide:  shardAuthoringGuide(resources, t.runtimeAuthoringEnabled()),
 		CurrentIndexTSX: starterIndexTSX,
 		Citations:       []citationOut{{Kind: "shard", ID: id, Title: created.Artifact.Title}},
 	}, nil
@@ -661,7 +662,7 @@ func (t docToolServer) buildApp(ctx context.Context, _ *sdkmcp.CallToolRequest, 
 // reach. With a page_id it also returns that shard's current files, manifest,
 // and index.tsx, which is the context an edit actually needs.
 func (t docToolServer) getAuthoringGuide(ctx context.Context, _ *sdkmcp.CallToolRequest, in authoringGuideInput) (*sdkmcp.CallToolResult, authoringGuideOutput, error) {
-	out := authoringGuideOutput{AuthoringGuide: shardAuthoringGuide(t.resourceAuthoringEnabled())}
+	out := authoringGuideOutput{AuthoringGuide: shardAuthoringGuide(t.resourceAuthoringEnabled(), t.runtimeAuthoringEnabled())}
 	if strings.TrimSpace(in.PageID) == "" {
 		return nil, out, nil
 	}

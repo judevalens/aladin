@@ -13,6 +13,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -217,6 +219,17 @@ func (b *builder) Build(ctx context.Context, pageID string, channel service.Buil
 		if err != nil {
 			return service.BuildResult{}, err
 		}
+		compiled, err := shardv2.Compile(contract, b.profiles)
+		if err != nil {
+			return service.BuildResult{}, err
+		}
+		runtimeFiles, err := b.buildServerRuntime(ctx, pageID, dir, compiled.Contract)
+		if err != nil {
+			return service.BuildResult{OK: false, Log: "server runtime: " + err.Error()}, nil
+		}
+		for name, data := range runtimeFiles {
+			files[name] = data
+		}
 		served := "/content/" + pageID + "/"
 		if draft {
 			served += "?channel=draft"
@@ -237,6 +250,119 @@ func (b *builder) Build(ctx context.Context, pageID string, channel service.Buil
 		Log:       formatMessages(result.Warnings),
 		BuildID:   buildID,
 	}, nil
+}
+
+func cleanRuntimeSource(name string) (string, error) {
+	clean := filepath.ToSlash(filepath.Clean(name))
+	if clean != name || strings.HasPrefix(clean, "../") || strings.HasPrefix(clean, "/") {
+		return "", fmt.Errorf("invalid runtime source path %q", name)
+	}
+	return clean, nil
+}
+
+// buildServerRuntime compiles authored TypeScript into a release-scoped Node
+// module. The module has no datastore credentials; its only non-relative import
+// is the host-provided capability SDK.
+func (b *builder) buildServerRuntime(ctx context.Context, pageID, dir string, contract shardv2.Contract) (map[string][]byte, error) {
+	if contract.GraphQL == nil && len(contract.Lambdas) == 0 {
+		return nil, nil
+	}
+	allowed := map[string]bool{}
+	entry := strings.Builder{}
+	entry.WriteString("export const resolvers = {\n")
+	if contract.GraphQL != nil {
+		names := make([]string, 0, len(contract.GraphQL.Resolvers))
+		for name := range contract.GraphQL.Resolvers {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			handler := contract.GraphQL.Resolvers[name]
+			file, err := cleanRuntimeSource(handler.File)
+			if err != nil {
+				return nil, err
+			}
+			allowed[filepath.Join(dir, filepath.FromSlash(file))] = true
+			entry.WriteString(strconv.Quote(name) + ": (await import(" + strconv.Quote("./"+file) + "))[" + strconv.Quote(handler.Export) + "],\n")
+		}
+	}
+	entry.WriteString("};\nexport const lambdas = {\n")
+	lambdaNames := make([]string, 0, len(contract.Lambdas))
+	for name := range contract.Lambdas {
+		lambdaNames = append(lambdaNames, name)
+	}
+	sort.Strings(lambdaNames)
+	for _, name := range lambdaNames {
+		handler := contract.Lambdas[name]
+		file, err := cleanRuntimeSource(handler.File)
+		if err != nil {
+			return nil, err
+		}
+		allowed[filepath.Join(dir, filepath.FromSlash(file))] = true
+		entry.WriteString(strconv.Quote(name) + ": (await import(" + strconv.Quote("./"+file) + "))[" + strconv.Quote(handler.Export) + "],\n")
+	}
+	entry.WriteString("};\n")
+	plugin := esbuild.Plugin{Name: "shard-runtime-boundary", Setup: func(build esbuild.PluginBuild) {
+		build.OnResolve(esbuild.OnResolveOptions{Filter: ".*"}, func(args esbuild.OnResolveArgs) (esbuild.OnResolveResult, error) {
+			if args.Path == "@aladin/shard-runtime" {
+				return esbuild.OnResolveResult{Path: args.Path, Namespace: "shard-runtime-sdk"}, nil
+			}
+			if !strings.HasPrefix(args.Path, ".") {
+				return esbuild.OnResolveResult{}, fmt.Errorf("runtime import %q is not allowed", args.Path)
+			}
+			base := dir
+			if args.Importer != "" && args.Importer != "<stdin>" {
+				base = filepath.Dir(args.Importer)
+			}
+			resolved := filepath.Clean(filepath.Join(base, filepath.FromSlash(args.Path)))
+			if !allowed[resolved] {
+				return esbuild.OnResolveResult{}, fmt.Errorf("runtime import %q is not declared", args.Path)
+			}
+			return esbuild.OnResolveResult{Path: resolved}, nil
+		})
+		build.OnLoad(esbuild.OnLoadOptions{Filter: ".*", Namespace: "shard-runtime-sdk"}, func(esbuild.OnLoadArgs) (esbuild.OnLoadResult, error) {
+			source := `export const defineResolver = (handler) => handler; export const defineLambda = (handler) => handler;`
+			return esbuild.OnLoadResult{Contents: &source, Loader: esbuild.LoaderJS}, nil
+		})
+	}}
+	result := esbuild.Build(esbuild.BuildOptions{
+		AbsWorkingDir: dir,
+		Stdin:         &esbuild.StdinOptions{Contents: entry.String(), ResolveDir: dir, Sourcefile: "shard-runtime-entry.mjs", Loader: esbuild.LoaderJS},
+		Outfile:       "resolver.bundle.mjs",
+		Bundle:        true,
+		Write:         false,
+		Format:        esbuild.FormatESModule,
+		Platform:      esbuild.PlatformNode,
+		Target:        esbuild.ES2022,
+		Plugins:       []esbuild.Plugin{plugin},
+		LogLevel:      esbuild.LogLevelSilent,
+	})
+	if len(result.Errors) > 0 {
+		return nil, fmt.Errorf("%s", formatMessages(result.Errors))
+	}
+	if len(result.OutputFiles) != 1 {
+		return nil, fmt.Errorf("runtime compiler produced %d outputs", len(result.OutputFiles))
+	}
+	manifest, err := json.Marshal(struct {
+		GraphQL *shardv2.GraphQLRuntime   `json:"graphql,omitempty"`
+		Lambdas map[string]shardv2.Lambda `json:"lambdas,omitempty"`
+	}{contract.GraphQL, contract.Lambdas})
+	if err != nil {
+		return nil, err
+	}
+	files := map[string][]byte{"resolver.bundle.mjs": result.OutputFiles[0].Contents, "runtime-manifest.json": manifest}
+	if contract.GraphQL != nil {
+		schema, err := cleanRuntimeSource(contract.GraphQL.Schema)
+		if err != nil {
+			return nil, err
+		}
+		data, err := b.store.ReadFile(ctx, pageID, schema)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", schema, err)
+		}
+		files["schema.graphql"] = data
+	}
+	return files, nil
 }
 
 // buildID is a content hash of the build outputs (bundle.js + bundle.css). It

@@ -22,6 +22,37 @@ type Contract struct {
 	Intent    string              `json:"intent"`
 	Resources map[string]Resource `json:"resources"`
 	Bindings  map[string]Binding  `json:"bindings"`
+	GraphQL   *GraphQLRuntime     `json:"graphql,omitempty"`
+	Lambdas   map[string]Lambda   `json:"lambdas,omitempty"`
+}
+
+type RuntimeBudget struct {
+	MaxOperations int `json:"maxOperations"`
+	MaxDocuments  int `json:"maxDocuments"`
+	TimeoutMS     int `json:"timeoutMs"`
+	MemoryMiB     int `json:"memoryMiB"`
+}
+type RuntimeHandler struct {
+	File         string        `json:"file"`
+	Export       string        `json:"export"`
+	Capabilities []string      `json:"capabilities"`
+	Budget       RuntimeBudget `json:"budget"`
+}
+type PersistedOperation struct {
+	Document string   `json:"document"`
+	Exposure []string `json:"exposure"`
+}
+type GraphQLRuntime struct {
+	Schema     string                        `json:"schema"`
+	Operations map[string]PersistedOperation `json:"operations"`
+	Resolvers  map[string]RuntimeHandler     `json:"resolvers"`
+}
+type LambdaTrigger struct {
+	Kind string `json:"kind"`
+}
+type Lambda struct {
+	RuntimeHandler
+	Trigger LambdaTrigger `json:"trigger"`
 }
 type Resource struct {
 	URI           string       `json:"uri"`

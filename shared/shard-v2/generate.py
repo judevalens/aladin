@@ -9,8 +9,11 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 DRAFT = "https://json-schema.org/draft/2020-12/schema"
 ID = {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"}
+RESOLVER_ID = {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}(?:\\.[A-Za-z_][A-Za-z0-9_]{0,63})?$", "maxLength": 129}
 TOKEN = {"type": "string", "minLength": 1, "maxLength": 256}
 POINTER = {"type": "string", "pattern": "^(?:/(?:[^~/]|~[01])*)+$", "maxLength": 1024}
+SCHEMA_FILE = {"type": "string", "pattern": "^graphql/[A-Za-z0-9_./-]+\\.graphql$", "maxLength": 256}
+HANDLER_FILE = {"type": "string", "pattern": "^(?:resolvers|lambdas)/[A-Za-z0-9_./-]+\\.tsx?$", "maxLength": 256}
 OPS = ["snapshot", "query", "insert", "update", "delete"]
 CAPS = OPS + ["observe"]
 
@@ -70,7 +73,38 @@ def schemas():
         "query": obj({"filterFields": arr(POINTER, uniqueItems=True, maxItems=64), "sortFields": arr(POINTER, uniqueItems=True, maxItems=64), "maxLimit": {"type": "integer", "minimum": 1, "maximum": 500}}),
     }, ["uri", "kind", "meaning", "schemaVersion", "schema", "source", "operations"])
     binding = obj({"resource": ID, "params": {"type": "object", "additionalProperties": parameter}, "inputsSchema": {"type": "object"}, "query": query, "select": arr(POINTER, minItems=1, uniqueItems=True, maxItems=64)}, ["resource"])
-    contract = document(obj({"version": {"const": 2}, "intent": {"type": "string", "minLength": 1}, "resources": {"type": "object", "propertyNames": ID, "additionalProperties": resource, "minProperties": 1, "maxProperties": 32}, "bindings": {"type": "object", "propertyNames": ID, "additionalProperties": binding, "maxProperties": 128}}, ["version", "intent", "resources", "bindings"]), {"predicate": predicate})
+    budget = obj({
+        "maxOperations": {"type": "integer", "minimum": 1, "maximum": 64},
+        "maxDocuments": {"type": "integer", "minimum": 1, "maximum": 5000},
+        "timeoutMs": {"type": "integer", "minimum": 10, "maximum": 30000},
+        "memoryMiB": {"type": "integer", "minimum": 16, "maximum": 256},
+    }, ["maxOperations", "maxDocuments", "timeoutMs", "memoryMiB"])
+    handler = obj({
+        "file": HANDLER_FILE, "export": ID,
+        "capabilities": arr({"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}:(?:snapshot|query|insert|update|delete)$"}, uniqueItems=True, maxItems=64),
+        "budget": budget,
+    }, ["file", "export", "capabilities", "budget"])
+    persisted_operation = obj({
+        "document": {"type": "string", "minLength": 1, "maxLength": 65536},
+        "exposure": arr(enum(["app", "agent"]), uniqueItems=True, minItems=1, maxItems=2),
+    }, ["document", "exposure"])
+    graphql = obj({
+        "schema": SCHEMA_FILE,
+        "operations": {"type": "object", "propertyNames": ID, "additionalProperties": persisted_operation, "maxProperties": 128},
+        "resolvers": {"type": "object", "propertyNames": RESOLVER_ID, "additionalProperties": handler, "maxProperties": 64},
+    }, ["schema", "operations", "resolvers"])
+    lambda_handler = obj({
+        "file": HANDLER_FILE, "export": ID,
+        "capabilities": handler["properties"]["capabilities"], "budget": budget,
+        "trigger": obj({"kind": {"const": "manual"}}, ["kind"]),
+    }, ["file", "export", "capabilities", "budget", "trigger"])
+    contract = document(obj({
+        "version": {"const": 2}, "intent": {"type": "string", "minLength": 1},
+        "resources": {"type": "object", "propertyNames": ID, "additionalProperties": resource, "minProperties": 1, "maxProperties": 32},
+        "bindings": {"type": "object", "propertyNames": ID, "additionalProperties": binding, "maxProperties": 128},
+        "graphql": graphql,
+        "lambdas": {"type": "object", "propertyNames": ID, "additionalProperties": lambda_handler, "maxProperties": 32},
+    }, ["version", "intent", "resources", "bindings"]), {"predicate": predicate})
     record = obj({"id": TOKEN, "revision": TOKEN, "schemaVersion": {"type": "integer", "minimum": 1, "maximum": 9007199254740991}, "data": {"type": "object"}}, ["id", "revision", "schemaVersion", "data"])
     routing = {"protocol": {"const": "shard-data/1"}, "subscriptionId": TOKEN, "resource": {"type": "string", "pattern": "^shard://[A-Za-z0-9_-]+/resources/[A-Za-z][A-Za-z0-9_-]{0,63}\\?view=[A-Za-z0-9_-]+$", "maxLength": 1024}, "epoch": TOKEN, "seq": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$", "maxLength": 128}}
     event = document({"oneOf": [
@@ -93,9 +127,13 @@ def schemas():
     command = document({"oneOf": commands})
     requests = []
     binding_params = {"binding": ID, "inputs": {"type": "object"}}
-    for method in ["hello", "theme.get", "resource.describe", "resource.read", "resource.query", "resource.subscribe", "resource.unsubscribe", "resource.insert", "resource.update", "resource.delete"]:
+    for method in ["hello", "theme.get", "resource.describe", "resource.read", "resource.query", "resource.subscribe", "resource.unsubscribe", "resource.insert", "resource.update", "resource.delete", "graphql.execute", "lambda.invoke"]:
         params, required = {}, []
-        if method == "resource.unsubscribe":
+        if method == "graphql.execute":
+            params, required = {"operationId": ID, "variables": {"type": "object"}}, ["operationId"]
+        elif method == "lambda.invoke":
+            params, required = {"name": ID, "input": {"type": "object"}}, ["name"]
+        elif method == "resource.unsubscribe":
             params, required = {"subscriptionId": TOKEN}, ["subscriptionId"]
         elif method.startswith("resource."):
             params, required = dict(binding_params), ["binding"]

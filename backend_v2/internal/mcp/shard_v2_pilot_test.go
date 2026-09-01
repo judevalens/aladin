@@ -105,7 +105,7 @@ func TestShardV2Pilot(t *testing.T) {
 	catalog := service.NewShardCatalogService(storage, resources)
 	// Registration exercises SDK schema derivation too (including recursive query predicates).
 	sdk := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "pilot", Version: "1"}, nil)
-	registerShardResourceTools(sdk, resources, catalog)
+	registerShardResourceTools(sdk, resources, catalog, nil)
 	root := t.TempDir()
 	store := docsurface.NewStore(root)
 	runtime := docsurface.NewBuilder(store, filepath.Join(root, "cache", "esm"), profiles)

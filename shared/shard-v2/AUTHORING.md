@@ -7,6 +7,21 @@ owned settings singleton, alongside `index.tsx` and `anchors.json`. It returns t
 contract and matching guide. The starter writes no data and grants no agent access.
 Extend or replace its declarations with the example below.
 
+For complex backend composition, add optional `graphql` and `lambdas` sections.
+GraphQL queries and mutations are named and persisted in `contract.json`; shard code calls
+`executeGraphQL(operationId, variables)`. Resolver files may import
+`defineResolver` from `@aladin/shard-runtime`. Each resolver declares binding-level
+capabilities such as `tasks:query` plus operation, document, time and memory budgets.
+The handler receives `(args, context)` and can call only
+`context.capabilities.call("tasks:query", input)`. It never receives a database
+client. Lambda handlers use the same bundle and budgets and currently support the
+explicit `{ "kind": "manual" }` trigger. Build failure leaves the active release
+unchanged.
+
+Use `subscribeResource` for live views. The current GraphQL execution route is
+request/response and rejects persisted `subscription` documents at contract
+compile time.
+
 For an existing app, pass `page_id` to get guidance matching its files and protected
 release. Enabling resources does not migrate existing KV data or change its guide.
 A resource app whose execution is disabled returns an unavailable-runtime message;

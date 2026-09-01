@@ -14,6 +14,7 @@ import (
 type shardResourceTools struct {
 	resources service.ShardResourceService
 	catalog   service.ShardCatalogService
+	graphql   service.ShardGraphQLService
 }
 
 func readOnlyTool(title string) *sdkmcp.ToolAnnotations {
@@ -75,17 +76,47 @@ type mutateShardResourceInput struct {
 	BaseRevision string         `json:"baseRevision,omitempty"`
 	Data         map[string]any `json:"data,omitempty"`
 }
+type executeShardOperationInput struct {
+	ShardID      string         `json:"shardId"`
+	OperationID  string         `json:"operationId"`
+	ContractHash string         `json:"contractHash,omitempty"`
+	Variables    map[string]any `json:"variables,omitempty"`
+}
 
-func registerShardResourceTools(server *sdkmcp.Server, resources service.ShardResourceService, catalog service.ShardCatalogService) {
+func registerShardResourceTools(server *sdkmcp.Server, resources service.ShardResourceService, catalog service.ShardCatalogService, graphql service.ShardGraphQLService) {
 	if resources == nil || catalog == nil {
 		return
 	}
-	t := shardResourceTools{resources, catalog}
+	t := shardResourceTools{resources: resources, catalog: catalog, graphql: graphql}
 	sdkmcp.AddTool(server, &sdkmcp.Tool{Name: "find_shard_resources", Description: "Find published shard resources, their schemas and current agent capabilities. Reads protected release metadata; no open iframe required.", Annotations: readOnlyTool("Find shard resources")}, t.find)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{Name: "describe_shard_resource", OutputSchema: resourceMCPOutputSchema(false), InputSchema: resourceMCPInputSchema(false), Description: "Describe a published shard:// resource and its current agent capabilities and contract hash.", Annotations: readOnlyTool("Describe shard resource")}, t.describe)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{Name: "read_shard_resource", OutputSchema: resourceMCPOutputSchema(false), InputSchema: resourceMCPInputSchema(false), Description: "Read current canonical published resource records while its UI may be closed. Optional id selects one record. Revisions are opaque strings.", Annotations: readOnlyTool("Read shard resource")}, t.read)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{Name: "query_shard_resource", OutputSchema: resourceMCPOutputSchema(false), InputSchema: resourceMCPInputSchema(true), Description: "Query declared scalar fields with bounded filter/order/limit/cursor. Backend enforces declared query capabilities; pages are read-current.", Annotations: readOnlyTool("Query shard resource")}, t.read)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{Name: "mutate_shard_resource", OutputSchema: resourceMCPOutputSchema(true), Description: "Insert, fully replace (update), or delete a published shard resource record. Requires granted agent write capability, current contractHash and requestId; update/delete require baseRevision. Retain the same requestId and exact payload when retrying an unknown outcome within 24 hours.", Annotations: destructiveTool("Mutate shard resource")}, t.mutate)
+	if graphql != nil && graphql.Enabled() {
+		sdkmcp.AddTool(server, &sdkmcp.Tool{Name: "execute_shard_operation", Description: "Execute a named, published GraphQL query or mutation declared by a shard. The backend pins the active release, checks agent exposure, and does not accept raw GraphQL text."}, t.executeOperation)
+	}
+}
+func (t shardResourceTools) executeOperation(ctx context.Context, _ *sdkmcp.CallToolRequest, in executeShardOperationInput) (*sdkmcp.CallToolResult, map[string]any, error) {
+	ctx, cancel := context.WithTimeout(ctx, 35*time.Second)
+	defer cancel()
+	target := service.ResourceTarget{ShardID: in.ShardID, Environment: service.ChannelPublished, Audience: "agent", ContractHash: in.ContractHash}
+	if target.ContractHash == "" {
+		hello, err := t.resources.Hello(ctx, target)
+		if err != nil {
+			return nil, nil, err
+		}
+		target.ContractHash, _ = hello["contractHash"].(string)
+	}
+	raw, err := t.graphql.Execute(ctx, target, service.ShardGraphQLRequest{OperationID: in.OperationID, Variables: in.Variables})
+	if err != nil {
+		return nil, nil, err
+	}
+	value, err := shardv2.DecodeJSON(raw)
+	if err != nil {
+		return nil, nil, err
+	}
+	return nil, value.(map[string]any), nil
 }
 func (t shardResourceTools) find(ctx context.Context, _ *sdkmcp.CallToolRequest, in findShardResourcesInput) (*sdkmcp.CallToolResult, findShardResourcesOutput, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)

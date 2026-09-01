@@ -41,9 +41,10 @@ unknown rows from source-level observations.
    wrapper. Document unmapped or invalid values rather than dropping them.
 3. Back up v1 rows and files to trusted storage; verify hashes and a restore in an
    isolated database. V2 resource archives alone do not back up v1 or vendor files.
-4. Implement and test a shard-scoped freeze/drain barrier across v1 KV writes,
-   queued client commands and publication; snapshot only after the barrier.
-   The coordinator and v1-to-v2 transformation runner are not implemented yet.
+4. Use the shard-scoped Mongo freeze fence before export. Every Mongo mutation
+   touches the same control record transactionally, so the freeze drains conflicting
+   writers and rejects new ones. A v1-to-v2 transformation still needs an explicit,
+   shard-specific mapping and v1 write fence.
 5. Transform and validate into a new generation in the sandbox; compare every
    row/count/hash and expected user-visible behavior. No dual writes. Review the
    data-bearing migration artifact and rollback boundary before production use.
@@ -58,10 +59,11 @@ unknown rows from source-level observations.
 
 ## Implemented recovery boundary
 
-V2 archive export/restore is available as an internal repository interface with
-checksum/count verification, tombstones and command receipts. Restore accepts
-only the same owner/shard/environment/generation/contract in an empty namespace;
-it refuses existing records or receipts and rolls back corrupt imports.
+Mongo V2 export/restore is available as an internal repository interface after a
+tested namespace freeze. The versioned archive contains durable records (including
+tombstones) and audit events. Restore rewrites them into a new, empty generation,
+enforces record/byte quotas and commits atomically. Expiring receipts and cursors
+are deliberately omitted; retry transport state is not migrated as user data.
 
 This provides a tested building block, not a completed v1 migration tool. Ordinary
 release activation deliberately rejects incompatible schemas/generation changes.

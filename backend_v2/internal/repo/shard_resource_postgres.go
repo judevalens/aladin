@@ -34,6 +34,10 @@ type ShardResourceLimits struct {
 }
 
 func NewShardResourcePostgres(pool *pgxpool.Pool, limits ShardResourceLimits) *ShardResourcePostgres {
+	return &ShardResourcePostgres{pool: pool, limits: normalizeShardResourceLimits(limits)}
+}
+
+func normalizeShardResourceLimits(limits ShardResourceLimits) ShardResourceLimits {
 	if limits.ActiveBytes <= 0 {
 		limits.ActiveBytes = 16 << 20
 	}
@@ -55,7 +59,7 @@ func NewShardResourcePostgres(pool *pgxpool.Pool, limits ShardResourceLimits) *S
 	if limits.BuildBytes <= 0 {
 		limits.BuildBytes = 128 << 20
 	}
-	return &ShardResourcePostgres{pool: pool, limits: limits}
+	return limits
 }
 func (*ShardResourcePostgres) Profile() shardv2.ProviderProfile {
 	return shardv2.ProviderProfile{Version: 1, Owned: true, Operations: []string{"snapshot", "query", "insert", "update", "delete"}, Observation: "refresh-snapshots", ParamsSchema: shardv2.Schema{"type": "object", "additionalProperties": false}}

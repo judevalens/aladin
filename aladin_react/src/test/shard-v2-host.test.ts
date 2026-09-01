@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createResourceHostHub } from "@/modules/doc-surface/bridge/resource-host-hub";
 import { createBridgeV2Host } from "@/modules/doc-surface/bridge/bridge-v2-host";
-import type { ApiClient } from "@/shared/api/client";
+import { ApiError, type ApiClient } from "@/shared/api/client";
 
 class Socket {
   readyState = 0;
@@ -25,7 +25,7 @@ afterEach(() => { for (const close of cleanups.splice(0)) close(); vi.useRealTim
 function setup() {
   let token = "session-one";
   const sockets: Socket[] = [];
-  const fetch = vi.fn(async (_path: string, init?: RequestInit) => {
+  const fetch = vi.fn(async (_path: string, init?: RequestInit): Promise<unknown> => {
     const req = JSON.parse(String(init?.body));
     return { aladin: "bridge/2", type: "response", id: req.id, ok: true, data: { protocol: "bridge/2", buildId: "build-one", contractHash: "hash-one" } };
   });
@@ -86,6 +86,16 @@ describe("v2 host isolation", () => {
     setToken("another-account");
     await expect(a.call("hello", {})).rejects.toMatchObject({ code: "forbidden" });
     expect(push).toHaveBeenCalledWith("resource.error", expect.objectContaining({ code: "forbidden" }));
+  });
+  it("routes persisted operations and preserves runtime failure codes", async () => {
+    const { hub, fetch } = setup();
+    const session = hub.session(target, vi.fn());
+    fetch.mockResolvedValueOnce({ data: { open: 3 } });
+    await expect(session.call("graphql.execute", { operationId: "summary", variables: { projectId: "p" } })).resolves.toEqual({ data: { open: 3 } });
+    expect(fetch.mock.calls[0][0]).toContain("/artifact-one/v2/draft/graphql");
+    expect(JSON.parse(String(fetch.mock.calls[0][1]?.body))).toEqual({ operationId: "summary", variables: { projectId: "p" } });
+    fetch.mockRejectedValueOnce(new ApiError("conflict", 409, "Conflict", { code: "contract-changed", error: "Shard runtime request failed" }));
+    await expect(session.call("graphql.execute", { operationId: "summary" })).rejects.toMatchObject({ code: "contract-changed" });
   });
   it("rejects forged inputs and other windows; drops replies after detach", async () => {
     const { hub, fetch } = setup();

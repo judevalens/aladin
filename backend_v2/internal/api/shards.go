@@ -16,6 +16,9 @@ func (s *Server) registerShardRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/shard-resources/ws", s.handleShardResourceSocket)
 	mux.HandleFunc("GET /api/shards/{id}/release", s.handleShardRelease)
 	mux.HandleFunc("POST /api/shards/{id}/v2/{environment}/request", s.handleShardResourceRequest)
+	mux.HandleFunc("POST /api/shards/{id}/v2/{environment}/graphql", s.handleShardGraphQL)
+	mux.HandleFunc("POST /api/shards/{id}/v2/{environment}/lambdas/{name}", s.handleShardLambda)
+	mux.HandleFunc("POST /internal/shard-runtime/capability", s.handleShardRuntimeCapability)
 	mux.HandleFunc("GET /api/shards/{id}/v2/{environment}/ws", s.handleShardResourceSocket)
 	// Build status for the live work-pane view. Authed (authMiddleware) + ownership
 	// scoped via Artifacts().Get; the realtime build-status events seed/update the

@@ -63,7 +63,8 @@ export class WindowResourceBridgePort implements ResourceBridgePort {
         if (error) reject(error); else resolve(value);
       };
       const abort = () => finish(new DOMException("Aborted", "AbortError"));
-      const timer = setTimeout(() => finish({ code: "source-unavailable", message: "Bridge request timed out; mutation outcome may be unknown" }), 8000);
+      const timeoutMs = method === "graphql.execute" || method === "lambda.invoke" ? 35000 : 8000;
+      const timer = setTimeout(() => finish({ code: "source-unavailable", message: "Bridge request timed out; mutation outcome may be unknown" }), timeoutMs);
       this.pending.set(id, { resolve: value => finish(null, value), reject: error => finish(error) });
       signal?.addEventListener("abort", abort, { once: true });
       try { this.parent.postMessage(request, "*"); } catch (error) { finish(error); }
@@ -184,5 +185,17 @@ export class BridgeResourceTransport implements ResourceTransport {
     validateEvent({ ...snapshot, protocol: "shard-data/1", subscriptionId: "query", epoch: "query", seq: "0", op: "snapshot" }, descriptor, descriptor.schema);
     if (snapshot.records.length > (query.limit ?? descriptor.limit)) throw { code: "invalid-schema", message: "Query response exceeds its view limit" };
     return deepFreeze(snapshot);
+  }
+
+  async executeGraphQL<T = unknown>(operationId: string, variables: Data = {}, signal?: AbortSignal): Promise<{ data?: T; errors?: { message: string }[] }> {
+    await this.ready();
+    const result = await this.bridge.call("graphql.execute", { operationId, variables }, signal);
+    if (!object(result) || (result.data === undefined && !Array.isArray(result.errors))) throw { code: "source-unavailable", message: "Invalid GraphQL response" };
+    return deepFreeze(result as { data?: T; errors?: { message: string }[] });
+  }
+
+  async invokeLambda<T = unknown>(name: string, input: Data = {}, signal?: AbortSignal): Promise<T> {
+    await this.ready();
+    return deepFreeze(await this.bridge.call("lambda.invoke", { name, input }, signal) as T);
   }
 }

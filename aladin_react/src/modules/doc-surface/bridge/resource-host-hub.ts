@@ -110,6 +110,17 @@ export function createResourceHostHub(api: ApiClient, socketURL: string, token: 
     validateWithSchema(requestSchema, request);
     owner.inflight++;
     try {
+      if (method === "graphql.execute" || method === "lambda.invoke") {
+        const suffix = method === "graphql.execute" ? "graphql" : `lambdas/${encodeURIComponent(String(params.name))}`;
+        const body = method === "graphql.execute" ? params : { input: params.input ?? {} };
+        try {
+          return await api.fetch(`/api/shards/${encodeURIComponent(owner.target.shardId)}/v2/${owner.target.environment}/${suffix}`, { method: "POST", headers: { "X-Shard-Contract": owner.target.contractHash }, body: JSON.stringify(body), signal: AbortSignal.any([owner.abort.signal, AbortSignal.timeout(35000)]) });
+        } catch (error) {
+          const body = error instanceof ApiError ? error.body as { code?: unknown; error?: unknown } | undefined : undefined;
+          if (typeof body?.code === "string") throw failure(body.code, typeof body.error === "string" ? body.error : "Shard runtime request failed");
+          throw error;
+        }
+      }
       if (method === "resource.subscribe" || method === "resource.unsubscribe") {
         if (method === "resource.unsubscribe") {
           if (!owner.subscriptions.delete(String(params.subscriptionId))) return true;

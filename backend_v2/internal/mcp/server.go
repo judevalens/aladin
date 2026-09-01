@@ -134,8 +134,8 @@ func New(addr string, deps app.Dependencies, pages service.PageDocumentService, 
 		Instructions: mcpInstructions,
 	})
 	registerTools(server, deps.Artifacts(), pages, converter, bridge, deps.EntityTags(), deps.ArtifactRefs())
-	registerShardResourceTools(server, deps.ShardResources(), deps.ShardCatalog())
-	registerDocSurfaceTools(server, deps.Artifacts(), deps.DocSurfaceStore(), deps.ShardBuild(), deps.Preview(), deps.ShardBridge(), deps.ShardReleases())
+	registerShardResourceTools(server, deps.ShardResources(), deps.ShardCatalog(), deps.ShardGraphQL())
+	registerDocSurfaceTools(server, deps.Artifacts(), deps.DocSurfaceStore(), deps.ShardBuild(), deps.Preview(), deps.ShardBridge(), deps.ShardReleases(), deps.ShardGraphQL())
 	registerWorkspaceTools(server, workspaceToolServer{
 		search:      deps.Search(),
 		entities:    deps.EntityContext(),

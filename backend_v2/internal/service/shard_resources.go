@@ -139,7 +139,7 @@ func (s *shardResourceService) Hello(ctx context.Context, target ResourceTarget)
 		return nil, err
 	}
 	return map[string]any{"protocol": shardv2.BridgeVersion, "streamProtocol": shardv2.StreamVersion, "contractHash": release.Hash, "buildId": release.BuildID,
-		"methods":  []string{"hello", "theme.get", "resource.describe", "resource.read", "resource.query", "resource.subscribe", "resource.unsubscribe", "resource.insert", "resource.update", "resource.delete"},
+		"methods":  []string{"hello", "theme.get", "resource.describe", "resource.read", "resource.query", "resource.subscribe", "resource.unsubscribe", "resource.insert", "resource.update", "resource.delete", "graphql.execute", "lambda.invoke"},
 		"bindings": compiled.Contract.Bindings, "limits": map[string]int{"recordBytes": shardv2.MaxRecordBytes, "viewRecords": shardv2.MaxLimit, "subscriptions": 32}}, nil
 }
 
@@ -279,6 +279,10 @@ func (s *shardResourceService) resolveView(ctx context.Context, target ResourceT
 		if request.ID != "" && request.ID != "value" {
 			return fail("bad-request", "Singleton record ID is value")
 		}
+	}
+	query, err = shardv2.NormalizeQuery(query)
+	if err != nil {
+		return fail("bad-request", "Invalid resource query")
 	}
 	if err := shardv2.ValidateQuery(definition, query); err != nil {
 		return fail("bad-request", "Invalid resource query")

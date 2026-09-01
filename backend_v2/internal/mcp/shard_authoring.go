@@ -55,7 +55,7 @@ const kitAuthoringLoop = `Loop: after each write_file/edit_file, READ the return
 const kitResourceGuide = `Shard data is managed through declared resources. create_app seeds contract.json and anchors.json automatically. Extend those files; keep their schema-version fields intact. The runtime details are handled by the backend, not a choice to put to the user.
 
 Available data sources:
-- shard.documents: the shard's own persistent collections and singletons. Supports create, full replacement, delete, declared-field filtering/sorting, cursor pagination and subscribed refresh snapshots. No extra storage integration is needed for journals, trackers, forms, saved settings or learning progress.
+- shard.documents: the shard's own persistent collections and singletons. Supports create, full replacement, delete, declared-field filtering/sorting, cursor pagination and subscribed live snapshots. No extra storage integration is needed for journals, trackers, forms, saved settings or learning progress.
 - workspace.nodes: read-only snapshots of explicitly granted artifacts, records, research and watchlists. Supported observable entity kinds can refresh live. The source takes fixed authorized IDs, not arbitrary workspace queries; it does not provide joins, structured filtering, cursor pagination or workspace mutations.
 - Other managed sources or advanced analytics require an installed backend provider. Do not infer that an available Copilot market tool is automatically a shard resource provider.
 
@@ -110,10 +110,17 @@ func (t docToolServer) resourceAuthoringEnabled() bool {
 	return t.releases != nil && t.releases.Enabled()
 }
 
-func shardAuthoringGuide(resources bool) string {
+const kitGraphQLGuide = `Authored backend runtime is enabled on this target. For cross-resource composition, declare named persisted queries or mutations under contract.graphql.operations, a GraphQL schema file, and resolver TypeScript files. Import defineResolver from "@aladin/shard-runtime". Each resolver declares binding capabilities such as tasks:query and explicit maxOperations, maxDocuments, timeoutMs and memoryMiB budgets. Call executeGraphQL(operationId, variables) from the shard; raw GraphQL text is never accepted. Use subscribeResource for live data because this request/response GraphQL route does not expose subscription documents. A resolver receives only context.capabilities.call(capability,input), never a database client or namespace selector. Manual lambdas use the same bundle/budgets and invokeLambda(name,input). Published agent-exposed operations are available through execute_shard_operation.\n`
+
+func (t docToolServer) runtimeAuthoringEnabled() bool { return t.graphql != nil && t.graphql.Enabled() }
+
+func shardAuthoringGuide(resources, graphql bool) string {
 	data := kitKeyValueGuide
 	if resources {
 		data = kitResourceGuide
+	}
+	if resources && graphql {
+		data += "\n" + kitGraphQLGuide
 	}
 	return kitComponentGuide + data + "\n" + kitAuthoringLoop
 }
@@ -134,7 +141,7 @@ func (t docToolServer) existingShardAuthoringGuide(ctx context.Context, id strin
 		for _, channel := range []service.BuildChannel{service.ChannelDraft, service.ChannelPublished} {
 			release, err := t.releases.Active(ctx, id, channel)
 			if err == nil {
-				return shardAuthoringGuide(true) + "\nThe authoring contract file is missing. Restore contract.json from the returned protected contract before building; do not change this shard's storage API.\n", string(release.Source), nil
+				return shardAuthoringGuide(true, t.runtimeAuthoringEnabled()) + "\nThe authoring contract file is missing. Restore contract.json from the returned protected contract before building; do not change this shard's storage API.\n", string(release.Source), nil
 			}
 			if service.ResourceErrorCode(err) == "unsupported-capability" {
 				return unavailableShardGuide, "", nil
@@ -147,5 +154,5 @@ func (t docToolServer) existingShardAuthoringGuide(ctx context.Context, id strin
 	if hasContract && !t.resourceAuthoringEnabled() {
 		return unavailableShardGuide, string(contract), nil
 	}
-	return shardAuthoringGuide(hasContract), string(contract), nil
+	return shardAuthoringGuide(hasContract, t.runtimeAuthoringEnabled()), string(contract), nil
 }
