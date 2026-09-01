@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Aladin PROD restore drill.
 #
-# Proves the newest dump in ~/aladin-backups actually restores — the only thing
+# Proves the newest Postgres and MongoDB dumps actually restore — the only thing
 # that makes it a backup rather than a file. Restores into a THROWAWAY database
 # (`restore_drill`) inside the same Postgres container, compares its per-table
 # row counts against live prod, then drops it. The `aladin` database is never
@@ -14,15 +14,26 @@
 # Env overrides:
 #   ALADIN_BACKUP_DIR     (default: ~/aladin-backups)
 #   PROD_PG_CONTAINER     (default: aladin-prod-postgres)
+#   PROD_MONGO_CONTAINER  (default: aladin-prod-shard-mongo)
 #   DRILL_DB              (default: restore_drill)
+#   MONGO_DRILL_DB        (default: aladin_shards_restore_drill)
 set -euo pipefail
 
 CONTAINER=${PROD_PG_CONTAINER:-aladin-prod-postgres}
+MONGO_CONTAINER=${PROD_MONGO_CONTAINER:-aladin-prod-shard-mongo}
+RELEASE_ENV=${ALADIN_RELEASE_ENV:-$HOME/Library/Application Support/aladin/current/env}
+release_mongo_db=$(sed -n 's/^SHARD_MONGODB_DATABASE=//p' "$RELEASE_ENV" 2>/dev/null | head -1 | tr -d '"' || true)
+MONGO_DB=${SHARD_MONGODB_DATABASE:-${release_mongo_db:-aladin_shards}}
 BACKUP_DIR=${ALADIN_BACKUP_DIR:-$HOME/aladin-backups}
 DRILL_DB=${DRILL_DB:-restore_drill}
+MONGO_DRILL_DB=${MONGO_DRILL_DB:-aladin_shards_restore_drill}
 
 if ! docker ps --format '{{.Names}}' | grep -qx "$CONTAINER"; then
   echo "drill: container '$CONTAINER' is not running" >&2
+  exit 1
+fi
+if ! docker ps --format '{{.Names}}' | grep -qx "$MONGO_CONTAINER"; then
+  echo "drill: container '$MONGO_CONTAINER' is not running" >&2
   exit 1
 fi
 
@@ -41,6 +52,7 @@ prod_counts=$(psql_q aladin "$COUNT_SQL")
 
 cleanup() {
   docker exec "$CONTAINER" psql -U aladin -d postgres -c "DROP DATABASE IF EXISTS $DRILL_DB;" >/dev/null 2>&1 || true
+  docker exec "$MONGO_CONTAINER" mongosh --quiet --eval "db.getSiblingDB('$MONGO_DRILL_DB').dropDatabase()" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -63,12 +75,38 @@ if [[ "$prod_counts" != "$drill_counts" ]]; then
   exit 1
 fi
 
-# Cross-check the two halves. A dump and a tarball can each be individually valid and still
+# Restore the MongoDB member of the same timestamped set into a throwaway
+# database and compare exact collection document counts.
+stamp=$(basename "$DUMP" .dump)
+mongo_archive="$BACKUP_DIR/$stamp-mongo.archive.gz"
+if [[ ! -f "$mongo_archive" ]]; then
+  echo "drill: FAILED — paired MongoDB archive $(basename "$mongo_archive") is missing" >&2
+  exit 1
+fi
+docker exec "$MONGO_CONTAINER" mongosh --quiet --eval "db.getSiblingDB('$MONGO_DRILL_DB').dropDatabase()" >/dev/null
+if ! docker exec -i "$MONGO_CONTAINER" mongorestore --quiet --archive --gzip \
+    --nsFrom "$MONGO_DB.*" --nsTo "$MONGO_DRILL_DB.*" < "$mongo_archive"; then
+  echo "drill: FAILED — mongorestore reported errors" >&2
+  exit 1
+fi
+mongo_counts() {
+  docker exec "$MONGO_CONTAINER" mongosh --quiet "$1" --eval \
+    'db.getCollectionNames().sort().map(n => n + "=" + db.getCollection(n).countDocuments({})).join("\n")'
+}
+live_mongo_counts=$(mongo_counts "$MONGO_DB")
+drill_mongo_counts=$(mongo_counts "$MONGO_DRILL_DB")
+if [[ "$live_mongo_counts" != "$drill_mongo_counts" ]]; then
+  echo "drill: FAILED — restored MongoDB collection counts differ from prod:" >&2
+  diff <(echo "$live_mongo_counts") <(echo "$drill_mongo_counts") >&2 || true
+  exit 1
+fi
+echo "drill: MongoDB collection counts match prod"
+
+# Cross-check the relational and file members. A dump and a tarball can each be individually valid and still
 # not reconstruct a working system: what matters is whether every file the RESTORED database
 # references actually exists in the archive paired with it. artifacts.metadata->>'storageKey'
 # is a logical "<kind>/<name>" (never a path), and FilesystemArtifactStore maps kind 'file' to
 # uploads/ and 'audio' to audio/ — so that mapping is what a real restore depends on.
-stamp=$(basename "$DUMP" .dump)
 archive="$BACKUP_DIR/$stamp-files.tar.gz"
 keys=$(psql_q "$DRILL_DB" "select metadata->>'storageKey' from artifacts where metadata->>'storageKey' is not null;")
 if [[ -z "$keys" ]]; then

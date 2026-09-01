@@ -35,7 +35,7 @@ if ! docker info >/dev/null 2>&1; then
 fi
 ok "docker" "running"
 
-for c in aladin-postgres aladin-redis aladin-neo4j; do
+for c in aladin-postgres aladin-redis aladin-neo4j aladin-shard-mongo; do
   status=$(docker inspect "$c" --format '{{.State.Status}}' 2>/dev/null || echo missing)
   case "$status" in
     running) ok "$c" "running" ;;
@@ -46,7 +46,7 @@ done
 
 # The ports the HOST processes connect through. A healthy container on an unpublished
 # port is invisible to a native process — the same trap prod_doctor checks for.
-for pair in "postgres:5433" "redis:6379" "neo4j:7687"; do
+for pair in "postgres:5433" "redis:6379" "neo4j:7687" "mongodb:27017"; do
   name=${pair%%:*}; port=${pair##*:}
   port_open "$port" && ok "$name port $port" "reachable" \
     || { bad "$name port $port" "not reachable from the host"; fix "make db-up"; }
@@ -59,6 +59,17 @@ if [[ -f "$ROOT/backend_v2/.env" ]]; then
   grep -qE '^\s*ANTHROPIC_API_KEY=..' "$ROOT/backend_v2/.env" \
     && ok "ANTHROPIC_API_KEY" "set" \
     || { warn "ANTHROPIC_API_KEY" "absent — fine only in COPILOT_AUTH=subscription mode"; fix "add it to backend_v2/.env, or set COPILOT_AUTH=subscription"; }
+  if grep -q '^SHARD_V2_ENABLED=1$' "$ROOT/backend_v2/.env"; then
+    ok "Shard v2" "enabled"
+    grep -q '^SHARD_MONGODB_URI=.' "$ROOT/backend_v2/.env" \
+      && ok "SHARD_MONGODB_URI" "set" \
+      || { bad "SHARD_MONGODB_URI" "missing"; fix "set it to mongodb://127.0.0.1:27017/?replicaSet=shard-rs&directConnection=true"; }
+    secret=$(sed -n 's/^SHARD_RUNTIME_SECRET=//p' "$ROOT/backend_v2/.env" | head -1 | tr -d '"')
+    [[ ${#secret} -ge 32 ]] && ok "SHARD_RUNTIME_SECRET" "set" \
+      || { bad "SHARD_RUNTIME_SECRET" "missing or shorter than 32 bytes"; fix "generate one with: openssl rand -hex 32"; }
+  else
+    ok "Shard v2" "disabled"
+  fi
 else
   bad "backend_v2/.env" "missing"
   fix "the Go services read it with godotenv; without it they exit on boot"
@@ -66,7 +77,9 @@ fi
 
 # ── 3. app tier ──────────────────────────────────────────────────────────────────────
 echo; bold "app tier (host processes)"
-for pair in "api:8000" "mcp:8090" "blocknote:3500" "copilot-agent:3550" "web:4173"; do
+app_pairs="api:8000 mcp:8090 blocknote:3500 copilot-agent:3550 web:4173"
+grep -q '^SHARD_V2_ENABLED=1$' "$ROOT/backend_v2/.env" 2>/dev/null && app_pairs="api:8000 shard-runtime:8092 mcp:8090 blocknote:3500 copilot-agent:3550 web:4173"
+for pair in $app_pairs; do
   name=${pair%%:*}; port=${pair##*:}
   pid=$(listener "$port")
   if [[ -z "$pid" ]]; then
@@ -96,6 +109,10 @@ http_ok http://127.0.0.1:8000/healthz && ok "api /healthz" "8000" \
 http_ok http://127.0.0.1:8000/readyz && ok "api /readyz" "db reachable from api" \
   || bad "api /readyz" "api up but not ready"
 http_ok http://127.0.0.1:8090/healthz && ok "mcp /healthz" "8090" || warn "mcp" "8090 no answer"
+if grep -q '^SHARD_V2_ENABLED=1$' "$ROOT/backend_v2/.env" 2>/dev/null; then
+  http_ok http://127.0.0.1:8092/healthz && ok "shard-runtime" "8092" \
+    || { bad "shard-runtime" "8092 no answer"; fix "make dev-restart"; }
+fi
 http_ok http://127.0.0.1:3500/healthz && ok "blocknote" "3500 · collab 3501" \
   || warn "blocknote" "3500 no answer"
 port_open 3501 && ok "collab ws" "3501 listening" || warn "collab ws" "3501 not listening"
@@ -114,6 +131,12 @@ if cop=$(curl -fsS -m 3 http://127.0.0.1:3550/healthz 2>/dev/null); then
   grep -q '"mcp":true' <<<"$cop" || { warn "copilot-agent -> mcp" "cannot reach the MCP server"; fix "make dev-up PROCS=mcp — copilot has no tools without it"; }
 else
   warn "copilot-agent" "3550 no answer"
+fi
+if docker exec aladin-shard-mongo mongosh --quiet --eval 'quit(rs.status().ok === 1 ? 0 : 1)' >/dev/null 2>&1; then
+  ok "mongodb replica set" "shard-rs ready"
+else
+  bad "mongodb replica set" "not ready"
+  fix "make db-up"
 fi
 http_ok http://127.0.0.1:4173/ && ok "web (vite)" "4173" || warn "web (vite)" "4173 no answer"
 

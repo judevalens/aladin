@@ -106,7 +106,7 @@ gone "launchd backup agent" "booted out + plist removed"
 
 # 3. docker: containers and volumes. All profiles, so nothing is left behind.
 if docker info >/dev/null 2>&1; then
-  ( cd "$REPO" && COMPOSE_PROFILES=api,worker,mcp,collab,copilot docker compose \
+  ( cd "$REPO" && COMPOSE_PROFILES=api,worker,mcp,collab,copilot,shards docker compose \
       -p aladin-prod --env-file backend_v2/.env.prod -f docker-compose.prod.yml down -v ) >/dev/null 2>&1
   gone "docker containers + volumes" "down -v"
 else
@@ -129,7 +129,7 @@ safe_rm "$CLIENT_STATE" && gone "$CLIENT_STATE" "removed"
 echo
 bold "gone. to rebuild:"
 echo "  make prod-env            # only if you removed .env.prod"
-echo "  make prod-up PROD_PROFILES=   # data tier only (postgres/redis/neo4j)"
+echo "  make prod-up PROD_PROFILES=   # data tier only (postgres/redis/neo4j/mongodb)"
 echo "  make prod-release && make prod-run"
 echo "  make prod-backup-install && make prod-app"
 echo "  make prod-doctor"

@@ -13,7 +13,8 @@
 #   copilot  -> the copilot-agent sidecar (Claude Agent SDK; needs api + mcp,
 #               and ANTHROPIC_API_KEY in backend_v2/.env.prod)
 #   worker   -> enrichment pipeline + syncers  (pulls in redis + neo4j)
-# postgres has no profile: it is the shared canonical store, always started.
+#   shards   -> authored resolver runtime (MongoDB is part of the data tier)
+# The data tier has no profiles: Postgres, MongoDB, Redis, and Neo4j always start.
 #
 # Secrets/config come from backend_v2/.env.prod via `--env-file` (interpolation)
 # and `env_file` (container env). Nothing secret lives in this committed file.
@@ -99,7 +100,7 @@ services:
       API_ADDR: ":8000"
       DATA_VOLUME_PATH: /data
       # Enable only with the `shards` profile and matching .env.prod values.
-      # SHARD_MONGODB_URI=mongodb://mongo:27017/?replicaSet=shard-rs
+      # SHARD_MONGODB_URI=mongodb://mongo:27017/?replicaSet=shard-rs&directConnection=true
       # SHARD_RUNTIME_URL=http://shard-runtime:8092
       # The copilot-agent sidecar (profile `copilot`). Without that profile the
       # copilot dock errors on send; unset COPILOT_AGENT_URL in .env.prod to
@@ -123,8 +124,9 @@ services:
   mongo:
     image: mongo:8.0.16
     container_name: aladin-prod-shard-mongo
-    profiles: ["shards"]
     command: ["mongod", "--replSet", "shard-rs", "--bind_ip_all"]
+    ports:
+      - "27018:27017"       # native prod api -> MongoDB (dev uses 27017)
     volumes:
       - prod_shard_mongo_data:/data/db
     restart: unless-stopped
@@ -136,7 +138,6 @@ services:
 
   mongo-init:
     image: mongo:8.0.16
-    profiles: ["shards"]
     depends_on:
       mongo:
         condition: service_healthy

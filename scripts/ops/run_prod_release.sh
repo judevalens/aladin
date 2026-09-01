@@ -16,7 +16,8 @@
 #   PROCS="api mcp" bash scripts/ops/run_prod_release.sh start
 #
 # Env overrides:
-#   PROCS         (default: api mcp blocknote worker)  which to start
+#   PROCS         (default: api mcp blocknote worker copilot-agent, plus
+#                 shard-runtime when SHARD_V2_ENABLED=1)  which to start
 #   ALADIN_PREFIX (default: ~/Library/Application Support/aladin)
 #   STOP_TIMEOUT  (default: 15) seconds to wait for SIGTERM before SIGKILL
 #   FORCE         (default: unset) start even if a port is already bound
@@ -30,7 +31,11 @@ STOP_TIMEOUT=${STOP_TIMEOUT:-15}
 # gen_prod_env.sh does not write) rather than failing — /healthz reports
 # "anthropicKey": false — so a missing key is visible instead of the dock just
 # erroring on send with the sidecar absent entirely.
-PROCS=${PROCS:-api mcp blocknote worker copilot-agent}
+DEFAULT_PROCS="api mcp blocknote worker copilot-agent"
+if grep -q '^SHARD_V2_ENABLED=1$' "$CURRENT/env" 2>/dev/null; then
+  DEFAULT_PROCS="api shard-runtime mcp blocknote worker copilot-agent"
+fi
+PROCS=${PROCS:-$DEFAULT_PROCS}
 
 say() { printf '\033[1m>> %s\033[0m\n' "$*"; }
 die() { printf 'run: %s\n' "$*" >&2; exit 1; }
@@ -39,6 +44,7 @@ die() { printf 'run: %s\n' "$*" >&2; exit 1; }
 port_for() {
   case "$1" in
     api) echo 8080 ;; mcp) echo 8091 ;;
+    shard-runtime) echo 8092 ;;
     blocknote) echo 3510 3511 3512 ;; copilot-agent) echo 3560 ;;  # 3560: dev owns 3550
     *) echo "" ;;
   esac

@@ -31,6 +31,30 @@ services:
       - redis_data:/data
     command: redis-server --appendonly yes
 
+  # Shard-owned documents. A single-node replica set keeps transactions and
+  # change streams available while remaining a normal `make db-up` dependency.
+  mongo:
+    image: mongo:8.0.16
+    container_name: aladin-shard-mongo
+    command: ["mongod", "--replSet", "shard-rs", "--bind_ip_all"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - shard_mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mongo-init:
+    image: mongo:8.0.16
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: "no"
+    command: ["mongosh", "mongodb://mongo:27017/admin", "--quiet", "--eval", "try { rs.status().ok } catch (e) { rs.initiate({_id:'shard-rs',members:[{_id:0,host:'mongo:27017'}]}) }"]
+
   loki:
     image: grafana/loki:3.0.0
     container_name: aladin-loki
@@ -102,6 +126,7 @@ volumes:
   postgres_data:
   neo4j_data:
   redis_data:
+  shard_mongo_data:
   loki_data:
   grafana_data:
   promtail_positions:

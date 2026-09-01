@@ -8,7 +8,27 @@ OUT=backend_v2/.env.prod
 SRC=backend_v2/.env
 
 if [[ -f "$OUT" && "${FORCE:-0}" != "1" ]]; then
-  echo "gen-prod-env: $OUT already exists — leaving it untouched (FORCE=1 to regenerate)"
+  # Existing installations predate Shard v2. Backfill only missing keys; never
+  # rotate or overwrite an operator's current secrets/configuration.
+  added=0
+  append_missing() {
+    local key=$1 value=$2
+    grep -q "^${key}=" "$OUT" && return 0
+    printf '%s=%s\n' "$key" "$value" >> "$OUT"
+    added=$((added + 1))
+  }
+  append_missing SHARD_V2_ENABLED 0
+  append_missing SHARD_DATASTORE mongo
+  append_missing SHARD_MONGODB_URI '"mongodb://mongo:27017/?replicaSet=shard-rs&directConnection=true"'
+  append_missing SHARD_MONGODB_DATABASE aladin_shards
+  append_missing SHARD_RUNTIME_URL http://shard-runtime:8092
+  append_missing SHARD_RUNTIME_SECRET "$(openssl rand -hex 32)"
+  chmod 600 "$OUT"
+  if [[ $added -gt 0 ]]; then
+    echo "gen-prod-env: added $added missing Shard v2 setting(s) to $OUT; existing values unchanged"
+  else
+    echo "gen-prod-env: $OUT already exists — leaving it untouched (FORCE=1 to regenerate)"
+  fi
   exit 0
 fi
 
@@ -17,6 +37,7 @@ val() { grep -E "^$1=" "$SRC" 2>/dev/null | head -1 | cut -d= -f2- || true; }
 PG_PW=$(openssl rand -hex 16)
 NEO_PW=$(openssl rand -hex 16)
 ADMIN=$(openssl rand -hex 16)
+SHARD_SECRET=$(openssl rand -hex 32)
 OPENAI=$(val OPENAI_API_KEY)
 TAVILY=$(val TAVILY_API_KEY)
 
@@ -36,6 +57,14 @@ TAVILY_API_KEY=$TAVILY
 ALPACA_API_KEY=
 ALPACA_API_SECRET=
 BLOCKNOTE_ADMIN_SHARED_SECRET=$ADMIN
+# Shard v2 remains opt-in. MongoDB is already part of the data tier, so enabling
+# it later only requires changing this flag and rebuilding the native release.
+SHARD_V2_ENABLED=0
+SHARD_DATASTORE=mongo
+SHARD_MONGODB_URI="mongodb://mongo:27017/?replicaSet=shard-rs&directConnection=true"
+SHARD_MONGODB_DATABASE=aladin_shards
+SHARD_RUNTIME_URL=http://shard-runtime:8092
+SHARD_RUNTIME_SECRET=$SHARD_SECRET
 LOG_LEVEL=info
 WORKER_CONCURRENCY=16
 NGROK_AUTOSTART=0

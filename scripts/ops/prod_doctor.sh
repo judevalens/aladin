@@ -47,7 +47,7 @@ if ! docker info >/dev/null 2>&1; then
 fi
 ok "docker" "running"
 
-for c in aladin-prod-postgres aladin-prod-redis aladin-prod-neo4j; do
+for c in aladin-prod-postgres aladin-prod-redis aladin-prod-neo4j aladin-prod-shard-mongo; do
   status=$(docker inspect "$c" --format '{{.State.Status}}' 2>/dev/null || echo missing)
   health=$(docker inspect "$c" --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' 2>/dev/null)
   case "$status" in
@@ -62,7 +62,7 @@ done
 
 # Ports the NATIVE tier reaches the containers through. A healthy container on an
 # unpublished port is invisible to a host process — that cost an hour once (redis 6381).
-for pair in "postgres:5455" "redis:6381" "neo4j:7689"; do
+for pair in "postgres:5455" "redis:6381" "neo4j:7689" "mongodb:27018"; do
   name=${pair%%:*}; port=${pair##*:}
   port_open "$port" && ok "$name port $port" "reachable" || {
     bad "$name port $port" "not reachable from the host"
@@ -96,8 +96,12 @@ fi
 echo; bold "app tier (native, started by hand)"
 cur_real=$(readlink "$PREFIX/current" 2>/dev/null)
 stale=0
-for p in api mcp worker blocknote copilot-agent; do
-  if [[ "$p" == blocknote || "$p" == copilot-agent ]]; then
+shard_enabled=0
+grep -q '^SHARD_V2_ENABLED=1$' "$PREFIX/current/env" 2>/dev/null && shard_enabled=1
+app_procs="api mcp worker blocknote copilot-agent"
+[[ $shard_enabled -eq 1 ]] && app_procs="$app_procs shard-runtime"
+for p in $app_procs; do
+  if [[ "$p" == blocknote || "$p" == copilot-agent || "$p" == shard-runtime ]]; then
     pid=$(pgrep -f "$RELEASES/.*/services/$p/server.js" | head -1)
   else
     pid=$(pgrep -f "$RELEASES/.*/bin/$p\$" | head -1)
@@ -135,6 +139,10 @@ if cop=$(curl -fsS -m 3 http://127.0.0.1:3560/healthz 2>/dev/null); then
 else
   warn "copilot-agent" "3560 no answer"
 fi
+if [[ $shard_enabled -eq 1 ]]; then
+  http_ok http://127.0.0.1:8092/healthz && ok "shard-runtime" "8092" \
+    || { bad "shard-runtime" "8092 no answer"; fix "make prod-run"; }
+fi
 
 # ── 5. backups — the only thing here that is irreplaceable ───────────────────────────
 echo; bold "backups"
@@ -145,6 +153,12 @@ if launchctl print "gui/$(id -u)/com.aladin.prod.backup" >/dev/null 2>&1; then
 else
   bad "nightly agent" "not installed"
   fix "make prod-backup-install"
+fi
+if docker exec aladin-prod-shard-mongo mongosh --quiet --eval 'quit(rs.status().ok === 1 ? 0 : 1)' >/dev/null 2>&1; then
+  ok "mongodb replica set" "shard-rs ready"
+else
+  bad "mongodb replica set" "not ready"
+  fix "make prod-up PROD_PROFILES="
 fi
 
 newest=$(ls -1t "$BACKUP_DIR"/aladin-prod-*.dump 2>/dev/null | head -1)
@@ -165,6 +179,14 @@ else
     fix "make prod-backup — a dump alone loses uploaded documents"
   else
     ok "paired file archive" "not needed (file root empty)"
+  fi
+  if [[ -f "$BACKUP_DIR/$stamp-mongo.archive.gz" ]]; then
+    gzip -t "$BACKUP_DIR/$stamp-mongo.archive.gz" 2>/dev/null \
+      && ok "paired MongoDB archive" "$(du -h "$BACKUP_DIR/$stamp-mongo.archive.gz" | cut -f1)" \
+      || { bad "paired MongoDB archive" "corrupt"; fix "make prod-backup"; }
+  else
+    bad "paired MongoDB archive" "missing"
+    fix "make prod-backup"
   fi
 fi
 

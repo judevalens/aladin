@@ -12,6 +12,7 @@ TEST_DATABASE_URL := postgres://aladin:password@localhost:5444/aladin
 # start (override to run lean, e.g. PROD_PROFILES=api,collab for notes-only).
 PROD_COMPOSE := docker compose -p aladin-prod --env-file backend_v2/.env.prod -f docker-compose.prod.yml
 PROD_PROFILES ?= api,worker,mcp,collab,copilot
+PROD_ALL_PROFILES := api,worker,mcp,collab,copilot,shards
 # Env keys the copilot-agent Node sidecar needs from backend_v2/.env (it does
 # not load .env itself, unlike the Go binaries' godotenv).
 COPILOT_AGENT_ENV_KEYS = --key ANTHROPIC_API_KEY --key COPILOT_MODEL --key COPILOT_EFFORT --key COPILOT_AGENT_SHARED_SECRET --key ALADIN_MCP_URL --key COPILOT_AUTH
@@ -25,14 +26,20 @@ DATA_VOLUME_PATH ?= $(CURDIR)/backend_v2/data
 help: ## List available make targets
 	@awk 'BEGIN {FS = ":.*## "; printf "Available targets:\n"} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-24s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-backend: ngrok-ensure ## Run the blocknote + copilot-agent sidecars (local) + the Go API on :8000 (needs infra up; see `make db-up`)
+backend: ngrok-ensure ## Run local sidecars (including shard-runtime when v2 is enabled) + the Go API on :8000
 	@(cd services/blocknote && exec node server.js) & \
 	SIDECAR_PID=$$!; \
 	(eval "$$(python3 scripts/ops/read_env_keys.py --env backend_v2/.env $(COPILOT_AGENT_ENV_KEYS))" && cd services/copilot-agent && exec node server.js) & \
 	AGENT_PID=$$!; \
-	trap 'kill $$SIDECAR_PID $$AGENT_PID 2>/dev/null' EXIT INT TERM; \
+	RUNTIME_PID=; \
+	if grep -q '^SHARD_V2_ENABLED=1$$' backend_v2/.env; then \
+		(eval "$$(python3 scripts/ops/read_env_keys.py --env backend_v2/.env --key SHARD_RUNTIME_SECRET)" && cd services/shard-runtime && HOST=127.0.0.1 PORT=8092 SHARD_CAPABILITY_URL=http://127.0.0.1:8000/internal/shard-runtime/capability exec node server.js) & \
+		RUNTIME_PID=$$!; \
+	fi; \
+	trap 'kill $$SIDECAR_PID $$AGENT_PID $${RUNTIME_PID:-} 2>/dev/null' EXIT INT TERM; \
 	echo ">> blocknote sidecar pid $$SIDECAR_PID (converter :3500, collab :3501)"; \
 	echo ">> copilot-agent sidecar pid $$AGENT_PID (:3550)"; \
+	if grep -q '^SHARD_V2_ENABLED=1$$' backend_v2/.env; then echo ">> shard-runtime sidecar pid $$RUNTIME_PID (:8092)"; fi; \
 	eval "$$(python3 scripts/ops/read_env_keys.py --env backend_v2/.env)" && cd backend_v2 && API_ADDR=:8000 DATA_VOLUME_PATH=$(DATA_VOLUME_PATH) go run ./cmd/api
 
 mcp: ## Run the MCP page server on port 8090
@@ -156,7 +163,7 @@ ops-reset-stuck-cycles: ## Close stale active/running cycles; optional AGE=30m
 # back. They do not touch the infra containers — `make db-up` owns those.
 .PHONY: dev-up dev-down dev-restart dev-status dev-logs dev-doctor dev-app dev-app-deps dev-help
 
-dev-up: ## Start the dev tier (api :8000, mcp :8090, blocknote :3500/:3501, copilot :3550, worker, web :4173), killing whatever holds those ports first
+dev-up: ## Start the dev tier (plus shard-runtime :8092 when SHARD_V2_ENABLED=1), killing whatever holds those ports first
 	bash scripts/ops/run_dev.sh start
 
 dev-down: ## Stop every dev service on those ports — including ones started by hand
@@ -168,7 +175,7 @@ dev-restart: ## dev-down + dev-up (rebuilds the Go binaries from the working tre
 dev-status: ## Show which dev services are up, on which port, and whether this tool started them
 	@bash scripts/ops/run_dev.sh status
 
-dev-logs: ## Tail the dev logs (SERVICE=api|mcp|blocknote|copilot-agent|worker|web to scope)
+dev-logs: ## Tail the dev logs (SERVICE=api|mcp|shard-runtime|blocknote|copilot-agent|worker|web to scope)
 	bash scripts/ops/run_dev.sh logs
 
 dev-doctor: ## Diagnose the dev loop: infra, config, processes, health, data
@@ -200,7 +207,8 @@ dev-help: ## Explain the dev commands: what to run, what each one touches, in wh
 	  '    make dev-down             stop everything on the dev ports' \
 	  '' \
 	  '\033[1m  What dev-up runs\033[0m   PROCS="api web" scopes both start and stop' \
-	  '    api :8000 · mcp :8090 · blocknote :3500 + collab :3501 · copilot-agent :3550' \
+	  '    api :8000 · mcp :8090 · shard-runtime :8092 when v2 is enabled' \
+	  '    blocknote :3500 + collab :3501 · copilot-agent :3550' \
 	  '    worker (no port) · web :4173' \
 	  '    It is NOT additive: whatever holds a dev port is killed first, so a stale' \
 	  '    process cannot keep serving old code on a port you thought you restarted.' \
@@ -211,7 +219,7 @@ dev-help: ## Explain the dev commands: what to run, what each one touches, in wh
 	  '    make worker-go · make mcp · (cd aladin_react && npm run dev)' \
 	  '    Same services. dev-up exists for when you want your terminal back.' \
 	  '' \
-	  '\033[1m  Infra\033[0m   Docker: postgres :5433, redis :6379, neo4j :7687 — dev-up never touches these' \
+	  '\033[1m  Infra\033[0m   Docker: postgres :5433, redis :6379, neo4j :7687, MongoDB :27017' \
 	  '    make db-up · make db-down          the containers the app tier connects to' \
 	  '    make test-db-up                    the ISOLATED sandbox (pg :5444) — tests only' \
 	  '' \
@@ -238,29 +246,34 @@ prod-env: ## Generate backend_v2/.env.prod (random infra passwords + OpenAI/Tavi
 prod-check-env:
 	@test -f backend_v2/.env.prod || { echo ">> backend_v2/.env.prod missing — run 'make prod-env' first"; exit 1; }
 
-prod-build: prod-check-env ## Build the prod backend + blocknote images (backend built once via `api`)
-	$(PROD_COMPOSE) build api blocknote
+prod-build: prod-check-env ## Build the prod backend and Node sidecar images
+	$(PROD_COMPOSE) build api blocknote shard-runtime
 
-prod-up: prod-build ## Build + start the prod stack (PROD_PROFILES selects processes)
+prod-up: prod-check-env ## Build selected app profiles + start prod; empty profiles start only the data tier
+	@if [ -n "$(strip $(PROD_PROFILES))" ]; then $(PROD_COMPOSE) build api blocknote shard-runtime; fi
 	COMPOSE_PROFILES=$(PROD_PROFILES) $(PROD_COMPOSE) up -d
-	@echo ">> prod up (profiles: $(PROD_PROFILES)). API http://localhost:8080  collab ws://localhost:3511  mcp http://localhost:8091"
+	@if [ -n "$(strip $(PROD_PROFILES))" ]; then \
+		echo ">> prod up (profiles: $(PROD_PROFILES)). API http://localhost:8080  collab ws://localhost:3511  mcp http://localhost:8091"; \
+	else \
+		echo ">> prod data tier up. Postgres :5455  MongoDB :27018  Redis :6381  Neo4j :7689"; \
+	fi
 
 prod-down: prod-check-env ## Stop the prod stack (ARGS=-v also drops prod volumes — DESTROYS DATA)
-	COMPOSE_PROFILES=api,worker,mcp,collab $(PROD_COMPOSE) down $(ARGS)
+	COMPOSE_PROFILES=$(PROD_ALL_PROFILES) $(PROD_COMPOSE) down $(ARGS)
 
 prod-restart: prod-build ## Rebuild images + recreate prod services
 	COMPOSE_PROFILES=$(PROD_PROFILES) $(PROD_COMPOSE) up -d --force-recreate
 
 prod-ps: prod-check-env ## Show prod stack status
-	COMPOSE_PROFILES=api,worker,mcp,collab $(PROD_COMPOSE) ps
+	COMPOSE_PROFILES=$(PROD_ALL_PROFILES) $(PROD_COMPOSE) ps
 
-prod-logs: prod-check-env ## Tail prod logs (SERVICE=api|worker|mcp|blocknote to scope)
-	COMPOSE_PROFILES=api,worker,mcp,collab $(PROD_COMPOSE) logs -f $(SERVICE)
+prod-logs: prod-check-env ## Tail prod logs (SERVICE=api|worker|mcp|blocknote|shard-runtime to scope)
+	COMPOSE_PROFILES=$(PROD_ALL_PROFILES) $(PROD_COMPOSE) logs -f $(SERVICE)
 
 prod-psql: ## Open psql on the prod Postgres
 	docker exec -it aladin-prod-postgres psql -U aladin -d aladin
 
-prod-backup: ## Run a one-off prod Postgres backup (pg_dump -Fc, retained)
+prod-backup: ## Back up prod Postgres, shard MongoDB, and the file root
 	bash scripts/ops/backup_prod.sh
 
 prod-backup-install: ## Install/refresh the nightly 03:00 backup LaunchAgent (re-run after editing backup_prod.sh)
@@ -332,7 +345,7 @@ prod-help: ## Explain the prod commands: what to run, what each one touches, in 
 	  '    make prod-app             build + install the DESKTOP APP to /Applications' \
 	  '' \
 	  '\033[1m  Those two are separate on purpose\033[0m' \
-	  '    prod-update  ->  api, worker, mcp, blocknote, copilot-agent  (Go + node, from a git archive)' \
+	  '    prod-update  ->  api, worker, mcp, blocknote, copilot-agent, shard-runtime when enabled' \
 	  '    prod-app     ->  the Tauri client — the ONLY way frontend code ships' \
 	  '    Neither builds the other. A frontend-only change needs prod-app, not prod-update.' \
 	    '    prod-app runs npm ci first when package-lock.json is newer than node_modules.' \
@@ -344,7 +357,7 @@ prod-help: ## Explain the prod commands: what to run, what each one touches, in 
 	  '    prod-doctor reports the schema version the database is currently at.' \
 	  '' \
 	  '\033[1m  Data safety\033[0m' \
-	  '    make prod-backup          one-off dump + file archive, verified as a pair and retained' \
+	  '    make prod-backup          PostgreSQL + MongoDB + files, one timestamped set' \
 	  '    make prod-restore-drill   prove the newest dump restores, into a throwaway DB' \
 	  '    make prod-backup-install  install/refresh the nightly 03:00 LaunchAgent' \
 	  '    make prod-backup-status   agent state + what is on disk' \

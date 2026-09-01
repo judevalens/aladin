@@ -23,7 +23,8 @@
 # server alive and holding the port.
 #
 # Env overrides:
-#   PROCS=(default: api mcp blocknote copilot-agent worker web)  which to start;
+#   PROCS=(default: api [shard-runtime] mcp blocknote copilot-agent worker web)
+#                 shard-runtime is included when SHARD_V2_ENABLED=1; which to start;
 #                 also scopes `stop`, e.g. PROCS=worker ... stop
 #   CONCURRENCY   (default 16)  worker concurrency
 #   STOP_TIMEOUT  (default 10)  seconds to wait for SIGTERM before SIGKILL
@@ -38,7 +39,11 @@ STOP_TIMEOUT=${STOP_TIMEOUT:-10}
 # Whether PROCS was set by the caller (not just defaulted) decides how `stop` behaves:
 # scoped when asked for, everything otherwise.
 PROCS_SCOPED=${PROCS+1}
-PROCS=${PROCS:-api mcp blocknote copilot-agent worker web}
+DEFAULT_PROCS="api mcp blocknote copilot-agent worker web"
+if grep -q '^SHARD_V2_ENABLED=1$' "$ROOT/backend_v2/.env" 2>/dev/null; then
+  DEFAULT_PROCS="api shard-runtime mcp blocknote copilot-agent worker web"
+fi
+PROCS=${PROCS:-$DEFAULT_PROCS}
 DATA_VOLUME_PATH=${DATA_VOLUME_PATH:-$ROOT/backend_v2/data}
 
 # Every port the dev tier binds. blocknote binds two (converter + Hocuspocus collab);
@@ -47,13 +52,14 @@ ports_for() {
   case "$1" in
     api) echo 8000 ;;
     mcp) echo 8090 ;;
+    shard-runtime) echo 8092 ;;
     blocknote) echo 3500 3501 3502 ;;
     copilot-agent) echo 3550 ;;
     web) echo 4173 ;;
     *) echo "" ;;
   esac
 }
-ALL_PROCS="api mcp blocknote copilot-agent worker web"
+ALL_PROCS="api shard-runtime mcp blocknote copilot-agent worker web"
 
 say()  { printf '\033[1m>> %s\033[0m\n' "$*"; }
 warn() { printf '\033[33m>> %s\033[0m\n' "$*" >&2; }
@@ -151,6 +157,13 @@ start_proc() {
         --key ANTHROPIC_API_KEY --key COPILOT_MODEL --key COPILOT_EFFORT \
         --key COPILOT_AGENT_SHARED_SECRET --key ALADIN_MCP_URL --key COPILOT_AUTH)"
       ( cd "$ROOT/services/copilot-agent" && launch copilot-agent node server.js ) ;;
+    shard-runtime)
+      eval "$(python3 "$ROOT/scripts/ops/read_env_keys.py" --env "$ROOT/backend_v2/.env" \
+        --key SHARD_RUNTIME_SECRET)"
+      ( cd "$ROOT/services/shard-runtime" && \
+        HOST=127.0.0.1 PORT=8092 \
+        SHARD_CAPABILITY_URL=http://127.0.0.1:8000/internal/shard-runtime/capability \
+        launch shard-runtime node server.js ) ;;
     web)
       ( cd "$ROOT/aladin_react" && launch web node_modules/.bin/vite ) ;;
     *) die "unknown service '$name' (known: $ALL_PROCS)" ;;

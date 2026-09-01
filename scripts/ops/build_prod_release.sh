@@ -94,7 +94,7 @@ say "building go binaries (api, worker, mcp)"
 # --- 3. node sidecars --------------------------------------------------------
 # Mirrors the sidecar Dockerfiles exactly: package.json + lockfile, install
 # --omit=dev, then server.js + src/. No build step.
-for svc in blocknote copilot-agent; do
+for svc in blocknote copilot-agent shard-runtime; do
   say "installing $svc deps (node $NODE_VER)"
   mkdir -p "$STAGE/services/$svc"
   cp "$SRC/services/$svc/package.json" "$STAGE/services/$svc/"
@@ -138,6 +138,8 @@ ENVF=$STAGE/env
     -e 's#@postgres:5432#@127.0.0.1:5455#g' \
     -e 's#redis://redis:6379#redis://127.0.0.1:6381#g' \
     -e 's#bolt://neo4j:7687#bolt://127.0.0.1:7689#g' \
+    -e 's#mongodb://mongo:27017#mongodb://127.0.0.1:27018#g' \
+    -e 's#http://shard-runtime:8092#http://127.0.0.1:8092#g' \
     "$REPO/backend_v2/.env.prod"
   cat <<EOF
 
@@ -158,6 +160,7 @@ CONVERTER_URL="http://127.0.0.1:3510"
 COPILOT_AGENT_URL="http://127.0.0.1:3560"
 ALADIN_MCP_URL="http://127.0.0.1:8091/mcp"
 BLOCKNOTE_AUTH_RESOLVE_URL="http://127.0.0.1:8080/api/auth/resolve"
+SHARD_CAPABILITY_URL="http://127.0.0.1:8080/internal/shard-runtime/capability"
 
 # --- host paths (the container used /data on a docker volume)
 DATA_VOLUME_PATH="$PREFIX/data"
@@ -269,6 +272,7 @@ emit_run blocknote      'PORT=3510 COLLAB_PORT=3511 BOARD_SYNC_PORT=3512' '' api
 # to a fresh path reintroduces the "MCP stuck pending" failure this release
 # already had to fix once.
 emit_run copilot-agent  'PORT=3560'                  '' api "\"$NODE_BIN\" \"\$HERE/services/copilot-agent/server.js\""
+emit_run shard-runtime  'HOST=127.0.0.1 PORT=8092'   '' api "\"$NODE_BIN\" \"\$HERE/services/shard-runtime/server.js\""
 
 # --- 7. stamp ----------------------------------------------------------------
 cat > "$STAGE/VERSION" <<EOF

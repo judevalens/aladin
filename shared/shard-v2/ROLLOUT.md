@@ -19,7 +19,7 @@ the immutable release identity and undeclared or Node builtin imports are reject
 | --- | --- | --- |
 | WP01 | Shared schemas, generated Go map, cross-language fixtures, profile limits | Keep fixtures synchronized as contracts evolve |
 | WP02 | Authorized registry/service, params, projection, capabilities, conditional writes | Broader provider/security review |
-| WP03 | PostgreSQL compatibility plus Mongo default adapter, receipts, quotas, ordered changes and fenced archive restore | Operational retention/recovery tooling, crash/load evidence |
+| WP03 | PostgreSQL compatibility plus Mongo default adapter, receipts, quotas, ordered changes, fenced archive restore, and production backup/restore drill integration | Retention cleanup and broader crash/load evidence |
 | WP04 | Deterministic client reducer, shared subscriptions, bounded recovery | Sustained memory/throughput soak at default caps |
 | WP05 | Kit exports, protected bootstrap, actual web host, one shared socket | Native WKWebView/vendor-scheme pilot and complete lifecycle matrix |
 | WP06 | Owned documents, Mongo event-triggered reconciliation and real workspace source | Full credential/fault matrix and broader provider coverage |
@@ -87,6 +87,13 @@ these are not test failures. Native-host and broad-rollout gaps below remain.
 - Protected serving ignores tampered mutable dist, including when v2 execution
   is disabled. Legacy v1 build, data hub and
   content-token tests remain passing.
+- Standard launchers now own the operational topology: `make db-up` provisions
+  the development replica set, `make dev-up` conditionally starts the resolver
+  runtime, and native production releases package and conditionally supervise it.
+  The production data tier publishes MongoDB only on its prod-specific port;
+  generated release env rewrites both MongoDB and runtime URLs. Diagnostics check
+  the replica set and runtime. Timestamped backups now include and restore-drill
+  PostgreSQL, MongoDB, and the file root together.
 
 Observed local sandbox timings (not production SLOs):
 
@@ -142,8 +149,9 @@ Broad rollout is **not approved** by these results. Complete these steps first:
    with commands, repeated disconnects, source disappearance and vendor failures.
    Existing CAS/receipt/reconciliation tests cover parts, not that full matrix.
 4. Add reviewed retention/maintenance tooling for inactive builds, dormant
-   receipts/cursors and tombstones. Include vendor files and protected release
-   metadata in a verified backup, not only the data archive.
+   receipts/cursors and tombstones. The operational backup now covers PostgreSQL,
+   MongoDB and the file root; explicitly inventory vendor-cache material and
+   protected release metadata before broad rollout.
 5. Run a deployed staging persisted pilot and live workspace pilot with genuine
    authorized sources. Keep unknown freshness visibly unknown. Only then prepare
    an explicit, reviewable production enablement with monitoring and backup.

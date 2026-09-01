@@ -12,6 +12,45 @@ MongoDB is the default owned-data engine and requires `SHARD_MONGODB_URI` (plus 
 optional `SHARD_MONGODB_DATABASE`). Set `SHARD_DATASTORE=postgres` explicitly for
 the compatibility adapter. No existing shard is converted automatically.
 
+## Run it
+
+The normal repository launchers own the runtime; do not start the Node sidecar
+separately. For development, add the following to `backend_v2/.env` (generate the
+secret with `openssl rand -hex 32`), then use the usual Make targets:
+
+```dotenv
+SHARD_V2_ENABLED=1
+SHARD_DATASTORE=mongo
+SHARD_MONGODB_URI="mongodb://127.0.0.1:27017/?replicaSet=shard-rs&directConnection=true"
+SHARD_MONGODB_DATABASE=aladin_shards_dev
+SHARD_RUNTIME_URL=http://127.0.0.1:8092
+SHARD_RUNTIME_SECRET=<at-least-32-byte-secret>
+```
+
+```sh
+make db-up
+make dev-up
+make dev-doctor
+make dev-app
+```
+
+`make db-up` starts the single-node MongoDB replica set. `make dev-up` includes
+`shard-runtime` automatically only when the feature flag is `1`.
+
+For native production, `make prod-env` generates the MongoDB and runtime values
+with `SHARD_V2_ENABLED=0`. Change that flag to `1`, start the data tier, then use
+the existing protected release flow:
+
+```sh
+make prod-up PROD_PROFILES=
+REF=codex/shard-datastore-runtime make prod-update
+make prod-app
+```
+
+The native release rewrites Compose service names to published host ports and
+starts `shard-runtime` conditionally. Production backup and restore drills cover
+PostgreSQL, shard MongoDB, and the file root as one timestamped recovery set.
+
 Copilot and MCP clients discover capabilities through `get_authoring_guide`.
 New apps automatically receive the configured data API and starter files; guides
 for existing apps preserve their storage model. Runtime version selection is an
