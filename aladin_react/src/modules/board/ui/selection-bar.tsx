@@ -6,6 +6,8 @@ import { useBoardHost } from "../domain/board-host";
 import { describeShape } from "../domain/board-selection";
 import { useBoardToasts } from "../domain/board-toasts";
 import { BoardButton } from "./board-button";
+import { resolveLinkInto } from "../domain/board-link-flow";
+import { boardSourceUrl, useOpenBoardSource } from "../domain/board-source";
 
 const TINTS = [
   { id: "neutral", color: "white" },
@@ -18,6 +20,7 @@ const TINTS = [
 export function SelectionBar({ hidden = false }: { hidden?: boolean }) {
   const editor = useEditor();
   const host = useBoardHost();
+  const openSource = useOpenBoardSource();
   const toasts = useBoardToasts();
   const content = useBoardContent();
   const folderId = useBoardFolder();
@@ -59,7 +62,7 @@ export function SelectionBar({ hidden = false }: { hidden?: boolean }) {
   }}>
     {editable && <button className="rs-selection-edit" onClick={() => { editor.setCurrentTool("select"); editor.setEditingShape(shape.id); }}><Pencil size={15} />{shape.type === "note" ? "Edit note" : "Edit"}</button>}
     {summary?.artifactId && host.onOpenArtifact && <button className="rs-selection-edit" onClick={() => host.onOpenArtifact?.(summary.artifactId!, summary.page != null ? { page: summary.page } : undefined)}>Open</button>}
-    {shape?.type === "aladin-link" && /^https?:\/\//i.test(shape.props.url) && <a className="rs-selection-edit" href={shape.props.url} target="_blank" rel="noopener noreferrer">Open source</a>}
+    {shape?.type === "aladin-link" && boardSourceUrl(shape.props.url) && <button type="button" className="rs-selection-edit" onClick={() => openSource(shape.props.url)}>Open source</button>}
     {canTint && <>{TINTS.map((tint) => <button key={tint.id} type="button" className={"rs-tint-dot rs-tint--" + tint.id} aria-label={tint.id + " card"} aria-pressed={shape.type === "note" ? shape.props.color === tint.color : (shape.meta.boardTint ?? "neutral") === tint.id} onClick={() => perform("change card colour", () => {
       if (shape.type === "note") editor.updateShape({ id: shape.id, type: "note", props: { color: tint.color as TLDefaultColorStyle } });
       else editor.updateShape({ id: shape.id, type: shape.type, meta: { ...shape.meta, boardTint: tint.id } });
@@ -70,6 +73,10 @@ export function SelectionBar({ hidden = false }: { hidden?: boolean }) {
     <BoardButton label="More" icon={MoreHorizontal} aria-expanded={moreOpen} onClick={() => setMoreOpen(!moreOpen)} />
     <BoardButton label="Remove from board" icon={Trash2} onClick={remove} />
     {moreOpen && <div className="board-selection-menu rs-surface" role="menu">
+      {shape?.type === "aladin-link" && content?.unfurl && <button role="menuitem" onClick={() => {
+        setMoreOpen(false);
+        resolveLinkInto(editor, content, shape.id, shape.props.url);
+      }}>Refresh preview</button>}
       {summary && host.onAskAbout && <button role="menuitem" onClick={() => { host.onAskAbout?.({ artifactId: summary.artifactId ?? undefined, title: summary.title }); setMoreOpen(false); }}>Ask about this</button>}
       {shape?.type === "aladin-doc" && summary?.artifactId && content?.createWorksheet && host.onOpenArtifact && <button role="menuitem" onClick={() => {
         setMoreOpen(false);

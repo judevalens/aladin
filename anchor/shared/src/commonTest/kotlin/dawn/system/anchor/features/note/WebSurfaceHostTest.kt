@@ -174,6 +174,18 @@ class WebSurfaceHostTest {
     }
 
     @Test
+    fun `source links use the external browser bridge and reject unsafe schemes`() {
+        assertEquals(
+            HostMessage.OpenExternalUrl("https://youtube.com/watch?v=video&t=24"),
+            parseHostMessage("""{"type":"openExternalUrl","url":"https://youtube.com/watch?v=video&t=24"}"""),
+        )
+        for (url in listOf("javascript:alert(1)", "file:///etc/passwd", "data:text/html,test", "https://user:pass@example.com", "https://", "not a url")) {
+            assertEquals(null, parseHostMessage("""{"type":"openExternalUrl","url":"$url"}"""))
+        }
+        assertEquals(null, parseHostMessage("""{"type":"openExternalUrl"}"""))
+    }
+
+    @Test
     fun `haptic parses to its weight and drops unknown weights`() {
         assertEquals(
             HostMessage.Haptic(dawn.system.anchor.services.platform.Haptic.Select),

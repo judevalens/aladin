@@ -22,6 +22,8 @@ export type BoardHaptic = "light" | "medium" | "select";
  * - Spike: none — the buttons simply do not render.
  */
 export interface BoardHost {
+  /** Open a web source outside the board (native shells must handle new windows). */
+  onOpenExternalUrl?: (url: string) => void | Promise<void>;
   /** Open the artifact — at a page when the object carries a cite (the wormhole). */
   onOpenArtifact?: (artifactId: string, at?: { page?: number }) => void;
   onAskAbout?: (ctx: { artifactId?: string; title: string; text?: string }) => void;

@@ -55,6 +55,12 @@ describe("unfurl patches", () => {
     expect(patch.status).toBe("failed");
     expect(patch.domain).toBe("example.com");
   });
+
+  it("keeps provider fallbacks retryable instead of treating a site name as success", () => {
+    const patch = unfurlPatch({ ...RESULT, title: "Reddit discussion", previewStatus: "partial" });
+    expect(patch.status).toBe("failed");
+    expect(patch.title).toBe("Reddit discussion");
+  });
 });
 
 describe("linkDomain", () => {

@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { invoke } from "@tauri-apps/api/core";
 
 import { useAppComposition } from "@/app/composition/app-composition";
 import { useAppStore } from "@/app/state/store";
@@ -28,6 +29,9 @@ export function DesktopBoardPane({ boardId, title }: { boardId: string; title?: 
 
   const host = useMemo<BoardHost>(
     () => ({
+      onOpenExternalUrl: runtime.config.isDesktopApp
+        ? (url) => invoke<void>("open_external_url", { url })
+        : undefined,
       onOpenArtifact: (artifactId, at) =>
         at?.page != null
           ? useAppStore.getState().openArtifactAt(artifactId, at.page)
@@ -36,7 +40,7 @@ export function DesktopBoardPane({ boardId, title }: { boardId: string; title?: 
         useAppStore.getState().queueCopilotText(text ? `${objectTitle} — ${text}` : objectTitle),
       captures,
     }),
-    [captures],
+    [captures, runtime.config.isDesktopApp],
   );
 
   const sync = useMemo<BoardSyncConfig | null>(() => {

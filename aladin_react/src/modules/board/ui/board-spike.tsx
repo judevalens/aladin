@@ -137,11 +137,19 @@ function createSpikeApiClient(): ApiClient {
             ...a,
             folderId: "spike-folder",
             content: "",
-            metadata: {},
+            metadata: a.type === "file" ? { mimeType: "application/pdf" } : {},
             createdAt: nowIso(),
             updatedAt: nowIso(),
           })) as T,
         );
+      }
+
+      const fileMatch = url.pathname.match(/^\/api\/artifacts\/(a_opt|a_worksheet|a_greeks)$/);
+      if (fileMatch && method === "GET") {
+        return Promise.resolve({
+          id: fileMatch[1], type: "file", title: "Sample PDF", content: "",
+          metadata: { mimeType: "application/pdf" }, createdAt: nowIso(), updatedAt: nowIso(),
+        } as T);
       }
 
       const pagesMatch = url.pathname.match(/^\/api\/artifacts\/(a_opt|a_worksheet)\/document\/pages$/);
@@ -172,7 +180,13 @@ function createSpikeApiClient(): ApiClient {
 
       return Promise.reject(new ApiError(`spike client: no route for ${method} ${path}`, 404));
     },
-    fetchBlob() {
+    async fetchBlob(path, init) {
+      if (/^\/api\/artifacts\/(a_opt|a_worksheet|a_greeks)\/resource$/.test(path)) {
+        // Existing local reader fixture: real page pixels exercise the production renderer.
+        const response = await fetch("/__harness.pdf", { signal: init?.signal });
+        if (!response.ok) throw new ApiError("PDF fixture unavailable", response.status);
+        return response.blob();
+      }
       return Promise.reject(new ApiError("spike client: no blobs", 404));
     },
   };

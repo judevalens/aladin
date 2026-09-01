@@ -69,6 +69,7 @@ pub fn run() {
             crate::vendor_cache::handle(ctx, request, responder);
         })
         .invoke_handler(tauri::generate_handler![
+            commands::external::open_external_url,
             local_frontend::finish_local_frontend_bootstrap,
             artifact_cmd::db_list_artifacts,
             artifact_cmd::db_get_artifact,

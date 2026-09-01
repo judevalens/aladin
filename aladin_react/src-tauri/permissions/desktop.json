@@ -5,6 +5,7 @@
       "description": "Aladin workspace and terminal commands for the trusted desktop frontend.",
       "commands": {
         "allow": [
+          "open_external_url",
           "db_list_artifacts", "db_get_artifact", "db_get_artifacts", "db_upsert_artifact",
           "db_create_artifact", "db_rename_artifact", "db_delete_artifact",
           "db_update_artifact_properties", "db_query_artifacts_by_property",

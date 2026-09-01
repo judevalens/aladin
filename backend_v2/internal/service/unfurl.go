@@ -21,13 +21,14 @@ import (
 // Unfurl is the resolved preview of an external URL — what a board link object renders,
 // and what the MCP board summary hands an agent reading the board.
 type Unfurl struct {
-	URL         string `json:"url"`
-	Domain      string `json:"domain"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	SiteName    string `json:"siteName"`
-	ImageURL    string `json:"imageUrl"`
-	FaviconURL  string `json:"faviconUrl"`
+	URL           string `json:"url"`
+	Domain        string `json:"domain"`
+	Title         string `json:"title"`
+	Description   string `json:"description"`
+	SiteName      string `json:"siteName"`
+	ImageURL      string `json:"imageUrl"`
+	FaviconURL    string `json:"faviconUrl"`
+	PreviewStatus string `json:"previewStatus,omitempty"`
 }
 
 type UnfurlService interface {
@@ -122,6 +123,54 @@ func (u *unfurler) Unfurl(ctx context.Context, rawURL string) (Unfurl, error) {
 	if err != nil {
 		return Unfurl{}, err
 	}
+	// A provider request and its HTML fallback share one bounded budget.
+	ctx, cancel := context.WithTimeout(ctx, unfurlTimeout)
+	defer cancel()
+	provider := previewProviderFor(target)
+	if provider != nil {
+		if preview, err := u.providerPreview(ctx, target, provider); err == nil {
+			return preview, nil
+		}
+	}
+	preview, err := u.htmlPreview(ctx, target)
+	if provider != nil {
+		if err == nil && preview.URL != target.String() {
+			if resolved, parseErr := normalizeUnfurlURL(preview.URL, u.allowPrivate); parseErr == nil {
+				if p := previewProviderFor(resolved); p != nil && p.name == provider.name && p.lookupURL != provider.lookupURL {
+					if rich, fetchErr := u.providerPreview(ctx, resolved, p); fetchErr == nil {
+						return rich, nil
+					}
+				}
+			}
+		}
+		if err == nil && !genericProviderTitle(preview.Title, provider.name) {
+			// Keep the original watch position / comment link, not a redirect's login URL.
+			if redirected := previewProviderForURL(preview.URL); redirected != nil && redirected.name == provider.name {
+				preview.URL = target.String()
+				preview.SiteName = provider.name
+				return preview, nil
+			}
+		}
+		return providerFallback(target, provider), nil
+	}
+	// Reddit share links can redirect to a normal post. Resolve its metadata via
+	// the official endpoint, without probing alternate sites after a blocked request.
+	if err == nil && preview.URL != target.String() {
+		if resolved, parseErr := normalizeUnfurlURL(preview.URL, u.allowPrivate); parseErr == nil {
+			if p := previewProviderFor(resolved); p != nil {
+				if rich, fetchErr := u.providerPreview(ctx, resolved, p); fetchErr == nil {
+					return rich, nil
+				}
+				if genericProviderTitle(preview.Title, p.name) {
+					return providerFallback(resolved, p), nil
+				}
+			}
+		}
+	}
+	return preview, err
+}
+
+func (u *unfurler) htmlPreview(ctx context.Context, target *url.URL) (Unfurl, error) {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
 	if err != nil {

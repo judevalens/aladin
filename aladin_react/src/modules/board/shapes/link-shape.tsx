@@ -1,9 +1,11 @@
+import { useState } from "react";
 import { BaseBoxShapeUtil, HTMLContainer } from "tldraw";
 import type { TLIndicatorPath } from "tldraw";
 
 import { DOCK_PATHS, DockIcon } from "../ui/dock-icons";
 import { LINK_DEFAULTS, linkProps, type LinkShape } from "./shape-types";
 import { boardObjectClass, roundedIndicator, tappable } from "./shape-shared";
+import { boardSourceUrl, useOpenBoardSource } from "../domain/board-source";
 
 /**
  * An external link with its unfurled preview — the board-native replacement for tldraw's
@@ -27,26 +29,13 @@ export class LinkShapeUtil extends BaseBoxShapeUtil<LinkShape> {
   }
 
   override component(shape: LinkShape) {
+    const openSource = useOpenBoardSource();
     const { url, title, description, domain, image, favicon, status } = shape.props;
 
     return (
       <HTMLContainer>
         <article aria-label={"Link: " + (title || domain || url)} className={boardObjectClass(shape) + " rs-object board-link-object"}>
-          {image ? (
-            <div className="h-[124px] w-full shrink-0 overflow-hidden border-b border-line bg-field">
-              {/* External URL by design — previews aren't workspace assets. draggable=false
-                  keeps the browser's native image-drag from fighting the canvas. */}
-              <img
-                src={image}
-                alt=""
-                draggable={false}
-                className="h-full w-full object-cover"
-                onError={(e) => {
-                  (e.currentTarget.parentElement as HTMLElement).style.display = "none";
-                }}
-              />
-            </div>
-          ) : null}
+          {image ? <LinkThumbnail key={image} url={image} /> : null}
           <div className="rs-object-content">
             <div className="rs-object-meta">
               {favicon ? (
@@ -63,16 +52,15 @@ export class LinkShapeUtil extends BaseBoxShapeUtil<LinkShape> {
               <span>
                 {domain || "link"}
               </span>
-              <a
-                href={/^https?:\/\//i.test(url) ? url : undefined}
-                target="_blank"
-                rel="noreferrer noopener"
+              <button
+                type="button"
+                disabled={!boardSourceUrl(url)}
                 aria-label="Open link"
-                {...tappable(this.editor, () => {})}
+                {...tappable(this.editor, () => openSource(url))}
                 className="board-source-open"
               >
                 <DockIcon d={DOCK_PATHS.open} size={15} strokeWidth={2} />
-              </a>
+              </button>
             </div>
             <h2 className="line-clamp-2">
               {status === "pending" && !title ? (
@@ -91,4 +79,12 @@ export class LinkShapeUtil extends BaseBoxShapeUtil<LinkShape> {
       </HTMLContainer>
     );
   }
+}
+
+function LinkThumbnail({ url }: { url: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return null;
+  return <div className="h-[124px] w-full shrink-0 overflow-hidden border-b border-line bg-field">
+    <img src={url} alt="" draggable={false} className="h-full w-full object-cover" onError={() => setFailed(true)} />
+  </div>;
 }

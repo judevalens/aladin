@@ -204,6 +204,7 @@ function useShardPlanes(config: EmbedConfig) {
 
 // The companion's board host: everything rides the native bridge as JSON-string verbs.
 const EMBED_BOARD_HOST: BoardHost = {
+  onOpenExternalUrl: (url) => post({ type: "openExternalUrl", url }),
   // `page` = the wormhole's landing spot; older shells ignore unknown keys.
   onOpenArtifact: (id, at) => post({ type: "openArtifact", id, page: at?.page ?? null }),
   // "Ask about this" opens the shell's copilot pane with the object as context. The pane

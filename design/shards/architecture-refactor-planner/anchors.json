@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "intent": "Operate Aladin's architecture consolidation and targeted code-quality program without mixing broad rewrites into unstable boundaries.",
+  "anchors": [
+    {
+      "id": "program-overview",
+      "kind": "metric",
+      "route": "#/",
+      "source": "index.tsx",
+      "meaning": "Current program progress, active phase, and the distinction between architecture consolidation and targeted rewrites."
+    },
+    {
+      "id": "program-phases",
+      "kind": "collection",
+      "route": "#/",
+      "source": "index.tsx",
+      "meaning": "The ordered phases, their purpose, and the exit gate required before moving forward."
+    },
+    {
+      "id": "program-backlog",
+      "kind": "collection",
+      "route": "#/",
+      "source": "index.tsx",
+      "meaning": "Persistent status board for the first architecture consolidation and rewrite-planning work items."
+    },
+    {
+      "id": "program-rewrite-gate",
+      "kind": "control",
+      "route": "#/",
+      "source": "index.tsx",
+      "meaning": "The evidence gate a module must pass before it is approved for a rewrite."
+    }
+  ]
+}

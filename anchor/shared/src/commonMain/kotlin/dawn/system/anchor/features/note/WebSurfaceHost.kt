@@ -24,6 +24,7 @@ import dawn.system.anchor.services.platform.Haptic
 import dawn.system.anchor.services.platform.WebHostHandle
 import dawn.system.anchor.services.platform.WebHostSurface
 import dawn.system.anchor.services.platform.performHaptic
+import dawn.system.anchor.services.platform.openExternalUrl
 import dawn.system.anchor.services.platform.rememberWebHost
 import dawn.system.anchor.services.platform.documentsDirPath
 import dawn.system.anchor.services.platform.fileExists
@@ -158,6 +159,7 @@ fun rememberWebSurfaceHost(
         onMessage = { raw ->
             when (val message = parseHostMessage(raw)) {
                 is HostMessage.OpenArtifact -> onOpenArtifact(message.id, message.page)
+                is HostMessage.OpenExternalUrl -> openExternalUrl(message.url)
                 is HostMessage.AskAbout -> onAskAbout(message)
                 is HostMessage.Haptic -> onHaptic(message.kind)
                 is HostMessage.WebError -> println("anchor embed error: ${message.message}")
@@ -259,6 +261,9 @@ sealed interface HostMessage {
      */
     data class OpenArtifact(val id: String, val page: Int? = null) : HostMessage
 
+    /** A board source opens in the system browser, not inside the editor's webview. */
+    data class OpenExternalUrl(val url: String) : HostMessage
+
     /**
      * The board's selection bar: "Ask about this" — open the copilot with the object as
      * context. [artifactId] is null for objects that are not windows onto an artifact
@@ -284,6 +289,12 @@ internal fun parseHostMessage(raw: String): HostMessage? = runCatching {
     val obj = hostMessageJson.parseToJsonElement(raw).jsonObject
     when (obj["type"]?.jsonPrimitive?.content) {
         "ready" -> HostMessage.Ready
+        "openExternalUrl" -> obj["url"]?.jsonPrimitive?.content
+            ?.takeIf { url ->
+                url.none { it <= ' ' || it == '\\' || it == '\u007f' } &&
+                    Regex("^https?://[^/@?#]+(?:[/?#].*)?$", RegexOption.IGNORE_CASE).matches(url)
+            }
+            ?.let { HostMessage.OpenExternalUrl(it) }
         "openArtifact" -> obj["id"]?.jsonPrimitive?.content
             ?.takeIf { it.isNotBlank() }
             ?.let { id ->

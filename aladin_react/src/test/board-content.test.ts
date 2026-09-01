@@ -3,9 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createBoardContentSource,
   flattenBlocks,
+  isPdfArtifact,
   sectionForPage,
 } from "@/modules/board/domain/board-content";
 import type { ApiClient } from "@/shared/api/client";
+import type { UserArtifact } from "@/shared/api/models";
 
 describe("flattenBlocks", () => {
   it("collects text across nested content and children", () => {
@@ -59,6 +61,28 @@ function clientOf(handler: (path: string) => unknown): ApiClient {
 }
 
 describe("createBoardContentSource", () => {
+  it("resolves PDFs without requesting extracted text or waiting for ingestion", async () => {
+    const client = clientOf(() => ({ type: "file", title: "Paper", metadata: { mimeType: "application/pdf" } }));
+    const source = createBoardContentSource(client);
+    const a = vi.fn();
+    const b = vi.fn();
+    source.subscribe("pdf/1", 1, a, "file");
+    source.subscribe("pdf/1", 2, b, "file");
+    await vi.waitFor(() => expect(b).toHaveBeenCalled());
+    expect(source.get("pdf/1", 1)).toMatchObject({ state: "ready", format: "pdf", sourceLine: "PDF", excerpt: "" });
+    expect(a).toHaveBeenCalled();
+    expect(client.fetch).toHaveBeenCalledExactlyOnceWith("/api/artifacts/pdf%2F1");
+  });
+
+  it("keeps non-PDF files as files", async () => {
+    const client = clientOf(() => ({ type: "file", title: "Data", summary: "Price history", metadata: { mimeType: "text/csv" } }));
+    const source = createBoardContentSource(client);
+    const changed = vi.fn();
+    source.subscribe("csv-1", 1, changed, "file");
+    await vi.waitFor(() => expect(changed).toHaveBeenCalled());
+    expect(source.get("csv-1", 1)).toMatchObject({ state: "ready", format: "file", sourceLine: "File", excerpt: "Price history" });
+  });
+
   it("resolves a document page through meta + pages, and caches within the TTL", async () => {
     const calls: string[] = [];
     const client = clientOf((path) => {
@@ -112,7 +136,7 @@ describe("createBoardContentSource", () => {
 
   it("lists only window-insertable folder artifacts", async () => {
     const client = clientOf(() => [
-      { id: "f1", type: "file", title: "Book", content: "", metadata: {}, createdAt: "", updatedAt: "" },
+      { id: "f1", type: "file", title: "Book", content: "", metadata: { mimeType: "application/pdf" }, createdAt: "", updatedAt: "" },
       { id: "p1", type: "page", title: "Note", content: "", metadata: {}, createdAt: "", updatedAt: "" },
       { id: "b1", type: "board", title: "Board", content: "", metadata: {}, createdAt: "", updatedAt: "" },
       { id: "l1", type: "link", title: "Link", content: "", metadata: {}, createdAt: "", updatedAt: "" },
@@ -121,6 +145,7 @@ describe("createBoardContentSource", () => {
     const rows = await source.listFolderArtifacts("folder-1");
     expect(rows.map((r) => r.id)).toEqual(["f1", "p1", "l1"]);
     expect(rows[1]).toMatchObject({ kind: "note", meta: "note" });
+    expect(rows[0]).toMatchObject({ kind: "file", meta: "PDF" });
   });
 
   it("resolves an instrument from real artifact metadata, not the notes/PDF endpoints", async () => {
@@ -132,5 +157,18 @@ describe("createBoardContentSource", () => {
     expect(source.get("app-1", 1)).toMatchObject({ state: "ready", excerpt: "A workspace instrument", sourceLine: "Aladin instrument" });
     expect(client.fetch).toHaveBeenCalledWith("/api/artifacts/app-1");
     expect(client.fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("PDF identification", () => {
+  const artifact = { type: "file", title: "My paper", metadata: {} } as UserArtifact;
+  it("accepts MIME metadata and original filename fallbacks", () => {
+    expect(isPdfArtifact({ ...artifact, metadata: { mimeType: "Application/PDF; charset=binary" } })).toBe(true);
+    expect(isPdfArtifact({ ...artifact, metadata: { originalFilename: "paper.PDF" } })).toBe(true);
+    expect(isPdfArtifact({ ...artifact, title: "paper.pdf" })).toBe(true);
+  });
+  it("does not mistake a note or another MIME type for a PDF", () => {
+    expect(isPdfArtifact({ ...artifact, type: "note", title: "paper.pdf" })).toBe(false);
+    expect(isPdfArtifact({ ...artifact, title: "paper.pdf", metadata: { mimeType: "image/png" } })).toBe(false);
   });
 });

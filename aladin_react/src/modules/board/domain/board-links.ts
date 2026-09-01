@@ -15,6 +15,7 @@ export interface UnfurlResult {
   siteName: string;
   imageUrl: string;
   faviconUrl: string;
+  previewStatus?: "partial";
 }
 
 /**
@@ -52,7 +53,7 @@ export const LINK_HEIGHT_IMAGE = 252;
 /** The prop patch for a resolved unfurl. Height only ever grows the pending rect. */
 export function unfurlPatch(result: UnfurlResult): Partial<LinkProps> {
   return {
-    status: "ready",
+    status: result.previewStatus === "partial" ? "failed" : "ready",
     url: result.url,
     title: result.title,
     description: result.description,

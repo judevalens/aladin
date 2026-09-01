@@ -4,24 +4,26 @@ import { ApiError, type ApiClient } from "@/shared/api/client";
 import type { SearchResponse, UserArtifact } from "@/shared/api/models";
 
 import type { UnfurlResult } from "./board-links";
+import { createBoardPdfCache, type BoardPdfLease } from "./board-pdf";
 
 /**
  * The read-live content plane for doc windows and the picker.
  *
- * A doc window stores only (artifactId, page) — its body text resolves through this
+ * A doc window stores only (artifactId, page) — its preview resolves through this
  * context at render time. BoardPane mounts the provider around <Tldraw>, so shape
  * components (which render inside the editor's tree) can reach it.
  *
- * Resolution: try the ingested-document plane first (`/document` meta once per artifact,
+ * Files resolve their type from artifact metadata and PDFs render the original resource.
+ * Other documents try the ingested-document plane (`/document` meta once per artifact,
  * then `/document/pages` per page); a 404 there means nothing was ingested — the normal
- * state for a note — so fall back to the page-blocks projection. Everything is cached
+ * state for a note — so fall back to the page-blocks projection). Everything is cached
  * with in-flight dedupe and a short TTL ("read-live": fresh enough, never a fetch storm).
  */
 
 export type DocPageContent =
   | { state: "loading" }
   | { state: "missing" }
-  | { state: "ready"; sourceLine: string; excerpt: string; pageCount: number };
+  | { state: "ready"; sourceLine: string; excerpt: string; pageCount: number; format?: "pdf" | "file" };
 
 /** One row the picker can insert. */
 export interface PickerArtifact {
@@ -36,6 +38,8 @@ export interface BoardContentSource {
   /** Subscribe to (artifactId, page); useSyncExternalStore-compatible. */
   subscribe(artifactId: string, page: number, onChange: () => void, kind?: string): () => void;
   get(artifactId: string, page: number): DocPageContent;
+  /** Authenticated, shared PDF resource. Release when its preview unmounts. */
+  acquirePdf?(artifactId: string): BoardPdfLease;
   /** The board's folder siblings, insertable as live windows. */
   listFolderArtifacts(folderId: string | null): Promise<PickerArtifact[]>;
   /** The picker's "then everywhere": the workspace search, narrowed to insertable kinds. */
@@ -126,6 +130,8 @@ const ARTIFACT_TYPE_TO_KIND: Record<string, string> = {
 export function createBoardContentSource(client: ApiClient): BoardContentSource {
   const entries = new Map<string, Entry>();
   const metas = new Map<string, Promise<DocumentMeta | null>>();
+  const files = new Map<string, Promise<UserArtifact>>();
+  const acquirePdf = createBoardPdfCache(client);
 
   function entry(key: string): Entry {
     let found = entries.get(key);
@@ -164,6 +170,23 @@ export function createBoardContentSource(client: ApiClient): BoardContentSource 
   }
 
   async function resolve(artifactId: string, page: number, kind?: string): Promise<DocPageContent> {
+    if (kind === "file") {
+      let file = files.get(artifactId);
+      if (!file) {
+        file = client.fetch<UserArtifact>(`/api/artifacts/${encodeURIComponent(artifactId)}`)
+          .catch((error: unknown) => { files.delete(artifactId); throw error; });
+        files.set(artifactId, file);
+      }
+      const artifact = await file;
+      const pdf = isPdfArtifact(artifact);
+      // Thumbnails use the original resource, even before text ingestion finishes.
+      // The renderer supplies the authoritative page count.
+      return {
+        state: "ready", pageCount: 1, format: pdf ? "pdf" : "file",
+        sourceLine: pdf ? "PDF" : "File",
+        excerpt: pdf ? "" : (artifact.summary || "Open the source to explore this file.").slice(0, EXCERPT_LIMIT),
+      };
+    }
     if (kind === "app" || kind === "link" || kind === "voice") {
       const artifact = await client.fetch<UserArtifact>(`/api/artifacts/${encodeURIComponent(artifactId)}`);
       return {
@@ -218,6 +241,7 @@ export function createBoardContentSource(client: ApiClient): BoardContentSource 
   }
 
   return {
+    acquirePdf,
     subscribe(artifactId, page, onChange, kind) {
       const key = `${artifactId}:${page}`;
       const e = entry(key);
@@ -274,8 +298,15 @@ export function createBoardContentSource(client: ApiClient): BoardContentSource 
           id: artifact.id,
           kind: ARTIFACT_TYPE_TO_KIND[artifact.type],
           title: artifact.title,
-          meta: artifact.type === "page" ? "note" : artifact.type,
+          meta: isPdfArtifact(artifact) ? "PDF" : artifact.type === "page" ? "note" : artifact.type,
         }));
     },
   };
+}
+
+export function isPdfArtifact(artifact: UserArtifact): boolean {
+  if (artifact.type !== "file") return false;
+  const mime = String(artifact.metadata?.mimeType ?? "").split(";")[0].trim().toLowerCase();
+  if (mime && mime !== "application/octet-stream") return mime === "application/pdf";
+  return /\.pdf$/i.test(String(artifact.metadata?.originalFilename ?? artifact.title));
 }
