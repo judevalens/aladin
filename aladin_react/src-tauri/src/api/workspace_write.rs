@@ -121,11 +121,22 @@ pub trait WorkspaceWriteApi: Send + Sync {
     /// GET /api/artifacts/property-facets — the property keys/values in use (for a filter UI).
     fn artifact_property_facets(&self, config: &SyncConfig) -> ApiResult<serde_json::Value>;
     /// GET /api/artifacts/{id}/entities — the entities tagged on an artifact.
-    fn list_artifact_entities(&self, config: &SyncConfig, id: &str) -> ApiResult<serde_json::Value>;
+    fn list_artifact_entities(&self, config: &SyncConfig, id: &str)
+        -> ApiResult<serde_json::Value>;
     /// POST /api/artifacts/{id}/entities — tag an entity onto an artifact.
-    fn attach_artifact_entity(&self, config: &SyncConfig, id: &str, entity_id: &str) -> ApiResult<()>;
+    fn attach_artifact_entity(
+        &self,
+        config: &SyncConfig,
+        id: &str,
+        entity_id: &str,
+    ) -> ApiResult<()>;
     /// DELETE /api/artifacts/{id}/entities/{entityId} — untag it.
-    fn detach_artifact_entity(&self, config: &SyncConfig, id: &str, entity_id: &str) -> ApiResult<()>;
+    fn detach_artifact_entity(
+        &self,
+        config: &SyncConfig,
+        id: &str,
+        entity_id: &str,
+    ) -> ApiResult<()>;
     /// PUT /api/artifacts/{id}/entity-mentions — replace the @entity mention set.
     fn sync_artifact_mentions(
         &self,
@@ -249,7 +260,10 @@ impl WorkspaceWriteApi for HttpWorkspaceWriteApi {
     fn artifact_property_facets(&self, config: &SyncConfig) -> ApiResult<serde_json::Value> {
         let client = reqwest::blocking::Client::new();
         client
-            .get(format!("{}/api/artifacts/property-facets", Self::base(config)))
+            .get(format!(
+                "{}/api/artifacts/property-facets",
+                Self::base(config)
+            ))
             .bearer_auth(Self::token(config))
             .send()
             .map_err(ApiError::from_reqwest)?
@@ -259,10 +273,18 @@ impl WorkspaceWriteApi for HttpWorkspaceWriteApi {
             .map_err(ApiError::from_reqwest)
     }
 
-    fn list_artifact_entities(&self, config: &SyncConfig, id: &str) -> ApiResult<serde_json::Value> {
+    fn list_artifact_entities(
+        &self,
+        config: &SyncConfig,
+        id: &str,
+    ) -> ApiResult<serde_json::Value> {
         let client = reqwest::blocking::Client::new();
         client
-            .get(format!("{}/api/artifacts/{}/entities", Self::base(config), id))
+            .get(format!(
+                "{}/api/artifacts/{}/entities",
+                Self::base(config),
+                id
+            ))
             .bearer_auth(Self::token(config))
             .send()
             .map_err(ApiError::from_reqwest)?
@@ -272,10 +294,19 @@ impl WorkspaceWriteApi for HttpWorkspaceWriteApi {
             .map_err(ApiError::from_reqwest)
     }
 
-    fn attach_artifact_entity(&self, config: &SyncConfig, id: &str, entity_id: &str) -> ApiResult<()> {
+    fn attach_artifact_entity(
+        &self,
+        config: &SyncConfig,
+        id: &str,
+        entity_id: &str,
+    ) -> ApiResult<()> {
         let client = reqwest::blocking::Client::new();
         client
-            .post(format!("{}/api/artifacts/{}/entities", Self::base(config), id))
+            .post(format!(
+                "{}/api/artifacts/{}/entities",
+                Self::base(config),
+                id
+            ))
             .bearer_auth(Self::token(config))
             .json(&json!({ "entityId": entity_id }))
             .send()
@@ -285,7 +316,12 @@ impl WorkspaceWriteApi for HttpWorkspaceWriteApi {
         Ok(())
     }
 
-    fn detach_artifact_entity(&self, config: &SyncConfig, id: &str, entity_id: &str) -> ApiResult<()> {
+    fn detach_artifact_entity(
+        &self,
+        config: &SyncConfig,
+        id: &str,
+        entity_id: &str,
+    ) -> ApiResult<()> {
         let client = reqwest::blocking::Client::new();
         client
             .delete(format!(

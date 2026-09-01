@@ -134,7 +134,6 @@ pub fn get_reading_position(conn: &Connection, id: &str) -> DbResult<Option<Read
 mod tests {
     use super::*;
     use crate::db::Db;
-    use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn test_db(name: &str) -> Db {
@@ -147,7 +146,7 @@ mod tests {
             std::process::id(),
             nanos
         ));
-        Db::open(PathBuf::from(path)).unwrap()
+        Db::open(path).unwrap()
     }
 
     fn data(page: i64, updated_at: i64) -> serde_json::Value {

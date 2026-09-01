@@ -99,7 +99,6 @@ mod tests {
     use super::*;
     use crate::api::sync::{Frame, FrameEntity, SyncPullResult};
     use crate::api::{ApiError, ApiResult};
-    use std::path::PathBuf;
     use std::sync::Mutex;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -113,7 +112,7 @@ mod tests {
             std::process::id(),
             nanos
         ));
-        Db::open(PathBuf::from(path)).unwrap()
+        Db::open(path).unwrap()
     }
 
     fn config() -> SyncConfig {
@@ -278,7 +277,11 @@ mod tests {
                 "f2 removed — its position id must not join the node retain set"
             );
             let pos = crate::db::repo::reading_position::get_reading_position(c, "f2")?.unwrap();
-            assert_eq!((pos.page, pos.updated_at), (87, 1000), "the position itself applied");
+            assert_eq!(
+                (pos.page, pos.updated_at),
+                (87, 1000),
+                "the position itself applied"
+            );
             Ok(())
         })
         .unwrap();

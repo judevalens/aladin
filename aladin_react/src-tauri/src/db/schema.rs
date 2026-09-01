@@ -77,39 +77,6 @@ pub fn migrate(conn: &mut Connection) -> DbResult<()> {
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use rusqlite::Connection;
-
-    // The atomic migrate applies the whole chain (fresh DB → CURRENT_VERSION with the latest
-    // table present) and is a safe no-op on re-run.
-    #[test]
-    fn migrate_applies_full_chain_and_is_idempotent() {
-        let mut conn = Connection::open_in_memory().unwrap();
-        migrate(&mut conn).unwrap();
-
-        let v: i32 = conn
-            .query_row("PRAGMA user_version", [], |r| r.get(0))
-            .unwrap();
-        assert_eq!(v, CURRENT_VERSION, "version stamped to CURRENT_VERSION");
-
-        // A table created by the newest migration (V14) exists — proves the chain ran, not just
-        // the version stamp.
-        let n: i32 = conn
-            .query_row(
-                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='watchlists'",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert_eq!(n, 1, "latest migration's table present");
-
-        // Re-run: early-returns, no error, no double-apply.
-        migrate(&mut conn).unwrap();
-    }
-}
-
 // Research bench (RESEARCH_SURFACE_PRD §5): a research folder is a third tree kind on
 // the SAME nodes table, so it needs no table of its own — only somewhere to keep the
 // extension's light fields (run state, exec mode, source kind) that ride its frame.
@@ -415,3 +382,36 @@ CREATE TABLE IF NOT EXISTS nodes (
 CREATE INDEX IF NOT EXISTS nodes_parent ON nodes(parent_id);
 CREATE INDEX IF NOT EXISTS nodes_kind ON nodes(kind);
 ";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    // The atomic migrate applies the whole chain (fresh DB → CURRENT_VERSION with the latest
+    // table present) and is a safe no-op on re-run.
+    #[test]
+    fn migrate_applies_full_chain_and_is_idempotent() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrate(&mut conn).unwrap();
+
+        let v: i32 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(v, CURRENT_VERSION, "version stamped to CURRENT_VERSION");
+
+        // A table created by the newest migration (V14) exists — proves the chain ran, not just
+        // the version stamp.
+        let n: i32 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='watchlists'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 1, "latest migration's table present");
+
+        // Re-run: early-returns, no error, no double-apply.
+        migrate(&mut conn).unwrap();
+    }
+}

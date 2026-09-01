@@ -58,7 +58,9 @@ impl Db {
         match Self::open(path.clone()) {
             Ok(db) => Ok(db),
             Err(err) => {
-                eprintln!("[db] local cache unusable ({err}); recreating it (will re-sync from server)");
+                eprintln!(
+                    "[db] local cache unusable ({err}); recreating it (will re-sync from server)"
+                );
                 // Remove the db and its WAL/SHM sidecars so a truly corrupt file can't survive.
                 let _ = std::fs::remove_file(&path);
                 let _ = std::fs::remove_file(path.with_extension("sqlite-wal"));

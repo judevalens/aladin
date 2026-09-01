@@ -328,7 +328,6 @@ fn map_node_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<NodeRow> {
 mod tests {
     use super::*;
     use crate::db::Db;
-    use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn test_db(name: &str) -> Db {
@@ -341,7 +340,7 @@ mod tests {
             std::process::id(),
             nanos
         ));
-        Db::open(PathBuf::from(path)).unwrap()
+        Db::open(path).unwrap()
     }
 
     fn folder_data(id: &str, title: &str) -> serde_json::Value {
