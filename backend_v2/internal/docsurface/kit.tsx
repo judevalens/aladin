@@ -11,7 +11,13 @@
 // content-addressed at /vendor/<sha>; agents `import { … } from "@aladin/kit"`.
 
 import { useEffect, useState, useSyncExternalStore } from "react";
-export { useResource, queryResource, resourceRequestId } from "./resource-client.generated.js";
+export {
+  useResource,
+  queryResource,
+  resourceRequestId,
+  executeGraphQL,
+  invokeLambda,
+} from "./resource-client.generated.js";
 import { allocateBridgeRequestID } from "./resource-client.generated.js";
 import type {
   ReactNode,

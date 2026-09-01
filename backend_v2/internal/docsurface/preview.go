@@ -68,6 +68,7 @@ type PreviewOptions struct {
 	Builder   service.ShardBuildService
 	Resources service.ShardResourceService
 	Releases  service.ShardReleaseService
+	GraphQL   service.ShardGraphQLService
 }
 
 // PreviewSessions is the service.PreviewService impl. One manager owns a shared
@@ -78,6 +79,7 @@ type PreviewSessions struct {
 	builder   service.ShardBuildService // optional; see PreviewOptions.Builder
 	resources service.ShardResourceService
 	releases  service.ShardReleaseService
+	graphql   service.ShardGraphQLService
 
 	idleTTL      time.Duration
 	maxSessions  int
@@ -145,6 +147,7 @@ func NewPreviewSessions(store service.DocSurfaceStore, runtime service.Workspace
 		builder:      opts.Builder,
 		resources:    opts.Resources,
 		releases:     opts.Releases,
+		graphql:      opts.GraphQL,
 		idleTTL:      opts.IdleTTL,
 		maxSessions:  opts.MaxSessions,
 		tickInterval: tick,

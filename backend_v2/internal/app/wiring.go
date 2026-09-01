@@ -600,7 +600,7 @@ func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig c
 		catalogSvc = coreservice.NewShardCatalogService(storage, resourceSvc)
 	}
 	shardBuild := coreservice.NewShardBuildService(docRuntime, repo.NewShardBuildPostgres(pool), releaseSvc)
-	docPreview := docsurface.NewPreviewSessions(docStore, docRuntime, docsurface.PreviewOptions{Builder: shardBuild, Resources: resourceSvc, Releases: releaseSvc})
+	docPreview := docsurface.NewPreviewSessions(docStore, docRuntime, docsurface.PreviewOptions{Builder: shardBuild, Resources: resourceSvc, Releases: releaseSvc, GraphQL: graphQLSvc})
 	return wiring{
 		auth:                coreservice.NewAuthService(authRepo, coreservice.NewPasswordHasher()),
 		system:              coreservice.NewSystemService(systemRepo),

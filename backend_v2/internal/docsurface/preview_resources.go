@@ -148,6 +148,42 @@ func (m *PreviewSessions) configureResourcePreview(caller context.Context, sessi
 					delete(subscriptions, params.SubscriptionID)
 				}
 				reply(request.ID, true, nil)
+			case "graphql.execute":
+				if m.graphql == nil || !m.graphql.Enabled() {
+					reply(request.ID, nil, service.ResourceFailure("unsupported-capability", "Shard GraphQL runtime is unavailable"))
+					continue
+				}
+				var params service.ShardGraphQLRequest
+				if err := json.Unmarshal(request.Params, &params); err != nil {
+					reply(request.ID, nil, service.ResourceFailure("bad-request", "Invalid GraphQL operation"))
+					continue
+				}
+				op, stop := context.WithTimeout(ctx, 35*time.Second)
+				raw, err := m.graphql.Execute(op, target, params)
+				stop()
+				var value any
+				if err == nil {
+					value, err = shardv2.DecodeJSON(raw)
+				}
+				reply(request.ID, value, err)
+			case "lambda.invoke":
+				if m.graphql == nil || !m.graphql.Enabled() {
+					reply(request.ID, nil, service.ResourceFailure("unsupported-capability", "Shard lambda runtime is unavailable"))
+					continue
+				}
+				var params service.ShardLambdaRequest
+				if err := json.Unmarshal(request.Params, &params); err != nil {
+					reply(request.ID, nil, service.ResourceFailure("bad-request", "Invalid lambda invocation"))
+					continue
+				}
+				op, stop := context.WithTimeout(ctx, 35*time.Second)
+				raw, err := m.graphql.InvokeLambda(op, target, params)
+				stop()
+				var value any
+				if err == nil {
+					value, err = shardv2.DecodeJSON(raw)
+				}
+				reply(request.ID, value, err)
 			default:
 				op, stop := context.WithTimeout(ctx, 10*time.Second)
 				value, err := service.DispatchResource(op, m.resources, target, request)

@@ -26,6 +26,7 @@ func TestBuildKitCompilesWithVizHelpers(t *testing.T) {
 		"Quiz", "Flashcards", "Timer", "Checklist", "Stepper", // L4d interactive/stateful
 		"useTheme", "kv", "useShardState", "useKV", // platform + local state
 		"bridge", "useNode", "useNodes", // L5 bridge
+		"useResource", "queryResource", "resourceRequestId", "executeGraphQL", "invokeLambda", // Shard v2 data/runtime client
 	} {
 		if !strings.Contains(js, sym) {
 			t.Fatalf("kit bundle missing exported symbol %q", sym)
