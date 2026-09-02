@@ -74,7 +74,7 @@ func NewWithDependencies(addr string, deps app.Dependencies) *Server {
 	s.registerInstrumentRoutes(mux)
 	s.registerSearchRoutes(mux)
 	s.registerMarketRoutes(mux)
-	s.registerWatchlistRoutes(mux)
+	newWatchlistRoutes(deps.Watchlist()).register(mux)
 	s.registerReadingPositionRoutes(mux)
 	s.registerAlertRoutes(mux)
 	s.registerCopilotRoutes(mux)

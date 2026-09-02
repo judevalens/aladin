@@ -80,6 +80,9 @@ func TestWatchlistsRoundTrip(t *testing.T) {
 	if len(lists) != 2 {
 		t.Fatalf("expected 2 lists, got %d", len(lists))
 	}
+	if lists[0].ID != tech.ID || lists[1].ID != shorts.ID {
+		t.Fatalf("list order = [%s, %s], want creation order [%s, %s]", lists[0].ID, lists[1].ID, tech.ID, shorts.ID)
+	}
 	counts := map[string]int{}
 	for _, l := range lists {
 		counts[l.Name] = l.ItemCount
@@ -111,6 +114,18 @@ func TestWatchlistsRoundTrip(t *testing.T) {
 	}
 	if got, _ := svc.ListItems(ctx, userID, tech.ID); len(got) != 2 {
 		t.Fatalf("cross-tenant add leaked into the list: now %d items", len(got))
+	}
+	if got, err := svc.ListItems(ctx, otherUser, tech.ID); err != nil || len(got) != 0 {
+		t.Fatalf("cross-tenant list = (%d items, %v), want empty", len(got), err)
+	}
+	if err := svc.RemoveItem(ctx, otherUser, tech.ID, instA); err != nil {
+		t.Fatalf("cross-tenant remove errored (should be a silent no-op): %v", err)
+	}
+	if got, _ := svc.ListItems(ctx, userID, tech.ID); len(got) != 2 {
+		t.Fatalf("cross-tenant remove changed the list: now %d items", len(got))
+	}
+	if err := svc.DeleteWatchlist(ctx, otherUser, tech.ID); err != coreservice.ErrWatchlistNotFound {
+		t.Fatalf("cross-tenant delete = %v, want ErrWatchlistNotFound", err)
 	}
 
 	// Delete cascades items.

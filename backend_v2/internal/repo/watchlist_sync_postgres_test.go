@@ -77,8 +77,35 @@ func TestWatchlistSyncFrames(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE user_id=$1::uuid AND type='data_event'`, userID).Scan(&frameCount); err != nil {
 		t.Fatalf("count frames: %v", err)
 	}
-	if frameCount < 2 {
-		t.Fatalf("want >=2 data_event frames after create+add, got %d", frameCount)
+	if frameCount != 2 {
+		t.Fatalf("want exactly 2 data_event frames after create+add, got %d", frameCount)
+	}
+
+	// Idempotent writes do not advance the sync sequence or emit duplicate frames.
+	if err := r.AddItem(ctx, userID, list.ID, instA); err != nil {
+		t.Fatalf("duplicate add: %v", err)
+	}
+	if err := r.RemoveItem(ctx, userID, list.ID, uuid.NewString()); err != nil {
+		t.Fatalf("remove absent item: %v", err)
+	}
+	var afterNoops int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE user_id=$1::uuid AND type='data_event'`, userID).Scan(&afterNoops); err != nil {
+		t.Fatalf("count frames after no-ops: %v", err)
+	}
+	if afterNoops != frameCount {
+		t.Fatalf("idempotent no-ops emitted frames: before=%d after=%d", frameCount, afterNoops)
+	}
+
+	// A failed membership write rolls back without changing data or emitting an outbox frame.
+	if err := r.AddItem(ctx, userID, list.ID, uuid.NewString()); err == nil {
+		t.Fatal("add with missing instrument succeeded, want foreign-key failure")
+	}
+	var afterFailure int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE user_id=$1::uuid AND type='data_event'`, userID).Scan(&afterFailure); err != nil {
+		t.Fatalf("count frames after failed add: %v", err)
+	}
+	if afterFailure != frameCount {
+		t.Fatalf("failed add emitted a frame: before=%d after=%d", frameCount, afterFailure)
 	}
 
 	// Snapshot reflects the live list with its item.

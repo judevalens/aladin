@@ -2,11 +2,15 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"sort"
 	"strings"
 	"testing"
 
 	"aladin/backend_v2/internal/service"
+
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // --- fakes -----------------------------------------------------------------
@@ -50,18 +54,25 @@ func (f *fakeEntityContextService) RejectMerge(context.Context, string) error { 
 type fakeWatchlistService struct {
 	items       []service.WatchlistItem
 	lists       []service.Watchlist
+	listUser    string
+	listID      string
+	listsUser   string
+	createUser  string
 	addUser     string
 	addListID   string
 	addID       string
+	resolveUser string
 	resolved    string // the name passed to ResolveOrCreateByName
 	createdWith string
 	err         error
 }
 
-func (f *fakeWatchlistService) ListWatchlists(context.Context, string) ([]service.Watchlist, error) {
+func (f *fakeWatchlistService) ListWatchlists(_ context.Context, userID string) ([]service.Watchlist, error) {
+	f.listsUser = userID
 	return f.lists, f.err
 }
-func (f *fakeWatchlistService) CreateWatchlist(_ context.Context, _, name string) (service.Watchlist, error) {
+func (f *fakeWatchlistService) CreateWatchlist(_ context.Context, userID, name string) (service.Watchlist, error) {
+	f.createUser = userID
 	f.createdWith = name
 	return service.Watchlist{ID: "new-list", Name: name, Kind: "manual"}, f.err
 }
@@ -69,7 +80,8 @@ func (f *fakeWatchlistService) RenameWatchlist(context.Context, string, string, 
 	return nil
 }
 func (f *fakeWatchlistService) DeleteWatchlist(context.Context, string, string) error { return nil }
-func (f *fakeWatchlistService) ListItems(context.Context, string, string) ([]service.WatchlistItem, error) {
+func (f *fakeWatchlistService) ListItems(_ context.Context, userID, listID string) ([]service.WatchlistItem, error) {
+	f.listUser, f.listID = userID, listID
 	return f.items, f.err
 }
 func (f *fakeWatchlistService) AddItem(_ context.Context, userID, listID, instrumentID string) error {
@@ -77,7 +89,8 @@ func (f *fakeWatchlistService) AddItem(_ context.Context, userID, listID, instru
 	return f.err
 }
 func (f *fakeWatchlistService) RemoveItem(context.Context, string, string, string) error { return nil }
-func (f *fakeWatchlistService) ResolveOrCreateByName(_ context.Context, _, name string) (string, error) {
+func (f *fakeWatchlistService) ResolveOrCreateByName(_ context.Context, userID, name string) (string, error) {
+	f.resolveUser = userID
 	f.resolved = name
 	if name == "" {
 		return "default-list", f.err
@@ -321,6 +334,175 @@ func TestGetBarsUppercasesAndDefaultsLimit(t *testing.T) {
 	}
 }
 
+func TestGetWatchlistScopesDefaultAndNamedListsToPrincipal(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name       string
+		input      getWatchlistInput
+		wantListID string
+		wantName   string
+	}{
+		{name: "default", input: getWatchlistInput{}, wantListID: ""},
+		{name: "named", input: getWatchlistInput{List: "Semis"}, wantListID: "resolved-Semis", wantName: "Semis"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			watchlist := &fakeWatchlistService{items: []service.WatchlistItem{{InstrumentID: "inst-1", Symbol: "NVDA"}}}
+			tools := workspaceToolServer{watchlist: watchlist}
+			_, out, err := tools.getWatchlist(contextWithScopes(), nil, tt.input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(out.Items) != 1 || watchlist.listUser != "user-1" || watchlist.listID != tt.wantListID {
+				t.Fatalf("out=%#v list=(%q,%q), want user-1/%q", out, watchlist.listUser, watchlist.listID, tt.wantListID)
+			}
+			if watchlist.resolved != tt.wantName || (tt.wantName != "" && watchlist.resolveUser != "user-1") {
+				t.Fatalf("resolve=(%q,%q), want user-1/%q", watchlist.resolveUser, watchlist.resolved, tt.wantName)
+			}
+		})
+	}
+}
+
+func TestListWatchlistsScopesToPrincipal(t *testing.T) {
+	t.Parallel()
+	watchlist := &fakeWatchlistService{lists: []service.Watchlist{{ID: "l1", Name: "Tech", ItemCount: 3}}}
+	tools := workspaceToolServer{watchlist: watchlist}
+	_, out, err := tools.listWatchlists(contextWithScopes(), nil, emptyInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if watchlist.listsUser != "user-1" || len(out.Watchlists) != 1 || out.Watchlists[0].ItemCount != 3 {
+		t.Fatalf("user=%q output=%#v", watchlist.listsUser, out)
+	}
+}
+
+func TestWatchlistWorkspaceToolsRequirePrincipal(t *testing.T) {
+	t.Parallel()
+	tools := workspaceToolServer{}
+	ctx := context.Background()
+	tests := []struct {
+		name string
+		call func() error
+	}{
+		{name: "get", call: func() error { _, _, err := tools.getWatchlist(ctx, nil, getWatchlistInput{}); return err }},
+		{name: "list", call: func() error { _, _, err := tools.listWatchlists(ctx, nil, emptyInput{}); return err }},
+		{name: "create", call: func() error {
+			_, _, err := tools.createWatchlist(ctx, nil, createWatchlistInput{Name: "Tech"})
+			return err
+		}},
+		{name: "add", call: func() error {
+			_, _, err := tools.addToWatchlist(ctx, nil, addToWatchlistInput{Symbol: "NVDA"})
+			return err
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := tt.call(); !errors.Is(err, service.ErrUnauthenticated) {
+				t.Fatalf("error = %v, want ErrUnauthenticated", err)
+			}
+		})
+	}
+}
+
+func TestWatchlistToolSchemas(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "watchlist-contract", Version: "test"}, nil)
+	registerWorkspaceTools(server, workspaceToolServer{})
+	clientTransport, serverTransport := sdkmcp.NewInMemoryTransports()
+	serverSession, err := server.Connect(ctx, serverTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer serverSession.Close()
+	client := sdkmcp.NewClient(&sdkmcp.Implementation{Name: "watchlist-contract-client", Version: "test"}, nil)
+	clientSession, err := client.Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clientSession.Close()
+	listed, err := clientSession.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byName := make(map[string]*sdkmcp.Tool, len(listed.Tools))
+	for _, tool := range listed.Tools {
+		byName[tool.Name] = tool
+	}
+
+	tests := []struct {
+		name           string
+		description    string
+		inputProps     []string
+		inputRequired  []string
+		outputProps    []string
+		outputRequired []string
+	}{
+		{name: "get_watchlist", description: "List the tickers in a watchlist. Optionally pass a list name; omit for the user's default list.", inputProps: []string{"list"}, outputProps: []string{"items"}, outputRequired: []string{"items"}},
+		{name: "list_watchlists", description: "List the user's watchlists (named instrument sets) with their item counts.", outputProps: []string{"watchlists"}, outputRequired: []string{"watchlists"}},
+		{name: "create_watchlist", description: "Create a new named watchlist. Returns its id.", inputProps: []string{"name"}, inputRequired: []string{"name"}, outputProps: []string{"id", "name"}, outputRequired: []string{"id", "name"}},
+		{name: "add_to_watchlist", description: "Add a ticker to a watchlist by symbol. Optionally pass a list name (created if it doesn't exist); omit for the user's default list.", inputProps: []string{"list", "symbol"}, inputRequired: []string{"symbol"}, outputProps: []string{"citations", "list", "note", "ok", "symbol"}, outputRequired: []string{"ok", "symbol"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tool := byName[tt.name]
+			if tool == nil {
+				t.Fatalf("tool %q not registered", tt.name)
+			}
+			if tool.Description != tt.description {
+				t.Fatalf("description = %q", tool.Description)
+			}
+			assertToolSchema(t, "input", tool.InputSchema, tt.inputProps, tt.inputRequired)
+			assertToolSchema(t, "output", tool.OutputSchema, tt.outputProps, tt.outputRequired)
+		})
+	}
+}
+
+func assertToolSchema(t *testing.T, label string, raw any, wantProps, wantRequired []string) {
+	t.Helper()
+	encoded, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var schema map[string]any
+	if err := json.Unmarshal(encoded, &schema); err != nil {
+		t.Fatal(err)
+	}
+	properties, _ := schema["properties"].(map[string]any)
+	gotProps := make([]string, 0, len(properties))
+	for key := range properties {
+		gotProps = append(gotProps, key)
+	}
+	sort.Strings(gotProps)
+	sort.Strings(wantProps)
+	if !equalStrings(gotProps, wantProps) {
+		t.Fatalf("%s properties = %v, want %v; schema=%s", label, gotProps, wantProps, encoded)
+	}
+	gotRequired := make([]string, 0)
+	if required, ok := schema["required"].([]any); ok {
+		for _, value := range required {
+			gotRequired = append(gotRequired, value.(string))
+		}
+	}
+	sort.Strings(gotRequired)
+	sort.Strings(wantRequired)
+	if !equalStrings(gotRequired, wantRequired) {
+		t.Fatalf("%s required = %v, want %v; schema=%s", label, gotRequired, wantRequired, encoded)
+	}
+}
+
+func equalStrings(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func TestAddToWatchlistResolvesSymbol(t *testing.T) {
 	t.Parallel()
 
@@ -335,6 +517,9 @@ func TestAddToWatchlistResolvesSymbol(t *testing.T) {
 	}
 	if !out.OK || out.Symbol != "NVDA" {
 		t.Fatalf("output = %#v, want ok NVDA", out)
+	}
+	if len(out.Citations) != 1 || out.Citations[0].Kind != "ticker" || out.Citations[0].ID != "NVDA" || out.Citations[0].Title != "NVDA" {
+		t.Fatalf("citations = %#v, want NVDA ticker citation", out.Citations)
 	}
 	if watchlist.addUser != "user-1" || watchlist.addID != "inst-1" || watchlist.addListID != "default-list" {
 		t.Fatalf("watchlist add = (%q,%q,%q), want (user-1, inst-1, default-list)", watchlist.addUser, watchlist.addID, watchlist.addListID)
@@ -368,8 +553,8 @@ func TestCreateWatchlistTool(t *testing.T) {
 	if err != nil {
 		t.Fatalf("createWatchlist error: %v", err)
 	}
-	if watchlist.createdWith != "Shorts" || out.Name != "Shorts" {
-		t.Fatalf("created %q (out %q), want Shorts", watchlist.createdWith, out.Name)
+	if watchlist.createUser != "user-1" || watchlist.createdWith != "Shorts" || out.Name != "Shorts" {
+		t.Fatalf("created by %q with %q (out %q), want user-1/Shorts", watchlist.createUser, watchlist.createdWith, out.Name)
 	}
 }
 
