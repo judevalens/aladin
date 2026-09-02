@@ -68,3 +68,25 @@ are deliberately omitted; retry transport state is not migrated as user data.
 This provides a tested building block, not a completed v1 migration tool. Ordinary
 release activation deliberately rejects incompatible schemas/generation changes.
 An operator must not bypass that guard by manually changing protected pointers.
+
+## Authoring SDK migration
+
+Published releases are immutable bundles, so removing the provisional UI kit does
+not change a shard that is already published. A source rebuild is the migration
+boundary:
+
+1. Move nonvisual imports such as `useShardState`, `useKV`, `useResource`,
+   `executeGraphQL` and `invokeLambda` from `@aladin/kit` to `@aladin/shard`.
+2. Replace kit UI imports with locally authored React and semantic HTML. Use the
+   host's token-backed Tailwind colors, typography roles, radii and shadows first;
+   use authored CSS where a custom visual or interaction needs it.
+3. Put `data-anchor` and `data-kind` directly on the element that owns each
+   declared region. These attributes remain platform metadata and do not require
+   a component wrapper.
+4. Build, inspect the preview and snapshot, verify every anchor and interaction,
+   then publish through the normal immutable release flow.
+
+The builder rejects new `@aladin/kit` imports with a targeted migration message.
+There is no automatic UI rewrite because choosing the replacement structure and
+interaction is design work. `@aladin/kit` remains reserved for a future component
+system; it is not an alias for the runtime SDK.

@@ -43,7 +43,7 @@ const CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-i
 // themeCSS is the canonical Aladin design theme — the SINGLE source of truth,
 // generated from aladin_react/src/theme.css via `make tokens` and drift-guarded
 // by `make check-tokens`. It carries the Tailwind v4 `@theme inline` block: the
-// runtime engine (KIT-1.2) compiles the utilities, inlining each token's base var
+// runtime Tailwind engine compiles the utilities, inlining each token's base var
 // directly — so it does NOT emit :root --color-* custom properties (that's what
 // `inline` means). shardColorRootCSS re-emits them so var(--color-*) still
 // resolves. No hand-authored token values live in Go.
@@ -144,14 +144,31 @@ func ValidTheme(name string) bool {
 // WASM-free, network-free IIFE — verified: no fetch/eval/WebAssembly, so it runs
 // under the shard CSP's connect-src 'none' + script-src 'unsafe-inline'). It
 // scans the DOM + the <style type="text/tailwindcss"> block and JIT-injects the
-// utilities agents use. KIT-1.2 "B" (runtime). The build-time path "A" (deferred)
-// will compile Tailwind at build and drop this ~275KB/page runtime cost.
+// utilities agents use. The current path compiles at runtime; a deferred build-time
+// path will compile Tailwind during the build and drop this ~275KB/page runtime cost.
 //
 //go:embed tailwind-browser.js
 var tailwindBrowserJS string
 
 var reCloseScript = regexp.MustCompile(`(?i)</script`)
 var reCloseStyle = regexp.MustCompile(`(?i)</style`)
+
+// themeSyncJS belongs to the document shell, not the optional data SDK. Every
+// shard must follow live host theme changes, including a purely visual shard
+// that imports only React. The first paint still comes from the server-stamped
+// data-theme attribute; this listener applies later bridge pushes without a
+// reload. Authored code can already change its own data-theme value, so source
+// authentication adds no security boundary here; the bridge envelope and theme
+// channel keep unrelated messages from changing it accidentally.
+const themeSyncJS = `(function(){
+  if(window.__aladinApplyThemePush)return;
+  window.__aladinApplyThemePush=function(m){
+    if(!m||(m.aladin!=="bridge/1"&&m.aladin!=="bridge/2")||m.type!=="push"||m.channel!=="theme")return;
+    var theme=m.data&&m.data.theme;
+    if(typeof theme==="string"&&theme)document.documentElement.dataset.theme=theme;
+  };
+  window.addEventListener("message",function(e){window.__aladinApplyThemePush(e.data);});
+})();`
 
 // breakInlineClosers neutralizes any literal </script or </style inside inlined
 // content so it can't break out of its <script>/<style> block. The \/ is inert
@@ -171,7 +188,7 @@ func breakInlineClosers(s string) string {
 //
 // theme, when non-empty (already validated via ValidTheme), is stamped as
 // data-theme on <html> so the FIRST PAINT is in the viewer's theme; the host
-// bridge re-stamps live on later switches. Empty theme = default dark.
+// document-shell listener re-stamps live on later switches. Empty theme = default dark.
 func EntryHTML(title, tokensCSS, bundleCSS, bundleJS string, im ImportMap, theme string) string {
 	// Tailwind is the agent default styling: the theme/tokens go in a
 	// type="text/tailwindcss" block (so the runtime engine compiles the @theme
@@ -191,11 +208,13 @@ func EntryHTML(title, tokensCSS, bundleCSS, bundleJS string, im ImportMap, theme
 	var scripts string
 	if im.Imports == nil {
 		// Legacy build: inlined IIFE bundle, no vendored deps.
-		scripts = "<script>" + breakInlineClosers(bundleJS) + "</script>"
+		scripts = "<script>" + themeSyncJS + "</script>\n" +
+			"<script>" + breakInlineClosers(bundleJS) + "</script>"
 	} else {
 		// ESM build: an import map (bare specifier -> /vendor/<sha>) then the module.
 		imJSON, _ := json.Marshal(im)
-		scripts = `<script type="importmap">` + breakInlineClosers(string(imJSON)) + "</script>\n" +
+		scripts = "<script>" + themeSyncJS + "</script>\n" +
+			`<script type="importmap">` + breakInlineClosers(string(imJSON)) + "</script>\n" +
 			`<script type="module">` + breakInlineClosers(bundleJS) + "</script>"
 	}
 	htmlOpen := `<html lang="en">`
@@ -235,11 +254,11 @@ func CSPWithVendorScheme() string {
 }
 
 // previewBridgeEmulatorJS stands in for the production host's bridge: it answers
-// the kit's hello/theme.get with the stamped document theme and nodes.get/
+// the shard SDK's hello/theme.get with the stamped document theme and nodes.get/
 // subscribe with stub nodes, so themed and data-wired shards render in the
 // headless preview instead of hanging on a host that isn't there. Preview-only —
 // EntryHTML (the served doc) never carries it; the real app's host responds with
-// workspace data. See kit.tsx L5 bridge.
+// workspace data. See shard-sdk.tsx for the client side.
 const previewBridgeEmulatorJS = `(function(){
   if(window.__aladinBridgeEmu)return; window.__aladinBridgeEmu=1;
   function node(id){return {id:id,type:"preview",title:"Preview node "+id,
@@ -327,8 +346,7 @@ func LostCredentialHTML() string {
 		`Close and reopen the shard to request a fresh credential. If it still fails, ` +
 		`restart Aladin and sign in again.</p>` +
 		`<p>If this happened after following a link inside the shard, its links must use ` +
-		`<code>href="#/section"</code> (or the kit's <code>Link</code> / ` +
-		`<code>AppShell</code>), not <code>href="/section"</code>.</p></body></html>`
+		`<code>href="#/section"</code>, not <code>href="/section"</code>.</p></body></html>`
 }
 
 // NotBuiltHTML is shown when a page has no built bundle yet.

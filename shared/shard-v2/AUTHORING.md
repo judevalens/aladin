@@ -2,6 +2,13 @@
 
 For agent authoring, call `get_authoring_guide` first. It returns the data APIs
 enabled on the connected backend, without presenting a runtime-version choice.
+Shard UI is ordinary React and semantic HTML. Use Aladin's injected, token-backed
+Tailwind utilities as the primary styling system; use authored CSS with the same
+custom properties for visuals Tailwind cannot express clearly. There is no bundled
+component library. `@aladin/shard` contains nonvisual data/runtime APIs only.
+The document shell follows live host theme changes even when the shard imports no
+SDK. If render code resolves a CSS variable into a concrete canvas or chart color,
+use the SDK's `useTheme` hook to recompute that value after a switch.
 With resources enabled, `create_app` seeds a valid `contract.json` containing an
 owned settings singleton, alongside `index.tsx` and `anchors.json`. It returns the
 contract and matching guide. The starter writes no data and grants no agent access.
@@ -18,7 +25,7 @@ client. Lambda handlers use the same bundle and budgets and currently support th
 explicit `{ "kind": "manual" }` trigger. Build failure leaves the active release
 unchanged.
 
-Use `subscribeResource` for live views. The current GraphQL execution route is
+Use `useResource` for live views. The current GraphQL execution route is
 request/response and rejects persisted `subscription` documents at contract
 compile time.
 
@@ -98,7 +105,7 @@ URLs or credentials. Narrative-only anchors can omit a binding.
 ```tsx
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Page, Region, Button, useResource, resourceRequestId } from "@aladin/kit";
+import { useResource, resourceRequestId } from "@aladin/shard";
 
 type Task = { title: string; done: boolean };
 function App() {
@@ -111,19 +118,21 @@ function App() {
     catch (error) { setMessage(String((error as {message?: string})?.message ?? error)); }
     // A production retry UI must retain command unchanged if its outcome is unknown.
   }
-  return <Page><Region anchor="tasks" kind="collection">
+  return <main className="min-h-screen bg-bg p-8 text-ink">
+    <section data-anchor="tasks" data-kind="collection" className="mx-auto max-w-3xl rounded-card border border-line bg-panel p-6">
     {tasks.loading && <p>Loading…</p>}
     {tasks.stale && <p>Reconnecting; displayed records may be out of date.</p>}
     {tasks.error && <p>{tasks.error.message}</p>}
     {message && <p>{message}</p>}
-    <Button disabled={!tasks.insert || tasks.pending.length > 0} onClick={add}>Add task</Button>
+    <button className="rounded-control bg-amber px-3 py-2 font-mono text-small text-bg disabled:opacity-50" disabled={!tasks.insert || tasks.pending.length > 0} onClick={add}>Add task</button>
     {tasks.records.map(record => <p key={record.id}>{record.data.title}</p>)}
-  </Region></Page>;
+    </section>
+  </main>;
 }
 createRoot(document.getElementById("root")!).render(<App />);
 ```
 
-No author fetch/WS or bootstrap code is needed. The kit handles snapshots,
+No author fetch/WS or bootstrap code is needed. The shard SDK handles snapshots,
 subscriptions, schema validation, reconnect and stale/revoked states. Updates
 replace the complete data object and require the current opaque revision:
 

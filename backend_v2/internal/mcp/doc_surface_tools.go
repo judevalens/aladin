@@ -18,32 +18,26 @@ import (
 // from "page", which is a BlockNote note).
 const appArtifactType = "app"
 
-// starterIndexTSX seeds a new shard composed from @aladin/kit — the default way
-// to author: kit components (Region marks addressable surfaces), Tailwind +
-// Aladin token utilities for styling, hash routing for multi-view shards.
+// starterIndexTSX is intentionally plain React. Aladin injects theme tokens and
+// Tailwind utilities, while authors own their markup and visual language.
 const starterIndexTSX = `import { createRoot } from "react-dom/client";
-import { Page, Section, Region } from "@aladin/kit";
-
-// The three levers most shards want (get_authoring_guide has the full reference):
-//   theme  — automatic; only call useTheme() where you compute a color at render
-//   memory — use the storage API described in the returned authoring guide
-//   data   — declare sources using the files and examples returned by create_app
 
 function App() {
   return (
-    <Page>
-      <Section>
-        <Region anchor="intro" kind="narrative">
-          <h1 className="text-2xl font-display text-ink">New shard</h1>
-          <p className="mt-2 text-ink-2">
-            Composed from <span className="font-mono text-amber">@aladin/kit</span>.
-            Wrap addressable regions in <span className="font-mono">Region</span>,
-            style with Tailwind + token utilities (bg-panel, text-ink, …), and
-            declare each region in anchors.json.
-          </p>
-        </Region>
-      </Section>
-    </Page>
+    <main className="min-h-screen bg-bg px-8 py-10 text-ink">
+      <section
+        data-anchor="intro"
+        data-kind="narrative"
+        className="mx-auto max-w-3xl rounded-card border border-line bg-panel p-6"
+      >
+        <p className="font-mono text-meta uppercase tracking-wider text-amber">New shard</p>
+        <h1 className="mt-2 font-display text-title">Build the interface this tool needs.</h1>
+        <p className="mt-3 max-w-xl text-body text-ink-2">
+          Use ordinary React, HTML and CSS. Aladin supplies theme tokens and the
+          nonvisual @aladin/shard data SDK; your shard owns its UI.
+        </p>
+      </section>
+    </main>
   );
 }
 
@@ -51,7 +45,7 @@ createRoot(document.getElementById("root")!).render(<App />);
 `
 
 // starterAnchorsJSON seeds the manifest so the addressable surface is declared
-// from the start (the intro Region above). Agents extend this as they add regions.
+// from the start (the data-anchor above). Agents extend it as they add regions.
 const starterAnchorsJSON = `{
   "version": 1,
   "intent": "Describe what this shard is for — written so a cold agent could rebuild its idea.",
@@ -123,7 +117,7 @@ func registerDocSurfaceTools(server *sdkmcp.Server, artifacts service.ArtifactSe
 	}, t.buildApp)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "get_authoring_guide",
-		Description: "Read the currently available shard building capabilities and @aladin/kit reference. Call this before answering capability questions or editing a shard. Without page_id it describes new shards on this backend. With page_id it selects the supported APIs for that existing shard and returns its files, anchors, contract when present, and current index.tsx. Use the returned capabilities directly; no runtime-version choice is needed.",
+		Description: "Read the currently available shard building capabilities, Tailwind theme tokens and nonvisual @aladin/shard API reference. Call this before answering capability questions or editing a shard. Without page_id it describes new shards on this backend. With page_id it selects the supported APIs for that existing shard and returns its files, anchors, contract when present, and current index.tsx. Use the returned capabilities directly; no runtime-version choice is needed.",
 	}, t.getAuthoringGuide)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "verify_app",
@@ -185,8 +179,8 @@ type createAppInput struct {
 type createAppOutput struct {
 	ID    string `json:"id"`
 	Title string `json:"title"`
-	// AuthoringGuide + CurrentIndexTSX ride back so the agent writes valid kit
-	// code that EXTENDS the seeded module instead of guessing components/props.
+	// AuthoringGuide + CurrentIndexTSX ride back so the agent writes valid code
+	// that extends the seeded module using the target's current capabilities.
 	AuthoringGuide  string        `json:"authoring_guide"`
 	CurrentIndexTSX string        `json:"current_index_tsx"`
 	ContractJSON    string        `json:"contract_json,omitempty"`
@@ -656,11 +650,10 @@ func (t docToolServer) buildApp(ctx context.Context, _ *sdkmcp.CallToolRequest, 
 	return nil, res, nil
 }
 
-// getAuthoringGuide hands back the kit reference on demand. create_app returns
-// it too, but an agent EDITING an existing shard never went through create_app
-// — so it was guessing components and props with no reference anywhere in
-// reach. With a page_id it also returns that shard's current files, manifest,
-// and index.tsx, which is the context an edit actually needs.
+// getAuthoringGuide hands back the current visual and data authoring contract on
+// demand. create_app returns it too, but an agent EDITING an existing shard never
+// went through create_app. With a page_id it also returns that shard's current
+// files, manifest and index.tsx, which is the context an edit actually needs.
 func (t docToolServer) getAuthoringGuide(ctx context.Context, _ *sdkmcp.CallToolRequest, in authoringGuideInput) (*sdkmcp.CallToolResult, authoringGuideOutput, error) {
 	out := authoringGuideOutput{AuthoringGuide: shardAuthoringGuide(t.resourceAuthoringEnabled(), t.runtimeAuthoringEnabled())}
 	if strings.TrimSpace(in.PageID) == "" {
@@ -959,7 +952,7 @@ func verifyFailure(report verifyReport) string {
 			lines = append(lines, fmt.Sprintf("%s (%d uncaught exception(s): %s)", r.Route, len(r.Exceptions), firstLine(r.Exceptions[0])))
 		case len(r.EscapingLinks) > 0:
 			lines = append(lines, fmt.Sprintf(
-				"%s (link(s) navigate off the shard and will 401 when clicked: %s — use hash routes, e.g. href=\"#/section\" or the kit's Link/AppShell)",
+				"%s (link(s) navigate off the shard and will 401 when clicked: %s — use hash routes such as href=\"#/section\")",
 				r.Route, strings.Join(r.EscapingLinks, ", ")))
 		case len(r.AnchorsMissing) > 0:
 			lines = append(lines, fmt.Sprintf("%s (declared anchors not in the DOM: %s)", r.Route, strings.Join(r.AnchorsMissing, ", ")))

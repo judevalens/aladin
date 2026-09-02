@@ -414,7 +414,7 @@ func (m *PreviewSessions) ConsoleErrors(ctx context.Context, pageID string) ([]s
 }
 
 // CheckAnchors counts, for each declared anchor id, how many elements carry it
-// on the CURRENT route (kit Region stamps data-anchor). This is the check the
+// on the CURRENT route (authored markup stamps data-anchor). This is the check the
 // manifest always promised and never had: a shard whose anchors.json claims a
 // region that isn't in the DOM is lying about its own structure, and every
 // downstream consumer (deep links, provenance, live regions) is broken.

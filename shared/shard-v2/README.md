@@ -56,8 +56,8 @@ New apps automatically receive the configured data API and starter files; guides
 for existing apps preserve their storage model. Runtime version selection is an
 operator concern, not an authoring question presented to the user.
 
-- [AUTHORING.md](AUTHORING.md): complete contract, anchors and component example.
-- [CLIENT.md](CLIENT.md): kit exports, subscriptions, mutations and pagination.
+- [AUTHORING.md](AUTHORING.md): complete contract, anchors and Tailwind-first example.
+- [CLIENT.md](CLIENT.md): shard SDK exports, subscriptions, mutations and pagination.
 - [BACKEND.md](BACKEND.md): publication, transports, storage and operating limits.
 - [ROLLOUT.md](ROLLOUT.md): verification evidence and outstanding release gates.
 - [MIGRATION.md](MIGRATION.md): read-only inventory and safe cutover requirements.
@@ -77,7 +77,7 @@ operator concern, not an authoring question presented to the user.
   run compiled TypeScript resolvers/lambdas, enforce budgets and drain old releases.
 - `backend_v2/internal/api/shard_resources.go`: HTTP/WS using the shared bridge
   envelopes; `fixtures/api.json` freezes the transport mapping.
-- `backend_v2/internal/docsurface`: opt-in contract/anchor checks, embedded kit
+- `backend_v2/internal/docsurface`: opt-in contract/anchor checks, embedded shard SDK,
   client and real-resource preview; published code is pinned to its contract.
 - `aladin_react/src/modules/doc-surface/data`: framework-independent reducer,
   session client, bridge adapter, and a small React adapter. See [CLIENT.md](CLIENT.md).
@@ -158,8 +158,8 @@ An author file or iframe parameter must never select the policy.
 
 Run `node shared/shard-v2/bundle-client.mjs` from the repository root after client
 changes (requires installed frontend dependencies). It bundles the tested client
-into the Go-embedded kit asset; it does not copy frontend public assets. The kit
-vendor hash includes this generated asset. Do not edit generated JS by hand.
+into the Go-embedded `@aladin/shard` asset; it does not copy frontend public assets.
+The SDK vendor hash includes this generated asset. Do not edit generated JS by hand.
 
 UI, authored resolvers and MCP call the same authorized service. Owned records use
 opaque per-user/shard/environment MongoDB collections when Mongo is configured;

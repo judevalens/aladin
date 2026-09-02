@@ -21,7 +21,7 @@ the immutable release identity and undeclared or Node builtin imports are reject
 | WP02 | Authorized registry/service, params, projection, capabilities, conditional writes | Broader provider/security review |
 | WP03 | PostgreSQL compatibility plus Mongo default adapter, receipts, quotas, ordered changes, fenced archive restore, and production backup/restore drill integration | Retention cleanup and broader crash/load evidence |
 | WP04 | Deterministic client reducer, shared subscriptions, bounded recovery | Sustained memory/throughput soak at default caps |
-| WP05 | Kit exports, protected bootstrap, actual web host, one shared socket | Native WKWebView/vendor-scheme pilot and complete lifecycle matrix |
+| WP05 | Shard SDK exports, protected bootstrap, actual web host, one shared socket | Native WKWebView/vendor-scheme pilot and complete lifecycle matrix |
 | WP06 | Owned documents, Mongo event-triggered reconciliation and real workspace source | Full credential/fault matrix and broader provider coverage |
 | WP07 | Published catalog, five resource MCP tools and optional persisted-operation execution | Staging operational monitoring/visibility |
 | WP08 | Immutable code+contract+anchors, exact-build verification, atomic pointer, stage quotas | Per-field index/query-plan staging, reviewed inactive-build cleanup tooling |
@@ -40,7 +40,7 @@ The complete Go suite passes with the race detector, including the real Mongo
 replica-set tests. All 76 frontend test files pass (511 tests), as do the nine
 Node resolver-runtime tests; TypeScript, the production frontend build and
 `go vet ./...` pass. Schemas, manifest, embedded Go schema map
-and kit client bundle regenerate deterministically. The frontend build still
+and shard SDK client bundle regenerate deterministically. The frontend build still
 reports PDF dynamic-import and large-chunk warnings in the existing app build;
 these are not test failures. Native-host and broad-rollout gaps below remain.
 
@@ -61,7 +61,7 @@ these are not test failures. Native-host and broad-rollout gaps below remain.
   import rollback and refusal to overwrite accepted writes.
 - API tests: real HTTP/WS with PostgreSQL, content-token rejection, default-off
   behavior, current release checks and workspace grant enforcement.
-- Chromium pilot: real kit mounts owned collection/singleton and authorized
+- Chromium pilot: real shard SDK mounts owned collection/singleton and authorized
   workspace records; edits persist across close/reopen; a third declaration uses
   the same provider; server pagination returns distinct pages; published data
   stays separate; verification activates the exact staged build.

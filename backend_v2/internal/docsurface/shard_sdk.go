@@ -9,33 +9,33 @@ import (
 	esbuild "github.com/evanw/esbuild/pkg/api"
 )
 
-// kitSpec is the bare specifier agents import: `import { Region } from "@aladin/kit"`.
+// shardSDKSpec is the bare specifier for the nonvisual authored-shard runtime.
 // It is vendored like the react family, but its source is embedded in this
 // binary (it's OUR code) rather than fetched from esm.sh.
-const kitSpec = "@aladin/kit"
+const shardSDKSpec = "@aladin/shard"
 
-//go:embed kit.tsx
-var kitSource string
+//go:embed shard-sdk.tsx
+var shardSDKSource string
 
 //go:embed resource-client.generated.js
 var resourceClientSource string
 
-// kitSourceHash keys the kit in the vendor cache, so a rebuilt binary with
-// changed kit source re-vendors (the served file stays content-addressed).
-func kitSourceHash() string {
-	sum := sha256.Sum256([]byte(kitSource + "\x00" + resourceClientSource))
+// shardSDKSourceHash keys the shard SDK in the vendor cache, so a rebuilt binary with
+// changed shard SDK source re-vendors (the served file stays content-addressed).
+func shardSDKSourceHash() string {
+	sum := sha256.Sum256([]byte(shardSDKSource + "\x00" + resourceClientSource))
 	return hex.EncodeToString(sum[:])
 }
 
-// buildKit bundles the embedded kit into a single ESM file with the react family
-// externalized — so the kit, all shards, and React share ONE instance via the
+// buildShardSDK bundles the embedded shard SDK into a single ESM file with the react family
+// externalized — so the shard SDK, all shards, and React share ONE instance via the
 // shard's import map.
-func (b *builder) buildKit() ([]byte, error) {
+func (b *builder) buildShardSDK() ([]byte, error) {
 	res := esbuild.Build(esbuild.BuildOptions{
 		Stdin: &esbuild.StdinOptions{
-			Contents:   kitSource,
+			Contents:   shardSDKSource,
 			Loader:     esbuild.LoaderTSX,
-			Sourcefile: "kit.tsx",
+			Sourcefile: "shard-sdk.tsx",
 		},
 		Bundle:           true,
 		Write:            false,
@@ -49,10 +49,10 @@ func (b *builder) buildKit() ([]byte, error) {
 		LogLevel:         esbuild.LogLevelSilent,
 	})
 	if len(res.Errors) > 0 {
-		return nil, fmt.Errorf("kit build: %s", formatMessages(res.Errors))
+		return nil, fmt.Errorf("shard SDK build: %s", formatMessages(res.Errors))
 	}
 	if len(res.OutputFiles) == 0 {
-		return nil, fmt.Errorf("kit build produced no output")
+		return nil, fmt.Errorf("shard SDK build produced no output")
 	}
 	return res.OutputFiles[0].Contents, nil
 }
@@ -69,7 +69,7 @@ func embeddedResourceClientPlugin() esbuild.Plugin {
 }
 
 // externalReactPlugin marks the react family external (react, react-dom,
-// react/jsx-runtime, …) so the kit bundle imports them at runtime via the import
+// react/jsx-runtime, …) so the shard SDK bundle imports them at runtime via the import
 // map instead of inlining a second copy.
 func externalReactPlugin() esbuild.Plugin {
 	return esbuild.Plugin{

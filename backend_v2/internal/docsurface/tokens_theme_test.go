@@ -33,6 +33,15 @@ func TestEntryHTMLThemeStamp(t *testing.T) {
 	}
 }
 
+func TestEntryHTMLAlwaysInstallsLiveThemeSync(t *testing.T) {
+	doc := EntryHTML("t", TokensCSS, "", "1", ImportMap{}, "light")
+	for _, want := range []string{`__aladinApplyThemePush`, `window.addEventListener("message"`, `m.channel!=="theme"`, `document.documentElement.dataset.theme=theme`} {
+		if !strings.Contains(doc, want) {
+			t.Fatalf("EntryHTML missing SDK-independent live theme sync %q", want)
+		}
+	}
+}
+
 // The plain-CSS tail makes the stamped theme apply at PARSE time (first paint),
 // independent of the runtime Tailwind engine.
 func TestShardThemeTailCSS(t *testing.T) {
@@ -50,7 +59,7 @@ func TestShardThemeTailCSS(t *testing.T) {
 	}
 }
 
-// The preview emulator must answer the kit's theme handshake so themed shards
+// The preview emulator must answer the shard SDK's theme handshake so themed shards
 // behave headless. String-level guard: the emulator source names both methods.
 func TestPreviewEmulatorSpeaksTheme(t *testing.T) {
 	for _, method := range []string{`"hello"`, `"theme.get"`} {

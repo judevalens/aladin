@@ -44,7 +44,7 @@ func TestValidateManifest(t *testing.T) {
 		}
 	})
 
-	t.Run("kind is open / kit-owned (not enforced)", func(t *testing.T) {
+	t.Run("kind is open / author-owned (not enforced)", func(t *testing.T) {
 		problems := ValidateManifest(Manifest{
 			Version: 1,
 			Anchors: []ManifestAnchor{{ID: "a", Route: "#/", Meaning: "m", Kind: "custom-widget"}},

@@ -39,13 +39,21 @@ func TestPreviewSession_ThemeChangesPaint(t *testing.T) {
 		t.Fatalf("theme stamp had no effect on paint: both %s", dark)
 	}
 
-	// data-theme visible to shard code (kit useTheme seeds from it).
+	// data-theme is visible to shard code and follows host pushes even though
+	// this fixture does not import the shard SDK.
 	st, err := m.Eval(ctx, "p1", "document.documentElement.getAttribute('data-theme')")
 	if err != nil {
 		t.Fatalf("Eval data-theme: %v", err)
 	}
 	if !strings.Contains(st.EvalResult, "light") {
 		t.Errorf("data-theme attribute = %s; want light", st.EvalResult)
+	}
+	live, err := m.Eval(ctx, "p1", `(window.__aladinApplyThemePush({aladin:"bridge/1",type:"push",channel:"theme",data:{theme:"dark"}}),getComputedStyle(document.body).backgroundColor)`)
+	if err != nil {
+		t.Fatalf("Eval live theme push: %v", err)
+	}
+	if !strings.Contains(live.EvalResult, "13, 13, 16") {
+		t.Errorf("live theme push did not repaint without SDK import: %s", live.EvalResult)
 	}
 
 	// Invalid theme names are dropped server-side → default palette.

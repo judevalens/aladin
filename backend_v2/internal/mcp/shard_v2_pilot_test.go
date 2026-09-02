@@ -29,12 +29,12 @@ import (
 
 const resourcePilotTSX = `import {createRoot} from "react-dom/client";
 import {useState,useEffect} from "react";
-import {Region,useResource,queryResource,resourceRequestId} from "@aladin/kit";
+import {useResource,queryResource,resourceRequestId} from "@aladin/shard";
 function App(){
  const [pagination,setPagination]=useState("");
  const tasks=useResource("tasks"), prefs=useResource("preferences"), live=useResource("workspace"), notes=useResource("notes");
  useEffect(()=>{window.parent.postMessage({type:"pilot.render",text:document.getElementById("tasks")?.textContent},"*");},[tasks]);
- return <Region anchor="main"><div id="tasks">{tasks.status}:{JSON.stringify(tasks.records)}</div>
+ return <main data-anchor="main" data-kind="collection"><div id="tasks">{tasks.status}:{JSON.stringify(tasks.records)}</div>
  <div id="live">{live.status}:{JSON.stringify(live.records)}{live.error?.message}</div>
  <div id="third">{notes.status}:{JSON.stringify(notes.records)}</div>
  <div id="prefs">{prefs.status}:{JSON.stringify(prefs.records)}:{prefs.error?.message}</div>
@@ -50,7 +50,7 @@ function App(){
    setPagination("pagination:"+(first.records.length+second.records.length)+":"+(first.records[0].id!==second.records[0].id));
  }catch(error){setPagination("query failed:"+String(error?.message||error)+":"+JSON.stringify(error));}}}>Page</button>
  <div id="pagination">{pagination}</div>
- </Region>;
+ </main>;
 }createRoot(document.getElementById("root")).render(<App/>);`
 
 type pilotAuth struct {
@@ -68,7 +68,7 @@ func (a pilotAuth) ResolveBearerToken(_ context.Context, token string) (service.
 	return a.principal, nil
 }
 
-// Runs on the isolated test DB and real Chromium. Preview uses the same kit,
+// Runs on the isolated test DB and real Chromium. Preview uses the same shard SDK,
 // client and resource service, with actual draft persistence and workspace data.
 func TestShardV2Pilot(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
@@ -141,7 +141,7 @@ func TestShardV2Pilot(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !state.Mounted {
-		t.Fatalf("kit did not mount: %+v", state)
+		t.Fatalf("shard did not mount: %+v", state)
 	}
 	wait := func(selector, want string) {
 		t.Helper()

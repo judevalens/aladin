@@ -49,7 +49,7 @@ stochasticity — none eliminates it:
   "the UI might be wrong" into "the UI is cheap to correct."
 - the **manifest** makes stochastic output addressable + durable, so
   corrections *accumulate* on a stable substrate.
-- the **kit** + tool descriptions *raise the mean* of the quality
+- the **authoring brief, theme tokens, and examples** *raise the mean* of the quality
   distribution; the gate/feedback *bound the tails*. Neither pretends to a
   point mass.
 
@@ -61,7 +61,7 @@ heuristics that would have frozen us at today's intelligence.
 
 Design heuristic that falls out: never spend effort on content-determinism
 (futile, anti-frontier). Spend on rails (grant, grounding, continuity), steering
-ergonomics (feedback), defaults (kit), and model context. **Shift the
+ergonomics (feedback), defaults (tokens and examples), and model context. **Shift the
 distribution and bound the tails; never chase the point mass.**
 
 ---
@@ -335,26 +335,26 @@ joins."
 | | Declared layer (canonical) | Mechanical layer (evidence) |
 |---|---|---|
 | what | `anchors.json` + `data-anchor` | `data-aladin-key` (+ selector/text) |
-| cost | agent discipline (gate-enforced) | emitted by kit components as props |
+| cost | agent discipline (gate-enforced) | authored as ordinary DOM attributes |
 | carries | identity, binding, refs, meaning | data-instance key, instance position |
 | survives | any refactor, even regeneration | as long as the component is used |
 | role | the join table | instances within regions; clicks outside the declared surface |
 
-**Stamping is done at the component level, not by a build-time transform shim**
-(decided 2026-06-12). `Region` emits `data-anchor`; `Collection` emits
-`data-aladin-key` from the same key React already requires on lists — both are
-ordinary props the kit components spread onto their root element. No
-`jsxImportSource` shim, no `JSXDev`, no `react/jsx-dev-runtime` wrapper, no dev
-runtime shipped in published.
+**Stamping is done in authored markup, not by a build-time transform shim**
+(decided 2026-06-12). The agent writes `data-anchor` on the owning region and
+`data-aladin-key` on collection instances, usually from the same stable key
+React already requires on lists. No `jsxImportSource` shim, no `JSXDev`, no
+`react/jsx-dev-runtime` wrapper, no dev runtime shipped in published.
 
-**Feedback is per-region, via a kit `FeedbackToolbar` (decided 2026-06-13)** —
-this supersedes the earlier host-overlay "inspect runtime + evidence bundle"
-design. Because the toolbar lives *inside* a `<Region anchor=… kind=…>` (and,
-for collection items, carries that item's `nodeKey`), it already knows its
-identity — no DOM-walking, no CSS selector, no source chain. The feedback
+**Feedback is per-region, through a locally authored control that uses the
+platform feedback bridge (decided 2026-06-13)** — this supersedes the earlier
+host-overlay "inspect runtime + evidence bundle" design. Because the control
+lives inside an element carrying `data-anchor` (and, for collection items,
+carries that item's data key), it already knows its identity — no DOM-walking,
+no CSS selector, no source chain. The feedback
 payload collapses to `{ anchorId, instanceKey?, action, note }`, sent to the
 host via the bridge. Consequence (accepted): **feedback is possible only on
-declared Regions** — to make something feedback-able you wrap it in a `Region`,
+declared regions** — to make something feedback-able it must carry an anchor,
 so the addressable surface and the feedback surface are the same set. Gated
 behind a "feedback mode" toggle so per-region toolbars aren't visual clutter.
 The agent gets the *file* from the manifest's `source` field, not from the DOM.
@@ -427,7 +427,7 @@ honest socially — and the difference must not blur:
 | Region grounding (output depends on declared refs) | **verified (live)** | differential test via the preview emulator — catches fabrication and unused refs (see §5) |
 | Conservation law | **partially verified** | gate check 8, warn — structural coverage only; full conservation needs understanding what pixels mean, which "no AST" deliberately pushed out |
 | Binding derivation (the transform *shape*) | **trusted** | the irreducible sliver — unverified inside a verified frame (refs exist + grounding); a wrong derivation misleads provenance only, caught socially, escapable via snapshot or entity-promotion (see §5) |
-| Meaning/intent regeneration-completeness | **trusted** | social + kit nudges. No oracle exists: the phenotype is deliberately non-deterministic, so a regeneration can't be diffed against an original to score the prose. "Falsifiable in principle" ≠ verified |
+| Meaning/intent regeneration-completeness | **trusted** | social + authoring-guide nudges. No oracle exists: the phenotype is deliberately non-deterministic, so a regeneration can't be diffed against an original to score the prose. "Falsifiable in principle" ≠ verified |
 
 Where a later section claims durability, regenerability, or conservation, read
 it against this table.
@@ -716,11 +716,11 @@ re-renders, forever, with zero builds.
 
 ### Observability is an authoring-time signal
 
-The agent (or the kit) makes a three-way choice per region, informed by the
+The agent makes a three-way choice per region, informed by the
 capability registry (which must be queryable at authoring time — via
 shard_status / manifest validation):
 
-1. **Observable + should track reality → write it live** (`LiveNodes`). The
+1. **Observable + should track reality → write it live** (`useNode`/`useResource`). The
    default for metrics, tables, "current state" regions.
 2. **Observable + deliberately a snapshot → bake it.** "Analysis as of June 11"
    *should* freeze; it still gets the staleness badge; refresh = intentional
@@ -760,18 +760,23 @@ subscription works is settled the way agents settle everything: by *looking*, in
 the live preview. Behavioral verification for behavior, declarative verification
 for declarations.
 
-### The kit (@aladin/kit), correctly sized
+### The authoring foundation, correctly sized
 
-Not required machinery — sugar with a purpose. `Region`, `Collection`,
-`LiveNodes`, `HashRouter` make the invariants the path of least resistance
-(anchor attrs, keys-as-data-ids, subscription cleanup, the preview fallback),
-and a shared vocabulary makes regenerated shards *converge* where freeform React
-diverges. Kit taxonomy = manifest `kind` taxonomy. Distributed like react itself:
-embedded source, built by the existing vendor pipeline, content-addressed,
-import-mapped, Tauri-cached; build meta records the kit hash (a regeneration
-input). Grows from observed agent behavior (`declared:null` picks, recurring
-hand-rolled patterns). Raw React stays a first-class escape hatch — the kit can
-afford to be optional precisely because it isn't load-bearing.
+The platform supplies theme colors, typography roles, radii and shadows as CSS
+variables and Tailwind utilities. The agent writes ordinary React and semantic
+HTML, uses Tailwind as its primary styling language, and adds authored CSS only
+when the visual needs it. Anchor invariants remain explicit HTML attributes such
+as `data-anchor` and `data-kind`; they do not depend on a wrapper component.
+
+`@aladin/shard` is the nonvisual runtime SDK. It owns resource queries,
+GraphQL/lambda calls, host bridge access, subscriptions and shard-local state.
+Keeping that transport surface separate from UI lets agents design full apps
+instead of converging on one generic component vocabulary.
+
+`@aladin/kit` is reserved for a future component system built from observed,
+repeated authoring needs. It is deliberately absent today. If such a kit ships,
+it remains optional and cannot carry data access or anchor semantics; authored
+React stays the underlying contract.
 
 ---
 
@@ -883,7 +888,7 @@ it *is* the design."
   capture trades hollowness for pollution.
 - **The gate needs Chrome at publish** — degrade to schema-only with a loud
   warning; Chrome-present is a deployment requirement for real use.
-- **Manifest discipline taxes agents** — kit makes it the default, descriptions
+- **Manifest discipline taxes agents** — examples make it the default, descriptions
   teach it, the gate fails loudly at publish rather than silently in the data.
 - **Thin graph ⇒ thin shards** — the thesis's named dependency.
 - **Conservation is only partially mechanical** — the gate's coverage check
@@ -966,14 +971,13 @@ make a small change. The cheapest hardening is to make that hard to do by accide
 `write_file` against a file that already exists unless an explicit overwrite flag is passed,
 so a rewrite is a decision rather than a default.
 
-**2. The kit is the real lever, and today it is layout-only.** Determinism is inversely
-proportional to how much free code the agent writes. The kit ships 24 components and every
-one is structural — `Page`, `Section`, `Panel`, `Card`, `Stat`, `Tabs`, `Dialog`, the
-stance colours. Nothing domain-level. So a quiz, a timer, a flashcard deck are all authored
-freehand *every time*, which is exactly where re-rolls diverge. A `<Quiz questions={…}>`
-cannot drift; a hand-rolled quiz always can. **Adding domain primitives converts "generate
-code" into "supply data to fixed components"** — the same argument TUTOR_PRD D-D makes for
-consistency, which turns out to matter more for determinism.
+**2. Reusable interaction patterns are a lever, but the provisional component kit was the
+wrong abstraction.** Determinism is inversely proportional to how much free code the agent
+rewrites, yet fixing layout components before observing enough real shards makes every app
+converge on the wrong UI. The current foundation supplies tokens, Tailwind typography and
+the nonvisual SDK while leaving interaction design in ordinary React. Exact edits, stable
+anchors and file history provide the immediate deterministic boundary. Repeated domain
+patterns may become optional components later, after their APIs are learned from use.
 
 **3. The manifest already carries the durable contract** — that is this document's thesis,
 and the regen experiment supports it: blind regeneration from `anchors.json` reproduced the
@@ -991,4 +995,5 @@ File-level history is the smallest thing that turns it into one.
 
 **Summary of the order to attack it**, cheapest first and none of it decided: make
 `write_file` refuse to silently overwrite → add file history so an adjustment is inspectable
-and revertible → grow the kit so there is less free code to diverge in the first place.
+and revertible → improve the authoring brief and examples from observed failures; package
+only proven recurring patterns in a future optional kit.

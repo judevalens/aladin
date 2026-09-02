@@ -1,8 +1,8 @@
 # Shard client data-stream library
 
-The client is bundled into `@aladin/kit`, with `useResource`, `queryResource` and
+The client is bundled into the nonvisual `@aladin/shard` SDK, with `useResource`, `queryResource` and
 `resourceRequestId` exports. The host reads protected release metadata before
-mounting a bridge/2 iframe; the kit creates one lazy session from the matching
+mounting a bridge/2 iframe; the shard SDK creates one lazy session from the matching
 inert bootstrap. Author components do not construct sockets or bridge clients.
 See [AUTHORING.md](AUTHORING.md) for a complete runnable example.
 
@@ -117,7 +117,7 @@ infer window membership. Client subscription creation unwinds on failure.
 Persisted GraphQL queries/mutations and manual lambdas use the protected host bridge:
 
 ```ts
-import { executeGraphQL, invokeLambda } from "@aladin/kit";
+import { executeGraphQL, invokeLambda } from "@aladin/shard";
 
 const graph = await executeGraphQL<{ project: { open: number } }>(
   "projectExecutionGraph",
@@ -135,7 +135,7 @@ transport.
 ## Querying and pagination
 
 ```ts
-import { queryResource } from "@aladin/kit";
+import { queryResource } from "@aladin/shard";
 
 const first = await queryResource("tasks", {
   where: { field: "/done", op: "eq", value: false },

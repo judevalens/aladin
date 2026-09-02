@@ -64,8 +64,9 @@ Authoring loop:
      and returns authoring_guide, current_index_tsx and any data contract.
      For an EXISTING shard, call get_authoring_guide(page_id), then read its files.
      Preserve its saved data and storage API; do not migrate during a routine edit.
-  2. Compose React components from @aladin/kit using the guide's exact props and
-     Aladin theme tokens. Keep Region anchors and their declarations in sync.
+  2. Build the UI with ordinary React and semantic HTML. Use Aladin's token-backed
+     Tailwind utilities by default; import nonvisual APIs from @aladin/shard.
+     Keep data-anchor attributes and their anchors.json declarations in sync.
      Entry point: index.tsx, mounting #root via createRoot from react-dom/client.
   3. write_file creates files; overwrite:true is required to replace an existing
      file. Prefer edit_file for targeted changes. Previous bytes go to .history/.
@@ -82,11 +83,11 @@ Authoring loop:
      and makes the verified artifact live. Renderer requirements come from the
      current guide; a successful build alone is not evidence of correct rendering.
 
-Use hash routing (kit Route/Link/AppShell, or HashRouter), never pushState or
-BrowserRouter. Every internal link must retain the document URL and credential
+Use hash routing, never pushState or BrowserRouter. Every internal link must
+retain the document URL and credential
 through a fragment (#/section); relative navigation breaks authentication and is
-rejected by verification. When computing chart/SVG colors, use tok/chartSeries
-and the chartAxis/chartGrid/chartTooltip helpers rather than hardcoded colors.
+rejected by verification. Use injected CSS variables such as var(--color-ink)
+and var(--color-for) for chart/SVG colors rather than hardcoded palette values.
 
 The iframe is isolated from Aladin's DOM/session. Workspace access uses the
 host-authorized API described by the guide. External HTTPS/WSS requests are

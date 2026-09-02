@@ -8,7 +8,7 @@ import (
 	"aladin/backend_v2/internal/service"
 )
 
-// A fixture bundle that speaks the kv bridge protocol directly (no kit import —
+// A fixture bundle that speaks the kv bridge protocol directly (no SDK import —
 // same style as fixtureBundleJS): set → get → render, then a deliberately stale
 // set to prove the conflict reply shape. Rendered markers are asserted below.
 const fixtureKVBundleJS = `(function(){

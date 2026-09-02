@@ -68,8 +68,8 @@ Three moving parts, two of which **already exist**:
   shards (`internal/service/copilot.go`). We give it a *study-aid* brief and the retrieved
   source text to build from.
 - **Shard** is the medium. Agent-authored multi-file React, esbuild-in-Go, sandboxed
-  opaque-origin iframe, composed from `@aladin/kit`, rendered as a work-pane tab
-  (`modules/doc-surface/`). No new runtime.
+  opaque-origin iframe, styled primarily with token-backed Tailwind utilities and
+  rendered as a work-pane tab (`modules/doc-surface/`). No new runtime.
 - **The ingest engine** was the one net-new subsystem. **It is now shipped and running in
   prod** (`INGESTION_PRD.md`): a dropped PDF becomes pages, typed regions, chunks and an
   outline, readable by an agent through `read_document` / `search_document`. The claim this
@@ -177,8 +177,9 @@ which remembers where you got to.** Not a wizard, not a chatbot transcript.
 > is what's proposed.
 >
 > **2. There is a catalogue, not an open canvas.** A small set of aid kinds the agent
-> composes reliably (see D-D). This is why the kit exists: "quiz over §3.2" should produce
-> the same solid `Quiz` every time, not a fresh improvisation.
+> composes reliably (see D-D). The catalogue defines outcomes and interaction patterns;
+> agents initially author the actual React/Tailwind UI so real examples can shape any
+> future component API.
 >
 > | aid | what it's for |
 > |---|---|
@@ -220,7 +221,7 @@ When an aid *is* requested, the bar for it is unchanged — it should reliably c
 
 - **v1 — self-contained interactivity.** Everything above, inside the shard's sandbox.
 - **v2 — connected exploration.** Links out to the entity/ticker a lesson touches, and
-  live Aladin data bound into the lesson via the kit data bridge (`useNode`/`useNodes`).
+  live Aladin data bound into the lesson via the nonvisual shard SDK (`useNode`/`useNodes`).
   **Deferred** — the shard data bridge is a deliberate stub today (host answers only
   `ping`; `doc-surface-ui.tsx:136`) and shard data-wiring is paused until the data model
   settles. Do not build the KG-bound lesson first.
@@ -413,7 +414,7 @@ is one of the four kinds §4b licenses — and even then, cite.
 - **Not a new agent or runtime.** Reuses Copilot + Shard. No forked authoring path (§5).
 - **Not a verbatim surface.** Tutor transforms; grounding (not verbatim-ness) is the
   guarantee (§7). Don't import Entity Context's rules here.
-- **Not live-data-bound in v1.** The kit data bridge stays stubbed; connected exploration
+- **Not live-data-bound in v1.** The original data bridge stayed stubbed; connected exploration
   is v2 (§4), gated on shard data-wiring being unpaused.
 - **Not a bespoke ML/parser stack.** The ingest engine leans on the app's existing
   multimodal LLM + a thin rasterizer, not a from-scratch document-layout model.
@@ -429,7 +430,7 @@ is one of the four kinds §4b licenses — and even then, cite.
 | **D-I** | **Unit of a lesson** | **RESOLVED — a plan item.** Not the document (361 pages can't be one turn) and not auto-chaptering (fires N expensive turns for sections nobody asked for). The user and agent co-author a revisable plan; lessons are authored per item, on demand (§3, §4a). |
 | **D-J** | **How equations reach the lesson** | **RESOLVED — vision → LaTeX, rendered.** Formula crops transcribe to LaTeX and render (KaTeX) in the shard, so math is typeset content a lesson can step through and bind to a simulator. Gated on the §13 T0 spike: this is the one assumption that can sink the surface. |
 | **D-C** | **Generation driver** — general Copilot capability vs. a dedicated "Lesson Author" turn? | Open. *Rec:* a dedicated Lesson-Author system prompt + a surface-kicked turn, streamed in the existing dock. Add a `tutor` surface kind to `systemPrompt(surface)` (`copilot.go:824`). |
-| **D-D** | **Teaching kit primitives** | **RESOLVED in shape by rev 3 — a catalogue, in the kit.** The aid kinds *are* the primitives: `Quiz`, `Flashcards`, `Visualizer`, `StepThrough`, `Overview`, `MindMap`, plus `Glossary`/`Formula`. Built into `@aladin/kit` (`docsurface/kit.tsx`) so "quiz over §3.2" yields the same solid component every time rather than a fresh improvisation. Still open: which ship first — see §13 T3, which deliberately builds two or three aids freehand before fixing the API. |
+| **D-D** | **Teaching interaction patterns** | **RESOLVED in shape by rev 3 — a catalogue, initially authored per shard.** The aid kinds are `Quiz`, `Flashcards`, `Visualizer`, `StepThrough`, `Overview`, `MindMap`, plus `Glossary`/`Formula`. They are built as ordinary React with token-backed Tailwind first, so real use can reveal the right interaction and API before Aladin commits to a component library. Still open: which ship first — see §13 T3. |
 | **D-G** | **Source→turn attachment** — copilot turns are text-only today. | Open. *Rec:* explicit `source_artifact_id` on the turn; the agent reads it via `get_artifact`. Don't stuff the paper into `surfaceContext` (caps at 1800 chars, `copilot.go:871`). |
 | **D-K** | **How a learning container is typed** | **OPEN, but converging — leading answer: it is a PLAIN FOLDER, typed by properties, and by the stateful artifacts inside it.** Rejected along the way: a `purpose` column on `research_strategies` (mixes table responsibilities — a learning row would carry `exec_mode`/`run_state`/`manifest`/`code_hash`/`universe`, none of which apply, in a table whose name says its rows are strategies), and `kind='learning'` (~31 files across 5 layers for a container with no state of its own). **The correction underneath both:** `00037:10` justifies a research *kind* because "folders don't have state" — but that state is `run_state`, `code_hash`, `manifest`, `universe`, `exec_mode`, which is **strategy** state, not folder state. It sits on the node only because a strategy isn't an artifact. Move it to the stateful thing and the container needs nothing. **The pattern already ships:** `artifact_documents` is a `file` artifact with a 1:1 extension holding `status`/`page_count`/`extractor`, and `artifacts.type` is unconstrained text, so `strategy`/`canvas`/`study` cost nothing at the schema level. **The one real gap:** typed properties are indexed on `artifacts.metadata->'properties'` (mig 00035) and `tree_nodes` has **no metadata column at all** — so filtering folders by property needs `tree_nodes.metadata jsonb` + a `jsonb_path_ops` GIN index, mirroring 00035 exactly. One column, one index, and it pays for every folder rather than only this feature — which is the test a fourth kind failed. |
 | **D-H** | **How much "explore" in v1** | Open. *Rec:* self-contained interactivity only; live entity/ticker links + data bridge deferred to v2 (§4). |
@@ -642,12 +643,13 @@ the turn — its chunk/page span, *not* the paper stuffed into `surfaceContext`,
 at 1800 chars), and the gated `publish_app` review. Uses the existing Copilot + Shard path;
 no forked authoring engine (§5's rule that must not bend).
 
-### T3 — The aid catalogue (the kit)
+### T3 — The aid catalogue
 
-D-D: `Quiz` / `Simulator` / `Glossary` / `StepThrough` / `Reveal` / `Figure` / `Formula` in
-`@aladin/kit`. Deliberately *after* T2: author two or three real lessons freehand first and
-let the primitives fall out of what the agent actually reaches for. Building the kit first
-means guessing.
+D-D: author `Quiz` / `Simulator` / `Glossary` / `StepThrough` / `Reveal` /
+`Figure` / `Formula` in two or three real lessons using ordinary React and
+token-backed Tailwind. Record the recurring interaction, accessibility and state
+patterns. A future component kit may package the patterns that survive real use;
+shipping a kit before this step would mean guessing.
 
 ### T4 — Library and progress
 

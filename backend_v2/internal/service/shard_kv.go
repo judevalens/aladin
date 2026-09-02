@@ -27,7 +27,7 @@ type ShardKVEntry struct {
 }
 
 // ShardKVConflict is returned when a revision-guarded write loses: it carries the
-// stored current so the client can re-apply and retry (the kit hook does this
+// stored current so the client can re-apply and retry (the shard SDK hook does this
 // automatically). For a tombstoned key Current.Deleted is true and Value nil —
 // retrying with Current.Revision revives the key.
 type ShardKVConflict struct {

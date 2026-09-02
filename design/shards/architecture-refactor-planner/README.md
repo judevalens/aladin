@@ -7,10 +7,11 @@ The document is the canonical rationale, sequence, and policy. The shard is the
 execution surface: it shows phases and work items, persists status and planning
 notes through `useShardState`, and makes the program usable as an operating board.
 
-The source targets the authoring capabilities currently returned by the production
-Aladin `get_authoring_guide`: React/TypeScript, `@aladin/kit`, `anchors.json`, and
-the bridge/1 shard-local state API. It intentionally does not opt into the
-unreleased Shard v2 resource contract.
+The source targets the current Aladin authoring contract: React/TypeScript,
+token-backed Tailwind utilities, `anchors.json`, and the nonvisual
+`@aladin/shard` SDK. Its controls and visual patterns are authored locally; it
+uses the bridge/1 shard-local state API and intentionally does not opt into a
+Shard v2 resource contract.
 
 Before importing this package into Aladin:
 

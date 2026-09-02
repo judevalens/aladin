@@ -4844,7 +4844,7 @@ function G(e, t) {
 	if (n || (n = Pn.compile(e), Fn.set(e, n), Pn.removeSchema(e)), !n(t)) throw Error(Pn.errorsText(n.errors));
 }
 //#endregion
-//#region ../../aladin_react/src/modules/doc-surface/data/types.ts
+//#region aladin_react/src/modules/doc-surface/data/types.ts
 var K = Object.freeze({
 	jsonBytes: 1 << 20,
 	jsonDepth: 64,
@@ -5141,7 +5141,7 @@ var Wn = {
 	]
 };
 //#endregion
-//#region ../../aladin_react/src/modules/doc-surface/data/event-validation.ts
+//#region aladin_react/src/modules/doc-surface/data/event-validation.ts
 function Gn(e, t, n) {
 	X(e), G(Wn, e), Y(new TextEncoder().encode(JSON.stringify(e)).byteLength <= K.jsonBytes, "event exceeds byte limit");
 	let r = e, i = r.op === "snapshot" ? r.records : "record" in r ? [r.record] : [];
@@ -5151,7 +5151,7 @@ function Gn(e, t, n) {
 	return Y(t.kind !== "singleton" || r.op !== "delete" || r.id === "value", "invalid singleton ID"), r;
 }
 //#endregion
-//#region ../../aladin_react/src/modules/doc-surface/data/resource-store.ts
+//#region aladin_react/src/modules/doc-surface/data/resource-store.ts
 var Kn = Object.freeze({
 	records: Object.freeze([]),
 	seq: null,
@@ -5254,7 +5254,7 @@ function Jn(e, t, n, r) {
 	});
 }
 //#endregion
-//#region ../../aladin_react/src/modules/doc-surface/data/resource-client.ts
+//#region aladin_react/src/modules/doc-surface/data/resource-client.ts
 var Yn = [
 	"snapshot",
 	"query",
@@ -6365,13 +6365,13 @@ var $n = class {
 	additionalProperties: !1
 };
 //#endregion
-//#region ../../aladin_react/src/modules/doc-surface/data/request-id.ts
+//#region aladin_react/src/modules/doc-surface/data/request-id.ts
 function or() {
 	let e = new Uint8Array(16);
 	return crypto.getRandomValues(e), Array.from(e, (e) => e.toString(16).padStart(2, "0")).join("");
 }
 //#endregion
-//#region ../../aladin_react/src/modules/doc-surface/data/bridge-transport.ts
+//#region aladin_react/src/modules/doc-surface/data/bridge-transport.ts
 var sr = /* @__PURE__ */ new WeakMap();
 function cr(e) {
 	let t = (sr.get(e) ?? 0) + 1;
@@ -6649,7 +6649,7 @@ var lr = class {
 	}
 };
 //#endregion
-//#region ../../aladin_react/src/modules/doc-surface/data/use-resource.ts
+//#region aladin_react/src/modules/doc-surface/data/use-resource.ts
 function dr(n) {
 	return function(r, i = {}) {
 		let a = In(i), o = e(() => n.resource(r, JSON.parse(a)), [r, a]);
@@ -6663,7 +6663,7 @@ function dr(n) {
 	};
 }
 //#endregion
-//#region ../../aladin_react/src/modules/doc-surface/data/kit-resource.ts
+//#region aladin_react/src/modules/doc-surface/data/shard-resource.ts
 var fr, $;
 function pr() {
 	if (!fr) {

@@ -165,7 +165,7 @@ function ShardSurface({ artifact, hidden, controlsTarget }: { artifact: Artifact
     </span>
   );
 
-  // One bridge host per iframe: answers the kit's bridge/1 requests (source-
+  // One bridge host per iframe: answers the shard SDK's bridge/1 requests (source-
   // window checked), proxies shard local state, and pushes theme switches.
   const hostRef = useRef<BridgeHost | null>(null);
   useLayoutEffect(() => {

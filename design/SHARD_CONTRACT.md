@@ -185,10 +185,10 @@ put data in the right store from the start.
 3. **Observed** (derived, advisory, reversible): verification keeps
    declarations honest; tiered entity resolution over kv text later derives the
    links agents forgot. Never blocks publish.
-4. **Emergent**: kit `stateKey` components (Quiz/Checklist/Flashcards…) already
-   impose shared shapes by library adoption. Recurring bespoke shapes get
-   promoted into the kit as named kinds — the vocabulary standardizes through
-   the dependency, never by mandate.
+4. **Emergent**: authored shards reveal recurring state and interaction shapes.
+   We document the ones that survive real use and may later package them in an
+   optional component system. The vocabulary emerges from use rather than a
+   mandated schema or a premature library API.
 
 Degrades gracefully by construction: subtract the LLM and the mechanics
 (catalog, patterns, GIN/tsvector, entity refs, grant) still give a 2015-era

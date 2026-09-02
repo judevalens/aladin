@@ -43,6 +43,25 @@ func TestShardAuthoringInstructionsUseCapabilityDiscovery(t *testing.T) {
 	}
 }
 
+func TestRuntimeAuthoringGuideContainsRunnableGraphQLShape(t *testing.T) {
+	for _, want := range []string{
+		`"schema": "graphql/schema.graphql"`,
+		`"Query.taskSummary"`,
+		`"capabilities": ["tasks:query"]`,
+		`defineResolver`,
+		`ctx.capabilities.call("tasks:query"`,
+		`executeGraphQL`,
+		`from "@aladin/shard"`,
+	} {
+		if !strings.Contains(runtimeAuthoringGuide, want) {
+			t.Fatalf("runtime guide missing %q", want)
+		}
+	}
+	if strings.Contains(runtimeAuthoringGuide, "subscribeResource") || strings.Contains(runtimeAuthoringGuide, "@aladin/kit") {
+		t.Fatal("runtime guide advertises an unavailable client API")
+	}
+}
+
 // Exercise tool calls over MCP, including the returned contract, rather than
 // testing only string helpers. No DB is needed for guide selection or creation.
 func TestShardAuthoringEnabledCapabilitiesAndCreation(t *testing.T) {
@@ -88,6 +107,16 @@ func TestShardAuthoringEnabledCapabilitiesAndCreation(t *testing.T) {
 				return value
 			}
 			guide := call("get_authoring_guide", map[string]any{})["authoring_guide"].(string)
+			for _, want := range []string{"ordinary React", "Tailwind utilities as the primary styling system", "data-anchor", "@aladin/shard"} {
+				if !strings.Contains(guide, want) {
+					t.Fatalf("authoring guide missing %q", want)
+				}
+			}
+			for _, removed := range []string{"@aladin/kit exports", "<AppShell", "<DataTable", "prefer kit primitives"} {
+				if strings.Contains(guide, removed) {
+					t.Fatalf("authoring guide still advertises removed UI %q", removed)
+				}
+			}
 			if strings.Contains(guide, "useResource(") != enabled || strings.Contains(guide, "useKV(") == enabled {
 				t.Fatalf("guide advertises wrong data API: %s", guide)
 			}
@@ -101,6 +130,10 @@ func TestShardAuthoringEnabledCapabilitiesAndCreation(t *testing.T) {
 				t.Fatal("create and discovery disagree")
 			}
 			id := created["id"].(string)
+			starter := created["current_index_tsx"].(string)
+			if strings.Contains(starter, "@aladin/kit") || !strings.Contains(starter, "data-anchor=\"intro\"") || !strings.Contains(starter, "font-display") {
+				t.Fatalf("starter does not model custom token-backed UI: %s", starter)
+			}
 			contract, err := store.ReadFile(ctx, id, "contract.json")
 			if enabled {
 				if err != nil || created["contract_json"] != string(contract) {

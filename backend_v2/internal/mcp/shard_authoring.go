@@ -10,49 +10,51 @@ import (
 
 // The shared UI reference contains no storage API assumptions. Exactly one
 // data guide is selected using runtime configuration and the target's files.
-const kitComponentGuide = `This guide describes the capabilities available for this authoring target. Use them directly; do not ask the user to choose a runtime version.
+const shardSurfaceGuide = `This guide describes the capabilities available for this authoring target. Use them directly; do not ask the user to choose a runtime version.
 
-A shard is a REACT app written in TypeScript/TSX. create_app returns a working index.tsx (current_index_tsx) and the files required by this backend — write_file a COMPLETE, valid index.tsx that EXTENDS it: a full module with the React imports at the top, your <App/> component, and the createRoot render at the bottom. Never write a fragment, markdown, or prose into a .tsx file. Import components from "@aladin/kit". Style with Tailwind + Aladin tokens ONLY — never arbitrary hex.
+A shard is a React app written in TypeScript/TSX. Its UI is ordinary React, semantic HTML and authored CSS. There is no Aladin component library. Do not import from "@aladin/kit" or imitate a generic dashboard template. Design the interface around the shard's actual job.
 
-index.tsx MUST be a complete module and end with:
+create_app returns a complete working index.tsx and the files required by this backend. Every index.tsx replacement must remain a full module with imports at the top and this mount at the bottom:
   import { createRoot } from "react-dom/client";
   createRoot(document.getElementById("root")!).render(<App />);
+Never write a fragment, markdown or prose into a .tsx file.
 
-@aladin/kit exports (all token-styled, self-contained):
-- Layout: <Page>, <Section> (centered, max-w-3xl), <Panel>, <Card>, <Toolbar>, <Divider/>
-- Regions (wrap each addressable part; add a matching entry in anchors.json): <Region anchor="intro" kind="narrative|metric|chart|collection|control">…</Region>
-- Routing (hash, for multi-view shards): <Route path="/x">…</Route>, <Link to="/x">…</Link>, useRoute()
-- UI: <Button variant="primary|outline|ghost|danger" size="sm|md">, <Badge tone="neutral|amber|for|against">, <Callout tone="info|warn|for|against" title="…">, <Stat label={…} value={…} sub={…}/>, <Tabs tabs={[{id,label,content}]}/>, <Dialog open onClose title>, <Input>, <Textarea>, <Field label hint>
-- Semantic colored text: <For>, <Against>, <Catalyst>, <Echo>
-- Data display: <DataTable columns={[{key,label,render?,align?,width?}]} rows={…} rowKey={r=>r.id} onRowClick? empty?/>, <KeyValue items={[{label,value,hint?}]}/>, <MetricRow metrics={[{label,value,delta?,hint?}]}/>, <Sparkline points={[1,2,3]} tone?/>, <Delta value={-2.5} suffix?/>, <ProgressBar value max? label?/>
-- App chrome + forms: <AppShell title nav={[{id,label,to}]} footer?>…</AppShell> (hash-routed sidebar), <SearchInput value onChange/>, <Select options={[{value,label}]} value onChange/>, <Checkbox checked onChange label?/>, <RadioGroup name options value onChange/>, <EmptyState title hint? action?/>, <LoadingState label?/>, useToast().show(msg, "neutral|for|against") with a single <Toasts/> mounted near the root
-- Interactive components (in-memory state; persistence guidance below): <Quiz questions={[{id,prompt,choices:[{id,text}],answerId,explanation?}]} onComplete?/>, <Flashcards cards={[{id,front,back}]}/>, <Timer seconds label? onComplete?/>, <Checklist items={[{id,label}]} onChange?/>, <Stepper steps={[{id,title,content}]}/>
+Theme tokens are injected into every shard and update automatically when the host theme changes. No import is needed. Use token-backed Tailwind utilities as the primary styling system:
+- surfaces: bg-bg/bg-panel/bg-card/bg-raise/bg-field; var(--color-bg), var(--color-panel), var(--color-card), var(--color-raise), var(--color-field)
+- ink: text-ink/text-ink-2/text-ink-3/text-ink-4; var(--color-ink), var(--color-ink-2), var(--color-ink-3), var(--color-ink-4)
+- accent and lines: text-amber/bg-amber/border-amber-line/border-line/border-line-2
+- semantics: text-for/text-against/text-catalyst/text-echo
+- type: font-display/font-mono/font-sans and text-meta/text-small/text-body/text-lead/text-title/text-display
+- radii and shadows: rounded-tap/rounded-chip/rounded-control/rounded-card/rounded-modal and shadow-panel/shadow-modal/shadow-toast
+Typography is part of the token system: use font-display for titles, font-sans for interface text, font-mono for data/code, and the named type steps instead of arbitrary font sizes. Use responsive Tailwind utilities for layout, spacing and interaction states. Write and import a .css file only when a custom visual, animation or selector is clearer than utilities; in that CSS use var(--color-*), var(--font-*), and the other injected properties instead of fixed palette values. CSS variables also work with currentColor for SVG.
+The document shell applies live theme changes even if the shard imports no SDK. When code resolves a CSS variable into a concrete canvas/chart value during render, import useTheme from "@aladin/shard" and read the variable again when that hook changes.
 
-Theme: shards follow the app's theme automatically (utilities + tokens re-resolve on switch). Only when you compute a color at render time (tok(), chart colors, hand-drawn SVG) call useTheme() in that component so it re-renders on a switch.
+Mark every addressable region with data-anchor and optional data-kind, then add the same ID to anchors.json:
+  <section data-anchor="tasks" data-kind="collection">...</section>
+Kinds include narrative, metric, chart, collection and control. This identity is plain DOM metadata, not a component.
 
-Tokens (Tailwind classes): surfaces bg-bg/bg-panel/bg-card/bg-raise/bg-field; ink text-ink/text-ink-2/text-ink-3/text-ink-4; accent text-amber, border-amber-line; lines border-line; radius rounded-card/rounded-chip/rounded-modal; fonts font-display/font-mono/font-sans.
+For multiple views, use fragment routes only. Links must be href="#/path"; observe hashchange or use a local router that never calls pushState. Root-relative and ordinary relative links escape the authenticated shard document and fail verification.
 
-Charts: run install_lib "recharts" first, import from "recharts", theme via the kit: <XAxis {...chartAxis()}/>, <CartesianGrid {...chartGrid()}/>, <Tooltip {...chartTooltip()}/>, and series colors from chartSeries()[i]. (import { chartAxis, chartGrid, chartTooltip, chartSeries } from "@aladin/kit")
+Charts and other libraries are optional. Run install_lib first, import the package normally, and style it with injected CSS variables. Remote runtime scripts and arbitrary UI frameworks are not part of the authoring surface.
 
-Animations: Tailwind (transition-*, hover:*, animate-pulse) or your own CSS keyframes in a .css file you write_file and import.
+Animations may use CSS keyframes or Tailwind transition/animation utilities.
 
 `
 
-const kitKeyValueGuide = `Shard-local storage (the shard's own little database — persists per user, survives reload, syncs across the user's clients):
+const legacyDataGuide = `Import the nonvisual compatibility APIs from "@aladin/shard". Shard-local storage persists per user, survives reload and syncs across the user's clients:
+  import { useShardState, useKV, useNode, useNodes } from "@aladin/shard"
   const [value, setValue] = useShardState<T>("settings", initial)  // one key; setValue takes a value or (prev)=>next and retries safely if another client wrote first
   const { entries, put, remove, loading } = useKV("expenses/")     // a LIVE view of every key under a prefix — this is how a mini-app holds a collection
   Keys are stable paths: "settings", "filters", "layout/main", "scenario/base", "expenses/2026-08-01". A prefix IS a collection. Values are small JSON (16KiB max per key, 1MiB per shard). Use it for app/UI data — filters, layouts, entries, progress — never for knowledge that belongs in the workspace.
 
 Workspace data (read-only, opt-in): declare the entity ids a region depends on in that anchor's "refs" in anchors.json, then const { node } = useNode("artifact-…") / useNodes([...]). Refs are the GRANT — a read of anything undeclared is refused, and publish fails if a ref doesn't resolve. Id forms: "artifact-…", "record-…", "research-…", and "watchlist:<uuid>" for kinds whose ids are bare uuids.
 
-Interactive component persistence: Quiz, Flashcards, Timer, Checklist and Stepper also accept an optional stateKey. With it their state persists; without it state remains in memory. A persisted timer stores its target timestamp.
-
 Preserve this shard's existing storage keys and data APIs. Do not add a resource contract or rewrite its persistence as part of a routine edit.
 `
 
-const kitAuthoringLoop = `Loop: after each write_file/edit_file, READ the returned build log — if it has errors, fix the exact file and write again until build.ok is true. Then verify_app (it checks that every anchor you declared is really in the DOM on its route, that declared sources resolve, and that nothing threw) before publish_app. Keep components small and valid; prefer kit primitives over hand-rolled markup.`
+const shardAuthoringLoop = `Loop: for several files, call write_file with build:false and then build_app once. Read every build diagnostic and fix the exact file until build.ok is true. Open the preview, exercise meaningful interactions and inspect its snapshot/console. Then run verify_app; it checks that every declared anchor is present on its route, sources resolve, links stay inside the shard, and nothing threw. Fix every failure before publish_app. A successful build alone is not evidence that the shard works.`
 
-const kitResourceGuide = `Shard data is managed through declared resources. create_app seeds contract.json and anchors.json automatically. Extend those files; keep their schema-version fields intact. The runtime details are handled by the backend, not a choice to put to the user.
+const resourceAuthoringGuide = `Shard data is managed through declared resources. create_app seeds contract.json and anchors.json automatically. Extend those files; keep their schema-version fields intact. The runtime details are handled by the backend, not a choice to put to the user.
 
 Available data sources:
 - shard.documents: the shard's own persistent collections and singletons. Supports create, full replacement, delete, declared-field filtering/sorting, cursor pagination and subscribed live snapshots. No extra storage integration is needed for journals, trackers, forms, saved settings or learning progress.
@@ -66,7 +68,8 @@ Contract authoring:
   "tasks": {"uri":"shard://self/resources/tasks","kind":"collection","meaning":"Tasks managed by this shard","schemaVersion":1,"schema":{"type":"object","properties":{"title":{"type":"string"},"done":{"type":"boolean"}},"required":["title","done"],"additionalProperties":false},"source":{"provider":"shard.documents","dataset":"tasks"},"operations":["snapshot","query","insert","update","delete"],"observe":{"mode":"changes","protocol":"shard-data/1"},"exposure":{"app":["snapshot","query","observe","insert","update","delete"],"agent":["snapshot","query"]},"query":{"filterFields":["/done"],"sortFields":["/title"],"maxLimit":100}}
   Then add bindings.tasks:{resource:"tasks"}. Bindings can project fields with select; never treat a projected read as a full replacement write. Optional inputsSchema/params resolve declared inputs and singleton dependencies; the backend reauthorizes them.
 
-Import from @aladin/kit:
+Import only the nonvisual client from @aladin/shard:
+  import { useResource, queryResource, resourceRequestId } from "@aladin/shard"
   const tasks = useResource("tasks", inputs?)
   // records: [{id,revision,schemaVersion,data}], status/loading/stale/error,
   // capabilities/pending/nextCursor/refresh, permitted insert/update/remove.
@@ -77,7 +80,7 @@ Import from @aladin/kit:
   // Query needs the query capability and declared query.filterFields/sortFields.
   // Next page: retain query/inputs and add cursor:page.nextCursor.
 
-The kit owns transport, schema validation, subscriptions, stale state and recovery. Add observe:{mode:"changes",protocol:"shard-data/1"} and the observe grant for subscribed refresh snapshots. This reports current state, not a lossless event log. Records are bounded; do not scan a large dataset client-side to emulate backend analytics. Singleton ID is value; insertion is explicit, never an automatic default write. Use React state for temporary UI state; use resources for saved settings/progress, including custom learning components. The listed interactive components keep their internal state in memory.
+The shard SDK owns transport, schema validation, subscriptions, stale state and recovery. Add observe:{mode:"changes",protocol:"shard-data/1"} and the observe grant for subscribed refresh snapshots. This reports current state, not a lossless event log. Records are bounded; do not scan a large dataset client-side to emulate backend analytics. Singleton ID is value; insertion is explicit, never an automatic default write. Use React state for temporary UI state and resources for saved settings or progress.
 
 Updates replace complete data. Retain the original requestId and exact command for an explicit retry after an unknown outcome. No automatic optimistic/offline writes. Query pages are read-current and separate from the live hook; discard them on view/session changes. Credentials, backend URLs, environment and release hash never come from authored binding params or TSX. Public browser-compatible HTTPS/WSS data can be used subject to CORS, but it is outside managed resource guarantees; never embed private credentials.
 
@@ -110,19 +113,59 @@ func (t docToolServer) resourceAuthoringEnabled() bool {
 	return t.releases != nil && t.releases.Enabled()
 }
 
-const kitGraphQLGuide = `Authored backend runtime is enabled on this target. For cross-resource composition, declare named persisted queries or mutations under contract.graphql.operations, a GraphQL schema file, and resolver TypeScript files. Import defineResolver from "@aladin/shard-runtime". Each resolver declares binding capabilities such as tasks:query and explicit maxOperations, maxDocuments, timeoutMs and memoryMiB budgets. Call executeGraphQL(operationId, variables) from the shard; raw GraphQL text is never accepted. Use subscribeResource for live data because this request/response GraphQL route does not expose subscription documents. A resolver receives only context.capabilities.call(capability,input), never a database client or namespace selector. Manual lambdas use the same bundle/budgets and invokeLambda(name,input). Published agent-exposed operations are available through execute_shard_operation.\n`
+const runtimeAuthoringGuide = `Authored backend runtime is enabled on this target. GraphQL operations are named and persisted; raw GraphQL text is never accepted.
+
+Add this exact shape under contract.graphql, adapting names and fields:
+  "graphql": {
+    "schema": "graphql/schema.graphql",
+    "operations": {
+      "taskSummary": {
+        "document": "query TaskSummary { taskSummary { total open } }",
+        "exposure": ["app", "agent"]
+      }
+    },
+    "resolvers": {
+      "Query.taskSummary": {
+        "file": "resolvers/taskSummary.ts",
+        "export": "default",
+        "capabilities": ["tasks:query"],
+        "budget": {"maxOperations": 1, "maxDocuments": 100, "timeoutMs": 1500, "memoryMiB": 32}
+      }
+    }
+  }
+
+graphql/schema.graphql:
+  type Query { taskSummary: TaskSummary! }
+  type TaskSummary { total: Int!, open: Int! }
+
+resolvers/taskSummary.ts:
+  import { defineResolver } from "@aladin/shard-runtime";
+  export default defineResolver(async (_args: unknown, ctx: any) => {
+    const result = await ctx.capabilities.call("tasks:query", {query: {limit: 100}});
+    const records = result.records || [];
+    return {total: records.length, open: records.filter((item: any) => !item.data.done).length};
+  });
+
+Shard UI:
+  import { executeGraphQL } from "@aladin/shard";
+  const result = await executeGraphQL<{taskSummary:{total:number;open:number}}>("taskSummary", {});
+
+Resolver capability names are <binding>:<operation>. Every resolver declares only the capabilities it calls plus explicit operation, document, time and memory budgets. It receives context.capabilities.call(capability,input), never a database client, storage namespace or credential. Use useResource for live views because this GraphQL route is request/response and persisted subscription documents are rejected.
+
+Manual lambdas use resolver-style TypeScript, the same capability/budget declarations, a {"kind":"manual"} trigger, and invokeLambda(name,input) from "@aladin/shard". Published agent-exposed GraphQL operations are available through execute_shard_operation.
+`
 
 func (t docToolServer) runtimeAuthoringEnabled() bool { return t.graphql != nil && t.graphql.Enabled() }
 
 func shardAuthoringGuide(resources, graphql bool) string {
-	data := kitKeyValueGuide
+	data := legacyDataGuide
 	if resources {
-		data = kitResourceGuide
+		data = resourceAuthoringGuide
 	}
 	if resources && graphql {
-		data += "\n" + kitGraphQLGuide
+		data += "\n" + runtimeAuthoringGuide
 	}
-	return kitComponentGuide + data + "\n" + kitAuthoringLoop
+	return shardSurfaceGuide + data + "\n" + shardAuthoringLoop
 }
 
 const unavailableShardGuide = `This shard's data runtime is unavailable on this backend. Do not build or publish it, remove its contract, or rewrite its saved data to use another API. Ask for the configured runtime to be restored. Existing saved data must be preserved.`

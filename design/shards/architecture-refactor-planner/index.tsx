@@ -1,20 +1,86 @@
 import { useMemo, useState } from "react";
+import type { ButtonHTMLAttributes, ReactNode, TextareaHTMLAttributes } from "react";
 import { createRoot } from "react-dom/client";
-import {
-  Badge,
-  Button,
-  Callout,
-  Card,
-  Divider,
-  Page,
-  Panel,
-  ProgressBar,
-  Region,
-  Section,
-  Stat,
-  Textarea,
-  useShardState,
-} from "@aladin/kit";
+import { useShardState } from "@aladin/shard";
+
+type Tone = "neutral" | "amber" | "for" | "against";
+
+const toneClasses: Record<Tone, string> = {
+  neutral: "border-line bg-raise text-ink-2",
+  amber: "border-amber-line bg-amber-soft text-amber",
+  for: "border-for/30 bg-for/10 text-for",
+  against: "border-against/30 bg-against/10 text-against",
+};
+
+function Page({ children }: { children: ReactNode }) {
+  return <main className="min-h-screen bg-bg text-ink">{children}</main>;
+}
+
+function Section({ children }: { children: ReactNode }) {
+  return <div className="mx-auto w-full max-w-6xl px-5 py-8 sm:px-8">{children}</div>;
+}
+
+function Region({ anchor, kind, children }: { anchor: string; kind: string; children: ReactNode }) {
+  return <section data-anchor={anchor} data-kind={kind}>{children}</section>;
+}
+
+function Badge({ tone = "neutral", children }: { tone?: Tone; children: ReactNode }) {
+  return <span className={`inline-flex items-center rounded-chip border px-2 py-1 font-mono text-meta uppercase tracking-wider ${toneClasses[tone]}`}>{children}</span>;
+}
+
+function Button({ variant = "outline", size = "md", className = "", ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "outline" | "ghost"; size?: "sm" | "md" }) {
+  const variants = {
+    primary: "border-amber bg-amber text-bg hover:opacity-90",
+    outline: "border-line bg-panel text-ink hover:border-line-2 hover:bg-raise",
+    ghost: "border-transparent bg-transparent text-ink-2 hover:bg-raise hover:text-ink",
+  };
+  return <button type="button" className={`rounded-control border font-sans transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber ${size === "sm" ? "px-3 py-1.5 text-small" : "px-4 py-2 text-body"} ${variants[variant]} ${className}`} {...props} />;
+}
+
+function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return <article className={`rounded-card border border-line bg-panel p-4 shadow-panel ${className}`}>{children}</article>;
+}
+
+function Panel({ children }: { children: ReactNode }) {
+  return <div className="rounded-card border border-line bg-field p-4">{children}</div>;
+}
+
+function Divider() {
+  return <hr className="border-0 border-t border-line" />;
+}
+
+function Textarea({ className = "", ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return <textarea className={`w-full resize-y rounded-control border border-line bg-field px-3 py-2 text-body text-ink outline-none transition-colors placeholder:text-ink-3 focus:border-amber ${className}`} {...props} />;
+}
+
+function Stat({ label, value, sub }: { label: string; value: string; sub: string }) {
+  return (
+    <div className="rounded-card border border-line bg-panel p-4">
+      <div className="font-mono text-meta uppercase tracking-wider text-ink-3">{label}</div>
+      <div className="mt-2 font-display text-title text-ink">{value}</div>
+      <div className="mt-1 text-small text-ink-2">{sub}</div>
+    </div>
+  );
+}
+
+function ProgressBar({ value, max, label }: { value: number; max: number; label: string }) {
+  const percent = max > 0 ? Math.round((value / max) * 100) : 0;
+  return (
+    <div>
+      <div className="mb-2 flex justify-between font-mono text-meta uppercase tracking-wider text-ink-3"><span>Progress</span><span>{label}</span></div>
+      <div className="h-2 overflow-hidden rounded-full bg-field"><div className="h-full rounded-full bg-amber transition-[width]" style={{ width: `${percent}%` }} /></div>
+    </div>
+  );
+}
+
+function Callout({ title, children }: { tone?: "warn"; title: string; children: ReactNode }) {
+  return (
+    <aside className="rounded-card border border-amber-line bg-amber-soft p-4 text-ink-2">
+      <h3 className="font-display text-body text-amber">{title}</h3>
+      <div className="mt-2 text-small leading-relaxed">{children}</div>
+    </aside>
+  );
+}
 
 type PhaseId = "stabilize" | "map" | "consolidate" | "rewrite" | "harden";
 type Area = "program" | "product" | "frontend" | "backend" | "shards" | "verification";

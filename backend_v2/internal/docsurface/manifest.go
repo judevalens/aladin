@@ -33,10 +33,10 @@ type ManifestAnchor struct {
 	Meaning string          `json:"meaning"`
 }
 
-// knownAnchorKinds is the advisory region taxonomy (mirrors the kit). `kind` is
-// an OPEN, kit-owned string — NOT enforced here — so the kit can introduce new
-// kinds without a manifest-schema change. Kept for documentation / a future
-// soft warning.
+// knownAnchorKinds is the advisory region taxonomy used in the authoring guide.
+// `kind` is an OPEN string and is not enforced here, so authors can introduce
+// a more precise kind without a manifest-schema change. Kept for documentation
+// and a future soft warning.
 var knownAnchorKinds = map[string]bool{
 	"collection": true,
 	"metric":     true,
@@ -90,7 +90,7 @@ func ValidateManifest(m Manifest) []string {
 		if a.Meaning == "" {
 			problems = append(problems, where+": meaning is required")
 		}
-		// kind is intentionally NOT validated — it's an open, kit-owned string.
+		// kind is intentionally NOT validated — it is an open author-owned string.
 		if a.ID != "" && a.Route != "" {
 			key := a.Route + "\x00" + a.ID
 			if _, dup := seen[key]; dup {

@@ -8,7 +8,7 @@ import (
 	"aladin/backend_v2/internal/service"
 )
 
-// A fixture that stamps two anchors (as kit Region does) and rejects a promise
+// A fixture that stamps two anchors as ordinary DOM metadata and rejects a promise
 // with no catch — the failure mode CDP's exceptionThrown does NOT report.
 const fixtureAnchorBundleJS = `(function(){
   var r = document.getElementById('root');

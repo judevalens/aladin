@@ -75,7 +75,7 @@ Content serving and manifest reads use the active protected artifact. An
 optional build ID must match, or serving fails with 409. A broken v2 release
 never falls back to mutable dist. Disabling v2 execution retains protected
 release lookup and refuses to serve existing v2 shards; it does not revive old v1
-files or change active pointers. The kit handshake verifies code/release
+files or change active pointers. The shard SDK handshake verifies code/release
 identity. Only this protected selection adds the approved `unsafe-eval` policy;
 v1 keeps its CSP. All v2 iframe code receives that permission, not just AJV.
 

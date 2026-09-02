@@ -400,7 +400,7 @@ func (b *builder) resolveImportMap(ctx context.Context, metafile string, pins ma
 	}
 
 	needReact := false
-	usesKit := false
+	usesShardSDK := false
 	for _, spec := range parseExternalImports(metafile) {
 		if !isVendored(spec) {
 			continue // a stray external (shouldn't happen) — leave it unmapped
@@ -411,13 +411,13 @@ func (b *builder) resolveImportMap(ctx context.Context, metafile string, pins ma
 		if reactFamily[spec] && spec != "react" {
 			needReact = true // its bare `import "react"` needs the shared react mapped
 		}
-		if spec == kitSpec {
-			usesKit = true
+		if spec == shardSDKSpec {
+			usesShardSDK = true
 		}
 	}
-	// The kit imports react + react/jsx-runtime at runtime; map them even if the
+	// The shard SDK imports react + react/jsx-runtime at runtime; map them even if the
 	// shard's own code didn't pull them in directly.
-	if usesKit {
+	if usesShardSDK {
 		needReact = true
 		if !ensure("react/jsx-runtime") {
 			return ImportMap{}, failLog, false
@@ -499,6 +499,9 @@ func (b *builder) cdnPlugin(ctx context.Context, pins map[string]string) esbuild
 		Name: "esm-sh-cdn",
 		Setup: func(build esbuild.PluginBuild) {
 			build.OnResolve(esbuild.OnResolveOptions{Filter: ".*"}, func(args esbuild.OnResolveArgs) (esbuild.OnResolveResult, error) {
+				if args.Path == "@aladin/kit" {
+					return esbuild.OnResolveResult{}, fmt.Errorf("@aladin/kit UI components were removed; build UI with React/CSS and import data APIs from @aladin/shard")
+				}
 				// Full URL import (from agent code or within a fetched module).
 				if strings.HasPrefix(args.Path, "http://") || strings.HasPrefix(args.Path, "https://") {
 					return esbuild.OnResolveResult{Path: args.Path, Namespace: ns}, nil

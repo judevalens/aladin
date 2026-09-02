@@ -1,4 +1,4 @@
-// The host half of the shard bridge (protocol "bridge/1" — the kit's envelope).
+// The host half of the shard bridge (protocol "bridge/1" — the shard SDK envelope).
 //
 // A shard iframe is sandboxed to an OPAQUE origin: postMessage is its only
 // channel out, and this module is what answers. One host is attached per shard
@@ -13,7 +13,7 @@
 // desktop, REST on web; REST writes everywhere; published channel only — the
 // host owns channel selection, shards never see it). nodes.* (the manifest-
 // granted workspace plane) lands behind the same switch. Unknown methods are
-// REJECTED with code "unknown-method" so a kit call fails fast instead of
+// REJECTED with code "unknown-method" so an SDK call fails fast instead of
 // hanging into its 8s timeout.
 
 import { ShardKVConflictError } from "@/shared/api/shard-api";
