@@ -23,14 +23,16 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
-type Dependencies interface {
+// APIComponents is the process composition output used by cmd/api. The HTTP
+// package owns its narrower request-serving contract; this surface additionally
+// exposes the three loops whose lifecycle is owned by the API process.
+type APIComponents interface {
 	Auth() coreservice.AuthService
 	System() coreservice.SystemService
 	Sources() coreservice.SourceService
 	Records() coreservice.RecordService
 	Artifacts() coreservice.ArtifactService
 	Pages() coreservice.PageService
-	PageDocuments() coreservice.PageDocumentService
 	Files() coreservice.FileService
 	Feed() coreservice.FeedService
 	Insights() coreservice.InsightService
@@ -45,15 +47,12 @@ type Dependencies interface {
 	// MCP process writes files + builds; the API process serves built dist.
 	DocSurfaceStore() coreservice.DocSurfaceStore
 	WorkspaceRuntime() coreservice.WorkspaceRuntime
-	// Preview drives interactive headless inspection of built app pages (MCP only).
-	Preview() coreservice.PreviewService
 	// ShardBuild runs builds while recording status + emitting build-status events.
 	ShardBuild() coreservice.ShardBuildService
 	// ShardResources is the opt-in v2 resource service (nil when disabled).
 	ShardResources() coreservice.ShardResourceService
 	ShardGraphQL() coreservice.ShardGraphQLService
 	ShardReleases() coreservice.ShardReleaseService
-	ShardCatalog() coreservice.ShardCatalogService
 	// ShardKV is the v1 per-shard key/value document store.
 	ShardKV() coreservice.ShardKVService
 	// ShardBridge serves the workspace plane to shards under the manifest grant.
@@ -89,14 +88,9 @@ type Dependencies interface {
 	Unfurl() coreservice.UnfurlService
 	// ContentIndex is the readable-workspace projection (READABLE_WORKSPACE R1): the
 	// worker sweeps it fresh; federated search reads it.
-	ContentIndex() coreservice.ContentIndexService
 	// Bars is the OHLCV history store behind the ticker chart.
 	Bars() coreservice.BarService
 	// QuoteSnapshots is the live-quote snapshot source (nil without market-data keys).
-	QuoteSnapshots() coreservice.QuoteSnapshotSource
-	// MarketInfo is the read-only market-intelligence surface: news, screeners, and the
-	// (paper/live) account's balance + positions (nil without Alpaca keys).
-	MarketInfo() coreservice.MarketInfoService
 	// Alerts backs price alerts (the alert engine that evaluates them runs only in the api process).
 	Alerts() coreservice.AlertService
 	// Notifications is the reusable durable per-user inbox primitive.
@@ -109,6 +103,36 @@ type Dependencies interface {
 	GraphReader() coreservice.GraphReader
 	// Copilot is the in-app agentic LLM interface (streaming, tool-grounded on Aladin data).
 	Copilot() coreservice.CopilotService
+}
+
+// MCPComponents is the process composition output used by cmd/mcp. It excludes
+// API-owned lifecycle loops and HTTP-only services. Construction is still
+// explicit hand wiring; the interface only prevents consumers from regaining
+// the former application-wide service locator.
+type MCPComponents interface {
+	Auth() coreservice.AuthService
+	Artifacts() coreservice.ArtifactService
+	PageDocuments() coreservice.PageDocumentService
+	Insights() coreservice.InsightService
+	DocSurfaceStore() coreservice.DocSurfaceStore
+	Preview() coreservice.PreviewService
+	ShardBuild() coreservice.ShardBuildService
+	ShardResources() coreservice.ShardResourceService
+	ShardGraphQL() coreservice.ShardGraphQLService
+	ShardReleases() coreservice.ShardReleaseService
+	ShardCatalog() coreservice.ShardCatalogService
+	ShardBridge() coreservice.ShardBridgeService
+	Documents() coreservice.DocumentService
+	EntityTags() coreservice.EntityTagService
+	ArtifactRefs() coreservice.ArtifactRefService
+	EntityContext() coreservice.EntityContextService
+	Instruments() coreservice.InstrumentService
+	Watchlist() coreservice.WatchlistService
+	Search() coreservice.SearchService
+	Bars() coreservice.BarService
+	QuoteSnapshots() coreservice.QuoteSnapshotSource
+	MarketInfo() coreservice.MarketInfoService
+	Alerts() coreservice.AlertService
 }
 
 type StaticDependencies struct {
@@ -391,11 +415,23 @@ func (w wiring) AlertEngine() *coreservice.AlertEngine          { return w.alert
 func (w wiring) MarketData() coreservice.MarketDataService      { return w.marketData }
 func (w wiring) Copilot() coreservice.CopilotService            { return w.copilot }
 
-func NewDependencies(pool *pgxpool.Pool) Dependencies {
-	return NewDependenciesWithProviderConnections(pool, config.LoadProviderConnections(), config.DataVolumePathOrDefault())
+func NewAPIComponents(pool *pgxpool.Pool) APIComponents {
+	return NewAPIComponentsWithProviderConnections(pool, config.LoadProviderConnections(), config.DataVolumePathOrDefault())
 }
 
-func NewDependenciesWithProviderConnections(pool *pgxpool.Pool, providerConfig config.ProviderConnectionConfig, dataVolumePath string) Dependencies {
+func NewAPIComponentsWithProviderConnections(pool *pgxpool.Pool, providerConfig config.ProviderConnectionConfig, dataVolumePath string) APIComponents {
+	return buildComponents(pool, providerConfig, dataVolumePath)
+}
+
+func NewMCPComponents(pool *pgxpool.Pool) MCPComponents {
+	return NewMCPComponentsWithProviderConnections(pool, config.LoadProviderConnections(), config.DataVolumePathOrDefault())
+}
+
+func NewMCPComponentsWithProviderConnections(pool *pgxpool.Pool, providerConfig config.ProviderConnectionConfig, dataVolumePath string) MCPComponents {
+	return buildComponents(pool, providerConfig, dataVolumePath)
+}
+
+func buildComponents(pool *pgxpool.Pool, providerConfig config.ProviderConnectionConfig, dataVolumePath string) wiring {
 	authRepo := repo.NewAuthPostgres(pool)
 	sourceRepo := repo.NewSourcePostgres(pool)
 	recordRepo := repo.NewRecordPostgres(pool)

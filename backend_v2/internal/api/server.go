@@ -20,7 +20,53 @@ import (
 
 type Server struct {
 	httpServer *http.Server
-	deps       app.Dependencies
+	deps       Dependencies
+}
+
+// Dependencies is the API consumer's request-serving contract. Process-owned
+// lifecycle loops are deliberately absent; cmd/api owns and starts those from
+// app.APIComponents.
+type Dependencies interface {
+	Auth() coreservice.AuthService
+	System() coreservice.SystemService
+	Sources() coreservice.SourceService
+	Records() coreservice.RecordService
+	Artifacts() coreservice.ArtifactService
+	Pages() coreservice.PageService
+	Files() coreservice.FileService
+	Feed() coreservice.FeedService
+	Insights() coreservice.InsightService
+	ProviderConnections() coreservice.ProviderConnectionService
+	Realtime() coreservice.RealtimeEventService
+	RealtimeKeyResolver() coreservice.SubscriptionKeyResolver
+	Sync() coreservice.SyncService
+	DocSurfaceStore() coreservice.DocSurfaceStore
+	WorkspaceRuntime() coreservice.WorkspaceRuntime
+	ShardBuild() coreservice.ShardBuildService
+	ShardResources() coreservice.ShardResourceService
+	ShardGraphQL() coreservice.ShardGraphQLService
+	ShardReleases() coreservice.ShardReleaseService
+	ShardKV() coreservice.ShardKVService
+	ShardBridge() coreservice.ShardBridgeService
+	Relationships() coreservice.RelationshipService
+	Research() coreservice.ResearchService
+	Documents() coreservice.DocumentService
+	GraphPane() coreservice.GraphPaneService
+	EntityTags() coreservice.EntityTagService
+	ArtifactRefs() coreservice.ArtifactRefService
+	EntityContext() coreservice.EntityContextService
+	EntityList() coreservice.EntityListService
+	Instruments() coreservice.InstrumentService
+	Watchlist() coreservice.WatchlistService
+	ReadingPositions() coreservice.ReadingPositionService
+	Search() coreservice.SearchService
+	Unfurl() coreservice.UnfurlService
+	Bars() coreservice.BarService
+	Alerts() coreservice.AlertService
+	Notifications() coreservice.NotificationService
+	MarketData() coreservice.MarketDataService
+	GraphReader() coreservice.GraphReader
+	Copilot() coreservice.CopilotService
 }
 
 type contextKey string
@@ -39,10 +85,10 @@ const (
 )
 
 func New(addr string, pool *pgxpool.Pool) *Server {
-	return NewWithDependencies(addr, app.NewDependencies(pool))
+	return NewWithDependencies(addr, app.NewAPIComponents(pool))
 }
 
-func NewWithDependencies(addr string, deps app.Dependencies) *Server {
+func NewWithDependencies(addr string, deps Dependencies) *Server {
 	s := &Server{deps: deps}
 	mux := http.NewServeMux()
 

@@ -4,8 +4,9 @@
 //
 // Drives the live MCP server using the modelcontextprotocol/go-sdk
 // client transport, exercising the full agent-authored-pages workflow:
-//   list_folders → create_page → get_page → update_block →
-//   insert_blocks → delete_block → get_page (verify).
+//
+//	list_folders → create_page → get_page → update_block →
+//	insert_blocks → delete_block → get_page (verify).
 //
 // Prerequisites (the test SkipNow()s if any are missing):
 //   - Postgres reachable at $DATABASE_URL or postgres://aladin:password@localhost:5433/aladin
@@ -17,7 +18,8 @@
 //     local-dev-admin-secret).
 //
 // Run with:
-//   cd backend_v2 && go test -tags=integration ./internal/mcp/... -v -run TestMCP_EndToEnd
+//
+//	cd backend_v2 && go test -tags=integration ./internal/mcp/... -v -run TestMCP_EndToEnd
 package mcpserver
 
 import (
@@ -77,7 +79,7 @@ func TestMCP_EndToEnd(t *testing.T) {
 		t.Fatalf("truncate: %v", err)
 	}
 
-	deps := app.NewDependencies(pool)
+	deps := app.NewMCPComponents(pool)
 
 	// Mint an integration token by sitting in the default admin user's
 	// session principal and calling AuthService.CreateIntegrationToken.
@@ -285,4 +287,3 @@ func envDefault(key, def string) string {
 	}
 	return def
 }
-

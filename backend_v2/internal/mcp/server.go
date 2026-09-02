@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"time"
 
-	"aladin/backend_v2/internal/app"
 	"aladin/backend_v2/internal/blocknote"
 	"aladin/backend_v2/internal/service"
 
@@ -127,7 +126,34 @@ type Server struct {
 	preview    service.PreviewService
 }
 
-func New(addr string, deps app.Dependencies, pages service.PageDocumentService, converter blocknote.Converter, bridge blocknote.Bridge) *Server {
+// Dependencies is the MCP consumer's complete service contract. It is defined
+// here so adding an API/worker-only dependency cannot silently widen MCP.
+type Dependencies interface {
+	Auth() service.AuthService
+	Artifacts() service.ArtifactService
+	Insights() service.InsightService
+	DocSurfaceStore() service.DocSurfaceStore
+	Preview() service.PreviewService
+	ShardBuild() service.ShardBuildService
+	ShardResources() service.ShardResourceService
+	ShardGraphQL() service.ShardGraphQLService
+	ShardReleases() service.ShardReleaseService
+	ShardCatalog() service.ShardCatalogService
+	ShardBridge() service.ShardBridgeService
+	Documents() service.DocumentService
+	EntityTags() service.EntityTagService
+	ArtifactRefs() service.ArtifactRefService
+	EntityContext() service.EntityContextService
+	Instruments() service.InstrumentService
+	Watchlist() service.WatchlistService
+	Search() service.SearchService
+	Bars() service.BarService
+	QuoteSnapshots() service.QuoteSnapshotSource
+	MarketInfo() service.MarketInfoService
+	Alerts() service.AlertService
+}
+
+func New(addr string, deps Dependencies, pages service.PageDocumentService, converter blocknote.Converter, bridge blocknote.Bridge) *Server {
 	server := sdkmcp.NewServer(&sdkmcp.Implementation{
 		Name:    "aladin-mcp",
 		Version: "0.1.0",

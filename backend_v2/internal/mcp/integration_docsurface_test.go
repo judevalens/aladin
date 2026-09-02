@@ -113,7 +113,7 @@ func TestDocSurface_EndToEnd(t *testing.T) {
 		t.Fatalf("truncate: %v", err)
 	}
 
-	deps := app.NewDependencies(pool)
+	deps := app.NewMCPComponents(pool)
 
 	adminCtx := service.WithPrincipal(ctx, service.Principal{
 		UserID:    defaultAdminUserID,

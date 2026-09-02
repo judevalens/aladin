@@ -7,7 +7,7 @@ import "context"
 // files on a data volume (users/{userId}/pages/{pageId}/...), NOT in Postgres;
 // Postgres holds only the artifact row + the MD summary (the KG spine).
 //
-// These interfaces are declared here (the service layer) so app.Dependencies can
+// These interfaces are declared here (the service layer) so process composition can
 // expose them; the concrete impls live in internal/docsurface.
 
 // FileEntry is one item in a directory listing.
