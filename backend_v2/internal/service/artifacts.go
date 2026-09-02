@@ -38,7 +38,9 @@ type ArtifactService interface {
 	FolderBreadcrumbs(context.Context, string) ([]BreadcrumbItem, error)
 }
 
-type ArtifactRepository interface {
+// ArtifactQueryRepository owns tenant-scoped reads of the canonical artifact
+// aggregate and its browser-tree representation.
+type ArtifactQueryRepository interface {
 	ListArtifacts(context.Context, ArtifactListParams) ([]ArtifactResponse, error)
 	SearchPageArtifacts(context.Context, PageSearchParams) ([]ArtifactResponse, error)
 	// QueryArtifactsByProperty returns the caller's artifacts carrying a typed property
@@ -52,36 +54,40 @@ type ArtifactRepository interface {
 	// tombstones) — the model a write returns so the client applies the result
 	// under the seq guard. No Frame leaks into REST.
 	LightNode(context.Context, string) (BrowserNodeResponse, error)
+	ListFolders(context.Context, *string) ([]FolderNode, error)
+	ListAllFolders(context.Context) ([]FolderNode, error)
+	ListAllBrowserNodes(context.Context) ([]BrowserTreeFlatNode, error)
+	NextNodePosition(context.Context, *string) (int64, error)
+	GetFolder(context.Context, string) (FolderNode, error)
+	GetContainer(context.Context, string) (FolderNode, error)
+	FolderBreadcrumbs(context.Context, string) ([]BreadcrumbItem, error)
+}
+
+// ArtifactCommandRepository owns canonical PostgreSQL mutations. Implementors
+// must commit the aggregate state and its outbox frame in one transaction.
+type ArtifactCommandRepository interface {
 	// CreateArtifactGraph writes the artifact, its tree node, and (when
 	// pageBlocks != nil) the initial page_documents row in a single
 	// transaction. pageBlocks must be a JSON array of BlockNote blocks;
 	// pageSearchText is the pre-derived inline text for full-text search.
 	CreateArtifactGraph(ctx context.Context, rec ArtifactResponse, node TreeNodeRecord, pageBlocks json.RawMessage, pageSearchText string) error
-	UpdateArtifact(context.Context, string, ArtifactPatch) error
-	// CreatePageDocument inserts the page_documents row for an artifact that
-	// already exists. blocks must be a JSON array; searchText is the
-	// pre-derived inline text.
-	CreatePageDocument(ctx context.Context, artifactID string, blocks json.RawMessage, searchText string) error
+	// UpdateArtifactGraph applies artifact fields and an optional tree move as
+	// one aggregate transaction while preserving their individual outbox frames.
+	UpdateArtifactGraph(context.Context, string, ArtifactPatch) error
 	// SavePageBlocks is the single mutation point for page blocks. expectedRev
 	// of 0 means last-write-wins; >0 enforces optimistic concurrency and
 	// returns ErrConflict if the stored revision is >= expectedRev.
 	SavePageBlocks(ctx context.Context, artifactID string, blocks json.RawMessage, searchText string, expectedRev int64) (newRev int64, err error)
 	DeleteArtifact(context.Context, string) error
-	ListFolders(context.Context, *string) ([]FolderNode, error)
-	ListAllFolders(context.Context) ([]FolderNode, error)
-	ListAllBrowserNodes(context.Context) ([]BrowserTreeFlatNode, error)
-	NextNodePosition(context.Context, *string) (int64, error)
 	CreateTreeNode(context.Context, TreeNodeRecord) error
 	DeleteBrowserNode(context.Context, string) error
 	UpdateArtifactNodeParent(context.Context, string, *string) error
 	UpdateFolderTitle(context.Context, string, string) error
-	GetFolder(context.Context, string) (FolderNode, error)
-	// GetContainer resolves a node that may CONTAIN others: a plain folder OR a
-	// research folder (RESEARCH_SURFACE_PRD §21). Parent/destination validation uses
-	// this; GetFolder stays folder-only so the folder rename/read API can't touch a
-	// research node.
-	GetContainer(context.Context, string) (FolderNode, error)
-	FolderBreadcrumbs(context.Context, string) ([]BreadcrumbItem, error)
+}
+
+type ArtifactRepository interface {
+	ArtifactQueryRepository
+	ArtifactCommandRepository
 }
 
 type StoredArtifactResource struct {
@@ -95,6 +101,7 @@ type StoredArtifactResource struct {
 type ArtifactFileStore interface {
 	SaveResource(kind string, filename string, contentType string, body io.Reader) (StoredArtifactResource, error)
 	ResourcePath(string) (string, error)
+	DeleteResource(string) error
 }
 
 type DefaultArtifactService struct {
@@ -464,11 +471,6 @@ func (s *DefaultArtifactService) Update(ctx context.Context, id string, patch Ar
 		return ArtifactResponse{}, BadRequest("board content is edited via the board sync room, not the artifact API")
 	}
 
-	if patch.FolderID != nil {
-		if err := s.repo.UpdateArtifactNodeParent(ctx, id, patch.FolderID); err != nil {
-			return ArtifactResponse{}, err
-		}
-	}
 	// M8c seam guard: page blocks are owned by the collaborative Y.Doc. A
 	// direct block write through the artifact API would silently diverge from
 	// (or be clobbered by) the Hocuspocus doc + its projection. Agents edit
@@ -476,7 +478,7 @@ func (s *DefaultArtifactService) Update(ctx context.Context, id string, patch Ar
 	if current.Type == "page" && patch.Blocks != nil {
 		return ArtifactResponse{}, BadRequest("page blocks are edited via the collab bridge, not the artifact API")
 	}
-	if err := s.repo.UpdateArtifact(ctx, id, patch); err != nil {
+	if err := s.repo.UpdateArtifactGraph(ctx, id, patch); err != nil {
 		return ArtifactResponse{}, err
 	}
 	updated, err := s.repo.GetArtifact(ctx, id)
@@ -585,7 +587,7 @@ func (s *DefaultArtifactService) Upload(ctx context.Context, input ArtifactUploa
 	}
 	position, err := s.repo.NextNodePosition(ctx, input.FolderID)
 	if err != nil {
-		return ArtifactResponse{}, err
+		return ArtifactResponse{}, cleanupStoredResource(s.files, stored.StorageKey, err)
 	}
 	artifactID := rec.ID
 	node := TreeNodeRecord{
@@ -596,7 +598,7 @@ func (s *DefaultArtifactService) Upload(ctx context.Context, input ArtifactUploa
 		Position:   position,
 	}
 	if err := s.repo.CreateArtifactGraph(ctx, rec, node, nil, ""); err != nil {
-		return ArtifactResponse{}, err
+		return ArtifactResponse{}, cleanupStoredResource(s.files, stored.StorageKey, err)
 	}
 	return rec, nil
 }

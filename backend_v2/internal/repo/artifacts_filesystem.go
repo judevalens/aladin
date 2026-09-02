@@ -38,6 +38,7 @@ func (s *FilesystemArtifactStore) SaveResource(kind string, filename string, con
 	defer out.Close()
 	size, err := io.Copy(out, body)
 	if err != nil {
+		_ = os.Remove(path)
 		return coreservice.StoredArtifactResource{}, err
 	}
 	// Trust the uploaded content-type (set from the browser's blob type) — the
@@ -57,6 +58,24 @@ func (s *FilesystemArtifactStore) SaveResource(kind string, filename string, con
 		OriginalFilename: filepath.Base(filename),
 		SizeBytes:        size,
 	}, nil
+}
+
+// DeleteResource compensates a successful byte write when the canonical
+// PostgreSQL mutation fails. Missing files are already in the desired state.
+func (s *FilesystemArtifactStore) DeleteResource(storageKey string) error {
+	parts := strings.SplitN(storageKey, "/", 2)
+	if len(parts) != 2 {
+		return coreservice.ErrNotFound
+	}
+	baseDir := s.baseDir(parts[0])
+	if baseDir == "" {
+		return coreservice.ErrNotFound
+	}
+	path := filepath.Join(baseDir, filepath.Base(parts[1]))
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
 
 func (s *FilesystemArtifactStore) ResourcePath(storageKey string) (string, error) {

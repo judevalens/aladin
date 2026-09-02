@@ -273,12 +273,41 @@ func (r *PostgresArtifactRepository) CreateArtifactGraph(ctx context.Context, re
 	return tx.Commit(ctx)
 }
 
-func (r *PostgresArtifactRepository) UpdateArtifact(ctx context.Context, id string, patch artifactservice.ArtifactPatch) error {
+func (r *PostgresArtifactRepository) UpdateArtifactGraph(ctx context.Context, id string, patch artifactservice.ArtifactPatch) error {
+	metadataJSON := any(nil)
+	if patch.Metadata != nil {
+		raw, err := json.Marshal(*patch.Metadata)
+		if err != nil {
+			return fmt.Errorf("marshal artifact metadata: %w", err)
+		}
+		metadataJSON = string(raw)
+	}
 	return r.withUserTx(ctx, func(tx pgx.Tx, userID string) error {
-		metadataJSON := any(nil)
-		if patch.Metadata != nil {
-			raw, _ := json.Marshal(*patch.Metadata)
-			metadataJSON = string(raw)
+		if patch.FolderID != nil {
+			var position int64
+			if err := tx.QueryRow(ctx, `
+				SELECT COALESCE(MAX(position), 0) + 1
+				  FROM tree_nodes
+				 WHERE user_id = $1::uuid
+				   AND parent_id IS NOT DISTINCT FROM $2
+				   AND is_deleted = false
+			`, userID, patch.FolderID).Scan(&position); err != nil {
+				return err
+			}
+			tag, err := tx.Exec(ctx, `
+				UPDATE tree_nodes
+				   SET parent_id = $3, position = $4, updated_at = now()
+				 WHERE id = $1 AND user_id = $2::uuid AND kind = 'artifact'
+			`, id, userID, patch.FolderID, position)
+			if err != nil {
+				return err
+			}
+			if tag.RowsAffected() == 0 {
+				return artifactservice.ErrNotFound
+			}
+			if err := emitNodeUpsert(ctx, tx, userID, id); err != nil {
+				return err
+			}
 		}
 		tag, err := tx.Exec(ctx, `
 			UPDATE artifacts
@@ -304,18 +333,6 @@ func (r *PostgresArtifactRepository) UpdateArtifact(ctx context.Context, id stri
 		// client apply it iff newer).
 		return emitNodeUpsert(ctx, tx, userID, id)
 	})
-}
-
-func (r *PostgresArtifactRepository) CreatePageDocument(ctx context.Context, artifactID string, blocks json.RawMessage, searchText string) error {
-	if _, err := r.userID(ctx); err != nil {
-		return err
-	}
-	_, err := r.pool.Exec(ctx, `
-		INSERT INTO page_documents (artifact_id, blocks, search_text, created_at, updated_at)
-		VALUES ($1, $2::jsonb, $3, now(), now())
-		ON CONFLICT (artifact_id) DO NOTHING
-	`, artifactID, string(blocks), searchText)
-	return err
 }
 
 // PageBlockAttribution returns the raw block_attribution JSON for a page (the

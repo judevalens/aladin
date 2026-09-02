@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"time"
@@ -17,10 +19,10 @@ type FileRepository interface {
 	GetFile(context.Context, string) (FileRecord, error)
 }
 
-type FileStore interface {
-	SaveResource(kind string, filename string, contentType string, body io.Reader) (StoredArtifactResource, error)
-	ResourcePath(string) (string, error)
-}
+// FileStore is the same byte-store port used by artifact resources. Keeping one
+// contract prevents the legacy file endpoint and artifact upload path from
+// acquiring different compensation behavior.
+type FileStore = ArtifactFileStore
 
 type FileUploadInput struct {
 	Filename    string
@@ -67,9 +69,16 @@ func (s *DefaultFileService) Upload(ctx context.Context, input FileUploadInput, 
 	}
 	rec.URL = fileResourceURL(rec.ID)
 	if err := s.repo.CreateFile(ctx, rec); err != nil {
-		return FileRecord{}, err
+		return FileRecord{}, cleanupStoredResource(s.store, stored.StorageKey, err)
 	}
 	return rec, nil
+}
+
+func cleanupStoredResource(store ArtifactFileStore, storageKey string, operationErr error) error {
+	if cleanupErr := store.DeleteResource(storageKey); cleanupErr != nil {
+		return errors.Join(operationErr, fmt.Errorf("compensate stored resource %q: %w", storageKey, cleanupErr))
+	}
+	return operationErr
 }
 
 func (s *DefaultFileService) Resource(ctx context.Context, id string) (FileResource, error) {

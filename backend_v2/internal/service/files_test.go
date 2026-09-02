@@ -30,6 +30,21 @@ func TestFileServiceUpload(t *testing.T) {
 	}
 }
 
+func TestFileServiceUploadRemovesBytesWhenRecordWriteFails(t *testing.T) {
+	t.Parallel()
+
+	wantErr := errors.New("database unavailable")
+	store := &fakeFileStore{}
+	service := NewFileService(&fakeFileRepository{createErr: wantErr}, store)
+
+	if _, err := service.Upload(testPrincipalContext(), FileUploadInput{Filename: "memo.txt"}, bytes.NewBufferString("hello")); !errors.Is(err, wantErr) {
+		t.Fatalf("Upload error = %v, want %v", err, wantErr)
+	}
+	if len(store.deleted) != 1 || store.deleted[0] != "file/file-blob.txt" {
+		t.Fatalf("deleted = %#v, want stored resource compensation", store.deleted)
+	}
+}
+
 func TestFileServiceResource(t *testing.T) {
 	t.Parallel()
 
@@ -69,11 +84,15 @@ func TestFileServiceReadOnlyTokenCannotUpload(t *testing.T) {
 }
 
 type fakeFileRepository struct {
-	record  FileRecord
-	created *FileRecord
+	record    FileRecord
+	created   *FileRecord
+	createErr error
 }
 
 func (f *fakeFileRepository) CreateFile(_ context.Context, rec FileRecord) error {
+	if f.createErr != nil {
+		return f.createErr
+	}
 	copyRec := rec
 	f.created = &copyRec
 	return nil
@@ -87,7 +106,8 @@ func (f *fakeFileRepository) GetFile(_ context.Context, _ string) (FileRecord, e
 }
 
 type fakeFileStore struct {
-	path string
+	path    string
+	deleted []string
 }
 
 func (f *fakeFileStore) SaveResource(_ string, _ string, _ string, _ io.Reader) (StoredArtifactResource, error) {
@@ -101,4 +121,9 @@ func (f *fakeFileStore) ResourcePath(_ string) (string, error) {
 		return "", ErrNotFound
 	}
 	return f.path, nil
+}
+
+func (f *fakeFileStore) DeleteResource(key string) error {
+	f.deleted = append(f.deleted, key)
+	return nil
 }

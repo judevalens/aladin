@@ -251,6 +251,25 @@ func TestArtifactServiceUploadCreatesArtifactRecord(t *testing.T) {
 	}
 }
 
+func TestArtifactServiceUploadRemovesBytesWhenAggregateWriteFails(t *testing.T) {
+	t.Parallel()
+
+	wantErr := errors.New("aggregate write failed")
+	files := &fakeArtifactFiles{}
+	svc := NewArtifactService(&fakeArtifactRepository{createGraphErr: wantErr}, files)
+
+	_, err := svc.Upload(testPrincipalContext(), ArtifactUploadInput{
+		Type:     "file",
+		Filename: "report.txt",
+	}, strings.NewReader("hello"))
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Upload error = %v, want %v", err, wantErr)
+	}
+	if len(files.deleted) != 1 || files.deleted[0] != "file/resource-1" {
+		t.Fatalf("deleted = %#v, want stored resource compensation", files.deleted)
+	}
+}
+
 func TestArtifactServiceFolderTreeBuildsHierarchy(t *testing.T) {
 	t.Parallel()
 
@@ -321,6 +340,7 @@ type fakeArtifactRepository struct {
 	propertyResults  []ArtifactResponse
 	propertyFacets   []PropertyFacet
 	searchParams     *PageSearchParams
+	createGraphErr   error
 }
 
 func (f *fakeArtifactRepository) ListArtifacts(context.Context, ArtifactListParams) ([]ArtifactResponse, error) {
@@ -373,6 +393,9 @@ func (f *fakeArtifactRepository) CreateArtifact(_ context.Context, rec ArtifactR
 }
 
 func (f *fakeArtifactRepository) CreateArtifactGraph(_ context.Context, rec ArtifactResponse, node TreeNodeRecord, pageBlocks json.RawMessage, pageSearchText string) error {
+	if f.createGraphErr != nil {
+		return f.createGraphErr
+	}
 	f.createdArtifacts = append(f.createdArtifacts, rec)
 	if pageBlocks != nil {
 		if f.pagesByID == nil {
@@ -396,15 +419,7 @@ func (f *fakeArtifactRepository) CreateArtifactGraph(_ context.Context, rec Arti
 	return nil
 }
 
-func (f *fakeArtifactRepository) UpdateArtifact(context.Context, string, ArtifactPatch) error {
-	return nil
-}
-
-func (f *fakeArtifactRepository) CreatePageDocument(_ context.Context, artifactID string, blocks json.RawMessage, searchText string) error {
-	if f.pagesByID == nil {
-		f.pagesByID = map[string]*fakePageStore{}
-	}
-	f.pagesByID[artifactID] = &fakePageStore{blocks: blocks, searchText: searchText}
+func (f *fakeArtifactRepository) UpdateArtifactGraph(context.Context, string, ArtifactPatch) error {
 	return nil
 }
 
@@ -506,7 +521,7 @@ func (f *fakeArtifactRepository) FolderBreadcrumbs(context.Context, string) ([]B
 	return nil, nil
 }
 
-type fakeArtifactFiles struct{}
+type fakeArtifactFiles struct{ deleted []string }
 
 func (f *fakeArtifactFiles) SaveResource(kind string, filename string, _ string, body io.Reader) (StoredArtifactResource, error) {
 	_, _ = io.ReadAll(body)
@@ -520,6 +535,10 @@ func (f *fakeArtifactFiles) SaveResource(kind string, filename string, _ string,
 }
 
 func (f *fakeArtifactFiles) ResourcePath(string) (string, error) { return "", ErrNotFound }
+func (f *fakeArtifactFiles) DeleteResource(key string) error {
+	f.deleted = append(f.deleted, key)
+	return nil
+}
 
 func testPrincipalContext() context.Context {
 	return WithPrincipal(context.Background(), Principal{
