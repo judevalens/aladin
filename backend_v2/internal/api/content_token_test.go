@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"aladin/backend_v2/internal/app"
 	artifactservice "aladin/backend_v2/internal/service"
 )
 
@@ -51,7 +50,7 @@ func (emptyShardStore) ReadFile(ctx context.Context, _, _ string) ([]byte, error
 }
 
 func contentTokenServer() *Server {
-	return NewWithDependencies(":0", app.StaticDependencies{
+	return NewWithDependencies(":0", testDependencies{
 		AuthSvc:            &fakeAuthService{},
 		ArtifactsSvc:       shardArtifactService{},
 		DocSurfaceStoreSvc: emptyShardStore{},

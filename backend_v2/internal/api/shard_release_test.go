@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"aladin/backend_v2/internal/app"
 	"aladin/backend_v2/internal/docsurface"
 	"aladin/backend_v2/internal/service"
 )
@@ -57,7 +56,7 @@ func TestShardReleaseMetadataSeparatesUnpublishedFromUnavailable(t *testing.T) {
 			if tc.disabled {
 				releases.err = service.ResourceFailure("unsupported-capability", "disabled")
 			}
-			server := NewWithDependencies(":0", app.StaticDependencies{AuthSvc: &fakeAuthService{}, ArtifactsSvc: shardArtifactService{}, DocSurfaceStoreSvc: store, ShardReleaseSvc: releases})
+			server := NewWithDependencies(":0", testDependencies{AuthSvc: &fakeAuthService{}, ArtifactsSvc: shardArtifactService{}, DocSurfaceStoreSvc: store, ShardReleaseSvc: releases})
 			req := httptest.NewRequest(http.MethodGet, "/api/shards/artifact-shard/release?channel=published", nil)
 			req.Header.Set("Authorization", "Bearer desktop-valid")
 			rec := httptest.NewRecorder()

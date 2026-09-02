@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"aladin/backend_v2/internal/api"
-	"aladin/backend_v2/internal/app"
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/dbtest"
 	"aladin/backend_v2/internal/docsurface"
@@ -246,7 +245,7 @@ func TestShardV2Pilot(t *testing.T) {
 			t.Fatalf("MCP wire %s: %+v %v", name, result, err)
 		}
 	}
-	apiServer := api.NewWithDependencies(":0", app.StaticDependencies{AuthSvc: pilotAuth{principal: p}, ArtifactsSvc: artifacts, DocSurfaceStoreSvc: store, WorkspaceRuntimeSvc: runtime, ShardResourceSvc: resources, ShardReleaseSvc: releases})
+	apiServer := api.NewWithDependencies(":0", pilotAPIDependencies{AuthSvc: pilotAuth{principal: p}, ArtifactsSvc: artifacts, DocSurfaceStoreSvc: store, WorkspaceRuntimeSvc: runtime, ShardResourceSvc: resources, ShardReleaseSvc: releases})
 	httpServer := httptest.NewServer(apiServer.Handler())
 	defer httpServer.Close()
 	active, err := releases.Active(ctx, id, service.ChannelPublished)
@@ -267,7 +266,7 @@ func TestShardV2Pilot(t *testing.T) {
 		t.Fatalf("protected serving failed: %d %s", response.StatusCode, body)
 	}
 	// Disabling execution must not expose an older mutable v1 build.
-	disabledAPI := api.NewWithDependencies(":0", app.StaticDependencies{AuthSvc: pilotAuth{principal: p}, ArtifactsSvc: artifacts, DocSurfaceStoreSvc: store, WorkspaceRuntimeSvc: runtime, ShardReleaseSvc: service.NewShardReleaseService(storage, nil)})
+	disabledAPI := api.NewWithDependencies(":0", pilotAPIDependencies{AuthSvc: pilotAuth{principal: p}, ArtifactsSvc: artifacts, DocSurfaceStoreSvc: store, WorkspaceRuntimeSvc: runtime, ShardReleaseSvc: service.NewShardReleaseService(storage, nil)})
 	disabledRequest := httptest.NewRequest("GET", "/content/"+id+"/", nil)
 	disabledRequest.Header.Set("Authorization", "Bearer pilot-test-token")
 	disabledResponse := httptest.NewRecorder()
@@ -312,4 +311,71 @@ func TestShardV2Pilot(t *testing.T) {
 	})
 	t.Logf("complete persisted/live/third-resource/publish/MCP/shared-WS pilot: %s", time.Since(start))
 }
+
+type pilotAPIDependencies struct {
+	emptyAPIDependencies
+	AuthSvc             service.AuthService
+	ArtifactsSvc        service.ArtifactService
+	DocSurfaceStoreSvc  service.DocSurfaceStore
+	WorkspaceRuntimeSvc service.WorkspaceRuntime
+	ShardResourceSvc    service.ShardResourceService
+	ShardReleaseSvc     service.ShardReleaseService
+}
+
+type emptyAPIDependencies struct{}
+
+func (emptyAPIDependencies) Auth() service.AuthService                              { return nil }
+func (emptyAPIDependencies) System() service.SystemService                          { return nil }
+func (emptyAPIDependencies) Sources() service.SourceService                         { return nil }
+func (emptyAPIDependencies) Records() service.RecordService                         { return nil }
+func (emptyAPIDependencies) Artifacts() service.ArtifactService                     { return nil }
+func (emptyAPIDependencies) Pages() service.PageService                             { return nil }
+func (emptyAPIDependencies) Files() service.FileService                             { return nil }
+func (emptyAPIDependencies) Feed() service.FeedService                              { return nil }
+func (emptyAPIDependencies) Insights() service.InsightService                       { return nil }
+func (emptyAPIDependencies) ProviderConnections() service.ProviderConnectionService { return nil }
+func (emptyAPIDependencies) Realtime() service.RealtimeEventService                 { return nil }
+func (emptyAPIDependencies) RealtimeKeyResolver() service.SubscriptionKeyResolver   { return nil }
+func (emptyAPIDependencies) Sync() service.SyncService                              { return nil }
+func (emptyAPIDependencies) DocSurfaceStore() service.DocSurfaceStore               { return nil }
+func (emptyAPIDependencies) WorkspaceRuntime() service.WorkspaceRuntime             { return nil }
+func (emptyAPIDependencies) ShardBuild() service.ShardBuildService                  { return nil }
+func (emptyAPIDependencies) ShardResources() service.ShardResourceService           { return nil }
+func (emptyAPIDependencies) ShardGraphQL() service.ShardGraphQLService              { return nil }
+func (emptyAPIDependencies) ShardReleases() service.ShardReleaseService             { return nil }
+func (emptyAPIDependencies) ShardKV() service.ShardKVService                        { return nil }
+func (emptyAPIDependencies) ShardBridge() service.ShardBridgeService                { return nil }
+func (emptyAPIDependencies) Relationships() service.RelationshipService             { return nil }
+func (emptyAPIDependencies) Research() service.ResearchService                      { return nil }
+func (emptyAPIDependencies) Documents() service.DocumentService                     { return nil }
+func (emptyAPIDependencies) GraphPane() service.GraphPaneService                    { return nil }
+func (emptyAPIDependencies) EntityTags() service.EntityTagService                   { return nil }
+func (emptyAPIDependencies) ArtifactRefs() service.ArtifactRefService               { return nil }
+func (emptyAPIDependencies) EntityContext() service.EntityContextService            { return nil }
+func (emptyAPIDependencies) EntityList() service.EntityListService                  { return nil }
+func (emptyAPIDependencies) Instruments() service.InstrumentService                 { return nil }
+func (emptyAPIDependencies) Watchlist() service.WatchlistService                    { return nil }
+func (emptyAPIDependencies) ReadingPositions() service.ReadingPositionService       { return nil }
+func (emptyAPIDependencies) Search() service.SearchService                          { return nil }
+func (emptyAPIDependencies) Unfurl() service.UnfurlService                          { return nil }
+func (emptyAPIDependencies) Bars() service.BarService                               { return nil }
+func (emptyAPIDependencies) Alerts() service.AlertService                           { return nil }
+func (emptyAPIDependencies) Notifications() service.NotificationService             { return nil }
+func (emptyAPIDependencies) MarketData() service.MarketDataService                  { return nil }
+func (emptyAPIDependencies) GraphReader() service.GraphReader                       { return nil }
+func (emptyAPIDependencies) Copilot() service.CopilotService                        { return nil }
+
+func (d pilotAPIDependencies) Auth() service.AuthService                { return d.AuthSvc }
+func (d pilotAPIDependencies) Artifacts() service.ArtifactService       { return d.ArtifactsSvc }
+func (d pilotAPIDependencies) DocSurfaceStore() service.DocSurfaceStore { return d.DocSurfaceStoreSvc }
+func (d pilotAPIDependencies) WorkspaceRuntime() service.WorkspaceRuntime {
+	return d.WorkspaceRuntimeSvc
+}
+func (d pilotAPIDependencies) ShardResources() service.ShardResourceService {
+	return d.ShardResourceSvc
+}
+func (d pilotAPIDependencies) ShardReleases() service.ShardReleaseService { return d.ShardReleaseSvc }
+
+var _ api.Dependencies = pilotAPIDependencies{}
+
 func quotePilot(value string) string { raw, _ := json.Marshal(value); return string(raw) }

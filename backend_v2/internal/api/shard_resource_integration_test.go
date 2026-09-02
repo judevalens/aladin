@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"aladin/backend_v2/internal/app"
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/dbtest"
 	"aladin/backend_v2/internal/repo"
@@ -100,7 +99,7 @@ func TestShardResourceHTTPAndWebSocketWithPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	resources := service.NewShardResourceService(resourceAPIArtifacts{pool: pool}, storage, map[string]service.ResourceProvider{"shard.documents": storage}, service.ResourceServiceOptions{RefreshInterval: 10 * time.Millisecond})
-	server := NewWithDependencies(":0", app.StaticDependencies{AuthSvc: &resourceAPIAuth{userID: userID}, ShardResourceSvc: resources})
+	server := NewWithDependencies(":0", testDependencies{AuthSvc: &resourceAPIAuth{userID: userID}, ShardResourceSvc: resources})
 	httpServer := httptest.NewServer(server.httpServer.Handler)
 	defer httpServer.Close()
 	path := "/api/shards/" + shardID + "/v2/published"
@@ -193,7 +192,7 @@ func TestShardResourceHTTPAndWebSocketWithPostgres(t *testing.T) {
 }
 
 func TestShardResourceRoutesDenyContentCredentialsAndDefaultOff(t *testing.T) {
-	server := NewWithDependencies(":0", app.StaticDependencies{AuthSvc: &fakeAuthService{}})
+	server := NewWithDependencies(":0", testDependencies{AuthSvc: &fakeAuthService{}})
 	for _, path := range []string{"/api/shards/artifact-test/v2/published/request", "/api/shards/artifact-test/v2/published/ws?access_token=content-valid"} {
 		method := http.MethodPost
 		if path[len(path)-5:] == "valid" {

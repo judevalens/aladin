@@ -1,7 +1,6 @@
 package api
 
 import (
-	"aladin/backend_v2/internal/app"
 	"context"
 	"encoding/json"
 	"io"
@@ -45,7 +44,7 @@ func TestArtifactsCreate(t *testing.T) {
 	t.Parallel()
 
 	service := &fakeArtifactService{}
-	server := NewWithDependencies(":0", app.StaticDependencies{ArtifactsSvc: service})
+	server := NewWithDependencies(":0", testDependencies{ArtifactsSvc: service})
 	req := httptest.NewRequest(
 		http.MethodPost,
 		"/api/artifacts/",
@@ -70,7 +69,7 @@ func TestBrowserTreeRoute(t *testing.T) {
 	artifactID := "artifact-1"
 	artifactType := "page"
 	updatedAt := "2026-04-27T00:00:00Z"
-	server := NewWithDependencies(":0", app.StaticDependencies{
+	server := NewWithDependencies(":0", testDependencies{
 		ArtifactsSvc: &fakeArtifactService{
 			browserTree: []artifactservice.BrowserTreeNode{
 				{
@@ -99,7 +98,7 @@ func TestArtifactsListByFolder(t *testing.T) {
 	t.Parallel()
 
 	folderID := "folder-1"
-	server := NewWithDependencies(":0", app.StaticDependencies{
+	server := NewWithDependencies(":0", testDependencies{
 		ArtifactsSvc: &fakeArtifactService{
 			list: []artifactservice.ArtifactResponse{{ID: "artifact-1", FolderID: &folderID, Title: "Memo"}},
 		},
@@ -121,7 +120,7 @@ func TestFoldersCreateRoute(t *testing.T) {
 	t.Parallel()
 
 	service := &fakeArtifactService{}
-	server := NewWithDependencies(":0", app.StaticDependencies{ArtifactsSvc: service})
+	server := NewWithDependencies(":0", testDependencies{ArtifactsSvc: service})
 	req := httptest.NewRequest(http.MethodPost, "/api/folders/", strings.NewReader(`{"title":"Rivian","parentId":"folder-parent"}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -139,7 +138,7 @@ func TestFoldersCreateRoute(t *testing.T) {
 func TestFoldersTreeRoute(t *testing.T) {
 	t.Parallel()
 
-	server := NewWithDependencies(":0", app.StaticDependencies{
+	server := NewWithDependencies(":0", testDependencies{
 		ArtifactsSvc: &fakeArtifactService{
 			folderTree: []artifactservice.FolderTreeNode{
 				{
@@ -169,7 +168,7 @@ func TestArtifactsUploadRoute(t *testing.T) {
 	t.Parallel()
 
 	service := &fakeArtifactService{}
-	server := NewWithDependencies(":0", app.StaticDependencies{ArtifactsSvc: service})
+	server := NewWithDependencies(":0", testDependencies{ArtifactsSvc: service})
 
 	var body strings.Builder
 	writer := multipart.NewWriter(&body)
@@ -220,7 +219,7 @@ func TestArtifactsResourceRoute(t *testing.T) {
 			ContentType: "text/plain",
 		},
 	}
-	server := NewWithDependencies(":0", app.StaticDependencies{ArtifactsSvc: service})
+	server := NewWithDependencies(":0", testDependencies{ArtifactsSvc: service})
 	req := httptest.NewRequest(http.MethodGet, "/api/artifacts/artifact-1/resource", nil)
 	rec := httptest.NewRecorder()
 
@@ -237,7 +236,7 @@ func TestArtifactsResourceRoute(t *testing.T) {
 func TestLegacyArtifactRoutesRemoved(t *testing.T) {
 	t.Parallel()
 
-	server := NewWithDependencies(":0", app.StaticDependencies{ArtifactsSvc: &fakeArtifactService{}})
+	server := NewWithDependencies(":0", testDependencies{ArtifactsSvc: &fakeArtifactService{}})
 	paths := []string{
 		"/api/notes/",
 		"/api/audio/upload",
@@ -256,7 +255,7 @@ func TestLegacyArtifactRoutesRemoved(t *testing.T) {
 func TestPagesGet(t *testing.T) {
 	t.Parallel()
 
-	server := NewWithDependencies(":0", app.StaticDependencies{
+	server := NewWithDependencies(":0", testDependencies{
 		PagesSvc: &fakePageService{
 			page: artifactservice.PageDocument{
 				ID:        "artifact-1",
@@ -296,7 +295,7 @@ func TestPagesSave(t *testing.T) {
 			UpdatedAt: "2026-05-01T00:00:00Z",
 		},
 	}
-	server := NewWithDependencies(":0", app.StaticDependencies{PagesSvc: service})
+	server := NewWithDependencies(":0", testDependencies{PagesSvc: service})
 	req := httptest.NewRequest(http.MethodPatch, "/api/pages/artifact-1", strings.NewReader(`{"blocks":[{"id":"a","type":"paragraph","content":[{"type":"text","text":"updated"}],"children":[]}],"revision":2}`))
 	rec := httptest.NewRecorder()
 
@@ -317,7 +316,7 @@ func TestFilesUpload(t *testing.T) {
 	t.Parallel()
 
 	service := &fakeFileService{}
-	server := NewWithDependencies(":0", app.StaticDependencies{FilesSvc: service})
+	server := NewWithDependencies(":0", testDependencies{FilesSvc: service})
 
 	var body strings.Builder
 	writer := multipart.NewWriter(&body)
@@ -360,7 +359,7 @@ func TestFilesResourceRoute(t *testing.T) {
 		t.Fatalf("Close: %v", err)
 	}
 
-	server := NewWithDependencies(":0", app.StaticDependencies{
+	server := NewWithDependencies(":0", testDependencies{
 		FilesSvc: &fakeFileService{
 			resource: artifactservice.FileResource{
 				Path:        tmp.Name(),
@@ -384,7 +383,7 @@ func TestFilesResourceRoute(t *testing.T) {
 func TestAuthMiddlewareRequiresSession(t *testing.T) {
 	t.Parallel()
 
-	server := NewWithDependencies(":0", app.StaticDependencies{AuthSvc: &fakeAuthService{}})
+	server := NewWithDependencies(":0", testDependencies{AuthSvc: &fakeAuthService{}})
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
 	rec := httptest.NewRecorder()
 
@@ -398,7 +397,7 @@ func TestAuthMiddlewareRequiresSession(t *testing.T) {
 func TestAuthMiddlewareInjectsCurrentUser(t *testing.T) {
 	t.Parallel()
 
-	server := NewWithDependencies(":0", app.StaticDependencies{AuthSvc: &fakeAuthService{}})
+	server := NewWithDependencies(":0", testDependencies{AuthSvc: &fakeAuthService{}})
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
 	req.AddCookie(&http.Cookie{Name: artifactservice.SessionCookieName, Value: "valid"})
 	rec := httptest.NewRecorder()
@@ -416,7 +415,7 @@ func TestAuthMiddlewareInjectsCurrentUser(t *testing.T) {
 func TestAuthMiddlewareInjectsCurrentUserFromBearerSession(t *testing.T) {
 	t.Parallel()
 
-	server := NewWithDependencies(":0", app.StaticDependencies{AuthSvc: &fakeAuthService{}})
+	server := NewWithDependencies(":0", testDependencies{AuthSvc: &fakeAuthService{}})
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
 	req.Header.Set("Authorization", "Bearer desktop-valid")
 	rec := httptest.NewRecorder()
@@ -434,7 +433,7 @@ func TestAuthMiddlewareInjectsCurrentUserFromBearerSession(t *testing.T) {
 func TestAuthMiddlewareInjectsCurrentUserFromRealtimeAccessToken(t *testing.T) {
 	t.Parallel()
 
-	server := &Server{deps: app.StaticDependencies{AuthSvc: &fakeAuthService{}}}
+	server := &Server{deps: testDependencies{AuthSvc: &fakeAuthService{}}}
 	handler := server.authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, ok := artifactservice.PrincipalFromContext(r.Context()); !ok {
 			t.Fatal("principal missing from request context")
@@ -454,7 +453,7 @@ func TestAuthMiddlewareInjectsCurrentUserFromRealtimeAccessToken(t *testing.T) {
 func TestDesktopAuthLoginReturnsBearerSession(t *testing.T) {
 	t.Parallel()
 
-	server := NewWithDependencies(":0", app.StaticDependencies{
+	server := NewWithDependencies(":0", testDependencies{
 		AuthSvc: &fakeAuthService{
 			loginSession: artifactservice.AuthSession{
 				User:      artifactservice.CurrentUser{ID: "desktop-user", Email: "desktop@example.com"},
@@ -483,7 +482,7 @@ func TestDesktopAuthLoginReturnsBearerSession(t *testing.T) {
 func TestDesktopAuthRegisterReturnsBearerSession(t *testing.T) {
 	t.Parallel()
 
-	server := NewWithDependencies(":0", app.StaticDependencies{
+	server := NewWithDependencies(":0", testDependencies{
 		AuthSvc: &fakeAuthService{
 			registerSession: artifactservice.AuthSession{
 				User:      artifactservice.CurrentUser{ID: "desktop-user", Email: "desktop@example.com"},
@@ -510,7 +509,7 @@ func TestAuthLogoutRevokesBearerSession(t *testing.T) {
 	t.Parallel()
 
 	auth := &fakeAuthService{}
-	server := NewWithDependencies(":0", app.StaticDependencies{AuthSvc: auth})
+	server := NewWithDependencies(":0", testDependencies{AuthSvc: auth})
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
 	req.Header.Set("Authorization", "Bearer desktop-valid")
 	rec := httptest.NewRecorder()
@@ -528,7 +527,7 @@ func TestAuthLogoutRevokesBearerSession(t *testing.T) {
 func TestIntegrationTokensCreate(t *testing.T) {
 	t.Parallel()
 
-	server := NewWithDependencies(":0", app.StaticDependencies{AuthSvc: &fakeAuthService{}})
+	server := NewWithDependencies(":0", testDependencies{AuthSvc: &fakeAuthService{}})
 	req := httptest.NewRequest(
 		http.MethodPost,
 		"/api/integration-tokens",
@@ -551,7 +550,7 @@ func TestIntegrationTokensCreate(t *testing.T) {
 func TestIntegrationTokensRequireUserSession(t *testing.T) {
 	t.Parallel()
 
-	server := NewWithDependencies(":0", app.StaticDependencies{AuthSvc: &fakeAuthService{}})
+	server := NewWithDependencies(":0", testDependencies{AuthSvc: &fakeAuthService{}})
 	req := httptest.NewRequest(http.MethodGet, "/api/integration-tokens", nil)
 	rec := httptest.NewRecorder()
 
@@ -565,7 +564,7 @@ func TestIntegrationTokensRequireUserSession(t *testing.T) {
 func TestArtifactForbiddenMapsToHTTP403(t *testing.T) {
 	t.Parallel()
 
-	server := NewWithDependencies(":0", app.StaticDependencies{
+	server := NewWithDependencies(":0", testDependencies{
 		AuthSvc:      &fakeAuthService{},
 		ArtifactsSvc: &fakeArtifactService{err: artifactservice.ErrForbidden},
 	})
@@ -583,7 +582,7 @@ func TestArtifactForbiddenMapsToHTTP403(t *testing.T) {
 func TestPageForbiddenMapsToHTTP403(t *testing.T) {
 	t.Parallel()
 
-	server := NewWithDependencies(":0", app.StaticDependencies{
+	server := NewWithDependencies(":0", testDependencies{
 		AuthSvc:  &fakeAuthService{},
 		PagesSvc: &fakePageService{err: artifactservice.ErrForbidden},
 	})
@@ -601,7 +600,7 @@ func TestPageForbiddenMapsToHTTP403(t *testing.T) {
 func TestFileForbiddenMapsToHTTP403(t *testing.T) {
 	t.Parallel()
 
-	server := NewWithDependencies(":0", app.StaticDependencies{
+	server := NewWithDependencies(":0", testDependencies{
 		AuthSvc:  &fakeAuthService{},
 		FilesSvc: &fakeFileService{err: artifactservice.ErrForbidden},
 	})
@@ -619,7 +618,7 @@ func TestFileForbiddenMapsToHTTP403(t *testing.T) {
 func TestProviderConnectionsRequireAuth(t *testing.T) {
 	t.Parallel()
 
-	server := NewWithDependencies(":0", app.StaticDependencies{
+	server := NewWithDependencies(":0", testDependencies{
 		AuthSvc:                &fakeAuthService{},
 		ProviderConnectionsSvc: &fakeProviderConnectionService{},
 	})
@@ -636,7 +635,7 @@ func TestProviderConnectionsRequireAuth(t *testing.T) {
 func TestProviderConnectionsProviders(t *testing.T) {
 	t.Parallel()
 
-	server := NewWithDependencies(":0", app.StaticDependencies{
+	server := NewWithDependencies(":0", testDependencies{
 		AuthSvc: &fakeAuthService{},
 		ProviderConnectionsSvc: &fakeProviderConnectionService{
 			providers: []artifactservice.ProviderDescriptor{
@@ -670,7 +669,7 @@ func TestProviderConnectionsStartConnect(t *testing.T) {
 	service := &fakeProviderConnectionService{
 		session: artifactservice.ProviderConnectSession{ConnectSessionToken: "nango-session"},
 	}
-	server := NewWithDependencies(":0", app.StaticDependencies{
+	server := NewWithDependencies(":0", testDependencies{
 		AuthSvc:                &fakeAuthService{},
 		ProviderConnectionsSvc: service,
 	})
@@ -694,7 +693,7 @@ func TestProviderConnectionsSync(t *testing.T) {
 	service := &fakeProviderConnectionService{
 		connections: []artifactservice.ProviderConnection{{ID: "conn-1", Provider: "google"}},
 	}
-	server := NewWithDependencies(":0", app.StaticDependencies{
+	server := NewWithDependencies(":0", testDependencies{
 		AuthSvc:                &fakeAuthService{},
 		ProviderConnectionsSvc: service,
 	})
@@ -716,7 +715,7 @@ func TestProviderConnectionsNangoWebhookIsPublic(t *testing.T) {
 	t.Parallel()
 
 	service := &fakeProviderConnectionService{}
-	server := NewWithDependencies(":0", app.StaticDependencies{
+	server := NewWithDependencies(":0", testDependencies{
 		AuthSvc:                &fakeAuthService{},
 		ProviderConnectionsSvc: service,
 	})
@@ -761,7 +760,7 @@ type fakeFileService struct {
 func TestAuthResolveReturnsPrincipalForBearerToken(t *testing.T) {
 	t.Parallel()
 
-	server := NewWithDependencies(":0", app.StaticDependencies{AuthSvc: &fakeAuthService{}})
+	server := NewWithDependencies(":0", testDependencies{AuthSvc: &fakeAuthService{}})
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/resolve", nil)
 	req.Header.Set("Authorization", "Bearer desktop-valid")
 	rec := httptest.NewRecorder()
@@ -785,7 +784,7 @@ func TestAuthResolveReturnsPrincipalForBearerToken(t *testing.T) {
 func TestAuthResolveUnauthenticatedReturns401(t *testing.T) {
 	t.Parallel()
 
-	server := NewWithDependencies(":0", app.StaticDependencies{AuthSvc: &fakeAuthService{}})
+	server := NewWithDependencies(":0", testDependencies{AuthSvc: &fakeAuthService{}})
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/resolve", nil)
 	rec := httptest.NewRecorder()
 	server.httpServer.Handler.ServeHTTP(rec, req)
@@ -801,7 +800,7 @@ func TestAuthResolveUnauthenticatedReturns401(t *testing.T) {
 func TestUnauthenticatedBrowserNavigationGetsHTML(t *testing.T) {
 	t.Parallel()
 
-	server := NewWithDependencies(":0", app.StaticDependencies{AuthSvc: &fakeAuthService{}})
+	server := NewWithDependencies(":0", testDependencies{AuthSvc: &fakeAuthService{}})
 
 	navReq := httptest.NewRequest(http.MethodGet, "/returns", nil)
 	navReq.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")

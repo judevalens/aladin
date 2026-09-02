@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"aladin/backend_v2/internal/app"
 	coreservice "aladin/backend_v2/internal/service"
 )
 
@@ -111,7 +110,7 @@ func authedReq(method, path, body string) *http.Request {
 
 func serveWatchlistRequest(t *testing.T, svc *fakeWatchlistSvc, method, path, body string) *httptest.ResponseRecorder {
 	t.Helper()
-	server := NewWithDependencies(":0", app.StaticDependencies{WatchlistSvc: svc})
+	server := NewWithDependencies(":0", testDependencies{WatchlistSvc: svc})
 	rec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(rec, authedReq(method, path, body))
 	return rec
@@ -228,7 +227,7 @@ func TestWatchlistRouteContracts(t *testing.T) {
 
 func TestWatchlistRouteRequiresAuthentication(t *testing.T) {
 	t.Parallel()
-	server := NewWithDependencies(":0", app.StaticDependencies{AuthSvc: &fakeAuthService{}, WatchlistSvc: &fakeWatchlistSvc{}})
+	server := NewWithDependencies(":0", testDependencies{AuthSvc: &fakeAuthService{}, WatchlistSvc: &fakeWatchlistSvc{}})
 	rec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/watchlists", nil))
 	if rec.Code != http.StatusUnauthorized || strings.TrimSpace(rec.Body.String()) != `{"error":"Unauthenticated"}` {

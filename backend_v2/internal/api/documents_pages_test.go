@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"aladin/backend_v2/internal/app"
 	coreservice "aladin/backend_v2/internal/service"
 )
 
@@ -45,7 +44,7 @@ func pagesReq(query string) *http.Request {
 func TestDocumentPagesHappyPath(t *testing.T) {
 	t.Parallel()
 	svc := &fakeDocumentsSvc{pageTexts: []coreservice.DocumentPage{{Page: 94, Text: "the collar's width"}}}
-	s := &Server{deps: app.StaticDependencies{DocumentsSvc: svc}}
+	s := &Server{deps: testDependencies{DocumentsSvc: svc}}
 
 	rec := httptest.NewRecorder()
 	s.handleArtifactDocumentPages(rec, pagesReq("?from=94&to=94"))
@@ -70,7 +69,7 @@ func TestDocumentPagesHappyPath(t *testing.T) {
 func TestDocumentPagesClampsRange(t *testing.T) {
 	t.Parallel()
 	svc := &fakeDocumentsSvc{}
-	s := &Server{deps: app.StaticDependencies{DocumentsSvc: svc}}
+	s := &Server{deps: testDependencies{DocumentsSvc: svc}}
 
 	rec := httptest.NewRecorder()
 	s.handleArtifactDocumentPages(rec, pagesReq("?from=1&to=500"))
@@ -85,7 +84,7 @@ func TestDocumentPagesClampsRange(t *testing.T) {
 
 func TestDocumentPagesRejectsBadParams(t *testing.T) {
 	t.Parallel()
-	s := &Server{deps: app.StaticDependencies{DocumentsSvc: &fakeDocumentsSvc{}}}
+	s := &Server{deps: testDependencies{DocumentsSvc: &fakeDocumentsSvc{}}}
 
 	for _, query := range []string{"", "?from=0&to=3", "?from=5&to=4", "?from=x&to=2"} {
 		rec := httptest.NewRecorder()
@@ -99,7 +98,7 @@ func TestDocumentPagesRejectsBadParams(t *testing.T) {
 func TestDocumentPagesNotFoundMaps404(t *testing.T) {
 	t.Parallel()
 	svc := &fakeDocumentsSvc{pagesErr: coreservice.ErrNotFound}
-	s := &Server{deps: app.StaticDependencies{DocumentsSvc: svc}}
+	s := &Server{deps: testDependencies{DocumentsSvc: svc}}
 
 	rec := httptest.NewRecorder()
 	s.handleArtifactDocumentPages(rec, pagesReq("?from=1&to=1"))

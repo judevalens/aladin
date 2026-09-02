@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"aladin/backend_v2/internal/app"
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/dbtest"
 	"aladin/backend_v2/internal/repo"
@@ -27,7 +26,7 @@ var syncTestAdminUserID = uuid.NewString()
 // The pull endpoint requires an authenticated principal (checked before any
 // service call, so a nil Sync() is never reached here).
 func TestHandleSyncPull_RequiresPrincipal(t *testing.T) {
-	s := &Server{deps: app.StaticDependencies{}}
+	s := &Server{deps: testDependencies{}}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/sync/pull", nil)
 	s.handleSyncPull(rec, req)
@@ -42,7 +41,7 @@ func TestHandleSyncPull_RejectsBadCursor(t *testing.T) {
 		UserID: syncTestAdminUserID,
 		Scopes: []string{string(coreservice.ScopeArtifactsRead)},
 	})
-	s := &Server{deps: app.StaticDependencies{}}
+	s := &Server{deps: testDependencies{}}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/sync/pull?since=not-a-number", nil).WithContext(ctx)
 	s.handleSyncPull(rec, req)
@@ -94,7 +93,7 @@ func TestHandleSyncPull_ReturnsFramesAndAdvancesCursor(t *testing.T) {
 		t.Fatalf("create tree node: %v", err)
 	}
 
-	deps := app.StaticDependencies{
+	deps := testDependencies{
 		SyncSvc: coreservice.NewSyncService(repo.NewSyncPostgres(pool), repo.NewTreeSyncSource(pool)),
 	}
 	s := &Server{deps: deps}

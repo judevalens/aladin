@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"aladin/backend_v2/internal/app"
 	"aladin/backend_v2/internal/graph"
 )
 
@@ -30,7 +29,7 @@ func (f *fakeGraphReader) Neighbors(_ context.Context, id string, limit int) (*g
 func TestGraphNeighbors_NotConfiguredReturns503(t *testing.T) {
 	t.Parallel()
 
-	server := NewWithDependencies(":0", app.StaticDependencies{}) // GraphReaderSvc nil
+	server := NewWithDependencies(":0", testDependencies{}) // GraphReaderSvc nil
 	req := httptest.NewRequest(http.MethodGet, "/api/graph/entity/ent-1/neighbors", nil)
 	rec := httptest.NewRecorder()
 
@@ -48,7 +47,7 @@ func TestGraphNeighbors_ReturnsNeighborhood(t *testing.T) {
 		Entity:  graph.NeighborEntity{ID: "ent-1", Name: "Acme", Kind: "org"},
 		Related: []graph.NeighborEntity{{ID: "ent-2", Name: "Globex", Kind: "org", Weight: 3}},
 	}}
-	server := NewWithDependencies(":0", app.StaticDependencies{GraphReaderSvc: reader})
+	server := NewWithDependencies(":0", testDependencies{GraphReaderSvc: reader})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/graph/entity/ent-1/neighbors?limit=5", nil)
 	rec := httptest.NewRecorder()

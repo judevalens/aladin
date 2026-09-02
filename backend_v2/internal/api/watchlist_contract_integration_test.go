@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"aladin/backend_v2/internal/app"
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/dbtest"
 	"aladin/backend_v2/internal/repo"
@@ -52,7 +51,7 @@ func TestWatchlistHTTPServiceRepositoryContract(t *testing.T) {
 	})
 
 	watchlists := service.NewWatchlistService(repo.NewWatchlistPostgres(pool))
-	server := NewWithDependencies(":0", app.StaticDependencies{
+	server := NewWithDependencies(":0", testDependencies{
 		AuthSvc:      &resourceAPIAuth{userID: userID},
 		WatchlistSvc: watchlists,
 	})
