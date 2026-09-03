@@ -1,4 +1,4 @@
-package repo
+package postgres
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"aladin/backend_v2/internal/db"
+	"aladin/backend_v2/internal/dbtest"
 
 	"github.com/google/uuid"
 )
@@ -17,7 +18,10 @@ func TestGraphPane_ForArtifact(t *testing.T) {
 	ctx := context.Background()
 	ctxTO, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	pool := mustTestPool(ctxTO, t)
+	pool, err := db.Connect(ctxTO, dbtest.RequireTestDSN(t))
+	if err != nil {
+		t.Fatalf("connect test db: %v", err)
+	}
 	defer pool.Close()
 
 	tag := uuid.NewString()[:8]

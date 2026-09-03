@@ -7,6 +7,7 @@ import (
 
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/entities"
+	graphpanepostgres "aladin/backend_v2/internal/graphpane/postgres"
 	coreservice "aladin/backend_v2/internal/service"
 
 	"github.com/google/uuid"
@@ -104,7 +105,7 @@ func TestEntityTag_SearchAttachDetach(t *testing.T) {
 	}
 
 	// It surfaces in the graph pane as a tag-origin entity.
-	pane, err := NewGraphPanePostgres(pool).ForArtifact(ctx, artID)
+	pane, err := graphpanepostgres.NewGraphPanePostgres(pool).ForArtifact(ctx, artID)
 	if err != nil {
 		t.Fatalf("ForArtifact: %v", err)
 	}

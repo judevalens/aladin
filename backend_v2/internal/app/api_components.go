@@ -11,6 +11,8 @@ import (
 	"aladin/backend_v2/internal/feed"
 	feedpostgres "aladin/backend_v2/internal/feed/postgres"
 	"aladin/backend_v2/internal/graph"
+	"aladin/backend_v2/internal/graphpane"
+	graphpanepostgres "aladin/backend_v2/internal/graphpane/postgres"
 	"aladin/backend_v2/internal/insights"
 	"aladin/backend_v2/internal/providerconnection"
 	providerconnectionpostgres "aladin/backend_v2/internal/providerconnection/postgres"
@@ -47,7 +49,7 @@ type APIProcess struct {
 	outboxDrainer       *changefeed.Drainer
 	shardKV             coreservice.ShardKVService
 	relationships       relationship.RelationshipService
-	graphPane           coreservice.GraphPaneService
+	graphPane           graphpane.GraphPaneService
 	entityList          coreservice.EntityListService
 	graphReader         coreservice.GraphReader
 	readingPositions    readingposition.Service
@@ -139,7 +141,7 @@ func NewAPIComponentsWithProviderConnections(pool *pgxpool.Pool, providerConfig 
 		outboxDrainer:       outboxDrainer,
 		shardKV:             coreservice.NewShardKVService(shared.artifacts, repo.NewShardKVPostgres(pool)),
 		relationships:       relationship.NewRelationshipService(relationshippostgres.NewRelationshipPostgres(pool)),
-		graphPane:           coreservice.NewGraphPaneService(repo.NewGraphPanePostgres(pool)),
+		graphPane:           graphpane.NewGraphPaneService(graphpanepostgres.NewGraphPanePostgres(pool)),
 		entityList:          coreservice.NewEntityListService(repo.NewEntityListPostgres(pool)),
 		graphReader:         graphReader,
 		readingPositions:    readingposition.NewService(readingpositionpostgres.New(pool)),
@@ -178,7 +180,7 @@ func (c *APIProcess) ShardBridge() coreservice.ShardBridgeService              {
 func (c *APIProcess) Relationships() relationship.RelationshipService          { return c.relationships }
 func (c *APIProcess) Research() coreservice.ResearchService                    { return c.research }
 func (c *APIProcess) Documents() coreservice.DocumentService                   { return c.documents }
-func (c *APIProcess) GraphPane() coreservice.GraphPaneService                  { return c.graphPane }
+func (c *APIProcess) GraphPane() graphpane.GraphPaneService                    { return c.graphPane }
 func (c *APIProcess) EntityTags() coreservice.EntityTagService                 { return c.entityTags }
 func (c *APIProcess) ArtifactRefs() coreservice.ArtifactRefService             { return c.artifactRefs }
 func (c *APIProcess) EntityContext() coreservice.EntityContextService          { return c.entityContext }

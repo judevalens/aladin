@@ -4,6 +4,7 @@ import (
 	"aladin/backend_v2/internal/alert"
 	"aladin/backend_v2/internal/changefeed"
 	"aladin/backend_v2/internal/feed"
+	"aladin/backend_v2/internal/graphpane"
 	"aladin/backend_v2/internal/insights"
 	"aladin/backend_v2/internal/providerconnection"
 	"aladin/backend_v2/internal/readingposition"
@@ -44,7 +45,7 @@ type APIComponents interface {
 	Relationships() relationship.RelationshipService
 	Research() coreservice.ResearchService
 	Documents() coreservice.DocumentService
-	GraphPane() coreservice.GraphPaneService
+	GraphPane() graphpane.GraphPaneService
 	EntityTags() coreservice.EntityTagService
 	ArtifactRefs() coreservice.ArtifactRefService
 	EntityContext() coreservice.EntityContextService

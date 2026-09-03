@@ -1,10 +1,10 @@
-package repo
+package postgres
 
 import (
 	"context"
 	"fmt"
 
-	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/graphpane"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -18,10 +18,10 @@ func NewGraphPanePostgres(pool *pgxpool.Pool) *PostgresGraphPaneRepository {
 // ForArtifact assembles the "On the graph" pane for the artifact you're viewing: the
 // entities connected to it (tagged or @mentioned, with mention counts) and the other
 // artifacts it connects to. An empty pane means nothing is linked to the page yet.
-func (r *PostgresGraphPaneRepository) ForArtifact(ctx context.Context, artifactID string) (*coreservice.GraphPane, error) {
-	pane := &coreservice.GraphPane{
-		Entities:        []coreservice.GraphEntity{},
-		LinkedArtifacts: []coreservice.GraphLinkedArtifact{},
+func (r *PostgresGraphPaneRepository) ForArtifact(ctx context.Context, artifactID string) (*graphpane.GraphPane, error) {
+	pane := &graphpane.GraphPane{
+		Entities:        []graphpane.GraphEntity{},
+		LinkedArtifacts: []graphpane.GraphLinkedArtifact{},
 	}
 
 	// Entities connected to this artifact: tags and projected @mentions from
@@ -47,7 +47,7 @@ func (r *PostgresGraphPaneRepository) ForArtifact(ctx context.Context, artifactI
 	}
 	defer entRows.Close()
 	for entRows.Next() {
-		var e coreservice.GraphEntity
+		var e graphpane.GraphEntity
 		if err := entRows.Scan(&e.ID, &e.Name, &e.Kind, &e.Origin, &e.Mentions); err != nil {
 			return nil, fmt.Errorf("graph pane artifact entity scan: %w", err)
 		}
@@ -94,7 +94,7 @@ func (r *PostgresGraphPaneRepository) ForArtifact(ctx context.Context, artifactI
 	}
 	defer linkRows.Close()
 	for linkRows.Next() {
-		var la coreservice.GraphLinkedArtifact
+		var la graphpane.GraphLinkedArtifact
 		if err := linkRows.Scan(&la.ID, &la.Title, &la.Kind, &la.Relation); err != nil {
 			return nil, fmt.Errorf("graph pane linked artifact scan: %w", err)
 		}

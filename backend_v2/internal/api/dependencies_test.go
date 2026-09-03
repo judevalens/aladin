@@ -3,6 +3,7 @@ package api
 import (
 	"aladin/backend_v2/internal/alert"
 	"aladin/backend_v2/internal/feed"
+	"aladin/backend_v2/internal/graphpane"
 	"aladin/backend_v2/internal/insights"
 	"aladin/backend_v2/internal/providerconnection"
 	"aladin/backend_v2/internal/readingposition"
@@ -41,7 +42,7 @@ type testDependencies struct {
 	RelationshipsSvc       relationship.RelationshipService
 	ResearchSvc            coreservice.ResearchService
 	DocumentsSvc           coreservice.DocumentService
-	GraphPaneSvc           coreservice.GraphPaneService
+	GraphPaneSvc           graphpane.GraphPaneService
 	EntityTagsSvc          coreservice.EntityTagService
 	ArtifactRefsSvc        coreservice.ArtifactRefService
 	EntityContextSvc       coreservice.EntityContextService
@@ -91,7 +92,7 @@ func (d testDependencies) ShardBridge() coreservice.ShardBridgeService     { ret
 func (d testDependencies) Relationships() relationship.RelationshipService { return d.RelationshipsSvc }
 func (d testDependencies) Research() coreservice.ResearchService           { return d.ResearchSvc }
 func (d testDependencies) Documents() coreservice.DocumentService          { return d.DocumentsSvc }
-func (d testDependencies) GraphPane() coreservice.GraphPaneService         { return d.GraphPaneSvc }
+func (d testDependencies) GraphPane() graphpane.GraphPaneService           { return d.GraphPaneSvc }
 func (d testDependencies) EntityTags() coreservice.EntityTagService        { return d.EntityTagsSvc }
 func (d testDependencies) ArtifactRefs() coreservice.ArtifactRefService    { return d.ArtifactRefsSvc }
 func (d testDependencies) EntityContext() coreservice.EntityContextService { return d.EntityContextSvc }

@@ -7,6 +7,8 @@ import (
 	"aladin/backend_v2/internal/docsurface"
 	"aladin/backend_v2/internal/feed"
 	feedhttp "aladin/backend_v2/internal/feed/httptransport"
+	"aladin/backend_v2/internal/graphpane"
+	graphpanehttp "aladin/backend_v2/internal/graphpane/httptransport"
 	"aladin/backend_v2/internal/httpapi"
 	"aladin/backend_v2/internal/insights"
 	insightshttp "aladin/backend_v2/internal/insights/httptransport"
@@ -70,7 +72,7 @@ type Dependencies interface {
 	Relationships() relationship.RelationshipService
 	Research() coreservice.ResearchService
 	Documents() coreservice.DocumentService
-	GraphPane() coreservice.GraphPaneService
+	GraphPane() graphpane.GraphPaneService
 	EntityTags() coreservice.EntityTagService
 	ArtifactRefs() coreservice.ArtifactRefService
 	EntityContext() coreservice.EntityContextService
@@ -129,7 +131,7 @@ func NewWithDependencies(addr string, deps Dependencies) *Server {
 	s.registerContentRoutes(mux)
 	s.registerShardRoutes(mux)
 	relationshiphttp.Register(mux, deps.Relationships())
-	s.registerGraphPaneRoutes(mux)
+	graphpanehttp.Register(mux, deps.GraphPane())
 	s.registerResearchRoutes(mux)
 	s.registerDocumentRoutes(mux)
 	s.registerEntityTagRoutes(mux)
