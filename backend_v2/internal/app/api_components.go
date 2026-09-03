@@ -9,6 +9,8 @@ import (
 	"aladin/backend_v2/internal/config"
 	"aladin/backend_v2/internal/copilotagent"
 	"aladin/backend_v2/internal/graph"
+	"aladin/backend_v2/internal/providerconnection"
+	providerconnectionpostgres "aladin/backend_v2/internal/providerconnection/postgres"
 	"aladin/backend_v2/internal/readingposition"
 	readingpositionpostgres "aladin/backend_v2/internal/readingposition/postgres"
 	"aladin/backend_v2/internal/realtime"
@@ -31,7 +33,7 @@ type APIProcess struct {
 	pages               coreservice.PageService
 	files               coreservice.FileService
 	feed                coreservice.FeedService
-	providerConnections coreservice.ProviderConnectionService
+	providerConnections providerconnection.ProviderConnectionService
 	realtime            coreservice.RealtimeEventService
 	realtimeKeys        coreservice.SubscriptionKeyResolver
 	sync                coreservice.SyncService
@@ -62,18 +64,18 @@ func NewAPIComponentsWithProviderConnections(pool *pgxpool.Pool, providerConfig 
 	realtime := realtime.NewService(realtimeKeys)
 	outboxDrainer := changefeed.NewDrainer(syncRepo, realtime, changefeed.DefaultDrainInterval)
 
-	nangoClient := coreservice.NewHTTPNangoClient(providerConfig.NangoBaseURL, providerConfig.NangoSecretKey)
-	nangoBackend := coreservice.NewNangoProviderConnectionBackend(
+	nangoClient := providerconnection.NewHTTPNangoClient(providerConfig.NangoBaseURL, providerConfig.NangoSecretKey)
+	nangoBackend := providerconnection.NewNangoProviderConnectionBackend(
 		nangoClient,
 		providerConfig.NangoBaseURL,
 		providerConfig.NangoConnectBaseURL,
 		providerConfig.NangoSecretKey,
 	)
-	providerConnections := coreservice.NewProviderConnectionService(
-		repo.NewProviderConnectionPostgres(pool),
+	providerConnections := providerconnection.NewProviderConnectionService(
+		providerconnectionpostgres.NewProviderConnectionPostgres(pool),
 		providerCatalog(providerConfig),
-		[]coreservice.ProviderConnectionBackend{nangoBackend},
-		coreservice.WithNangoWebhookSigningKey(providerConfig.NangoWebhookSigningKey),
+		[]providerconnection.ProviderConnectionBackend{nangoBackend},
+		providerconnection.WithNangoWebhookSigningKey(providerConfig.NangoWebhookSigningKey),
 	)
 
 	quoteSvc := coreservice.NewQuoteService(syncRepo)
@@ -151,7 +153,7 @@ func (c *APIProcess) Pages() coreservice.PageService         { return c.pages }
 func (c *APIProcess) Files() coreservice.FileService         { return c.files }
 func (c *APIProcess) Feed() coreservice.FeedService          { return c.feed }
 func (c *APIProcess) Insights() coreservice.InsightService   { return c.insights }
-func (c *APIProcess) ProviderConnections() coreservice.ProviderConnectionService {
+func (c *APIProcess) ProviderConnections() providerconnection.ProviderConnectionService {
 	return c.providerConnections
 }
 func (c *APIProcess) Realtime() coreservice.RealtimeEventService               { return c.realtime }
@@ -187,21 +189,21 @@ func (c *APIProcess) MarketData() coreservice.MarketDataService                {
 func (c *APIProcess) GraphReader() coreservice.GraphReader                     { return c.graphReader }
 func (c *APIProcess) Copilot() coreservice.CopilotService                      { return c.copilot }
 
-func providerCatalog(providerConfig config.ProviderConnectionConfig) []coreservice.ProviderDefinition {
-	return []coreservice.ProviderDefinition{
-		{Provider: coreservice.ProviderGoogle, Label: "Google", Backend: coreservice.ProviderConnectionBackendNango, ProviderConfigKey: providerConfig.NangoGoogleProviderConfigKey, Description: "Connect Google as the first private-provider path. Gmail ingestion comes next.", Category: "Workspace", Capabilities: []string{"Gmail", "Drive-ready", "Calendar-ready"}},
-		comingSoonProvider(coreservice.ProviderMicrosoft, "Microsoft", "Workspace", "Outlook, OneDrive, and Teams private-source support."),
-		comingSoonProvider(coreservice.ProviderSlack, "Slack", "Communication", "Workspace channels, threads, and shared links."),
-		comingSoonProvider(coreservice.ProviderNotion, "Notion", "Knowledge base", "Pages and databases as private research context."),
-		comingSoonProvider(coreservice.ProviderGitHub, "GitHub", "Code", "Issues, pull requests, discussions, and repository context."),
-		comingSoonProvider(coreservice.ProviderLinear, "Linear", "Planning", "Issues, projects, and product planning context."),
-		comingSoonProvider(coreservice.ProviderDiscord, "Discord", "Community", "Community servers and research conversations."),
-		comingSoonProvider(coreservice.ProviderDropbox, "Dropbox", "Files", "Documents and uploaded files as private context."),
-		comingSoonProvider(coreservice.ProviderAtlassian, "Atlassian", "Planning", "Jira and Confluence work surfaces."),
-		comingSoonProvider(coreservice.ProviderFigma, "Figma", "Design", "Design files and product context."),
+func providerCatalog(providerConfig config.ProviderConnectionConfig) []providerconnection.ProviderDefinition {
+	return []providerconnection.ProviderDefinition{
+		{Provider: providerconnection.ProviderGoogle, Label: "Google", Backend: providerconnection.ProviderConnectionBackendNango, ProviderConfigKey: providerConfig.NangoGoogleProviderConfigKey, Description: "Connect Google as the first private-provider path. Gmail ingestion comes next.", Category: "Workspace", Capabilities: []string{"Gmail", "Drive-ready", "Calendar-ready"}},
+		comingSoonProvider(providerconnection.ProviderMicrosoft, "Microsoft", "Workspace", "Outlook, OneDrive, and Teams private-source support."),
+		comingSoonProvider(providerconnection.ProviderSlack, "Slack", "Communication", "Workspace channels, threads, and shared links."),
+		comingSoonProvider(providerconnection.ProviderNotion, "Notion", "Knowledge base", "Pages and databases as private research context."),
+		comingSoonProvider(providerconnection.ProviderGitHub, "GitHub", "Code", "Issues, pull requests, discussions, and repository context."),
+		comingSoonProvider(providerconnection.ProviderLinear, "Linear", "Planning", "Issues, projects, and product planning context."),
+		comingSoonProvider(providerconnection.ProviderDiscord, "Discord", "Community", "Community servers and research conversations."),
+		comingSoonProvider(providerconnection.ProviderDropbox, "Dropbox", "Files", "Documents and uploaded files as private context."),
+		comingSoonProvider(providerconnection.ProviderAtlassian, "Atlassian", "Planning", "Jira and Confluence work surfaces."),
+		comingSoonProvider(providerconnection.ProviderFigma, "Figma", "Design", "Design files and product context."),
 	}
 }
 
-func comingSoonProvider(provider, label, category, description string) coreservice.ProviderDefinition {
-	return coreservice.ProviderDefinition{Provider: provider, Label: label, Backend: coreservice.ProviderConnectionBackendNango, Description: description, Category: category, Capabilities: []string{"Planned"}, ComingSoon: true}
+func comingSoonProvider(provider, label, category, description string) providerconnection.ProviderDefinition {
+	return providerconnection.ProviderDefinition{Provider: provider, Label: label, Backend: providerconnection.ProviderConnectionBackendNango, Description: description, Category: category, Capabilities: []string{"Planned"}, ComingSoon: true}
 }

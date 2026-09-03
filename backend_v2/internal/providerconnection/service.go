@@ -1,4 +1,4 @@
-package service
+package providerconnection
 
 import (
 	"context"
@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	coreservice "aladin/backend_v2/internal/service"
 )
 
 const (
@@ -195,9 +197,9 @@ func NewProviderConnectionService(
 }
 
 func (s *DefaultProviderConnectionService) ListProviders(ctx context.Context) ([]ProviderDescriptor, error) {
-	principal, err := RequirePrincipal(ctx)
+	principal, err := coreservice.RequirePrincipal(ctx)
 	if err != nil {
-		return nil, ErrUnauthenticated
+		return nil, coreservice.ErrUnauthenticated
 	}
 	connections, err := s.repo.ListProviderConnections(ctx, principal.UserID)
 	if err != nil {
@@ -237,16 +239,16 @@ func (s *DefaultProviderConnectionService) ListProviders(ctx context.Context) ([
 }
 
 func (s *DefaultProviderConnectionService) StartConnect(ctx context.Context, input StartProviderConnectInput) (ProviderConnectSession, error) {
-	principal, err := RequirePrincipal(ctx)
+	principal, err := coreservice.RequirePrincipal(ctx)
 	if err != nil {
-		return ProviderConnectSession{}, ErrUnauthenticated
+		return ProviderConnectSession{}, coreservice.ErrUnauthenticated
 	}
 	def, backend, err := s.resolveProvider(input.Provider)
 	if err != nil {
 		return ProviderConnectSession{}, err
 	}
 	if strings.TrimSpace(def.ProviderConfigKey) == "" || !backend.Available() {
-		return ProviderConnectSession{}, BadRequest("provider is not available")
+		return ProviderConnectSession{}, coreservice.BadRequest("provider is not available")
 	}
 	return backend.StartConnect(ctx, ProviderConnectBackendInput{
 		Principal: ProviderConnectionPrincipal{
@@ -259,9 +261,9 @@ func (s *DefaultProviderConnectionService) StartConnect(ctx context.Context, inp
 }
 
 func (s *DefaultProviderConnectionService) SyncConnections(ctx context.Context, _ SyncProviderConnectionsInput) ([]ProviderConnection, error) {
-	principal, err := RequirePrincipal(ctx)
+	principal, err := coreservice.RequirePrincipal(ctx)
 	if err != nil {
-		return nil, ErrUnauthenticated
+		return nil, coreservice.ErrUnauthenticated
 	}
 	current := ProviderConnectionPrincipal{UserID: principal.UserID, Email: principal.Email}
 
@@ -313,18 +315,18 @@ func (s *DefaultProviderConnectionService) HandleNangoWebhook(ctx context.Contex
 
 	var payload nangoWebhookPayload
 	if err := json.Unmarshal(input.RawBody, &payload); err != nil {
-		return BadRequest("invalid nango webhook payload")
+		return coreservice.BadRequest("invalid nango webhook payload")
 	}
 	if payload.Type != "auth" || payload.Operation != "creation" || !payload.Success {
 		return nil
 	}
 	if strings.TrimSpace(payload.ConnectionID) == "" || strings.TrimSpace(payload.ProviderConfigKey) == "" {
-		return BadRequest("nango webhook missing connection id or provider config key")
+		return coreservice.BadRequest("nango webhook missing connection id or provider config key")
 	}
 
 	userID := nangoWebhookUserID(payload)
 	if strings.TrimSpace(userID) == "" {
-		return BadRequest("nango webhook missing user tag")
+		return coreservice.BadRequest("nango webhook missing user tag")
 	}
 	def, ok := s.providerDefinitionByConfigKey(payload.ProviderConfigKey)
 	if !ok {
@@ -355,17 +357,17 @@ func (s *DefaultProviderConnectionService) HandleNangoWebhook(ctx context.Contex
 }
 
 func (s *DefaultProviderConnectionService) ListConnections(ctx context.Context) ([]ProviderConnection, error) {
-	principal, err := RequirePrincipal(ctx)
+	principal, err := coreservice.RequirePrincipal(ctx)
 	if err != nil {
-		return nil, ErrUnauthenticated
+		return nil, coreservice.ErrUnauthenticated
 	}
 	return s.repo.ListProviderConnections(ctx, principal.UserID)
 }
 
 func (s *DefaultProviderConnectionService) Disconnect(ctx context.Context, connectionID string) error {
-	principal, err := RequirePrincipal(ctx)
+	principal, err := coreservice.RequirePrincipal(ctx)
 	if err != nil {
-		return ErrUnauthenticated
+		return coreservice.ErrUnauthenticated
 	}
 	connections, err := s.repo.ListProviderConnections(ctx, principal.UserID)
 	if err != nil {
@@ -381,7 +383,7 @@ func (s *DefaultProviderConnectionService) Disconnect(ctx context.Context, conne
 		}
 	}
 	if !found {
-		return ErrNotFound
+		return coreservice.ErrNotFound
 	}
 	if backend := s.backends[connection.Backend]; backend != nil && backend.Available() {
 		if err := backend.Disconnect(ctx, connection); err != nil {
@@ -395,9 +397,9 @@ func (s *DefaultProviderConnectionService) Disconnect(ctx context.Context, conne
 }
 
 func (s *DefaultProviderConnectionService) GetConnectionCredentials(ctx context.Context, input ProviderCredentialRequest) (ProviderCredentials, error) {
-	principal, err := RequirePrincipal(ctx)
+	principal, err := coreservice.RequirePrincipal(ctx)
 	if err != nil {
-		return ProviderCredentials{}, ErrUnauthenticated
+		return ProviderCredentials{}, coreservice.ErrUnauthenticated
 	}
 	connections, err := s.repo.ListProviderConnections(ctx, principal.UserID)
 	if err != nil {
@@ -407,12 +409,12 @@ func (s *DefaultProviderConnectionService) GetConnectionCredentials(ctx context.
 		if connection.ID == input.ConnectionID && connection.Status == "active" {
 			backend := s.backends[connection.Backend]
 			if backend == nil || !backend.Available() {
-				return ProviderCredentials{}, BadRequest("provider backend is not available")
+				return ProviderCredentials{}, coreservice.BadRequest("provider backend is not available")
 			}
 			return backend.GetConnectionCredentials(ctx, input, connection)
 		}
 	}
-	return ProviderCredentials{}, ErrNotFound
+	return ProviderCredentials{}, coreservice.ErrNotFound
 }
 
 func (s *DefaultProviderConnectionService) resolveProvider(provider string) (ProviderDefinition, ProviderConnectionBackend, error) {
@@ -421,12 +423,12 @@ func (s *DefaultProviderConnectionService) resolveProvider(provider string) (Pro
 		if def.Provider == provider {
 			backend := s.backends[def.Backend]
 			if backend == nil {
-				return ProviderDefinition{}, nil, BadRequest("provider backend is not available")
+				return ProviderDefinition{}, nil, coreservice.BadRequest("provider backend is not available")
 			}
 			return def, backend, nil
 		}
 	}
-	return ProviderDefinition{}, nil, ErrNotFound
+	return ProviderDefinition{}, nil, coreservice.ErrNotFound
 }
 
 func (s *DefaultProviderConnectionService) providerDefinitionByConfigKey(providerConfigKey string) (ProviderDefinition, bool) {
@@ -449,13 +451,13 @@ func (s *DefaultProviderConnectionService) verifyNangoWebhookSignature(rawBody [
 	}
 	signature = strings.TrimSpace(signature)
 	if signature == "" {
-		return ErrForbidden
+		return coreservice.ErrForbidden
 	}
 	mac := hmac.New(sha256.New, []byte(signingKey))
 	_, _ = mac.Write(rawBody)
 	expected := hex.EncodeToString(mac.Sum(nil))
 	if !hmac.Equal([]byte(expected), []byte(signature)) {
-		return ErrForbidden
+		return coreservice.ErrForbidden
 	}
 	return nil
 }

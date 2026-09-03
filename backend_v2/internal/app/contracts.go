@@ -3,6 +3,7 @@ package app
 import (
 	"aladin/backend_v2/internal/alert"
 	"aladin/backend_v2/internal/changefeed"
+	"aladin/backend_v2/internal/providerconnection"
 	"aladin/backend_v2/internal/readingposition"
 	"aladin/backend_v2/internal/search"
 	coreservice "aladin/backend_v2/internal/service"
@@ -23,7 +24,7 @@ type APIComponents interface {
 	Files() coreservice.FileService
 	Feed() coreservice.FeedService
 	Insights() coreservice.InsightService
-	ProviderConnections() coreservice.ProviderConnectionService
+	ProviderConnections() providerconnection.ProviderConnectionService
 	Realtime() coreservice.RealtimeEventService
 	RealtimeKeyResolver() coreservice.SubscriptionKeyResolver
 	Sync() coreservice.SyncService

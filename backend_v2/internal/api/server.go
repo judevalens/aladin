@@ -6,6 +6,8 @@ import (
 	"aladin/backend_v2/internal/app"
 	"aladin/backend_v2/internal/docsurface"
 	"aladin/backend_v2/internal/httpapi"
+	"aladin/backend_v2/internal/providerconnection"
+	providerconnectionhttp "aladin/backend_v2/internal/providerconnection/httptransport"
 	"aladin/backend_v2/internal/readingposition"
 	readingpositionhttp "aladin/backend_v2/internal/readingposition/httptransport"
 	"aladin/backend_v2/internal/search"
@@ -45,7 +47,7 @@ type Dependencies interface {
 	Files() coreservice.FileService
 	Feed() coreservice.FeedService
 	Insights() coreservice.InsightService
-	ProviderConnections() coreservice.ProviderConnectionService
+	ProviderConnections() providerconnection.ProviderConnectionService
 	Realtime() coreservice.RealtimeEventService
 	RealtimeKeyResolver() coreservice.SubscriptionKeyResolver
 	Sync() coreservice.SyncService
@@ -133,7 +135,7 @@ func NewWithDependencies(addr string, deps Dependencies) *Server {
 	s.registerEntityContextRoutes(mux)
 	s.registerArtifactRefRoutes(mux)
 	s.registerRealtimeRoutes(mux)
-	s.registerProviderConnectionRoutes(mux)
+	providerconnectionhttp.Register(mux, deps.ProviderConnections())
 	s.registerSyncRoutes(mux)
 
 	mux.HandleFunc("GET /api/sources/", s.handleSourcesList)

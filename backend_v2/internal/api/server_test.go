@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"aladin/backend_v2/internal/providerconnection"
 	artifactservice "aladin/backend_v2/internal/service"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -638,7 +639,7 @@ func TestProviderConnectionsProviders(t *testing.T) {
 	server := NewWithDependencies(":0", testDependencies{
 		AuthSvc: &fakeAuthService{},
 		ProviderConnectionsSvc: &fakeProviderConnectionService{
-			providers: []artifactservice.ProviderDescriptor{
+			providers: []providerconnection.ProviderDescriptor{
 				{
 					Provider:          "google",
 					Label:             "Google",
@@ -667,7 +668,7 @@ func TestProviderConnectionsStartConnect(t *testing.T) {
 	t.Parallel()
 
 	service := &fakeProviderConnectionService{
-		session: artifactservice.ProviderConnectSession{ConnectSessionToken: "nango-session"},
+		session: providerconnection.ProviderConnectSession{ConnectSessionToken: "nango-session"},
 	}
 	server := NewWithDependencies(":0", testDependencies{
 		AuthSvc:                &fakeAuthService{},
@@ -691,7 +692,7 @@ func TestProviderConnectionsSync(t *testing.T) {
 	t.Parallel()
 
 	service := &fakeProviderConnectionService{
-		connections: []artifactservice.ProviderConnection{{ID: "conn-1", Provider: "google"}},
+		connections: []providerconnection.ProviderConnection{{ID: "conn-1", Provider: "google"}},
 	}
 	server := NewWithDependencies(":0", testDependencies{
 		AuthSvc:                &fakeAuthService{},
@@ -841,9 +842,9 @@ type fakeAuthService struct {
 }
 
 type fakeProviderConnectionService struct {
-	providers        []artifactservice.ProviderDescriptor
-	connections      []artifactservice.ProviderConnection
-	session          artifactservice.ProviderConnectSession
+	providers        []providerconnection.ProviderDescriptor
+	connections      []providerconnection.ProviderConnection
+	session          providerconnection.ProviderConnectSession
 	startProvider    string
 	syncCalls        int
 	webhookBody      []byte
@@ -938,21 +939,21 @@ func (f *fakeAuthService) MintContentToken(ctx context.Context) (artifactservice
 	return artifactservice.ContentToken{Token: "content-valid", ExpiresAt: "2026-01-01T00:00:00Z"}, nil
 }
 
-func (f *fakeProviderConnectionService) ListProviders(context.Context) ([]artifactservice.ProviderDescriptor, error) {
+func (f *fakeProviderConnectionService) ListProviders(context.Context) ([]providerconnection.ProviderDescriptor, error) {
 	return f.providers, nil
 }
 
-func (f *fakeProviderConnectionService) StartConnect(_ context.Context, input artifactservice.StartProviderConnectInput) (artifactservice.ProviderConnectSession, error) {
+func (f *fakeProviderConnectionService) StartConnect(_ context.Context, input providerconnection.StartProviderConnectInput) (providerconnection.ProviderConnectSession, error) {
 	f.startProvider = input.Provider
 	return f.session, nil
 }
 
-func (f *fakeProviderConnectionService) SyncConnections(context.Context, artifactservice.SyncProviderConnectionsInput) ([]artifactservice.ProviderConnection, error) {
+func (f *fakeProviderConnectionService) SyncConnections(context.Context, providerconnection.SyncProviderConnectionsInput) ([]providerconnection.ProviderConnection, error) {
 	f.syncCalls++
 	return f.connections, nil
 }
 
-func (f *fakeProviderConnectionService) ListConnections(context.Context) ([]artifactservice.ProviderConnection, error) {
+func (f *fakeProviderConnectionService) ListConnections(context.Context) ([]providerconnection.ProviderConnection, error) {
 	return f.connections, nil
 }
 
@@ -960,11 +961,11 @@ func (f *fakeProviderConnectionService) Disconnect(context.Context, string) erro
 	return nil
 }
 
-func (f *fakeProviderConnectionService) GetConnectionCredentials(context.Context, artifactservice.ProviderCredentialRequest) (artifactservice.ProviderCredentials, error) {
-	return artifactservice.ProviderCredentials{}, nil
+func (f *fakeProviderConnectionService) GetConnectionCredentials(context.Context, providerconnection.ProviderCredentialRequest) (providerconnection.ProviderCredentials, error) {
+	return providerconnection.ProviderCredentials{}, nil
 }
 
-func (f *fakeProviderConnectionService) HandleNangoWebhook(_ context.Context, input artifactservice.NangoWebhookInput) error {
+func (f *fakeProviderConnectionService) HandleNangoWebhook(_ context.Context, input providerconnection.NangoWebhookInput) error {
 	f.webhookBody = input.RawBody
 	f.webhookSignature = input.Signature
 	return nil

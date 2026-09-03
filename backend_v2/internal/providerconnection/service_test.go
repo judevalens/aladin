@@ -1,4 +1,4 @@
-package service
+package providerconnection
 
 import (
 	"context"
@@ -7,6 +7,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"testing"
+
+	coreservice "aladin/backend_v2/internal/service"
 )
 
 func TestProviderConnectionListProvidersHidesUnavailableDetails(t *testing.T) {
@@ -64,7 +66,7 @@ func TestProviderConnectionStartConnectRequiresPrincipal(t *testing.T) {
 	t.Parallel()
 
 	svc := NewProviderConnectionService(&fakeProviderConnectionRepo{}, nil, nil)
-	if _, err := svc.StartConnect(context.Background(), StartProviderConnectInput{Provider: "google"}); !errors.Is(err, ErrUnauthenticated) {
+	if _, err := svc.StartConnect(context.Background(), StartProviderConnectInput{Provider: "google"}); !errors.Is(err, coreservice.ErrUnauthenticated) {
 		t.Fatalf("StartConnect error = %v, want ErrUnauthenticated", err)
 	}
 }
@@ -109,7 +111,7 @@ func TestProviderConnectionStartConnectRejectsUnavailableBackend(t *testing.T) {
 	)
 
 	_, err := svc.StartConnect(testProviderConnectionPrincipalContext(), StartProviderConnectInput{Provider: "google"})
-	var requestErr BadRequest
+	var requestErr coreservice.BadRequest
 	if !errors.As(err, &requestErr) {
 		t.Fatalf("StartConnect error = %v, want BadRequest", err)
 	}
@@ -125,7 +127,7 @@ func TestProviderConnectionStartConnectRejectsUnconfiguredProvider(t *testing.T)
 	)
 
 	_, err := svc.StartConnect(testProviderConnectionPrincipalContext(), StartProviderConnectInput{Provider: "slack"})
-	var requestErr BadRequest
+	var requestErr coreservice.BadRequest
 	if !errors.As(err, &requestErr) {
 		t.Fatalf("StartConnect error = %v, want BadRequest", err)
 	}
@@ -253,7 +255,7 @@ func TestProviderConnectionNangoWebhookRejectsBadSignature(t *testing.T) {
 		RawBody:   []byte(`{"type":"auth"}`),
 		Signature: "not-valid",
 	})
-	if !errors.Is(err, ErrForbidden) {
+	if !errors.Is(err, coreservice.ErrForbidden) {
 		t.Fatalf("HandleNangoWebhook error = %v, want ErrForbidden", err)
 	}
 }
@@ -265,9 +267,9 @@ func testNangoWebhookSignature(key string, body []byte) string {
 }
 
 func testProviderConnectionPrincipalContext() context.Context {
-	return WithPrincipal(context.Background(), Principal{
+	return coreservice.WithPrincipal(context.Background(), coreservice.Principal{
 		UserID:    "user-1",
-		ActorType: ActorTypeUserSession,
+		ActorType: coreservice.ActorTypeUserSession,
 		ActorID:   "user-1",
 		Email:     "admin@email.com",
 	})
@@ -320,7 +322,7 @@ func (r *fakeProviderConnectionRepo) DisconnectProviderConnection(_ context.Cont
 	r.ensure()
 	connection, ok := r.connections[id]
 	if !ok || connection.UserID != userID || connection.Status != "active" {
-		return ProviderConnection{}, ErrNotFound
+		return ProviderConnection{}, coreservice.ErrNotFound
 	}
 	connection.Status = "disconnected"
 	r.connections[id] = connection

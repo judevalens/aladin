@@ -1,4 +1,4 @@
-package repo
+package postgres
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"errors"
 	"time"
 
+	"aladin/backend_v2/internal/providerconnection"
 	coreservice "aladin/backend_v2/internal/service"
 
 	"github.com/jackc/pgx/v5"
@@ -18,7 +19,7 @@ func NewProviderConnectionPostgres(pool *pgxpool.Pool) *PostgresProviderConnecti
 	return &PostgresProviderConnectionRepository{pool: pool}
 }
 
-func (r *PostgresProviderConnectionRepository) ListProviderConnections(ctx context.Context, userID string) ([]coreservice.ProviderConnection, error) {
+func (r *PostgresProviderConnectionRepository) ListProviderConnections(ctx context.Context, userID string) ([]providerconnection.ProviderConnection, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, user_id::text, provider, backend, provider_config_key,
 		       external_connection_id, status, granted_scopes, metadata,
@@ -33,7 +34,7 @@ func (r *PostgresProviderConnectionRepository) ListProviderConnections(ctx conte
 	}
 	defer rows.Close()
 
-	var out []coreservice.ProviderConnection
+	var out []providerconnection.ProviderConnection
 	for rows.Next() {
 		rec, err := scanProviderConnection(rows)
 		if err != nil {
@@ -44,7 +45,7 @@ func (r *PostgresProviderConnectionRepository) ListProviderConnections(ctx conte
 	return out, rows.Err()
 }
 
-func (r *PostgresProviderConnectionRepository) UpsertProviderConnection(ctx context.Context, userID string, input coreservice.ProviderConnection) (coreservice.ProviderConnection, error) {
+func (r *PostgresProviderConnectionRepository) UpsertProviderConnection(ctx context.Context, userID string, input providerconnection.ProviderConnection) (providerconnection.ProviderConnection, error) {
 	metadata, _ := json.Marshal(input.Metadata)
 	grantedScopes := input.GrantedScopes
 	if grantedScopes == nil {
@@ -93,7 +94,7 @@ func (r *PostgresProviderConnectionRepository) UpsertProviderConnection(ctx cont
 	return scanProviderConnection(row)
 }
 
-func (r *PostgresProviderConnectionRepository) DisconnectProviderConnection(ctx context.Context, userID string, id string) (coreservice.ProviderConnection, error) {
+func (r *PostgresProviderConnectionRepository) DisconnectProviderConnection(ctx context.Context, userID string, id string) (providerconnection.ProviderConnection, error) {
 	row := r.pool.QueryRow(ctx, `
 		UPDATE provider_connections
 		   SET status = 'disconnected',
@@ -109,9 +110,9 @@ func (r *PostgresProviderConnectionRepository) DisconnectProviderConnection(ctx 
 	rec, err := scanProviderConnection(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return coreservice.ProviderConnection{}, coreservice.ErrNotFound
+			return providerconnection.ProviderConnection{}, coreservice.ErrNotFound
 		}
-		return coreservice.ProviderConnection{}, err
+		return providerconnection.ProviderConnection{}, err
 	}
 	return rec, nil
 }
@@ -132,8 +133,8 @@ type providerConnectionScanner interface {
 	Scan(dest ...any) error
 }
 
-func scanProviderConnection(row providerConnectionScanner) (coreservice.ProviderConnection, error) {
-	var rec coreservice.ProviderConnection
+func scanProviderConnection(row providerConnectionScanner) (providerconnection.ProviderConnection, error) {
+	var rec providerconnection.ProviderConnection
 	var metadata []byte
 	var createdAt time.Time
 	var updatedAt time.Time
@@ -152,7 +153,7 @@ func scanProviderConnection(row providerConnectionScanner) (coreservice.Provider
 		&updatedAt,
 		&disconnectedAt,
 	); err != nil {
-		return coreservice.ProviderConnection{}, err
+		return providerconnection.ProviderConnection{}, err
 	}
 	_ = json.Unmarshal(metadata, &rec.Metadata)
 	if rec.Metadata == nil {
