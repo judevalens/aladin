@@ -14,6 +14,7 @@ import (
 	"aladin/backend_v2/internal/search"
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/source"
+	"aladin/backend_v2/internal/unfurl"
 	"aladin/backend_v2/internal/watchlist"
 )
 
@@ -54,7 +55,7 @@ type testDependencies struct {
 	WatchlistSvc           watchlist.Service
 	ReadingPositionsSvc    readingposition.Service
 	SearchSvc              search.SearchService
-	UnfurlSvc              coreservice.UnfurlService
+	UnfurlSvc              unfurl.UnfurlService
 	BarsSvc                market.BarService
 	AlertsSvc              alert.AlertService
 	NotificationsSvc       alert.NotificationService
@@ -106,7 +107,7 @@ func (d testDependencies) ReadingPositions() readingposition.Service {
 	return d.ReadingPositionsSvc
 }
 func (d testDependencies) Search() search.SearchService             { return d.SearchSvc }
-func (d testDependencies) Unfurl() coreservice.UnfurlService        { return d.UnfurlSvc }
+func (d testDependencies) Unfurl() unfurl.UnfurlService             { return d.UnfurlSvc }
 func (d testDependencies) Bars() market.BarService                  { return d.BarsSvc }
 func (d testDependencies) Alerts() alert.AlertService               { return d.AlertsSvc }
 func (d testDependencies) Notifications() alert.NotificationService { return d.NotificationsSvc }

@@ -16,6 +16,7 @@ import (
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/shardresource"
 	"aladin/backend_v2/internal/source"
+	"aladin/backend_v2/internal/unfurl"
 	"aladin/backend_v2/internal/watchlist"
 )
 
@@ -57,7 +58,7 @@ type APIComponents interface {
 	Watchlist() watchlist.Service
 	ReadingPositions() readingposition.Service
 	Search() search.SearchService
-	Unfurl() coreservice.UnfurlService
+	Unfurl() unfurl.UnfurlService
 	Bars() market.BarService
 	Alerts() alert.AlertService
 	Notifications() alert.NotificationService

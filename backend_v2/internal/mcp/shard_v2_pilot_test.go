@@ -32,6 +32,7 @@ import (
 	shardstorage "aladin/backend_v2/internal/shardresource/storage"
 	"aladin/backend_v2/internal/shardv2"
 	"aladin/backend_v2/internal/source"
+	"aladin/backend_v2/internal/unfurl"
 	"aladin/backend_v2/internal/watchlist"
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
@@ -373,7 +374,7 @@ func (emptyAPIDependencies) Instruments() instrument.InstrumentService          
 func (emptyAPIDependencies) Watchlist() watchlist.Service                         { return nil }
 func (emptyAPIDependencies) ReadingPositions() readingposition.Service            { return nil }
 func (emptyAPIDependencies) Search() searchdomain.SearchService                   { return nil }
-func (emptyAPIDependencies) Unfurl() service.UnfurlService                        { return nil }
+func (emptyAPIDependencies) Unfurl() unfurl.UnfurlService                         { return nil }
 func (emptyAPIDependencies) Bars() market.BarService                              { return nil }
 func (emptyAPIDependencies) Alerts() alert.AlertService                           { return nil }
 func (emptyAPIDependencies) Notifications() alert.NotificationService             { return nil }

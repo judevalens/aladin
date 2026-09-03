@@ -30,6 +30,8 @@ import (
 	"aladin/backend_v2/internal/shardresource"
 	"aladin/backend_v2/internal/source"
 	sourcehttp "aladin/backend_v2/internal/source/httptransport"
+	"aladin/backend_v2/internal/unfurl"
+	unfurlhttp "aladin/backend_v2/internal/unfurl/httptransport"
 	"aladin/backend_v2/internal/watchlist"
 	watchlisthttp "aladin/backend_v2/internal/watchlist/httptransport"
 	"context"
@@ -87,7 +89,7 @@ type Dependencies interface {
 	Watchlist() watchlist.Service
 	ReadingPositions() readingposition.Service
 	Search() search.SearchService
-	Unfurl() coreservice.UnfurlService
+	Unfurl() unfurl.UnfurlService
 	Bars() market.BarService
 	Alerts() alert.AlertService
 	Notifications() alert.NotificationService
@@ -133,7 +135,7 @@ func NewWithDependencies(addr string, deps Dependencies) *Server {
 	s.registerArtifactRoutes(mux)
 	s.registerPageRoutes(mux)
 	s.registerFileRoutes(mux)
-	s.registerUnfurlRoutes(mux)
+	unfurlhttp.Register(mux, deps.Unfurl())
 	s.registerContentRoutes(mux)
 	s.registerShardRoutes(mux)
 	relationshiphttp.Register(mux, deps.Relationships())

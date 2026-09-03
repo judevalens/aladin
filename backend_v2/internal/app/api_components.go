@@ -31,6 +31,7 @@ import (
 	"aladin/backend_v2/internal/shardresource"
 	"aladin/backend_v2/internal/source"
 	sourcepostgres "aladin/backend_v2/internal/source/postgres"
+	"aladin/backend_v2/internal/unfurl"
 	"aladin/backend_v2/internal/watchlist"
 	watchlistpostgres "aladin/backend_v2/internal/watchlist/postgres"
 
@@ -56,7 +57,7 @@ type APIProcess struct {
 	entityList          coreservice.EntityListService
 	graphReader         coreservice.GraphReader
 	readingPositions    readingposition.Service
-	unfurl              coreservice.UnfurlService
+	unfurl              unfurl.UnfurlService
 	notifications       alert.NotificationService
 	alertEngine         *alert.AlertEngine
 	marketData          market.MarketDataService
@@ -148,7 +149,7 @@ func NewAPIComponentsWithProviderConnections(pool *pgxpool.Pool, providerConfig 
 		entityList:          coreservice.NewEntityListService(repo.NewEntityListPostgres(pool)),
 		graphReader:         graphReader,
 		readingPositions:    readingposition.NewService(readingpositionpostgres.New(pool)),
-		unfurl:              coreservice.NewUnfurlService(),
+		unfurl:              unfurl.NewUnfurlService(),
 		notifications:       alert.NewNotificationService(alertpostgres.NewNotificationsPostgres(pool)),
 		alertEngine:         alertEngine,
 		marketData:          marketDataSvc,
@@ -192,7 +193,7 @@ func (c *APIProcess) Instruments() instrument.InstrumentService                {
 func (c *APIProcess) Watchlist() watchlist.Service                             { return c.watchlist }
 func (c *APIProcess) ReadingPositions() readingposition.Service                { return c.readingPositions }
 func (c *APIProcess) Search() search.SearchService                             { return c.search }
-func (c *APIProcess) Unfurl() coreservice.UnfurlService                        { return c.unfurl }
+func (c *APIProcess) Unfurl() unfurl.UnfurlService                             { return c.unfurl }
 func (c *APIProcess) Bars() market.BarService                                  { return c.bars }
 func (c *APIProcess) Alerts() alert.AlertService                               { return c.alerts }
 func (c *APIProcess) Notifications() alert.NotificationService                 { return c.notifications }
