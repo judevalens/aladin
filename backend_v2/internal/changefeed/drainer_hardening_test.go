@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	. "aladin/backend_v2/internal/realtime"
 	. "aladin/backend_v2/internal/service"
 )
 

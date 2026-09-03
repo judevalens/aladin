@@ -6,8 +6,9 @@ import (
 	"testing"
 	"time"
 
-	rtruntime "aladin/backend_v2/internal/realtime"
-	. "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/apperror"
+	"aladin/backend_v2/internal/auth"
+	. "aladin/backend_v2/internal/realtime"
 )
 
 func TestCanonicalQualifiersSortsKeys(t *testing.T) {
@@ -26,11 +27,11 @@ func TestCanonicalQualifiersSortsKeys(t *testing.T) {
 }
 
 func TestInMemoryRealtimePublishesToMatchingSubscriber(t *testing.T) {
-	ctx, cancel := context.WithCancel(realtimeTestContext("user-a", ActorTypeUserSession, nil))
+	ctx, cancel := context.WithCancel(realtimeTestContext("user-a", auth.ActorTypeUserSession, nil))
 	defer cancel()
 
-	resolver := NewSubscriptionKeyResolver()
-	realtime := rtruntime.NewService(resolver)
+	resolver := newTestSubscriptionKeyResolver()
+	realtime := NewService(resolver)
 	keys, err := resolver.ResolveSubscribeKeys(ctx, SubscriptionOptions{
 		Subscriptions: []PublicSubscriptionKey{{
 			Stream:       WorkspaceStream,
@@ -71,11 +72,11 @@ func TestInMemoryRealtimePublishesToMatchingSubscriber(t *testing.T) {
 }
 
 func TestInMemoryRealtimeSkipsNonMatchingSubscriber(t *testing.T) {
-	ctx, cancel := context.WithCancel(realtimeTestContext("user-a", ActorTypeUserSession, nil))
+	ctx, cancel := context.WithCancel(realtimeTestContext("user-a", auth.ActorTypeUserSession, nil))
 	defer cancel()
 
-	resolver := NewSubscriptionKeyResolver()
-	realtime := rtruntime.NewService(resolver)
+	resolver := newTestSubscriptionKeyResolver()
+	realtime := NewService(resolver)
 	keys, err := resolver.ResolveSubscribeKeys(ctx, SubscriptionOptions{
 		Subscriptions: []PublicSubscriptionKey{{
 			Stream:       WorkspaceStream,
@@ -110,10 +111,10 @@ func TestInMemoryRealtimeSkipsNonMatchingSubscriber(t *testing.T) {
 }
 
 func TestInMemoryRealtimeScopesWildcardSubscriptionsToPrincipal(t *testing.T) {
-	resolver := NewSubscriptionKeyResolver()
-	realtime := rtruntime.NewService(resolver)
-	userACtx := realtimeTestContext("user-a", ActorTypeUserSession, nil)
-	userBCtx := realtimeTestContext("user-b", ActorTypeUserSession, nil)
+	resolver := newTestSubscriptionKeyResolver()
+	realtime := NewService(resolver)
+	userACtx := realtimeTestContext("user-a", auth.ActorTypeUserSession, nil)
+	userBCtx := realtimeTestContext("user-b", auth.ActorTypeUserSession, nil)
 
 	userAKeys, err := resolver.ResolveSubscribeKeys(userACtx, SubscriptionOptions{})
 	if err != nil {
@@ -149,8 +150,8 @@ func TestInMemoryRealtimeScopesWildcardSubscriptionsToPrincipal(t *testing.T) {
 }
 
 func TestSubscriptionResolverScopesIntegrationTokenToOwner(t *testing.T) {
-	resolver := NewSubscriptionKeyResolver()
-	ctx := realtimeTestContext("owner-user", ActorTypeIntegrationToken, []string{ScopeArtifactsRead})
+	resolver := newTestSubscriptionKeyResolver()
+	ctx := realtimeTestContext("owner-user", auth.ActorTypeIntegrationToken, []string{auth.ScopeArtifactsRead})
 
 	keys, err := resolver.ResolveSubscribeKeys(ctx, SubscriptionOptions{})
 	if err != nil {
@@ -168,21 +169,21 @@ func TestSubscriptionResolverScopesIntegrationTokenToOwner(t *testing.T) {
 }
 
 func TestSubscriptionResolverRejectsIntegrationTokenWithoutArtifactsRead(t *testing.T) {
-	resolver := NewSubscriptionKeyResolver()
-	ctx := realtimeTestContext("owner-user", ActorTypeIntegrationToken, []string{ScopeArtifactsWrite})
+	resolver := newTestSubscriptionKeyResolver()
+	ctx := realtimeTestContext("owner-user", auth.ActorTypeIntegrationToken, []string{auth.ScopeArtifactsWrite})
 
 	_, err := resolver.ResolveSubscribeKeys(ctx, SubscriptionOptions{})
-	if !errors.Is(err, ErrForbidden) {
-		t.Fatalf("ResolveSubscribeKeys error = %v, want ErrForbidden", err)
+	if !errors.Is(err, auth.ErrForbidden) {
+		t.Fatalf("ResolveSubscribeKeys error = %v, want auth.ErrForbidden", err)
 	}
 }
 
 func TestInMemoryRealtimeFiltersByEventKind(t *testing.T) {
-	ctx, cancel := context.WithCancel(realtimeTestContext("user-a", ActorTypeUserSession, nil))
+	ctx, cancel := context.WithCancel(realtimeTestContext("user-a", auth.ActorTypeUserSession, nil))
 	defer cancel()
 
-	resolver := NewSubscriptionKeyResolver()
-	realtime := rtruntime.NewService(resolver)
+	resolver := newTestSubscriptionKeyResolver()
+	realtime := NewService(resolver)
 	keys, err := resolver.ResolveSubscribeKeys(ctx, SubscriptionOptions{
 		Subscriptions: []PublicSubscriptionKey{{
 			Stream:    WorkspaceStream,
@@ -224,8 +225,8 @@ func TestInMemoryRealtimeFiltersByEventKind(t *testing.T) {
 }
 
 func TestSubscriptionResolverRejectsMalformedEventKind(t *testing.T) {
-	resolver := NewSubscriptionKeyResolver()
-	ctx := realtimeTestContext("user-a", ActorTypeUserSession, nil)
+	resolver := newTestSubscriptionKeyResolver()
+	ctx := realtimeTestContext("user-a", auth.ActorTypeUserSession, nil)
 
 	if _, err := resolver.ResolveSubscribeKeys(ctx, SubscriptionOptions{
 		Subscriptions: []PublicSubscriptionKey{{
@@ -258,8 +259,8 @@ func TestSubscriptionResolverRejectsMalformedEventKind(t *testing.T) {
 // one wildcard-prefix exception — regression guard for the R1-C live bug where
 // the subscribe was rejected and live frames never arrived.
 func TestSubscriptionResolverAcceptsFrameEventKind(t *testing.T) {
-	resolver := NewSubscriptionKeyResolver()
-	ctx := realtimeTestContext("user-a", ActorTypeUserSession, nil)
+	resolver := newTestSubscriptionKeyResolver()
+	ctx := realtimeTestContext("user-a", auth.ActorTypeUserSession, nil)
 
 	keys, err := resolver.ResolveSubscribeKeys(ctx, SubscriptionOptions{
 		Subscriptions: []PublicSubscriptionKey{{
@@ -282,11 +283,11 @@ func TestSubscriptionResolverAcceptsFrameEventKind(t *testing.T) {
 // resource. Other wildcard kinds (e.g. "*.updated") remain rejected — proven by
 // TestSubscriptionResolverRejectsMalformedEventKind.
 func TestInMemoryRealtimeDeliversFrameToWildcardSubscriber(t *testing.T) {
-	ctx, cancel := context.WithCancel(realtimeTestContext("user-a", ActorTypeUserSession, nil))
+	ctx, cancel := context.WithCancel(realtimeTestContext("user-a", auth.ActorTypeUserSession, nil))
 	defer cancel()
 
-	resolver := NewSubscriptionKeyResolver()
-	realtime := rtruntime.NewService(resolver)
+	resolver := newTestSubscriptionKeyResolver()
+	realtime := NewService(resolver)
 	keys, err := resolver.ResolveSubscribeKeys(ctx, SubscriptionOptions{
 		Subscriptions: []PublicSubscriptionKey{{
 			Stream:       WorkspaceStream,
@@ -320,8 +321,8 @@ func TestInMemoryRealtimeDeliversFrameToWildcardSubscriber(t *testing.T) {
 }
 
 func TestSubscriptionResolverRejectsEventKindResourceMismatch(t *testing.T) {
-	resolver := NewSubscriptionKeyResolver()
-	ctx := realtimeTestContext("user-a", ActorTypeUserSession, nil)
+	resolver := newTestSubscriptionKeyResolver()
+	ctx := realtimeTestContext("user-a", auth.ActorTypeUserSession, nil)
 
 	_, err := resolver.ResolveSubscribeKeys(ctx, SubscriptionOptions{
 		Subscriptions: []PublicSubscriptionKey{{
@@ -336,8 +337,8 @@ func TestSubscriptionResolverRejectsEventKindResourceMismatch(t *testing.T) {
 }
 
 func TestSubscriptionResolverRejectsUnsupportedPublicSubscriptions(t *testing.T) {
-	resolver := NewSubscriptionKeyResolver()
-	ctx := realtimeTestContext("user-a", ActorTypeUserSession, nil)
+	resolver := newTestSubscriptionKeyResolver()
+	ctx := realtimeTestContext("user-a", auth.ActorTypeUserSession, nil)
 
 	if _, err := resolver.ResolveSubscribeKeys(ctx, SubscriptionOptions{
 		Subscriptions: []PublicSubscriptionKey{{
@@ -360,10 +361,10 @@ func TestSubscriptionResolverRejectsUnsupportedPublicSubscriptions(t *testing.T)
 }
 
 func TestInMemoryRealtimeReplayUsesPublishedInternalKeys(t *testing.T) {
-	resolver := NewSubscriptionKeyResolver()
-	realtime := rtruntime.NewService(resolver)
-	userACtx := realtimeTestContext("user-a", ActorTypeUserSession, nil)
-	userBCtx := realtimeTestContext("user-b", ActorTypeUserSession, nil)
+	resolver := newTestSubscriptionKeyResolver()
+	realtime := NewService(resolver)
+	userACtx := realtimeTestContext("user-a", auth.ActorTypeUserSession, nil)
+	userBCtx := realtimeTestContext("user-b", auth.ActorTypeUserSession, nil)
 
 	userAKeys, err := resolver.ResolveSubscribeKeys(userACtx, SubscriptionOptions{})
 	if err != nil {
@@ -438,8 +439,19 @@ func expectNoRealtimeEvent(t *testing.T, events <-chan AppEvent) {
 	}
 }
 
+func newTestSubscriptionKeyResolver() *SubscriptionKeyResolver {
+	return NewSubscriptionKeyResolver(
+		func(ctx context.Context) (string, error) {
+			principal, err := auth.RequirePrincipal(ctx)
+			return principal.UserID, err
+		},
+		func(ctx context.Context) error { return auth.RequireScope(ctx, auth.ScopeArtifactsRead) },
+		func(message string) error { return apperror.BadRequest(message) },
+	)
+}
+
 func realtimeTestContext(userID string, actorType string, scopes []string) context.Context {
-	return WithPrincipal(context.Background(), Principal{
+	return auth.WithPrincipal(context.Background(), auth.Principal{
 		UserID:    userID,
 		ActorType: actorType,
 		ActorID:   userID,
@@ -451,10 +463,10 @@ func realtimeTestContext(userID string, actorType string, scopes []string) conte
 // A broadcast-stream ('market') event reaches subscribers on DIFFERENT tenants — proving the
 // broadcast-scope matcher fans out across users (unlike the tenant-isolated workspace stream).
 func TestInMemoryRealtimeBroadcastsMarketToAllTenants(t *testing.T) {
-	resolver := NewSubscriptionKeyResolver()
-	realtime := rtruntime.NewService(resolver)
-	userACtx := realtimeTestContext("user-a", ActorTypeUserSession, nil)
-	userBCtx := realtimeTestContext("user-b", ActorTypeUserSession, nil)
+	resolver := newTestSubscriptionKeyResolver()
+	realtime := NewService(resolver)
+	userACtx := realtimeTestContext("user-a", auth.ActorTypeUserSession, nil)
+	userBCtx := realtimeTestContext("user-b", auth.ActorTypeUserSession, nil)
 
 	marketSub := SubscriptionOptions{Subscriptions: []PublicSubscriptionKey{
 		{Stream: MarketStream, ResourceKind: "quote", ResourceID: "NVDA-id"},

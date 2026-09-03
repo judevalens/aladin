@@ -8,6 +8,7 @@ import (
 
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/market"
+	"aladin/backend_v2/internal/realtime"
 	"aladin/backend_v2/internal/repo"
 	coreservice "aladin/backend_v2/internal/service"
 
@@ -47,7 +48,7 @@ func TestAppendMarketQuoteDrainsAsBroadcast(t *testing.T) {
 	}
 	var found *coreservice.OutboxAppEvent
 	for i := range events {
-		if e := events[i].AppEvent; e != nil && e.Stream == coreservice.MarketStream && e.ResourceID == "inst-nvda" {
+		if e := events[i].AppEvent; e != nil && e.Stream == realtime.MarketStream && e.ResourceID == "inst-nvda" {
 			found = e
 		}
 	}

@@ -8,32 +8,40 @@ import (
 	"testing"
 	"time"
 
-	rtruntime "aladin/backend_v2/internal/realtime"
-	artifactservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/apperror"
+	"aladin/backend_v2/internal/auth"
+	"aladin/backend_v2/internal/realtime"
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 )
 
 type realtimeClientWireMessage struct {
-	Type          string                                  `json:"type"`
-	Subscriptions []artifactservice.PublicSubscriptionKey `json:"subscriptions"`
+	Type          string                           `json:"type"`
+	Subscriptions []realtime.PublicSubscriptionKey `json:"subscriptions"`
 }
 
 type realtimeServerWireMessage struct {
-	Type    string                    `json:"type"`
-	Event   *artifactservice.AppEvent `json:"event,omitempty"`
-	Message string                    `json:"message,omitempty"`
+	Type    string             `json:"type"`
+	Event   *realtime.AppEvent `json:"event,omitempty"`
+	Message string             `json:"message,omitempty"`
 }
 
 func TestRealtimeWebSocketResubscribeSwapsActiveSubscriptionSet(t *testing.T) {
 	t.Parallel()
 
-	resolver := artifactservice.NewSubscriptionKeyResolver()
-	realtime := rtruntime.NewService(resolver)
+	resolver := realtime.NewSubscriptionKeyResolver(
+		func(ctx context.Context) (string, error) {
+			principal, err := auth.RequirePrincipal(ctx)
+			return principal.UserID, err
+		},
+		func(ctx context.Context) error { return auth.RequireScope(ctx, auth.ScopeArtifactsRead) },
+		func(message string) error { return apperror.BadRequest(message) },
+	)
+	realtimeService := realtime.NewService(resolver)
 	server := NewWithDependencies(":0", testDependencies{
 		AuthSvc:      &fakeAuthService{},
-		RealtimeSvc:  realtime,
+		RealtimeSvc:  realtimeService,
 		RealtimeKeys: resolver,
 	})
 	httpServer := httptest.NewServer(server.httpServer.Handler)
@@ -50,29 +58,29 @@ func TestRealtimeWebSocketResubscribeSwapsActiveSubscriptionSet(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
 
-	writeRealtimeSubscribe(t, ctx, conn, []artifactservice.PublicSubscriptionKey{{
-		Stream:       artifactservice.WorkspaceStream,
+	writeRealtimeSubscribe(t, ctx, conn, []realtime.PublicSubscriptionKey{{
+		Stream:       realtime.WorkspaceStream,
 		ResourceKind: "artifact",
 		ResourceID:   "artifact-1",
 	}})
 	expectRealtimeServerMessage(t, ctx, conn, "subscribed", "")
 
-	publishRealtimeEvent(t, realtime, "artifact", "artifact-1", "updated")
+	publishRealtimeEvent(t, realtimeService, "artifact", "artifact-1", "updated")
 	expectRealtimeServerMessage(t, ctx, conn, "event", "artifact.updated")
 
-	writeRealtimeSubscribe(t, ctx, conn, []artifactservice.PublicSubscriptionKey{{
-		Stream:       artifactservice.WorkspaceStream,
+	writeRealtimeSubscribe(t, ctx, conn, []realtime.PublicSubscriptionKey{{
+		Stream:       realtime.WorkspaceStream,
 		ResourceKind: "folder",
 		ResourceID:   "folder-1",
 	}})
 	expectRealtimeServerMessage(t, ctx, conn, "subscribed", "")
 
-	publishRealtimeEvent(t, realtime, "artifact", "artifact-1", "updated")
-	publishRealtimeEvent(t, realtime, "folder", "folder-1", "updated")
+	publishRealtimeEvent(t, realtimeService, "artifact", "artifact-1", "updated")
+	publishRealtimeEvent(t, realtimeService, "folder", "folder-1", "updated")
 	expectRealtimeServerMessage(t, ctx, conn, "event", "folder.updated")
 }
 
-func writeRealtimeSubscribe(t *testing.T, ctx context.Context, conn *websocket.Conn, subscriptions []artifactservice.PublicSubscriptionKey) {
+func writeRealtimeSubscribe(t *testing.T, ctx context.Context, conn *websocket.Conn, subscriptions []realtime.PublicSubscriptionKey) {
 	t.Helper()
 	if err := wsjson.Write(ctx, conn, realtimeClientWireMessage{
 		Type:          "subscribe",
@@ -102,16 +110,16 @@ func expectRealtimeServerMessage(t *testing.T, ctx context.Context, conn *websoc
 	return msg
 }
 
-func publishRealtimeEvent(t *testing.T, realtime artifactservice.RealtimeEventService, resourceKind string, resourceID string, operation string) {
+func publishRealtimeEvent(t *testing.T, realtimeService realtime.EventService, resourceKind string, resourceID string, operation string) {
 	t.Helper()
-	ctx := artifactservice.WithPrincipal(context.Background(), artifactservice.Principal{
+	ctx := auth.WithPrincipal(context.Background(), auth.Principal{
 		UserID:    "user-1",
-		ActorType: artifactservice.ActorTypeUserSession,
+		ActorType: auth.ActorTypeUserSession,
 		ActorID:   "user-1",
 		Email:     "user@example.com",
 	})
-	if err := realtime.Publish(ctx, artifactservice.PublishTarget{
-		Stream:       artifactservice.WorkspaceStream,
+	if err := realtimeService.Publish(ctx, realtime.PublishTarget{
+		Stream:       realtime.WorkspaceStream,
 		ResourceKind: resourceKind,
 		ResourceID:   resourceID,
 		Operation:    operation,

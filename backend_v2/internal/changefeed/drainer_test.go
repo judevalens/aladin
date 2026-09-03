@@ -5,7 +5,9 @@ import (
 	"testing"
 	"time"
 
-	rtruntime "aladin/backend_v2/internal/realtime"
+	"aladin/backend_v2/internal/apperror"
+	"aladin/backend_v2/internal/auth"
+	. "aladin/backend_v2/internal/realtime"
 	. "aladin/backend_v2/internal/service"
 )
 
@@ -25,8 +27,8 @@ func (f *fakeDrainReader) Horizon(_ context.Context) (uint64, error) {
 // drainOnce publishes each event's frame to ITS user's subscribers (TenantID =
 // event.UserID), tagged `*.frame`, and returns the horizon as the new cursor.
 func TestOutboxDrain_PublishesFramePerUser(t *testing.T) {
-	resolver := NewSubscriptionKeyResolver()
-	rt := rtruntime.NewService(resolver)
+	resolver := newTestSubscriptionKeyResolver()
+	rt := NewService(resolver)
 
 	ch, unsub, err := rt.Subscribe(context.Background(), []SubscriptionKey{{
 		TenantID: "u1", Stream: WorkspaceStream, ResourceKind: AnyResource, ResourceID: AnyResource,
@@ -63,8 +65,8 @@ func TestOutboxDrain_PublishesFramePerUser(t *testing.T) {
 
 // A frame for user u2 must NOT reach user u1's subscriber.
 func TestOutboxDrain_PerUserIsolation(t *testing.T) {
-	resolver := NewSubscriptionKeyResolver()
-	rt := rtruntime.NewService(resolver)
+	resolver := newTestSubscriptionKeyResolver()
+	rt := NewService(resolver)
 
 	ch, unsub, err := rt.Subscribe(context.Background(), []SubscriptionKey{{
 		TenantID: "u1", Stream: WorkspaceStream, ResourceKind: AnyResource, ResourceID: AnyResource,
@@ -91,4 +93,15 @@ func TestOutboxDrain_PerUserIsolation(t *testing.T) {
 	case <-time.After(200 * time.Millisecond):
 		// expected: nothing
 	}
+}
+
+func newTestSubscriptionKeyResolver() *SubscriptionKeyResolver {
+	return NewSubscriptionKeyResolver(
+		func(ctx context.Context) (string, error) {
+			principal, err := auth.RequirePrincipal(ctx)
+			return principal.UserID, err
+		},
+		func(ctx context.Context) error { return auth.RequireScope(ctx, auth.ScopeArtifactsRead) },
+		func(message string) error { return apperror.BadRequest(message) },
+	)
 }
