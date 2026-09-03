@@ -1,10 +1,11 @@
-package docsurface
+package verification
 
 import (
 	"context"
 	"fmt"
 	"strings"
 
+	docsurface "aladin/backend_v2/internal/docsurface"
 	"aladin/backend_v2/internal/service"
 )
 
@@ -51,12 +52,12 @@ func NewVerification(store service.DocSurfaceStore, preview service.PreviewServi
 
 func (v *Verification) Verify(ctx context.Context, pageID string, channel service.BuildChannel, strictConsole bool, built *service.BuildResult) (VerificationReport, error) {
 	report := VerificationReport{Channel: string(channel)}
-	data, readErr := v.store.ReadFile(ctx, pageID, ManifestFileName)
+	data, readErr := v.store.ReadFile(ctx, pageID, docsurface.ManifestFileName)
 	if built != nil && len(built.Contract) > 0 {
-		data, readErr = built.Files[ManifestFileName], nil
+		data, readErr = built.Files[docsurface.ManifestFileName], nil
 	}
 	if readErr == nil {
-		report.ManifestProblems = ValidateManifestBytes(data)
+		report.ManifestProblems = docsurface.ValidateManifestBytes(data)
 		if len(report.ManifestProblems) > 0 {
 			return report, nil
 		}
@@ -64,7 +65,7 @@ func (v *Verification) Verify(ctx context.Context, pageID string, channel servic
 	byRoute, routes := v.ManifestAnchorsByRoute(ctx, pageID, data)
 	first, err := v.preview.Open(ctx, pageID, channel, service.PreviewOpenOptions{Build: built})
 	if err != nil {
-		if IsRendererUnavailable(err) {
+		if docsurface.IsRendererUnavailable(err) {
 			report.Warning = "renderer unavailable — nothing was verified; preview the routes manually before relying on this build."
 			return report, nil
 		}
@@ -104,7 +105,7 @@ func (v *Verification) Verify(ctx context.Context, pageID string, channel servic
 		}
 		state, err := v.preview.Navigate(ctx, pageID, route)
 		if err != nil {
-			if IsRendererUnavailable(err) {
+			if docsurface.IsRendererUnavailable(err) {
 				report.RendererAvailable = false
 				report.Warning = "renderer unavailable mid-verification — the remaining routes were not checked."
 				return report, nil
@@ -154,14 +155,14 @@ func FailureSummary(report VerificationReport) string {
 }
 
 func (v *Verification) ManifestAnchorsByRoute(ctx context.Context, pageID string, snapshot ...[]byte) (map[string][]string, []string) {
-	data, err := v.store.ReadFile(ctx, pageID, ManifestFileName)
+	data, err := v.store.ReadFile(ctx, pageID, docsurface.ManifestFileName)
 	if len(snapshot) > 0 {
 		data, err = snapshot[0], nil
 	}
 	if err != nil {
 		return nil, []string{"#/"}
 	}
-	manifest, err := ParseManifest(data)
+	manifest, err := docsurface.ParseManifest(data)
 	if err != nil {
 		return nil, []string{"#/"}
 	}

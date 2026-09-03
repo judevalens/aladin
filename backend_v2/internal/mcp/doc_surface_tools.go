@@ -6,6 +6,10 @@ import (
 	"strings"
 
 	"aladin/backend_v2/internal/docsurface"
+	docauthoring "aladin/backend_v2/internal/docsurface/authoring"
+	docpreview "aladin/backend_v2/internal/docsurface/previewapp"
+	docpublication "aladin/backend_v2/internal/docsurface/publication"
+	docverification "aladin/backend_v2/internal/docsurface/verification"
 	"aladin/backend_v2/internal/service"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -69,16 +73,16 @@ type docToolServer struct {
 	graphql  service.ShardGraphQLService
 }
 
-func (t docToolServer) authoring() *docsurface.Authoring {
-	return docsurface.NewAuthoring(t.artifacts, t.store, t.build)
+func (t docToolServer) authoring() *docauthoring.Authoring {
+	return docauthoring.NewAuthoring(t.artifacts, t.store, t.build)
 }
 
-func (t docToolServer) publication() *docsurface.Publication {
-	return docsurface.NewPublication(t.artifacts, t.store, t.build, t.preview, t.bridge, t.releases)
+func (t docToolServer) publication() *docpublication.Publication {
+	return docpublication.NewPublication(t.artifacts, t.store, t.build, t.preview, t.bridge, t.releases)
 }
 
-func (t docToolServer) previewCommands() *docsurface.PreviewCommands {
-	return docsurface.NewPreviewCommands(t.artifacts, t.store, t.build, t.preview)
+func (t docToolServer) previewCommands() *docpreview.PreviewCommands {
+	return docpreview.New(t.artifacts, t.store, t.build, t.preview)
 }
 
 func registerDocSurfaceTools(server *sdkmcp.Server, artifacts service.ArtifactService, store service.DocSurfaceStore, build service.ShardBuildService, preview service.PreviewService, bridge service.ShardBridgeService, releases service.ShardReleaseService, graphql ...service.ShardGraphQLService) {
@@ -281,7 +285,7 @@ type publishAppOutput struct {
 	Citations []citationOut `json:"citations,omitempty"`
 }
 
-type verifyReport = docsurface.VerificationReport
+type verifyReport = docverification.VerificationReport
 
 type authoringGuideInput struct {
 	// PageID is optional: with it the guide comes back alongside the shard's
@@ -355,7 +359,7 @@ func (t docToolServer) createApp(ctx context.Context, _ *sdkmcp.CallToolRequest,
 		contract = starterResourceContractJSON
 		files["contract.json"] = []byte(contract)
 	}
-	created, err := t.authoring().Create(ctx, docsurface.CreateCommand{
+	created, err := t.authoring().Create(ctx, docauthoring.CreateCommand{
 		Artifact: service.ArtifactPayload{
 			FolderID: in.FolderID,
 			Title:    in.Title,
@@ -378,7 +382,7 @@ func (t docToolServer) createApp(ctx context.Context, _ *sdkmcp.CallToolRequest,
 }
 
 func (t docToolServer) deleteFile(ctx context.Context, _ *sdkmcp.CallToolRequest, in deleteFileInput) (*sdkmcp.CallToolResult, deleteFileOutput, error) {
-	result, err := t.authoring().DeleteFile(ctx, docsurface.DeleteCommand{PageID: in.PageID, Path: in.Path, Build: in.Build})
+	result, err := t.authoring().DeleteFile(ctx, docauthoring.DeleteCommand{PageID: in.PageID, Path: in.Path, Build: in.Build})
 	if err != nil {
 		return nil, deleteFileOutput{}, err
 	}
@@ -402,7 +406,7 @@ func (t docToolServer) readFile(ctx context.Context, _ *sdkmcp.CallToolRequest, 
 }
 
 func (t docToolServer) writeFile(ctx context.Context, _ *sdkmcp.CallToolRequest, in writeFileInput) (*sdkmcp.CallToolResult, writeFileOutput, error) {
-	result, err := t.authoring().WriteFile(ctx, docsurface.WriteCommand{
+	result, err := t.authoring().WriteFile(ctx, docauthoring.WriteCommand{
 		PageID: in.PageID, Path: in.Path, Content: in.Content, Build: in.Build, Overwrite: in.Overwrite,
 	})
 	if err != nil {
@@ -412,7 +416,7 @@ func (t docToolServer) writeFile(ctx context.Context, _ *sdkmcp.CallToolRequest,
 }
 
 func (t docToolServer) editFile(ctx context.Context, _ *sdkmcp.CallToolRequest, in editFileInput) (*sdkmcp.CallToolResult, editFileOutput, error) {
-	result, err := t.authoring().EditFile(ctx, docsurface.EditCommand{
+	result, err := t.authoring().EditFile(ctx, docauthoring.EditCommand{
 		PageID: in.PageID, Path: in.Path, OldString: in.OldString, NewString: in.NewString,
 		ReplaceAll: in.ReplaceAll, Build: in.Build,
 	})
@@ -452,9 +456,9 @@ func (t docToolServer) getAuthoringGuide(ctx context.Context, _ *sdkmcp.CallTool
 		return nil, authoringGuideOutput{}, err
 	}
 	switch context.Mode {
-	case docsurface.AuthoringUnavailable:
+	case docpublication.AuthoringUnavailable:
 		out.AuthoringGuide = unavailableShardGuide
-	case docsurface.AuthoringResources:
+	case docpublication.AuthoringResources:
 		out.AuthoringGuide = shardAuthoringGuide(true, t.runtimeAuthoringEnabled())
 		if context.ContractMissing {
 			out.AuthoringGuide += "\nThe authoring contract file is missing. Restore contract.json from the returned protected contract before building; do not change this shard's storage API.\n"

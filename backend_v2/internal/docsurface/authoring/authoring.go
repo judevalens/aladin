@@ -1,4 +1,4 @@
-package docsurface
+package authoring
 
 import (
 	"context"

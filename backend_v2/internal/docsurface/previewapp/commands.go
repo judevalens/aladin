@@ -1,20 +1,21 @@
-package docsurface
+package previewapp
 
 import (
 	"context"
 
+	"aladin/backend_v2/internal/docsurface/authoring"
 	"aladin/backend_v2/internal/service"
 )
 
 // PreviewCommands is the authorization-aware application boundary for the
 // ephemeral renderer. PreviewService remains the sole lifecycle owner.
 type PreviewCommands struct {
-	authoring *Authoring
+	authoring *authoring.Authoring
 	preview   service.PreviewService
 }
 
-func NewPreviewCommands(artifacts service.ArtifactService, store service.DocSurfaceStore, build service.ShardBuildService, preview service.PreviewService) *PreviewCommands {
-	return &PreviewCommands{authoring: NewAuthoring(artifacts, store, build), preview: preview}
+func New(artifacts service.ArtifactService, store service.DocSurfaceStore, build service.ShardBuildService, preview service.PreviewService) *PreviewCommands {
+	return &PreviewCommands{authoring: authoring.NewAuthoring(artifacts, store, build), preview: preview}
 }
 
 func (p *PreviewCommands) Open(ctx context.Context, pageID string, channel service.BuildChannel, theme string) (service.PreviewState, error) {

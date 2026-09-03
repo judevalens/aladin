@@ -5,13 +5,13 @@ import (
 	"strings"
 	"testing"
 
-	"aladin/backend_v2/internal/docsurface"
+	docauthoring "aladin/backend_v2/internal/docsurface/authoring"
 	"aladin/backend_v2/internal/service"
 )
 
 const (
-	historyDir  = docsurface.HistoryDir
-	historyKeep = docsurface.HistoryKeep
+	historyDir  = docauthoring.HistoryDir
+	historyKeep = docauthoring.HistoryKeep
 )
 
 // writableStore is a fakeStore that actually accepts writes/deletes, so the

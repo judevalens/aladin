@@ -1,4 +1,4 @@
-package docsurface
+package publication
 
 import (
 	"context"
@@ -7,6 +7,9 @@ import (
 	"sort"
 	"strings"
 
+	docsurface "aladin/backend_v2/internal/docsurface"
+	"aladin/backend_v2/internal/docsurface/authoring"
+	"aladin/backend_v2/internal/docsurface/verification"
 	"aladin/backend_v2/internal/service"
 )
 
@@ -43,31 +46,31 @@ type Publication struct {
 	build        service.ShardBuildService
 	bridge       service.ShardBridgeService
 	releases     service.ShardReleaseService
-	authoring    *Authoring
-	verification *Verification
+	authoring    *authoring.Authoring
+	verification *verification.Verification
 }
 
 func NewPublication(artifacts service.ArtifactService, store service.DocSurfaceStore, build service.ShardBuildService, preview service.PreviewService, bridge service.ShardBridgeService, releases service.ShardReleaseService) *Publication {
 	return &Publication{
 		artifacts: artifacts, store: store, build: build, bridge: bridge, releases: releases,
-		authoring: NewAuthoring(artifacts, store, build), verification: NewVerification(store, preview),
+		authoring: authoring.NewAuthoring(artifacts, store, build), verification: verification.NewVerification(store, preview),
 	}
 }
 
-func (p *Publication) Verify(ctx context.Context, pageID string, channel service.BuildChannel, strictConsole bool) (VerificationReport, error) {
+func (p *Publication) Verify(ctx context.Context, pageID string, channel service.BuildChannel, strictConsole bool) (verification.VerificationReport, error) {
 	if err := p.authoring.RequireApp(ctx, pageID); err != nil {
-		return VerificationReport{}, err
+		return verification.VerificationReport{}, err
 	}
 	report, err := p.verification.Verify(ctx, pageID, channel, strictConsole, nil)
 	if err != nil {
-		return VerificationReport{}, err
+		return verification.VerificationReport{}, err
 	}
 	if p.bridge != nil {
 		refs, err := p.bridge.CheckRefs(ctx, pageID)
 		if err != nil {
-			return VerificationReport{}, err
+			return verification.VerificationReport{}, err
 		}
-		report.Refs = &ReferenceSummary{OK: refs.OK, Total: refs.Total, Missing: refs.Missing, UnknownKind: refs.UnknownKind, Unobservable: refs.Unobservable}
+		report.Refs = &verification.ReferenceSummary{OK: refs.OK, Total: refs.Total, Missing: refs.Missing, UnknownKind: refs.UnknownKind, Unobservable: refs.Unobservable}
 		if !refs.OK {
 			report.OK = false
 		}
@@ -110,7 +113,7 @@ func (p *Publication) AuthoringContext(ctx context.Context, pageID string) (Auth
 	}
 	if entries, err := p.store.ListDir(ctx, pageID, ""); err == nil {
 		for _, entry := range entries {
-			if entry.Name == HistoryDir || entry.Name == "dist" {
+			if entry.Name == authoring.HistoryDir || entry.Name == "dist" {
 				continue
 			}
 			name := entry.Name
@@ -121,7 +124,7 @@ func (p *Publication) AuthoringContext(ctx context.Context, pageID string) (Auth
 		}
 		sort.Strings(out.Files)
 	}
-	if data, err := p.store.ReadFile(ctx, pageID, ManifestFileName); err == nil {
+	if data, err := p.store.ReadFile(ctx, pageID, docsurface.ManifestFileName); err == nil {
 		out.Anchors = string(data)
 	}
 	if data, err := p.store.ReadFile(ctx, pageID, "index.tsx"); err == nil {
@@ -144,14 +147,14 @@ func (p *Publication) Publish(ctx context.Context, pageID, rawSummary string) (P
 			return PublishResult{}, service.BadRequest("publish blocked — the published build failed:\n" + result.Log)
 		}
 		staged = &result
-	} else if _, err := p.store.ReadFile(ctx, pageID, BuildMetaPath); err != nil {
+	} else if _, err := p.store.ReadFile(ctx, pageID, docsurface.BuildMetaPath); err != nil {
 		return PublishResult{}, service.BadRequest("no successful build found — run build_app first")
 	}
 	report, err := p.verification.Verify(ctx, pageID, service.ChannelPublished, false, staged)
 	if err != nil {
 		return PublishResult{}, err
 	}
-	if problems := FailureSummary(report); problems != "" {
+	if problems := verification.FailureSummary(report); problems != "" {
 		return PublishResult{}, service.BadRequest("publish blocked — verification failed:\n  - " + problems +
 			"\nRun verify_app for the full report, fix, then publish_app again.")
 	}
