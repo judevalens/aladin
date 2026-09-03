@@ -17,6 +17,7 @@ import (
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/dbtest"
 	"aladin/backend_v2/internal/docsurface"
+	"aladin/backend_v2/internal/feed"
 	"aladin/backend_v2/internal/providerconnection"
 	"aladin/backend_v2/internal/readingposition"
 	"aladin/backend_v2/internal/repo"
@@ -337,7 +338,7 @@ func (emptyAPIDependencies) Records() service.RecordService     { return nil }
 func (emptyAPIDependencies) Artifacts() service.ArtifactService { return nil }
 func (emptyAPIDependencies) Pages() service.PageService         { return nil }
 func (emptyAPIDependencies) Files() service.FileService         { return nil }
-func (emptyAPIDependencies) Feed() service.FeedService          { return nil }
+func (emptyAPIDependencies) Feed() feed.FeedService             { return nil }
 func (emptyAPIDependencies) Insights() service.InsightService   { return nil }
 func (emptyAPIDependencies) ProviderConnections() providerconnection.ProviderConnectionService {
 	return nil

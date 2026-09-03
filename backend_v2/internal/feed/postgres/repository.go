@@ -1,4 +1,4 @@
-package repo
+package postgres
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/feed"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -17,7 +17,7 @@ func NewFeedPostgres(pool *pgxpool.Pool) *PostgresFeedRepository {
 	return &PostgresFeedRepository{pool: pool}
 }
 
-func (r *PostgresFeedRepository) List(ctx context.Context, params coreservice.FeedListParams) (map[string]any, error) {
+func (r *PostgresFeedRepository) List(ctx context.Context, params feed.FeedListParams) (map[string]any, error) {
 	query := `
 		SELECT
 		    a.id, a.type, a.label, LEFT(COALESCE(a.content, ''), 500) AS content,
@@ -72,9 +72,9 @@ func (r *PostgresFeedRepository) List(ctx context.Context, params coreservice.Fe
 	}
 	defer rows.Close()
 
-	items := make([]coreservice.FeedItem, 0)
+	items := make([]feed.FeedItem, 0)
 	for rows.Next() {
-		var item coreservice.FeedItem
+		var item feed.FeedItem
 		var enrichment, metadata []byte
 		var createdAt time.Time
 		item.Metadata = map[string]any{}
@@ -146,7 +146,7 @@ func (r *PostgresFeedRepository) Topics(ctx context.Context) ([]string, error) {
 	return out, nil
 }
 
-func (r *PostgresFeedRepository) Sources(ctx context.Context) ([]coreservice.FeedSourceRecord, error) {
+func (r *PostgresFeedRepository) Sources(ctx context.Context) ([]feed.FeedSourceRecord, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT ss.id::text, ss.name, ps.provider, ss.status, ps.last_refresh_at
 		  FROM source_subscriptions ss
@@ -154,12 +154,12 @@ func (r *PostgresFeedRepository) Sources(ctx context.Context) ([]coreservice.Fee
 		 ORDER BY ss.name
 	`)
 	if err != nil {
-		return []coreservice.FeedSourceRecord{}, nil
+		return []feed.FeedSourceRecord{}, nil
 	}
 	defer rows.Close()
-	out := make([]coreservice.FeedSourceRecord, 0)
+	out := make([]feed.FeedSourceRecord, 0)
 	for rows.Next() {
-		var rec coreservice.FeedSourceRecord
+		var rec feed.FeedSourceRecord
 		var lastSynced *time.Time
 		if rows.Scan(&rec.ID, &rec.Name, &rec.Type, &rec.SyncState, &lastSynced) == nil {
 			if lastSynced != nil {

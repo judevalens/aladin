@@ -5,6 +5,8 @@ import (
 	alerthttp "aladin/backend_v2/internal/alert/httptransport"
 	"aladin/backend_v2/internal/app"
 	"aladin/backend_v2/internal/docsurface"
+	"aladin/backend_v2/internal/feed"
+	feedhttp "aladin/backend_v2/internal/feed/httptransport"
 	"aladin/backend_v2/internal/httpapi"
 	"aladin/backend_v2/internal/providerconnection"
 	providerconnectionhttp "aladin/backend_v2/internal/providerconnection/httptransport"
@@ -45,7 +47,7 @@ type Dependencies interface {
 	Artifacts() coreservice.ArtifactService
 	Pages() coreservice.PageService
 	Files() coreservice.FileService
-	Feed() coreservice.FeedService
+	Feed() feed.FeedService
 	Insights() coreservice.InsightService
 	ProviderConnections() providerconnection.ProviderConnectionService
 	Realtime() coreservice.RealtimeEventService
@@ -149,12 +151,7 @@ func NewWithDependencies(addr string, deps Dependencies) *Server {
 	mux.HandleFunc("GET /api/records/{id}/similar", s.handleRecordSimilar)
 	mux.HandleFunc("GET /api/records/{id}/children", s.handleRecordChildren)
 
-	mux.HandleFunc("GET /api/feed/", s.handleFeedList)
-	mux.HandleFunc("GET /api/feed/topics", s.handleFeedTopics)
-	mux.HandleFunc("GET /api/feed/sources", s.handleFeedSources)
-	mux.HandleFunc("POST /api/feed/{id}/save", s.handleFeedSave)
-	mux.HandleFunc("POST /api/feed/{id}/dismiss", s.handleFeedDismiss)
-	mux.HandleFunc("POST /api/feed/{id}/unsave", s.handleFeedUnsave)
+	feedhttp.Register(mux, deps.Feed())
 
 	mux.HandleFunc("GET /api/insights/", s.handleInsightsList)
 	mux.HandleFunc("GET /api/insights/stats", s.handleInsightsStats)

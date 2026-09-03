@@ -8,6 +8,8 @@ import (
 	"aladin/backend_v2/internal/changefeed"
 	"aladin/backend_v2/internal/config"
 	"aladin/backend_v2/internal/copilotagent"
+	"aladin/backend_v2/internal/feed"
+	feedpostgres "aladin/backend_v2/internal/feed/postgres"
 	"aladin/backend_v2/internal/graph"
 	"aladin/backend_v2/internal/providerconnection"
 	providerconnectionpostgres "aladin/backend_v2/internal/providerconnection/postgres"
@@ -32,7 +34,7 @@ type APIProcess struct {
 	records             coreservice.RecordService
 	pages               coreservice.PageService
 	files               coreservice.FileService
-	feed                coreservice.FeedService
+	feed                feed.FeedService
 	providerConnections providerconnection.ProviderConnectionService
 	realtime            coreservice.RealtimeEventService
 	realtimeKeys        coreservice.SubscriptionKeyResolver
@@ -124,7 +126,7 @@ func NewAPIComponentsWithProviderConnections(pool *pgxpool.Pool, providerConfig 
 		records:             coreservice.NewRecordService(shared.recordRepo),
 		pages:               coreservice.NewPageService(shared.artifactRepo),
 		files:               coreservice.NewFileService(shared.artifactRepo, shared.artifactFiles),
-		feed:                coreservice.NewFeedService(repo.NewFeedPostgres(pool)),
+		feed:                feed.NewFeedService(feedpostgres.NewFeedPostgres(pool)),
 		providerConnections: providerConnections,
 		realtime:            realtime,
 		realtimeKeys:        realtimeKeys,
@@ -151,7 +153,7 @@ func (c *APIProcess) Records() coreservice.RecordService     { return c.records 
 func (c *APIProcess) Artifacts() coreservice.ArtifactService { return c.artifacts }
 func (c *APIProcess) Pages() coreservice.PageService         { return c.pages }
 func (c *APIProcess) Files() coreservice.FileService         { return c.files }
-func (c *APIProcess) Feed() coreservice.FeedService          { return c.feed }
+func (c *APIProcess) Feed() feed.FeedService                 { return c.feed }
 func (c *APIProcess) Insights() coreservice.InsightService   { return c.insights }
 func (c *APIProcess) ProviderConnections() providerconnection.ProviderConnectionService {
 	return c.providerConnections

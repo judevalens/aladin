@@ -2,6 +2,7 @@ package api
 
 import (
 	"aladin/backend_v2/internal/alert"
+	"aladin/backend_v2/internal/feed"
 	"aladin/backend_v2/internal/providerconnection"
 	"aladin/backend_v2/internal/readingposition"
 	"aladin/backend_v2/internal/search"
@@ -20,7 +21,7 @@ type testDependencies struct {
 	ArtifactsSvc           coreservice.ArtifactService
 	PagesSvc               coreservice.PageService
 	FilesSvc               coreservice.FileService
-	FeedSvc                coreservice.FeedService
+	FeedSvc                feed.FeedService
 	InsightsSvc            coreservice.InsightService
 	ProviderConnectionsSvc providerconnection.ProviderConnectionService
 	RealtimeSvc            coreservice.RealtimeEventService
@@ -62,7 +63,7 @@ func (d testDependencies) Records() coreservice.RecordService     { return d.Rec
 func (d testDependencies) Artifacts() coreservice.ArtifactService { return d.ArtifactsSvc }
 func (d testDependencies) Pages() coreservice.PageService         { return d.PagesSvc }
 func (d testDependencies) Files() coreservice.FileService         { return d.FilesSvc }
-func (d testDependencies) Feed() coreservice.FeedService          { return d.FeedSvc }
+func (d testDependencies) Feed() feed.FeedService                 { return d.FeedSvc }
 func (d testDependencies) Insights() coreservice.InsightService   { return d.InsightsSvc }
 func (d testDependencies) ProviderConnections() providerconnection.ProviderConnectionService {
 	return d.ProviderConnectionsSvc
