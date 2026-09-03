@@ -9,8 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"aladin/backend_v2/internal/market"
 	"aladin/backend_v2/internal/safego"
-	coreservice "aladin/backend_v2/internal/service"
 )
 
 // AlertEngine evaluates price alerts on live ticks. It is a SINGLETON (one Alpaca WS) and runs
@@ -24,7 +24,7 @@ import (
 type AlertEngine struct {
 	repo      AlertRepository
 	demand    AlertDemand
-	snapshots coreservice.QuoteSnapshotSource
+	snapshots market.QuoteSnapshotSource
 	now       func() time.Time
 
 	reconcileEvery time.Duration
@@ -77,7 +77,7 @@ const (
 
 // NewAlertEngine builds the engine. demand is the market hub (satisfies AlertDemand); snapshots
 // seeds slope + backs up missed ticks (nil-safe — without it, reconcile can't backstop).
-func NewAlertEngine(repo AlertRepository, demand AlertDemand, snapshots coreservice.QuoteSnapshotSource) *AlertEngine {
+func NewAlertEngine(repo AlertRepository, demand AlertDemand, snapshots market.QuoteSnapshotSource) *AlertEngine {
 	return &AlertEngine{
 		repo:           repo,
 		demand:         demand,

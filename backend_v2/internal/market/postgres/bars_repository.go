@@ -1,11 +1,11 @@
-package repo
+package postgres
 
 import (
 	"context"
 	"fmt"
 	"strings"
 
-	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/market"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -20,7 +20,7 @@ func NewBarPostgres(pool *pgxpool.Pool) *PostgresBarRepository {
 
 // ListBars returns the latest `limit` bars for an active symbol+timeframe, oldest → newest
 // (chart order). Joins instruments on the active-listing symbol.
-func (r *PostgresBarRepository) ListBars(ctx context.Context, symbol, timeframe string, limit int) ([]coreservice.Bar, error) {
+func (r *PostgresBarRepository) ListBars(ctx context.Context, symbol, timeframe string, limit int) ([]market.Bar, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT b.ts, b.open, b.high, b.low, b.close, b.volume
 		  FROM bars b
@@ -33,9 +33,9 @@ func (r *PostgresBarRepository) ListBars(ctx context.Context, symbol, timeframe 
 		return nil, fmt.Errorf("bars list: %w", err)
 	}
 	defer rows.Close()
-	out := make([]coreservice.Bar, 0, limit)
+	out := make([]market.Bar, 0, limit)
 	for rows.Next() {
-		var b coreservice.Bar
+		var b market.Bar
 		if err := rows.Scan(&b.Time, &b.Open, &b.High, &b.Low, &b.Close, &b.Volume); err != nil {
 			return nil, fmt.Errorf("bars scan: %w", err)
 		}
@@ -53,7 +53,7 @@ func (r *PostgresBarRepository) ListBars(ctx context.Context, symbol, timeframe 
 
 // UpsertBars writes bars idempotently, resolving symbol → active instrument_id once per
 // distinct symbol. Bars for an unknown symbol are skipped. Batched.
-func (r *PostgresBarRepository) UpsertBars(ctx context.Context, rows []coreservice.BarUpsert) (int, error) {
+func (r *PostgresBarRepository) UpsertBars(ctx context.Context, rows []market.BarUpsert) (int, error) {
 	if len(rows) == 0 {
 		return 0, nil
 	}

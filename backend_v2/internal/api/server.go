@@ -14,6 +14,8 @@ import (
 	insightshttp "aladin/backend_v2/internal/insights/httptransport"
 	"aladin/backend_v2/internal/instrument"
 	instrumenthttp "aladin/backend_v2/internal/instrument/httptransport"
+	"aladin/backend_v2/internal/market"
+	markethttp "aladin/backend_v2/internal/market/httptransport"
 	"aladin/backend_v2/internal/providerconnection"
 	providerconnectionhttp "aladin/backend_v2/internal/providerconnection/httptransport"
 	"aladin/backend_v2/internal/readingposition"
@@ -84,10 +86,10 @@ type Dependencies interface {
 	ReadingPositions() readingposition.Service
 	Search() search.SearchService
 	Unfurl() coreservice.UnfurlService
-	Bars() coreservice.BarService
+	Bars() market.BarService
 	Alerts() alert.AlertService
 	Notifications() alert.NotificationService
-	MarketData() coreservice.MarketDataService
+	MarketData() market.MarketDataService
 	GraphReader() coreservice.GraphReader
 	Copilot() coreservice.CopilotService
 }
@@ -139,7 +141,7 @@ func NewWithDependencies(addr string, deps Dependencies) *Server {
 	s.registerEntityTagRoutes(mux)
 	instrumenthttp.Register(mux, deps.Instruments(), deps.Bars())
 	searchhttp.Register(mux, deps.Search())
-	s.registerMarketRoutes(mux)
+	markethttp.Register(mux, deps.MarketData())
 	watchlisthttp.Register(mux, deps.Watchlist())
 	readingpositionhttp.Register(mux, deps.ReadingPositions())
 	alerthttp.Register(mux, deps.Alerts(), deps.Notifications())

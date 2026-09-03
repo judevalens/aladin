@@ -9,6 +9,7 @@ import (
 	"aladin/backend_v2/internal/blocknote"
 	"aladin/backend_v2/internal/insights"
 	"aladin/backend_v2/internal/instrument"
+	"aladin/backend_v2/internal/market"
 	"aladin/backend_v2/internal/search"
 	"aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/watchlist"
@@ -44,9 +45,9 @@ type workspaceToolServer struct {
 	insights    insights.InsightService
 	artifacts   service.ArtifactService
 	watchlist   watchlist.Service
-	bars        service.BarService
-	snapshots   service.QuoteSnapshotSource
-	marketInfo  service.MarketInfoService
+	bars        market.BarService
+	snapshots   market.QuoteSnapshotSource
+	marketInfo  market.MarketInfoService
 	alerts      alert.AlertService
 	instruments instrument.InstrumentService
 	documents   service.DocumentService
@@ -281,7 +282,7 @@ type getBarsInput struct {
 }
 type getBarsOutput struct {
 	Symbol    string        `json:"symbol"`
-	Bars      []service.Bar `json:"bars"`
+	Bars      []market.Bar  `json:"bars"`
 	Citations []citationOut `json:"citations,omitempty"`
 }
 
@@ -289,7 +290,7 @@ type getQuoteInput struct {
 	Symbol string `json:"symbol"`
 }
 type getQuoteOutput struct {
-	Quote     service.Quote `json:"quote"`
+	Quote     market.Quote  `json:"quote"`
 	Citations []citationOut `json:"citations,omitempty"`
 }
 
@@ -320,26 +321,26 @@ type getNewsInput struct {
 	Limit   int    `json:"limit,omitempty"`
 }
 type getNewsOutput struct {
-	News      []service.NewsArticle `json:"news"`
-	Citations []citationOut         `json:"citations,omitempty"`
+	News      []market.NewsArticle `json:"news"`
+	Citations []citationOut        `json:"citations,omitempty"`
 }
 
 type topInput struct {
 	Top int `json:"top,omitempty"`
 }
 type getMoversOutput struct {
-	Movers service.MoversResult `json:"movers"`
+	Movers market.MoversResult `json:"movers"`
 }
 type getMostActivesOutput struct {
-	MostActives []service.ActiveStock `json:"mostActives"`
+	MostActives []market.ActiveStock `json:"mostActives"`
 }
 
 type getAccountOutput struct {
-	Account service.AccountSummary `json:"account"`
+	Account market.AccountSummary `json:"account"`
 }
 type getPositionsOutput struct {
-	Positions []service.PositionView `json:"positions"`
-	Citations []citationOut          `json:"citations,omitempty"`
+	Positions []market.PositionView `json:"positions"`
+	Citations []citationOut         `json:"citations,omitempty"`
 }
 
 // --- handlers --------------------------------------------------------------

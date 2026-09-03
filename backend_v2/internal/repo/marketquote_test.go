@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"aladin/backend_v2/internal/db"
+	"aladin/backend_v2/internal/market"
 	"aladin/backend_v2/internal/repo"
 	coreservice "aladin/backend_v2/internal/service"
 
@@ -34,7 +35,7 @@ func TestAppendMarketQuoteDrainsAsBroadcast(t *testing.T) {
 	if err != nil {
 		t.Fatalf("horizon: %v", err)
 	}
-	q := coreservice.Quote{Symbol: "NVDA", InstrumentID: "inst-nvda", Last: 1183.56}
+	q := market.Quote{Symbol: "NVDA", InstrumentID: "inst-nvda", Last: 1183.56}
 	payload, _ := json.Marshal(q)
 	if err := sync.AppendMarketQuote(ctx, q.InstrumentID, payload); err != nil {
 		t.Fatalf("append: %v", err)

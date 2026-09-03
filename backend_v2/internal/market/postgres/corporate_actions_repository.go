@@ -1,11 +1,11 @@
-package repo
+package postgres
 
 import (
 	"context"
 	"fmt"
 	"strings"
 
-	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/market"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -23,7 +23,7 @@ func NewCorporateActionPostgres(pool *pgxpool.Pool) *PostgresCorporateActionRepo
 // ListActions returns every corporate action for an active symbol, oldest ex-date first.
 // The whole history is returned deliberately: the adjustment is a cumulative replay, so a
 // truncated log would silently under-adjust the oldest bars.
-func (r *PostgresCorporateActionRepository) ListActions(ctx context.Context, symbol string) ([]coreservice.CorporateAction, error) {
+func (r *PostgresCorporateActionRepository) ListActions(ctx context.Context, symbol string) ([]market.CorporateAction, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT c.type, c.ex_date, COALESCE(c.split_ratio, 0), COALESCE(c.cash_amount, 0)
 		  FROM corporate_actions c
@@ -35,9 +35,9 @@ func (r *PostgresCorporateActionRepository) ListActions(ctx context.Context, sym
 		return nil, fmt.Errorf("corporate actions list: %w", err)
 	}
 	defer rows.Close()
-	out := make([]coreservice.CorporateAction, 0)
+	out := make([]market.CorporateAction, 0)
 	for rows.Next() {
-		var a coreservice.CorporateAction
+		var a market.CorporateAction
 		if err := rows.Scan(&a.Type, &a.ExDate, &a.SplitRatio, &a.CashAmount); err != nil {
 			return nil, fmt.Errorf("corporate actions scan: %w", err)
 		}
@@ -52,7 +52,7 @@ func (r *PostgresCorporateActionRepository) ListActions(ctx context.Context, sym
 // UpsertActions writes actions idempotently for one symbol, keyed on
 // (instrument_id, type, ex_date). Idempotence matters more here than for bars: a duplicated split
 // would double-adjust every earlier bar. Unknown symbols are skipped.
-func (r *PostgresCorporateActionRepository) UpsertActions(ctx context.Context, symbol string, actions []coreservice.CorporateAction) (int, error) {
+func (r *PostgresCorporateActionRepository) UpsertActions(ctx context.Context, symbol string, actions []market.CorporateAction) (int, error) {
 	if len(actions) == 0 {
 		return 0, nil
 	}
@@ -68,12 +68,12 @@ func (r *PostgresCorporateActionRepository) UpsertActions(ctx context.Context, s
 	for _, a := range actions {
 		var ratio, cash any
 		switch a.Type {
-		case coreservice.ActionSplit:
+		case market.ActionSplit:
 			if a.SplitRatio <= 0 {
 				continue // the CHECK would reject it; skip rather than fail the batch
 			}
 			ratio = a.SplitRatio
-		case coreservice.ActionCashDividend:
+		case market.ActionCashDividend:
 			if a.CashAmount <= 0 {
 				continue
 			}

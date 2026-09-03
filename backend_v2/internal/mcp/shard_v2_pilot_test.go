@@ -21,6 +21,7 @@ import (
 	"aladin/backend_v2/internal/graphpane"
 	"aladin/backend_v2/internal/insights"
 	"aladin/backend_v2/internal/instrument"
+	"aladin/backend_v2/internal/market"
 	"aladin/backend_v2/internal/providerconnection"
 	"aladin/backend_v2/internal/readingposition"
 	"aladin/backend_v2/internal/relationship"
@@ -372,10 +373,10 @@ func (emptyAPIDependencies) Watchlist() watchlist.Service                       
 func (emptyAPIDependencies) ReadingPositions() readingposition.Service            { return nil }
 func (emptyAPIDependencies) Search() searchdomain.SearchService                   { return nil }
 func (emptyAPIDependencies) Unfurl() service.UnfurlService                        { return nil }
-func (emptyAPIDependencies) Bars() service.BarService                             { return nil }
+func (emptyAPIDependencies) Bars() market.BarService                              { return nil }
 func (emptyAPIDependencies) Alerts() alert.AlertService                           { return nil }
 func (emptyAPIDependencies) Notifications() alert.NotificationService             { return nil }
-func (emptyAPIDependencies) MarketData() service.MarketDataService                { return nil }
+func (emptyAPIDependencies) MarketData() market.MarketDataService                 { return nil }
 func (emptyAPIDependencies) GraphReader() service.GraphReader                     { return nil }
 func (emptyAPIDependencies) Copilot() service.CopilotService                      { return nil }
 

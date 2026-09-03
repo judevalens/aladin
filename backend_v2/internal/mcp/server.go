@@ -10,6 +10,7 @@ import (
 	"aladin/backend_v2/internal/blocknote"
 	"aladin/backend_v2/internal/insights"
 	"aladin/backend_v2/internal/instrument"
+	"aladin/backend_v2/internal/market"
 	"aladin/backend_v2/internal/search"
 	"aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/shardresource"
@@ -153,9 +154,9 @@ type Dependencies interface {
 	Instruments() instrument.InstrumentService
 	Watchlist() watchlist.Service
 	Search() search.SearchService
-	Bars() service.BarService
-	QuoteSnapshots() service.QuoteSnapshotSource
-	MarketInfo() service.MarketInfoService
+	Bars() market.BarService
+	QuoteSnapshots() market.QuoteSnapshotSource
+	MarketInfo() market.MarketInfoService
 	Alerts() alert.AlertService
 }
 

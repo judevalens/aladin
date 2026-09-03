@@ -7,6 +7,7 @@ import (
 	"aladin/backend_v2/internal/graphpane"
 	"aladin/backend_v2/internal/insights"
 	"aladin/backend_v2/internal/instrument"
+	"aladin/backend_v2/internal/market"
 	"aladin/backend_v2/internal/providerconnection"
 	"aladin/backend_v2/internal/readingposition"
 	"aladin/backend_v2/internal/relationship"
@@ -56,11 +57,11 @@ type APIComponents interface {
 	ReadingPositions() readingposition.Service
 	Search() search.SearchService
 	Unfurl() coreservice.UnfurlService
-	Bars() coreservice.BarService
+	Bars() market.BarService
 	Alerts() alert.AlertService
 	Notifications() alert.NotificationService
 	AlertEngine() *alert.AlertEngine
-	MarketData() coreservice.MarketDataService
+	MarketData() market.MarketDataService
 	GraphReader() coreservice.GraphReader
 	Copilot() coreservice.CopilotService
 }
@@ -87,8 +88,8 @@ type MCPComponents interface {
 	Instruments() instrument.InstrumentService
 	Watchlist() watchlist.Service
 	Search() search.SearchService
-	Bars() coreservice.BarService
-	QuoteSnapshots() coreservice.QuoteSnapshotSource
-	MarketInfo() coreservice.MarketInfoService
+	Bars() market.BarService
+	QuoteSnapshots() market.QuoteSnapshotSource
+	MarketInfo() market.MarketInfoService
 	Alerts() alert.AlertService
 }

@@ -20,9 +20,9 @@ import (
 	"aladin/backend_v2/internal/app"
 	"aladin/backend_v2/internal/config"
 	"aladin/backend_v2/internal/db"
+	"aladin/backend_v2/internal/market"
 	"aladin/backend_v2/internal/market/alpaca"
-	"aladin/backend_v2/internal/repo"
-	coreservice "aladin/backend_v2/internal/service"
+	marketpostgres "aladin/backend_v2/internal/market/postgres"
 )
 
 func main() {
@@ -70,8 +70,8 @@ func main() {
 	}
 
 	client := alpaca.NewClient(alpacaCfg.APIKey, alpacaCfg.APISecret, alpacaCfg.TradingBaseURL, alpacaCfg.DataBaseURL)
-	svc := coreservice.NewBarService(repo.NewBarPostgres(pool)).
-		WithCorporateActions(repo.NewCorporateActionPostgres(pool))
+	svc := market.NewBarService(marketpostgres.NewBarPostgres(pool)).
+		WithCorporateActions(marketpostgres.NewCorporateActionPostgres(pool))
 	src := app.NewAlpacaCorporateActionSource(client)
 	// Reach back further than the bar history: an action must be known for every bar it precedes,
 	// so the action window has to cover at least the bar window.

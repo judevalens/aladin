@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"aladin/backend_v2/internal/instrument"
+	"aladin/backend_v2/internal/market"
 	searchdomain "aladin/backend_v2/internal/search"
 	"aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/watchlist"
@@ -114,31 +115,31 @@ type fakeBarService struct {
 	symbol    string
 	timeframe string
 	limit     int
-	bars      []service.Bar
+	bars      []market.Bar
 	err       error
 }
 
-func (f *fakeBarService) Get(_ context.Context, symbol, timeframe string, limit int) ([]service.Bar, error) {
+func (f *fakeBarService) Get(_ context.Context, symbol, timeframe string, limit int) ([]market.Bar, error) {
 	f.symbol, f.timeframe, f.limit = symbol, timeframe, limit
 	return f.bars, f.err
 }
-func (f *fakeBarService) GetAdjusted(ctx context.Context, symbol, timeframe string, limit int, _ service.AdjustMode) ([]service.Bar, error) {
+func (f *fakeBarService) GetAdjusted(ctx context.Context, symbol, timeframe string, limit int, _ market.AdjustMode) ([]market.Bar, error) {
 	return f.Get(ctx, symbol, timeframe, limit)
 }
-func (f *fakeBarService) SyncCorporateActions(context.Context, service.CorporateActionSource, string, string, string) (int, error) {
+func (f *fakeBarService) SyncCorporateActions(context.Context, market.CorporateActionSource, string, string, string) (int, error) {
 	return 0, nil
 }
-func (f *fakeBarService) SyncBars(context.Context, service.BarSource, string, string, string, string) (int, error) {
+func (f *fakeBarService) SyncBars(context.Context, market.BarSource, string, string, string, string) (int, error) {
 	return 0, nil
 }
 
 type fakeSnapshotSource struct {
-	quote service.Quote
+	quote market.Quote
 	ok    bool
 	err   error
 }
 
-func (f *fakeSnapshotSource) FetchSnapshot(context.Context, string) (service.Quote, bool, error) {
+func (f *fakeSnapshotSource) FetchSnapshot(context.Context, string) (market.Quote, bool, error) {
 	return f.quote, f.ok, f.err
 }
 
@@ -159,29 +160,29 @@ func (f *fakeInstrumentService) ResolveInstrumentID(context.Context, string) (st
 }
 
 type fakeMarketInfo struct {
-	news      []service.NewsArticle
-	movers    service.MoversResult
-	actives   []service.ActiveStock
-	account   service.AccountSummary
-	positions []service.PositionView
+	news      []market.NewsArticle
+	movers    market.MoversResult
+	actives   []market.ActiveStock
+	account   market.AccountSummary
+	positions []market.PositionView
 	newsSyms  string
 	err       error
 }
 
-func (f *fakeMarketInfo) News(_ context.Context, symbols string, _ int) ([]service.NewsArticle, error) {
+func (f *fakeMarketInfo) News(_ context.Context, symbols string, _ int) ([]market.NewsArticle, error) {
 	f.newsSyms = symbols
 	return f.news, f.err
 }
-func (f *fakeMarketInfo) Movers(context.Context, int) (service.MoversResult, error) {
+func (f *fakeMarketInfo) Movers(context.Context, int) (market.MoversResult, error) {
 	return f.movers, f.err
 }
-func (f *fakeMarketInfo) MostActives(context.Context, int) ([]service.ActiveStock, error) {
+func (f *fakeMarketInfo) MostActives(context.Context, int) ([]market.ActiveStock, error) {
 	return f.actives, f.err
 }
-func (f *fakeMarketInfo) Account(context.Context) (service.AccountSummary, error) {
+func (f *fakeMarketInfo) Account(context.Context) (market.AccountSummary, error) {
 	return f.account, f.err
 }
-func (f *fakeMarketInfo) Positions(context.Context) ([]service.PositionView, error) {
+func (f *fakeMarketInfo) Positions(context.Context) ([]market.PositionView, error) {
 	return f.positions, f.err
 }
 
@@ -306,7 +307,7 @@ func TestGetQuoteDegradesWithoutSnapshots(t *testing.T) {
 func TestGetQuoteReturnsSnapshotWithCitation(t *testing.T) {
 	t.Parallel()
 
-	tools := workspaceToolServer{snapshots: &fakeSnapshotSource{quote: service.Quote{Last: 123.45}, ok: true}}
+	tools := workspaceToolServer{snapshots: &fakeSnapshotSource{quote: market.Quote{Last: 123.45}, ok: true}}
 
 	_, out, err := tools.getQuote(contextWithScopes(), nil, getQuoteInput{Symbol: "nvda"})
 	if err != nil {
@@ -607,7 +608,7 @@ func TestDrawEdgeValidatesRequiredFields(t *testing.T) {
 func TestGetNewsUppercasesFilterAndCitesSymbols(t *testing.T) {
 	t.Parallel()
 
-	mi := &fakeMarketInfo{news: []service.NewsArticle{
+	mi := &fakeMarketInfo{news: []market.NewsArticle{
 		{ID: 1, Headline: "Tesla sinks", Symbols: []string{"TSLA", "AMZN"}},
 		{ID: 2, Headline: "More", Symbols: []string{"TSLA"}}, // dup ticker collapses
 	}}
@@ -678,7 +679,7 @@ func TestAlertToolsDegradeWithoutConfig(t *testing.T) {
 func TestGetPositionsCitesEachHolding(t *testing.T) {
 	t.Parallel()
 
-	mi := &fakeMarketInfo{positions: []service.PositionView{
+	mi := &fakeMarketInfo{positions: []market.PositionView{
 		{Symbol: "NVDA", Qty: "99", UnrealizedPL: "107.84"},
 	}}
 	tools := workspaceToolServer{marketInfo: mi}

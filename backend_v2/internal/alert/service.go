@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"aladin/backend_v2/internal/market"
 	coreservice "aladin/backend_v2/internal/service"
 
 	"github.com/google/uuid"
@@ -180,13 +181,18 @@ type AlertService interface {
 	Pause(ctx context.Context, userID, id string) error
 }
 
-type defaultAlertService struct {
-	repo        AlertRepository
-	instruments coreservice.InstrumentResolver
-	snapshots   coreservice.QuoteSnapshotSource // optional — seeds armed from the last-known price
+// InstrumentResolver is the narrow instrument boundary needed when creating alerts.
+type InstrumentResolver interface {
+	ResolveInstrumentID(ctx context.Context, symbol string) (string, bool, error)
 }
 
-func NewAlertService(repo AlertRepository, instruments coreservice.InstrumentResolver, snapshots coreservice.QuoteSnapshotSource) AlertService {
+type defaultAlertService struct {
+	repo        AlertRepository
+	instruments InstrumentResolver
+	snapshots   market.QuoteSnapshotSource // optional — seeds armed from the last-known price
+}
+
+func NewAlertService(repo AlertRepository, instruments InstrumentResolver, snapshots market.QuoteSnapshotSource) AlertService {
 	return &defaultAlertService{repo: repo, instruments: instruments, snapshots: snapshots}
 }
 

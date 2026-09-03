@@ -8,11 +8,11 @@ import (
 
 	"aladin/backend_v2/internal/httpapi"
 	"aladin/backend_v2/internal/instrument"
-	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/market"
 )
 
 type BarReader interface {
-	Get(context.Context, string, string, int) ([]coreservice.Bar, error)
+	Get(context.Context, string, string, int) ([]market.Bar, error)
 }
 
 // Register mounts the existing instrument search and price-history routes.

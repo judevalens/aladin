@@ -1,4 +1,4 @@
-package repo_test
+package postgres_test
 
 import (
 	"context"
@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"aladin/backend_v2/internal/db"
-	"aladin/backend_v2/internal/repo"
-	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/market"
+	marketpostgres "aladin/backend_v2/internal/market/postgres"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -46,18 +46,18 @@ func TestCorporateActions_RoundTripAndAdjustedRead(t *testing.T) {
 
 	// Raw bars: 400 pre-split, 100 post-split.
 	day := func(d int) time.Time { return time.Date(2024, 6, d, 0, 0, 0, 0, time.UTC) }
-	barRepo := repo.NewBarPostgres(pool)
-	if _, err := barRepo.UpsertBars(ctx, []coreservice.BarUpsert{
-		{Symbol: symbol, Timeframe: "1Day", Bar: coreservice.Bar{Time: day(1), Open: 400, High: 400, Low: 400, Close: 400, Volume: 100}},
-		{Symbol: symbol, Timeframe: "1Day", Bar: coreservice.Bar{Time: day(3), Open: 100, High: 100, Low: 100, Close: 100, Volume: 400}},
+	barRepo := marketpostgres.NewBarPostgres(pool)
+	if _, err := barRepo.UpsertBars(ctx, []market.BarUpsert{
+		{Symbol: symbol, Timeframe: "1Day", Bar: market.Bar{Time: day(1), Open: 400, High: 400, Low: 400, Close: 400, Volume: 100}},
+		{Symbol: symbol, Timeframe: "1Day", Bar: market.Bar{Time: day(3), Open: 100, High: 100, Low: 100, Close: 100, Volume: 400}},
 	}); err != nil {
 		t.Fatalf("upsert bars: %v", err)
 	}
 
-	caRepo := repo.NewCorporateActionPostgres(pool)
-	actions := []coreservice.CorporateAction{
-		{Type: coreservice.ActionSplit, ExDate: day(3), SplitRatio: 4},
-		{Type: coreservice.ActionCashDividend, ExDate: day(2), CashAmount: 1},
+	caRepo := marketpostgres.NewCorporateActionPostgres(pool)
+	actions := []market.CorporateAction{
+		{Type: market.ActionSplit, ExDate: day(3), SplitRatio: 4},
+		{Type: market.ActionCashDividend, ExDate: day(2), CashAmount: 1},
 	}
 	n, err := caRepo.UpsertActions(ctx, symbol, actions)
 	if err != nil {
@@ -81,10 +81,10 @@ func TestCorporateActions_RoundTripAndAdjustedRead(t *testing.T) {
 		t.Fatalf("actions must come back oldest-first, got %v then %v", got[0].ExDate, got[1].ExDate)
 	}
 
-	svc := coreservice.NewBarService(barRepo).WithCorporateActions(caRepo)
+	svc := market.NewBarService(barRepo).WithCorporateActions(caRepo)
 
 	// Raw storage is untouched.
-	raw, err := svc.GetAdjusted(ctx, symbol, "1Day", 10, coreservice.AdjustNone)
+	raw, err := svc.GetAdjusted(ctx, symbol, "1Day", 10, market.AdjustNone)
 	if err != nil {
 		t.Fatalf("get raw: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestCorporateActions_RoundTripAndAdjustedRead(t *testing.T) {
 	}
 
 	// Split-adjusted: the pre-split bar divides by 4 → continuity with the post-split bar.
-	split, err := svc.GetAdjusted(ctx, symbol, "1Day", 10, coreservice.AdjustSplits)
+	split, err := svc.GetAdjusted(ctx, symbol, "1Day", 10, market.AdjustSplits)
 	if err != nil {
 		t.Fatalf("get split-adjusted: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestCorporateActions_RoundTripAndAdjustedRead(t *testing.T) {
 	}
 
 	// Total-return also replays the $1 dividend: 400 × (400-1)/400 ÷ 4.
-	total, err := svc.GetAdjusted(ctx, symbol, "1Day", 10, coreservice.AdjustTotal)
+	total, err := svc.GetAdjusted(ctx, symbol, "1Day", 10, market.AdjustTotal)
 	if err != nil {
 		t.Fatalf("get total-adjusted: %v", err)
 	}

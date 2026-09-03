@@ -1,4 +1,4 @@
-package repo_test
+package postgres_test
 
 import (
 	"context"
@@ -7,15 +7,15 @@ import (
 	"time"
 
 	"aladin/backend_v2/internal/db"
-	"aladin/backend_v2/internal/repo"
-	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/market"
+	marketpostgres "aladin/backend_v2/internal/market/postgres"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type fakeBarSource struct{ bars []coreservice.Bar }
+type fakeBarSource struct{ bars []market.Bar }
 
-func (f fakeBarSource) FetchBars(context.Context, string, string, string, string) ([]coreservice.Bar, error) {
+func (f fakeBarSource) FetchBars(context.Context, string, string, string, string) ([]market.Bar, error) {
 	return f.bars, nil
 }
 
@@ -33,9 +33,9 @@ func TestBarSyncAndList(t *testing.T) {
 	if err := db.Migrate(ctx, pool); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	svc := coreservice.NewBarService(repo.NewBarPostgres(pool))
+	svc := market.NewBarService(marketpostgres.NewBarPostgres(pool))
 	base := time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC)
-	src := fakeBarSource{bars: []coreservice.Bar{
+	src := fakeBarSource{bars: []market.Bar{
 		{Time: base, Open: 180, High: 185, Low: 179, Close: 184, Volume: 1_000_000},
 		{Time: base.AddDate(0, 0, 1), Open: 184, High: 190, Low: 183, Close: 189, Volume: 1_200_000},
 	}}

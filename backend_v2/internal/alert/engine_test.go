@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/market"
 )
 
 type fakeAlertRepo struct {
@@ -91,11 +91,11 @@ func (d *fakeDemand) has(sym string) bool {
 
 type fakeSnap map[string]float64
 
-func (f fakeSnap) FetchSnapshot(_ context.Context, sym string) (coreservice.Quote, bool, error) {
+func (f fakeSnap) FetchSnapshot(_ context.Context, sym string) (market.Quote, bool, error) {
 	if p, ok := f[sym]; ok {
-		return coreservice.Quote{Symbol: sym, Last: p}, true, nil
+		return market.Quote{Symbol: sym, Last: p}, true, nil
 	}
-	return coreservice.Quote{}, false, nil
+	return market.Quote{}, false, nil
 }
 
 func waitFor(t *testing.T, cond func() bool) {

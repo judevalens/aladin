@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"aladin/backend_v2/internal/instrument"
-	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/market"
 )
 
 type instrumentServiceStub struct{ query string }
@@ -26,9 +26,9 @@ func (*instrumentServiceStub) ResolveInstrumentID(context.Context, string) (stri
 
 type barReaderStub struct{ symbol string }
 
-func (s *barReaderStub) Get(_ context.Context, symbol, _ string, _ int) ([]coreservice.Bar, error) {
+func (s *barReaderStub) Get(_ context.Context, symbol, _ string, _ int) ([]market.Bar, error) {
 	s.symbol = symbol
-	return []coreservice.Bar{{Close: 200}}, nil
+	return []market.Bar{{Close: 200}}, nil
 }
 
 func TestRegisterPreservesInstrumentRoutes(t *testing.T) {

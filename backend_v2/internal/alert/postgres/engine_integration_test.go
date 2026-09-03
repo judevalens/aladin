@@ -9,7 +9,7 @@ import (
 	"aladin/backend_v2/internal/alert"
 	alertpostgres "aladin/backend_v2/internal/alert/postgres"
 	"aladin/backend_v2/internal/db"
-	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/market"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -22,11 +22,11 @@ func (engineFakeDemand) Unsubscribe(context.Context, []string) error { return ni
 
 type engineFakeSnap map[string]float64
 
-func (f engineFakeSnap) FetchSnapshot(_ context.Context, sym string) (coreservice.Quote, bool, error) {
+func (f engineFakeSnap) FetchSnapshot(_ context.Context, sym string) (market.Quote, bool, error) {
 	if p, ok := f[sym]; ok {
-		return coreservice.Quote{Symbol: sym, Last: p}, true, nil
+		return market.Quote{Symbol: sym, Last: p}, true, nil
 	}
-	return coreservice.Quote{}, false, nil
+	return market.Quote{}, false, nil
 }
 
 // TestAlertEngineIntegration wires the REAL AlertEngine to the REAL Postgres repos and drives it

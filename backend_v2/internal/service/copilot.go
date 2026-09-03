@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"aladin/backend_v2/internal/market"
+
 	"aladin/backend_v2/internal/blocknote"
 	copilotapproval "aladin/backend_v2/internal/copilot/approval"
 	"aladin/backend_v2/internal/copilot/conversation"
@@ -134,7 +136,7 @@ type CopilotDeps struct {
 	// Effort guides adaptive thinking depth per turn ("" ⇒ high, matching Claude Code default).
 	Effort string
 	// Surface-context preloading (all optional/nil-safe).
-	Snapshots QuoteSnapshotSource
+	Snapshots market.QuoteSnapshotSource
 	Artifacts ArtifactService
 	Entities  EntityContextService
 	Watchlist watchlist.Service

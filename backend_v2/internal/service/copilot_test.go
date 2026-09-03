@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"aladin/backend_v2/internal/market"
 	"time"
 
 	"aladin/backend_v2/internal/copilotagent"
@@ -14,8 +16,8 @@ import (
 
 type fakeSnapshot struct{}
 
-func (fakeSnapshot) FetchSnapshot(_ context.Context, sym string) (Quote, bool, error) {
-	return Quote{Symbol: sym, Last: 184.5, PrevClose: 180.0, ChangePct: 2.5}, true, nil
+func (fakeSnapshot) FetchSnapshot(_ context.Context, sym string) (market.Quote, bool, error) {
+	return market.Quote{Symbol: sym, Last: 184.5, PrevClose: 180.0, ChangePct: 2.5}, true, nil
 }
 
 // TestCopilotSurfaceContext — ambient context: a ticker surface preloads the live snapshot,

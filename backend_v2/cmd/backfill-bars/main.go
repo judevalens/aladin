@@ -14,22 +14,22 @@ import (
 
 	"aladin/backend_v2/internal/config"
 	"aladin/backend_v2/internal/db"
+	"aladin/backend_v2/internal/market"
 	"aladin/backend_v2/internal/market/alpaca"
-	"aladin/backend_v2/internal/repo"
-	coreservice "aladin/backend_v2/internal/service"
+	marketpostgres "aladin/backend_v2/internal/market/postgres"
 )
 
 // alpacaBarSource adapts the vendor client to the service's BarSource port.
 type alpacaBarSource struct{ client *alpaca.Client }
 
-func (a alpacaBarSource) FetchBars(ctx context.Context, symbol, timeframe, start, end string) ([]coreservice.Bar, error) {
+func (a alpacaBarSource) FetchBars(ctx context.Context, symbol, timeframe, start, end string) ([]market.Bar, error) {
 	bars, err := a.client.GetBars(ctx, symbol, timeframe, start, end)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]coreservice.Bar, 0, len(bars))
+	out := make([]market.Bar, 0, len(bars))
 	for _, b := range bars {
-		out = append(out, coreservice.Bar{
+		out = append(out, market.Bar{
 			Time: b.Time, Open: b.Open, High: b.High, Low: b.Low, Close: b.Close, Volume: b.Volume,
 		})
 	}
@@ -81,7 +81,7 @@ func main() {
 	}
 
 	client := alpaca.NewClient(alpacaCfg.APIKey, alpacaCfg.APISecret, alpacaCfg.TradingBaseURL, alpacaCfg.DataBaseURL)
-	svc := coreservice.NewBarService(repo.NewBarPostgres(pool))
+	svc := market.NewBarService(marketpostgres.NewBarPostgres(pool))
 	src := alpacaBarSource{client: client}
 	start := time.Now().AddDate(-2, 0, 0).Format("2006-01-02") // ~2 years of daily history
 

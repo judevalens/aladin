@@ -15,6 +15,7 @@ import (
 	graphpanepostgres "aladin/backend_v2/internal/graphpane/postgres"
 	"aladin/backend_v2/internal/insights"
 	"aladin/backend_v2/internal/instrument"
+	"aladin/backend_v2/internal/market"
 	"aladin/backend_v2/internal/providerconnection"
 	providerconnectionpostgres "aladin/backend_v2/internal/providerconnection/postgres"
 	"aladin/backend_v2/internal/readingposition"
@@ -57,7 +58,7 @@ type APIProcess struct {
 	unfurl              coreservice.UnfurlService
 	notifications       alert.NotificationService
 	alertEngine         *alert.AlertEngine
-	marketData          coreservice.MarketDataService
+	marketData          market.MarketDataService
 	copilot             coreservice.CopilotService
 }
 
@@ -88,8 +89,8 @@ func NewAPIComponentsWithProviderConnections(pool *pgxpool.Pool, providerConfig 
 		providerconnection.WithNangoWebhookSigningKey(providerConfig.NangoWebhookSigningKey),
 	)
 
-	quoteSvc := coreservice.NewQuoteService(syncRepo)
-	marketDataSvc := coreservice.NewMarketDataService(coreservice.MarketDataConfig{
+	quoteSvc := market.NewQuoteService(syncRepo)
+	marketDataSvc := market.NewMarketDataService(market.MarketDataConfig{
 		Configured:    shared.alpacaConfig.Configured(),
 		StreamBaseURL: shared.alpacaConfig.StreamBaseURL,
 		Feed:          shared.alpacaConfig.Feed,
@@ -98,7 +99,7 @@ func NewAPIComponentsWithProviderConnections(pool *pgxpool.Pool, providerConfig 
 	}, quoteSvc, shared.instruments, shared.quoteSnapshots)
 	alertEngine := alert.NewAlertEngine(shared.alertRepo, marketDataSvc, shared.quoteSnapshots)
 	if observer, ok := marketDataSvc.(interface {
-		SetTickObserver(coreservice.TickObserver)
+		SetTickObserver(market.TickObserver)
 	}); ok {
 		observer.SetTickObserver(alertEngine.OnTick)
 	}
@@ -191,11 +192,11 @@ func (c *APIProcess) Watchlist() watchlist.Service                             {
 func (c *APIProcess) ReadingPositions() readingposition.Service                { return c.readingPositions }
 func (c *APIProcess) Search() search.SearchService                             { return c.search }
 func (c *APIProcess) Unfurl() coreservice.UnfurlService                        { return c.unfurl }
-func (c *APIProcess) Bars() coreservice.BarService                             { return c.bars }
+func (c *APIProcess) Bars() market.BarService                                  { return c.bars }
 func (c *APIProcess) Alerts() alert.AlertService                               { return c.alerts }
 func (c *APIProcess) Notifications() alert.NotificationService                 { return c.notifications }
 func (c *APIProcess) AlertEngine() *alert.AlertEngine                          { return c.alertEngine }
-func (c *APIProcess) MarketData() coreservice.MarketDataService                { return c.marketData }
+func (c *APIProcess) MarketData() market.MarketDataService                     { return c.marketData }
 func (c *APIProcess) GraphReader() coreservice.GraphReader                     { return c.graphReader }
 func (c *APIProcess) Copilot() coreservice.CopilotService                      { return c.copilot }
 

@@ -17,7 +17,9 @@ import (
 	insightspostgres "aladin/backend_v2/internal/insights/postgres"
 	"aladin/backend_v2/internal/instrument"
 	instrumentpostgres "aladin/backend_v2/internal/instrument/postgres"
+	"aladin/backend_v2/internal/market"
 	"aladin/backend_v2/internal/market/alpaca"
+	marketpostgres "aladin/backend_v2/internal/market/postgres"
 	"aladin/backend_v2/internal/repo"
 	"aladin/backend_v2/internal/search"
 	coreservice "aladin/backend_v2/internal/service"
@@ -53,15 +55,15 @@ type sharedComponents struct {
 	instruments      instrument.InstrumentService
 	watchlist        watchlist.Service
 	search           search.SearchService
-	bars             coreservice.BarService
+	bars             market.BarService
 	alerts           alert.AlertService
 
 	recordRepo     coreservice.RecordRepository
 	artifactRepo   *repo.PostgresArtifactRepository
 	artifactFiles  coreservice.ArtifactFileStore
 	research       coreservice.ResearchService
-	quoteSnapshots coreservice.QuoteSnapshotSource
-	marketInfo     coreservice.MarketInfoService
+	quoteSnapshots market.QuoteSnapshotSource
+	marketInfo     market.MarketInfoService
 	alertRepo      alert.AlertRepository
 	alpacaConfig   config.AlpacaConfig
 	shardStorage   *shardstorage.ShardResourcePostgres
@@ -110,10 +112,10 @@ func buildSharedComponents(pool *pgxpool.Pool, dataVolumePath string) sharedComp
 	contentIndexSvc := coreservice.NewContentIndexService(repo.NewContentIndexPostgres(pool))
 
 	alpacaCfg := config.LoadAlpaca()
-	var barSource coreservice.BarSource
+	var barSource market.BarSource
 	var assetLookup instrument.AssetLookup
-	var snapshotSource coreservice.QuoteSnapshotSource
-	var marketInfo coreservice.MarketInfoService
+	var snapshotSource market.QuoteSnapshotSource
+	var marketInfo market.MarketInfoService
 	if alpacaCfg.Configured() {
 		restClient := alpaca.NewClient(alpacaCfg.APIKey, alpacaCfg.APISecret, alpacaCfg.TradingBaseURL, alpacaCfg.DataBaseURL)
 		barSource = alpacaBarSource{c: restClient}
@@ -126,8 +128,8 @@ func buildSharedComponents(pool *pgxpool.Pool, dataVolumePath string) sharedComp
 	if assetLookup != nil {
 		instrumentsSvc = instrumentsSvc.WithAssetLookup(assetLookup)
 	}
-	barsSvc := coreservice.NewBarService(repo.NewBarPostgres(pool)).
-		WithCorporateActions(repo.NewCorporateActionPostgres(pool))
+	barsSvc := market.NewBarService(marketpostgres.NewBarPostgres(pool)).
+		WithCorporateActions(marketpostgres.NewCorporateActionPostgres(pool))
 	if barSource != nil {
 		barsSvc = barsSvc.WithSource(barSource)
 	}
