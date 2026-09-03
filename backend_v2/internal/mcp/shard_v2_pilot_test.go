@@ -20,6 +20,7 @@ import (
 	"aladin/backend_v2/internal/feed"
 	"aladin/backend_v2/internal/providerconnection"
 	"aladin/backend_v2/internal/readingposition"
+	"aladin/backend_v2/internal/relationship"
 	"aladin/backend_v2/internal/repo"
 	searchdomain "aladin/backend_v2/internal/search"
 	"aladin/backend_v2/internal/service"
@@ -355,7 +356,7 @@ func (emptyAPIDependencies) ShardGraphQL() service.ShardGraphQLService          
 func (emptyAPIDependencies) ShardReleases() service.ShardReleaseService           { return nil }
 func (emptyAPIDependencies) ShardKV() service.ShardKVService                      { return nil }
 func (emptyAPIDependencies) ShardBridge() service.ShardBridgeService              { return nil }
-func (emptyAPIDependencies) Relationships() service.RelationshipService           { return nil }
+func (emptyAPIDependencies) Relationships() relationship.RelationshipService      { return nil }
 func (emptyAPIDependencies) Research() service.ResearchService                    { return nil }
 func (emptyAPIDependencies) Documents() service.DocumentService                   { return nil }
 func (emptyAPIDependencies) GraphPane() service.GraphPaneService                  { return nil }

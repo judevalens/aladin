@@ -5,6 +5,7 @@ import (
 	"aladin/backend_v2/internal/feed"
 	"aladin/backend_v2/internal/providerconnection"
 	"aladin/backend_v2/internal/readingposition"
+	"aladin/backend_v2/internal/relationship"
 	"aladin/backend_v2/internal/search"
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/source"
@@ -36,7 +37,7 @@ type testDependencies struct {
 	ShardReleaseSvc        coreservice.ShardReleaseService
 	ShardKVSvc             coreservice.ShardKVService
 	ShardBridgeSvc         coreservice.ShardBridgeService
-	RelationshipsSvc       coreservice.RelationshipService
+	RelationshipsSvc       relationship.RelationshipService
 	ResearchSvc            coreservice.ResearchService
 	DocumentsSvc           coreservice.DocumentService
 	GraphPaneSvc           coreservice.GraphPaneService
@@ -86,7 +87,7 @@ func (d testDependencies) ShardGraphQL() coreservice.ShardGraphQLService   { ret
 func (d testDependencies) ShardReleases() coreservice.ShardReleaseService  { return d.ShardReleaseSvc }
 func (d testDependencies) ShardKV() coreservice.ShardKVService             { return d.ShardKVSvc }
 func (d testDependencies) ShardBridge() coreservice.ShardBridgeService     { return d.ShardBridgeSvc }
-func (d testDependencies) Relationships() coreservice.RelationshipService  { return d.RelationshipsSvc }
+func (d testDependencies) Relationships() relationship.RelationshipService { return d.RelationshipsSvc }
 func (d testDependencies) Research() coreservice.ResearchService           { return d.ResearchSvc }
 func (d testDependencies) Documents() coreservice.DocumentService          { return d.DocumentsSvc }
 func (d testDependencies) GraphPane() coreservice.GraphPaneService         { return d.GraphPaneSvc }

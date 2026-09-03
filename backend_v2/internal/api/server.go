@@ -12,6 +12,8 @@ import (
 	providerconnectionhttp "aladin/backend_v2/internal/providerconnection/httptransport"
 	"aladin/backend_v2/internal/readingposition"
 	readingpositionhttp "aladin/backend_v2/internal/readingposition/httptransport"
+	"aladin/backend_v2/internal/relationship"
+	relationshiphttp "aladin/backend_v2/internal/relationship/httptransport"
 	"aladin/backend_v2/internal/search"
 	searchhttp "aladin/backend_v2/internal/search/httptransport"
 	coreservice "aladin/backend_v2/internal/service"
@@ -63,7 +65,7 @@ type Dependencies interface {
 	ShardReleases() coreservice.ShardReleaseService
 	ShardKV() coreservice.ShardKVService
 	ShardBridge() coreservice.ShardBridgeService
-	Relationships() coreservice.RelationshipService
+	Relationships() relationship.RelationshipService
 	Research() coreservice.ResearchService
 	Documents() coreservice.DocumentService
 	GraphPane() coreservice.GraphPaneService
@@ -124,7 +126,7 @@ func NewWithDependencies(addr string, deps Dependencies) *Server {
 	s.registerUnfurlRoutes(mux)
 	s.registerContentRoutes(mux)
 	s.registerShardRoutes(mux)
-	s.registerRelationshipRoutes(mux)
+	relationshiphttp.Register(mux, deps.Relationships())
 	s.registerGraphPaneRoutes(mux)
 	s.registerResearchRoutes(mux)
 	s.registerDocumentRoutes(mux)

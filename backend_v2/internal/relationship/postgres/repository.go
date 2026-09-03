@@ -1,10 +1,10 @@
-package repo
+package postgres
 
 import (
 	"context"
 	"encoding/json"
 
-	"aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/relationship"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -20,13 +20,13 @@ func NewRelationshipPostgres(pool *pgxpool.Pool) *RelationshipRepo {
 	return &RelationshipRepo{pool: pool}
 }
 
-func (r *RelationshipRepo) Create(ctx context.Context, rel service.Relationship) (service.Relationship, error) {
+func (r *RelationshipRepo) Create(ctx context.Context, rel relationship.Relationship) (relationship.Relationship, error) {
 	if rel.Metadata == nil {
 		rel.Metadata = map[string]any{}
 	}
 	mb, err := json.Marshal(rel.Metadata)
 	if err != nil {
-		return service.Relationship{}, err
+		return relationship.Relationship{}, err
 	}
 	row := r.pool.QueryRow(ctx, `
 		INSERT INTO relationships (user_id, src_kind, src_id, dst_kind, dst_id, rel_type, metadata)
@@ -36,12 +36,12 @@ func (r *RelationshipRepo) Create(ctx context.Context, rel service.Relationship)
 		RETURNING id::text, created_at
 	`, rel.UserID, rel.SrcKind, rel.SrcID, rel.DstKind, rel.DstID, rel.RelType, string(mb))
 	if err := row.Scan(&rel.ID, &rel.CreatedAt); err != nil {
-		return service.Relationship{}, err
+		return relationship.Relationship{}, err
 	}
 	return rel, nil
 }
 
-func (r *RelationshipRepo) ListForNode(ctx context.Context, userID, kind, id string) ([]service.Relationship, error) {
+func (r *RelationshipRepo) ListForNode(ctx context.Context, userID, kind, id string) ([]relationship.Relationship, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, user_id::text, src_kind, src_id, dst_kind, dst_id, rel_type, metadata, created_at
 		FROM relationships
@@ -54,9 +54,9 @@ func (r *RelationshipRepo) ListForNode(ctx context.Context, userID, kind, id str
 	}
 	defer rows.Close()
 
-	var out []service.Relationship
+	var out []relationship.Relationship
 	for rows.Next() {
-		var rel service.Relationship
+		var rel relationship.Relationship
 		var meta []byte
 		if err := rows.Scan(&rel.ID, &rel.UserID, &rel.SrcKind, &rel.SrcID, &rel.DstKind, &rel.DstID, &rel.RelType, &meta, &rel.CreatedAt); err != nil {
 			return nil, err

@@ -1,4 +1,4 @@
-package repo
+package postgres
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/dbtest"
-	"aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/relationship"
 
 	"github.com/google/uuid"
 )
@@ -45,7 +45,7 @@ func TestRelationshipRepo(t *testing.T) {
 	recordID := "rec-" + uuid.NewString()
 
 	// Create an edge: artifact —cites→ record.
-	edge := service.Relationship{
+	edge := relationship.Relationship{
 		UserID: userID, SrcKind: "artifact", SrcID: artifactID,
 		DstKind: "record", DstID: recordID, RelType: "cites",
 		Metadata: map[string]any{"note": "from the doc"},

@@ -17,6 +17,8 @@ import (
 	readingpositionpostgres "aladin/backend_v2/internal/readingposition/postgres"
 	"aladin/backend_v2/internal/realtime"
 	"aladin/backend_v2/internal/reconciliation"
+	"aladin/backend_v2/internal/relationship"
+	relationshippostgres "aladin/backend_v2/internal/relationship/postgres"
 	"aladin/backend_v2/internal/repo"
 	"aladin/backend_v2/internal/search"
 	coreservice "aladin/backend_v2/internal/service"
@@ -43,7 +45,7 @@ type APIProcess struct {
 	sync                coreservice.SyncService
 	outboxDrainer       *changefeed.Drainer
 	shardKV             coreservice.ShardKVService
-	relationships       coreservice.RelationshipService
+	relationships       relationship.RelationshipService
 	graphPane           coreservice.GraphPaneService
 	entityList          coreservice.EntityListService
 	graphReader         coreservice.GraphReader
@@ -135,7 +137,7 @@ func NewAPIComponentsWithProviderConnections(pool *pgxpool.Pool, providerConfig 
 		sync:                syncSvc,
 		outboxDrainer:       outboxDrainer,
 		shardKV:             coreservice.NewShardKVService(shared.artifacts, repo.NewShardKVPostgres(pool)),
-		relationships:       coreservice.NewRelationshipService(repo.NewRelationshipPostgres(pool)),
+		relationships:       relationship.NewRelationshipService(relationshippostgres.NewRelationshipPostgres(pool)),
 		graphPane:           coreservice.NewGraphPaneService(repo.NewGraphPanePostgres(pool)),
 		entityList:          coreservice.NewEntityListService(repo.NewEntityListPostgres(pool)),
 		graphReader:         graphReader,
@@ -172,7 +174,7 @@ func (c *APIProcess) ShardGraphQL() coreservice.ShardGraphQLService            {
 func (c *APIProcess) ShardReleases() coreservice.ShardReleaseService           { return c.shardReleases }
 func (c *APIProcess) ShardKV() coreservice.ShardKVService                      { return c.shardKV }
 func (c *APIProcess) ShardBridge() coreservice.ShardBridgeService              { return c.shardBridge }
-func (c *APIProcess) Relationships() coreservice.RelationshipService           { return c.relationships }
+func (c *APIProcess) Relationships() relationship.RelationshipService          { return c.relationships }
 func (c *APIProcess) Research() coreservice.ResearchService                    { return c.research }
 func (c *APIProcess) Documents() coreservice.DocumentService                   { return c.documents }
 func (c *APIProcess) GraphPane() coreservice.GraphPaneService                  { return c.graphPane }

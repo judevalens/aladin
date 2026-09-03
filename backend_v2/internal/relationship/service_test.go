@@ -1,9 +1,11 @@
-package service
+package relationship
 
 import (
 	"context"
 	"errors"
 	"testing"
+
+	coreservice "aladin/backend_v2/internal/service"
 )
 
 type fakeRelStore struct {
@@ -22,7 +24,7 @@ func (f *fakeRelStore) ListForNode(_ context.Context, _ string, _ string, _ stri
 func (f *fakeRelStore) Delete(_ context.Context, _ string, _ string) error { return nil }
 
 func isBadRequest(err error) bool {
-	var b BadRequest
+	var b coreservice.BadRequest
 	return errors.As(err, &b)
 }
 
@@ -32,7 +34,7 @@ func isBadRequest(err error) bool {
 func TestRelationshipServiceValidatesAndScopes(t *testing.T) {
 	store := &fakeRelStore{}
 	svc := NewRelationshipService(store)
-	ctx := WithPrincipal(context.Background(), Principal{UserID: "user-42"})
+	ctx := coreservice.WithPrincipal(context.Background(), coreservice.Principal{UserID: "user-42"})
 
 	// Happy path: valid edge persists with the principal's userID stamped.
 	out, err := svc.Create(ctx, Relationship{SrcKind: "artifact", SrcID: "a1", DstKind: "record", DstID: "r1", RelType: "cites"})

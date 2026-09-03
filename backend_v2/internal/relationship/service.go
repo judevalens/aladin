@@ -1,9 +1,11 @@
-package service
+package relationship
 
 import (
 	"context"
 	"strings"
 	"time"
+
+	coreservice "aladin/backend_v2/internal/service"
 )
 
 // Relationship is a typed edge connecting two workspace/ingestion entities — the
@@ -64,44 +66,44 @@ func NewRelationshipService(store RelationshipStore) RelationshipService {
 }
 
 func (s *relationshipService) Create(ctx context.Context, rel Relationship) (Relationship, error) {
-	p, err := RequirePrincipal(ctx)
+	p, err := coreservice.RequirePrincipal(ctx)
 	if err != nil {
 		return Relationship{}, err
 	}
 	if !RelationshipKinds[rel.SrcKind] || !RelationshipKinds[rel.DstKind] {
-		return Relationship{}, BadRequest("srcKind and dstKind must each be one of: artifact, record, insight")
+		return Relationship{}, coreservice.BadRequest("srcKind and dstKind must each be one of: artifact, record, insight")
 	}
 	if !RelationshipTypes[rel.RelType] {
-		return Relationship{}, BadRequest("relType must be one of: cites, supports, contradicts, about, derived_from")
+		return Relationship{}, coreservice.BadRequest("relType must be one of: cites, supports, contradicts, about, derived_from")
 	}
 	if strings.TrimSpace(rel.SrcID) == "" || strings.TrimSpace(rel.DstID) == "" {
-		return Relationship{}, BadRequest("srcId and dstId are required")
+		return Relationship{}, coreservice.BadRequest("srcId and dstId are required")
 	}
 	rel.UserID = p.UserID
 	return s.store.Create(ctx, rel)
 }
 
 func (s *relationshipService) ListForNode(ctx context.Context, kind, id string) ([]Relationship, error) {
-	p, err := RequirePrincipal(ctx)
+	p, err := coreservice.RequirePrincipal(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if !RelationshipKinds[kind] {
-		return nil, BadRequest("kind must be one of: artifact, record, insight")
+		return nil, coreservice.BadRequest("kind must be one of: artifact, record, insight")
 	}
 	if strings.TrimSpace(id) == "" {
-		return nil, BadRequest("id is required")
+		return nil, coreservice.BadRequest("id is required")
 	}
 	return s.store.ListForNode(ctx, p.UserID, kind, id)
 }
 
 func (s *relationshipService) Delete(ctx context.Context, id string) error {
-	p, err := RequirePrincipal(ctx)
+	p, err := coreservice.RequirePrincipal(ctx)
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(id) == "" {
-		return BadRequest("id is required")
+		return coreservice.BadRequest("id is required")
 	}
 	return s.store.Delete(ctx, p.UserID, id)
 }
