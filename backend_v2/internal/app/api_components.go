@@ -9,6 +9,8 @@ import (
 	"aladin/backend_v2/internal/artifactref"
 	"aladin/backend_v2/internal/changefeed"
 	"aladin/backend_v2/internal/config"
+	"aladin/backend_v2/internal/copilot"
+	copilotpostgres "aladin/backend_v2/internal/copilot/postgres"
 	"aladin/backend_v2/internal/copilotagent"
 	"aladin/backend_v2/internal/document"
 	"aladin/backend_v2/internal/feed"
@@ -69,7 +71,7 @@ type APIProcess struct {
 	notifications       alert.NotificationService
 	alertEngine         *alert.AlertEngine
 	marketData          market.MarketDataService
-	copilot             coreservice.CopilotService
+	copilot             copilot.CopilotService
 }
 
 func NewAPIComponents(pool *pgxpool.Pool) *APIProcess {
@@ -131,12 +133,12 @@ func NewAPIComponentsWithProviderConnections(pool *pgxpool.Pool, providerConfig 
 	}
 
 	copilotConfig := config.LoadCopilotAgent()
-	var agentClient coreservice.CopilotAgent
+	var agentClient copilot.CopilotAgent
 	if copilotConfig.URL != "" {
 		agentClient = copilotagent.New(copilotConfig.URL, copilotConfig.SharedSecret)
 	}
-	copilotSvc := coreservice.NewCopilotService(coreservice.CopilotDeps{
-		Store:     repo.NewCopilotPostgres(pool),
+	copilotSvc := copilot.NewCopilotService(copilot.CopilotDeps{
+		Store:     copilotpostgres.NewCopilotPostgres(pool),
 		Agent:     agentClient,
 		Realtime:  realtime,
 		Model:     copilotConfig.Model,
@@ -217,7 +219,7 @@ func (c *APIProcess) Notifications() alert.NotificationService        { return c
 func (c *APIProcess) AlertEngine() *alert.AlertEngine                 { return c.alertEngine }
 func (c *APIProcess) MarketData() market.MarketDataService            { return c.marketData }
 func (c *APIProcess) GraphReader() coreservice.GraphReader            { return c.graphReader }
-func (c *APIProcess) Copilot() coreservice.CopilotService             { return c.copilot }
+func (c *APIProcess) Copilot() copilot.CopilotService                 { return c.copilot }
 
 func providerCatalog(providerConfig config.ProviderConnectionConfig) []providerconnection.ProviderDefinition {
 	return []providerconnection.ProviderDefinition{

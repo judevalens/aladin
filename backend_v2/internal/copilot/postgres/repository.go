@@ -1,4 +1,4 @@
-package repo
+package postgres
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	coreservice "aladin/backend_v2/internal/service"
+	copilot "aladin/backend_v2/internal/copilot"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -41,7 +41,7 @@ func (r *PostgresCopilotStore) TouchThread(ctx context.Context, threadID string)
 	return nil
 }
 
-func (r *PostgresCopilotStore) ListThreads(ctx context.Context, userID string) ([]coreservice.CopilotThread, error) {
+func (r *PostgresCopilotStore) ListThreads(ctx context.Context, userID string) ([]copilot.CopilotThread, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, title, to_char(updated_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at,
 		       pinned_at IS NOT NULL AS pinned
@@ -54,9 +54,9 @@ func (r *PostgresCopilotStore) ListThreads(ctx context.Context, userID string) (
 		return nil, fmt.Errorf("copilot list threads: %w", err)
 	}
 	defer rows.Close()
-	out := make([]coreservice.CopilotThread, 0)
+	out := make([]copilot.CopilotThread, 0)
 	for rows.Next() {
-		var t coreservice.CopilotThread
+		var t copilot.CopilotThread
 		if err := rows.Scan(&t.ID, &t.Title, &t.UpdatedAt, &t.Pinned); err != nil {
 			return nil, fmt.Errorf("copilot thread scan: %w", err)
 		}
@@ -65,8 +65,8 @@ func (r *PostgresCopilotStore) ListThreads(ctx context.Context, userID string) (
 	return out, rows.Err()
 }
 
-func (r *PostgresCopilotStore) GetThread(ctx context.Context, userID, threadID string) (coreservice.CopilotThread, bool, error) {
-	var t coreservice.CopilotThread
+func (r *PostgresCopilotStore) GetThread(ctx context.Context, userID, threadID string) (copilot.CopilotThread, bool, error) {
+	var t copilot.CopilotThread
 	err := r.pool.QueryRow(ctx, `
 		SELECT id::text, title, COALESCE(sdk_session_id, '') AS sdk_session_id,
 		       to_char(updated_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at,
@@ -76,15 +76,15 @@ func (r *PostgresCopilotStore) GetThread(ctx context.Context, userID, threadID s
 	`, threadID, userID).Scan(&t.ID, &t.Title, &t.SDKSessionID, &t.UpdatedAt, &t.Pinned)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return coreservice.CopilotThread{}, false, nil
+			return copilot.CopilotThread{}, false, nil
 		}
-		return coreservice.CopilotThread{}, false, fmt.Errorf("copilot get thread: %w", err)
+		return copilot.CopilotThread{}, false, fmt.Errorf("copilot get thread: %w", err)
 	}
 	return t, true, nil
 }
 
-func (r *PostgresCopilotStore) RenameThread(ctx context.Context, userID, threadID, title string) (coreservice.CopilotThread, bool, error) {
-	var t coreservice.CopilotThread
+func (r *PostgresCopilotStore) RenameThread(ctx context.Context, userID, threadID, title string) (copilot.CopilotThread, bool, error) {
+	var t copilot.CopilotThread
 	err := r.pool.QueryRow(ctx, `
 		UPDATE copilot_threads
 		   SET title = $3,
@@ -98,9 +98,9 @@ func (r *PostgresCopilotStore) RenameThread(ctx context.Context, userID, threadI
 	`, threadID, userID, title).Scan(&t.ID, &t.Title, &t.SDKSessionID, &t.UpdatedAt, &t.Pinned)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return coreservice.CopilotThread{}, false, nil
+			return copilot.CopilotThread{}, false, nil
 		}
-		return coreservice.CopilotThread{}, false, fmt.Errorf("copilot rename thread: %w", err)
+		return copilot.CopilotThread{}, false, fmt.Errorf("copilot rename thread: %w", err)
 	}
 	return t, true, nil
 }
@@ -120,8 +120,8 @@ func (r *PostgresCopilotStore) ArchiveThread(ctx context.Context, userID, thread
 	return tag.RowsAffected() > 0, nil
 }
 
-func (r *PostgresCopilotStore) SetThreadPinned(ctx context.Context, userID, threadID string, pinned bool) (coreservice.CopilotThread, bool, error) {
-	var t coreservice.CopilotThread
+func (r *PostgresCopilotStore) SetThreadPinned(ctx context.Context, userID, threadID string, pinned bool) (copilot.CopilotThread, bool, error) {
+	var t copilot.CopilotThread
 	err := r.pool.QueryRow(ctx, `
 		UPDATE copilot_threads
 		   SET pinned_at = CASE WHEN $3 THEN COALESCE(pinned_at, now()) ELSE NULL END
@@ -134,9 +134,9 @@ func (r *PostgresCopilotStore) SetThreadPinned(ctx context.Context, userID, thre
 	`, threadID, userID, pinned).Scan(&t.ID, &t.Title, &t.SDKSessionID, &t.UpdatedAt, &t.Pinned)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return coreservice.CopilotThread{}, false, nil
+			return copilot.CopilotThread{}, false, nil
 		}
-		return coreservice.CopilotThread{}, false, fmt.Errorf("copilot set thread pinned: %w", err)
+		return copilot.CopilotThread{}, false, fmt.Errorf("copilot set thread pinned: %w", err)
 	}
 	return t, true, nil
 }
@@ -153,10 +153,10 @@ func (r *PostgresCopilotStore) SetThreadSDKSession(ctx context.Context, threadID
 	return nil
 }
 
-func (r *PostgresCopilotStore) AppendMessage(ctx context.Context, m coreservice.StoredCopilotMessage) error {
+func (r *PostgresCopilotStore) AppendMessage(ctx context.Context, m copilot.StoredCopilotMessage) error {
 	citations := m.Citations
 	if citations == nil {
-		citations = []coreservice.Citation{}
+		citations = []copilot.Citation{}
 	}
 	payload, err := json.Marshal(citations)
 	if err != nil {
@@ -178,7 +178,7 @@ func (r *PostgresCopilotStore) AppendMessage(ctx context.Context, m coreservice.
 	return nil
 }
 
-func (r *PostgresCopilotStore) ListMessages(ctx context.Context, threadID string) ([]coreservice.CopilotMessage, error) {
+func (r *PostgresCopilotStore) ListMessages(ctx context.Context, threadID string) ([]copilot.CopilotMessage, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, role, content, citations, meta,
 		       to_char(created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
@@ -190,9 +190,9 @@ func (r *PostgresCopilotStore) ListMessages(ctx context.Context, threadID string
 		return nil, fmt.Errorf("copilot list messages: %w", err)
 	}
 	defer rows.Close()
-	out := make([]coreservice.CopilotMessage, 0)
+	out := make([]copilot.CopilotMessage, 0)
 	for rows.Next() {
-		var m coreservice.CopilotMessage
+		var m copilot.CopilotMessage
 		var citations, meta []byte
 		if err := rows.Scan(&m.ID, &m.Role, &m.Content, &citations, &meta, &m.CreatedAt); err != nil {
 			return nil, fmt.Errorf("copilot message scan: %w", err)
@@ -201,11 +201,11 @@ func (r *PostgresCopilotStore) ListMessages(ctx context.Context, threadID string
 			_ = json.Unmarshal(citations, &m.Citations)
 		}
 		if m.Citations == nil {
-			m.Citations = []coreservice.Citation{}
+			m.Citations = []copilot.Citation{}
 		}
 		// meta defaults to '{}' — only surface it when it actually carries something.
 		if len(meta) > 2 {
-			var parsed coreservice.CopilotMessageMeta
+			var parsed copilot.CopilotMessageMeta
 			if json.Unmarshal(meta, &parsed) == nil {
 				m.Meta = &parsed
 			}

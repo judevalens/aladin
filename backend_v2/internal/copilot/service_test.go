@@ -1,4 +1,4 @@
-package service
+package copilot
 
 import (
 	"context"
@@ -12,7 +12,33 @@ import (
 	"time"
 
 	"aladin/backend_v2/internal/copilotagent"
+	rtruntime "aladin/backend_v2/internal/realtime"
+	coreservice "aladin/backend_v2/internal/service"
 )
+
+type SubscriptionKey = rtruntime.SubscriptionKey
+
+const (
+	WorkspaceStream = rtruntime.WorkspaceStream
+	AnyResource     = rtruntime.AnyResource
+)
+
+func NewSubscriptionKeyResolver() *rtruntime.SubscriptionKeyResolver {
+	return rtruntime.NewSubscriptionKeyResolver(
+		func(ctx context.Context) (string, error) {
+			principal, err := coreservice.RequirePrincipal(ctx)
+			return principal.UserID, err
+		},
+		func(ctx context.Context) error {
+			return coreservice.RequireScope(ctx, coreservice.ScopeArtifactsRead)
+		},
+		func(message string) error { return coreservice.BadRequest(message) },
+	)
+}
+
+func NewInMemoryRealtimeEventService(resolver rtruntime.KeyResolver) *rtruntime.Service {
+	return rtruntime.NewService(resolver)
+}
 
 type fakeSnapshot struct{}
 

@@ -6,6 +6,8 @@ import (
 	"aladin/backend_v2/internal/app"
 	"aladin/backend_v2/internal/artifactref"
 	artifactrefhttp "aladin/backend_v2/internal/artifactref/httptransport"
+	"aladin/backend_v2/internal/copilot"
+	copilothttp "aladin/backend_v2/internal/copilot/httptransport"
 	"aladin/backend_v2/internal/docsurface"
 	"aladin/backend_v2/internal/document"
 	documenthttp "aladin/backend_v2/internal/document/httptransport"
@@ -107,7 +109,7 @@ type Dependencies interface {
 	Notifications() alert.NotificationService
 	MarketData() market.MarketDataService
 	GraphReader() coreservice.GraphReader
-	Copilot() coreservice.CopilotService
+	Copilot() copilot.CopilotService
 }
 
 type errorCategory string
@@ -160,7 +162,7 @@ func NewWithDependencies(addr string, deps Dependencies) *Server {
 	watchlisthttp.Register(mux, deps.Watchlist())
 	readingpositionhttp.Register(mux, deps.ReadingPositions())
 	alerthttp.Register(mux, deps.Alerts(), deps.Notifications())
-	s.registerCopilotRoutes(mux)
+	copilothttp.Register(mux, deps.Copilot())
 	s.registerEntityContextRoutes(mux)
 	artifactrefhttp.Register(mux, deps.ArtifactRefs())
 	realtimehttp.Register(mux, deps.Realtime(), deps.RealtimeKeyResolver())

@@ -4,6 +4,7 @@ import (
 	"aladin/backend_v2/internal/alert"
 	"aladin/backend_v2/internal/artifactref"
 	"aladin/backend_v2/internal/changefeed"
+	"aladin/backend_v2/internal/copilot"
 	"aladin/backend_v2/internal/document"
 	"aladin/backend_v2/internal/feed"
 	"aladin/backend_v2/internal/file"
@@ -71,7 +72,7 @@ type APIComponents interface {
 	AlertEngine() *alert.AlertEngine
 	MarketData() market.MarketDataService
 	GraphReader() coreservice.GraphReader
-	Copilot() coreservice.CopilotService
+	Copilot() copilot.CopilotService
 }
 
 // MCPComponents is the process-owned graph consumed by cmd/mcp. It deliberately

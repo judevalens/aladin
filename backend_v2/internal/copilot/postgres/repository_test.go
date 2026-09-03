@@ -1,13 +1,13 @@
-package repo_test
+package postgres_test
 
 import (
 	"context"
 	"os"
 	"testing"
 
+	"aladin/backend_v2/internal/copilot"
+	copilotpostgres "aladin/backend_v2/internal/copilot/postgres"
 	"aladin/backend_v2/internal/db"
-	"aladin/backend_v2/internal/repo"
-	coreservice "aladin/backend_v2/internal/service"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -28,7 +28,7 @@ func TestCopilotStoreRoundTrip(t *testing.T) {
 		t.Fatalf("migrate: %v", err)
 	}
 
-	store := repo.NewCopilotPostgres(pool)
+	store := copilotpostgres.NewCopilotPostgres(pool)
 	userID := uuid.NewString()
 	otherUser := uuid.NewString()
 	threadID := uuid.NewString()
@@ -38,17 +38,17 @@ func TestCopilotStoreRoundTrip(t *testing.T) {
 		t.Fatalf("create thread: %v", err)
 	}
 
-	if err := store.AppendMessage(ctx, coreservice.StoredCopilotMessage{
+	if err := store.AppendMessage(ctx, copilot.StoredCopilotMessage{
 		ID: uuid.NewString(), ThreadID: threadID, Role: "user", Content: "how does NVDA look?",
 	}); err != nil {
 		t.Fatalf("append user: %v", err)
 	}
-	if err := store.AppendMessage(ctx, coreservice.StoredCopilotMessage{
+	if err := store.AppendMessage(ctx, copilot.StoredCopilotMessage{
 		ID: uuid.NewString(), ThreadID: threadID, Role: "assistant", Content: "Strong.",
-		Citations: []coreservice.Citation{{Kind: "ticker", ID: "NVDA", Title: "NVDA"}},
-		Meta: &coreservice.CopilotMessageMeta{
+		Citations: []copilot.Citation{{Kind: "ticker", ID: "NVDA", Title: "NVDA"}},
+		Meta: &copilot.CopilotMessageMeta{
 			NumTurns: 3, InputTokens: 100, OutputTokens: 40, CostUSD: 0.12,
-			Activity: []coreservice.CopilotActivityItem{{Name: "search", OK: true}},
+			Activity: []copilot.CopilotActivityItem{{Name: "search", OK: true}},
 		},
 	}); err != nil {
 		t.Fatalf("append assistant: %v", err)

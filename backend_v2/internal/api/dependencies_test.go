@@ -3,6 +3,7 @@ package api
 import (
 	"aladin/backend_v2/internal/alert"
 	"aladin/backend_v2/internal/artifactref"
+	"aladin/backend_v2/internal/copilot"
 	"aladin/backend_v2/internal/document"
 	"aladin/backend_v2/internal/feed"
 	"aladin/backend_v2/internal/file"
@@ -67,7 +68,7 @@ type testDependencies struct {
 	NotificationsSvc       alert.NotificationService
 	MarketDataSvc          market.MarketDataService
 	GraphReaderSvc         coreservice.GraphReader
-	CopilotSvc             coreservice.CopilotService
+	CopilotSvc             copilot.CopilotService
 }
 
 func (d testDependencies) Auth() coreservice.AuthService          { return d.AuthSvc }
@@ -119,6 +120,6 @@ func (d testDependencies) Alerts() alert.AlertService               { return d.A
 func (d testDependencies) Notifications() alert.NotificationService { return d.NotificationsSvc }
 func (d testDependencies) MarketData() market.MarketDataService     { return d.MarketDataSvc }
 func (d testDependencies) GraphReader() coreservice.GraphReader     { return d.GraphReaderSvc }
-func (d testDependencies) Copilot() coreservice.CopilotService      { return d.CopilotSvc }
+func (d testDependencies) Copilot() copilot.CopilotService          { return d.CopilotSvc }
 
 var _ Dependencies = testDependencies{}

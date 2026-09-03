@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"aladin/backend_v2/internal/alert"
 	"aladin/backend_v2/internal/artifactref"
+	"aladin/backend_v2/internal/copilot"
 	"context"
 	"encoding/json"
 	"io"
@@ -386,7 +387,7 @@ func (emptyAPIDependencies) Alerts() alert.AlertService                      { r
 func (emptyAPIDependencies) Notifications() alert.NotificationService        { return nil }
 func (emptyAPIDependencies) MarketData() market.MarketDataService            { return nil }
 func (emptyAPIDependencies) GraphReader() service.GraphReader                { return nil }
-func (emptyAPIDependencies) Copilot() service.CopilotService                 { return nil }
+func (emptyAPIDependencies) Copilot() copilot.CopilotService                 { return nil }
 
 func (d pilotAPIDependencies) Auth() service.AuthService                { return d.AuthSvc }
 func (d pilotAPIDependencies) Artifacts() service.ArtifactService       { return d.ArtifactsSvc }
