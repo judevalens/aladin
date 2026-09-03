@@ -14,7 +14,7 @@ import (
 	"aladin/backend_v2/internal/config"
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/graph"
-	"aladin/backend_v2/internal/repo"
+	graphpostgres "aladin/backend_v2/internal/graph/postgres"
 )
 
 func main() {
@@ -50,7 +50,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	data, err := repo.NewGraphProjectionPostgres(pool).FullGraph(ctx)
+	data, err := graphpostgres.NewGraphProjectionPostgres(pool).FullGraph(ctx)
 	if err != nil {
 		slog.Error("backfill-graph: read entity layer failed", "err", err)
 		os.Exit(1)

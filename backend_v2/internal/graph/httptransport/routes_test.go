@@ -1,4 +1,4 @@
-package api
+package httptransport
 
 import (
 	"context"
@@ -29,11 +29,12 @@ func (f *fakeGraphReader) Neighbors(_ context.Context, id string, limit int) (*g
 func TestGraphNeighbors_NotConfiguredReturns503(t *testing.T) {
 	t.Parallel()
 
-	server := NewWithDependencies(":0", testDependencies{}) // GraphReaderSvc nil
+	mux := http.NewServeMux()
+	Register(mux, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/graph/entity/ent-1/neighbors", nil)
 	rec := httptest.NewRecorder()
 
-	server.httpServer.Handler.ServeHTTP(rec, req)
+	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503: %s", rec.Code, rec.Body.String())
@@ -47,11 +48,12 @@ func TestGraphNeighbors_ReturnsNeighborhood(t *testing.T) {
 		Entity:  graph.NeighborEntity{ID: "ent-1", Name: "Acme", Kind: "org"},
 		Related: []graph.NeighborEntity{{ID: "ent-2", Name: "Globex", Kind: "org", Weight: 3}},
 	}}
-	server := NewWithDependencies(":0", testDependencies{GraphReaderSvc: reader})
+	mux := http.NewServeMux()
+	Register(mux, reader)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/graph/entity/ent-1/neighbors?limit=5", nil)
 	rec := httptest.NewRecorder()
-	server.httpServer.Handler.ServeHTTP(rec, req)
+	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())

@@ -7,6 +7,7 @@ import (
 	"aladin/backend_v2/internal/document"
 	"aladin/backend_v2/internal/feed"
 	"aladin/backend_v2/internal/file"
+	"aladin/backend_v2/internal/graph"
 	"aladin/backend_v2/internal/graphpane"
 	"aladin/backend_v2/internal/insights"
 	"aladin/backend_v2/internal/instrument"
@@ -67,7 +68,7 @@ type testDependencies struct {
 	AlertsSvc              alert.AlertService
 	NotificationsSvc       alert.NotificationService
 	MarketDataSvc          market.MarketDataService
-	GraphReaderSvc         coreservice.GraphReader
+	GraphReaderSvc         graph.GraphReader
 	CopilotSvc             copilot.CopilotService
 }
 
@@ -119,7 +120,7 @@ func (d testDependencies) Bars() market.BarService                  { return d.B
 func (d testDependencies) Alerts() alert.AlertService               { return d.AlertsSvc }
 func (d testDependencies) Notifications() alert.NotificationService { return d.NotificationsSvc }
 func (d testDependencies) MarketData() market.MarketDataService     { return d.MarketDataSvc }
-func (d testDependencies) GraphReader() coreservice.GraphReader     { return d.GraphReaderSvc }
+func (d testDependencies) GraphReader() graph.GraphReader           { return d.GraphReaderSvc }
 func (d testDependencies) Copilot() copilot.CopilotService          { return d.CopilotSvc }
 
 var _ Dependencies = testDependencies{}

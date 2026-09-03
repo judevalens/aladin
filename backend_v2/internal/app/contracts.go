@@ -8,6 +8,7 @@ import (
 	"aladin/backend_v2/internal/document"
 	"aladin/backend_v2/internal/feed"
 	"aladin/backend_v2/internal/file"
+	"aladin/backend_v2/internal/graph"
 	"aladin/backend_v2/internal/graphpane"
 	"aladin/backend_v2/internal/insights"
 	"aladin/backend_v2/internal/instrument"
@@ -71,7 +72,7 @@ type APIComponents interface {
 	Notifications() alert.NotificationService
 	AlertEngine() *alert.AlertEngine
 	MarketData() market.MarketDataService
-	GraphReader() coreservice.GraphReader
+	GraphReader() graph.GraphReader
 	Copilot() copilot.CopilotService
 }
 

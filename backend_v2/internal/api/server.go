@@ -15,6 +15,8 @@ import (
 	feedhttp "aladin/backend_v2/internal/feed/httptransport"
 	"aladin/backend_v2/internal/file"
 	filehttp "aladin/backend_v2/internal/file/httptransport"
+	"aladin/backend_v2/internal/graph"
+	graphhttp "aladin/backend_v2/internal/graph/httptransport"
 	"aladin/backend_v2/internal/graphpane"
 	graphpanehttp "aladin/backend_v2/internal/graphpane/httptransport"
 	"aladin/backend_v2/internal/httpapi"
@@ -108,7 +110,7 @@ type Dependencies interface {
 	Alerts() alert.AlertService
 	Notifications() alert.NotificationService
 	MarketData() market.MarketDataService
-	GraphReader() coreservice.GraphReader
+	GraphReader() graph.GraphReader
 	Copilot() copilot.CopilotService
 }
 
@@ -141,7 +143,7 @@ func NewWithDependencies(addr string, deps Dependencies) *Server {
 
 	mux.HandleFunc("GET /api/graph", s.handleEmptyGraph)
 	mux.HandleFunc("GET /api/graph-explore/full", s.handleEmptyGraph)
-	s.registerGraphRoutes(mux)
+	graphhttp.Register(mux, deps.GraphReader())
 
 	systemhttp.Register(mux, deps.System())
 

@@ -22,6 +22,7 @@ import (
 	"aladin/backend_v2/internal/document"
 	"aladin/backend_v2/internal/feed"
 	"aladin/backend_v2/internal/file"
+	"aladin/backend_v2/internal/graph"
 	"aladin/backend_v2/internal/graphpane"
 	"aladin/backend_v2/internal/insights"
 	"aladin/backend_v2/internal/instrument"
@@ -386,7 +387,7 @@ func (emptyAPIDependencies) Bars() market.BarService                         { r
 func (emptyAPIDependencies) Alerts() alert.AlertService                      { return nil }
 func (emptyAPIDependencies) Notifications() alert.NotificationService        { return nil }
 func (emptyAPIDependencies) MarketData() market.MarketDataService            { return nil }
-func (emptyAPIDependencies) GraphReader() service.GraphReader                { return nil }
+func (emptyAPIDependencies) GraphReader() graph.GraphReader                  { return nil }
 func (emptyAPIDependencies) Copilot() copilot.CopilotService                 { return nil }
 
 func (d pilotAPIDependencies) Auth() service.AuthService                { return d.AuthSvc }

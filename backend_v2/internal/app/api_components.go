@@ -65,7 +65,7 @@ type APIProcess struct {
 	relationships       relationship.RelationshipService
 	graphPane           graphpane.GraphPaneService
 	entityList          coreservice.EntityListService
-	graphReader         coreservice.GraphReader
+	graphReader         graph.GraphReader
 	readingPositions    readingposition.Service
 	unfurl              unfurl.UnfurlService
 	notifications       alert.NotificationService
@@ -125,7 +125,7 @@ func NewAPIComponentsWithProviderConnections(pool *pgxpool.Pool, providerConfig 
 		observer.SetTickObserver(alertEngine.OnTick)
 	}
 
-	var graphReader coreservice.GraphReader
+	var graphReader graph.GraphReader
 	if uri := os.Getenv("NEO4J_URI"); uri != "" {
 		if reader, err := graph.NewProjector(uri, os.Getenv("NEO4J_USER"), os.Getenv("NEO4J_PASS")); err == nil {
 			graphReader = reader
@@ -218,7 +218,7 @@ func (c *APIProcess) Alerts() alert.AlertService                      { return c
 func (c *APIProcess) Notifications() alert.NotificationService        { return c.notifications }
 func (c *APIProcess) AlertEngine() *alert.AlertEngine                 { return c.alertEngine }
 func (c *APIProcess) MarketData() market.MarketDataService            { return c.marketData }
-func (c *APIProcess) GraphReader() coreservice.GraphReader            { return c.graphReader }
+func (c *APIProcess) GraphReader() graph.GraphReader                  { return c.graphReader }
 func (c *APIProcess) Copilot() copilot.CopilotService                 { return c.copilot }
 
 func providerCatalog(providerConfig config.ProviderConnectionConfig) []providerconnection.ProviderDefinition {

@@ -21,6 +21,7 @@ import (
 	documentpostgres "aladin/backend_v2/internal/document/postgres"
 	"aladin/backend_v2/internal/entities"
 	"aladin/backend_v2/internal/graph"
+	graphpostgres "aladin/backend_v2/internal/graph/postgres"
 	"aladin/backend_v2/internal/ingestion"
 	"aladin/backend_v2/internal/insights"
 	"aladin/backend_v2/internal/llm"
@@ -313,7 +314,7 @@ func Run() {
 		orch.Add(lowConfWorker)
 	}
 	if graphProjector != nil {
-		orch.Add(workers.NewGraphProjectWorker(repo.NewGraphProjectionPostgres(pool), graphProjector))
+		orch.Add(workers.NewGraphProjectWorker(graphpostgres.NewGraphProjectionPostgres(pool), graphProjector))
 	}
 
 	// Sync orchestrator
