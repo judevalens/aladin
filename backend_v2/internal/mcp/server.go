@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"aladin/backend_v2/internal/blocknote"
+	"aladin/backend_v2/internal/search"
 	"aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/shardresource"
 	"aladin/backend_v2/internal/watchlist"
@@ -149,7 +150,7 @@ type Dependencies interface {
 	EntityContext() service.EntityContextService
 	Instruments() service.InstrumentService
 	Watchlist() watchlist.Service
-	Search() service.SearchService
+	Search() search.SearchService
 	Bars() service.BarService
 	QuoteSnapshots() service.QuoteSnapshotSource
 	MarketInfo() service.MarketInfoService

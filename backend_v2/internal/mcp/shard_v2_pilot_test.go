@@ -19,6 +19,7 @@ import (
 	"aladin/backend_v2/internal/docsurface"
 	"aladin/backend_v2/internal/readingposition"
 	"aladin/backend_v2/internal/repo"
+	searchdomain "aladin/backend_v2/internal/search"
 	"aladin/backend_v2/internal/service"
 	shardstorage "aladin/backend_v2/internal/shardresource/storage"
 	"aladin/backend_v2/internal/shardv2"
@@ -360,7 +361,7 @@ func (emptyAPIDependencies) EntityList() service.EntityListService              
 func (emptyAPIDependencies) Instruments() service.InstrumentService                 { return nil }
 func (emptyAPIDependencies) Watchlist() watchlist.Service                           { return nil }
 func (emptyAPIDependencies) ReadingPositions() readingposition.Service              { return nil }
-func (emptyAPIDependencies) Search() service.SearchService                          { return nil }
+func (emptyAPIDependencies) Search() searchdomain.SearchService                     { return nil }
 func (emptyAPIDependencies) Unfurl() service.UnfurlService                          { return nil }
 func (emptyAPIDependencies) Bars() service.BarService                               { return nil }
 func (emptyAPIDependencies) Alerts() alert.AlertService                             { return nil }

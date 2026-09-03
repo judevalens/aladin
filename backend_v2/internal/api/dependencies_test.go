@@ -3,6 +3,7 @@ package api
 import (
 	"aladin/backend_v2/internal/alert"
 	"aladin/backend_v2/internal/readingposition"
+	"aladin/backend_v2/internal/search"
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/watchlist"
 )
@@ -43,7 +44,7 @@ type testDependencies struct {
 	InstrumentsSvc         coreservice.InstrumentService
 	WatchlistSvc           watchlist.Service
 	ReadingPositionsSvc    readingposition.Service
-	SearchSvc              coreservice.SearchService
+	SearchSvc              search.SearchService
 	UnfurlSvc              coreservice.UnfurlService
 	BarsSvc                coreservice.BarService
 	AlertsSvc              alert.AlertService
@@ -95,7 +96,7 @@ func (d testDependencies) Watchlist() watchlist.Service                    { ret
 func (d testDependencies) ReadingPositions() readingposition.Service {
 	return d.ReadingPositionsSvc
 }
-func (d testDependencies) Search() coreservice.SearchService         { return d.SearchSvc }
+func (d testDependencies) Search() search.SearchService              { return d.SearchSvc }
 func (d testDependencies) Unfurl() coreservice.UnfurlService         { return d.UnfurlSvc }
 func (d testDependencies) Bars() coreservice.BarService              { return d.BarsSvc }
 func (d testDependencies) Alerts() alert.AlertService                { return d.AlertsSvc }

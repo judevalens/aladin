@@ -4,6 +4,7 @@ import (
 	"aladin/backend_v2/internal/alert"
 	"aladin/backend_v2/internal/config"
 	"aladin/backend_v2/internal/docsurface"
+	"aladin/backend_v2/internal/search"
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/shardresource"
 	"aladin/backend_v2/internal/watchlist"
@@ -64,7 +65,7 @@ func (c *MCPProcess) ArtifactRefs() coreservice.ArtifactRefService    { return c
 func (c *MCPProcess) EntityContext() coreservice.EntityContextService { return c.entityContext }
 func (c *MCPProcess) Instruments() coreservice.InstrumentService      { return c.instruments }
 func (c *MCPProcess) Watchlist() watchlist.Service                    { return c.watchlist }
-func (c *MCPProcess) Search() coreservice.SearchService               { return c.search }
+func (c *MCPProcess) Search() search.SearchService                    { return c.search }
 func (c *MCPProcess) Bars() coreservice.BarService                    { return c.bars }
 func (c *MCPProcess) QuoteSnapshots() coreservice.QuoteSnapshotSource { return c.quoteSnapshots }
 func (c *MCPProcess) MarketInfo() coreservice.MarketInfoService       { return c.marketInfo }

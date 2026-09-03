@@ -15,6 +15,7 @@ import (
 	"aladin/backend_v2/internal/entities"
 	"aladin/backend_v2/internal/market/alpaca"
 	"aladin/backend_v2/internal/repo"
+	"aladin/backend_v2/internal/search"
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/shardresource"
 	shardstorage "aladin/backend_v2/internal/shardresource/storage"
@@ -47,7 +48,7 @@ type sharedComponents struct {
 	entityContext    coreservice.EntityContextService
 	instruments      coreservice.InstrumentService
 	watchlist        watchlist.Service
-	search           coreservice.SearchService
+	search           search.SearchService
 	bars             coreservice.BarService
 	alerts           alert.AlertService
 
@@ -126,11 +127,11 @@ func buildSharedComponents(pool *pgxpool.Pool, dataVolumePath string) sharedComp
 	if barSource != nil {
 		barsSvc = barsSvc.WithSource(barSource)
 	}
-	searchSvc := coreservice.NewSearchService(
-		coreservice.NewInstrumentSearchProvider(instrumentsSvc),
-		coreservice.NewEntitySearchProvider(entityTagsSvc),
-		coreservice.NewArtifactSearchProvider(artifactRefsSvc),
-		coreservice.NewContentSearchProvider(contentIndexSvc),
+	searchSvc := search.NewSearchService(
+		search.NewInstrumentSearchProvider(instrumentsSvc),
+		search.NewEntitySearchProvider(entityTagsSvc),
+		search.NewArtifactSearchProvider(artifactRefsSvc),
+		search.NewContentSearchProvider(contentIndexSvc),
 	)
 
 	artifactsSvc := coreservice.NewArtifactService(artifactRepo, artifactFiles)

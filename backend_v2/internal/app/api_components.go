@@ -14,6 +14,7 @@ import (
 	"aladin/backend_v2/internal/realtime"
 	"aladin/backend_v2/internal/reconciliation"
 	"aladin/backend_v2/internal/repo"
+	"aladin/backend_v2/internal/search"
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/shardresource"
 	"aladin/backend_v2/internal/watchlist"
@@ -176,7 +177,7 @@ func (c *APIProcess) EntityList() coreservice.EntityListService                {
 func (c *APIProcess) Instruments() coreservice.InstrumentService               { return c.instruments }
 func (c *APIProcess) Watchlist() watchlist.Service                             { return c.watchlist }
 func (c *APIProcess) ReadingPositions() readingposition.Service                { return c.readingPositions }
-func (c *APIProcess) Search() coreservice.SearchService                        { return c.search }
+func (c *APIProcess) Search() search.SearchService                             { return c.search }
 func (c *APIProcess) Unfurl() coreservice.UnfurlService                        { return c.unfurl }
 func (c *APIProcess) Bars() coreservice.BarService                             { return c.bars }
 func (c *APIProcess) Alerts() alert.AlertService                               { return c.alerts }

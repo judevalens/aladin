@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"aladin/backend_v2/internal/blocknote"
+	"aladin/backend_v2/internal/search"
 	"aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/watchlist"
 
@@ -36,7 +37,7 @@ type citationOut struct {
 // marketInfo may be nil (no market-data keys) — the dependent tools degrade with
 // a clear "not configured" error.
 type workspaceToolServer struct {
-	search      service.SearchService
+	search      search.SearchService
 	entities    service.EntityContextService
 	insights    service.InsightService
 	artifacts   service.ArtifactService
@@ -153,8 +154,8 @@ type searchInput struct {
 	Limit int    `json:"limit,omitempty"`
 }
 type searchOutput struct {
-	Results   service.SearchResponse `json:"results"`
-	Citations []citationOut          `json:"citations,omitempty"`
+	Results   search.SearchResponse `json:"results"`
+	Citations []citationOut         `json:"citations,omitempty"`
 }
 
 type getEntityInput struct {

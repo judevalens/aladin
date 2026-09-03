@@ -8,6 +8,8 @@ import (
 	"aladin/backend_v2/internal/httpapi"
 	"aladin/backend_v2/internal/readingposition"
 	readingpositionhttp "aladin/backend_v2/internal/readingposition/httptransport"
+	"aladin/backend_v2/internal/search"
+	searchhttp "aladin/backend_v2/internal/search/httptransport"
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/shardresource"
 	"aladin/backend_v2/internal/watchlist"
@@ -66,7 +68,7 @@ type Dependencies interface {
 	Instruments() coreservice.InstrumentService
 	Watchlist() watchlist.Service
 	ReadingPositions() readingposition.Service
-	Search() coreservice.SearchService
+	Search() search.SearchService
 	Unfurl() coreservice.UnfurlService
 	Bars() coreservice.BarService
 	Alerts() alert.AlertService
@@ -122,7 +124,7 @@ func NewWithDependencies(addr string, deps Dependencies) *Server {
 	s.registerDocumentRoutes(mux)
 	s.registerEntityTagRoutes(mux)
 	s.registerInstrumentRoutes(mux)
-	s.registerSearchRoutes(mux)
+	searchhttp.Register(mux, deps.Search())
 	s.registerMarketRoutes(mux)
 	watchlisthttp.Register(mux, deps.Watchlist())
 	readingpositionhttp.Register(mux, deps.ReadingPositions())

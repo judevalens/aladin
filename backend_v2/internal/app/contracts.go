@@ -4,6 +4,7 @@ import (
 	"aladin/backend_v2/internal/alert"
 	"aladin/backend_v2/internal/changefeed"
 	"aladin/backend_v2/internal/readingposition"
+	"aladin/backend_v2/internal/search"
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/shardresource"
 	"aladin/backend_v2/internal/watchlist"
@@ -46,7 +47,7 @@ type APIComponents interface {
 	Instruments() coreservice.InstrumentService
 	Watchlist() watchlist.Service
 	ReadingPositions() readingposition.Service
-	Search() coreservice.SearchService
+	Search() search.SearchService
 	Unfurl() coreservice.UnfurlService
 	Bars() coreservice.BarService
 	Alerts() alert.AlertService
@@ -78,7 +79,7 @@ type MCPComponents interface {
 	EntityContext() coreservice.EntityContextService
 	Instruments() coreservice.InstrumentService
 	Watchlist() watchlist.Service
-	Search() coreservice.SearchService
+	Search() search.SearchService
 	Bars() coreservice.BarService
 	QuoteSnapshots() coreservice.QuoteSnapshotSource
 	MarketInfo() coreservice.MarketInfoService

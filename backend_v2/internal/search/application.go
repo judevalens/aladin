@@ -1,10 +1,12 @@
-package service
+package search
 
 import (
 	"context"
 	"log/slog"
 	"strings"
 	"sync"
+
+	coreservice "aladin/backend_v2/internal/service"
 )
 
 // Global search — one federating endpoint behind the ⌘K command box. Federation, section
@@ -33,14 +35,14 @@ const (
 // SearchHit is one result row. Kind is the fine row type (drives the client's icon + route);
 // the section it lands in is decided by its provider, not by Kind.
 type SearchHit struct {
-	Kind     string  `json:"kind"` // ticker | company | person | entity | page | shard | file | board | link
-	ID       string  `json:"id"`
-	Title    string  `json:"title"`
-	Subtitle string  `json:"subtitle,omitempty"`
+	Kind     string `json:"kind"` // ticker | company | person | entity | page | shard | file | board | link
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	Subtitle string `json:"subtitle,omitempty"`
 	// Locator points into the artifact ("page:12", "shape:<id>") when the hit came from
 	// content rather than a title — the citable deep-open (READABLE_WORKSPACE L3).
-	Locator  string  `json:"locator,omitempty"`
-	Score    float64 `json:"score"`
+	Locator string  `json:"locator,omitempty"`
+	Score   float64 `json:"score"`
 }
 
 // SearchSection is one typed group of hits, in backend priority order.
@@ -136,9 +138,9 @@ func scoreAt(index int) float64 { return 1.0 - float64(index)*0.001 }
 // ── providers: each wraps an existing search service (one source of truth) ──
 
 // InstrumentSearchProvider federates ticker search into the Entities section.
-type InstrumentSearchProvider struct{ svc InstrumentService }
+type InstrumentSearchProvider struct{ svc coreservice.InstrumentService }
 
-func NewInstrumentSearchProvider(svc InstrumentService) InstrumentSearchProvider {
+func NewInstrumentSearchProvider(svc coreservice.InstrumentService) InstrumentSearchProvider {
 	return InstrumentSearchProvider{svc: svc}
 }
 func (p InstrumentSearchProvider) Section() string { return SearchSectionEntity }
@@ -156,9 +158,9 @@ func (p InstrumentSearchProvider) Search(ctx context.Context, _ /*userID*/, quer
 
 // EntitySearchProvider federates entity search into the Entities section; company/person keep
 // their kind, everything else collapses to a generic "entity".
-type EntitySearchProvider struct{ svc EntityTagService }
+type EntitySearchProvider struct{ svc coreservice.EntityTagService }
 
-func NewEntitySearchProvider(svc EntityTagService) EntitySearchProvider {
+func NewEntitySearchProvider(svc coreservice.EntityTagService) EntitySearchProvider {
 	return EntitySearchProvider{svc: svc}
 }
 func (p EntitySearchProvider) Section() string { return SearchSectionEntity }
@@ -182,9 +184,11 @@ func (p EntitySearchProvider) Search(ctx context.Context, userID, query string, 
 // hits across every readable kind (pages, files, boards, links), each carrying the
 // locator that makes it citable. Registered AFTER ArtifactSearchProvider so title
 // matches outrank body matches and dedupe keeps the title row.
-type ContentSearchProvider struct{ svc ContentIndexService }
+type ContentSearchProvider struct {
+	svc coreservice.ContentIndexService
+}
 
-func NewContentSearchProvider(svc ContentIndexService) ContentSearchProvider {
+func NewContentSearchProvider(svc coreservice.ContentIndexService) ContentSearchProvider {
 	return ContentSearchProvider{svc: svc}
 }
 func (p ContentSearchProvider) Section() string { return SearchSectionArtifact }
@@ -210,9 +214,11 @@ func (p ContentSearchProvider) Search(ctx context.Context, userID, query string,
 // ArtifactSearchProvider federates page + shard TITLE search into the Artifacts section
 // (ArtifactRefService is the `#`-picker's source of truth and stays scoped to pages +
 // shards; body hits across all kinds come from ContentSearchProvider above).
-type ArtifactSearchProvider struct{ svc ArtifactRefService }
+type ArtifactSearchProvider struct {
+	svc coreservice.ArtifactRefService
+}
 
-func NewArtifactSearchProvider(svc ArtifactRefService) ArtifactSearchProvider {
+func NewArtifactSearchProvider(svc coreservice.ArtifactRefService) ArtifactSearchProvider {
 	return ArtifactSearchProvider{svc: svc}
 }
 func (p ArtifactSearchProvider) Section() string { return SearchSectionArtifact }

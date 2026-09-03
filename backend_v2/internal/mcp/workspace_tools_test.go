@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	searchdomain "aladin/backend_v2/internal/search"
 	"aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/watchlist"
 
@@ -21,11 +22,11 @@ type fakeSearchService struct {
 	userID string
 	query  string
 	limit  int
-	resp   service.SearchResponse
+	resp   searchdomain.SearchResponse
 	err    error
 }
 
-func (f *fakeSearchService) Search(_ context.Context, userID, query string, limit int) (service.SearchResponse, error) {
+func (f *fakeSearchService) Search(_ context.Context, userID, query string, limit int) (searchdomain.SearchResponse, error) {
 	f.userID, f.query, f.limit = userID, query, limit
 	return f.resp, f.err
 }
@@ -213,8 +214,8 @@ func (f *fakeAlertService) Pause(context.Context, string, string) error { return
 func TestSearchWorkspaceScopesToPrincipalAndEmitsCitations(t *testing.T) {
 	t.Parallel()
 
-	search := &fakeSearchService{resp: service.SearchResponse{Sections: []service.SearchSection{
-		{Hits: []service.SearchHit{
+	search := &fakeSearchService{resp: searchdomain.SearchResponse{Sections: []searchdomain.SearchSection{
+		{Hits: []searchdomain.SearchHit{
 			{Kind: "ticker", ID: "NVDA", Title: "NVIDIA"},
 			{Kind: "entity", ID: "ent-1", Title: "Jensen Huang"},
 		}},
