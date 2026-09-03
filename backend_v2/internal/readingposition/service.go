@@ -1,4 +1,6 @@
-package service
+// Package readingposition owns the document reading-position model, use case,
+// and persistence port.
+package readingposition
 
 import (
 	"context"
@@ -27,7 +29,7 @@ var (
 
 // ReadingPositionRepository is the persistence port. PutReadingPosition upserts
 // LWW, bumps seq, and appends the sync frame in one tx.
-type ReadingPositionRepository interface {
+type Repository interface {
 	PutReadingPosition(ctx context.Context, userID, artifactID string, page int64) (ReadingPosition, error)
 	GetReadingPosition(ctx context.Context, userID, artifactID string) (ReadingPosition, bool, error)
 }
@@ -35,16 +37,16 @@ type ReadingPositionRepository interface {
 // ReadingPositionService records and reads where the user is in a document.
 // Reads on clients normally ride the sync replica; the GET exists for the
 // writer's confirmation (anchor applies the committed row) and debugging.
-type ReadingPositionService interface {
+type Service interface {
 	Put(ctx context.Context, userID, artifactID string, page int64) (ReadingPosition, error)
 	Get(ctx context.Context, userID, artifactID string) (ReadingPosition, bool, error)
 }
 
 type defaultReadingPositionService struct {
-	repo ReadingPositionRepository
+	repo Repository
 }
 
-func NewReadingPositionService(repo ReadingPositionRepository) ReadingPositionService {
+func NewService(repo Repository) Service {
 	return &defaultReadingPositionService{repo: repo}
 }
 

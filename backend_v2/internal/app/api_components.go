@@ -7,6 +7,8 @@ import (
 	"aladin/backend_v2/internal/config"
 	"aladin/backend_v2/internal/copilotagent"
 	"aladin/backend_v2/internal/graph"
+	"aladin/backend_v2/internal/readingposition"
+	readingpositionpostgres "aladin/backend_v2/internal/readingposition/postgres"
 	"aladin/backend_v2/internal/realtime"
 	"aladin/backend_v2/internal/reconciliation"
 	"aladin/backend_v2/internal/repo"
@@ -36,7 +38,7 @@ type APIProcess struct {
 	graphPane           coreservice.GraphPaneService
 	entityList          coreservice.EntityListService
 	graphReader         coreservice.GraphReader
-	readingPositions    coreservice.ReadingPositionService
+	readingPositions    readingposition.Service
 	unfurl              coreservice.UnfurlService
 	notifications       coreservice.NotificationService
 	alertEngine         *coreservice.AlertEngine
@@ -52,7 +54,7 @@ func NewAPIComponentsWithProviderConnections(pool *pgxpool.Pool, providerConfig 
 	shared := buildSharedComponents(pool, dataVolumePath)
 
 	syncRepo := repo.NewSyncPostgres(pool)
-	syncSvc := reconciliation.New(syncRepo, repo.NewTreeSyncSource(pool), watchlistpostgres.NewSyncSource(pool), repo.NewShardKVSyncSource(pool), repo.NewReadingPositionSyncSource(pool))
+	syncSvc := reconciliation.New(syncRepo, repo.NewTreeSyncSource(pool), watchlistpostgres.NewSyncSource(pool), repo.NewShardKVSyncSource(pool), readingpositionpostgres.NewSyncSource(pool))
 	realtimeKeys := coreservice.NewSubscriptionKeyResolver()
 	realtime := realtime.NewService(realtimeKeys)
 	outboxDrainer := changefeed.NewDrainer(syncRepo, realtime, changefeed.DefaultDrainInterval)
@@ -128,7 +130,7 @@ func NewAPIComponentsWithProviderConnections(pool *pgxpool.Pool, providerConfig 
 		graphPane:           coreservice.NewGraphPaneService(repo.NewGraphPanePostgres(pool)),
 		entityList:          coreservice.NewEntityListService(repo.NewEntityListPostgres(pool)),
 		graphReader:         graphReader,
-		readingPositions:    coreservice.NewReadingPositionService(repo.NewReadingPositionPostgres(pool)),
+		readingPositions:    readingposition.NewService(readingpositionpostgres.New(pool)),
 		unfurl:              coreservice.NewUnfurlService(),
 		notifications:       coreservice.NewNotificationService(repo.NewNotificationsPostgres(pool)),
 		alertEngine:         alertEngine,
@@ -171,7 +173,7 @@ func (c *APIProcess) EntityContext() coreservice.EntityContextService          {
 func (c *APIProcess) EntityList() coreservice.EntityListService                { return c.entityList }
 func (c *APIProcess) Instruments() coreservice.InstrumentService               { return c.instruments }
 func (c *APIProcess) Watchlist() watchlist.Service                             { return c.watchlist }
-func (c *APIProcess) ReadingPositions() coreservice.ReadingPositionService     { return c.readingPositions }
+func (c *APIProcess) ReadingPositions() readingposition.Service                { return c.readingPositions }
 func (c *APIProcess) Search() coreservice.SearchService                        { return c.search }
 func (c *APIProcess) Unfurl() coreservice.UnfurlService                        { return c.unfurl }
 func (c *APIProcess) Bars() coreservice.BarService                             { return c.bars }

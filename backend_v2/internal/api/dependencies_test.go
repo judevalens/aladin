@@ -1,6 +1,7 @@
 package api
 
 import (
+	"aladin/backend_v2/internal/readingposition"
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/watchlist"
 )
@@ -40,7 +41,7 @@ type testDependencies struct {
 	EntityListSvc          coreservice.EntityListService
 	InstrumentsSvc         coreservice.InstrumentService
 	WatchlistSvc           watchlist.Service
-	ReadingPositionsSvc    coreservice.ReadingPositionService
+	ReadingPositionsSvc    readingposition.Service
 	SearchSvc              coreservice.SearchService
 	UnfurlSvc              coreservice.UnfurlService
 	BarsSvc                coreservice.BarService
@@ -90,7 +91,7 @@ func (d testDependencies) EntityContext() coreservice.EntityContextService { ret
 func (d testDependencies) EntityList() coreservice.EntityListService       { return d.EntityListSvc }
 func (d testDependencies) Instruments() coreservice.InstrumentService      { return d.InstrumentsSvc }
 func (d testDependencies) Watchlist() watchlist.Service                    { return d.WatchlistSvc }
-func (d testDependencies) ReadingPositions() coreservice.ReadingPositionService {
+func (d testDependencies) ReadingPositions() readingposition.Service {
 	return d.ReadingPositionsSvc
 }
 func (d testDependencies) Search() coreservice.SearchService              { return d.SearchSvc }

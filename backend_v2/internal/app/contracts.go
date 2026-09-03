@@ -2,6 +2,7 @@ package app
 
 import (
 	"aladin/backend_v2/internal/changefeed"
+	"aladin/backend_v2/internal/readingposition"
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/shardresource"
 	"aladin/backend_v2/internal/watchlist"
@@ -43,7 +44,7 @@ type APIComponents interface {
 	EntityList() coreservice.EntityListService
 	Instruments() coreservice.InstrumentService
 	Watchlist() watchlist.Service
-	ReadingPositions() coreservice.ReadingPositionService
+	ReadingPositions() readingposition.Service
 	Search() coreservice.SearchService
 	Unfurl() coreservice.UnfurlService
 	Bars() coreservice.BarService

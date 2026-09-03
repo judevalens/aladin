@@ -1,4 +1,5 @@
-package repo
+// Package postgres implements Reading Position persistence and sync projection.
+package postgres
 
 import (
 	"context"
@@ -7,6 +8,8 @@ import (
 
 	"encoding/json"
 
+	"aladin/backend_v2/internal/outbox"
+	"aladin/backend_v2/internal/readingposition"
 	"aladin/backend_v2/internal/service"
 
 	"github.com/jackc/pgx/v5"
@@ -23,6 +26,8 @@ import (
 // three clients can compare it against their own session caches without parsing.
 
 const readingPositionEntityKind = "reading_position"
+
+type scanner interface{ Scan(dest ...any) error }
 
 type lightReadingPositionData struct {
 	ArtifactID string `json:"artifactId"`
@@ -73,41 +78,41 @@ func emitReadingPositionFrame(ctx context.Context, tx pgx.Tx, userID, artifactID
 	if err != nil {
 		return fmt.Errorf("sync: light reading_position %s: %w", artifactID, err)
 	}
-	return appendOutboxEvent(ctx, tx, userID, service.Frame{Entities: []service.FrameEntity{ent}})
+	return outbox.AppendData(ctx, tx, userID, service.Frame{Entities: []service.FrameEntity{ent}})
 }
 
-// ReadingPositionRepo implements service.ReadingPositionRepository on Postgres.
-type ReadingPositionRepo struct{ pool *pgxpool.Pool }
+// Repository implements readingposition.Repository on PostgreSQL.
+type Repository struct{ pool *pgxpool.Pool }
 
-func NewReadingPositionPostgres(pool *pgxpool.Pool) *ReadingPositionRepo {
-	return &ReadingPositionRepo{pool: pool}
+func New(pool *pgxpool.Pool) *Repository {
+	return &Repository{pool: pool}
 }
 
-func scanReadingPosition(row pgx.Row) (service.ReadingPosition, error) {
-	var p service.ReadingPosition
+func scanReadingPosition(row pgx.Row) (readingposition.ReadingPosition, error) {
+	var p readingposition.ReadingPosition
 	err := row.Scan(&p.ArtifactID, &p.Page, &p.Seq, &p.UpdatedAt)
 	return p, err
 }
 
-func (r *ReadingPositionRepo) GetReadingPosition(ctx context.Context, userID, artifactID string) (service.ReadingPosition, bool, error) {
+func (r *Repository) GetReadingPosition(ctx context.Context, userID, artifactID string) (readingposition.ReadingPosition, bool, error) {
 	p, err := scanReadingPosition(r.pool.QueryRow(ctx, `
 		SELECT artifact_id, page, seq, (extract(epoch FROM updated_at) * 1000)::bigint
 		  FROM reading_positions
 		 WHERE user_id = $1::uuid AND artifact_id = $2 AND is_deleted = false
 	`, userID, artifactID))
 	if errors.Is(err, pgx.ErrNoRows) {
-		return service.ReadingPosition{}, false, nil
+		return readingposition.ReadingPosition{}, false, nil
 	}
 	if err != nil {
-		return service.ReadingPosition{}, false, err
+		return readingposition.ReadingPosition{}, false, err
 	}
 	return p, true, nil
 }
 
 // PutReadingPosition upserts the row (LWW), bumps seq, and appends the frame in
 // the same tx. The artifact must belong to the user.
-func (r *ReadingPositionRepo) PutReadingPosition(ctx context.Context, userID, artifactID string, page int64) (service.ReadingPosition, error) {
-	var out service.ReadingPosition
+func (r *Repository) PutReadingPosition(ctx context.Context, userID, artifactID string, page int64) (readingposition.ReadingPosition, error) {
+	var out readingposition.ReadingPosition
 	err := r.withUserTx(ctx, userID, func(tx pgx.Tx) error {
 		var owned bool
 		if err := tx.QueryRow(ctx,
@@ -116,7 +121,7 @@ func (r *ReadingPositionRepo) PutReadingPosition(ctx context.Context, userID, ar
 			return err
 		}
 		if !owned {
-			return service.ErrReadingPositionNotFound
+			return readingposition.ErrReadingPositionNotFound
 		}
 		p, err := scanReadingPosition(tx.QueryRow(ctx, `
 			INSERT INTO reading_positions (user_id, artifact_id, page, seq)
@@ -139,13 +144,13 @@ func (r *ReadingPositionRepo) PutReadingPosition(ctx context.Context, userID, ar
 
 // withUserTx wraps fn in a tx holding the per-user advisory lock — the same
 // serialization every outbox producer uses.
-func (r *ReadingPositionRepo) withUserTx(ctx context.Context, userID string, fn func(pgx.Tx) error) error {
+func (r *Repository) withUserTx(ctx context.Context, userID string, fn func(pgx.Tx) error) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if err := LockUser(ctx, tx, userID); err != nil {
+	if err := outbox.LockUser(ctx, tx, userID); err != nil {
 		return err
 	}
 	if err := fn(tx); err != nil {
@@ -156,15 +161,15 @@ func (r *ReadingPositionRepo) withUserTx(ctx context.Context, userID string, fn 
 
 // ReadingPositionSyncSource is the cold-start snapshot provider (per-user,
 // tombstones included). Implements service.SyncSource.
-type ReadingPositionSyncSource struct{ pool *pgxpool.Pool }
+type SyncSource struct{ pool *pgxpool.Pool }
 
-func NewReadingPositionSyncSource(pool *pgxpool.Pool) *ReadingPositionSyncSource {
-	return &ReadingPositionSyncSource{pool: pool}
+func NewSyncSource(pool *pgxpool.Pool) *SyncSource {
+	return &SyncSource{pool: pool}
 }
 
-func (s *ReadingPositionSyncSource) EntityKind() string { return readingPositionEntityKind }
+func (s *SyncSource) EntityKind() string { return readingPositionEntityKind }
 
-func (s *ReadingPositionSyncSource) Snapshot(ctx context.Context, userID string) ([]service.FrameEntity, error) {
+func (s *SyncSource) Snapshot(ctx context.Context, userID string) ([]service.FrameEntity, error) {
 	rows, err := s.pool.Query(ctx, lightReadingPositionSelect+` ORDER BY p.artifact_id`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("sync: reading_position snapshot query: %w", err)

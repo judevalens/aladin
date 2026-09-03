@@ -1,4 +1,4 @@
-package repo
+package postgres
 
 import (
 	"context"
@@ -6,26 +6,61 @@ import (
 	"errors"
 	"testing"
 
+	"aladin/backend_v2/internal/db"
+	"aladin/backend_v2/internal/dbtest"
+	"aladin/backend_v2/internal/readingposition"
 	coreservice "aladin/backend_v2/internal/service"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Reading-position DB integration tests (sandbox only — see mustTestPool).
 // Cover the LWW upsert + seq bump, ownership check, frame emission, and the
 // cold-start snapshot.
 
-func seedReadingArtifact(ctx context.Context, t *testing.T, r *ReadingPositionRepo, id string) {
+var testUserID = uuid.NewString()
+var testSuffix = uuid.NewString()[:8]
+
+func testID(name string) string { return name + "-" + testSuffix }
+
+func mustTestPool(ctx context.Context, t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	pool, err := pgxpool.New(ctx, dbtest.RequireTestDSN(t))
+	if err != nil {
+		t.Skipf("no test database: %v", err)
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		t.Skipf("test database unreachable: %v", err)
+	}
+	if err := db.Migrate(ctx, pool); err != nil {
+		pool.Close()
+		t.Fatalf("migrate: %v", err)
+	}
+	return pool
+}
+
+func seedUser(ctx context.Context, t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+	if _, err := pool.Exec(ctx, `INSERT INTO users (id,email,created_at,updated_at) VALUES ($1::uuid,$2,now(),now()) ON CONFLICT (id) DO NOTHING`, testUserID, testUserID+"@reading-position.test"); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+}
+
+func seedReadingArtifact(ctx context.Context, t *testing.T, r *Repository, id string) {
 	t.Helper()
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO artifacts (id, user_id, type, title, content, created_at, updated_at)
 		VALUES ($1, $2::uuid, 'file', 'reading test doc', '', now(), now())
 		ON CONFLICT (id) DO NOTHING
-	`, id, testAdminUserID)
+	`, id, testUserID)
 	if err != nil {
 		t.Fatalf("seed artifact: %v", err)
 	}
 }
 
-func countReadingPositionFrames(ctx context.Context, t *testing.T, r *ReadingPositionRepo, artifactID string) int {
+func countReadingPositionFrames(ctx context.Context, t *testing.T, r *Repository, artifactID string) int {
 	t.Helper()
 	var n int
 	err := r.pool.QueryRow(ctx, `
@@ -33,7 +68,7 @@ func countReadingPositionFrames(ctx context.Context, t *testing.T, r *ReadingPos
 		 WHERE user_id = $1::uuid AND type = 'data_event'
 		   AND payload::text LIKE '%reading_position%'
 		   AND payload::text LIKE '%' || $2 || '%'
-	`, testAdminUserID, artifactID).Scan(&n)
+	`, testUserID, artifactID).Scan(&n)
 	if err != nil {
 		t.Fatalf("count frames: %v", err)
 	}
@@ -44,13 +79,13 @@ func TestReadingPosition_PutBumpsSeqAndEmitsFrames(t *testing.T) {
 	ctx := context.Background()
 	pool := mustTestPool(ctx, t)
 	defer pool.Close()
-	seedUser(ctx, t, pool, testAdminUserID)
-	r := NewReadingPositionPostgres(pool)
-	doc := tid("artifact-readpos")
+	seedUser(ctx, t, pool)
+	r := New(pool)
+	doc := testID("artifact-readpos")
 	seedReadingArtifact(ctx, t, r, doc)
 
 	// First report: seq 1.
-	p, err := r.PutReadingPosition(ctx, testAdminUserID, doc, 12)
+	p, err := r.PutReadingPosition(ctx, testUserID, doc, 12)
 	if err != nil {
 		t.Fatalf("Put: %v", err)
 	}
@@ -62,7 +97,7 @@ func TestReadingPosition_PutBumpsSeqAndEmitsFrames(t *testing.T) {
 	}
 
 	// LWW: a later report simply wins; seq bumps.
-	if p, err = r.PutReadingPosition(ctx, testAdminUserID, doc, 87); err != nil || p.Page != 87 || p.Seq != 2 {
+	if p, err = r.PutReadingPosition(ctx, testUserID, doc, 87); err != nil || p.Page != 87 || p.Seq != 2 {
 		t.Fatalf("second put = %+v err=%v, want page 87 seq 2", p, err)
 	}
 	if n := countReadingPositionFrames(ctx, t, r, doc); n != 2 {
@@ -70,18 +105,18 @@ func TestReadingPosition_PutBumpsSeqAndEmitsFrames(t *testing.T) {
 	}
 
 	// Read back.
-	got, ok, err := r.GetReadingPosition(ctx, testAdminUserID, doc)
+	got, ok, err := r.GetReadingPosition(ctx, testUserID, doc)
 	if err != nil || !ok || got.Page != 87 {
 		t.Fatalf("Get = %+v ok=%v err=%v, want page 87", got, ok, err)
 	}
 
 	// Unknown artifact (or another user's) is rejected, nothing emitted.
-	if _, err := r.PutReadingPosition(ctx, testAdminUserID, tid("artifact-readpos-missing"), 3); !errors.Is(err, coreservice.ErrReadingPositionNotFound) {
+	if _, err := r.PutReadingPosition(ctx, testUserID, testID("artifact-readpos-missing"), 3); !errors.Is(err, readingposition.ErrReadingPositionNotFound) {
 		t.Fatalf("put on missing artifact err = %v, want ErrReadingPositionNotFound", err)
 	}
 
 	// Absent position reads as not-found, no error.
-	if _, ok, err := r.GetReadingPosition(ctx, testAdminUserID, tid("artifact-readpos-none")); err != nil || ok {
+	if _, ok, err := r.GetReadingPosition(ctx, testUserID, testID("artifact-readpos-none")); err != nil || ok {
 		t.Fatalf("get absent = ok=%v err=%v, want ok=false", ok, err)
 	}
 }
@@ -90,15 +125,15 @@ func TestReadingPosition_SnapshotCarriesTheRow(t *testing.T) {
 	ctx := context.Background()
 	pool := mustTestPool(ctx, t)
 	defer pool.Close()
-	seedUser(ctx, t, pool, testAdminUserID)
-	r := NewReadingPositionPostgres(pool)
-	doc := tid("artifact-readpos-snap")
+	seedUser(ctx, t, pool)
+	r := New(pool)
+	doc := testID("artifact-readpos-snap")
 	seedReadingArtifact(ctx, t, r, doc)
-	if _, err := r.PutReadingPosition(ctx, testAdminUserID, doc, 42); err != nil {
+	if _, err := r.PutReadingPosition(ctx, testUserID, doc, 42); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
 
-	ents, err := NewReadingPositionSyncSource(pool).Snapshot(ctx, testAdminUserID)
+	ents, err := NewSyncSource(pool).Snapshot(ctx, testUserID)
 	if err != nil {
 		t.Fatalf("Snapshot: %v", err)
 	}
