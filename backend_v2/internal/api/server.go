@@ -26,6 +26,8 @@ import (
 	readingpositionhttp "aladin/backend_v2/internal/readingposition/httptransport"
 	"aladin/backend_v2/internal/realtime"
 	realtimehttp "aladin/backend_v2/internal/realtime/httptransport"
+	"aladin/backend_v2/internal/record"
+	recordhttp "aladin/backend_v2/internal/record/httptransport"
 	"aladin/backend_v2/internal/relationship"
 	relationshiphttp "aladin/backend_v2/internal/relationship/httptransport"
 	"aladin/backend_v2/internal/research"
@@ -65,7 +67,7 @@ type Dependencies interface {
 	Auth() coreservice.AuthService
 	System() coreservice.SystemService
 	Sources() source.SourceService
-	Records() coreservice.RecordService
+	Records() record.RecordService
 	Artifacts() coreservice.ArtifactService
 	Pages() coreservice.PageService
 	Files() coreservice.FileService
@@ -164,12 +166,7 @@ func NewWithDependencies(addr string, deps Dependencies) *Server {
 
 	sourcehttp.Register(mux, deps.Sources())
 
-	mux.HandleFunc("GET /api/records/", s.handleRecordsList)
-	mux.HandleFunc("POST /api/records/", s.handleRecordsCreate)
-	mux.HandleFunc("DELETE /api/records/{id}", s.handleRecordsDelete)
-	mux.HandleFunc("POST /api/records/{id}/retry", s.handleRecordsRetry)
-	mux.HandleFunc("GET /api/records/{id}/similar", s.handleRecordSimilar)
-	mux.HandleFunc("GET /api/records/{id}/children", s.handleRecordChildren)
+	recordhttp.Register(mux, deps.Records())
 
 	feedhttp.Register(mux, deps.Feed())
 

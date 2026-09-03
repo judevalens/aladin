@@ -1,17 +1,17 @@
-package repo
+package postgres
 
 import (
 	"encoding/json"
 	"strings"
 	"time"
 
-	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/record"
 )
 
 type scanner interface{ Scan(dest ...any) error }
 
-func scanRecordRow(row scanner, withChildCount bool) (coreservice.RecordResponse, error) {
-	var rec coreservice.RecordResponse
+func scanRecordRow(row scanner, withChildCount bool) (record.RecordResponse, error) {
+	var rec record.RecordResponse
 	var sourceURL *string
 	var parentID *string
 	var enrichment []byte

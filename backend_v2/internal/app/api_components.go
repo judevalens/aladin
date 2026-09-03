@@ -25,6 +25,7 @@ import (
 	readingpositionpostgres "aladin/backend_v2/internal/readingposition/postgres"
 	"aladin/backend_v2/internal/realtime"
 	"aladin/backend_v2/internal/reconciliation"
+	"aladin/backend_v2/internal/record"
 	"aladin/backend_v2/internal/relationship"
 	relationshippostgres "aladin/backend_v2/internal/relationship/postgres"
 	"aladin/backend_v2/internal/repo"
@@ -45,7 +46,7 @@ type APIProcess struct {
 	sharedComponents
 	system              coreservice.SystemService
 	sources             source.SourceService
-	records             coreservice.RecordService
+	records             record.RecordService
 	pages               coreservice.PageService
 	files               coreservice.FileService
 	feed                feed.FeedService
@@ -146,7 +147,7 @@ func NewAPIComponentsWithProviderConnections(pool *pgxpool.Pool, providerConfig 
 		sharedComponents:    shared,
 		system:              coreservice.NewSystemService(repo.NewSystemPostgres(pool)),
 		sources:             source.NewSourceService(sourcepostgres.NewSourcePostgres(pool)),
-		records:             coreservice.NewRecordService(shared.recordRepo),
+		records:             record.NewRecordService(shared.recordRepo),
 		pages:               coreservice.NewPageService(shared.artifactRepo),
 		files:               coreservice.NewFileService(shared.artifactRepo, shared.artifactFiles),
 		feed:                feed.NewFeedService(feedpostgres.NewFeedPostgres(pool)),
@@ -172,7 +173,7 @@ func NewAPIComponentsWithProviderConnections(pool *pgxpool.Pool, providerConfig 
 func (c *APIProcess) Auth() coreservice.AuthService          { return c.auth }
 func (c *APIProcess) System() coreservice.SystemService      { return c.system }
 func (c *APIProcess) Sources() source.SourceService          { return c.sources }
-func (c *APIProcess) Records() coreservice.RecordService     { return c.records }
+func (c *APIProcess) Records() record.RecordService          { return c.records }
 func (c *APIProcess) Artifacts() coreservice.ArtifactService { return c.artifacts }
 func (c *APIProcess) Pages() coreservice.PageService         { return c.pages }
 func (c *APIProcess) Files() coreservice.FileService         { return c.files }

@@ -1,11 +1,11 @@
-package repo
+package postgres
 
 import (
 	"context"
 	"errors"
 	"fmt"
 
-	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/record"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -17,7 +17,7 @@ func NewRecordPostgres(pool *pgxpool.Pool) *PostgresRecordRepository {
 	return &PostgresRecordRepository{pool: pool}
 }
 
-func (r *PostgresRecordRepository) List(ctx context.Context) ([]coreservice.RecordResponse, error) {
+func (r *PostgresRecordRepository) List(ctx context.Context) ([]record.RecordResponse, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT
 		    a.id, a.type, a.label, a.content, a.source_url,
@@ -36,7 +36,7 @@ func (r *PostgresRecordRepository) List(ctx context.Context) ([]coreservice.Reco
 	}
 	defer rows.Close()
 
-	var out []coreservice.RecordResponse
+	var out []record.RecordResponse
 	for rows.Next() {
 		rec, err := scanRecordRow(rows, true)
 		if err != nil {
@@ -67,7 +67,7 @@ func (r *PostgresRecordRepository) Children(ctx context.Context, id string, limi
 	}
 	defer rows.Close()
 
-	var items []coreservice.RecordResponse
+	var items []record.RecordResponse
 	for rows.Next() {
 		rec, err := scanRecordRow(rows, true)
 		if err != nil {
@@ -107,7 +107,7 @@ func (r *PostgresRecordRepository) Delete(ctx context.Context, id string) error 
 // SimilarRecords returns records whose embedding is cosine-closest to the given record's
 // (the vector "similar sources" lens), excluding the record itself. Empty if the record
 // has no embedding.
-func (r *PostgresRecordRepository) SimilarRecords(ctx context.Context, id string, limit int) ([]coreservice.SimilarRecord, error) {
+func (r *PostgresRecordRepository) SimilarRecords(ctx context.Context, id string, limit int) ([]record.SimilarRecord, error) {
 	rows, err := r.pool.Query(ctx, `
 		WITH target AS (SELECT embedding FROM records WHERE id = $1)
 		SELECT r.id, r.label, COALESCE(r.source_url, ''), COALESCE(r.provider, ''),
@@ -124,9 +124,9 @@ func (r *PostgresRecordRepository) SimilarRecords(ctx context.Context, id string
 	}
 	defer rows.Close()
 
-	out := []coreservice.SimilarRecord{}
+	out := []record.SimilarRecord{}
 	for rows.Next() {
-		var s coreservice.SimilarRecord
+		var s record.SimilarRecord
 		if err := rows.Scan(&s.ID, &s.Label, &s.SourceURL, &s.Provider, &s.Cosine); err != nil {
 			return nil, fmt.Errorf("SimilarRecords scan: %w", err)
 		}
@@ -151,7 +151,7 @@ func (r *PostgresRecordRepository) ResetForRetry(ctx context.Context, id string)
 // GetRecord reads one record for the shard bridge's entity registry. Records
 // carry no owner column (see the baseline schema) — the same property the
 // existing List/Children reads have — so the shard's manifest grant is the gate.
-func (r *PostgresRecordRepository) GetRecord(ctx context.Context, id string) (coreservice.RecordResponse, bool, error) {
+func (r *PostgresRecordRepository) GetRecord(ctx context.Context, id string) (record.RecordResponse, bool, error) {
 	row := r.pool.QueryRow(ctx, `
 		SELECT
 		    a.id, a.type, a.label, a.content, a.source_url,
@@ -166,10 +166,10 @@ func (r *PostgresRecordRepository) GetRecord(ctx context.Context, id string) (co
 	`, id)
 	rec, err := scanRecordRow(row, true)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return coreservice.RecordResponse{}, false, nil
+		return record.RecordResponse{}, false, nil
 	}
 	if err != nil {
-		return coreservice.RecordResponse{}, false, err
+		return record.RecordResponse{}, false, err
 	}
 	return rec, true, nil
 }

@@ -1,8 +1,10 @@
-package service
+package record
 
 import (
 	"context"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
 type RecordService interface {
@@ -66,7 +68,7 @@ func (s *DefaultRecordService) Children(ctx context.Context, id string, limit in
 
 func (s *DefaultRecordService) Create(ctx context.Context, id string, kind string, label string, content string, sourceURL string, parentID string) error {
 	if strings.TrimSpace(id) == "" {
-		id = newID("record-")
+		id = "record-" + uuid.NewString()
 	}
 	return s.repo.Create(ctx, id, kind, label, content, sourceURL, parentID)
 }

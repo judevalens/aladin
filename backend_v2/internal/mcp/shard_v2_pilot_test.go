@@ -27,6 +27,7 @@ import (
 	"aladin/backend_v2/internal/providerconnection"
 	"aladin/backend_v2/internal/readingposition"
 	"aladin/backend_v2/internal/realtime"
+	"aladin/backend_v2/internal/record"
 	"aladin/backend_v2/internal/relationship"
 	"aladin/backend_v2/internal/repo"
 	"aladin/backend_v2/internal/research"
@@ -345,7 +346,7 @@ type emptyAPIDependencies struct{}
 func (emptyAPIDependencies) Auth() service.AuthService          { return nil }
 func (emptyAPIDependencies) System() service.SystemService      { return nil }
 func (emptyAPIDependencies) Sources() source.SourceService      { return nil }
-func (emptyAPIDependencies) Records() service.RecordService     { return nil }
+func (emptyAPIDependencies) Records() record.RecordService      { return nil }
 func (emptyAPIDependencies) Artifacts() service.ArtifactService { return nil }
 func (emptyAPIDependencies) Pages() service.PageService         { return nil }
 func (emptyAPIDependencies) Files() service.FileService         { return nil }

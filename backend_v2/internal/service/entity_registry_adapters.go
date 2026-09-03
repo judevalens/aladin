@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 
+	"aladin/backend_v2/internal/record"
 	"aladin/backend_v2/internal/watchlist"
 )
 
@@ -83,7 +84,7 @@ func (s artifactEntityService) NodeView(ctx context.Context, id string) (NodeVie
 // sees every record through /api/records, so this adapter is no wider than the
 // existing surface. The manifest grant is the real gate here.
 type RecordReader interface {
-	GetRecord(ctx context.Context, id string) (RecordResponse, bool, error)
+	GetRecord(ctx context.Context, id string) (record.RecordResponse, bool, error)
 }
 
 type recordEntityService struct{ records RecordReader }

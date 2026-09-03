@@ -1,4 +1,4 @@
-package repo
+package postgres
 
 import (
 	"context"
@@ -7,8 +7,30 @@ import (
 	"testing"
 	"time"
 
+	"aladin/backend_v2/internal/db"
+	"aladin/backend_v2/internal/dbtest"
+
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+func mustTestPool(ctx context.Context, t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	dsn := dbtest.RequireTestDSN(t)
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Skipf("no test database: %v", err)
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		t.Skipf("test database unreachable: %v", err)
+	}
+	if err := db.Migrate(ctx, pool); err != nil {
+		pool.Close()
+		t.Fatalf("migrate: %v", err)
+	}
+	return pool
+}
 
 // vec1536 builds a pgvector(1536) literal with the given leading values, zero-padded.
 func vec1536(lead ...float32) string {

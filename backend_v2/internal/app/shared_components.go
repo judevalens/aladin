@@ -24,6 +24,8 @@ import (
 	"aladin/backend_v2/internal/market"
 	"aladin/backend_v2/internal/market/alpaca"
 	marketpostgres "aladin/backend_v2/internal/market/postgres"
+	"aladin/backend_v2/internal/record"
+	recordpostgres "aladin/backend_v2/internal/record/postgres"
 	"aladin/backend_v2/internal/repo"
 	"aladin/backend_v2/internal/research"
 	researchpostgres "aladin/backend_v2/internal/research/postgres"
@@ -64,7 +66,7 @@ type sharedComponents struct {
 	bars             market.BarService
 	alerts           alert.AlertService
 
-	recordRepo     coreservice.RecordRepository
+	recordRepo     record.RecordRepository
 	artifactRepo   *repo.PostgresArtifactRepository
 	artifactFiles  coreservice.ArtifactFileStore
 	research       research.ResearchService
@@ -76,7 +78,7 @@ type sharedComponents struct {
 }
 
 func buildSharedComponents(pool *pgxpool.Pool, dataVolumePath string) sharedComponents {
-	recordRepo := repo.NewRecordPostgres(pool)
+	recordRepo := recordpostgres.NewRecordPostgres(pool)
 	artifactRepo := repo.NewArtifactsPostgres(pool)
 	artifactFiles := NewArtifactFileStore()
 	docStore := docsurface.NewStore(dataVolumePath)

@@ -13,6 +13,7 @@ import (
 	"aladin/backend_v2/internal/providerconnection"
 	"aladin/backend_v2/internal/readingposition"
 	"aladin/backend_v2/internal/realtime"
+	"aladin/backend_v2/internal/record"
 	"aladin/backend_v2/internal/relationship"
 	"aladin/backend_v2/internal/research"
 	"aladin/backend_v2/internal/search"
@@ -30,7 +31,7 @@ type APIComponents interface {
 	Auth() coreservice.AuthService
 	System() coreservice.SystemService
 	Sources() source.SourceService
-	Records() coreservice.RecordService
+	Records() record.RecordService
 	Artifacts() coreservice.ArtifactService
 	Pages() coreservice.PageService
 	Files() coreservice.FileService
