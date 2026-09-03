@@ -1,9 +1,12 @@
-package service
+package changefeed
 
 import (
 	"context"
 	"testing"
 	"time"
+
+	rtruntime "aladin/backend_v2/internal/realtime"
+	. "aladin/backend_v2/internal/service"
 )
 
 type fakeDrainReader struct {
@@ -23,7 +26,7 @@ func (f *fakeDrainReader) Horizon(_ context.Context) (uint64, error) {
 // event.UserID), tagged `*.frame`, and returns the horizon as the new cursor.
 func TestOutboxDrain_PublishesFramePerUser(t *testing.T) {
 	resolver := NewSubscriptionKeyResolver()
-	rt := NewInMemoryRealtimeEventService(resolver)
+	rt := rtruntime.NewService(resolver)
 
 	ch, unsub, err := rt.Subscribe(context.Background(), []SubscriptionKey{{
 		TenantID: "u1", Stream: WorkspaceStream, ResourceKind: AnyResource, ResourceID: AnyResource,
@@ -38,7 +41,7 @@ func TestOutboxDrain_PublishesFramePerUser(t *testing.T) {
 		events:  []DrainedEvent{{Xid: 42, UserID: "u1", Frame: frame}},
 		horizon: 100,
 	}
-	drainer := NewOutboxDrainer(reader, rt, 0)
+	drainer := NewDrainer(reader, rt, 0)
 
 	next, err := drainer.drainOnce(context.Background(), 0)
 	if err != nil {
@@ -61,7 +64,7 @@ func TestOutboxDrain_PublishesFramePerUser(t *testing.T) {
 // A frame for user u2 must NOT reach user u1's subscriber.
 func TestOutboxDrain_PerUserIsolation(t *testing.T) {
 	resolver := NewSubscriptionKeyResolver()
-	rt := NewInMemoryRealtimeEventService(resolver)
+	rt := rtruntime.NewService(resolver)
 
 	ch, unsub, err := rt.Subscribe(context.Background(), []SubscriptionKey{{
 		TenantID: "u1", Stream: WorkspaceStream, ResourceKind: AnyResource, ResourceID: AnyResource,
@@ -77,7 +80,7 @@ func TestOutboxDrain_PerUserIsolation(t *testing.T) {
 		}}},
 		horizon: 9,
 	}
-	drainer := NewOutboxDrainer(reader, rt, 0)
+	drainer := NewDrainer(reader, rt, 0)
 	if _, err := drainer.drainOnce(context.Background(), 0); err != nil {
 		t.Fatalf("drainOnce: %v", err)
 	}

@@ -3,109 +3,49 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
-	"net/url"
-	"sort"
 	"strings"
-	"sync"
-	"time"
 
-	"github.com/google/uuid"
+	runtime "aladin/backend_v2/internal/realtime"
 )
 
 const (
-	WorkspaceStream = "workspace"
-	// MarketStream is a BROADCAST stream: its events reach every subscriber regardless of
-	// tenant (a NVDA quote isn't owned by anyone). The first user of the generic broadcast
-	// scope below; add more broadcast streams by registering them in broadcastStreams.
-	MarketStream = "market"
-	AnyResource  = "*"
-	// FrameOperation is the live data-event operation. The CDC outbox drain
-	// publishes each committed frame as eventType "*.frame" — intentionally
-	// cross-resource, since one frame can carry entities of any kind — and the
-	// client's live subscriber subscribes to it. It is the ONE event kind whose
-	// resource prefix is the wildcard (see validateWorkspaceEventKind).
-	FrameOperation     = "frame"
-	WorkspaceFrameKind = AnyResource + "." + FrameOperation // "*.frame"
+	WorkspaceStream    = runtime.WorkspaceStream
+	MarketStream       = runtime.MarketStream
+	AnyResource        = runtime.AnyResource
+	FrameOperation     = runtime.FrameOperation
+	WorkspaceFrameKind = runtime.WorkspaceFrameKind
 )
 
+type SubscriptionKey = runtime.SubscriptionKey
+type PublicSubscriptionKey = runtime.PublicSubscriptionKey
+type PublishTarget = runtime.PublishTarget
+type SubscriptionOptions = runtime.SubscriptionOptions
+type AppEvent = runtime.AppEvent
+type RealtimeEventService = runtime.EventService
+type SubscriptionKeyResolver = runtime.KeyResolver
+type InMemoryRealtimeEventService = runtime.Service
+
 var allowedWorkspaceResourceKinds = map[string]bool{
-	AnyResource: true,
-	"artifact":  true,
-	"folder":    true,
-	"page":      true,
-	// copilot streams token/tool/message/done events per user (tenant-scoped workspace
-	// stream), published in-process by the CopilotService agent loop.
-	"copilot": true,
-	// notification.created events (price alerts firing, extensible to other producers),
-	// delivered tenant-scoped via the outbox drainer. Required or the drainer's Publish
-	// rejects the app_event and the toast is silently dropped.
-	"notification": true,
+	AnyResource: true, "artifact": true, "folder": true, "page": true,
+	"copilot": true, "notification": true,
 }
 
-// broadcastStreams are tenant-agnostic: an event on one reaches every subscriber of the same
-// stream+resource, regardless of tenant. Each maps to the resource kinds it permits.
 var broadcastStreams = map[string]map[string]bool{
 	MarketStream: {AnyResource: true, "quote": true},
 }
 
-func isBroadcastStream(stream string) bool {
-	_, ok := broadcastStreams[stream]
-	return ok
-}
-
-type SubscriptionKey struct {
-	TenantID     string            `json:"tenantId,omitempty"`
-	EventKind    string            `json:"eventKind,omitempty"`
-	Stream       string            `json:"stream"`
-	ResourceKind string            `json:"resourceKind"`
-	ResourceID   string            `json:"resourceId"`
-	Qualifiers   map[string]string `json:"qualifiers,omitempty"`
-}
-
-type PublicSubscriptionKey struct {
-	EventKind    string            `json:"eventKind,omitempty"`
-	Stream       string            `json:"stream"`
-	ResourceKind string            `json:"resourceKind"`
-	ResourceID   string            `json:"resourceId"`
-	Qualifiers   map[string]string `json:"qualifiers,omitempty"`
-}
-
-type PublishTarget struct {
-	TenantID     string
-	Stream       string
-	ResourceKind string
-	ResourceID   string
-	Operation    string
-	Qualifiers   map[string]string
-}
-
-type SubscriptionOptions struct {
-	Subscriptions []PublicSubscriptionKey `json:"subscriptions"`
-}
-
-type AppEvent struct {
-	EventID         string                `json:"eventId"`
-	Type            string                `json:"type"`
-	SubscriptionKey PublicSubscriptionKey `json:"subscriptionKey"`
-	Payload         any                   `json:"payload"`
-	OccurredAt      string                `json:"occurredAt"`
-}
-
-type RealtimeEventService interface {
-	Publish(context.Context, PublishTarget, any) error
-	Subscribe(context.Context, []SubscriptionKey, string) (<-chan AppEvent, func(), error)
-}
-
-type SubscriptionKeyResolver interface {
-	ResolveSubscribeKeys(context.Context, SubscriptionOptions) ([]SubscriptionKey, error)
-	ResolvePublishKeys(context.Context, PublishTarget) ([]SubscriptionKey, string, error)
-}
+func isBroadcastStream(stream string) bool { _, ok := broadcastStreams[stream]; return ok }
 
 type DefaultSubscriptionKeyResolver struct{}
 
 func NewSubscriptionKeyResolver() *DefaultSubscriptionKeyResolver {
 	return &DefaultSubscriptionKeyResolver{}
+}
+
+// NewInMemoryRealtimeEventService is a source-compatible construction shim.
+// Application composition uses realtime.NewService directly; the concrete owner is realtime.
+func NewInMemoryRealtimeEventService(resolver SubscriptionKeyResolver) *runtime.Service {
+	return runtime.NewService(resolver)
 }
 
 func (r *DefaultSubscriptionKeyResolver) ResolveSubscribeKeys(ctx context.Context, opts SubscriptionOptions) ([]SubscriptionKey, error) {
@@ -116,35 +56,21 @@ func (r *DefaultSubscriptionKeyResolver) ResolveSubscribeKeys(ctx context.Contex
 	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
 		return nil, err
 	}
-
 	subscriptions := opts.Subscriptions
 	if len(subscriptions) == 0 {
-		subscriptions = []PublicSubscriptionKey{{
-			Stream:       WorkspaceStream,
-			ResourceKind: AnyResource,
-			ResourceID:   AnyResource,
-		}}
+		subscriptions = []PublicSubscriptionKey{{Stream: WorkspaceStream, ResourceKind: AnyResource, ResourceID: AnyResource}}
 	}
-
 	keys := make([]SubscriptionKey, 0, len(subscriptions))
 	for _, sub := range subscriptions {
 		stream := defaultString(sub.Stream, WorkspaceStream)
 		resourceKind := defaultString(sub.ResourceKind, AnyResource)
 		resourceID := defaultString(sub.ResourceID, AnyResource)
 		eventKind := strings.TrimSpace(sub.EventKind)
-		// Broadcast streams: tenant-agnostic key (no TenantID), resource kind validated against
-		// the stream's own allow-set. Auth is still required (RequirePrincipal above).
 		if isBroadcastStream(stream) {
 			if !broadcastStreams[stream][resourceKind] {
 				return nil, BadRequest("unsupported broadcast resource kind")
 			}
-			keys = append(keys, SubscriptionKey{
-				EventKind:    eventKind,
-				Stream:       stream,
-				ResourceKind: resourceKind,
-				ResourceID:   resourceID,
-				Qualifiers:   normalizeQualifiers(sub.Qualifiers),
-			})
+			keys = append(keys, SubscriptionKey{EventKind: eventKind, Stream: stream, ResourceKind: resourceKind, ResourceID: resourceID, Qualifiers: normalizeQualifiers(sub.Qualifiers)})
 			continue
 		}
 		if stream != WorkspaceStream {
@@ -158,22 +84,12 @@ func (r *DefaultSubscriptionKeyResolver) ResolveSubscribeKeys(ctx context.Contex
 				return nil, err
 			}
 		}
-		key := SubscriptionKey{
-			TenantID:     principal.UserID,
-			EventKind:    eventKind,
-			Stream:       stream,
-			ResourceKind: resourceKind,
-			ResourceID:   resourceID,
-			Qualifiers:   normalizeQualifiers(sub.Qualifiers),
-		}
-		keys = append(keys, key)
+		keys = append(keys, SubscriptionKey{TenantID: principal.UserID, EventKind: eventKind, Stream: stream, ResourceKind: resourceKind, ResourceID: resourceID, Qualifiers: normalizeQualifiers(sub.Qualifiers)})
 	}
 	return keys, nil
 }
 
 func validateWorkspaceEventKind(eventKind, resourceKind string) error {
-	// The live data-event kind "*.frame" is cross-resource by design (one frame
-	// carries entities of any kind); it's the only kind with a wildcard prefix.
 	if eventKind == WorkspaceFrameKind {
 		return nil
 	}
@@ -200,9 +116,6 @@ func (r *DefaultSubscriptionKeyResolver) ResolvePublishKeys(ctx context.Context,
 		operation = "updated"
 	}
 	qualifiers := normalizeQualifiers(target.Qualifiers)
-
-	// Broadcast streams: tenant-agnostic keys (no principal / TenantID). A specific-resource
-	// key + an AnyResource key so both symbol-specific and "all quotes" subscribers match.
 	if isBroadcastStream(stream) {
 		if !broadcastStreams[stream][resourceKind] {
 			return nil, "", BadRequest("unsupported broadcast resource kind")
@@ -213,7 +126,6 @@ func (r *DefaultSubscriptionKeyResolver) ResolvePublishKeys(ctx context.Context,
 			{EventKind: eventType, Stream: stream, ResourceKind: AnyResource, ResourceID: AnyResource},
 		}, eventType, nil
 	}
-
 	tenantID := strings.TrimSpace(target.TenantID)
 	if tenantID == "" {
 		principal, err := RequirePrincipal(ctx)
@@ -229,220 +141,13 @@ func (r *DefaultSubscriptionKeyResolver) ResolvePublishKeys(ctx context.Context,
 		return nil, "", BadRequest("unsupported workspace resource kind")
 	}
 	eventType := resourceKind + "." + operation
-
 	return []SubscriptionKey{
-		{
-			TenantID:     tenantID,
-			EventKind:    eventType,
-			Stream:       stream,
-			ResourceKind: resourceKind,
-			ResourceID:   resourceID,
-			Qualifiers:   qualifiers,
-		},
-		{
-			TenantID:     tenantID,
-			EventKind:    eventType,
-			Stream:       stream,
-			ResourceKind: AnyResource,
-			ResourceID:   AnyResource,
-		},
+		{TenantID: tenantID, EventKind: eventType, Stream: stream, ResourceKind: resourceKind, ResourceID: resourceID, Qualifiers: qualifiers},
+		{TenantID: tenantID, EventKind: eventType, Stream: stream, ResourceKind: AnyResource, ResourceID: AnyResource},
 	}, eventType, nil
 }
 
-type InMemoryRealtimeEventService struct {
-	resolver     SubscriptionKeyResolver
-	mu           sync.RWMutex
-	nextID       int64
-	subscribers  map[string]realtimeSubscriber
-	recentEvents []recentRealtimeEvent
-	recentLimit  int
-	dropped      int64 // frames dropped to a full subscriber buffer (cumulative, guarded by mu)
-}
-
-type realtimeSubscriber struct {
-	keys []SubscriptionKey
-	ch   chan AppEvent
-	done chan struct{}
-}
-
-type recentRealtimeEvent struct {
-	event AppEvent
-	keys  []SubscriptionKey
-}
-
-func NewInMemoryRealtimeEventService(resolver SubscriptionKeyResolver) *InMemoryRealtimeEventService {
-	return &InMemoryRealtimeEventService{
-		resolver:    resolver,
-		subscribers: make(map[string]realtimeSubscriber),
-		recentLimit: 256,
-	}
-}
-
-func (s *InMemoryRealtimeEventService) Publish(ctx context.Context, target PublishTarget, payload any) error {
-	keys, eventType, err := s.resolver.ResolvePublishKeys(ctx, target)
-	if err != nil {
-		return err
-	}
-	if len(keys) == 0 {
-		return nil
-	}
-
-	event := AppEvent{
-		EventID:         "evt-" + uuid.NewString(),
-		Type:            eventType,
-		SubscriptionKey: keys[0].Public(),
-		Payload:         payload,
-		OccurredAt:      time.Now().UTC().Format(time.RFC3339Nano),
-	}
-
-	s.mu.Lock()
-	s.recentEvents = append(s.recentEvents, recentRealtimeEvent{event: event, keys: cloneSubscriptionKeys(keys)})
-	if len(s.recentEvents) > s.recentLimit {
-		s.recentEvents = s.recentEvents[len(s.recentEvents)-s.recentLimit:]
-	}
-
-	delivered := make(map[string]bool)
-	for subscriberID, sub := range s.subscribers {
-		if !subscriberMatchesAny(sub.keys, keys) || delivered[subscriberID] {
-			continue
-		}
-		delivered[subscriberID] = true
-		select {
-		case sub.ch <- event:
-		default:
-			// The subscriber's buffer is full (a slow/stalled client). Dropping keeps the drain
-			// non-blocking; data_event drops self-heal on the client's next pull, but the drop was
-			// previously invisible — surface it (rate-limited) so a persistently-behind client is
-			// diagnosable. A steadily climbing count signals a stuck subscriber.
-			s.dropped++
-			if s.dropped == 1 || s.dropped%100 == 0 {
-				slog.Warn("realtime: dropped frame to full subscriber buffer",
-					"component", "realtime", "subscriber", subscriberID, "event_type", eventType, "dropped_total", s.dropped)
-			}
-		}
-	}
-	s.mu.Unlock()
-	return nil
-}
-
-func (s *InMemoryRealtimeEventService) Subscribe(ctx context.Context, keys []SubscriptionKey, afterEventID string) (<-chan AppEvent, func(), error) {
-	id := uuid.NewString()
-	ch := make(chan AppEvent, 64)
-	done := make(chan struct{})
-
-	s.mu.Lock()
-	s.subscribers[id] = realtimeSubscriber{keys: keys, ch: ch, done: done}
-	replay := s.replayLocked(keys, afterEventID)
-	s.mu.Unlock()
-
-	go func() {
-		for _, event := range replay {
-			select {
-			case ch <- event:
-			case <-done:
-				return
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-
-	unsubscribe := func() {
-		s.mu.Lock()
-		if sub, ok := s.subscribers[id]; ok {
-			delete(s.subscribers, id)
-			close(sub.done)
-		}
-		s.mu.Unlock()
-	}
-	return ch, unsubscribe, nil
-}
-
-func (s *InMemoryRealtimeEventService) replayLocked(keys []SubscriptionKey, afterEventID string) []AppEvent {
-	if afterEventID == "" {
-		return nil
-	}
-	found := false
-	out := make([]AppEvent, 0)
-	for _, event := range s.recentEvents {
-		if !found {
-			found = event.event.EventID == afterEventID
-			continue
-		}
-		if subscriberMatchesAny(keys, event.keys) {
-			out = append(out, event.event)
-		}
-	}
-	return out
-}
-
-func cloneSubscriptionKeys(keys []SubscriptionKey) []SubscriptionKey {
-	out := make([]SubscriptionKey, 0, len(keys))
-	for _, key := range keys {
-		key.Qualifiers = normalizeQualifiers(key.Qualifiers)
-		out = append(out, key)
-	}
-	return out
-}
-
-func subscriberMatchesAny(subscriberKeys []SubscriptionKey, publishedKeys []SubscriptionKey) bool {
-	for _, sub := range subscriberKeys {
-		for _, pub := range publishedKeys {
-			if sub.Matches(pub) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func (k SubscriptionKey) Matches(other SubscriptionKey) bool {
-	if k.Stream != other.Stream {
-		return false
-	}
-	// Broadcast streams are tenant-agnostic — a global resource reaches every subscriber.
-	// Tenant streams (workspace) keep the strict tenant-isolation check.
-	if !isBroadcastStream(k.Stream) && k.TenantID != other.TenantID {
-		return false
-	}
-	if k.EventKind != "" && k.EventKind != other.EventKind {
-		return false
-	}
-	if k.ResourceKind != AnyResource && k.ResourceKind != other.ResourceKind {
-		return false
-	}
-	if k.ResourceID != AnyResource && k.ResourceID != other.ResourceID {
-		return false
-	}
-	return CanonicalQualifiers(k.Qualifiers) == CanonicalQualifiers(other.Qualifiers)
-}
-
-func (k SubscriptionKey) Public() PublicSubscriptionKey {
-	return PublicSubscriptionKey{
-		EventKind:    k.EventKind,
-		Stream:       k.Stream,
-		ResourceKind: k.ResourceKind,
-		ResourceID:   k.ResourceID,
-		Qualifiers:   normalizeQualifiers(k.Qualifiers),
-	}
-}
-
-func CanonicalQualifiers(q map[string]string) string {
-	if len(q) == 0 {
-		return ""
-	}
-	keys := make([]string, 0, len(q))
-	for key := range q {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-
-	parts := make([]string, 0, len(keys))
-	for _, key := range keys {
-		parts = append(parts, url.QueryEscape(key)+"="+url.QueryEscape(q[key]))
-	}
-	return strings.Join(parts, "&")
-}
+func CanonicalQualifiers(q map[string]string) string { return runtime.CanonicalQualifiers(q) }
 
 func normalizeQualifiers(q map[string]string) map[string]string {
 	if len(q) == 0 {
@@ -450,16 +155,14 @@ func normalizeQualifiers(q map[string]string) map[string]string {
 	}
 	out := make(map[string]string, len(q))
 	for key, value := range q {
-		trimmedKey := strings.TrimSpace(key)
-		if trimmedKey == "" {
-			continue
+		if key = strings.TrimSpace(key); key != "" {
+			out[key] = strings.TrimSpace(value)
 		}
-		out[trimmedKey] = strings.TrimSpace(value)
 	}
 	return out
 }
 
-func defaultString(value string, fallback string) string {
+func defaultString(value, fallback string) string {
 	if strings.TrimSpace(value) == "" {
 		return fallback
 	}

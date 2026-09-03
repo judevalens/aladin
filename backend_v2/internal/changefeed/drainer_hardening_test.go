@@ -1,9 +1,11 @@
-package service
+package changefeed
 
 import (
 	"context"
 	"errors"
 	"testing"
+
+	. "aladin/backend_v2/internal/service"
 )
 
 // flakyRealtime fails Publish for the first failUntil calls, then succeeds. Records how many
@@ -58,7 +60,7 @@ func TestDrainOnce_PublishFailureRetriesFromFailedEvent(t *testing.T) {
 		next: 100,
 	}
 	rt := &flakyRealtime{failAt: 2} // second publish fails
-	d := NewOutboxDrainer(reader, rt, 0)
+	d := NewDrainer(reader, rt, 0)
 
 	next, err := d.drainOnce(context.Background(), 0)
 	if err != nil {
@@ -79,7 +81,7 @@ func TestDrainOnce_AllSucceedAdvancesToNext(t *testing.T) {
 		next:   77,
 	}
 	rt := &flakyRealtime{failAt: 0}
-	d := NewOutboxDrainer(reader, rt, 0)
+	d := NewDrainer(reader, rt, 0)
 	next, err := d.drainOnce(context.Background(), 0)
 	if err != nil {
 		t.Fatalf("drainOnce: %v", err)
@@ -93,7 +95,7 @@ func TestDrainOnce_AllSucceedAdvancesToNext(t *testing.T) {
 // the first horizon reads fail — so a transient DB error at boot can't trigger a full-outbox replay.
 func TestInitCursor_RetriesHorizonThenSeeds(t *testing.T) {
 	reader := &horizonReader{horizon: 500, horizonFails: 2}
-	d := NewOutboxDrainer(reader, &flakyRealtime{}, 0)
+	d := NewDrainer(reader, &flakyRealtime{}, 0)
 	cur, ok := d.initCursor(context.Background())
 	if !ok {
 		t.Fatal("initCursor gave up")
@@ -106,7 +108,7 @@ func TestInitCursor_RetriesHorizonThenSeeds(t *testing.T) {
 // TestInitCursor_StopsOnCancel proves init doesn't spin forever if ctx is cancelled first.
 func TestInitCursor_StopsOnCancel(t *testing.T) {
 	reader := &horizonReader{horizonFails: 1_000_000} // never succeeds in time
-	d := NewOutboxDrainer(reader, &flakyRealtime{}, 0)
+	d := NewDrainer(reader, &flakyRealtime{}, 0)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if _, ok := d.initCursor(ctx); ok {

@@ -11,6 +11,7 @@ import (
 
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/dbtest"
+	"aladin/backend_v2/internal/reconciliation"
 	"aladin/backend_v2/internal/repo"
 	coreservice "aladin/backend_v2/internal/service"
 
@@ -94,7 +95,7 @@ func TestHandleSyncPull_ReturnsFramesAndAdvancesCursor(t *testing.T) {
 	}
 
 	deps := testDependencies{
-		SyncSvc: coreservice.NewSyncService(repo.NewSyncPostgres(pool), repo.NewTreeSyncSource(pool)),
+		SyncSvc: reconciliation.New(repo.NewSyncPostgres(pool), repo.NewTreeSyncSource(pool)),
 	}
 	s := &Server{deps: deps}
 

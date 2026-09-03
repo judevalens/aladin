@@ -3,9 +3,12 @@ package app
 import (
 	"os"
 
+	"aladin/backend_v2/internal/changefeed"
 	"aladin/backend_v2/internal/config"
 	"aladin/backend_v2/internal/copilotagent"
 	"aladin/backend_v2/internal/graph"
+	"aladin/backend_v2/internal/realtime"
+	"aladin/backend_v2/internal/reconciliation"
 	"aladin/backend_v2/internal/repo"
 	coreservice "aladin/backend_v2/internal/service"
 
@@ -24,7 +27,7 @@ type APIProcess struct {
 	realtime            coreservice.RealtimeEventService
 	realtimeKeys        coreservice.SubscriptionKeyResolver
 	sync                coreservice.SyncService
-	outboxDrainer       *coreservice.OutboxDrainer
+	outboxDrainer       *changefeed.Drainer
 	shardKV             coreservice.ShardKVService
 	relationships       coreservice.RelationshipService
 	graphPane           coreservice.GraphPaneService
@@ -46,10 +49,10 @@ func NewAPIComponentsWithProviderConnections(pool *pgxpool.Pool, providerConfig 
 	shared := buildSharedComponents(pool, dataVolumePath)
 
 	syncRepo := repo.NewSyncPostgres(pool)
-	syncSvc := coreservice.NewSyncService(syncRepo, repo.NewTreeSyncSource(pool), repo.NewWatchlistSyncSource(pool), repo.NewShardKVSyncSource(pool), repo.NewReadingPositionSyncSource(pool))
+	syncSvc := reconciliation.New(syncRepo, repo.NewTreeSyncSource(pool), repo.NewWatchlistSyncSource(pool), repo.NewShardKVSyncSource(pool), repo.NewReadingPositionSyncSource(pool))
 	realtimeKeys := coreservice.NewSubscriptionKeyResolver()
-	realtime := coreservice.NewInMemoryRealtimeEventService(realtimeKeys)
-	outboxDrainer := coreservice.NewOutboxDrainer(syncRepo, realtime, coreservice.DefaultDrainInterval)
+	realtime := realtime.NewService(realtimeKeys)
+	outboxDrainer := changefeed.NewDrainer(syncRepo, realtime, changefeed.DefaultDrainInterval)
 
 	nangoClient := coreservice.NewHTTPNangoClient(providerConfig.NangoBaseURL, providerConfig.NangoSecretKey)
 	nangoBackend := coreservice.NewNangoProviderConnectionBackend(
@@ -146,7 +149,7 @@ func (c *APIProcess) ProviderConnections() coreservice.ProviderConnectionService
 func (c *APIProcess) Realtime() coreservice.RealtimeEventService               { return c.realtime }
 func (c *APIProcess) RealtimeKeyResolver() coreservice.SubscriptionKeyResolver { return c.realtimeKeys }
 func (c *APIProcess) Sync() coreservice.SyncService                            { return c.sync }
-func (c *APIProcess) OutboxDrainer() *coreservice.OutboxDrainer                { return c.outboxDrainer }
+func (c *APIProcess) OutboxDrainer() *changefeed.Drainer                       { return c.outboxDrainer }
 func (c *APIProcess) DocSurfaceStore() coreservice.DocSurfaceStore             { return c.docSurfaceStore }
 func (c *APIProcess) WorkspaceRuntime() coreservice.WorkspaceRuntime           { return c.workspaceRuntime }
 func (c *APIProcess) ShardBuild() coreservice.ShardBuildService                { return c.shardBuild }

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	rtruntime "aladin/backend_v2/internal/realtime"
 	artifactservice "aladin/backend_v2/internal/service"
 
 	"github.com/coder/websocket"
@@ -18,7 +19,7 @@ func TestRealtimeWebSocketResubscribeSwapsActiveSubscriptionSet(t *testing.T) {
 	t.Parallel()
 
 	resolver := artifactservice.NewSubscriptionKeyResolver()
-	realtime := artifactservice.NewInMemoryRealtimeEventService(resolver)
+	realtime := rtruntime.NewService(resolver)
 	server := NewWithDependencies(":0", testDependencies{
 		AuthSvc:      &fakeAuthService{},
 		RealtimeSvc:  realtime,

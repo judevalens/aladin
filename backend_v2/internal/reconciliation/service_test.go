@@ -1,9 +1,11 @@
-package service
+package reconciliation
 
 import (
 	"context"
 	"errors"
 	"testing"
+
+	. "aladin/backend_v2/internal/service"
 )
 
 // Unit tests for the delta-vs-snapshot policy in DefaultSyncService, using fake
@@ -67,7 +69,7 @@ func TestSyncService_ColdCursorSnapshots(t *testing.T) {
 		{EntityKind: "folder", EntityID: "f1", Seq: 1, Op: OpUpsert},
 		{EntityKind: "folder", EntityID: "f2", Seq: 3, Op: OpDelete},
 	}}
-	svc := NewSyncService(ob, src)
+	svc := New(ob, src)
 
 	res, err := svc.Pull(context.Background(), "u1", 0)
 	if err != nil {
@@ -98,7 +100,7 @@ func TestSyncService_LiveCursorDeltas(t *testing.T) {
 		minXid:  5, hasMin: true,
 		frames: []Frame{{Entities: []FrameEntity{{EntityKind: "folder", EntityID: "f1", Seq: 2, Op: OpUpsert}}}},
 	}
-	svc := NewSyncService(ob, &fakeSource{kind: "tree"})
+	svc := New(ob, &fakeSource{kind: "tree"})
 
 	res, err := svc.Pull(context.Background(), "u1", 50)
 	if err != nil {
@@ -120,7 +122,7 @@ func TestSyncService_LiveCursorDeltas(t *testing.T) {
 func TestSyncService_CursorBehindRetentionSnapshots(t *testing.T) {
 	ob := &fakeOutbox{horizon: 100, minXid: 20, hasMin: true}
 	src := &fakeSource{kind: "tree", entities: []FrameEntity{{EntityKind: "folder", EntityID: "f1", Seq: 1, Op: OpUpsert}}}
-	svc := NewSyncService(ob, src)
+	svc := New(ob, src)
 
 	res, err := svc.Pull(context.Background(), "u1", 10) // 10 < minXid 20
 	if err != nil {
@@ -138,7 +140,7 @@ func TestSyncService_CursorBehindRetentionSnapshots(t *testing.T) {
 // the horizon.
 func TestSyncService_EmptySnapshot(t *testing.T) {
 	ob := &fakeOutbox{horizon: 7}
-	svc := NewSyncService(ob, &fakeSource{kind: "tree"})
+	svc := New(ob, &fakeSource{kind: "tree"})
 
 	res, err := svc.Pull(context.Background(), "u1", 0)
 	if err != nil {
@@ -155,7 +157,7 @@ func TestSyncService_EmptySnapshot(t *testing.T) {
 // Errors from the ports propagate.
 func TestSyncService_PropagatesErrors(t *testing.T) {
 	sentinel := errors.New("boom")
-	svc := NewSyncService(&fakeOutbox{err: sentinel}, &fakeSource{kind: "tree", err: sentinel})
+	svc := New(&fakeOutbox{err: sentinel}, &fakeSource{kind: "tree", err: sentinel})
 	if _, err := svc.Pull(context.Background(), "u1", 0); !errors.Is(err, sentinel) {
 		t.Fatalf("cold pull err = %v, want sentinel", err)
 	}
@@ -181,7 +183,7 @@ func countEntities(frames []Frame) int {
 func TestPullSnapshotsWhenCursorIsAheadOfHorizon(t *testing.T) {
 	// horizon 40 (server rewound), client cursor 900 (from the old timeline), retention fine.
 	ob := &fakeOutbox{horizon: 40, minXid: 1, hasMin: true}
-	svc := NewSyncService(ob, &fakeSource{kind: "tree"})
+	svc := New(ob, &fakeSource{kind: "tree"})
 
 	got, err := svc.Pull(context.Background(), "u1", 900)
 	if err != nil {
@@ -201,7 +203,7 @@ func TestPullSnapshotsWhenCursorIsAheadOfHorizon(t *testing.T) {
 // The ordinary case must still take the delta path: cursor at or below the horizon.
 func TestPullTakesDeltaWhenCursorIsWithinHorizon(t *testing.T) {
 	ob := &fakeOutbox{horizon: 40, minXid: 1, hasMin: true}
-	svc := NewSyncService(ob, &fakeSource{kind: "tree"})
+	svc := New(ob, &fakeSource{kind: "tree"})
 
 	got, err := svc.Pull(context.Background(), "u1", 40)
 	if err != nil {

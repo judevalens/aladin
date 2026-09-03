@@ -1,6 +1,9 @@
 package app
 
-import coreservice "aladin/backend_v2/internal/service"
+import (
+	"aladin/backend_v2/internal/changefeed"
+	coreservice "aladin/backend_v2/internal/service"
+)
 
 // APIComponents is the process-owned graph consumed by cmd/api. The HTTP
 // package owns its narrower request-serving interface; this contract also
@@ -19,7 +22,7 @@ type APIComponents interface {
 	Realtime() coreservice.RealtimeEventService
 	RealtimeKeyResolver() coreservice.SubscriptionKeyResolver
 	Sync() coreservice.SyncService
-	OutboxDrainer() *coreservice.OutboxDrainer
+	OutboxDrainer() *changefeed.Drainer
 	DocSurfaceStore() coreservice.DocSurfaceStore
 	WorkspaceRuntime() coreservice.WorkspaceRuntime
 	ShardBuild() coreservice.ShardBuildService
