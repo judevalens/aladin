@@ -1,4 +1,4 @@
-package service
+package board
 
 import (
 	"encoding/json"
@@ -49,9 +49,9 @@ type boardRecord struct {
 	} `json:"props"`
 }
 
-// ParseBoardContent reads a board's projected snapshot (artifacts.content). An empty or
+// ParseContent reads a board's projected snapshot (artifacts.content). An empty or
 // unreadable snapshot returns zero counts — callers decide how to say "empty".
-func ParseBoardContent(content string) BoardContent {
+func ParseContent(content string) BoardContent {
 	out := BoardContent{Counts: map[string]int{}}
 	trimmed := strings.TrimSpace(content)
 	if trimmed == "" {

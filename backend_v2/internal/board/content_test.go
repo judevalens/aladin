@@ -1,4 +1,4 @@
-package service
+package board
 
 import (
 	"strings"
@@ -17,7 +17,7 @@ const boardSnapshotFixture = `{"document":{"store":{
 }}}`
 
 func TestParseBoardContentRendersEveryLegibleKind(t *testing.T) {
-	parsed := ParseBoardContent(boardSnapshotFixture)
+	parsed := ParseContent(boardSnapshotFixture)
 
 	if parsed.Counts["task"] != 1 || parsed.Counts["draw"] != 1 || parsed.Counts["text"] != 1 {
 		t.Fatalf("counts wrong: %+v", parsed.Counts)
@@ -47,7 +47,7 @@ func TestParseBoardContentRendersEveryLegibleKind(t *testing.T) {
 
 func TestParseBoardContentToleratesJunk(t *testing.T) {
 	for _, content := range []string{"", "   ", "not json", `{"document":{}}`} {
-		parsed := ParseBoardContent(content)
+		parsed := ParseContent(content)
 		if len(parsed.Counts) != 0 || len(parsed.Lines) != 0 {
 			t.Fatalf("junk %q should parse empty, got %+v", content, parsed)
 		}
@@ -66,8 +66,8 @@ func TestFlattenRichTextWalksTolerantly(t *testing.T) {
 
 func TestBoardLinesFeedTheSummaryShape(t *testing.T) {
 	// The MCP summary sorts lines; make sure nothing in the parser depends on map order.
-	first := ParseBoardContent(boardSnapshotFixture)
-	second := ParseBoardContent(boardSnapshotFixture)
+	first := ParseContent(boardSnapshotFixture)
+	second := ParseContent(boardSnapshotFixture)
 	if len(first.Lines) != len(second.Lines) {
 		t.Fatal("nondeterministic line count")
 	}

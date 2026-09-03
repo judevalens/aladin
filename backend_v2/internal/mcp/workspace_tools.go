@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"aladin/backend_v2/internal/blocknote"
+	"aladin/backend_v2/internal/board"
 	"aladin/backend_v2/internal/document"
 	"aladin/backend_v2/internal/insights"
 	"aladin/backend_v2/internal/instrument"
@@ -949,10 +950,10 @@ func citationKindForArtifact(t string) string {
 // summarizeBoardContent renders a board's tldraw snapshot as a line of structure — shape
 // counts by kind and the texts a model could act on (tasks, cards, excerpts, links, ink
 // labels) — instead of the raw record JSON, which is noise at best and context-flooding
-// at worst. Parsing lives in service.ParseBoardContent, the SAME parser the content-index
+// at worst. Parsing lives in board.ParseContent, the SAME parser the content-index
 // projector uses, so what the copilot reads and what search retrieves can never drift.
 func summarizeBoardContent(content string) string {
-	parsed := service.ParseBoardContent(content)
+	parsed := board.ParseContent(content)
 	if len(parsed.Counts) == 0 {
 		return "an empty board"
 	}
