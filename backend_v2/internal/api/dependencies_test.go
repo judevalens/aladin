@@ -28,6 +28,7 @@ import (
 	"aladin/backend_v2/internal/system"
 	"aladin/backend_v2/internal/unfurl"
 	"aladin/backend_v2/internal/watchlist"
+	"aladin/backend_v2/internal/workspacesync"
 )
 
 // testDependencies is the API package's test-only implementation of its own
@@ -46,7 +47,7 @@ type testDependencies struct {
 	ProviderConnectionsSvc providerconnection.ProviderConnectionService
 	RealtimeSvc            realtime.EventService
 	RealtimeKeys           realtime.KeyResolver
-	SyncSvc                coreservice.SyncService
+	SyncSvc                workspacesync.SyncService
 	DocSurfaceStoreSvc     coreservice.DocSurfaceStore
 	WorkspaceRuntimeSvc    coreservice.WorkspaceRuntime
 	ShardBuildSvc          coreservice.ShardBuildService
@@ -92,7 +93,7 @@ func (d testDependencies) Realtime() realtime.EventService { return d.RealtimeSv
 func (d testDependencies) RealtimeKeyResolver() realtime.KeyResolver {
 	return d.RealtimeKeys
 }
-func (d testDependencies) Sync() coreservice.SyncService                { return d.SyncSvc }
+func (d testDependencies) Sync() workspacesync.SyncService              { return d.SyncSvc }
 func (d testDependencies) DocSurfaceStore() coreservice.DocSurfaceStore { return d.DocSurfaceStoreSvc }
 func (d testDependencies) WorkspaceRuntime() coreservice.WorkspaceRuntime {
 	return d.WorkspaceRuntimeSvc

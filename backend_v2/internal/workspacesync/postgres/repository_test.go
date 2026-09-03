@@ -1,4 +1,4 @@
-package repo
+package postgres
 
 import (
 	"aladin/backend_v2/internal/artifact"
@@ -10,8 +10,10 @@ import (
 	artifactpostgres "aladin/backend_v2/internal/artifact/postgres"
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/dbtest"
+	"aladin/backend_v2/internal/outbox"
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/treesync"
+	"aladin/backend_v2/internal/workspacesync"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -131,7 +133,7 @@ func TestOutbox_ProducerEmitsFrameOnCreate(t *testing.T) {
 	if horizon == 0 {
 		t.Fatalf("horizon = 0, want > 0")
 	}
-	var got coreservice.FrameEntity
+	var got workspacesync.FrameEntity
 	n := 0
 	for _, f := range frames {
 		for _, e := range f.Entities {
@@ -142,7 +144,7 @@ func TestOutbox_ProducerEmitsFrameOnCreate(t *testing.T) {
 	if n != 1 {
 		t.Fatalf("entity count = %d, want 1", n)
 	}
-	if got.EntityID != folderA || got.Op != coreservice.OpUpsert {
+	if got.EntityID != folderA || got.Op != workspacesync.OpUpsert {
 		t.Fatalf("entity = %+v, want upsert %s", got, folderA)
 	}
 	if got.Seq == 0 {
@@ -243,14 +245,14 @@ func TestTreeSyncSource_SnapshotIncludesTombstones(t *testing.T) {
 	if err != nil {
 		t.Fatalf("snapshot: %v", err)
 	}
-	byID := map[string]coreservice.FrameEntity{}
+	byID := map[string]workspacesync.FrameEntity{}
 	for _, e := range ents {
 		byID[e.EntityID] = e
 	}
-	if e, ok := byID[keepID]; !ok || e.Op != coreservice.OpUpsert {
+	if e, ok := byID[keepID]; !ok || e.Op != workspacesync.OpUpsert {
 		t.Fatalf("keep = %+v (ok=%v), want upsert", e, ok)
 	}
-	if e, ok := byID[dropID]; !ok || e.Op != coreservice.OpDelete {
+	if e, ok := byID[dropID]; !ok || e.Op != workspacesync.OpDelete {
 		t.Fatalf("drop = %+v (ok=%v), want delete tombstone", e, ok)
 	}
 	if byID[dropID].Seq <= byID[keepID].Seq {
@@ -290,11 +292,11 @@ func TestOutbox_HorizonExcludesInFlight(t *testing.T) {
 		t.Fatalf("begin: %v", err)
 	}
 	defer func() { _ = tx.Rollback(ctxTO) }()
-	if err := LockUser(ctxTO, tx, testAdminUserID); err != nil {
+	if err := outbox.LockUser(ctxTO, tx, testAdminUserID); err != nil {
 		t.Fatalf("lock: %v", err)
 	}
-	if err := appendOutboxEvent(ctxTO, tx, testAdminUserID, coreservice.Frame{
-		Entities: []coreservice.FrameEntity{{EntityKind: "folder", EntityID: "inflight", Seq: 1, Op: coreservice.OpUpsert}},
+	if err := appendOutboxEvent(ctxTO, tx, testAdminUserID, workspacesync.Frame{
+		Entities: []workspacesync.FrameEntity{{EntityKind: "folder", EntityID: "inflight", Seq: 1, Op: workspacesync.OpUpsert}},
 	}); err != nil {
 		t.Fatalf("append: %v", err)
 	}
@@ -321,7 +323,7 @@ func TestOutbox_HorizonExcludesInFlight(t *testing.T) {
 	}
 }
 
-func countEntities(frames []coreservice.Frame) int {
+func countEntities(frames []workspacesync.Frame) int {
 	n := 0
 	for _, f := range frames {
 		n += len(f.Entities)
@@ -369,11 +371,11 @@ func TestOutbox_CursorNeverAdvancesPastInFlight(t *testing.T) {
 		t.Fatalf("begin: %v", err)
 	}
 	defer func() { _ = tx.Rollback(ctxTO) }()
-	if err := LockUser(ctxTO, tx, testAdminUserID); err != nil {
+	if err := outbox.LockUser(ctxTO, tx, testAdminUserID); err != nil {
 		t.Fatalf("lock: %v", err)
 	}
-	if err := appendOutboxEvent(ctxTO, tx, testAdminUserID, coreservice.Frame{
-		Entities: []coreservice.FrameEntity{{EntityKind: "folder", EntityID: "gap-probe", Seq: 1, Op: coreservice.OpUpsert}},
+	if err := appendOutboxEvent(ctxTO, tx, testAdminUserID, workspacesync.Frame{
+		Entities: []workspacesync.FrameEntity{{EntityKind: "folder", EntityID: "gap-probe", Seq: 1, Op: workspacesync.OpUpsert}},
 	}); err != nil {
 		t.Fatalf("append: %v", err)
 	}

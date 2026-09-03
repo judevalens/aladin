@@ -1,10 +1,12 @@
-package api
+package httptransport
 
 import (
 	"net/http"
 	"strconv"
 
-	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/auth"
+	"aladin/backend_v2/internal/httpapi"
+	"aladin/backend_v2/internal/workspacesync"
 )
 
 // Data-layer R1 — the sync pull endpoint (server-authoritative outbox).
@@ -16,33 +18,38 @@ import (
 // replays them (live delivery rides the realtime websocket). There is no client
 // push path.
 
-func (s *Server) registerSyncRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/sync/pull", s.handleSyncPull)
+type routes struct {
+	service workspacesync.SyncService
+}
+
+func Register(mux *http.ServeMux, service workspacesync.SyncService) {
+	h := routes{service: service}
+	mux.HandleFunc("GET /api/sync/pull", h.handleSyncPull)
 }
 
 // handleSyncPull returns the outbox frames for the authenticated user since
 // their cursor (?since=<xid, decimal string>, default 0 = cold start → snapshot).
 // The response carries the new cursor (the log horizon) and a mode flag
 // (delta | snapshot); the client advances its cursor to the returned value.
-func (s *Server) handleSyncPull(w http.ResponseWriter, r *http.Request) {
-	principal, ok := coreservice.PrincipalFromContext(r.Context())
+func (h routes) handleSyncPull(w http.ResponseWriter, r *http.Request) {
+	principal, ok := auth.PrincipalFromContext(r.Context())
 	if !ok {
-		writeAPIError(w, r, http.StatusUnauthorized, categoryBadRequest, "Unauthenticated", coreservice.ErrUnauthenticated)
+		httpapi.WriteError(w, r, http.StatusUnauthorized, "bad_request", "Unauthenticated", auth.ErrUnauthenticated)
 		return
 	}
 	var cursor uint64
 	if v := r.URL.Query().Get("since"); v != "" {
 		parsed, err := strconv.ParseUint(v, 10, 64)
 		if err != nil {
-			writeAPIError(w, r, http.StatusBadRequest, categoryBadRequest, "invalid 'since' cursor", err)
+			httpapi.WriteError(w, r, http.StatusBadRequest, "bad_request", "invalid 'since' cursor", err)
 			return
 		}
 		cursor = parsed
 	}
-	res, err := s.deps.Sync().Pull(r.Context(), principal.UserID, cursor)
+	res, err := h.service.Pull(r.Context(), principal.UserID, cursor)
 	if err != nil {
-		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
+		httpapi.WriteError(w, r, http.StatusInternalServerError, "service_error", err.Error(), err)
 		return
 	}
-	writeJSON(w, http.StatusOK, res)
+	httpapi.WriteJSON(w, http.StatusOK, res)
 }

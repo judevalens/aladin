@@ -3,11 +3,10 @@
 package outbox
 
 import (
+	"aladin/backend_v2/internal/workspacesync"
 	"context"
 	"encoding/json"
 	"fmt"
-
-	"aladin/backend_v2/internal/service"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -23,7 +22,7 @@ func LockUser(ctx context.Context, tx pgx.Tx, userID string) error {
 
 // AppendData appends one durable data frame inside the caller's canonical
 // mutation transaction. An empty frame is a no-op.
-func AppendData(ctx context.Context, tx pgx.Tx, userID string, frame service.Frame) error {
+func AppendData(ctx context.Context, tx pgx.Tx, userID string, frame workspacesync.Frame) error {
 	if len(frame.Entities) == 0 {
 		return nil
 	}
@@ -42,7 +41,7 @@ func AppendData(ctx context.Context, tx pgx.Tx, userID string, frame service.Fra
 
 // AppendApp appends one live application event inside the caller's mutation
 // transaction. Application events are not returned by durable data pulls.
-func AppendApp(ctx context.Context, tx pgx.Tx, userID string, event service.OutboxAppEvent) error {
+func AppendApp(ctx context.Context, tx pgx.Tx, userID string, event workspacesync.OutboxAppEvent) error {
 	payload, err := json.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("sync: marshal app event: %w", err)

@@ -1,13 +1,13 @@
 package postgres_test
 
 import (
+	"aladin/backend_v2/internal/workspacesync"
 	"context"
 	"encoding/json"
 	"os"
 	"testing"
 
 	"aladin/backend_v2/internal/db"
-	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/watchlist"
 	watchlistpostgres "aladin/backend_v2/internal/watchlist/postgres"
 
@@ -115,7 +115,7 @@ func TestWatchlistSyncFrames(t *testing.T) {
 		t.Fatalf("snapshot: %v", err)
 	}
 	ent := findEntity(t, ents, list.ID)
-	if ent.Op != coreservice.OpUpsert {
+	if ent.Op != workspacesync.OpUpsert {
 		t.Fatalf("snapshot op = %s, want upsert", ent.Op)
 	}
 	if ent.Seq < 2 {
@@ -150,7 +150,7 @@ func TestWatchlistSyncFrames(t *testing.T) {
 	}
 	ents, _ = src.Snapshot(ctx, userID)
 	ent = findEntity(t, ents, list.ID)
-	if ent.Op != coreservice.OpDelete {
+	if ent.Op != workspacesync.OpDelete {
 		t.Fatalf("post-delete snapshot op = %s, want delete", ent.Op)
 	}
 	if len(ent.Data) != 0 {
@@ -158,7 +158,7 @@ func TestWatchlistSyncFrames(t *testing.T) {
 	}
 }
 
-func findEntity(t *testing.T, ents []coreservice.FrameEntity, id string) coreservice.FrameEntity {
+func findEntity(t *testing.T, ents []workspacesync.FrameEntity, id string) workspacesync.FrameEntity {
 	t.Helper()
 	for _, e := range ents {
 		if e.EntityID == id {
@@ -166,5 +166,5 @@ func findEntity(t *testing.T, ents []coreservice.FrameEntity, id string) coreser
 		}
 	}
 	t.Fatalf("entity %s not in snapshot (%d entities)", id, len(ents))
-	return coreservice.FrameEntity{}
+	return workspacesync.FrameEntity{}
 }

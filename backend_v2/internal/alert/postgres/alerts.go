@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"aladin/backend_v2/internal/workspacesync"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,7 +9,6 @@ import (
 
 	"aladin/backend_v2/internal/alert"
 	"aladin/backend_v2/internal/outbox"
-	coreservice "aladin/backend_v2/internal/service"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -130,7 +130,7 @@ func (r *PostgresAlertRepository) Fire(ctx context.Context, alertID string, pric
 // appendNotificationEvent appends the tenant-scoped workspace event in the
 // same transaction as the notification row and alert state change.
 func appendNotificationEvent(ctx context.Context, tx pgx.Tx, userID, notificationID string, payload []byte) error {
-	return outbox.AppendApp(ctx, tx, userID, coreservice.OutboxAppEvent{
+	return outbox.AppendApp(ctx, tx, userID, workspacesync.OutboxAppEvent{
 		ResourceKind: "notification",
 		ResourceID:   notificationID,
 		Operation:    "created",

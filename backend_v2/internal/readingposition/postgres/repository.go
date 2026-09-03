@@ -2,6 +2,7 @@
 package postgres
 
 import (
+	"aladin/backend_v2/internal/workspacesync"
 	"context"
 	"errors"
 	"fmt"
@@ -10,7 +11,6 @@ import (
 
 	"aladin/backend_v2/internal/outbox"
 	"aladin/backend_v2/internal/readingposition"
-	"aladin/backend_v2/internal/service"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -44,28 +44,28 @@ const lightReadingPositionSelect = `
 	  FROM reading_positions p
 	 WHERE p.user_id = $1::uuid`
 
-func scanLightReadingPosition(row scanner) (service.FrameEntity, error) {
+func scanLightReadingPosition(row scanner) (workspacesync.FrameEntity, error) {
 	var (
 		d         lightReadingPositionData
 		seq       int64
 		isDeleted bool
 	)
 	if err := row.Scan(&d.ArtifactID, &d.Page, &seq, &isDeleted, &d.UpdatedAt); err != nil {
-		return service.FrameEntity{}, err
+		return workspacesync.FrameEntity{}, err
 	}
-	ent := service.FrameEntity{
+	ent := workspacesync.FrameEntity{
 		EntityKind: readingPositionEntityKind,
 		EntityID:   d.ArtifactID,
 		Seq:        uint64(seq),
 	}
 	if isDeleted {
-		ent.Op = service.OpDelete
+		ent.Op = workspacesync.OpDelete
 		return ent, nil
 	}
-	ent.Op = service.OpUpsert
+	ent.Op = workspacesync.OpUpsert
 	data, err := json.Marshal(d)
 	if err != nil {
-		return service.FrameEntity{}, err
+		return workspacesync.FrameEntity{}, err
 	}
 	ent.Data = data
 	return ent, nil
@@ -78,7 +78,7 @@ func emitReadingPositionFrame(ctx context.Context, tx pgx.Tx, userID, artifactID
 	if err != nil {
 		return fmt.Errorf("sync: light reading_position %s: %w", artifactID, err)
 	}
-	return outbox.AppendData(ctx, tx, userID, service.Frame{Entities: []service.FrameEntity{ent}})
+	return outbox.AppendData(ctx, tx, userID, workspacesync.Frame{Entities: []workspacesync.FrameEntity{ent}})
 }
 
 // Repository implements readingposition.Repository on PostgreSQL.
@@ -160,7 +160,7 @@ func (r *Repository) withUserTx(ctx context.Context, userID string, fn func(pgx.
 }
 
 // ReadingPositionSyncSource is the cold-start snapshot provider (per-user,
-// tombstones included). Implements service.SyncSource.
+// tombstones included). Implements workspacesync.SyncSource.
 type SyncSource struct{ pool *pgxpool.Pool }
 
 func NewSyncSource(pool *pgxpool.Pool) *SyncSource {
@@ -169,13 +169,13 @@ func NewSyncSource(pool *pgxpool.Pool) *SyncSource {
 
 func (s *SyncSource) EntityKind() string { return readingPositionEntityKind }
 
-func (s *SyncSource) Snapshot(ctx context.Context, userID string) ([]service.FrameEntity, error) {
+func (s *SyncSource) Snapshot(ctx context.Context, userID string) ([]workspacesync.FrameEntity, error) {
 	rows, err := s.pool.Query(ctx, lightReadingPositionSelect+` ORDER BY p.artifact_id`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("sync: reading_position snapshot query: %w", err)
 	}
 	defer rows.Close()
-	out := make([]service.FrameEntity, 0)
+	out := make([]workspacesync.FrameEntity, 0)
 	for rows.Next() {
 		ent, err := scanLightReadingPosition(rows)
 		if err != nil {

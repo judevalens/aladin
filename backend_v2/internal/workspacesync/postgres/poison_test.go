@@ -1,4 +1,4 @@
-package repo_test
+package postgres_test
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"aladin/backend_v2/internal/db"
-	"aladin/backend_v2/internal/repo"
+	workspacepostgres "aladin/backend_v2/internal/workspacesync/postgres"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -41,7 +41,7 @@ func TestPullSince_SkipsPoisonRow(t *testing.T) {
 	})
 
 	validFrame := `{"entities":[{"entityKind":"folder","entityId":"f1","seq":"1","op":"upsert"}]}`
-	// A JSON string is valid jsonb but fails json.Unmarshal into service.Frame (a struct) — the
+	// A JSON string is valid jsonb but fails json.Unmarshal into workspacesync.Frame (a struct) — the
 	// realistic "poison" shape (a producer wrote a payload the reader can't decode).
 	poison := `"poison"`
 	for _, p := range []string{validFrame, poison, validFrame} {
@@ -52,7 +52,7 @@ func TestPullSince_SkipsPoisonRow(t *testing.T) {
 		}
 	}
 
-	sync := repo.NewSyncPostgres(pool)
+	sync := workspacepostgres.NewSyncPostgres(pool)
 	frames, cursor, err := sync.PullSince(ctx, userID, 0)
 	if err != nil {
 		t.Fatalf("PullSince returned an error instead of skipping the poison row: %v", err)
@@ -100,7 +100,7 @@ func TestPruneOutbox_DeletesOldKeepsRecent(t *testing.T) {
 		t.Fatalf("insert recent: %v", err)
 	}
 
-	if _, err := repo.NewSyncPostgres(pool).PruneOutbox(ctx, 5*time.Minute, 5000); err != nil {
+	if _, err := workspacepostgres.NewSyncPostgres(pool).PruneOutbox(ctx, 5*time.Minute, 5000); err != nil {
 		t.Fatalf("prune: %v", err)
 	}
 

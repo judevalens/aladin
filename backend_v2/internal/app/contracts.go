@@ -30,6 +30,7 @@ import (
 	"aladin/backend_v2/internal/system"
 	"aladin/backend_v2/internal/unfurl"
 	"aladin/backend_v2/internal/watchlist"
+	"aladin/backend_v2/internal/workspacesync"
 )
 
 // APIComponents is the process-owned graph consumed by cmd/api. The HTTP
@@ -48,7 +49,7 @@ type APIComponents interface {
 	ProviderConnections() providerconnection.ProviderConnectionService
 	Realtime() realtime.EventService
 	RealtimeKeyResolver() realtime.KeyResolver
-	Sync() coreservice.SyncService
+	Sync() workspacesync.SyncService
 	OutboxDrainer() *changefeed.Drainer
 	DocSurfaceStore() coreservice.DocSurfaceStore
 	WorkspaceRuntime() coreservice.WorkspaceRuntime

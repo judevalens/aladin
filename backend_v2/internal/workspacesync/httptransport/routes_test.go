@@ -1,6 +1,7 @@
-package api
+package httptransport
 
 import (
+	"aladin/backend_v2/internal/workspacesync"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -13,10 +14,9 @@ import (
 	artifactpostgres "aladin/backend_v2/internal/artifact/postgres"
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/dbtest"
-	"aladin/backend_v2/internal/reconciliation"
-	"aladin/backend_v2/internal/repo"
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/treesync"
+	workspacepostgres "aladin/backend_v2/internal/workspacesync/postgres"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -30,10 +30,10 @@ var syncTestAdminUserID = uuid.NewString()
 // The pull endpoint requires an authenticated principal (checked before any
 // service call, so a nil Sync() is never reached here).
 func TestHandleSyncPull_RequiresPrincipal(t *testing.T) {
-	s := &Server{deps: testDependencies{}}
+	h := routes{}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/sync/pull", nil)
-	s.handleSyncPull(rec, req)
+	h.handleSyncPull(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("no-principal status = %d, want 401", rec.Code)
 	}
@@ -45,10 +45,10 @@ func TestHandleSyncPull_RejectsBadCursor(t *testing.T) {
 		UserID: syncTestAdminUserID,
 		Scopes: []string{string(coreservice.ScopeArtifactsRead)},
 	})
-	s := &Server{deps: testDependencies{}}
+	h := routes{}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/sync/pull?since=not-a-number", nil).WithContext(ctx)
-	s.handleSyncPull(rec, req)
+	h.handleSyncPull(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("bad-cursor status = %d, want 400", rec.Code)
 	}
@@ -97,23 +97,20 @@ func TestHandleSyncPull_ReturnsFramesAndAdvancesCursor(t *testing.T) {
 		t.Fatalf("create tree node: %v", err)
 	}
 
-	deps := testDependencies{
-		SyncSvc: reconciliation.New(repo.NewSyncPostgres(pool), treesync.NewTreeSyncSource(pool)),
-	}
-	s := &Server{deps: deps}
+	h := routes{service: workspacesync.New(workspacepostgres.NewSyncPostgres(pool), treesync.NewTreeSyncSource(pool))}
 
 	// Cold pull (since=0) → snapshot containing the folder.
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/sync/pull?since=0", nil).WithContext(principalCtx)
-	s.handleSyncPull(rec, req)
+	h.handleSyncPull(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("pull status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
 	}
-	var res coreservice.PullResult
+	var res workspacesync.PullResult
 	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
 		t.Fatalf("decode pull: %v (body: %s)", err, rec.Body.String())
 	}
-	if res.Mode != coreservice.PullModeSnapshot {
+	if res.Mode != workspacesync.PullModeSnapshot {
 		t.Fatalf("mode = %q, want snapshot", res.Mode)
 	}
 	if n := countEntities(res.Frames); n != 1 {
@@ -127,15 +124,15 @@ func TestHandleSyncPull_ReturnsFramesAndAdvancesCursor(t *testing.T) {
 	rec2 := httptest.NewRecorder()
 	req2 := httptest.NewRequest(http.MethodGet,
 		"/api/sync/pull?since="+strconv.FormatUint(res.Cursor, 10), nil).WithContext(principalCtx)
-	s.handleSyncPull(rec2, req2)
+	h.handleSyncPull(rec2, req2)
 	if rec2.Code != http.StatusOK {
 		t.Fatalf("pull2 status = %d, want 200", rec2.Code)
 	}
-	var res2 coreservice.PullResult
+	var res2 workspacesync.PullResult
 	if err := json.Unmarshal(rec2.Body.Bytes(), &res2); err != nil {
 		t.Fatalf("decode pull2: %v", err)
 	}
-	if res2.Mode != coreservice.PullModeDelta {
+	if res2.Mode != workspacesync.PullModeDelta {
 		t.Fatalf("mode2 = %q, want delta", res2.Mode)
 	}
 	if n := countEntities(res2.Frames); n != 0 {
@@ -143,7 +140,7 @@ func TestHandleSyncPull_ReturnsFramesAndAdvancesCursor(t *testing.T) {
 	}
 }
 
-func countEntities(frames []coreservice.Frame) int {
+func countEntities(frames []workspacesync.Frame) int {
 	n := 0
 	for _, f := range frames {
 		n += len(f.Entities)

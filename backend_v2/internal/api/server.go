@@ -58,6 +58,8 @@ import (
 	unfurlhttp "aladin/backend_v2/internal/unfurl/httptransport"
 	"aladin/backend_v2/internal/watchlist"
 	watchlisthttp "aladin/backend_v2/internal/watchlist/httptransport"
+	"aladin/backend_v2/internal/workspacesync"
+	workspacesynchttp "aladin/backend_v2/internal/workspacesync/httptransport"
 	"context"
 	"errors"
 	"log/slog"
@@ -92,7 +94,7 @@ type Dependencies interface {
 	ProviderConnections() providerconnection.ProviderConnectionService
 	Realtime() realtime.EventService
 	RealtimeKeyResolver() realtime.KeyResolver
-	Sync() coreservice.SyncService
+	Sync() workspacesync.SyncService
 	DocSurfaceStore() coreservice.DocSurfaceStore
 	WorkspaceRuntime() coreservice.WorkspaceRuntime
 	ShardBuild() coreservice.ShardBuildService
@@ -176,7 +178,7 @@ func NewWithDependencies(addr string, deps Dependencies) *Server {
 	artifactrefhttp.Register(mux, deps.ArtifactRefs())
 	realtimehttp.Register(mux, deps.Realtime(), deps.RealtimeKeyResolver())
 	providerconnectionhttp.Register(mux, deps.ProviderConnections())
-	s.registerSyncRoutes(mux)
+	workspacesynchttp.Register(mux, deps.Sync())
 
 	sourcehttp.Register(mux, deps.Sources())
 

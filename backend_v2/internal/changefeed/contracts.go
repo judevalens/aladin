@@ -1,9 +1,8 @@
 package changefeed
 
 import (
+	"aladin/backend_v2/internal/workspacesync"
 	"context"
-
-	"aladin/backend_v2/internal/service"
 )
 
 // Data-layer R1 — the CDC outbox drain (live delivery).
@@ -22,8 +21,8 @@ import (
 type DrainedEvent struct {
 	Xid      uint64
 	UserID   string
-	Frame    service.Frame
-	AppEvent *service.OutboxAppEvent
+	Frame    workspacesync.Frame
+	AppEvent *workspacesync.OutboxAppEvent
 }
 
 // OutboxDrainReader is the drain's read port (implemented by the repo). DrainSince returns events

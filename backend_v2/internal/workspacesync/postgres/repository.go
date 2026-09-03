@@ -1,4 +1,4 @@
-package repo
+package postgres
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"aladin/backend_v2/internal/changefeed"
 	"aladin/backend_v2/internal/outbox"
 	"aladin/backend_v2/internal/realtime"
-	"aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/workspacesync"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -24,24 +24,24 @@ import (
 const outboxBatchLimit = 2000
 
 // outbox.go — the generic durable log: append (producer side) + the
-// service.OutboxReader reads (consumer side). Entity DATA never lives here; the
-// payload is an opaque JSON frame (service.Frame). Ordering is by `xid` (the
+// workspacesync.OutboxReader reads (consumer side). Entity DATA never lives here; the
+// payload is an opaque JSON frame (workspacesync.Frame). Ordering is by `xid` (the
 // committing txn's xid8): the client's resume cursor and replay key.
 
 // appendOutboxEvent appends ONE 'data_event' row carrying frame, inside the
 // caller's write tx (which must already hold LockUser + the canonical write), so
 // the event commits atomically with the data (transactional outbox). A frame
 // with no entities is a no-op.
-func appendOutboxEvent(ctx context.Context, tx pgx.Tx, userID string, frame service.Frame) error {
+func appendOutboxEvent(ctx context.Context, tx pgx.Tx, userID string, frame workspacesync.Frame) error {
 	return outbox.AppendData(ctx, tx, userID, frame)
 }
 
 // appendAppEvent appends ONE 'app_event' row carrying a non-data realtime event
-// (service.OutboxAppEvent), inside the caller's write tx. The live drain forwards
+// (workspacesync.OutboxAppEvent), inside the caller's write tx. The live drain forwards
 // it to the realtime websocket under its own eventType; the durable pull path
 // (PullSince/MinXid) filters 'app_event' out, so it never reaches a client's
 // offline data store. Use for ephemeral, cross-process UI events (build-status).
-func appendAppEvent(ctx context.Context, tx pgx.Tx, userID string, ev service.OutboxAppEvent) error {
+func appendAppEvent(ctx context.Context, tx pgx.Tx, userID string, ev workspacesync.OutboxAppEvent) error {
 	return outbox.AppendApp(ctx, tx, userID, ev)
 }
 
@@ -52,7 +52,7 @@ const marketQuoteUserID = "00000000-0000-0000-0000-000000000000"
 // AppendMarketQuote appends a broadcast 'market' app_event carrying a quote payload, keyed on
 // the instrument's distinct id. Own tx — the market-data hub holds no request tx.
 func (r *SyncRepo) AppendMarketQuote(ctx context.Context, instrumentID string, payload []byte) error {
-	ev := service.OutboxAppEvent{
+	ev := workspacesync.OutboxAppEvent{
 		Stream:       realtime.MarketStream,
 		ResourceKind: "quote",
 		ResourceID:   instrumentID,
@@ -91,7 +91,7 @@ func (r *SyncRepo) Horizon(ctx context.Context) (uint64, error) {
 // order, plus the horizon (the new cursor). The half-open window tiles perfectly
 // across calls: no gap, no boundary duplication; the client's seq guard absorbs
 // any redelivery. Reads only fully-committed events (xid < horizon).
-func (r *SyncRepo) PullSince(ctx context.Context, userID string, cursor uint64) ([]service.Frame, uint64, error) {
+func (r *SyncRepo) PullSince(ctx context.Context, userID string, cursor uint64) ([]workspacesync.Frame, uint64, error) {
 	horizon, err := r.Horizon(ctx)
 	if err != nil {
 		return nil, 0, err
@@ -111,7 +111,7 @@ func (r *SyncRepo) PullSince(ctx context.Context, userID string, cursor uint64) 
 	}
 	defer rows.Close()
 
-	frames := make([]service.Frame, 0)
+	frames := make([]workspacesync.Frame, 0)
 	fetched := 0
 	var maxXid uint64
 	for rows.Next() {
@@ -128,7 +128,7 @@ func (r *SyncRepo) PullSince(ctx context.Context, userID string, cursor uint64) 
 		if xid > maxXid {
 			maxXid = xid
 		}
-		var f service.Frame
+		var f workspacesync.Frame
 		if err := json.Unmarshal(payload, &f); err != nil {
 			// A single undecodable frame must not wedge the user's pull forever; skip it (the
 			// row is still advanced past). The client's seq guard heals the entity on a later frame.
@@ -254,7 +254,7 @@ func (r *SyncRepo) DrainSince(ctx context.Context, afterCursor uint64) ([]change
 		}
 		ev := changefeed.DrainedEvent{Xid: xid, UserID: userID}
 		if typ == "app_event" {
-			var ae service.OutboxAppEvent
+			var ae workspacesync.OutboxAppEvent
 			if err := json.Unmarshal(payload, &ae); err != nil {
 				// One poison row must not wedge the drain for EVERY user; skip it. The row is
 				// still counted so the cursor advances past it (skip = dead-letter).

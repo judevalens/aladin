@@ -1,6 +1,7 @@
-package repo_test
+package postgres_test
 
 import (
+	"aladin/backend_v2/internal/workspacesync"
 	"context"
 	"encoding/json"
 	"os"
@@ -9,8 +10,7 @@ import (
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/market"
 	"aladin/backend_v2/internal/realtime"
-	"aladin/backend_v2/internal/repo"
-	coreservice "aladin/backend_v2/internal/service"
+	workspacepostgres "aladin/backend_v2/internal/workspacesync/postgres"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -29,7 +29,7 @@ func TestAppendMarketQuoteDrainsAsBroadcast(t *testing.T) {
 	if err := db.Migrate(ctx, pool); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	sync := repo.NewSyncPostgres(pool)
+	sync := workspacepostgres.NewSyncPostgres(pool)
 
 	// Cursor before the write, so DrainSince returns just our event window.
 	before, err := sync.Horizon(ctx)
@@ -46,7 +46,7 @@ func TestAppendMarketQuoteDrainsAsBroadcast(t *testing.T) {
 	if err != nil {
 		t.Fatalf("drain: %v", err)
 	}
-	var found *coreservice.OutboxAppEvent
+	var found *workspacesync.OutboxAppEvent
 	for i := range events {
 		if e := events[i].AppEvent; e != nil && e.Stream == realtime.MarketStream && e.ResourceID == "inst-nvda" {
 			found = e

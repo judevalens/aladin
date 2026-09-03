@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"aladin/backend_v2/internal/workspacesync"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,7 +14,6 @@ import (
 	"aladin/backend_v2/internal/auth"
 	"aladin/backend_v2/internal/outbox"
 	"aladin/backend_v2/internal/page"
-	"aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/treesync"
 
 	"github.com/jackc/pgx/v5"
@@ -659,7 +659,7 @@ func (r *PostgresArtifactRepository) DeleteArtifact(ctx context.Context, id stri
 			}
 			return err
 		}
-		return outbox.AppendData(ctx, tx, userID, service.Frame{Entities: []service.FrameEntity{ent}})
+		return outbox.AppendData(ctx, tx, userID, workspacesync.Frame{Entities: []workspacesync.FrameEntity{ent}})
 	})
 }
 
@@ -870,7 +870,7 @@ func (r *PostgresArtifactRepository) DeleteBrowserNode(ctx context.Context, id s
 	// emit ONE frame with a delete entity per node. Artifact rows are kept
 	// (bodies retained); reads hide them via the tree_nodes join. The entity is
 	// keyed by the node id (== artifact id for artifacts — the spine).
-	ents := make([]service.FrameEntity, 0, len(nodes))
+	ents := make([]workspacesync.FrameEntity, 0, len(nodes))
 	for _, n := range nodes {
 		ent, err := treesync.SoftDeleteNode(ctx, tx, userID, n.id, n.kind)
 		if err != nil {
@@ -878,7 +878,7 @@ func (r *PostgresArtifactRepository) DeleteBrowserNode(ctx context.Context, id s
 		}
 		ents = append(ents, ent)
 	}
-	if err := outbox.AppendData(ctx, tx, userID, service.Frame{Entities: ents}); err != nil {
+	if err := outbox.AppendData(ctx, tx, userID, workspacesync.Frame{Entities: ents}); err != nil {
 		return err
 	}
 

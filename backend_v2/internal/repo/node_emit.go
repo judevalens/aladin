@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 
+	"aladin/backend_v2/internal/outbox"
 	"aladin/backend_v2/internal/treesync"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -28,7 +29,7 @@ func (e *NodeEmitter) EmitNodeChange(ctx context.Context, userID, artifactID str
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if err := LockUser(ctx, tx, userID); err != nil {
+	if err := outbox.LockUser(ctx, tx, userID); err != nil {
 		return err
 	}
 	if err := treesync.EmitNodeUpsert(ctx, tx, userID, artifactID); err != nil {

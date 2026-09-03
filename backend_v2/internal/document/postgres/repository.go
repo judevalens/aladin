@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"aladin/backend_v2/internal/document"
-	"aladin/backend_v2/internal/repo"
+	"aladin/backend_v2/internal/outbox"
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/treesync"
 
@@ -317,7 +317,7 @@ func (r *PostgresDocumentRepository) SaveResult(ctx context.Context, artifactID,
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	if err := repo.LockUser(ctx, tx, userID); err != nil {
+	if err := outbox.LockUser(ctx, tx, userID); err != nil {
 		return err
 	}
 

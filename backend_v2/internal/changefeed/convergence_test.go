@@ -4,8 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"aladin/backend_v2/internal/reconciliation"
-	. "aladin/backend_v2/internal/service"
+	. "aladin/backend_v2/internal/workspacesync"
 )
 
 // A websocket publication failure is a latency failure, not a durability failure:
@@ -23,7 +22,7 @@ func TestRealtimeLossIsHealedByDurablePull(t *testing.T) {
 		t.Fatalf("failed live cursor = %d, want retry xid 11", next)
 	}
 
-	pull := reconciliation.New(store)
+	pull := New(store)
 	result, err := pull.Pull(context.Background(), "u1", 10)
 	if err != nil {
 		t.Fatalf("pull: %v", err)

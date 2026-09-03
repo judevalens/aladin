@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"aladin/backend_v2/internal/workspacesync"
 	"context"
 	"encoding/json"
 	"errors"
@@ -180,13 +181,13 @@ func TestShardKV_ListPrefixQuotaSnapshot(t *testing.T) {
 			continue // rows from other tests' shards under this user
 		}
 		switch ent.Op {
-		case coreservice.OpUpsert:
+		case workspacesync.OpUpsert:
 			live++
 			var d lightShardKVData
 			if err := json.Unmarshal(ent.Data, &d); err != nil || d.ShardID != shard || d.Revision < 1 {
 				t.Fatalf("bad upsert data: %s err=%v", ent.Data, err)
 			}
-		case coreservice.OpDelete:
+		case workspacesync.OpDelete:
 			dead++
 			if ent.Seq < 2 {
 				t.Fatalf("tombstone seq = %d, want bumped >= 2", ent.Seq)

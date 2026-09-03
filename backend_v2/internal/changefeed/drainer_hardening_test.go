@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	. "aladin/backend_v2/internal/realtime"
-	. "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/workspacesync"
 )
 
 // flakyRealtime fails Publish for the first failUntil calls, then succeeds. Records how many
@@ -51,7 +51,7 @@ func (h *horizonReader) Horizon(context.Context) (uint64, error) {
 // window off the live channel: the drain returns the failed event's xid so [failed, …) retries,
 // and the events before it are not re-published.
 func TestDrainOnce_PublishFailureRetriesFromFailedEvent(t *testing.T) {
-	frame := Frame{Entities: []FrameEntity{{EntityKind: "folder", EntityID: "f", Seq: 1, Op: OpUpsert}}}
+	frame := workspacesync.Frame{Entities: []workspacesync.FrameEntity{{EntityKind: "folder", EntityID: "f", Seq: 1, Op: workspacesync.OpUpsert}}}
 	reader := &horizonReader{
 		events: []DrainedEvent{
 			{Xid: 10, UserID: "u1", Frame: frame},
@@ -78,7 +78,7 @@ func TestDrainOnce_PublishFailureRetriesFromFailedEvent(t *testing.T) {
 // TestDrainOnce_AllSucceedAdvancesToNext proves the happy path advances to the reader's next cursor.
 func TestDrainOnce_AllSucceedAdvancesToNext(t *testing.T) {
 	reader := &horizonReader{
-		events: []DrainedEvent{{Xid: 5, UserID: "u1", Frame: Frame{}}},
+		events: []DrainedEvent{{Xid: 5, UserID: "u1", Frame: workspacesync.Frame{}}},
 		next:   77,
 	}
 	rt := &flakyRealtime{failAt: 0}

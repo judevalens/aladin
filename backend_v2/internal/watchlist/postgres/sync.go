@@ -1,13 +1,13 @@
 package postgres
 
 import (
+	"aladin/backend_v2/internal/workspacesync"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 
 	"aladin/backend_v2/internal/outbox"
-	"aladin/backend_v2/internal/service"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -67,7 +67,7 @@ const lightWatchlistSelect = `
 
 // scanLightWatchlist maps one projected row to a FrameEntity: a tombstoned row → Op:delete (seq
 // only, no data); a live row → Op:upsert with the list + its items[].
-func scanLightWatchlist(row scanner) (service.FrameEntity, error) {
+func scanLightWatchlist(row scanner) (workspacesync.FrameEntity, error) {
 	var (
 		d         lightWatchlistData
 		def       []byte
@@ -76,26 +76,26 @@ func scanLightWatchlist(row scanner) (service.FrameEntity, error) {
 		isDeleted bool
 	)
 	if err := row.Scan(&d.ID, &d.Name, &d.Kind, &def, &d.Position, &seq, &isDeleted, &items); err != nil {
-		return service.FrameEntity{}, err
+		return workspacesync.FrameEntity{}, err
 	}
-	ent := service.FrameEntity{EntityKind: watchlistEntityKind, EntityID: d.ID, Seq: uint64(seq)}
+	ent := workspacesync.FrameEntity{EntityKind: watchlistEntityKind, EntityID: d.ID, Seq: uint64(seq)}
 	if isDeleted {
-		ent.Op = service.OpDelete
+		ent.Op = workspacesync.OpDelete
 		return ent, nil
 	}
-	ent.Op = service.OpUpsert
+	ent.Op = workspacesync.OpUpsert
 	if len(def) > 0 {
 		d.Definition = json.RawMessage(def)
 	}
 	d.Items = []lightWatchlistItem{}
 	if len(items) > 0 {
 		if err := json.Unmarshal(items, &d.Items); err != nil {
-			return service.FrameEntity{}, err
+			return workspacesync.FrameEntity{}, err
 		}
 	}
 	data, err := json.Marshal(d)
 	if err != nil {
-		return service.FrameEntity{}, err
+		return workspacesync.FrameEntity{}, err
 	}
 	ent.Data = data
 	return ent, nil
@@ -103,10 +103,10 @@ func scanLightWatchlist(row scanner) (service.FrameEntity, error) {
 
 // lightWatchlistByID reads one list's current light projection (used by producers after a canonical
 // mutation + seq bump, to build the frame entity).
-func lightWatchlistByID(ctx context.Context, q rowQuerier, userID, listID string) (service.FrameEntity, error) {
+func lightWatchlistByID(ctx context.Context, q rowQuerier, userID, listID string) (workspacesync.FrameEntity, error) {
 	ent, err := scanLightWatchlist(q.QueryRow(ctx, lightWatchlistSelect+` AND w.id = $2::uuid`, userID, listID))
 	if err != nil {
-		return service.FrameEntity{}, fmt.Errorf("sync: light watchlist %s: %w", listID, err)
+		return workspacesync.FrameEntity{}, fmt.Errorf("sync: light watchlist %s: %w", listID, err)
 	}
 	return ent, nil
 }
@@ -124,7 +124,7 @@ func emitWatchlistUpsert(ctx context.Context, tx pgx.Tx, userID, listID string) 
 	if err != nil {
 		return err
 	}
-	return outbox.AppendData(ctx, tx, userID, service.Frame{Entities: []service.FrameEntity{ent}})
+	return outbox.AppendData(ctx, tx, userID, workspacesync.Frame{Entities: []workspacesync.FrameEntity{ent}})
 }
 
 // emitWatchlistDelete tombstones one list (is_deleted=true, seq bumped, row KEPT) and appends its
@@ -142,20 +142,20 @@ func emitWatchlistDelete(ctx context.Context, tx pgx.Tx, userID, listID string) 
 		}
 		return false, fmt.Errorf("sync: tombstone watchlist %s: %w", listID, err)
 	}
-	ent := service.FrameEntity{
+	ent := workspacesync.FrameEntity{
 		EntityKind: watchlistEntityKind,
 		EntityID:   listID,
 		Seq:        uint64(seq),
-		Op:         service.OpDelete,
+		Op:         workspacesync.OpDelete,
 	}
-	if err := outbox.AppendData(ctx, tx, userID, service.Frame{Entities: []service.FrameEntity{ent}}); err != nil {
+	if err := outbox.AppendData(ctx, tx, userID, workspacesync.Frame{Entities: []workspacesync.FrameEntity{ent}}); err != nil {
 		return false, err
 	}
 	return true, nil
 }
 
 // WatchlistSyncSource is the cold-start snapshot provider for watchlists (per-user, tombstones
-// included). Implements service.SyncSource.
+// included). Implements workspacesync.SyncSource.
 type SyncSource struct{ pool *pgxpool.Pool }
 
 func NewSyncSource(pool *pgxpool.Pool) *SyncSource {
@@ -164,14 +164,14 @@ func NewSyncSource(pool *pgxpool.Pool) *SyncSource {
 
 func (s *SyncSource) EntityKind() string { return watchlistEntityKind }
 
-func (s *SyncSource) Snapshot(ctx context.Context, userID string) ([]service.FrameEntity, error) {
+func (s *SyncSource) Snapshot(ctx context.Context, userID string) ([]workspacesync.FrameEntity, error) {
 	rows, err := s.pool.Query(ctx, lightWatchlistSelect+` ORDER BY w.position, w.created_at ASC`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("sync: watchlist snapshot query: %w", err)
 	}
 	defer rows.Close()
 
-	out := make([]service.FrameEntity, 0)
+	out := make([]workspacesync.FrameEntity, 0)
 	for rows.Next() {
 		ent, err := scanLightWatchlist(rows)
 		if err != nil {

@@ -6,6 +6,7 @@ import (
 	artifactpostgres "aladin/backend_v2/internal/artifact/postgres"
 	"aladin/backend_v2/internal/artifactref"
 	"aladin/backend_v2/internal/copilot"
+	"aladin/backend_v2/internal/workspacesync"
 	"context"
 	"encoding/json"
 	"io"
@@ -365,7 +366,7 @@ func (emptyAPIDependencies) ProviderConnections() providerconnection.ProviderCon
 }
 func (emptyAPIDependencies) Realtime() realtime.EventService                 { return nil }
 func (emptyAPIDependencies) RealtimeKeyResolver() realtime.KeyResolver       { return nil }
-func (emptyAPIDependencies) Sync() service.SyncService                       { return nil }
+func (emptyAPIDependencies) Sync() workspacesync.SyncService                 { return nil }
 func (emptyAPIDependencies) DocSurfaceStore() service.DocSurfaceStore        { return nil }
 func (emptyAPIDependencies) WorkspaceRuntime() service.WorkspaceRuntime      { return nil }
 func (emptyAPIDependencies) ShardBuild() service.ShardBuildService           { return nil }

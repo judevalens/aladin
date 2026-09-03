@@ -1,12 +1,12 @@
 package treesync
 
 import (
+	"aladin/backend_v2/internal/workspacesync"
 	"context"
 	"encoding/json"
 	"fmt"
 
 	"aladin/backend_v2/internal/outbox"
-	"aladin/backend_v2/internal/service"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -88,7 +88,7 @@ const LightEntitySelect = lightEntitySelect
 // scanLightEntity maps one projected row to a FrameEntity. A tombstoned row
 // becomes an Op:delete (carrying its seq, no data); a live row an Op:upsert with
 // its light data.
-func scanLightEntity(row scanner) (service.FrameEntity, error) {
+func scanLightEntity(row scanner) (workspacesync.FrameEntity, error) {
 	var (
 		id, kind   string
 		parentID   *string
@@ -106,14 +106,14 @@ func scanLightEntity(row scanner) (service.FrameEntity, error) {
 	)
 	if err := row.Scan(&id, &kind, &parentID, &position, &title, &aType, &sourceURL, &summary, &metadata,
 		&runState, &execMode, &sourceKind, &seq, &isDeleted); err != nil {
-		return service.FrameEntity{}, err
+		return workspacesync.FrameEntity{}, err
 	}
-	ent := service.FrameEntity{EntityKind: kind, EntityID: id, Seq: uint64(seq)}
+	ent := workspacesync.FrameEntity{EntityKind: kind, EntityID: id, Seq: uint64(seq)}
 	if isDeleted {
-		ent.Op = service.OpDelete
+		ent.Op = workspacesync.OpDelete
 		return ent, nil
 	}
-	ent.Op = service.OpUpsert
+	ent.Op = workspacesync.OpUpsert
 	// The extension row is 1:1 and created with the node, so a research node always has
 	// one. Guard anyway: a research node whose extension is somehow missing should still
 	// sync as a tree row rather than fail the whole frame.
@@ -128,7 +128,7 @@ func scanLightEntity(row scanner) (service.FrameEntity, error) {
 		Research: research,
 	})
 	if err != nil {
-		return service.FrameEntity{}, err
+		return workspacesync.FrameEntity{}, err
 	}
 	ent.Data = data
 	return ent, nil
@@ -145,11 +145,11 @@ func derefOr(s *string, fallback string) string {
 
 // lightEntityByID reads one node's current light projection (used by producers
 // after a canonical mutation + seq bump, to build the frame entity).
-func lightEntityByID(ctx context.Context, q rowQuerier, userID, nodeID string) (service.FrameEntity, error) {
+func lightEntityByID(ctx context.Context, q rowQuerier, userID, nodeID string) (workspacesync.FrameEntity, error) {
 	row := q.QueryRow(ctx, lightEntitySelect+` AND n.id = $2`, userID, nodeID)
 	ent, err := scanLightEntity(row)
 	if err != nil {
-		return service.FrameEntity{}, fmt.Errorf("sync: light entity %s: %w", nodeID, err)
+		return workspacesync.FrameEntity{}, fmt.Errorf("sync: light entity %s: %w", nodeID, err)
 	}
 	return ent, nil
 }
@@ -178,14 +178,14 @@ func EmitNodeUpsert(ctx context.Context, tx pgx.Tx, userID, nodeID string) error
 	if err != nil {
 		return err
 	}
-	return outbox.AppendData(ctx, tx, userID, service.Frame{Entities: []service.FrameEntity{ent}})
+	return outbox.AppendData(ctx, tx, userID, workspacesync.Frame{Entities: []workspacesync.FrameEntity{ent}})
 }
 
 // softDeleteNode tombstones one node (is_deleted=true, seq bumped, row KEPT so a
 // stale lower-seq upsert can't resurrect it) and returns its delete frame entity
 // (carrying the bumped seq). Caller appends the frame (one frame may tombstone a
 // whole subtree). entityKind is the node's kind ("folder" | "artifact").
-func SoftDeleteNode(ctx context.Context, tx pgx.Tx, userID, nodeID, entityKind string) (service.FrameEntity, error) {
+func SoftDeleteNode(ctx context.Context, tx pgx.Tx, userID, nodeID, entityKind string) (workspacesync.FrameEntity, error) {
 	var seq int64
 	err := tx.QueryRow(ctx, `
 		UPDATE tree_nodes
@@ -194,18 +194,18 @@ func SoftDeleteNode(ctx context.Context, tx pgx.Tx, userID, nodeID, entityKind s
 		RETURNING seq
 	`, nodeID, userID).Scan(&seq)
 	if err != nil {
-		return service.FrameEntity{}, fmt.Errorf("sync: soft delete %s: %w", nodeID, err)
+		return workspacesync.FrameEntity{}, fmt.Errorf("sync: soft delete %s: %w", nodeID, err)
 	}
-	return service.FrameEntity{
+	return workspacesync.FrameEntity{
 		EntityKind: entityKind,
 		EntityID:   nodeID,
 		Seq:        uint64(seq),
-		Op:         service.OpDelete,
+		Op:         workspacesync.OpDelete,
 	}, nil
 }
 
 // TreeSyncSource is the cold-start snapshot provider for the workspace tree
-// (folders + artifacts). Implements service.SyncSource.
+// (folders + artifacts). Implements workspacesync.SyncSource.
 type TreeSyncSource struct {
 	pool *pgxpool.Pool
 }
@@ -219,14 +219,14 @@ func (s *TreeSyncSource) EntityKind() string { return "tree" }
 // Snapshot returns every tree entity for userID INCLUDING tombstones, so the
 // client's seq guard works on the snapshot and resurrection stays blocked on a
 // fresh client.
-func (s *TreeSyncSource) Snapshot(ctx context.Context, userID string) ([]service.FrameEntity, error) {
+func (s *TreeSyncSource) Snapshot(ctx context.Context, userID string) ([]workspacesync.FrameEntity, error) {
 	rows, err := s.pool.Query(ctx, lightEntitySelect+` ORDER BY n.position ASC, n.created_at ASC`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("sync: snapshot query: %w", err)
 	}
 	defer rows.Close()
 
-	out := make([]service.FrameEntity, 0)
+	out := make([]workspacesync.FrameEntity, 0)
 	for rows.Next() {
 		ent, err := scanLightEntity(rows)
 		if err != nil {

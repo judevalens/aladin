@@ -1,12 +1,14 @@
 package repo
 
 import (
+	"aladin/backend_v2/internal/workspacesync"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
+	"aladin/backend_v2/internal/outbox"
 	"aladin/backend_v2/internal/service"
 
 	"github.com/jackc/pgx/v5"
@@ -21,7 +23,7 @@ import (
 // `revision` doubles as the frame seq (every set/delete bumps it, so the client
 // seq guard orders correctly); `deleted_at` is the tombstone. Only the PUBLISHED
 // channel emits frames — draft rows are the agent's server-side sandbox and stay
-// out of the replica. Writes serialize per user via LockUser (the same advisory
+// out of the replica. Writes serialize per user via outbox.LockUser (the same advisory
 // lock every other producer takes), so guarded read-then-write is race-free.
 
 const shardKVEntityKind = "shard_kv"
@@ -45,27 +47,27 @@ const lightShardKVSelect = `
 	  JOIN artifacts a ON a.id = k.shard_id
 	 WHERE a.user_id = $1::uuid AND k.channel = 'published'`
 
-func scanLightShardKV(row scanner) (service.FrameEntity, error) {
+func scanLightShardKV(row scanner) (workspacesync.FrameEntity, error) {
 	var (
 		d         lightShardKVData
 		isDeleted bool
 	)
 	if err := row.Scan(&d.ShardID, &d.Channel, &d.Key, &d.Value, &d.Revision, &isDeleted); err != nil {
-		return service.FrameEntity{}, err
+		return workspacesync.FrameEntity{}, err
 	}
-	ent := service.FrameEntity{
+	ent := workspacesync.FrameEntity{
 		EntityKind: shardKVEntityKind,
 		EntityID:   shardKVEntityID(d.ShardID, d.Key),
 		Seq:        uint64(d.Revision),
 	}
 	if isDeleted {
-		ent.Op = service.OpDelete
+		ent.Op = workspacesync.OpDelete
 		return ent, nil
 	}
-	ent.Op = service.OpUpsert
+	ent.Op = workspacesync.OpUpsert
 	data, err := json.Marshal(d)
 	if err != nil {
-		return service.FrameEntity{}, err
+		return workspacesync.FrameEntity{}, err
 	}
 	ent.Data = data
 	return ent, nil
@@ -81,7 +83,7 @@ func emitShardKVFrame(ctx context.Context, tx pgx.Tx, userID, shardID string, ch
 	if err != nil {
 		return fmt.Errorf("sync: light shard_kv %s#%s: %w", shardID, key, err)
 	}
-	return appendOutboxEvent(ctx, tx, userID, service.Frame{Entities: []service.FrameEntity{ent}})
+	return outbox.AppendData(ctx, tx, userID, workspacesync.Frame{Entities: []workspacesync.FrameEntity{ent}})
 }
 
 // ShardKVRepo implements service.ShardKVRepository on Postgres.
@@ -249,7 +251,7 @@ func (r *ShardKVRepo) withUserTx(ctx context.Context, userID string, fn func(pgx
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if err := LockUser(ctx, tx, userID); err != nil {
+	if err := outbox.LockUser(ctx, tx, userID); err != nil {
 		return err
 	}
 	if err := fn(tx); err != nil {
@@ -295,7 +297,7 @@ func conflictFor(ctx context.Context, tx pgx.Tx, shardID string, channel service
 }
 
 // ShardKVSyncSource is the cold-start snapshot provider (published channel,
-// tombstones included). Implements service.SyncSource.
+// tombstones included). Implements workspacesync.SyncSource.
 type ShardKVSyncSource struct{ pool *pgxpool.Pool }
 
 func NewShardKVSyncSource(pool *pgxpool.Pool) *ShardKVSyncSource {
@@ -304,13 +306,13 @@ func NewShardKVSyncSource(pool *pgxpool.Pool) *ShardKVSyncSource {
 
 func (s *ShardKVSyncSource) EntityKind() string { return shardKVEntityKind }
 
-func (s *ShardKVSyncSource) Snapshot(ctx context.Context, userID string) ([]service.FrameEntity, error) {
+func (s *ShardKVSyncSource) Snapshot(ctx context.Context, userID string) ([]workspacesync.FrameEntity, error) {
 	rows, err := s.pool.Query(ctx, lightShardKVSelect+` ORDER BY k.shard_id, k.key`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("sync: shard_kv snapshot query: %w", err)
 	}
 	defer rows.Close()
-	out := make([]service.FrameEntity, 0)
+	out := make([]workspacesync.FrameEntity, 0)
 	for rows.Next() {
 		ent, err := scanLightShardKV(rows)
 		if err != nil {

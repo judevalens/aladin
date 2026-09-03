@@ -1,11 +1,13 @@
 package repo
 
 import (
+	"aladin/backend_v2/internal/workspacesync"
 	"context"
 	"encoding/json"
 	"errors"
 	"time"
 
+	"aladin/backend_v2/internal/outbox"
 	"aladin/backend_v2/internal/service"
 
 	"github.com/jackc/pgx/v5"
@@ -36,7 +38,7 @@ func (r *ShardBuildRepo) SetStatus(ctx context.Context, st service.ShardBuildSta
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if err := LockUser(ctx, tx, userID); err != nil {
+	if err := outbox.LockUser(ctx, tx, userID); err != nil {
 		return err
 	}
 
@@ -75,7 +77,7 @@ func (r *ShardBuildRepo) SetStatus(ctx context.Context, st service.ShardBuildSta
 	if err != nil {
 		return err
 	}
-	if err := appendAppEvent(ctx, tx, userID, service.OutboxAppEvent{
+	if err := outbox.AppendApp(ctx, tx, userID, workspacesync.OutboxAppEvent{
 		ResourceKind: "artifact",
 		ResourceID:   st.PageID,
 		Operation:    "build-status",

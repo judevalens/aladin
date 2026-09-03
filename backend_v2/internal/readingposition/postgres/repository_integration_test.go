@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"aladin/backend_v2/internal/workspacesync"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,7 +10,6 @@ import (
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/dbtest"
 	"aladin/backend_v2/internal/readingposition"
-	coreservice "aladin/backend_v2/internal/service"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -141,7 +141,7 @@ func TestReadingPosition_SnapshotCarriesTheRow(t *testing.T) {
 		if ent.EntityID != doc {
 			continue
 		}
-		if ent.EntityKind != "reading_position" || ent.Op != coreservice.OpUpsert || ent.Seq != 1 {
+		if ent.EntityKind != "reading_position" || ent.Op != workspacesync.OpUpsert || ent.Seq != 1 {
 			t.Fatalf("snapshot entity = %+v", ent)
 		}
 		var d struct {

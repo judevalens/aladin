@@ -8,7 +8,7 @@ import (
 	"aladin/backend_v2/internal/apperror"
 	"aladin/backend_v2/internal/auth"
 	. "aladin/backend_v2/internal/realtime"
-	. "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/workspacesync"
 )
 
 type fakeDrainReader struct {
@@ -38,7 +38,7 @@ func TestOutboxDrain_PublishesFramePerUser(t *testing.T) {
 	}
 	defer unsub()
 
-	frame := Frame{Entities: []FrameEntity{{EntityKind: "folder", EntityID: "f1", Seq: 1, Op: OpUpsert}}}
+	frame := workspacesync.Frame{Entities: []workspacesync.FrameEntity{{EntityKind: "folder", EntityID: "f1", Seq: 1, Op: workspacesync.OpUpsert}}}
 	reader := &fakeDrainReader{
 		events:  []DrainedEvent{{Xid: 42, UserID: "u1", Frame: frame}},
 		horizon: 100,
@@ -77,8 +77,8 @@ func TestOutboxDrain_PerUserIsolation(t *testing.T) {
 	defer unsub()
 
 	reader := &fakeDrainReader{
-		events: []DrainedEvent{{Xid: 7, UserID: "u2", Frame: Frame{
-			Entities: []FrameEntity{{EntityKind: "folder", EntityID: "x", Seq: 1, Op: OpUpsert}},
+		events: []DrainedEvent{{Xid: 7, UserID: "u2", Frame: workspacesync.Frame{
+			Entities: []workspacesync.FrameEntity{{EntityKind: "folder", EntityID: "x", Seq: 1, Op: workspacesync.OpUpsert}},
 		}}},
 		horizon: 9,
 	}

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	coreservice "aladin/backend_v2/internal/service"
+	workspacepostgres "aladin/backend_v2/internal/workspacesync/postgres"
 )
 
 // SetStatus upserts the build state, round-trips through GetStatus, and emits an
@@ -33,7 +34,7 @@ func TestShardBuild_SetStatusEmitsAppEventIsolatedFromPull(t *testing.T) {
 
 	// Cursor BEFORE the writes, so the drain assertion below reads a bounded window containing
 	// only this test's events (DrainSince is global across users and batch-limited).
-	sync := NewSyncPostgres(pool)
+	sync := workspacepostgres.NewSyncPostgres(pool)
 	beforeCursor, err := sync.Horizon(ctxTO)
 	if err != nil {
 		t.Fatalf("horizon: %v", err)

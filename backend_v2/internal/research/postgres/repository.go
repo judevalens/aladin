@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"aladin/backend_v2/internal/repo"
+	"aladin/backend_v2/internal/outbox"
 	"aladin/backend_v2/internal/research"
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/treesync"
@@ -90,7 +90,7 @@ func (r *PostgresResearchRepository) CreateResearchFolder(
 
 	// Same per-user advisory lock every tree write takes, so the appended seq is
 	// visible in commit order.
-	if err := repo.LockUser(ctx, tx, userID); err != nil {
+	if err := outbox.LockUser(ctx, tx, userID); err != nil {
 		return research.BrowserNodeResponse{}, err
 	}
 
@@ -157,7 +157,7 @@ func (r *PostgresResearchRepository) UpdateResearchFolder(ctx context.Context, i
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	if err := repo.LockUser(ctx, tx, userID); err != nil {
+	if err := outbox.LockUser(ctx, tx, userID); err != nil {
 		return research.BrowserNodeResponse{}, err
 	}
 

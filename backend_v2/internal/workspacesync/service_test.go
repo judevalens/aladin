@@ -1,11 +1,9 @@
-package reconciliation
+package workspacesync
 
 import (
 	"context"
 	"errors"
 	"testing"
-
-	. "aladin/backend_v2/internal/service"
 )
 
 // Unit tests for the delta-vs-snapshot policy in DefaultSyncService, using fake

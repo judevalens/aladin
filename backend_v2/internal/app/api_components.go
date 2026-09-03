@@ -1,6 +1,7 @@
 package app
 
 import (
+	"aladin/backend_v2/internal/workspacesync"
 	"context"
 	"os"
 
@@ -33,7 +34,6 @@ import (
 	"aladin/backend_v2/internal/readingposition"
 	readingpositionpostgres "aladin/backend_v2/internal/readingposition/postgres"
 	"aladin/backend_v2/internal/realtime"
-	"aladin/backend_v2/internal/reconciliation"
 	"aladin/backend_v2/internal/record"
 	"aladin/backend_v2/internal/relationship"
 	relationshippostgres "aladin/backend_v2/internal/relationship/postgres"
@@ -50,6 +50,7 @@ import (
 	"aladin/backend_v2/internal/unfurl"
 	"aladin/backend_v2/internal/watchlist"
 	watchlistpostgres "aladin/backend_v2/internal/watchlist/postgres"
+	workspacepostgres "aladin/backend_v2/internal/workspacesync/postgres"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -65,7 +66,7 @@ type APIProcess struct {
 	providerConnections providerconnection.ProviderConnectionService
 	realtime            realtime.EventService
 	realtimeKeys        realtime.KeyResolver
-	sync                coreservice.SyncService
+	sync                workspacesync.SyncService
 	outboxDrainer       *changefeed.Drainer
 	shardKV             coreservice.ShardKVService
 	relationships       relationship.RelationshipService
@@ -87,8 +88,8 @@ func NewAPIComponents(pool *pgxpool.Pool) *APIProcess {
 func NewAPIComponentsWithProviderConnections(pool *pgxpool.Pool, providerConfig config.ProviderConnectionConfig, dataVolumePath string) *APIProcess {
 	shared := buildSharedComponents(pool, dataVolumePath)
 
-	syncRepo := repo.NewSyncPostgres(pool)
-	syncSvc := reconciliation.New(syncRepo, treesync.NewTreeSyncSource(pool), watchlistpostgres.NewSyncSource(pool), repo.NewShardKVSyncSource(pool), readingpositionpostgres.NewSyncSource(pool))
+	syncRepo := workspacepostgres.NewSyncPostgres(pool)
+	syncSvc := workspacesync.New(syncRepo, treesync.NewTreeSyncSource(pool), watchlistpostgres.NewSyncSource(pool), repo.NewShardKVSyncSource(pool), readingpositionpostgres.NewSyncSource(pool))
 	realtimeKeys := realtime.NewSubscriptionKeyResolver(
 		func(ctx context.Context) (string, error) {
 			principal, err := coreservice.RequirePrincipal(ctx)
@@ -196,7 +197,7 @@ func (c *APIProcess) ProviderConnections() providerconnection.ProviderConnection
 }
 func (c *APIProcess) Realtime() realtime.EventService                 { return c.realtime }
 func (c *APIProcess) RealtimeKeyResolver() realtime.KeyResolver       { return c.realtimeKeys }
-func (c *APIProcess) Sync() coreservice.SyncService                   { return c.sync }
+func (c *APIProcess) Sync() workspacesync.SyncService                 { return c.sync }
 func (c *APIProcess) OutboxDrainer() *changefeed.Drainer              { return c.outboxDrainer }
 func (c *APIProcess) DocSurfaceStore() coreservice.DocSurfaceStore    { return c.docSurfaceStore }
 func (c *APIProcess) WorkspaceRuntime() coreservice.WorkspaceRuntime  { return c.workspaceRuntime }

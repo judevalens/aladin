@@ -28,12 +28,12 @@ import (
 	"aladin/backend_v2/internal/pipeline"
 	"aladin/backend_v2/internal/pipeline/workers"
 	"aladin/backend_v2/internal/ratelimit"
-	"aladin/backend_v2/internal/repo"
 	"aladin/backend_v2/internal/search"
 	searchpostgres "aladin/backend_v2/internal/search/postgres"
 	isync "aladin/backend_v2/internal/sync"
 	"aladin/backend_v2/internal/sync/syncers"
 	"aladin/backend_v2/internal/websearch"
+	workspacepostgres "aladin/backend_v2/internal/workspacesync/postgres"
 )
 
 func Run() {
@@ -262,7 +262,7 @@ func Run() {
 	// (dominated by ephemeral live market-quote app_events) can't grow unbounded, which also keeps
 	// the tight 50ms drain's xid-range scan cheap. Clients offline longer than the window fall back
 	// to a cold-start snapshot; the drain reads forward + re-seeds at the horizon on restart.
-	outboxSync := repo.NewSyncPostgres(pool)
+	outboxSync := workspacepostgres.NewSyncPostgres(pool)
 	outboxRetention := 5 * time.Minute
 	if v := os.Getenv("OUTBOX_RETENTION"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil {
