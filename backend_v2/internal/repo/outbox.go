@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"aladin/backend_v2/internal/changefeed"
 	"aladin/backend_v2/internal/outbox"
 	"aladin/backend_v2/internal/realtime"
 	"aladin/backend_v2/internal/service"
@@ -216,7 +217,7 @@ func (r *SyncRepo) MinXid(ctx context.Context, userID string) (uint64, bool, err
 // users, in xid order, plus the horizon (the new cursor) — the CDC drain's read
 // (service.OutboxDrainReader). Same gap-free half-open window as PullSince; the
 // drain publishes each frame to its user and advances its cursor to the horizon.
-func (r *SyncRepo) DrainSince(ctx context.Context, afterCursor uint64) ([]service.DrainedEvent, uint64, error) {
+func (r *SyncRepo) DrainSince(ctx context.Context, afterCursor uint64) ([]changefeed.DrainedEvent, uint64, error) {
 	horizon, err := r.Horizon(ctx)
 	if err != nil {
 		return nil, 0, err
@@ -234,7 +235,7 @@ func (r *SyncRepo) DrainSince(ctx context.Context, afterCursor uint64) ([]servic
 	}
 	defer rows.Close()
 
-	out := make([]service.DrainedEvent, 0)
+	out := make([]changefeed.DrainedEvent, 0)
 	fetched := 0
 	var maxXid uint64
 	for rows.Next() {
@@ -251,7 +252,7 @@ func (r *SyncRepo) DrainSince(ctx context.Context, afterCursor uint64) ([]servic
 		if xid > maxXid {
 			maxXid = xid
 		}
-		ev := service.DrainedEvent{Xid: xid, UserID: userID}
+		ev := changefeed.DrainedEvent{Xid: xid, UserID: userID}
 		if typ == "app_event" {
 			var ae service.OutboxAppEvent
 			if err := json.Unmarshal(payload, &ae); err != nil {

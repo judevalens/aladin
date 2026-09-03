@@ -8,18 +8,17 @@ import (
 
 	"aladin/backend_v2/internal/realtime"
 	"aladin/backend_v2/internal/safego"
-	coreservice "aladin/backend_v2/internal/service"
 )
 
 const DefaultDrainInterval = 50 * time.Millisecond
 
 type Drainer struct {
-	reader   coreservice.OutboxDrainReader
+	reader   OutboxDrainReader
 	realtime realtime.EventService
 	interval time.Duration
 }
 
-func NewDrainer(reader coreservice.OutboxDrainReader, realtime realtime.EventService, interval time.Duration) *Drainer {
+func NewDrainer(reader OutboxDrainReader, realtime realtime.EventService, interval time.Duration) *Drainer {
 	if interval <= 0 {
 		interval = DefaultDrainInterval
 	}
@@ -79,7 +78,7 @@ func (d *Drainer) drainOnce(ctx context.Context, cursor uint64) (uint64, error) 
 	return next, nil
 }
 
-func (d *Drainer) publishOne(ctx context.Context, event coreservice.DrainedEvent) error {
+func (d *Drainer) publishOne(ctx context.Context, event DrainedEvent) error {
 	if event.AppEvent != nil {
 		stream := event.AppEvent.Stream
 		tenantID := event.UserID
