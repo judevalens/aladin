@@ -13,6 +13,7 @@ import (
 	"aladin/backend_v2/internal/insights"
 	"aladin/backend_v2/internal/instrument"
 	"aladin/backend_v2/internal/market"
+	"aladin/backend_v2/internal/page"
 	"aladin/backend_v2/internal/providerconnection"
 	"aladin/backend_v2/internal/readingposition"
 	"aladin/backend_v2/internal/realtime"
@@ -36,7 +37,7 @@ type testDependencies struct {
 	SourcesSvc             source.SourceService
 	RecordsSvc             record.RecordService
 	ArtifactsSvc           coreservice.ArtifactService
-	PagesSvc               coreservice.PageService
+	PagesSvc               page.Service
 	FilesSvc               file.FileService
 	FeedSvc                feed.FeedService
 	InsightsSvc            insights.InsightService
@@ -78,7 +79,7 @@ func (d testDependencies) System() system.SystemService           { return d.Sys
 func (d testDependencies) Sources() source.SourceService          { return d.SourcesSvc }
 func (d testDependencies) Records() record.RecordService          { return d.RecordsSvc }
 func (d testDependencies) Artifacts() coreservice.ArtifactService { return d.ArtifactsSvc }
-func (d testDependencies) Pages() coreservice.PageService         { return d.PagesSvc }
+func (d testDependencies) Pages() page.Service                    { return d.PagesSvc }
 func (d testDependencies) Files() file.FileService                { return d.FilesSvc }
 func (d testDependencies) Feed() feed.FeedService                 { return d.FeedSvc }
 func (d testDependencies) Insights() insights.InsightService      { return d.InsightsSvc }

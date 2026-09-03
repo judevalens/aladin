@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"time"
 
+	"aladin/backend_v2/internal/apperror"
+	"aladin/backend_v2/internal/page"
 	artifactservice "aladin/backend_v2/internal/service"
 
 	"github.com/jackc/pgx/v5"
@@ -361,7 +363,7 @@ func (r *PostgresArtifactRepository) PageBlockAttribution(ctx context.Context, i
 
 // PageEditHistory returns a page's coalesced edit sessions (humans + agents),
 // newest first. User-scoped via the artifacts join.
-func (r *PostgresArtifactRepository) PageEditHistory(ctx context.Context, id string) ([]artifactservice.PageEditEntry, error) {
+func (r *PostgresArtifactRepository) PageEditHistory(ctx context.Context, id string) ([]page.PageEditEntry, error) {
 	userID, err := r.userID(ctx)
 	if err != nil {
 		return nil, err
@@ -378,9 +380,9 @@ func (r *PostgresArtifactRepository) PageEditHistory(ctx context.Context, id str
 		return nil, fmt.Errorf("page edit history %s: %w", id, err)
 	}
 	defer rows.Close()
-	out := make([]artifactservice.PageEditEntry, 0)
+	out := make([]page.PageEditEntry, 0)
 	for rows.Next() {
-		var e artifactservice.PageEditEntry
+		var e page.PageEditEntry
 		var occurred, ended time.Time
 		if err := rows.Scan(&e.ID, &e.EditorKind, &e.EditorName, &occurred, &ended, &e.Edits); err != nil {
 			return nil, fmt.Errorf("scan page edit history: %w", err)
@@ -395,10 +397,10 @@ func (r *PostgresArtifactRepository) PageEditHistory(ctx context.Context, id str
 // PageEditDiff returns the before/after markdown around a history entry: the
 // entry's own snapshot (after) and the previous entry's snapshot (before).
 // User-scoped via the entry → page → artifact join; missing snapshots read as "".
-func (r *PostgresArtifactRepository) PageEditDiff(ctx context.Context, entryID string) (artifactservice.PageDiff, error) {
+func (r *PostgresArtifactRepository) PageEditDiff(ctx context.Context, entryID string) (page.PageDiff, error) {
 	userID, err := r.userID(ctx)
 	if err != nil {
-		return artifactservice.PageDiff{}, err
+		return page.PageDiff{}, err
 	}
 	var pageID string
 	var occurred time.Time
@@ -411,9 +413,9 @@ func (r *PostgresArtifactRepository) PageEditDiff(ctx context.Context, entryID s
 	`, entryID, userID).Scan(&pageID, &occurred, &after)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return artifactservice.PageDiff{}, artifactservice.ErrNotFound
+			return page.PageDiff{}, apperror.ErrNotFound
 		}
-		return artifactservice.PageDiff{}, fmt.Errorf("page edit diff %s: %w", entryID, err)
+		return page.PageDiff{}, fmt.Errorf("page edit diff %s: %w", entryID, err)
 	}
 	var before *string
 	err = r.pool.QueryRow(ctx, `
@@ -424,7 +426,7 @@ func (r *PostgresArtifactRepository) PageEditDiff(ctx context.Context, entryID s
 		 LIMIT 1
 	`, pageID, occurred).Scan(&before)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return artifactservice.PageDiff{}, fmt.Errorf("page edit diff prev %s: %w", entryID, err)
+		return page.PageDiff{}, fmt.Errorf("page edit diff prev %s: %w", entryID, err)
 	}
 	deref := func(p *string) string {
 		if p == nil {
@@ -432,7 +434,7 @@ func (r *PostgresArtifactRepository) PageEditDiff(ctx context.Context, entryID s
 		}
 		return *p
 	}
-	return artifactservice.PageDiff{Before: deref(before), After: deref(after)}, nil
+	return page.PageDiff{Before: deref(before), After: deref(after)}, nil
 }
 
 // SavePageBlocks is the single mutation point for a page's block document.

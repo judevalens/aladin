@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"aladin/backend_v2/internal/blocknote"
+	"aladin/backend_v2/internal/page"
 	"aladin/backend_v2/internal/service"
 )
 
@@ -48,7 +49,7 @@ func (f *fakeConverter) Healthz(_ context.Context) error { return f.healthErr }
 
 type fakePageDocService struct {
 	replaceBlock func(pageID, blockID string, replacement json.RawMessage, expectedRev int64) (int64, int, error)
-	insertBlocks func(pageID string, position service.BlockPosition, blocks json.RawMessage, expectedRev int64) (int64, []string, error)
+	insertBlocks func(pageID string, position page.BlockPosition, blocks json.RawMessage, expectedRev int64) (int64, []string, error)
 	deleteBlock  func(pageID, blockID string, expectedRev int64) (int64, error)
 }
 
@@ -56,23 +57,23 @@ func (f *fakePageDocService) GetBlocks(context.Context, string) (json.RawMessage
 	return nil, 0, service.ErrNotFound
 }
 func (f *fakePageDocService) ReplaceAll(context.Context, string, json.RawMessage, int64) (int64, error) {
-	return 0, service.ErrNotImplemented
+	return 0, page.ErrNotImplemented
 }
 func (f *fakePageDocService) ReplaceBlock(_ context.Context, pageID, blockID string, replacement json.RawMessage, expectedRev int64) (int64, int, error) {
 	if f.replaceBlock == nil {
-		return 0, 0, service.ErrNotImplemented
+		return 0, 0, page.ErrNotImplemented
 	}
 	return f.replaceBlock(pageID, blockID, replacement, expectedRev)
 }
-func (f *fakePageDocService) InsertBlocks(_ context.Context, pageID string, position service.BlockPosition, blocks json.RawMessage, expectedRev int64) (int64, []string, error) {
+func (f *fakePageDocService) InsertBlocks(_ context.Context, pageID string, position page.BlockPosition, blocks json.RawMessage, expectedRev int64) (int64, []string, error) {
 	if f.insertBlocks == nil {
-		return 0, nil, service.ErrNotImplemented
+		return 0, nil, page.ErrNotImplemented
 	}
 	return f.insertBlocks(pageID, position, blocks, expectedRev)
 }
 func (f *fakePageDocService) DeleteBlock(_ context.Context, pageID, blockID string, expectedRev int64) (int64, error) {
 	if f.deleteBlock == nil {
-		return 0, service.ErrNotImplemented
+		return 0, page.ErrNotImplemented
 	}
 	return f.deleteBlock(pageID, blockID, expectedRev)
 }

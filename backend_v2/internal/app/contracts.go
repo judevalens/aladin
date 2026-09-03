@@ -14,6 +14,7 @@ import (
 	"aladin/backend_v2/internal/insights"
 	"aladin/backend_v2/internal/instrument"
 	"aladin/backend_v2/internal/market"
+	"aladin/backend_v2/internal/page"
 	"aladin/backend_v2/internal/providerconnection"
 	"aladin/backend_v2/internal/readingposition"
 	"aladin/backend_v2/internal/realtime"
@@ -38,7 +39,7 @@ type APIComponents interface {
 	Sources() source.SourceService
 	Records() record.RecordService
 	Artifacts() coreservice.ArtifactService
-	Pages() coreservice.PageService
+	Pages() page.Service
 	Files() file.FileService
 	Feed() feed.FeedService
 	Insights() insights.InsightService
@@ -82,7 +83,7 @@ type APIComponents interface {
 type MCPComponents interface {
 	Auth() auth.AuthService
 	Artifacts() coreservice.ArtifactService
-	PageDocuments() coreservice.PageDocumentService
+	PageDocuments() page.DocumentService
 	Insights() insights.InsightService
 	DocSurfaceStore() coreservice.DocSurfaceStore
 	Preview() coreservice.PreviewService

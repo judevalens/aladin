@@ -28,6 +28,8 @@ import (
 	instrumenthttp "aladin/backend_v2/internal/instrument/httptransport"
 	"aladin/backend_v2/internal/market"
 	markethttp "aladin/backend_v2/internal/market/httptransport"
+	"aladin/backend_v2/internal/page"
+	pagehttp "aladin/backend_v2/internal/page/httptransport"
 	"aladin/backend_v2/internal/providerconnection"
 	providerconnectionhttp "aladin/backend_v2/internal/providerconnection/httptransport"
 	"aladin/backend_v2/internal/readingposition"
@@ -79,7 +81,7 @@ type Dependencies interface {
 	Sources() source.SourceService
 	Records() record.RecordService
 	Artifacts() coreservice.ArtifactService
-	Pages() coreservice.PageService
+	Pages() page.Service
 	Files() file.FileService
 	Feed() feed.FeedService
 	Insights() insights.InsightService
@@ -150,7 +152,7 @@ func NewWithDependencies(addr string, deps Dependencies) *Server {
 	systemhttp.Register(mux, deps.System())
 
 	s.registerArtifactRoutes(mux)
-	s.registerPageRoutes(mux)
+	pagehttp.Register(mux, deps.Pages())
 	filehttp.Register(mux, deps.Files())
 	unfurlhttp.Register(mux, deps.Unfurl())
 	s.registerContentRoutes(mux)

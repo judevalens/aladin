@@ -1,4 +1,4 @@
-package service
+package page
 
 import (
 	"context"
@@ -6,10 +6,12 @@ import (
 	"errors"
 	"strings"
 
+	"aladin/backend_v2/internal/apperror"
+	"aladin/backend_v2/internal/auth"
 	"aladin/backend_v2/internal/blocknote"
 )
 
-// PageDocumentService is the only service callers should reach for to read or
+// DocumentService is the only service callers should reach for to read or
 // write page block content. It is the seam that lets M7 (collaborative editing
 // via Yjs/Hocuspocus) swap the storage backend without rewriting every caller:
 // today this is JSONB read/write, tomorrow it loads a Y.Doc, applies CRDT
@@ -21,7 +23,7 @@ import (
 //
 // M5 only implements GetBlocks and ReplaceAll. The block-ID-targeted methods
 // are stubbed and return ErrNotImplemented until M6 wires up block_ops.
-type PageDocumentService interface {
+type DocumentService interface {
 	// GetBlocks returns the page's current block document and revision. The
 	// blocks value is a JSON array of BlockNote blocks; opaque to this layer.
 	GetBlocks(ctx context.Context, pageID string) (blocks json.RawMessage, revision int64, err error)
@@ -59,54 +61,54 @@ type BlockPosition struct {
 // ErrNotImplemented is returned by M6-scope methods while M5 is in flight.
 var ErrNotImplemented = errors.New("not implemented")
 
-// PageDocumentStore is the minimal storage surface PageDocumentService needs.
+// DocumentStore is the minimal storage surface DocumentService needs.
 // A concrete implementation lives in the repo package; tests stub it.
-type PageDocumentStore interface {
+type DocumentStore interface {
 	GetPageBlocks(ctx context.Context, pageID string) (blocks json.RawMessage, revision int64, err error)
 	SavePageBlocks(ctx context.Context, pageID string, blocks json.RawMessage, searchText string, expectedRevision int64) (newRevision int64, err error)
 }
 
-// DefaultPageDocumentService is the production implementation backed by
-// PageDocumentStore. The store does the SQL; this layer owns the search_text
+// DefaultDocumentService is the production implementation backed by
+// DocumentStore. The store does the SQL; this layer owns the search_text
 // derivation, revision arithmetic, and (eventually) the block-ops splicing.
-type DefaultPageDocumentService struct {
-	store PageDocumentStore
+type DefaultDocumentService struct {
+	store DocumentStore
 }
 
-func NewPageDocumentService(store PageDocumentStore) *DefaultPageDocumentService {
-	return &DefaultPageDocumentService{store: store}
+func NewDocumentService(store DocumentStore) *DefaultDocumentService {
+	return &DefaultDocumentService{store: store}
 }
 
-func (s *DefaultPageDocumentService) GetBlocks(ctx context.Context, pageID string) (json.RawMessage, int64, error) {
-	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
+func (s *DefaultDocumentService) GetBlocks(ctx context.Context, pageID string) (json.RawMessage, int64, error) {
+	if err := auth.RequireScope(ctx, auth.ScopeArtifactsRead); err != nil {
 		return nil, 0, err
 	}
 	return s.store.GetPageBlocks(ctx, pageID)
 }
 
-func (s *DefaultPageDocumentService) ReplaceAll(ctx context.Context, pageID string, blocks json.RawMessage, expectedRevision int64) (int64, error) {
-	if err := RequireScope(ctx, ScopeArtifactsWrite); err != nil {
+func (s *DefaultDocumentService) ReplaceAll(ctx context.Context, pageID string, blocks json.RawMessage, expectedRevision int64) (int64, error) {
+	if err := auth.RequireScope(ctx, auth.ScopeArtifactsWrite); err != nil {
 		return 0, err
 	}
 	if len(blocks) == 0 || !looksLikeJSONArray(blocks) {
-		return 0, BadRequest("blocks must be a JSON array")
+		return 0, apperror.BadRequest("blocks must be a JSON array")
 	}
 	searchText, err := blocknote.ExtractText(blocks)
 	if err != nil {
-		return 0, BadRequest("blocks: " + err.Error())
+		return 0, apperror.BadRequest("blocks: " + err.Error())
 	}
 	return s.store.SavePageBlocks(ctx, pageID, blocks, searchText, expectedRevision)
 }
 
-func (s *DefaultPageDocumentService) ReplaceBlock(ctx context.Context, pageID, blockID string, replacement json.RawMessage, expectedRevision int64) (int64, int, error) {
-	if err := RequireScope(ctx, ScopeArtifactsWrite); err != nil {
+func (s *DefaultDocumentService) ReplaceBlock(ctx context.Context, pageID, blockID string, replacement json.RawMessage, expectedRevision int64) (int64, int, error) {
+	if err := auth.RequireScope(ctx, auth.ScopeArtifactsWrite); err != nil {
 		return 0, 0, err
 	}
 	if strings.TrimSpace(blockID) == "" {
-		return 0, 0, BadRequest("block_id is required")
+		return 0, 0, apperror.BadRequest("block_id is required")
 	}
 	if !looksLikeJSONArray(replacement) {
-		return 0, 0, BadRequest("replacement must be a JSON array")
+		return 0, 0, apperror.BadRequest("replacement must be a JSON array")
 	}
 	current, _, err := s.store.GetPageBlocks(ctx, pageID)
 	if err != nil {
@@ -118,24 +120,24 @@ func (s *DefaultPageDocumentService) ReplaceBlock(ctx context.Context, pageID, b
 	}
 	newBlocks, err := blocknote.ParseBlocks(replacement)
 	if err != nil {
-		return 0, 0, BadRequest("replacement: " + err.Error())
+		return 0, 0, apperror.BadRequest("replacement: " + err.Error())
 	}
 	updated, count, err := blocknote.ReplaceByID(blocks, blockID, newBlocks)
 	if err != nil {
 		if errors.Is(err, blocknote.ErrBlockNotFound) {
-			return 0, 0, ErrNotFound
+			return 0, 0, apperror.ErrNotFound
 		}
 		return 0, 0, err
 	}
 	return s.persistBlocks(ctx, pageID, updated, expectedRevision, count)
 }
 
-func (s *DefaultPageDocumentService) InsertBlocks(ctx context.Context, pageID string, position BlockPosition, newDoc json.RawMessage, expectedRevision int64) (int64, []string, error) {
-	if err := RequireScope(ctx, ScopeArtifactsWrite); err != nil {
+func (s *DefaultDocumentService) InsertBlocks(ctx context.Context, pageID string, position BlockPosition, newDoc json.RawMessage, expectedRevision int64) (int64, []string, error) {
+	if err := auth.RequireScope(ctx, auth.ScopeArtifactsWrite); err != nil {
 		return 0, nil, err
 	}
 	if !looksLikeJSONArray(newDoc) {
-		return 0, nil, BadRequest("blocks must be a JSON array")
+		return 0, nil, apperror.BadRequest("blocks must be a JSON array")
 	}
 	if err := validatePosition(position); err != nil {
 		return 0, nil, err
@@ -150,10 +152,10 @@ func (s *DefaultPageDocumentService) InsertBlocks(ctx context.Context, pageID st
 	}
 	newBlocks, err := blocknote.ParseBlocks(newDoc)
 	if err != nil {
-		return 0, nil, BadRequest("blocks: " + err.Error())
+		return 0, nil, apperror.BadRequest("blocks: " + err.Error())
 	}
 	if len(newBlocks) == 0 {
-		return 0, nil, BadRequest("blocks: at least one block required")
+		return 0, nil, apperror.BadRequest("blocks: at least one block required")
 	}
 	var updated []blocknote.Block
 	switch {
@@ -171,7 +173,7 @@ func (s *DefaultPageDocumentService) InsertBlocks(ctx context.Context, pageID st
 	}
 	if err != nil {
 		if errors.Is(err, blocknote.ErrBlockNotFound) {
-			return 0, nil, ErrNotFound
+			return 0, nil, apperror.ErrNotFound
 		}
 		return 0, nil, err
 	}
@@ -183,12 +185,12 @@ func (s *DefaultPageDocumentService) InsertBlocks(ctx context.Context, pageID st
 	return rev, insertedIDs, nil
 }
 
-func (s *DefaultPageDocumentService) DeleteBlock(ctx context.Context, pageID, blockID string, expectedRevision int64) (int64, error) {
-	if err := RequireScope(ctx, ScopeArtifactsWrite); err != nil {
+func (s *DefaultDocumentService) DeleteBlock(ctx context.Context, pageID, blockID string, expectedRevision int64) (int64, error) {
+	if err := auth.RequireScope(ctx, auth.ScopeArtifactsWrite); err != nil {
 		return 0, err
 	}
 	if strings.TrimSpace(blockID) == "" {
-		return 0, BadRequest("block_id is required")
+		return 0, apperror.BadRequest("block_id is required")
 	}
 	current, _, err := s.store.GetPageBlocks(ctx, pageID)
 	if err != nil {
@@ -199,12 +201,12 @@ func (s *DefaultPageDocumentService) DeleteBlock(ctx context.Context, pageID, bl
 		return 0, err
 	}
 	if len(blocks) <= 1 {
-		return 0, BadRequest("cannot delete the last block on a page; BlockNote requires at least one block")
+		return 0, apperror.BadRequest("cannot delete the last block on a page; BlockNote requires at least one block")
 	}
 	updated, err := blocknote.DeleteByID(blocks, blockID)
 	if err != nil {
 		if errors.Is(err, blocknote.ErrBlockNotFound) {
-			return 0, ErrNotFound
+			return 0, apperror.ErrNotFound
 		}
 		return 0, err
 	}
@@ -212,7 +214,7 @@ func (s *DefaultPageDocumentService) DeleteBlock(ctx context.Context, pageID, bl
 	return rev, err
 }
 
-func (s *DefaultPageDocumentService) persistBlocks(ctx context.Context, pageID string, blocks []blocknote.Block, expectedRevision int64, count int) (int64, int, error) {
+func (s *DefaultDocumentService) persistBlocks(ctx context.Context, pageID string, blocks []blocknote.Block, expectedRevision int64, count int) (int64, int, error) {
 	serialized, err := blocknote.SerializeBlocks(blocks)
 	if err != nil {
 		return 0, 0, err
@@ -239,11 +241,11 @@ func validatePosition(p BlockPosition) error {
 	if p.At != nil {
 		set++
 		if *p.At != "start" && *p.At != "end" {
-			return BadRequest("position.at must be \"start\" or \"end\"")
+			return apperror.BadRequest("position.at must be \"start\" or \"end\"")
 		}
 	}
 	if set != 1 {
-		return BadRequest("position requires exactly one of after_id, before_id, or at")
+		return apperror.BadRequest("position requires exactly one of after_id, before_id, or at")
 	}
 	return nil
 }

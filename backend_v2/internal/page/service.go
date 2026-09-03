@@ -1,12 +1,16 @@
-package service
+package page
 
 import (
 	"context"
 	"encoding/json"
 	"strings"
+
+	"aladin/backend_v2/internal/apperror"
+	"aladin/backend_v2/internal/auth"
+	coreservice "aladin/backend_v2/internal/service"
 )
 
-type PageService interface {
+type Service interface {
 	Get(context.Context, string) (PageDocument, error)
 	Save(context.Context, string, PageSaveInput) (PageDocument, error)
 	// Attribution returns the page's block-level agent-attribution map
@@ -19,8 +23,8 @@ type PageService interface {
 	Diff(context.Context, string) (PageDiff, error)
 }
 
-type PageRepository interface {
-	GetArtifact(context.Context, string) (ArtifactResponse, error)
+type Repository interface {
+	GetArtifact(context.Context, string) (coreservice.ArtifactResponse, error)
 	// SavePageBlocks persists the page's blocks + derived searchText with
 	// optimistic concurrency. expectedRev=0 disables the check.
 	SavePageBlocks(ctx context.Context, artifactID string, blocks json.RawMessage, searchText string, expectedRev int64) (newRev int64, err error)
@@ -63,16 +67,16 @@ type PageSaveInput struct {
 	Revision int64           `json:"revision"`
 }
 
-type DefaultPageService struct {
-	repo PageRepository
+type DefaultService struct {
+	repo Repository
 }
 
-func NewPageService(repo PageRepository) *DefaultPageService {
-	return &DefaultPageService{repo: repo}
+func NewService(repo Repository) *DefaultService {
+	return &DefaultService{repo: repo}
 }
 
-func (s *DefaultPageService) Get(ctx context.Context, id string) (PageDocument, error) {
-	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
+func (s *DefaultService) Get(ctx context.Context, id string) (PageDocument, error) {
+	if err := auth.RequireScope(ctx, auth.ScopeArtifactsRead); err != nil {
 		return PageDocument{}, err
 	}
 	rec, err := s.pageArtifact(ctx, id)
@@ -82,8 +86,8 @@ func (s *DefaultPageService) Get(ctx context.Context, id string) (PageDocument, 
 	return toPageDocument(rec), nil
 }
 
-func (s *DefaultPageService) Attribution(ctx context.Context, id string) (json.RawMessage, error) {
-	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
+func (s *DefaultService) Attribution(ctx context.Context, id string) (json.RawMessage, error) {
+	if err := auth.RequireScope(ctx, auth.ScopeArtifactsRead); err != nil {
 		return nil, err
 	}
 	// Verify it's a page the caller owns before exposing its attribution.
@@ -93,8 +97,8 @@ func (s *DefaultPageService) Attribution(ctx context.Context, id string) (json.R
 	return s.repo.PageBlockAttribution(ctx, id)
 }
 
-func (s *DefaultPageService) History(ctx context.Context, id string) ([]PageEditEntry, error) {
-	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
+func (s *DefaultService) History(ctx context.Context, id string) ([]PageEditEntry, error) {
+	if err := auth.RequireScope(ctx, auth.ScopeArtifactsRead); err != nil {
 		return nil, err
 	}
 	if _, err := s.pageArtifact(ctx, id); err != nil {
@@ -103,8 +107,8 @@ func (s *DefaultPageService) History(ctx context.Context, id string) ([]PageEdit
 	return s.repo.PageEditHistory(ctx, id)
 }
 
-func (s *DefaultPageService) Diff(ctx context.Context, entryID string) (PageDiff, error) {
-	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
+func (s *DefaultService) Diff(ctx context.Context, entryID string) (PageDiff, error) {
+	if err := auth.RequireScope(ctx, auth.ScopeArtifactsRead); err != nil {
 		return PageDiff{}, err
 	}
 	// Ownership is enforced in the repo (the entry → page → artifact.user_id join).
@@ -118,31 +122,31 @@ func (s *DefaultPageService) Diff(ctx context.Context, entryID string) (PageDiff
 // (the editor no longer calls it; usePageState is orphaned) and is removed
 // wholesale in M8d; it is refused here meanwhile so it can never silently
 // clobber collab state.
-func (s *DefaultPageService) Save(ctx context.Context, id string, _ PageSaveInput) (PageDocument, error) {
-	if err := RequireScope(ctx, ScopeArtifactsWrite); err != nil {
+func (s *DefaultService) Save(ctx context.Context, id string, _ PageSaveInput) (PageDocument, error) {
+	if err := auth.RequireScope(ctx, auth.ScopeArtifactsWrite); err != nil {
 		return PageDocument{}, err
 	}
 	if _, err := s.pageArtifact(ctx, id); err != nil {
 		return PageDocument{}, err
 	}
-	return PageDocument{}, BadRequest("page blocks are edited collaboratively, not via PATCH /api/pages")
+	return PageDocument{}, apperror.BadRequest("page blocks are edited collaboratively, not via PATCH /api/pages")
 }
 
-func (s *DefaultPageService) pageArtifact(ctx context.Context, id string) (ArtifactResponse, error) {
+func (s *DefaultService) pageArtifact(ctx context.Context, id string) (coreservice.ArtifactResponse, error) {
 	if strings.TrimSpace(id) == "" {
-		return ArtifactResponse{}, ErrNotFound
+		return coreservice.ArtifactResponse{}, apperror.ErrNotFound
 	}
 	rec, err := s.repo.GetArtifact(ctx, id)
 	if err != nil {
-		return ArtifactResponse{}, err
+		return coreservice.ArtifactResponse{}, err
 	}
 	if rec.Type != "page" {
-		return ArtifactResponse{}, ErrNotFound
+		return coreservice.ArtifactResponse{}, apperror.ErrNotFound
 	}
 	return rec, nil
 }
 
-func toPageDocument(rec ArtifactResponse) PageDocument {
+func toPageDocument(rec coreservice.ArtifactResponse) PageDocument {
 	return PageDocument{
 		ID:        rec.ID,
 		Title:     rec.Title,

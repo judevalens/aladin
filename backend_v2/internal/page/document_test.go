@@ -1,4 +1,4 @@
-package service
+package page
 
 import (
 	"context"
@@ -6,6 +6,9 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"aladin/backend_v2/internal/apperror"
+	"aladin/backend_v2/internal/auth"
 )
 
 type fakePageDocStore struct {
@@ -27,7 +30,7 @@ type savedCall struct {
 
 func (f *fakePageDocStore) GetPageBlocks(_ context.Context, _ string) (json.RawMessage, int64, error) {
 	if f.missingPage {
-		return nil, 0, ErrNotFound
+		return nil, 0, apperror.ErrNotFound
 	}
 	if f.getErr != nil {
 		return nil, 0, f.getErr
@@ -48,11 +51,11 @@ func (f *fakePageDocStore) SavePageBlocks(_ context.Context, pageID string, bloc
 
 func writeContext(scopes ...string) context.Context {
 	if len(scopes) == 0 {
-		scopes = []string{ScopeArtifactsRead, ScopeArtifactsWrite}
+		scopes = []string{auth.ScopeArtifactsRead, auth.ScopeArtifactsWrite}
 	}
-	return WithPrincipal(context.Background(), Principal{
+	return auth.WithPrincipal(context.Background(), auth.Principal{
 		UserID:    "00000000-0000-0000-0000-000000000001",
-		ActorType: ActorTypeIntegrationToken,
+		ActorType: auth.ActorTypeIntegrationToken,
 		ActorID:   "token-1",
 		Scopes:    scopes,
 	})
@@ -63,7 +66,7 @@ func TestPageDocumentService_GetBlocks(t *testing.T) {
 		blocks:   json.RawMessage(`[{"id":"a","type":"paragraph","content":[{"type":"text","text":"hi"}],"children":[]}]`),
 		revision: 3,
 	}
-	svc := NewPageDocumentService(store)
+	svc := NewDocumentService(store)
 
 	blocks, rev, err := svc.GetBlocks(writeContext(), "page-1")
 	if err != nil {
@@ -79,17 +82,17 @@ func TestPageDocumentService_GetBlocks(t *testing.T) {
 
 func TestPageDocumentService_GetBlocks_RequiresReadScope(t *testing.T) {
 	store := &fakePageDocStore{}
-	svc := NewPageDocumentService(store)
+	svc := NewDocumentService(store)
 	ctx := writeContext("nothing:relevant")
 	_, _, err := svc.GetBlocks(ctx, "page-1")
-	if !errors.Is(err, ErrForbidden) {
-		t.Fatalf("expected ErrForbidden, got %v", err)
+	if !errors.Is(err, auth.ErrForbidden) {
+		t.Fatalf("expected auth.ErrForbidden, got %v", err)
 	}
 }
 
 func TestPageDocumentService_ReplaceAll_ComputesSearchText(t *testing.T) {
 	store := &fakePageDocStore{revision: 1}
-	svc := NewPageDocumentService(store)
+	svc := NewDocumentService(store)
 	blocks := json.RawMessage(`[
 		{"id":"a","type":"heading","content":[{"type":"text","text":"Title"}],"children":[]},
 		{"id":"b","type":"paragraph","content":[{"type":"text","text":"Body"}],"children":[]}
@@ -112,17 +115,17 @@ func TestPageDocumentService_ReplaceAll_ComputesSearchText(t *testing.T) {
 
 func TestPageDocumentService_ReplaceAll_RequiresWriteScope(t *testing.T) {
 	store := &fakePageDocStore{}
-	svc := NewPageDocumentService(store)
-	ctx := writeContext(ScopeArtifactsRead)
+	svc := NewDocumentService(store)
+	ctx := writeContext(auth.ScopeArtifactsRead)
 	_, err := svc.ReplaceAll(ctx, "page-1", json.RawMessage(`[]`), 0)
-	if !errors.Is(err, ErrForbidden) {
-		t.Fatalf("expected ErrForbidden, got %v", err)
+	if !errors.Is(err, auth.ErrForbidden) {
+		t.Fatalf("expected auth.ErrForbidden, got %v", err)
 	}
 }
 
 func TestPageDocumentService_ReplaceAll_RejectsNonArray(t *testing.T) {
 	store := &fakePageDocStore{}
-	svc := NewPageDocumentService(store)
+	svc := NewDocumentService(store)
 	cases := []json.RawMessage{
 		nil,
 		json.RawMessage(``),
@@ -141,11 +144,11 @@ func TestPageDocumentService_ReplaceAll_RejectsNonArray(t *testing.T) {
 }
 
 func TestPageDocumentService_ReplaceAll_ConflictFromStore(t *testing.T) {
-	store := &fakePageDocStore{saveErr: ErrConflict}
-	svc := NewPageDocumentService(store)
+	store := &fakePageDocStore{saveErr: apperror.ErrConflict}
+	svc := NewDocumentService(store)
 	_, err := svc.ReplaceAll(writeContext(), "page-1", json.RawMessage(`[]`), 1)
-	if !errors.Is(err, ErrConflict) {
-		t.Fatalf("expected ErrConflict, got %v", err)
+	if !errors.Is(err, apperror.ErrConflict) {
+		t.Fatalf("expected apperror.ErrConflict, got %v", err)
 	}
 }
 
@@ -153,7 +156,7 @@ func TestPageDocumentService_ReplaceBlock(t *testing.T) {
 	store := &fakePageDocStore{
 		blocks: json.RawMessage(`[{"id":"a","type":"paragraph","content":[{"type":"text","text":"orig"}],"children":[]},{"id":"b","type":"paragraph","content":[],"children":[]}]`),
 	}
-	svc := NewPageDocumentService(store)
+	svc := NewDocumentService(store)
 	replacement := json.RawMessage(`[{"id":"new","type":"heading","content":[{"type":"text","text":"NEW"}],"children":[]}]`)
 
 	_, count, err := svc.ReplaceBlock(writeContext(), "page-1", "a", replacement, 0)
@@ -178,10 +181,10 @@ func TestPageDocumentService_ReplaceBlock_NotFound(t *testing.T) {
 	store := &fakePageDocStore{
 		blocks: json.RawMessage(`[{"id":"a","type":"paragraph","content":[],"children":[]}]`),
 	}
-	svc := NewPageDocumentService(store)
+	svc := NewDocumentService(store)
 	_, _, err := svc.ReplaceBlock(writeContext(), "page-1", "missing", json.RawMessage(`[{"id":"x","type":"p"}]`), 0)
-	if !errors.Is(err, ErrNotFound) {
-		t.Fatalf("error = %v, want ErrNotFound", err)
+	if !errors.Is(err, apperror.ErrNotFound) {
+		t.Fatalf("error = %v, want apperror.ErrNotFound", err)
 	}
 }
 
@@ -189,7 +192,7 @@ func TestPageDocumentService_InsertBlocks_After(t *testing.T) {
 	store := &fakePageDocStore{
 		blocks: json.RawMessage(`[{"id":"a","type":"p","content":[],"children":[]}]`),
 	}
-	svc := NewPageDocumentService(store)
+	svc := NewDocumentService(store)
 	after := "a"
 	_, ids, err := svc.InsertBlocks(
 		writeContext(),
@@ -211,7 +214,7 @@ func TestPageDocumentService_InsertBlocks_After(t *testing.T) {
 
 func TestPageDocumentService_InsertBlocks_PositionValidation(t *testing.T) {
 	store := &fakePageDocStore{blocks: json.RawMessage(`[{"id":"a","type":"p"}]`)}
-	svc := NewPageDocumentService(store)
+	svc := NewDocumentService(store)
 	ctx := writeContext()
 
 	if _, _, err := svc.InsertBlocks(ctx, "page-1", BlockPosition{}, json.RawMessage(`[{"id":"x","type":"p"}]`), 0); err == nil {
@@ -232,7 +235,7 @@ func TestPageDocumentService_DeleteBlock(t *testing.T) {
 	store := &fakePageDocStore{
 		blocks: json.RawMessage(`[{"id":"a","type":"p","content":[],"children":[]},{"id":"b","type":"p","content":[],"children":[]}]`),
 	}
-	svc := NewPageDocumentService(store)
+	svc := NewDocumentService(store)
 	if _, err := svc.DeleteBlock(writeContext(), "page-1", "a", 0); err != nil {
 		t.Fatalf("DeleteBlock: %v", err)
 	}
@@ -245,11 +248,11 @@ func TestPageDocumentService_DeleteBlock_RefusesLast(t *testing.T) {
 	store := &fakePageDocStore{
 		blocks: json.RawMessage(`[{"id":"a","type":"p","content":[],"children":[]}]`),
 	}
-	svc := NewPageDocumentService(store)
+	svc := NewDocumentService(store)
 	_, err := svc.DeleteBlock(writeContext(), "page-1", "a", 0)
-	var requestErr BadRequest
+	var requestErr apperror.BadRequest
 	if !errors.As(err, &requestErr) {
-		t.Fatalf("error = %v, want BadRequest", err)
+		t.Fatalf("error = %v, want apperror.BadRequest", err)
 	}
 	if store.saveCalls != 0 {
 		t.Fatalf("store should not be called; got %d save calls", store.saveCalls)
@@ -260,9 +263,9 @@ func TestPageDocumentService_DeleteBlock_NotFound(t *testing.T) {
 	store := &fakePageDocStore{
 		blocks: json.RawMessage(`[{"id":"a","type":"p","content":[],"children":[]},{"id":"b","type":"p","content":[],"children":[]}]`),
 	}
-	svc := NewPageDocumentService(store)
-	if _, err := svc.DeleteBlock(writeContext(), "page-1", "missing", 0); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("error = %v, want ErrNotFound", err)
+	svc := NewDocumentService(store)
+	if _, err := svc.DeleteBlock(writeContext(), "page-1", "missing", 0); !errors.Is(err, apperror.ErrNotFound) {
+		t.Fatalf("error = %v, want apperror.ErrNotFound", err)
 	}
 }
 

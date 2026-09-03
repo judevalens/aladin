@@ -13,6 +13,7 @@ import (
 	"aladin/backend_v2/internal/insights"
 	"aladin/backend_v2/internal/instrument"
 	"aladin/backend_v2/internal/market"
+	"aladin/backend_v2/internal/page"
 	"aladin/backend_v2/internal/search"
 	"aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/shardresource"
@@ -162,7 +163,7 @@ type Dependencies interface {
 	Alerts() alert.AlertService
 }
 
-func New(addr string, deps Dependencies, pages service.PageDocumentService, converter blocknote.Converter, bridge blocknote.Bridge) *Server {
+func New(addr string, deps Dependencies, pages page.DocumentService, converter blocknote.Converter, bridge blocknote.Bridge) *Server {
 	server := sdkmcp.NewServer(&sdkmcp.Implementation{
 		Name:    "aladin-mcp",
 		Version: "0.1.0",

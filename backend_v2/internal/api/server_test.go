@@ -13,6 +13,7 @@ import (
 	"time"
 
 	filedomain "aladin/backend_v2/internal/file"
+	"aladin/backend_v2/internal/page"
 	"aladin/backend_v2/internal/providerconnection"
 	artifactservice "aladin/backend_v2/internal/service"
 
@@ -259,7 +260,7 @@ func TestPagesGet(t *testing.T) {
 
 	server := NewWithDependencies(":0", testDependencies{
 		PagesSvc: &fakePageService{
-			page: artifactservice.PageDocument{
+			page: page.PageDocument{
 				ID:        "artifact-1",
 				Title:     "Memo",
 				Blocks:    json.RawMessage(`[{"id":"a","type":"paragraph","content":[{"type":"text","text":"Hello"}],"children":[]}]`),
@@ -289,7 +290,7 @@ func TestPagesSave(t *testing.T) {
 
 	updatedBlocks := json.RawMessage(`[{"id":"a","type":"paragraph","content":[{"type":"text","text":"updated"}],"children":[]}]`)
 	service := &fakePageService{
-		page: artifactservice.PageDocument{
+		page: page.PageDocument{
 			ID:        "artifact-1",
 			Title:     "Memo",
 			Blocks:    updatedBlocks,
@@ -748,8 +749,8 @@ type fakeArtifactService struct {
 }
 
 type fakePageService struct {
-	page  artifactservice.PageDocument
-	saved *artifactservice.PageSaveInput
+	page  page.PageDocument
+	saved *page.PageSaveInput
 	err   error
 }
 
@@ -986,16 +987,16 @@ func mustTime(t *testing.T, value string) time.Time {
 	return parsed
 }
 
-func (f *fakePageService) Get(context.Context, string) (artifactservice.PageDocument, error) {
+func (f *fakePageService) Get(context.Context, string) (page.PageDocument, error) {
 	if f.err != nil {
-		return artifactservice.PageDocument{}, f.err
+		return page.PageDocument{}, f.err
 	}
 	return f.page, nil
 }
 
-func (f *fakePageService) Save(_ context.Context, _ string, input artifactservice.PageSaveInput) (artifactservice.PageDocument, error) {
+func (f *fakePageService) Save(_ context.Context, _ string, input page.PageSaveInput) (page.PageDocument, error) {
 	if f.err != nil {
-		return artifactservice.PageDocument{}, f.err
+		return page.PageDocument{}, f.err
 	}
 	copyInput := input
 	f.saved = &copyInput
@@ -1009,18 +1010,18 @@ func (f *fakePageService) Attribution(_ context.Context, _ string) (json.RawMess
 	return json.RawMessage("{}"), nil
 }
 
-func (f *fakePageService) History(_ context.Context, _ string) ([]artifactservice.PageEditEntry, error) {
+func (f *fakePageService) History(_ context.Context, _ string) ([]page.PageEditEntry, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
 	return nil, nil
 }
 
-func (f *fakePageService) Diff(_ context.Context, _ string) (artifactservice.PageDiff, error) {
+func (f *fakePageService) Diff(_ context.Context, _ string) (page.PageDiff, error) {
 	if f.err != nil {
-		return artifactservice.PageDiff{}, f.err
+		return page.PageDiff{}, f.err
 	}
-	return artifactservice.PageDiff{}, nil
+	return page.PageDiff{}, nil
 }
 
 func (f *fakeFileService) Upload(_ context.Context, input filedomain.FileUploadInput, body io.Reader) (filedomain.FileRecord, error) {

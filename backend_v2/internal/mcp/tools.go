@@ -8,6 +8,7 @@ import (
 
 	"aladin/backend_v2/internal/artifactref"
 	"aladin/backend_v2/internal/blocknote"
+	"aladin/backend_v2/internal/page"
 	"aladin/backend_v2/internal/service"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -20,7 +21,7 @@ type toolServer struct {
 	// pages (M5/M6 PageDocumentService) is retained but unused: M8c routes
 	// page reads/writes through the collab bridge. Removed in M8d with the
 	// rest of the M7 page_content path.
-	pages     service.PageDocumentService
+	pages     page.DocumentService
 	converter blocknote.Converter
 	bridge    blocknote.Bridge
 	// entityTags + artifactRefs project a page's @entity mentions / `#` refs into the
@@ -30,7 +31,7 @@ type toolServer struct {
 	artifactRefs artifactref.ArtifactRefService
 }
 
-func registerTools(server *sdkmcp.Server, artifacts service.ArtifactService, pages service.PageDocumentService, converter blocknote.Converter, bridge blocknote.Bridge, entityTags service.EntityTagService, artifactRefs artifactref.ArtifactRefService) {
+func registerTools(server *sdkmcp.Server, artifacts service.ArtifactService, pages page.DocumentService, converter blocknote.Converter, bridge blocknote.Bridge, entityTags service.EntityTagService, artifactRefs artifactref.ArtifactRefService) {
 	tools := toolServer{artifacts: artifacts, pages: pages, converter: converter, bridge: bridge, entityTags: entityTags, artifactRefs: artifactRefs}
 
 	sdkmcp.AddTool(server, &sdkmcp.Tool{

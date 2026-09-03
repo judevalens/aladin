@@ -10,6 +10,7 @@ import (
 	"aladin/backend_v2/internal/insights"
 	"aladin/backend_v2/internal/instrument"
 	"aladin/backend_v2/internal/market"
+	"aladin/backend_v2/internal/page"
 	"aladin/backend_v2/internal/search"
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/shardresource"
@@ -20,7 +21,7 @@ import (
 
 type MCPProcess struct {
 	sharedComponents
-	pageDocuments coreservice.PageDocumentService
+	pageDocuments page.DocumentService
 	preview       coreservice.PreviewService
 	shardCatalog  coreservice.ShardCatalogService
 }
@@ -47,7 +48,7 @@ func NewMCPComponentsWithDataVolume(pool *pgxpool.Pool, dataVolumePath string) *
 	)
 	return &MCPProcess{
 		sharedComponents: shared,
-		pageDocuments:    coreservice.NewPageDocumentService(shared.artifactRepo),
+		pageDocuments:    page.NewDocumentService(shared.artifactRepo),
 		preview:          preview,
 		shardCatalog:     catalog,
 	}
@@ -55,7 +56,7 @@ func NewMCPComponentsWithDataVolume(pool *pgxpool.Pool, dataVolumePath string) *
 
 func (c *MCPProcess) Auth() auth.AuthService                          { return c.auth }
 func (c *MCPProcess) Artifacts() coreservice.ArtifactService          { return c.artifacts }
-func (c *MCPProcess) PageDocuments() coreservice.PageDocumentService  { return c.pageDocuments }
+func (c *MCPProcess) PageDocuments() page.DocumentService             { return c.pageDocuments }
 func (c *MCPProcess) Insights() insights.InsightService               { return c.insights }
 func (c *MCPProcess) DocSurfaceStore() coreservice.DocSurfaceStore    { return c.docSurfaceStore }
 func (c *MCPProcess) Preview() coreservice.PreviewService             { return c.preview }

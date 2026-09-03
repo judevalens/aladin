@@ -27,6 +27,7 @@ import (
 	"aladin/backend_v2/internal/insights"
 	"aladin/backend_v2/internal/instrument"
 	"aladin/backend_v2/internal/market"
+	"aladin/backend_v2/internal/page"
 	"aladin/backend_v2/internal/providerconnection"
 	"aladin/backend_v2/internal/readingposition"
 	"aladin/backend_v2/internal/realtime"
@@ -352,7 +353,7 @@ func (emptyAPIDependencies) System() system.SystemService       { return nil }
 func (emptyAPIDependencies) Sources() source.SourceService      { return nil }
 func (emptyAPIDependencies) Records() record.RecordService      { return nil }
 func (emptyAPIDependencies) Artifacts() service.ArtifactService { return nil }
-func (emptyAPIDependencies) Pages() service.PageService         { return nil }
+func (emptyAPIDependencies) Pages() page.Service                { return nil }
 func (emptyAPIDependencies) Files() file.FileService            { return nil }
 func (emptyAPIDependencies) Feed() feed.FeedService             { return nil }
 func (emptyAPIDependencies) Insights() insights.InsightService  { return nil }
