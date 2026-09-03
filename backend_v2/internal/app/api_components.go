@@ -11,6 +11,7 @@ import (
 	"aladin/backend_v2/internal/feed"
 	feedpostgres "aladin/backend_v2/internal/feed/postgres"
 	"aladin/backend_v2/internal/graph"
+	"aladin/backend_v2/internal/insights"
 	"aladin/backend_v2/internal/providerconnection"
 	providerconnectionpostgres "aladin/backend_v2/internal/providerconnection/postgres"
 	"aladin/backend_v2/internal/readingposition"
@@ -158,7 +159,7 @@ func (c *APIProcess) Artifacts() coreservice.ArtifactService { return c.artifact
 func (c *APIProcess) Pages() coreservice.PageService         { return c.pages }
 func (c *APIProcess) Files() coreservice.FileService         { return c.files }
 func (c *APIProcess) Feed() feed.FeedService                 { return c.feed }
-func (c *APIProcess) Insights() coreservice.InsightService   { return c.insights }
+func (c *APIProcess) Insights() insights.InsightService      { return c.insights }
 func (c *APIProcess) ProviderConnections() providerconnection.ProviderConnectionService {
 	return c.providerConnections
 }

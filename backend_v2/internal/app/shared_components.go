@@ -13,6 +13,8 @@ import (
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/docsurface"
 	"aladin/backend_v2/internal/entities"
+	"aladin/backend_v2/internal/insights"
+	insightspostgres "aladin/backend_v2/internal/insights/postgres"
 	"aladin/backend_v2/internal/market/alpaca"
 	"aladin/backend_v2/internal/repo"
 	"aladin/backend_v2/internal/search"
@@ -34,7 +36,7 @@ import (
 type sharedComponents struct {
 	auth             coreservice.AuthService
 	artifacts        coreservice.ArtifactService
-	insights         coreservice.InsightService
+	insights         insights.InsightService
 	docSurfaceStore  coreservice.DocSurfaceStore
 	workspaceRuntime coreservice.WorkspaceRuntime
 	shardBuild       coreservice.ShardBuildService
@@ -100,7 +102,7 @@ func buildSharedComponents(pool *pgxpool.Pool, dataVolumePath string) sharedComp
 
 	docRuntime := docsurface.NewBuilder(docStore, filepath.Join(dataVolumePath, "cache", "esm"), profiles)
 	researchSvc := coreservice.NewResearchService(repo.NewResearchPostgres(pool))
-	insightsSvc := coreservice.NewInsightService(repo.NewInsightPostgres(pool))
+	insightsSvc := insights.NewInsightService(insightspostgres.NewInsightPostgres(pool))
 	entityTagsSvc := coreservice.NewEntityTagService(repo.NewEntityTagPostgres(pool), entities.Normalize)
 	artifactRefsSvc := coreservice.NewArtifactRefService(repo.NewArtifactRefPostgres(pool))
 	contentIndexSvc := coreservice.NewContentIndexService(repo.NewContentIndexPostgres(pool))

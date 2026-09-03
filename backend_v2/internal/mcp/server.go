@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"aladin/backend_v2/internal/blocknote"
+	"aladin/backend_v2/internal/insights"
 	"aladin/backend_v2/internal/search"
 	"aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/shardresource"
@@ -135,7 +136,7 @@ type Server struct {
 type Dependencies interface {
 	Auth() service.AuthService
 	Artifacts() service.ArtifactService
-	Insights() service.InsightService
+	Insights() insights.InsightService
 	DocSurfaceStore() service.DocSurfaceStore
 	Preview() service.PreviewService
 	ShardBuild() service.ShardBuildService

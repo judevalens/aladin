@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"aladin/backend_v2/internal/blocknote"
+	"aladin/backend_v2/internal/insights"
 	"aladin/backend_v2/internal/search"
 	"aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/watchlist"
@@ -39,7 +40,7 @@ type citationOut struct {
 type workspaceToolServer struct {
 	search      search.SearchService
 	entities    service.EntityContextService
-	insights    service.InsightService
+	insights    insights.InsightService
 	artifacts   service.ArtifactService
 	watchlist   watchlist.Service
 	bars        service.BarService
@@ -390,7 +391,7 @@ func (t workspaceToolServer) getInsights(ctx context.Context, _ *sdkmcp.CallTool
 	if limit <= 0 {
 		limit = 10
 	}
-	res, err := t.insights.List(ctx, service.InsightListParams{Limit: limit, Type: in.Type, Status: in.Status})
+	res, err := t.insights.List(ctx, insights.InsightListParams{Limit: limit, Type: in.Type, Status: in.Status})
 	if err != nil {
 		return nil, getInsightsOutput{}, err
 	}

@@ -4,6 +4,7 @@ import (
 	"aladin/backend_v2/internal/alert"
 	"aladin/backend_v2/internal/config"
 	"aladin/backend_v2/internal/docsurface"
+	"aladin/backend_v2/internal/insights"
 	"aladin/backend_v2/internal/search"
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/shardresource"
@@ -50,7 +51,7 @@ func NewMCPComponentsWithDataVolume(pool *pgxpool.Pool, dataVolumePath string) *
 func (c *MCPProcess) Auth() coreservice.AuthService                   { return c.auth }
 func (c *MCPProcess) Artifacts() coreservice.ArtifactService          { return c.artifacts }
 func (c *MCPProcess) PageDocuments() coreservice.PageDocumentService  { return c.pageDocuments }
-func (c *MCPProcess) Insights() coreservice.InsightService            { return c.insights }
+func (c *MCPProcess) Insights() insights.InsightService               { return c.insights }
 func (c *MCPProcess) DocSurfaceStore() coreservice.DocSurfaceStore    { return c.docSurfaceStore }
 func (c *MCPProcess) Preview() coreservice.PreviewService             { return c.preview }
 func (c *MCPProcess) ShardBuild() coreservice.ShardBuildService       { return c.shardBuild }

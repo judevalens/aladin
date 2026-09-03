@@ -4,6 +4,7 @@ import (
 	"aladin/backend_v2/internal/alert"
 	"aladin/backend_v2/internal/changefeed"
 	"aladin/backend_v2/internal/feed"
+	"aladin/backend_v2/internal/insights"
 	"aladin/backend_v2/internal/providerconnection"
 	"aladin/backend_v2/internal/readingposition"
 	"aladin/backend_v2/internal/relationship"
@@ -26,7 +27,7 @@ type APIComponents interface {
 	Pages() coreservice.PageService
 	Files() coreservice.FileService
 	Feed() feed.FeedService
-	Insights() coreservice.InsightService
+	Insights() insights.InsightService
 	ProviderConnections() providerconnection.ProviderConnectionService
 	Realtime() coreservice.RealtimeEventService
 	RealtimeKeyResolver() coreservice.SubscriptionKeyResolver
@@ -68,7 +69,7 @@ type MCPComponents interface {
 	Auth() coreservice.AuthService
 	Artifacts() coreservice.ArtifactService
 	PageDocuments() coreservice.PageDocumentService
-	Insights() coreservice.InsightService
+	Insights() insights.InsightService
 	DocSurfaceStore() coreservice.DocSurfaceStore
 	Preview() coreservice.PreviewService
 	ShardBuild() coreservice.ShardBuildService

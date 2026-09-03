@@ -8,6 +8,8 @@ import (
 	"aladin/backend_v2/internal/feed"
 	feedhttp "aladin/backend_v2/internal/feed/httptransport"
 	"aladin/backend_v2/internal/httpapi"
+	"aladin/backend_v2/internal/insights"
+	insightshttp "aladin/backend_v2/internal/insights/httptransport"
 	"aladin/backend_v2/internal/providerconnection"
 	providerconnectionhttp "aladin/backend_v2/internal/providerconnection/httptransport"
 	"aladin/backend_v2/internal/readingposition"
@@ -52,7 +54,7 @@ type Dependencies interface {
 	Pages() coreservice.PageService
 	Files() coreservice.FileService
 	Feed() feed.FeedService
-	Insights() coreservice.InsightService
+	Insights() insights.InsightService
 	ProviderConnections() providerconnection.ProviderConnectionService
 	Realtime() coreservice.RealtimeEventService
 	RealtimeKeyResolver() coreservice.SubscriptionKeyResolver
@@ -155,10 +157,7 @@ func NewWithDependencies(addr string, deps Dependencies) *Server {
 
 	feedhttp.Register(mux, deps.Feed())
 
-	mux.HandleFunc("GET /api/insights/", s.handleInsightsList)
-	mux.HandleFunc("GET /api/insights/stats", s.handleInsightsStats)
-	mux.HandleFunc("POST /api/insights/{id}/accept", s.handleInsightAccept)
-	mux.HandleFunc("POST /api/insights/{id}/dismiss", s.handleInsightDismiss)
+	insightshttp.Register(mux, deps.Insights())
 
 	s.httpServer = &http.Server{
 		Addr:              addr,

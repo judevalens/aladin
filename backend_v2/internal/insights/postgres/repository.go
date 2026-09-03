@@ -1,4 +1,4 @@
-package repo
+package postgres
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/insights"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -17,7 +17,7 @@ func NewInsightPostgres(pool *pgxpool.Pool) *PostgresInsightRepository {
 	return &PostgresInsightRepository{pool: pool}
 }
 
-func (r *PostgresInsightRepository) List(ctx context.Context, params coreservice.InsightListParams) (map[string]any, error) {
+func (r *PostgresInsightRepository) List(ctx context.Context, params insights.InsightListParams) (map[string]any, error) {
 	query := `
 		SELECT id::text, type, title, body, entity, topic,
 		       record_ids, confidence, user_status, created_at,
@@ -46,9 +46,9 @@ func (r *PostgresInsightRepository) List(ctx context.Context, params coreservice
 	}
 	defer rows.Close()
 
-	items := make([]coreservice.InsightRecord, 0)
+	items := make([]insights.InsightRecord, 0)
 	for rows.Next() {
-		var item coreservice.InsightRecord
+		var item insights.InsightRecord
 		var createdAt time.Time
 		var prov []byte
 		if err := rows.Scan(&item.ID, &item.Type, &item.Title, &item.Body, &item.Entity, &item.Topic, &item.RecordIDs, &item.Confidence, &item.UserStatus, &createdAt, &item.EntityID, &item.TrustTier, &item.Version, &prov); err != nil {
