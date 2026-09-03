@@ -108,6 +108,10 @@ func LoadWorker() (WorkerConfig, error) {
 type AlpacaConfig struct {
 	APIKey    string
 	APISecret string
+	// StreamEnabled is an explicit environment-level ownership switch for the
+	// single Alpaca market-data connection. Keep it false in development when
+	// development and production share credentials.
+	StreamEnabled bool
 	// TradingBaseURL — where the Assets API lives. Defaults to PAPER (safe): paper and
 	// live share the same asset universe, so asset sync never needs the live endpoint.
 	TradingBaseURL string
@@ -122,10 +126,15 @@ type AlpacaConfig struct {
 // is sent only when present (command.Secret is omitempty). Trading/REST still want both.
 func (c AlpacaConfig) Configured() bool { return c.APIKey != "" }
 
+// StreamConfigured is deliberately stricter than Configured: REST integrations
+// can remain available while this process is forbidden from owning the live feed.
+func (c AlpacaConfig) StreamConfigured() bool { return c.Configured() && c.StreamEnabled }
+
 func LoadAlpaca() AlpacaConfig {
 	return AlpacaConfig{
 		APIKey:         os.Getenv("ALPACA_API_KEY"),
 		APISecret:      os.Getenv("ALPACA_API_SECRET"),
+		StreamEnabled:  optionalBool("ALPACA_STREAM_ENABLED", false),
 		TradingBaseURL: optional("ALPACA_TRADING_BASE_URL", "https://paper-api.alpaca.markets"),
 		DataBaseURL:    optional("ALPACA_DATA_BASE_URL", "https://data.alpaca.markets"),
 		StreamBaseURL:  optional("ALPACA_STREAM_BASE_URL", "wss://stream.data.alpaca.markets/v2"),
@@ -212,6 +221,18 @@ func optionalInt(key string, fallback int) int {
 	}
 	parsed, err := strconv.Atoi(v)
 	if err != nil || parsed <= 0 {
+		return fallback
+	}
+	return parsed
+}
+
+func optionalBool(key string, fallback bool) bool {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseBool(v)
+	if err != nil {
 		return fallback
 	}
 	return parsed

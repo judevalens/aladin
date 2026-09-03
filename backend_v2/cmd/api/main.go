@@ -60,8 +60,8 @@ func main() {
 	// converges via the client's periodic/reconnect pull, never live.
 	deps.OutboxDrainer().Start(ctx)
 
-	// Live market data: hold the (single) upstream Alpaca WS and publish ticks to the outbox
-	// for the drainer to fan out. No-op without Alpaca keys.
+	// Live market data: arm the demand-driven upstream Alpaca WS and publish ticks to the
+	// outbox for the drainer to fan out. No-op unless this environment explicitly owns it.
 	deps.MarketData().Start(ctx)
 
 	// Alert engine: evaluate price alerts on live ticks (via the hub's tick observer, wired in

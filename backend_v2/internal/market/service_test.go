@@ -26,6 +26,19 @@ func (f *fakeStream) Unsubscribe(_ context.Context, symbols ...string) {
 }
 func (f *fakeStream) Run(context.Context) {}
 
+type lifecycleStream struct {
+	started chan struct{}
+	stopped chan struct{}
+}
+
+func (f *lifecycleStream) Subscribe(context.Context, ...string)   {}
+func (f *lifecycleStream) Unsubscribe(context.Context, ...string) {}
+func (f *lifecycleStream) Run(ctx context.Context) {
+	f.started <- struct{}{}
+	<-ctx.Done()
+	f.stopped <- struct{}{}
+}
+
 type stubResolver struct{}
 
 func (stubResolver) ResolveInstrumentID(_ context.Context, symbol string) (string, bool, error) {
@@ -54,6 +67,39 @@ func TestMarketDataHubRefcountDedup(t *testing.T) {
 	_ = h.Unsubscribe(ctx, []string{"NVDA"})
 	if len(fs.unsubbed) != 1 || fs.unsubbed[0] != "NVDA" {
 		t.Fatalf("expected one NVDA unsub, got %v", fs.unsubbed)
+	}
+}
+
+func TestMarketDataHubConnectsOnlyOnDemandAndReleasesWhenIdle(t *testing.T) {
+	stream := &lifecycleStream{
+		started: make(chan struct{}, 1),
+		stopped: make(chan struct{}, 1),
+	}
+	h := newHub(nil, stubResolver{})
+	h.stream = stream
+	h.idleTimeout = 10 * time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	h.Start(ctx)
+	select {
+	case <-stream.started:
+		t.Fatal("idle hub opened the upstream stream")
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	_ = h.Subscribe(ctx, []string{"AAPL"})
+	select {
+	case <-stream.started:
+	case <-time.After(time.Second):
+		t.Fatal("first subscription did not start the upstream stream")
+	}
+
+	_ = h.Unsubscribe(ctx, []string{"AAPL"})
+	select {
+	case <-stream.stopped:
+	case <-time.After(time.Second):
+		t.Fatal("idle hub did not release the upstream stream")
 	}
 }
 

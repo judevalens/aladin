@@ -56,6 +56,7 @@ OPENAI_API_KEY=$OPENAI
 TAVILY_API_KEY=$TAVILY
 ALPACA_API_KEY=
 ALPACA_API_SECRET=
+ALPACA_STREAM_ENABLED=true
 BLOCKNOTE_ADMIN_SHARED_SECRET=$ADMIN
 # Shard v2 remains opt-in. MongoDB is already part of the data tier, so enabling
 # it later only requires changing this flag and rebuilding the native release.

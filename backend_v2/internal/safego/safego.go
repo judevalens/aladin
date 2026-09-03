@@ -34,19 +34,24 @@ func Go(name string, fn func()) {
 // alert engine, the market stream). fn is expected to block until ctx is done;
 // a panic no longer ends the subsystem — it restarts.
 func Loop(ctx context.Context, name string, fn func(context.Context)) {
-	go func() {
-		for ctx.Err() == nil {
-			runOnce(ctx, name, fn)
-			// Paused restart: on a clean return this only fires if fn exited
-			// before ctx was cancelled (unexpected); on a panic it prevents a
-			// tight crash-loop while still recovering.
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(restartBackoff):
-			}
+	go Supervise(ctx, name, fn)
+}
+
+// Supervise is the blocking form of Loop. It is useful when a caller owns a
+// shorter-lived subsystem and must observe when cancellation has fully stopped
+// the supervised body before starting it again.
+func Supervise(ctx context.Context, name string, fn func(context.Context)) {
+	for ctx.Err() == nil {
+		runOnce(ctx, name, fn)
+		// Paused restart: on a clean return this only fires if fn exited
+		// before ctx was cancelled (unexpected); on a panic it prevents a
+		// tight crash-loop while still recovering.
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(restartBackoff):
 		}
-	}()
+	}
 }
 
 // runOnce isolates the recover to a single invocation so Loop keeps iterating.

@@ -19,6 +19,7 @@ describe("observable services", () => {
       logout: vi.fn(),
     };
     let savedToken: { token: string; expiresAt?: string | null } | null = null;
+    const invalidationListeners = new Set<() => void>();
     const sessionStore: DesktopSessionStore = {
       load: () => (savedToken ? { ...savedToken } : null),
       save: (record) => {
@@ -26,6 +27,14 @@ describe("observable services", () => {
       },
       clear: () => {
         savedToken = null;
+      },
+      invalidate: () => {
+        savedToken = null;
+        invalidationListeners.forEach((listener) => listener());
+      },
+      onInvalidated: (listener) => {
+        invalidationListeners.add(listener);
+        return () => invalidationListeners.delete(listener);
       },
       getToken: () => savedToken?.token ?? null,
     };
@@ -51,6 +60,13 @@ describe("observable services", () => {
       status: "authenticated",
       user: { id: "user-1", email: "admin@email.com" },
     });
+
+    sessionStore.invalidate();
+    const invalidatedSubscription = service.session().subscribe((next) => {
+      sessionSnapshot = next;
+    });
+    invalidatedSubscription.unsubscribe();
+    expect(sessionSnapshot).toEqual({ status: "anonymous", user: null });
   });
 
   it("broadcasts the fetched artifact to all subscribers via artifactById", async () => {

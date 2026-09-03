@@ -19,7 +19,8 @@ import (
 type MarketDataService interface {
 	Subscribe(ctx context.Context, symbols []string) error
 	Unsubscribe(ctx context.Context, symbols []string) error
-	// Start runs the upstream stream until ctx is cancelled (no-op without Alpaca keys).
+	// Start arms the demand-driven upstream lifecycle until ctx is cancelled
+	// (no-op when this environment does not own an Alpaca stream).
 	Start(ctx context.Context)
 }
 
@@ -36,7 +37,10 @@ type upstreamStream interface {
 	Run(ctx context.Context)
 }
 
-const quoteThrottle = time.Second // ≤1 published quote per symbol per second
+const (
+	quoteThrottle     = time.Second // ≤1 published quote per symbol per second
+	streamIdleTimeout = 30 * time.Second
+)
 
 type marketDataHub struct {
 	quotes    QuoteService
@@ -53,6 +57,15 @@ type marketDataHub struct {
 	refcount    map[string]int       // symbol → active subscriptions
 	idBySymbol  map[string]string    // symbol → instrument_id (cached at subscribe)
 	lastPublish map[string]time.Time // symbol → last publish (throttle)
+
+	// The process context only arms the stream. The first live symbol starts it;
+	// the last symbol schedules cancellation so an idle process releases its
+	// upstream connection slot.
+	rootCtx     context.Context
+	runCancel   context.CancelFunc
+	runDone     chan struct{}
+	idleTimer   *time.Timer
+	idleTimeout time.Duration
 
 	// seedSem bounds concurrent snapshot-seed REST calls so a large subscribe (a big
 	// watchlist/screener) can't fan out 100+ simultaneous Alpaca calls and trip a 429.
@@ -91,6 +104,7 @@ func newHub(quotes QuoteService, resolver InstrumentResolver) *marketDataHub {
 		idBySymbol:  map[string]string{},
 		lastPublish: map[string]time.Time{},
 		seedSem:     make(chan struct{}, 8),
+		idleTimeout: streamIdleTimeout,
 	}
 }
 
@@ -105,10 +119,62 @@ type MarketDataConfig struct {
 }
 
 func (h *marketDataHub) Start(ctx context.Context) {
-	if h.stream != nil {
-		// Supervised: a panic in the WS read/reconnect loop must not silently kill live quotes.
-		safego.Loop(ctx, "market.stream", h.stream.Run)
+	if h.stream == nil {
+		return
 	}
+	h.mu.Lock()
+	h.rootCtx = ctx
+	if len(h.refcount) > 0 {
+		h.startStreamLocked()
+	}
+	h.mu.Unlock()
+}
+
+func (h *marketDataHub) startStreamLocked() {
+	if h.stream == nil || h.rootCtx == nil || h.rootCtx.Err() != nil || h.runCancel != nil {
+		return
+	}
+	if h.idleTimer != nil {
+		h.idleTimer.Stop()
+		h.idleTimer = nil
+	}
+	runCtx, cancel := context.WithCancel(h.rootCtx)
+	done := make(chan struct{})
+	h.runCancel = cancel
+	h.runDone = done
+	safego.Go("market.stream.supervisor", func() {
+		// Supervised: a panic in the WS read/reconnect loop must not silently kill live quotes.
+		safego.Supervise(runCtx, "market.stream", h.stream.Run)
+		close(done)
+		h.streamStopped(done)
+	})
+}
+
+func (h *marketDataHub) streamStopped(done chan struct{}) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.runDone != done {
+		return
+	}
+	h.runCancel = nil
+	h.runDone = nil
+	if len(h.refcount) > 0 {
+		h.startStreamLocked()
+	}
+}
+
+func (h *marketDataHub) scheduleIdleStopLocked() {
+	if h.runCancel == nil || h.idleTimer != nil {
+		return
+	}
+	h.idleTimer = time.AfterFunc(h.idleTimeout, func() {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		h.idleTimer = nil
+		if len(h.refcount) == 0 && h.runCancel != nil {
+			h.runCancel()
+		}
+	})
 }
 
 func (h *marketDataHub) Subscribe(ctx context.Context, symbols []string) error {
@@ -125,6 +191,12 @@ func (h *marketDataHub) Subscribe(ctx context.Context, symbols []string) error {
 		}
 	}
 	h.mu.Unlock()
+
+	if len(fresh) > 0 {
+		h.mu.Lock()
+		h.startStreamLocked()
+		h.mu.Unlock()
+	}
 
 	// Resolve + cache instrument ids for the newly-demanded symbols, then subscribe upstream.
 	for _, sym := range fresh {
@@ -190,6 +262,11 @@ func (h *marketDataHub) Unsubscribe(ctx context.Context, symbols []string) error
 	if h.stream != nil && len(drop) > 0 {
 		h.stream.Unsubscribe(ctx, drop...)
 	}
+	h.mu.Lock()
+	if len(h.refcount) == 0 {
+		h.scheduleIdleStopLocked()
+	}
+	h.mu.Unlock()
 	return nil
 }
 

@@ -119,7 +119,7 @@ func NewAPIComponentsWithProviderConnections(pool *pgxpool.Pool, providerConfig 
 
 	quoteSvc := market.NewQuoteService(syncRepo)
 	marketDataSvc := market.NewMarketDataService(market.MarketDataConfig{
-		Configured:    shared.alpacaConfig.Configured(),
+		Configured:    shared.alpacaConfig.StreamConfigured(),
 		StreamBaseURL: shared.alpacaConfig.StreamBaseURL,
 		Feed:          shared.alpacaConfig.Feed,
 		APIKey:        shared.alpacaConfig.APIKey,

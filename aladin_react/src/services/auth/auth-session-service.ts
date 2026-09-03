@@ -20,7 +20,13 @@ export class AuthSessionService {
   constructor(
     private readonly repo: AuthRepo,
     private readonly desktopSessionStore: DesktopSessionStore,
-  ) {}
+  ) {
+    this.desktopSessionStore.onInvalidated(() => {
+      if (this.subject.getValue().status !== "anonymous") {
+        this.subject.next({ status: "anonymous", user: null });
+      }
+    });
+  }
 
   session(): Observable<AuthSessionSnapshot> {
     this.bootstrapIfNeeded();

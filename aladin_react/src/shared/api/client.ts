@@ -49,6 +49,8 @@ export interface ApiRuntimeConfig {
 
 export interface SessionTokenStore {
   getToken(): string | null;
+  /** Drop a rejected bearer and notify session owners when supported. */
+  invalidate?(): void;
 }
 
 export interface ApiClient {
@@ -93,6 +95,9 @@ export function createApiClient(
         credentials: "omit",
         headers,
       });
+      if (response.status === 401) {
+        sessionStore.invalidate?.();
+      }
       return parseResponse<T>(response);
     },
     async fetchBlob(path, init) {
@@ -107,6 +112,9 @@ export function createApiClient(
         credentials: "omit",
         headers,
       });
+      if (response.status === 401) {
+        sessionStore.invalidate?.();
+      }
       if (!response.ok) {
         throw new ApiError(`${response.status} ${response.statusText}`, response.status, response.statusText);
       }
