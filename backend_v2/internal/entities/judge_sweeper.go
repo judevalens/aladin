@@ -8,7 +8,7 @@ import (
 
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/llm"
-	"aladin/backend_v2/internal/search"
+	"aladin/backend_v2/internal/websearch"
 )
 
 const (
@@ -53,7 +53,7 @@ type JudgeStore interface {
 type JudgeSweeper struct {
 	store    JudgeStore
 	judge    llm.EntityAdjudicator // nil → deterministic tier only
-	searcher search.Searcher       // nil → no web escalation
+	searcher websearch.Searcher    // nil → no web escalation
 }
 
 func NewJudgeSweeper(store JudgeStore, judge llm.EntityAdjudicator) *JudgeSweeper {
@@ -61,7 +61,7 @@ func NewJudgeSweeper(store JudgeStore, judge llm.EntityAdjudicator) *JudgeSweepe
 }
 
 // WithSearcher enables the web-search escalation for unsure verdicts.
-func (s *JudgeSweeper) WithSearcher(sr search.Searcher) *JudgeSweeper {
+func (s *JudgeSweeper) WithSearcher(sr websearch.Searcher) *JudgeSweeper {
 	s.searcher = sr
 	return s
 }

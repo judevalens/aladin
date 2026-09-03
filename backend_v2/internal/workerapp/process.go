@@ -33,6 +33,7 @@ import (
 	searchpostgres "aladin/backend_v2/internal/search/postgres"
 	isync "aladin/backend_v2/internal/sync"
 	"aladin/backend_v2/internal/sync/syncers"
+	"aladin/backend_v2/internal/websearch"
 )
 
 func Run() {
@@ -220,9 +221,9 @@ func Run() {
 	// about via web search → context → resolver. Built only when TAVILY_API_KEY is set; the
 	// CachedSearcher owns rate limiting, so the worker takes no limiter.
 	var lowConfWorker *workers.ResolveLowConfidenceWorker
-	var webSearcher search.Searcher
+	var webSearcher websearch.Searcher
 	if cfg.TavilyAPIKey != "" {
-		searcher := search.NewCachedSearcher(search.NewTavilyClient(cfg.TavilyAPIKey), redisClient, ratelimit.New(20))
+		searcher := websearch.NewCachedSearcher(websearch.NewTavilyClient(cfg.TavilyAPIKey), redisClient, ratelimit.New(20))
 		webSearcher = searcher
 		lowConfWorker = workers.NewResolveLowConfidenceWorker(recordRepo, entityResolver, searcher, nil)
 		handler.WithLowConfidenceSearch(true)

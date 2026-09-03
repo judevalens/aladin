@@ -11,7 +11,7 @@ import (
 	"aladin/backend_v2/internal/entities"
 	"aladin/backend_v2/internal/pipeline"
 	"aladin/backend_v2/internal/ratelimit"
-	"aladin/backend_v2/internal/search"
+	"aladin/backend_v2/internal/websearch"
 )
 
 // EntityResolver is the slice of *entities.Resolver this worker needs (so it's fakeable).
@@ -29,11 +29,11 @@ type EntityResolver interface {
 type ResolveLowConfidenceWorker struct {
 	records  db.RecordRepository
 	resolver EntityResolver
-	searcher search.Searcher
+	searcher websearch.Searcher
 	limiter  *ratelimit.Limiter
 }
 
-func NewResolveLowConfidenceWorker(records db.RecordRepository, resolver EntityResolver, searcher search.Searcher, limiter *ratelimit.Limiter) *ResolveLowConfidenceWorker {
+func NewResolveLowConfidenceWorker(records db.RecordRepository, resolver EntityResolver, searcher websearch.Searcher, limiter *ratelimit.Limiter) *ResolveLowConfidenceWorker {
 	return &ResolveLowConfidenceWorker{records: records, resolver: resolver, searcher: searcher, limiter: limiter}
 }
 
@@ -110,7 +110,7 @@ func (w *ResolveLowConfidenceWorker) Run(ctx context.Context, raw []byte) pipeli
 
 // searchHint builds a bounded context hint from the record summary + the top search result,
 // to strengthen the resolver's context-embedding match.
-func searchHint(summary string, top search.SearchResult) string {
+func searchHint(summary string, top websearch.SearchResult) string {
 	const maxContent = 500
 	content := top.Content
 	if len(content) > maxContent {

@@ -7,7 +7,7 @@ import (
 
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/llm"
-	"aladin/backend_v2/internal/search"
+	"aladin/backend_v2/internal/websearch"
 )
 
 // ── fakes ────────────────────────────────────────────────────────────────────────────
@@ -137,12 +137,12 @@ func (f *fakeJudge) JudgeSameEntity(_ context.Context, in llm.EntityAdjudication
 }
 
 type fakeJudgeSearcher struct {
-	results []search.SearchResult
+	results []websearch.SearchResult
 	err     error
 	queries []string
 }
 
-func (f *fakeJudgeSearcher) Search(_ context.Context, q string, _ int) ([]search.SearchResult, error) {
+func (f *fakeJudgeSearcher) Search(_ context.Context, q string, _ int) ([]websearch.SearchResult, error) {
 	f.queries = append(f.queries, q)
 	return f.results, f.err
 }
@@ -263,7 +263,7 @@ func TestJudgeSweep_UnsureEscalatesToWebAndResolves(t *testing.T) {
 		{Verdict: "uncertain", Confidence: 0.4},
 		{Verdict: "same", Confidence: 0.9},
 	}}
-	searcher := &fakeJudgeSearcher{results: []search.SearchResult{{Content: "HDFC Bank, India's largest private bank, commonly called HDFC"}}}
+	searcher := &fakeJudgeSearcher{results: []websearch.SearchResult{{Content: "HDFC Bank, India's largest private bank, commonly called HDFC"}}}
 
 	if _, err := NewJudgeSweeper(s, judge).WithSearcher(searcher).Sweep(context.Background(), 10); err != nil {
 		t.Fatalf("sweep: %v", err)

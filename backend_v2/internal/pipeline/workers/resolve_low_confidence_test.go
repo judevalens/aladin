@@ -10,7 +10,7 @@ import (
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/entities"
 	"aladin/backend_v2/internal/pipeline"
-	"aladin/backend_v2/internal/search"
+	"aladin/backend_v2/internal/websearch"
 )
 
 type fakeResolver struct{ calls []entities.Mention }
@@ -21,11 +21,11 @@ func (f *fakeResolver) Resolve(_ context.Context, m entities.Mention) (string, e
 }
 
 type fakeSearcher struct {
-	results map[string][]search.SearchResult
+	results map[string][]websearch.SearchResult
 	err     error
 }
 
-func (f *fakeSearcher) Search(_ context.Context, q string, _ int) ([]search.SearchResult, error) {
+func (f *fakeSearcher) Search(_ context.Context, q string, _ int) ([]websearch.SearchResult, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -45,7 +45,7 @@ func TestResolveLowConfidence_SearchesAndResolves(t *testing.T) {
 
 	repo := lowConfRecord("Acme Niche")
 	resolver := &fakeResolver{}
-	searcher := &fakeSearcher{results: map[string][]search.SearchResult{
+	searcher := &fakeSearcher{results: map[string][]websearch.SearchResult{
 		"Acme Niche": {{Title: "Acme Niche Inc", Content: "Acme Niche is a robotics startup."}},
 	}}
 	w := NewResolveLowConfidenceWorker(repo, resolver, searcher, nil)
