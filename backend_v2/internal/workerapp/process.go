@@ -4,7 +4,6 @@ package workerapp
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"log/slog"
 	"os"
@@ -28,7 +27,6 @@ import (
 	"aladin/backend_v2/internal/pipeline/workers"
 	"aladin/backend_v2/internal/ratelimit"
 	"aladin/backend_v2/internal/repo"
-	"aladin/backend_v2/internal/safego"
 	"aladin/backend_v2/internal/search"
 	coreservice "aladin/backend_v2/internal/service"
 	isync "aladin/backend_v2/internal/sync"
@@ -58,6 +56,7 @@ func Run() {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+	lifecycle := NewLifecyclePlan()
 
 	// Postgres
 	pool, err := db.Connect(ctx, cfg.DatabaseURL)
@@ -137,7 +136,7 @@ func Run() {
 	}
 	docSweeper := ingestion.NewSweeper(
 		repo.NewDocumentPostgres(pool, app.NewArtifactFileStore()), docSegmenter, slog.Default())
-	safego.Loop(ctx, "worker.ingestion", func(ctx context.Context) {
+	lifecycle.Add("worker.ingestion", func(ctx context.Context) {
 		ticker := time.NewTicker(15 * time.Second)
 		defer ticker.Stop()
 		for {
@@ -159,7 +158,7 @@ func Run() {
 	// written by the sidecar with direct SQL: no outbox frame ever fires for them, so the
 	// three source clocks in repo.StaleArtifacts are the only truthful freshness signal.
 	contentIndex := coreservice.NewContentIndexService(repo.NewContentIndexPostgres(pool))
-	safego.Loop(ctx, "worker.contentindex", func(ctx context.Context) {
+	lifecycle.Add("worker.contentindex", func(ctx context.Context) {
 		ticker := time.NewTicker(20 * time.Second)
 		defer ticker.Stop()
 		for {
@@ -180,7 +179,7 @@ func Run() {
 	// capture whose enrichment enqueue was lost to a crash). Idempotent: deterministic task
 	// ids make re-enqueuing a still-queued task a no-op.
 	reaper := pipeline.NewReaper(recordRepo, pipelineEnqueuer)
-	safego.Loop(ctx, "worker.reaper", func(ctx context.Context) {
+	lifecycle.Add("worker.reaper", func(ctx context.Context) {
 		ticker := time.NewTicker(2 * time.Minute)
 		defer ticker.Stop()
 		for {
@@ -239,7 +238,7 @@ func Run() {
 	if webSearcher != nil {
 		judgeSweeper = judgeSweeper.WithSearcher(webSearcher)
 	}
-	safego.Loop(ctx, "worker.judge", func(ctx context.Context) {
+	lifecycle.Add("worker.judge", func(ctx context.Context) {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
 		for {
@@ -267,7 +266,7 @@ func Run() {
 			outboxRetention = d
 		}
 	}
-	safego.Loop(ctx, "worker.outbox-prune", func(ctx context.Context) {
+	lifecycle.Add("worker.outbox-prune", func(ctx context.Context) {
 		ticker := time.NewTicker(2 * time.Minute)
 		defer ticker.Stop()
 		for {
@@ -289,15 +288,10 @@ func Run() {
 	// zeros; a stale beat = worker down/wedged).
 	inspector := asynq.NewInspector(redisOpt)
 	defer inspector.Close()
-	safego.Loop(ctx, "worker.heartbeat", func(ctx context.Context) {
+	lifecycle.Add("worker.heartbeat", func(ctx context.Context) {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
-		beat := func() {
-			payload, _ := json.Marshal(collectQueueStats(inspector))
-			if _, err := pool.Exec(ctx, `UPDATE worker_heartbeat SET updated_at = now(), stats = $1::jsonb WHERE id = 1`, payload); err != nil {
-				slog.Warn("worker heartbeat write failed", "component", "worker", "err", err)
-			}
-		}
+		beat := func() { writeHeartbeat(ctx, pool, inspector) }
 		beat() // beat immediately on start
 		for {
 			select {
@@ -321,11 +315,6 @@ func Run() {
 		orch.Add(workers.NewGraphProjectWorker(repo.NewGraphProjectionPostgres(pool), graphProjector))
 	}
 
-	// Mux
-	mux := asynq.NewServeMux()
-	orch.Register(mux)
-	insights.RegisterGenerateHandler(mux, gen)
-
 	// Sync orchestrator
 	seenStore := isync.NewRedisSeenStore(redisClient)
 	syncEnqueuer := isync.NewAsynqEnqueuer(asynqClient)
@@ -336,69 +325,20 @@ func Run() {
 		syncers.NewRedditSyncer(seenStore),
 	)
 
-	// asynq server — built after syncOrchestrator so we can pull queue names from syncers
-	queues := map[string]int{
-		pipeline.TaskGlobalFirstPass:      10,
-		pipeline.TaskTenantMatch:          10,
-		pipeline.TaskEmbed:                3,
-		pipeline.TaskResolveEntities:      5,
-		pipeline.TaskResolveLowConfidence: 3,
-		pipeline.TaskGraphProject:         3,
-		insights.TaskGenerate:             5,
-	}
-	for name, weight := range syncOrchestrator.Queues() {
-		queues[name] = weight
-	}
+	registry := NewTaskRegistry(orch, insights.NewGenerateHandler(gen), syncOrchestrator)
 	asynqServer := asynq.NewServer(redisOpt, asynq.Config{
 		Concurrency:    cfg.Concurrency,
-		Queues:         queues,
+		Queues:         registry.Queues(),
 		RetryDelayFunc: pipeline.RetryDelay,
 		IsFailure:      pipeline.IsFailure,
 		ErrorHandler:   isync.NewAsynqErrorHandler(recordRepo, providerStreamRepo, cycleRepo),
 	})
 
-	syncOrchestrator.RegisterHandlers(mux)
-	syncOrchestrator.Start(ctx)
-
-	// Start asynq server
-	go func() {
-		if err := asynqServer.Run(mux); err != nil {
-			slog.Error("asynq server stopped", "component", "worker", "err", err)
-		}
-	}()
-	go func() {
-		<-ctx.Done()
-		asynqServer.Shutdown()
-	}()
+	lifecycle.AddStarter("worker.sync-scheduler", syncOrchestrator.Start)
 
 	slog.Info("aladin worker running — ctrl+c to stop", "component", "worker", "concurrency", cfg.Concurrency)
-	<-ctx.Done()
+	if err := NewSupervisor(asynqServer, registry.Handler(), lifecycle).Run(ctx); err != nil {
+		slog.Error("asynq server stopped", "component", "worker", "err", err)
+	}
 	slog.Info("shutting down", "component", "worker")
-}
-
-// collectQueueStats aggregates Asynq queue counts across all queues for the worker heartbeat.
-func collectQueueStats(insp *asynq.Inspector) map[string]any {
-	queues, err := insp.Queues()
-	if err != nil {
-		return map[string]any{"error": err.Error()}
-	}
-	var pending, active, scheduled, retry, archived, completed, processed, failed int
-	for _, q := range queues {
-		info, err := insp.GetQueueInfo(q)
-		if err != nil {
-			continue
-		}
-		pending += info.Pending
-		active += info.Active
-		scheduled += info.Scheduled
-		retry += info.Retry
-		archived += info.Archived
-		completed += info.Completed
-		processed += info.Processed
-		failed += info.Failed
-	}
-	return map[string]any{
-		"queues": len(queues), "pending": pending, "active": active, "scheduled": scheduled,
-		"retry": retry, "archived": archived, "completed": completed, "processed": processed, "failed": failed,
-	}
 }

@@ -235,6 +235,16 @@ func (q *Orchestrator) Queues() map[string]int {
 	return m
 }
 
+// TaskTypes returns the stable handler names owned by the source-sync family.
+func (q *Orchestrator) TaskTypes() []string {
+	types := make([]string, 0, len(q.syncers))
+	for provider := range q.syncers {
+		types = append(types, taskType(provider))
+	}
+	sort.Strings(types)
+	return types
+}
+
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 func (q *Orchestrator) makeHandler(syncer Syncer) asynq.HandlerFunc {

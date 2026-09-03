@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"log/slog"
+	"sort"
 
 	"github.com/hibiken/asynq"
 )
@@ -14,6 +15,18 @@ import (
 type Orchestrator struct {
 	workers map[string]Worker
 	handler ResultHandler
+}
+
+// TaskTypes returns the stable task names owned by this pipeline family.
+// It is used by process composition to inventory registrations without
+// reaching into the orchestrator's handler map.
+func (o *Orchestrator) TaskTypes() []string {
+	types := make([]string, 0, len(o.workers))
+	for taskType := range o.workers {
+		types = append(types, taskType)
+	}
+	sort.Strings(types)
+	return types
 }
 
 func NewOrchestrator(handler ResultHandler) *Orchestrator {
