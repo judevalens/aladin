@@ -21,6 +21,8 @@ import (
 	"aladin/backend_v2/internal/market/alpaca"
 	marketpostgres "aladin/backend_v2/internal/market/postgres"
 	"aladin/backend_v2/internal/repo"
+	"aladin/backend_v2/internal/research"
+	researchpostgres "aladin/backend_v2/internal/research/postgres"
 	"aladin/backend_v2/internal/search"
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/shardresource"
@@ -61,7 +63,7 @@ type sharedComponents struct {
 	recordRepo     coreservice.RecordRepository
 	artifactRepo   *repo.PostgresArtifactRepository
 	artifactFiles  coreservice.ArtifactFileStore
-	research       coreservice.ResearchService
+	research       research.ResearchService
 	quoteSnapshots market.QuoteSnapshotSource
 	marketInfo     market.MarketInfoService
 	alertRepo      alert.AlertRepository
@@ -105,7 +107,7 @@ func buildSharedComponents(pool *pgxpool.Pool, dataVolumePath string) sharedComp
 	}
 
 	docRuntime := docsurface.NewBuilder(docStore, filepath.Join(dataVolumePath, "cache", "esm"), profiles)
-	researchSvc := coreservice.NewResearchService(repo.NewResearchPostgres(pool))
+	researchSvc := research.NewResearchService(researchpostgres.NewResearchPostgres(pool))
 	insightsSvc := insights.NewInsightService(insightspostgres.NewInsightPostgres(pool))
 	entityTagsSvc := coreservice.NewEntityTagService(repo.NewEntityTagPostgres(pool), entities.Normalize)
 	artifactRefsSvc := coreservice.NewArtifactRefService(repo.NewArtifactRefPostgres(pool))
@@ -155,7 +157,7 @@ func buildSharedComponents(pool *pgxpool.Pool, dataVolumePath string) sharedComp
 			coreservice.NewArtifactEntityService(artifactsSvc),
 			coreservice.NewRecordEntityService(recordRepo),
 			coreservice.NewWatchlistEntityService(watchlistSvc),
-			coreservice.NewResearchEntityService(researchSvc),
+			research.NewEntityService(researchSvc),
 		))
 		validators := []coreservice.ResourceStageValidator{workspace.(coreservice.ResourceStageValidator)}
 		if validator, ok := ownedStorage.(coreservice.ResourceStageValidator); ok {
@@ -182,7 +184,7 @@ func buildSharedComponents(pool *pgxpool.Pool, dataVolumePath string) sharedComp
 			coreservice.NewArtifactEntityService(artifactsSvc),
 			coreservice.NewRecordEntityService(recordRepo),
 			coreservice.NewWatchlistEntityService(watchlistSvc),
-			coreservice.NewResearchEntityService(researchSvc),
+			research.NewEntityService(researchSvc),
 		))
 
 	return sharedComponents{

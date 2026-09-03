@@ -22,6 +22,8 @@ import (
 	readingpositionhttp "aladin/backend_v2/internal/readingposition/httptransport"
 	"aladin/backend_v2/internal/relationship"
 	relationshiphttp "aladin/backend_v2/internal/relationship/httptransport"
+	"aladin/backend_v2/internal/research"
+	researchhttp "aladin/backend_v2/internal/research/httptransport"
 	"aladin/backend_v2/internal/search"
 	searchhttp "aladin/backend_v2/internal/search/httptransport"
 	coreservice "aladin/backend_v2/internal/service"
@@ -74,7 +76,7 @@ type Dependencies interface {
 	ShardKV() coreservice.ShardKVService
 	ShardBridge() coreservice.ShardBridgeService
 	Relationships() relationship.RelationshipService
-	Research() coreservice.ResearchService
+	Research() research.ResearchService
 	Documents() coreservice.DocumentService
 	GraphPane() graphpane.GraphPaneService
 	EntityTags() coreservice.EntityTagService
@@ -136,7 +138,7 @@ func NewWithDependencies(addr string, deps Dependencies) *Server {
 	s.registerShardRoutes(mux)
 	relationshiphttp.Register(mux, deps.Relationships())
 	graphpanehttp.Register(mux, deps.GraphPane())
-	s.registerResearchRoutes(mux)
+	researchhttp.Register(mux, deps.Research())
 	s.registerDocumentRoutes(mux)
 	s.registerEntityTagRoutes(mux)
 	instrumenthttp.Register(mux, deps.Instruments(), deps.Bars())

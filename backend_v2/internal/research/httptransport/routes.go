@@ -1,16 +1,23 @@
-package api
+// Package httptransport owns the public HTTP adapter for Research.
+package httptransport
 
 import (
 	"errors"
 	"net/http"
 
-	artifactservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/httpapi"
+	"aladin/backend_v2/internal/research"
+	coreservice "aladin/backend_v2/internal/service"
 )
 
-func (s *Server) registerResearchRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("POST /api/research", s.handleResearchCreate)
-	mux.HandleFunc("GET /api/research/{id}", s.handleResearchGet)
-	mux.HandleFunc("PATCH /api/research/{id}", s.handleResearchPatch)
+type routes struct{ service research.ResearchService }
+
+// Register installs the existing Research routes without changing their public contracts.
+func Register(mux *http.ServeMux, service research.ResearchService) {
+	routes := routes{service: service}
+	mux.HandleFunc("POST /api/research", routes.handleResearchCreate)
+	mux.HandleFunc("GET /api/research/{id}", routes.handleResearchGet)
+	mux.HandleFunc("PATCH /api/research/{id}", routes.handleResearchPatch)
 }
 
 // researchCreateRequest is the wire shape for creating a research folder. Only `title`
@@ -28,13 +35,13 @@ type researchCreateRequest struct {
 // seq guard the WS frame uses.
 //
 //	POST /api/research
-func (s *Server) handleResearchCreate(w http.ResponseWriter, r *http.Request) {
+func (routes routes) handleResearchCreate(w http.ResponseWriter, r *http.Request) {
 	var req researchCreateRequest
-	if err := readJSON(r, &req); err != nil {
-		writeDecodeError(w, r, err)
+	if err := httpapi.ReadJSON(r, &req); err != nil {
+		httpapi.WriteDecodeError(w, r, err)
 		return
 	}
-	node, err := s.deps.Research().Create(r.Context(), artifactservice.ResearchCreateInput{
+	node, err := routes.service.Create(r.Context(), research.ResearchCreateInput{
 		ID:         req.ID,
 		Title:      req.Title,
 		ParentID:   req.ParentID,
@@ -44,7 +51,7 @@ func (s *Server) handleResearchCreate(w http.ResponseWriter, r *http.Request) {
 		writeResearchError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, node)
+	httpapi.WriteJSON(w, http.StatusCreated, node)
 }
 
 // handleResearchGet reads one research folder's strategy facts — the fields the tree
@@ -52,13 +59,13 @@ func (s *Server) handleResearchCreate(w http.ResponseWriter, r *http.Request) {
 // opens rather than relayed to every tree row.
 //
 //	GET /api/research/{id}
-func (s *Server) handleResearchGet(w http.ResponseWriter, r *http.Request) {
-	out, err := s.deps.Research().Get(r.Context(), r.PathValue("id"))
+func (routes routes) handleResearchGet(w http.ResponseWriter, r *http.Request) {
+	out, err := routes.service.Get(r.Context(), r.PathValue("id"))
 	if err != nil {
 		writeResearchError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, out)
+	httpapi.WriteJSON(w, http.StatusOK, out)
 }
 
 // researchPatchRequest is the research folder's mutable surface. Title only for now;
@@ -73,13 +80,13 @@ type researchPatchRequest struct {
 // syncer — including the Overview, whose heavier fields don't ride the frame.
 //
 //	PATCH /api/research/{id}
-func (s *Server) handleResearchPatch(w http.ResponseWriter, r *http.Request) {
+func (routes routes) handleResearchPatch(w http.ResponseWriter, r *http.Request) {
 	var req researchPatchRequest
-	if err := readJSON(r, &req); err != nil {
-		writeDecodeError(w, r, err)
+	if err := httpapi.ReadJSON(r, &req); err != nil {
+		httpapi.WriteDecodeError(w, r, err)
 		return
 	}
-	node, err := s.deps.Research().Update(r.Context(), r.PathValue("id"), artifactservice.ResearchPatch{
+	node, err := routes.service.Update(r.Context(), r.PathValue("id"), research.ResearchPatch{
 		Title:      req.Title,
 		Hypothesis: req.Hypothesis,
 	})
@@ -87,21 +94,26 @@ func (s *Server) handleResearchPatch(w http.ResponseWriter, r *http.Request) {
 		writeResearchError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, node)
+	httpapi.WriteJSON(w, http.StatusOK, node)
 }
 
 func writeResearchError(w http.ResponseWriter, r *http.Request, err error) {
-	if writeAccessError(w, r, err) {
+	if errors.Is(err, coreservice.ErrUnauthenticated) {
+		httpapi.WriteError(w, r, http.StatusUnauthorized, "bad_request", "Unauthenticated", err)
 		return
 	}
-	if errors.Is(err, artifactservice.ErrNotFound) {
-		writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Research folder not found", err)
+	if errors.Is(err, coreservice.ErrForbidden) {
+		httpapi.WriteError(w, r, http.StatusForbidden, "bad_request", "Forbidden", err)
 		return
 	}
-	var requestErr artifactservice.BadRequest
+	if errors.Is(err, coreservice.ErrNotFound) {
+		httpapi.WriteError(w, r, http.StatusNotFound, "not_found", "Research folder not found", err)
+		return
+	}
+	var requestErr coreservice.BadRequest
 	if errors.As(err, &requestErr) {
-		writeAPIError(w, r, http.StatusBadRequest, categoryBadRequest, err.Error(), err)
+		httpapi.WriteError(w, r, http.StatusBadRequest, "bad_request", err.Error(), err)
 		return
 	}
-	writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)
+	httpapi.WriteError(w, r, http.StatusInternalServerError, "service_error", err.Error(), err)
 }

@@ -1,9 +1,15 @@
-package service
+package research
 
 import (
 	"context"
 	"strings"
+
+	coreservice "aladin/backend_v2/internal/service"
 )
+
+// BrowserNodeResponse remains the shared tree projection used by the browser
+// and sync surfaces; Research owns the workflow that creates it.
+type BrowserNodeResponse = coreservice.BrowserNodeResponse
 
 // research.go — the research bench's write side (design/RESEARCH_SURFACE_PRD.md §5).
 //
@@ -69,15 +75,15 @@ func NewResearchService(repo ResearchRepository) ResearchService {
 }
 
 func (s *researchService) Create(ctx context.Context, in ResearchCreateInput) (BrowserNodeResponse, error) {
-	if err := RequireScope(ctx, ScopeArtifactsWrite); err != nil {
+	if err := coreservice.RequireScope(ctx, coreservice.ScopeArtifactsWrite); err != nil {
 		return BrowserNodeResponse{}, err
 	}
 	in.Title = strings.TrimSpace(in.Title)
 	if in.Title == "" {
-		return BrowserNodeResponse{}, BadRequest("title is required")
+		return BrowserNodeResponse{}, coreservice.BadRequest("title is required")
 	}
 	in.Hypothesis = strings.TrimSpace(in.Hypothesis)
-	in.ParentID = TrimStringPtr(in.ParentID)
+	in.ParentID = coreservice.TrimStringPtr(in.ParentID)
 
 	// §5: "Comparing two strategies is a view ABOVE research folders, never a folder
 	// containing them." A research folder therefore nests inside plain folders only —
@@ -88,12 +94,12 @@ func (s *researchService) Create(ctx context.Context, in ResearchCreateInput) (B
 			return BrowserNodeResponse{}, err
 		}
 		if !ok {
-			return BrowserNodeResponse{}, BadRequest("a research folder can only be created at the root or inside a plain folder")
+			return BrowserNodeResponse{}, coreservice.BadRequest("a research folder can only be created at the root or inside a plain folder")
 		}
 	}
 
 	if in.ID = strings.TrimSpace(in.ID); in.ID == "" {
-		in.ID = newID("research-")
+		in.ID = coreservice.NewID("research-", "")
 	}
 	position, err := s.repo.NextResearchPosition(ctx, in.ParentID)
 	if err != nil {
@@ -110,19 +116,19 @@ type ResearchPatch struct {
 }
 
 func (s *researchService) Update(ctx context.Context, id string, patch ResearchPatch) (BrowserNodeResponse, error) {
-	if err := RequireScope(ctx, ScopeArtifactsWrite); err != nil {
+	if err := coreservice.RequireScope(ctx, coreservice.ScopeArtifactsWrite); err != nil {
 		return BrowserNodeResponse{}, err
 	}
 	if strings.TrimSpace(id) == "" {
-		return BrowserNodeResponse{}, ErrNotFound
+		return BrowserNodeResponse{}, coreservice.ErrNotFound
 	}
 	if patch.Title == nil && patch.Hypothesis == nil {
-		return BrowserNodeResponse{}, BadRequest("nothing to update")
+		return BrowserNodeResponse{}, coreservice.BadRequest("nothing to update")
 	}
 	if patch.Title != nil {
 		title := strings.TrimSpace(*patch.Title)
 		if title == "" {
-			return BrowserNodeResponse{}, BadRequest("title cannot be empty")
+			return BrowserNodeResponse{}, coreservice.BadRequest("title cannot be empty")
 		}
 		patch.Title = &title
 	}
@@ -135,11 +141,11 @@ func (s *researchService) Update(ctx context.Context, id string, patch ResearchP
 }
 
 func (s *researchService) Get(ctx context.Context, id string) (ResearchFolder, error) {
-	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
+	if err := coreservice.RequireScope(ctx, coreservice.ScopeArtifactsRead); err != nil {
 		return ResearchFolder{}, err
 	}
 	if strings.TrimSpace(id) == "" {
-		return ResearchFolder{}, ErrNotFound
+		return ResearchFolder{}, coreservice.ErrNotFound
 	}
 	return s.repo.GetResearchFolder(ctx, id)
 }

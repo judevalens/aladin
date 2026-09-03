@@ -25,6 +25,7 @@ import (
 	"aladin/backend_v2/internal/relationship"
 	relationshippostgres "aladin/backend_v2/internal/relationship/postgres"
 	"aladin/backend_v2/internal/repo"
+	"aladin/backend_v2/internal/research"
 	"aladin/backend_v2/internal/search"
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/shardresource"
@@ -180,7 +181,7 @@ func (c *APIProcess) ShardReleases() coreservice.ShardReleaseService           {
 func (c *APIProcess) ShardKV() coreservice.ShardKVService                      { return c.shardKV }
 func (c *APIProcess) ShardBridge() coreservice.ShardBridgeService              { return c.shardBridge }
 func (c *APIProcess) Relationships() relationship.RelationshipService          { return c.relationships }
-func (c *APIProcess) Research() coreservice.ResearchService                    { return c.research }
+func (c *APIProcess) Research() research.ResearchService                       { return c.research }
 func (c *APIProcess) Documents() coreservice.DocumentService                   { return c.documents }
 func (c *APIProcess) GraphPane() graphpane.GraphPaneService                    { return c.graphPane }
 func (c *APIProcess) EntityTags() coreservice.EntityTagService                 { return c.entityTags }

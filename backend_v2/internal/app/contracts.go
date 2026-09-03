@@ -11,6 +11,7 @@ import (
 	"aladin/backend_v2/internal/providerconnection"
 	"aladin/backend_v2/internal/readingposition"
 	"aladin/backend_v2/internal/relationship"
+	"aladin/backend_v2/internal/research"
 	"aladin/backend_v2/internal/search"
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/shardresource"
@@ -45,7 +46,7 @@ type APIComponents interface {
 	ShardKV() coreservice.ShardKVService
 	ShardBridge() coreservice.ShardBridgeService
 	Relationships() relationship.RelationshipService
-	Research() coreservice.ResearchService
+	Research() research.ResearchService
 	Documents() coreservice.DocumentService
 	GraphPane() graphpane.GraphPaneService
 	EntityTags() coreservice.EntityTagService

@@ -26,6 +26,7 @@ import (
 	"aladin/backend_v2/internal/readingposition"
 	"aladin/backend_v2/internal/relationship"
 	"aladin/backend_v2/internal/repo"
+	"aladin/backend_v2/internal/research"
 	searchdomain "aladin/backend_v2/internal/search"
 	"aladin/backend_v2/internal/service"
 	shardstorage "aladin/backend_v2/internal/shardresource/storage"
@@ -361,7 +362,7 @@ func (emptyAPIDependencies) ShardReleases() service.ShardReleaseService         
 func (emptyAPIDependencies) ShardKV() service.ShardKVService                      { return nil }
 func (emptyAPIDependencies) ShardBridge() service.ShardBridgeService              { return nil }
 func (emptyAPIDependencies) Relationships() relationship.RelationshipService      { return nil }
-func (emptyAPIDependencies) Research() service.ResearchService                    { return nil }
+func (emptyAPIDependencies) Research() research.ResearchService                   { return nil }
 func (emptyAPIDependencies) Documents() service.DocumentService                   { return nil }
 func (emptyAPIDependencies) GraphPane() graphpane.GraphPaneService                { return nil }
 func (emptyAPIDependencies) EntityTags() service.EntityTagService                 { return nil }

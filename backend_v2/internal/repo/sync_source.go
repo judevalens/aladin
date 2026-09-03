@@ -172,6 +172,13 @@ func emitNodeUpsert(ctx context.Context, tx pgx.Tx, userID, nodeID string) error
 	return appendOutboxEvent(ctx, tx, userID, service.Frame{Entities: []service.FrameEntity{ent}})
 }
 
+// EmitNodeUpsert exposes the shared transactional tree-frame primitive to
+// domain-owned PostgreSQL adapters. The caller must hold the write transaction
+// and the per-user lock, preserving the existing commit boundary.
+func EmitNodeUpsert(ctx context.Context, tx pgx.Tx, userID, nodeID string) error {
+	return emitNodeUpsert(ctx, tx, userID, nodeID)
+}
+
 // softDeleteNode tombstones one node (is_deleted=true, seq bumped, row KEPT so a
 // stale lower-seq upsert can't resurrect it) and returns its delete frame entity
 // (carrying the bumped seq). Caller appends the frame (one frame may tombstone a

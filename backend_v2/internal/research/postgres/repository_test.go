@@ -1,4 +1,4 @@
-package repo
+package postgres_test
 
 import (
 	"context"
@@ -8,10 +8,41 @@ import (
 	"testing"
 	"time"
 
+	"aladin/backend_v2/internal/db"
+	"aladin/backend_v2/internal/dbtest"
+	"aladin/backend_v2/internal/repo"
+	"aladin/backend_v2/internal/research"
+	researchpostgres "aladin/backend_v2/internal/research/postgres"
 	artifactservice "aladin/backend_v2/internal/service"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+func mustTestPool(ctx context.Context, t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	dsn := dbtest.RequireTestDSN(t)
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Skipf("no test database: %v", err)
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		t.Skipf("test database unreachable: %v", err)
+	}
+	if err := db.Migrate(ctx, pool); err != nil {
+		pool.Close()
+		t.Fatalf("migrate: %v", err)
+	}
+	return pool
+}
+
+func adminContext(userID string) context.Context {
+	return artifactservice.WithPrincipal(context.Background(), artifactservice.Principal{
+		UserID: userID, ActorType: artifactservice.ActorTypeUserSession, ActorID: userID,
+		Scopes: []string{artifactservice.ScopeArtifactsRead, artifactservice.ScopeArtifactsWrite},
+	})
+}
 
 // TestResearchFolder_CreateEmitsFrameWithExtension is the load-bearing test for the
 // research bench's spine (RESEARCH_SURFACE_PRD §5 + §11): creating a research folder must
@@ -40,10 +71,10 @@ func TestResearchFolder_CreateEmitsFrameWithExtension(t *testing.T) {
 		_, _ = pool.Exec(bg, `DELETE FROM users WHERE id = $1::uuid`, userID)
 	})
 
-	repo := NewResearchPostgres(pool)
-	svc := artifactservice.NewResearchService(repo)
+	researchRepo := researchpostgres.NewResearchPostgres(pool)
+	svc := research.NewResearchService(researchRepo)
 
-	node, err := svc.Create(ctx, artifactservice.ResearchCreateInput{
+	node, err := svc.Create(ctx, research.ResearchCreateInput{
 		ID:         nodeID,
 		Title:      "PEAD semis " + tag,
 		Hypothesis: "post-earnings drift persists in semis",
@@ -145,12 +176,12 @@ func TestResearchFolder_RejectsResearchParent(t *testing.T) {
 		_, _ = pool.Exec(bg, `DELETE FROM users WHERE id = $1::uuid`, userID)
 	})
 
-	svc := artifactservice.NewResearchService(NewResearchPostgres(pool))
-	if _, err := svc.Create(ctx, artifactservice.ResearchCreateInput{ID: parentID, Title: "Parent " + tag}); err != nil {
+	svc := research.NewResearchService(researchpostgres.NewResearchPostgres(pool))
+	if _, err := svc.Create(ctx, research.ResearchCreateInput{ID: parentID, Title: "Parent " + tag}); err != nil {
 		t.Fatalf("create parent: %v", err)
 	}
 
-	_, err := svc.Create(ctx, artifactservice.ResearchCreateInput{Title: "Nested " + tag, ParentID: &parentID})
+	_, err := svc.Create(ctx, research.ResearchCreateInput{Title: "Nested " + tag, ParentID: &parentID})
 	if err == nil {
 		t.Fatal("nesting research inside research must be rejected")
 	}
@@ -193,8 +224,8 @@ func TestResearchFolder_NestingRules(t *testing.T) {
 		_, _ = pool.Exec(bg, `DELETE FROM users WHERE id = $1::uuid`, userID)
 	})
 
-	artifacts := NewArtifactsPostgres(pool)
-	research := artifactservice.NewResearchService(NewResearchPostgres(pool))
+	artifacts := repo.NewArtifactsPostgres(pool)
+	researchService := research.NewResearchService(researchpostgres.NewResearchPostgres(pool))
 
 	// A plain folder to nest into.
 	if err := artifacts.CreateTreeNode(ctx, artifactservice.TreeNodeRecord{
@@ -204,7 +235,7 @@ func TestResearchFolder_NestingRules(t *testing.T) {
 	}
 
 	// research inside folder → allowed.
-	if _, err := research.Create(ctx, artifactservice.ResearchCreateInput{
+	if _, err := researchService.Create(ctx, research.ResearchCreateInput{
 		ID: researchID, Title: "PEAD " + tag, ParentID: &folderID,
 	}); err != nil {
 		t.Fatalf("research inside a folder must be allowed: %v", err)
@@ -216,7 +247,7 @@ func TestResearchFolder_NestingRules(t *testing.T) {
 	}
 
 	// research inside research → rejected.
-	_, err := research.Create(ctx, artifactservice.ResearchCreateInput{
+	_, err := researchService.Create(ctx, research.ResearchCreateInput{
 		Title: "Nested " + tag, ParentID: &researchID,
 	})
 	if err == nil {
@@ -229,14 +260,14 @@ func TestResearchFolder_NestingRules(t *testing.T) {
 
 	// And a plain folder must still NOT resolve through the research parent check,
 	// which is what keeps the rule one-directional.
-	ok, err := NewResearchPostgres(pool).ParentIsFolder(ctx, researchID)
+	ok, err := researchpostgres.NewResearchPostgres(pool).ParentIsFolder(ctx, researchID)
 	if err != nil {
 		t.Fatalf("ParentIsFolder: %v", err)
 	}
 	if ok {
 		t.Fatal("ParentIsFolder must not accept a research node")
 	}
-	if ok, err = NewResearchPostgres(pool).ParentIsFolder(ctx, folderID); err != nil || !ok {
+	if ok, err = researchpostgres.NewResearchPostgres(pool).ParentIsFolder(ctx, folderID); err != nil || !ok {
 		t.Fatalf("ParentIsFolder(folder) = %v, %v; want true, nil", ok, err)
 	}
 }
@@ -271,16 +302,16 @@ func TestResearchFolder_HoldsFoldersAndArtifacts(t *testing.T) {
 		_, _ = pool.Exec(bg, `DELETE FROM users WHERE id = $1::uuid`, userID)
 	})
 
-	research := artifactservice.NewResearchService(NewResearchPostgres(pool))
-	if _, err := research.Create(ctx, artifactservice.ResearchCreateInput{
+	researchService := research.NewResearchService(researchpostgres.NewResearchPostgres(pool))
+	if _, err := researchService.Create(ctx, research.ResearchCreateInput{
 		ID: researchID, Title: "PEAD " + tag,
 	}); err != nil {
 		t.Fatalf("create research: %v", err)
 	}
 
 	artifactSvc := artifactservice.NewArtifactService(
-		NewArtifactsPostgres(pool),
-		NewFilesystemArtifactStore(t.TempDir(), t.TempDir()),
+		repo.NewArtifactsPostgres(pool),
+		repo.NewFilesystemArtifactStore(t.TempDir(), t.TempDir()),
 	)
 
 	// "New folder here" inside a research folder.
@@ -346,12 +377,12 @@ func TestResearchFolder_Update(t *testing.T) {
 		_, _ = pool.Exec(bg, `DELETE FROM users WHERE id = $1::uuid`, userID)
 	})
 
-	svc := artifactservice.NewResearchService(NewResearchPostgres(pool))
-	if _, err := svc.Create(ctx, artifactservice.ResearchCreateInput{ID: researchID, Title: "Before " + tag}); err != nil {
+	svc := research.NewResearchService(researchpostgres.NewResearchPostgres(pool))
+	if _, err := svc.Create(ctx, research.ResearchCreateInput{ID: researchID, Title: "Before " + tag}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 
-	node, err := svc.Update(ctx, researchID, artifactservice.ResearchPatch{Title: strPtr("  After " + tag + "  ")})
+	node, err := svc.Update(ctx, researchID, research.ResearchPatch{Title: strPtr("  After " + tag + "  ")})
 	if err != nil {
 		t.Fatalf("rename: %v", err)
 	}
@@ -381,15 +412,15 @@ func TestResearchFolder_Update(t *testing.T) {
 	}
 
 	// An empty title is rejected; an empty patch is too.
-	if _, err := svc.Update(ctx, researchID, artifactservice.ResearchPatch{Title: strPtr("   ")}); err == nil {
+	if _, err := svc.Update(ctx, researchID, research.ResearchPatch{Title: strPtr("   ")}); err == nil {
 		t.Fatal("empty title must be rejected")
 	}
-	if _, err := svc.Update(ctx, researchID, artifactservice.ResearchPatch{}); err == nil {
+	if _, err := svc.Update(ctx, researchID, research.ResearchPatch{}); err == nil {
 		t.Fatal("an empty patch must be rejected")
 	}
 
 	// A hypothesis edit must NOT blank the title (the COALESCE guard).
-	if _, err := svc.Update(ctx, researchID, artifactservice.ResearchPatch{Hypothesis: strPtr("drift persists")}); err != nil {
+	if _, err := svc.Update(ctx, researchID, research.ResearchPatch{Hypothesis: strPtr("drift persists")}); err != nil {
 		t.Fatalf("patch hypothesis: %v", err)
 	}
 	after, err := svc.Get(ctx, researchID)
@@ -404,12 +435,12 @@ func TestResearchFolder_Update(t *testing.T) {
 	}
 
 	// A plain folder must NOT be renameable through the research endpoint.
-	if err := NewArtifactsPostgres(pool).CreateTreeNode(ctx, artifactservice.TreeNodeRecord{
+	if err := repo.NewArtifactsPostgres(pool).CreateTreeNode(ctx, artifactservice.TreeNodeRecord{
 		ID: folderID, Kind: "folder", Title: strPtr("Plain " + tag), Position: 2,
 	}); err != nil {
 		t.Fatalf("seed folder: %v", err)
 	}
-	if _, err := svc.Update(ctx, folderID, artifactservice.ResearchPatch{Title: strPtr("hijacked")}); err == nil {
+	if _, err := svc.Update(ctx, folderID, research.ResearchPatch{Title: strPtr("hijacked")}); err == nil {
 		t.Fatal("the research endpoint must not rename a plain folder")
 	}
 

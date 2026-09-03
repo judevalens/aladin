@@ -1,11 +1,13 @@
-package repo
+package postgres
 
 import (
 	"context"
 	"errors"
 	"fmt"
 
-	artifactservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/repo"
+	"aladin/backend_v2/internal/research"
+	coreservice "aladin/backend_v2/internal/service"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -26,7 +28,7 @@ func NewResearchPostgres(pool *pgxpool.Pool) *PostgresResearchRepository {
 }
 
 func (r *PostgresResearchRepository) userID(ctx context.Context) (string, error) {
-	principal, err := artifactservice.RequirePrincipal(ctx)
+	principal, err := coreservice.RequirePrincipal(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -72,30 +74,30 @@ func (r *PostgresResearchRepository) NextResearchPosition(ctx context.Context, p
 
 // CreateResearchFolder writes the node + its extension row + the sync frame in one tx.
 func (r *PostgresResearchRepository) CreateResearchFolder(
-	ctx context.Context, in artifactservice.ResearchCreateInput, position int64,
-) (artifactservice.BrowserNodeResponse, error) {
+	ctx context.Context, in research.ResearchCreateInput, position int64,
+) (research.BrowserNodeResponse, error) {
 	userID, err := r.userID(ctx)
 	if err != nil {
-		return artifactservice.BrowserNodeResponse{}, err
+		return research.BrowserNodeResponse{}, err
 	}
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return artifactservice.BrowserNodeResponse{}, err
+		return research.BrowserNodeResponse{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	// Same per-user advisory lock every tree write takes, so the appended seq is
 	// visible in commit order.
-	if err := LockUser(ctx, tx, userID); err != nil {
-		return artifactservice.BrowserNodeResponse{}, err
+	if err := repo.LockUser(ctx, tx, userID); err != nil {
+		return research.BrowserNodeResponse{}, err
 	}
 
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO tree_nodes (id, user_id, parent_id, kind, title, artifact_id, position, created_at, updated_at)
 		VALUES ($1, $2::uuid, $3, 'research', $4, NULL, $5, now(), now())
 	`, in.ID, userID, in.ParentID, in.Title, position); err != nil {
-		return artifactservice.BrowserNodeResponse{}, fmt.Errorf("research: insert node: %w", err)
+		return research.BrowserNodeResponse{}, fmt.Errorf("research: insert node: %w", err)
 	}
 
 	// The sparse extension row (§5): present from creation, empty of strategy facts.
@@ -109,26 +111,26 @@ func (r *PostgresResearchRepository) CreateResearchFolder(
 		INSERT INTO research_strategies (node_id, user_id, hypothesis)
 		VALUES ($1, $2::uuid, $3)
 	`, in.ID, userID, hypothesis); err != nil {
-		return artifactservice.BrowserNodeResponse{}, fmt.Errorf("research: insert strategy: %w", err)
+		return research.BrowserNodeResponse{}, fmt.Errorf("research: insert strategy: %w", err)
 	}
 
 	// One frame for the new entity — bumps seq, reads the light projection (which now
 	// includes the extension), and appends to the outbox in this same tx.
-	if err := emitNodeUpsert(ctx, tx, userID, in.ID); err != nil {
-		return artifactservice.BrowserNodeResponse{}, err
+	if err := repo.EmitNodeUpsert(ctx, tx, userID, in.ID); err != nil {
+		return research.BrowserNodeResponse{}, err
 	}
 
 	var seq int64
 	if err := tx.QueryRow(ctx,
 		`SELECT seq FROM tree_nodes WHERE id = $1 AND user_id = $2::uuid`, in.ID, userID,
 	).Scan(&seq); err != nil {
-		return artifactservice.BrowserNodeResponse{}, fmt.Errorf("research: read back seq: %w", err)
+		return research.BrowserNodeResponse{}, fmt.Errorf("research: read back seq: %w", err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return artifactservice.BrowserNodeResponse{}, err
+		return research.BrowserNodeResponse{}, err
 	}
-	return artifactservice.BrowserNodeResponse{
+	return research.BrowserNodeResponse{
 		ID:       in.ID,
 		ParentID: in.ParentID,
 		Kind:     "research",
@@ -142,20 +144,20 @@ func (r *PostgresResearchRepository) CreateResearchFolder(
 // (hypothesis), then emits the node frame — all in one tx. Scoped to kind='research' so
 // the research endpoints can't touch a plain folder, mirroring how the folder endpoints
 // are scoped to kind='folder'.
-func (r *PostgresResearchRepository) UpdateResearchFolder(ctx context.Context, id string, patch artifactservice.ResearchPatch) (artifactservice.BrowserNodeResponse, error) {
+func (r *PostgresResearchRepository) UpdateResearchFolder(ctx context.Context, id string, patch research.ResearchPatch) (research.BrowserNodeResponse, error) {
 	userID, err := r.userID(ctx)
 	if err != nil {
-		return artifactservice.BrowserNodeResponse{}, err
+		return research.BrowserNodeResponse{}, err
 	}
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return artifactservice.BrowserNodeResponse{}, err
+		return research.BrowserNodeResponse{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	if err := LockUser(ctx, tx, userID); err != nil {
-		return artifactservice.BrowserNodeResponse{}, err
+	if err := repo.LockUser(ctx, tx, userID); err != nil {
+		return research.BrowserNodeResponse{}, err
 	}
 
 	// COALESCE keeps an unpatched column untouched, so a hypothesis edit can't blank the
@@ -167,10 +169,10 @@ func (r *PostgresResearchRepository) UpdateResearchFolder(ctx context.Context, i
 		   AND kind = 'research' AND is_deleted = false
 	`, id, userID, patch.Title)
 	if err != nil {
-		return artifactservice.BrowserNodeResponse{}, fmt.Errorf("research: update %s: %w", id, err)
+		return research.BrowserNodeResponse{}, fmt.Errorf("research: update %s: %w", id, err)
 	}
 	if tag.RowsAffected() == 0 {
-		return artifactservice.BrowserNodeResponse{}, artifactservice.ErrNotFound
+		return research.BrowserNodeResponse{}, coreservice.ErrNotFound
 	}
 
 	if patch.Hypothesis != nil {
@@ -179,12 +181,12 @@ func (r *PostgresResearchRepository) UpdateResearchFolder(ctx context.Context, i
 			   SET hypothesis = $3, updated_at = now()
 			 WHERE node_id = $1 AND user_id = $2::uuid
 		`, id, userID, *patch.Hypothesis); err != nil {
-			return artifactservice.BrowserNodeResponse{}, fmt.Errorf("research: update hypothesis %s: %w", id, err)
+			return research.BrowserNodeResponse{}, fmt.Errorf("research: update hypothesis %s: %w", id, err)
 		}
 	}
 
-	if err := emitNodeUpsert(ctx, tx, userID, id); err != nil {
-		return artifactservice.BrowserNodeResponse{}, err
+	if err := repo.EmitNodeUpsert(ctx, tx, userID, id); err != nil {
+		return research.BrowserNodeResponse{}, err
 	}
 
 	var (
@@ -196,12 +198,12 @@ func (r *PostgresResearchRepository) UpdateResearchFolder(ctx context.Context, i
 	if err := tx.QueryRow(ctx,
 		`SELECT parent_id, COALESCE(title, ''), position, seq FROM tree_nodes WHERE id = $1 AND user_id = $2::uuid`, id, userID,
 	).Scan(&parentID, &title, &position, &seq); err != nil {
-		return artifactservice.BrowserNodeResponse{}, fmt.Errorf("research: read back update %s: %w", id, err)
+		return research.BrowserNodeResponse{}, fmt.Errorf("research: read back update %s: %w", id, err)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return artifactservice.BrowserNodeResponse{}, err
+		return research.BrowserNodeResponse{}, err
 	}
-	return artifactservice.BrowserNodeResponse{
+	return research.BrowserNodeResponse{
 		ID: id, ParentID: parentID, Kind: "research",
 		Title: title, Position: position, Seq: uint64(seq),
 	}, nil
@@ -209,13 +211,13 @@ func (r *PostgresResearchRepository) UpdateResearchFolder(ctx context.Context, i
 
 // GetResearchFolder reads the extension row joined to its node — the fields the sync
 // frame deliberately leaves off (hypothesis, source, hashes).
-func (r *PostgresResearchRepository) GetResearchFolder(ctx context.Context, id string) (artifactservice.ResearchFolder, error) {
+func (r *PostgresResearchRepository) GetResearchFolder(ctx context.Context, id string) (research.ResearchFolder, error) {
 	userID, err := r.userID(ctx)
 	if err != nil {
-		return artifactservice.ResearchFolder{}, err
+		return research.ResearchFolder{}, err
 	}
 	var (
-		out                                        artifactservice.ResearchFolder
+		out                                        research.ResearchFolder
 		hypothesis, sourceRef, commitSHA, codeHash *string
 	)
 	err = r.pool.QueryRow(ctx, `
@@ -232,14 +234,21 @@ func (r *PostgresResearchRepository) GetResearchFolder(ctx context.Context, id s
 		&out.ExecMode, &out.RunState,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return artifactservice.ResearchFolder{}, artifactservice.ErrNotFound
+		return research.ResearchFolder{}, coreservice.ErrNotFound
 	}
 	if err != nil {
-		return artifactservice.ResearchFolder{}, fmt.Errorf("research: get %s: %w", id, err)
+		return research.ResearchFolder{}, fmt.Errorf("research: get %s: %w", id, err)
 	}
-	out.Hypothesis = derefOr(hypothesis, "")
-	out.SourceRef = derefOr(sourceRef, "")
-	out.CommitSHA = derefOr(commitSHA, "")
-	out.CodeHash = derefOr(codeHash, "")
+	out.Hypothesis = valueOr(hypothesis, "")
+	out.SourceRef = valueOr(sourceRef, "")
+	out.CommitSHA = valueOr(commitSHA, "")
+	out.CodeHash = valueOr(codeHash, "")
 	return out, nil
+}
+
+func valueOr(value *string, fallback string) string {
+	if value == nil {
+		return fallback
+	}
+	return *value
 }
