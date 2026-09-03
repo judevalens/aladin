@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"aladin/backend_v2/internal/artifact"
 	"context"
 	"errors"
 	"path/filepath"
@@ -74,7 +75,7 @@ func TestShardAuthoringEnabledCapabilitiesAndCreation(t *testing.T) {
 			root := t.TempDir()
 			store := docsurface.NewStore(root)
 			ctx := contextWithScopes(service.ScopeArtifactsRead, service.ScopeArtifactsWrite)
-			artifacts := &fakeArtifactService{getResult: service.ArtifactResponse{ID: "page-created", Type: "app"}}
+			artifacts := &fakeArtifactService{getResult: artifact.ArtifactResponse{ID: "page-created", Type: "app"}}
 			profiles := shardv2.Registry(nil)
 			if enabled {
 				profiles = shardv2.Registry{"shard.documents": shardstorage.NewShardResourcePostgres(nil, shardstorage.ShardResourceLimits{}).Profile(), "workspace.nodes": service.NewWorkspaceResourceProvider(nil).Profile()}

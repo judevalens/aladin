@@ -8,6 +8,7 @@ import (
 	"aladin/backend_v2/internal/artifactref"
 	"aladin/backend_v2/internal/repo"
 	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/treesync"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -106,7 +107,7 @@ func (r *PostgresArtifactRefRepository) ReplaceRefs(ctx context.Context, artifac
 		}
 	}
 	// The page's # links changed → emit a node frame so reactive views (graph pane) refetch.
-	if err := repo.EmitNodeUpsert(ctx, tx, userID, artifactID); err != nil {
+	if err := treesync.EmitNodeUpsert(ctx, tx, userID, artifactID); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

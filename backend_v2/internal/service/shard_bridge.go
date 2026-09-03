@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"aladin/backend_v2/internal/artifact"
 )
 
 // The workspace plane's grant layer (SHARD_MODEL §6). A shard may read ONLY the
@@ -48,12 +50,12 @@ type ShardBridgeService interface {
 }
 
 type shardBridgeService struct {
-	artifacts ArtifactService
+	artifacts artifact.ArtifactService
 	store     DocSurfaceStore
 	registry  *EntityRegistry
 }
 
-func NewShardBridgeService(artifacts ArtifactService, store DocSurfaceStore, registry *EntityRegistry) ShardBridgeService {
+func NewShardBridgeService(artifacts artifact.ArtifactService, store DocSurfaceStore, registry *EntityRegistry) ShardBridgeService {
 	return &shardBridgeService{artifacts: artifacts, store: store, registry: registry}
 }
 

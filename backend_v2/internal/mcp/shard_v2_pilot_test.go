@@ -2,6 +2,8 @@ package mcpserver
 
 import (
 	"aladin/backend_v2/internal/alert"
+	"aladin/backend_v2/internal/artifact"
+	artifactpostgres "aladin/backend_v2/internal/artifact/postgres"
 	"aladin/backend_v2/internal/artifactref"
 	"aladin/backend_v2/internal/copilot"
 	"context"
@@ -120,7 +122,7 @@ func TestShardV2Pilot(t *testing.T) {
 		}
 		_, _ = pool.Exec(context.Background(), `DELETE FROM artifacts WHERE id=$1`, id)
 	}()
-	artifacts := service.NewArtifactService(repo.NewArtifactsPostgres(pool), nil)
+	artifacts := artifact.NewArtifactService(artifactpostgres.NewArtifactsPostgres(pool), nil)
 	storage := shardstorage.NewShardResourcePostgres(pool, shardstorage.ShardResourceLimits{})
 	workspace := service.NewWorkspaceResourceProvider(service.NewEntityRegistry(service.NewArtifactEntityService(artifacts)))
 	profiles := shardv2.Registry{"shard.documents": storage.Profile(), "workspace.nodes": workspace.Profile()}
@@ -340,7 +342,7 @@ func TestShardV2Pilot(t *testing.T) {
 type pilotAPIDependencies struct {
 	emptyAPIDependencies
 	AuthSvc             service.AuthService
-	ArtifactsSvc        service.ArtifactService
+	ArtifactsSvc        artifact.ArtifactService
 	DocSurfaceStoreSvc  service.DocSurfaceStore
 	WorkspaceRuntimeSvc service.WorkspaceRuntime
 	ShardResourceSvc    service.ShardResourceService
@@ -349,15 +351,15 @@ type pilotAPIDependencies struct {
 
 type emptyAPIDependencies struct{}
 
-func (emptyAPIDependencies) Auth() service.AuthService          { return nil }
-func (emptyAPIDependencies) System() system.SystemService       { return nil }
-func (emptyAPIDependencies) Sources() source.SourceService      { return nil }
-func (emptyAPIDependencies) Records() record.RecordService      { return nil }
-func (emptyAPIDependencies) Artifacts() service.ArtifactService { return nil }
-func (emptyAPIDependencies) Pages() page.Service                { return nil }
-func (emptyAPIDependencies) Files() file.FileService            { return nil }
-func (emptyAPIDependencies) Feed() feed.FeedService             { return nil }
-func (emptyAPIDependencies) Insights() insights.InsightService  { return nil }
+func (emptyAPIDependencies) Auth() service.AuthService           { return nil }
+func (emptyAPIDependencies) System() system.SystemService        { return nil }
+func (emptyAPIDependencies) Sources() source.SourceService       { return nil }
+func (emptyAPIDependencies) Records() record.RecordService       { return nil }
+func (emptyAPIDependencies) Artifacts() artifact.ArtifactService { return nil }
+func (emptyAPIDependencies) Pages() page.Service                 { return nil }
+func (emptyAPIDependencies) Files() file.FileService             { return nil }
+func (emptyAPIDependencies) Feed() feed.FeedService              { return nil }
+func (emptyAPIDependencies) Insights() insights.InsightService   { return nil }
 func (emptyAPIDependencies) ProviderConnections() providerconnection.ProviderConnectionService {
 	return nil
 }
@@ -393,7 +395,7 @@ func (emptyAPIDependencies) GraphReader() graph.GraphReader                  { r
 func (emptyAPIDependencies) Copilot() copilot.CopilotService                 { return nil }
 
 func (d pilotAPIDependencies) Auth() service.AuthService                { return d.AuthSvc }
-func (d pilotAPIDependencies) Artifacts() service.ArtifactService       { return d.ArtifactsSvc }
+func (d pilotAPIDependencies) Artifacts() artifact.ArtifactService      { return d.ArtifactsSvc }
 func (d pilotAPIDependencies) DocSurfaceStore() service.DocSurfaceStore { return d.DocSurfaceStoreSvc }
 func (d pilotAPIDependencies) WorkspaceRuntime() service.WorkspaceRuntime {
 	return d.WorkspaceRuntimeSvc

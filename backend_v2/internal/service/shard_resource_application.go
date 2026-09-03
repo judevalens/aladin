@@ -3,12 +3,13 @@ package service
 import (
 	"context"
 
+	"aladin/backend_v2/internal/artifact"
 	"aladin/backend_v2/internal/shardresource"
 )
 
 // shardResourceAccess adapts the service package's established authentication
 // and artifact ownership rules to the isolated Shard resource application.
-type shardResourceAccess struct{ artifacts ArtifactService }
+type shardResourceAccess struct{ artifacts artifact.ArtifactService }
 
 func (a shardResourceAccess) Principal(ctx context.Context) (shardresource.Principal, error) {
 	principal, err := RequirePrincipal(ctx)
@@ -42,6 +43,6 @@ func (a shardResourceAccess) RequireApp(ctx context.Context, shardID string) err
 func (shardResourceAccess) Forbidden() error           { return ErrForbidden }
 func (shardResourceAccess) ErrorCode(err error) string { return ResourceErrorCode(err) }
 
-func NewShardResourceService(artifacts ArtifactService, releases ResourceReleaseReader, providers map[string]ResourceProvider, options ResourceServiceOptions) ShardResourceService {
+func NewShardResourceService(artifacts artifact.ArtifactService, releases ResourceReleaseReader, providers map[string]ResourceProvider, options ResourceServiceOptions) ShardResourceService {
 	return shardresource.NewService(shardResourceAccess{artifacts: artifacts}, releases, providers, options)
 }

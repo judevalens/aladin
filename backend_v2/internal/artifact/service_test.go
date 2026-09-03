@@ -1,4 +1,4 @@
-package service
+package artifact
 
 import (
 	"context"
@@ -7,6 +7,9 @@ import (
 	"io"
 	"strings"
 	"testing"
+
+	"aladin/backend_v2/internal/apperror"
+	"aladin/backend_v2/internal/auth"
 )
 
 func TestArtifactServiceCreatePageIgnoresBlocks(t *testing.T) {
@@ -72,9 +75,9 @@ func TestArtifactServiceCreatePageRequiresTitle(t *testing.T) {
 	_, err := svc.Create(testPrincipalContext(), ArtifactPayload{
 		Type: "page",
 	})
-	var requestErr BadRequest
+	var requestErr apperror.BadRequest
 	if !errors.As(err, &requestErr) {
-		t.Fatalf("Create without title error = %v, want BadRequest", err)
+		t.Fatalf("Create without title error = %v, want apperror.BadRequest", err)
 	}
 }
 
@@ -108,11 +111,11 @@ func TestArtifactServiceRequiresPrincipal(t *testing.T) {
 	t.Parallel()
 
 	svc := NewArtifactService(&fakeArtifactRepository{}, &fakeArtifactFiles{})
-	if _, err := svc.Create(context.Background(), ArtifactPayload{Type: "page", Title: "Memo"}); !errors.Is(err, ErrUnauthenticated) {
-		t.Fatalf("Create error = %v, want ErrUnauthenticated", err)
+	if _, err := svc.Create(context.Background(), ArtifactPayload{Type: "page", Title: "Memo"}); !errors.Is(err, auth.ErrUnauthenticated) {
+		t.Fatalf("Create error = %v, want auth.ErrUnauthenticated", err)
 	}
-	if _, err := svc.BrowserTree(context.Background()); !errors.Is(err, ErrUnauthenticated) {
-		t.Fatalf("BrowserTree error = %v, want ErrUnauthenticated", err)
+	if _, err := svc.BrowserTree(context.Background()); !errors.Is(err, auth.ErrUnauthenticated) {
+		t.Fatalf("BrowserTree error = %v, want auth.ErrUnauthenticated", err)
 	}
 }
 
@@ -120,22 +123,22 @@ func TestArtifactServiceReadOnlyTokenCannotWrite(t *testing.T) {
 	t.Parallel()
 
 	svc := NewArtifactService(&fakeArtifactRepository{}, &fakeArtifactFiles{})
-	ctx := testIntegrationPrincipalContext(ScopeArtifactsRead)
+	ctx := testIntegrationPrincipalContext(auth.ScopeArtifactsRead)
 
 	if _, err := svc.BrowserTree(ctx); err != nil {
 		t.Fatalf("BrowserTree read-only error = %v, want nil", err)
 	}
-	if _, err := svc.Create(ctx, ArtifactPayload{Type: "page", Title: "Memo"}); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("Create read-only error = %v, want ErrForbidden", err)
+	if _, err := svc.Create(ctx, ArtifactPayload{Type: "page", Title: "Memo"}); !errors.Is(err, auth.ErrForbidden) {
+		t.Fatalf("Create read-only error = %v, want auth.ErrForbidden", err)
 	}
-	if _, err := svc.Delete(ctx, "artifact-1"); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("Delete read-only error = %v, want ErrForbidden", err)
+	if _, err := svc.Delete(ctx, "artifact-1"); !errors.Is(err, auth.ErrForbidden) {
+		t.Fatalf("Delete read-only error = %v, want auth.ErrForbidden", err)
 	}
-	if _, err := svc.CreateFolder(ctx, "Folder", nil); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("CreateFolder read-only error = %v, want ErrForbidden", err)
+	if _, err := svc.CreateFolder(ctx, "Folder", nil); !errors.Is(err, auth.ErrForbidden) {
+		t.Fatalf("CreateFolder read-only error = %v, want auth.ErrForbidden", err)
 	}
-	if _, err := svc.MoveArtifact(ctx, "artifact-1", nil); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("MoveArtifact read-only error = %v, want ErrForbidden", err)
+	if _, err := svc.MoveArtifact(ctx, "artifact-1", nil); !errors.Is(err, auth.ErrForbidden) {
+		t.Fatalf("MoveArtifact read-only error = %v, want auth.ErrForbidden", err)
 	}
 }
 
@@ -147,11 +150,11 @@ func TestArtifactServiceSearchPagesValidatesAndClamps(t *testing.T) {
 	}
 	svc := NewArtifactService(repo, &fakeArtifactFiles{})
 
-	if _, err := svc.SearchPages(testIntegrationPrincipalContext(ScopeArtifactsWrite), PageSearchParams{Query: "memo"}); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("SearchPages without read scope error = %v, want ErrForbidden", err)
+	if _, err := svc.SearchPages(testIntegrationPrincipalContext(auth.ScopeArtifactsWrite), PageSearchParams{Query: "memo"}); !errors.Is(err, auth.ErrForbidden) {
+		t.Fatalf("SearchPages without read scope error = %v, want auth.ErrForbidden", err)
 	}
 	if _, err := svc.SearchPages(testPrincipalContext(), PageSearchParams{Query: "   "}); err == nil {
-		t.Fatal("SearchPages empty query error = nil, want BadRequest")
+		t.Fatal("SearchPages empty query error = nil, want apperror.BadRequest")
 	}
 	results, err := svc.SearchPages(testPrincipalContext(), PageSearchParams{Query: "  memo  ", Limit: 500})
 	if err != nil {
@@ -207,11 +210,11 @@ func TestArtifactServiceCreateLinkRequiresSourceURL(t *testing.T) {
 	svc := NewArtifactService(&fakeArtifactRepository{}, &fakeArtifactFiles{})
 	_, err := svc.Create(testPrincipalContext(), ArtifactPayload{Type: "link", Title: "Saved"})
 	if err == nil {
-		t.Fatal("Create error = nil, want BadRequest")
+		t.Fatal("Create error = nil, want apperror.BadRequest")
 	}
-	var requestErr BadRequest
+	var requestErr apperror.BadRequest
 	if !errors.As(err, &requestErr) {
-		t.Fatalf("Create error = %T, want BadRequest", err)
+		t.Fatalf("Create error = %T, want apperror.BadRequest", err)
 	}
 }
 
@@ -219,14 +222,14 @@ func TestArtifactServiceEmptyIDsAreNotFound(t *testing.T) {
 	t.Parallel()
 
 	svc := NewArtifactService(&fakeArtifactRepository{}, &fakeArtifactFiles{})
-	if _, err := svc.Get(testPrincipalContext(), " "); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("Get error = %v, want ErrNotFound", err)
+	if _, err := svc.Get(testPrincipalContext(), " "); !errors.Is(err, apperror.ErrNotFound) {
+		t.Fatalf("Get error = %v, want apperror.ErrNotFound", err)
 	}
-	if _, err := svc.Update(testPrincipalContext(), " ", ArtifactPatch{}); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("Update error = %v, want ErrNotFound", err)
+	if _, err := svc.Update(testPrincipalContext(), " ", ArtifactPatch{}); !errors.Is(err, apperror.ErrNotFound) {
+		t.Fatalf("Update error = %v, want apperror.ErrNotFound", err)
 	}
-	if _, err := svc.Delete(testPrincipalContext(), " "); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("Delete error = %v, want ErrNotFound", err)
+	if _, err := svc.Delete(testPrincipalContext(), " "); !errors.Is(err, apperror.ErrNotFound) {
+		t.Fatalf("Delete error = %v, want apperror.ErrNotFound", err)
 	}
 }
 
@@ -365,11 +368,11 @@ func (f *fakeArtifactRepository) SearchPageArtifacts(_ context.Context, params P
 
 func (f *fakeArtifactRepository) GetArtifact(_ context.Context, id string) (ArtifactResponse, error) {
 	if f.artifactByID == nil {
-		return ArtifactResponse{}, ErrNotFound
+		return ArtifactResponse{}, apperror.ErrNotFound
 	}
 	rec, ok := f.artifactByID[id]
 	if !ok {
-		return ArtifactResponse{}, ErrNotFound
+		return ArtifactResponse{}, apperror.ErrNotFound
 	}
 	if rec.Type == "page" {
 		if page, ok := f.pagesByID[id]; ok && page != nil {
@@ -429,10 +432,10 @@ func (f *fakeArtifactRepository) PageBlockAttribution(_ context.Context, _ strin
 
 func (f *fakeArtifactRepository) SavePageBlocks(_ context.Context, artifactID string, blocks json.RawMessage, searchText string, expectedRev int64) (int64, error) {
 	if f.artifactByID == nil {
-		return 0, ErrNotFound
+		return 0, apperror.ErrNotFound
 	}
 	if _, ok := f.artifactByID[artifactID]; !ok {
-		return 0, ErrNotFound
+		return 0, apperror.ErrNotFound
 	}
 	if f.pagesByID == nil {
 		f.pagesByID = map[string]*fakePageStore{}
@@ -443,7 +446,7 @@ func (f *fakeArtifactRepository) SavePageBlocks(_ context.Context, artifactID st
 		f.pagesByID[artifactID] = page
 	}
 	if expectedRev > 0 && page.revision >= expectedRev {
-		return 0, ErrConflict
+		return 0, apperror.ErrConflict
 	}
 	page.blocks = blocks
 	page.searchText = searchText
@@ -457,11 +460,11 @@ func (f *fakeArtifactRepository) SavePageBlocks(_ context.Context, artifactID st
 
 func (f *fakeArtifactRepository) GetPageBlocks(_ context.Context, artifactID string) (json.RawMessage, int64, error) {
 	if f.pagesByID == nil {
-		return nil, 0, ErrNotFound
+		return nil, 0, apperror.ErrNotFound
 	}
 	page, ok := f.pagesByID[artifactID]
 	if !ok {
-		return nil, 0, ErrNotFound
+		return nil, 0, apperror.ErrNotFound
 	}
 	return page.blocks, page.revision, nil
 }
@@ -484,11 +487,11 @@ func (f *fakeArtifactRepository) CreateTreeNode(context.Context, TreeNodeRecord)
 func (f *fakeArtifactRepository) DeleteBrowserNode(context.Context, string) error      { return nil }
 func (f *fakeArtifactRepository) UpdateArtifactNodeParent(_ context.Context, id string, parentID *string) error {
 	if f.artifactByID == nil {
-		return ErrNotFound
+		return apperror.ErrNotFound
 	}
 	rec, ok := f.artifactByID[id]
 	if !ok {
-		return ErrNotFound
+		return apperror.ErrNotFound
 	}
 	rec.FolderID = parentID
 	f.artifactByID[id] = rec
@@ -498,7 +501,7 @@ func (f *fakeArtifactRepository) UpdateFolderTitle(context.Context, string, stri
 	return nil
 }
 func (f *fakeArtifactRepository) GetFolder(context.Context, string) (FolderNode, error) {
-	return FolderNode{}, ErrNotFound
+	return FolderNode{}, apperror.ErrNotFound
 }
 
 func (f *fakeArtifactRepository) GetContainer(_ context.Context, id string) (FolderNode, error) {
@@ -507,7 +510,7 @@ func (f *fakeArtifactRepository) GetContainer(_ context.Context, id string) (Fol
 			return rec, nil
 		}
 	}
-	return FolderNode{}, ErrNotFound
+	return FolderNode{}, apperror.ErrNotFound
 }
 func (f *fakeArtifactRepository) FolderBreadcrumbs(context.Context, string) ([]BreadcrumbItem, error) {
 	return nil, nil
@@ -526,25 +529,25 @@ func (f *fakeArtifactFiles) SaveResource(kind string, filename string, _ string,
 	}, nil
 }
 
-func (f *fakeArtifactFiles) ResourcePath(string) (string, error) { return "", ErrNotFound }
+func (f *fakeArtifactFiles) ResourcePath(string) (string, error) { return "", apperror.ErrNotFound }
 func (f *fakeArtifactFiles) DeleteResource(key string) error {
 	f.deleted = append(f.deleted, key)
 	return nil
 }
 
 func testPrincipalContext() context.Context {
-	return WithPrincipal(context.Background(), Principal{
+	return auth.WithPrincipal(context.Background(), auth.Principal{
 		UserID:    "00000000-0000-0000-0000-000000000001",
-		ActorType: ActorTypeUserSession,
+		ActorType: auth.ActorTypeUserSession,
 		ActorID:   "00000000-0000-0000-0000-000000000001",
 		Email:     "test@aladin.local",
 	})
 }
 
 func testIntegrationPrincipalContext(scopes ...string) context.Context {
-	return WithPrincipal(context.Background(), Principal{
+	return auth.WithPrincipal(context.Background(), auth.Principal{
 		UserID:    "00000000-0000-0000-0000-000000000001",
-		ActorType: ActorTypeIntegrationToken,
+		ActorType: auth.ActorTypeIntegrationToken,
 		ActorID:   "token-1",
 		Email:     "test@aladin.local",
 		Scopes:    scopes,

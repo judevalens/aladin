@@ -8,6 +8,7 @@ import (
 	"aladin/backend_v2/internal/document"
 	"aladin/backend_v2/internal/repo"
 	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/treesync"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -406,7 +407,7 @@ func (r *PostgresDocumentRepository) SaveResult(ctx context.Context, artifactID,
 
 	// The tree row shows ingestion status, so the artifact's node frame has to go out
 	// with the write — same transaction, same spine as every other change.
-	if err := repo.EmitNodeUpsert(ctx, tx, userID, artifactID); err != nil {
+	if err := treesync.EmitNodeUpsert(ctx, tx, userID, artifactID); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

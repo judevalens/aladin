@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"aladin/backend_v2/internal/artifact"
 	"context"
 	"fmt"
 	"strings"
@@ -62,7 +63,7 @@ const starterAnchorsJSON = `{
 // service scopes every Get/Create/Update to the caller's principal; the store
 // scopes file IO to the same principal. Together they enforce ownership.
 type docToolServer struct {
-	artifacts service.ArtifactService
+	artifacts artifact.ArtifactService
 	store     service.DocSurfaceStore
 	build     service.ShardBuildService
 	preview   service.PreviewService
@@ -85,7 +86,7 @@ func (t docToolServer) previewCommands() *docpreview.PreviewCommands {
 	return docpreview.New(t.artifacts, t.store, t.build, t.preview)
 }
 
-func registerDocSurfaceTools(server *sdkmcp.Server, artifacts service.ArtifactService, store service.DocSurfaceStore, build service.ShardBuildService, preview service.PreviewService, bridge service.ShardBridgeService, releases service.ShardReleaseService, graphql ...service.ShardGraphQLService) {
+func registerDocSurfaceTools(server *sdkmcp.Server, artifacts artifact.ArtifactService, store service.DocSurfaceStore, build service.ShardBuildService, preview service.PreviewService, bridge service.ShardBridgeService, releases service.ShardReleaseService, graphql ...service.ShardGraphQLService) {
 	t := docToolServer{artifacts: artifacts, store: store, build: build, preview: preview, bridge: bridge, releases: releases}
 	if len(graphql) > 0 {
 		t.graphql = graphql[0]
@@ -360,7 +361,7 @@ func (t docToolServer) createApp(ctx context.Context, _ *sdkmcp.CallToolRequest,
 		files["contract.json"] = []byte(contract)
 	}
 	created, err := t.authoring().Create(ctx, docauthoring.CreateCommand{
-		Artifact: service.ArtifactPayload{
+		Artifact: artifact.ArtifactPayload{
 			FolderID: in.FolderID,
 			Title:    in.Title,
 			Summary:  in.Summary,

@@ -4,6 +4,8 @@ import (
 	"aladin/backend_v2/internal/alert"
 	alerthttp "aladin/backend_v2/internal/alert/httptransport"
 	"aladin/backend_v2/internal/app"
+	"aladin/backend_v2/internal/artifact"
+	artifacthttp "aladin/backend_v2/internal/artifact/httptransport"
 	"aladin/backend_v2/internal/artifactref"
 	artifactrefhttp "aladin/backend_v2/internal/artifactref/httptransport"
 	"aladin/backend_v2/internal/auth"
@@ -82,7 +84,7 @@ type Dependencies interface {
 	System() system.SystemService
 	Sources() source.SourceService
 	Records() record.RecordService
-	Artifacts() coreservice.ArtifactService
+	Artifacts() artifact.ArtifactService
 	Pages() page.Service
 	Files() file.FileService
 	Feed() feed.FeedService
@@ -153,7 +155,7 @@ func NewWithDependencies(addr string, deps Dependencies) *Server {
 
 	systemhttp.Register(mux, deps.System())
 
-	s.registerArtifactRoutes(mux)
+	artifacthttp.Register(mux, deps.Artifacts())
 	pagehttp.Register(mux, deps.Pages())
 	filehttp.Register(mux, deps.Files())
 	unfurlhttp.Register(mux, deps.Unfurl())

@@ -1,6 +1,7 @@
 package file
 
 import (
+	"aladin/backend_v2/internal/artifact"
 	"bytes"
 	"context"
 	"errors"
@@ -112,8 +113,8 @@ type fakeFileStore struct {
 	deleted []string
 }
 
-func (f *fakeFileStore) SaveResource(_ string, _ string, _ string, _ io.Reader) (coreservice.StoredArtifactResource, error) {
-	return coreservice.StoredArtifactResource{
+func (f *fakeFileStore) SaveResource(_ string, _ string, _ string, _ io.Reader) (artifact.StoredArtifactResource, error) {
+	return artifact.StoredArtifactResource{
 		StorageKey: "file/file-blob.txt",
 	}, nil
 }

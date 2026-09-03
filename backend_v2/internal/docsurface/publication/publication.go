@@ -1,6 +1,7 @@
 package publication
 
 import (
+	"aladin/backend_v2/internal/artifact"
 	"context"
 	"errors"
 	"os"
@@ -41,7 +42,7 @@ type AuthoringContext struct {
 // build is passed into verification and release activation, preventing a
 // transport adapter from publishing stale or unchecked bytes.
 type Publication struct {
-	artifacts    service.ArtifactService
+	artifacts    artifact.ArtifactService
 	store        service.DocSurfaceStore
 	build        service.ShardBuildService
 	bridge       service.ShardBridgeService
@@ -50,7 +51,7 @@ type Publication struct {
 	verification *verification.Verification
 }
 
-func NewPublication(artifacts service.ArtifactService, store service.DocSurfaceStore, build service.ShardBuildService, preview service.PreviewService, bridge service.ShardBridgeService, releases service.ShardReleaseService) *Publication {
+func NewPublication(artifacts artifact.ArtifactService, store service.DocSurfaceStore, build service.ShardBuildService, preview service.PreviewService, bridge service.ShardBridgeService, releases service.ShardReleaseService) *Publication {
 	return &Publication{
 		artifacts: artifacts, store: store, build: build, bridge: bridge, releases: releases,
 		authoring: authoring.NewAuthoring(artifacts, store, build), verification: verification.NewVerification(store, preview),
@@ -195,7 +196,7 @@ func (p *Publication) Publish(ctx context.Context, pageID, rawSummary string) (P
 		}
 	}
 	if summary := strings.TrimSpace(rawSummary); summary != "" {
-		if _, err := p.artifacts.Update(ctx, pageID, service.ArtifactPatch{Summary: &summary}); err != nil {
+		if _, err := p.artifacts.Update(ctx, pageID, artifact.ArtifactPatch{Summary: &summary}); err != nil {
 			return PublishResult{}, err
 		}
 	}

@@ -6,6 +6,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"aladin/backend_v2/internal/artifact"
 )
 
 // The grant is the whole point of the workspace plane: a shard reads only what
@@ -61,17 +63,17 @@ func (s stubShardStore) ReadFile(_ context.Context, _ string, path string) ([]by
 
 // bridgeStubArtifacts answers Get for one shard id.
 type bridgeStubArtifacts struct {
-	ArtifactService
+	artifact.ArtifactService
 	id      string
 	typ     string
 	missing bool
 }
 
-func (s bridgeStubArtifacts) Get(_ context.Context, id string) (ArtifactResponse, error) {
+func (s bridgeStubArtifacts) Get(_ context.Context, id string) (artifact.ArtifactResponse, error) {
 	if s.missing || id != s.id {
-		return ArtifactResponse{}, ErrNotFound
+		return artifact.ArtifactResponse{}, ErrNotFound
 	}
-	return ArtifactResponse{ID: id, Type: s.typ, Title: "shard"}, nil
+	return artifact.ArtifactResponse{ID: id, Type: s.typ, Title: "shard"}, nil
 }
 
 const grantManifest = `{

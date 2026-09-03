@@ -1,6 +1,7 @@
 package api
 
 import (
+	"aladin/backend_v2/internal/artifact"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -22,17 +23,17 @@ import (
 // these tests exist for (a principal that lacks artifacts:read) would be
 // invisible here.
 type shardArtifactService struct {
-	artifactservice.ArtifactService
+	artifact.ArtifactService
 }
 
-func (shardArtifactService) Get(ctx context.Context, id string) (artifactservice.ArtifactResponse, error) {
+func (shardArtifactService) Get(ctx context.Context, id string) (artifact.ArtifactResponse, error) {
 	if err := artifactservice.RequireScope(ctx, artifactservice.ScopeArtifactsRead); err != nil {
-		return artifactservice.ArtifactResponse{}, err
+		return artifact.ArtifactResponse{}, err
 	}
 	if id != "artifact-shard" {
-		return artifactservice.ArtifactResponse{}, artifactservice.ErrNotFound
+		return artifact.ArtifactResponse{}, artifactservice.ErrNotFound
 	}
-	return artifactservice.ArtifactResponse{ID: id, Type: "app", Title: "Market Watch"}, nil
+	return artifact.ArtifactResponse{ID: id, Type: "app", Title: "Market Watch"}, nil
 }
 
 // emptyShardStore has no built files, so the handler serves NotBuiltHTML — a

@@ -1,6 +1,7 @@
 package authoring
 
 import (
+	"aladin/backend_v2/internal/artifact"
 	"context"
 	"errors"
 	"fmt"
@@ -26,30 +27,30 @@ var (
 // build commands. It owns authorization-before-IO, recoverable file mutation,
 // and the draft-build policy; MCP and HTTP adapters only map transport shapes.
 type Authoring struct {
-	artifacts service.ArtifactService
+	artifacts artifact.ArtifactService
 	store     service.DocSurfaceStore
 	build     service.ShardBuildService
 }
 
 type CreateCommand struct {
-	Artifact service.ArtifactPayload
+	Artifact artifact.ArtifactPayload
 	Files    map[string][]byte
 }
 
-func (a *Authoring) Create(ctx context.Context, cmd CreateCommand) (service.ArtifactResponse, error) {
+func (a *Authoring) Create(ctx context.Context, cmd CreateCommand) (artifact.ArtifactResponse, error) {
 	if strings.TrimSpace(cmd.Artifact.Title) == "" {
-		return service.ArtifactResponse{}, service.BadRequest("title is required")
+		return artifact.ArtifactResponse{}, service.BadRequest("title is required")
 	}
 	cmd.Artifact.Type = appArtifactType
 	created, err := a.artifacts.Create(ctx, cmd.Artifact)
 	if err != nil {
-		return service.ArtifactResponse{}, err
+		return artifact.ArtifactResponse{}, err
 	}
 	id := created.Artifact.ID
 	rollback := func() { _, _ = a.artifacts.Delete(ctx, id) }
 	if _, err := a.store.EnsurePageDir(ctx, id); err != nil {
 		rollback()
-		return service.ArtifactResponse{}, err
+		return artifact.ArtifactResponse{}, err
 	}
 	names := make([]string, 0, len(cmd.Files))
 	for name := range cmd.Files {
@@ -59,13 +60,13 @@ func (a *Authoring) Create(ctx context.Context, cmd CreateCommand) (service.Arti
 	for _, name := range names {
 		if err := a.store.WriteFile(ctx, id, name, cmd.Files[name]); err != nil {
 			rollback()
-			return service.ArtifactResponse{}, err
+			return artifact.ArtifactResponse{}, err
 		}
 	}
 	return created.Artifact, nil
 }
 
-func NewAuthoring(artifacts service.ArtifactService, store service.DocSurfaceStore, build service.ShardBuildService) *Authoring {
+func NewAuthoring(artifacts artifact.ArtifactService, store service.DocSurfaceStore, build service.ShardBuildService) *Authoring {
 	return &Authoring{artifacts: artifacts, store: store, build: build}
 }
 

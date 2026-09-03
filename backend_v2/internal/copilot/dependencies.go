@@ -1,6 +1,7 @@
 package copilot
 
 import (
+	"aladin/backend_v2/internal/artifact"
 	"context"
 
 	"aladin/backend_v2/internal/entities"
@@ -11,8 +12,8 @@ import (
 // keep the dependency visible while Auth, Artifact, and Entity are migrated in
 // their own bounded slices.
 type Principal = coreservice.Principal
-type ArtifactService = coreservice.ArtifactService
-type ArtifactResponse = coreservice.ArtifactResponse
+type ArtifactService = artifact.ArtifactService
+type ArtifactResponse = artifact.ArtifactResponse
 type EntityContextService = entities.EntityContextService
 type BadRequest = coreservice.BadRequest
 

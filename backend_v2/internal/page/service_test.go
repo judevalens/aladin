@@ -1,6 +1,7 @@
 package page
 
 import (
+	"aladin/backend_v2/internal/artifact"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,11 +9,10 @@ import (
 
 	"aladin/backend_v2/internal/apperror"
 	"aladin/backend_v2/internal/auth"
-	coreservice "aladin/backend_v2/internal/service"
 )
 
 type fakePageRepository struct {
-	artifactByID map[string]coreservice.ArtifactResponse
+	artifactByID map[string]artifact.ArtifactResponse
 	pagesByID    map[string]*fakePageStore
 }
 
@@ -22,10 +22,10 @@ type fakePageStore struct {
 	searchText string
 }
 
-func (f *fakePageRepository) GetArtifact(_ context.Context, id string) (coreservice.ArtifactResponse, error) {
+func (f *fakePageRepository) GetArtifact(_ context.Context, id string) (artifact.ArtifactResponse, error) {
 	record, ok := f.artifactByID[id]
 	if !ok {
-		return coreservice.ArtifactResponse{}, apperror.ErrNotFound
+		return artifact.ArtifactResponse{}, apperror.ErrNotFound
 	}
 	if stored := f.pagesByID[id]; stored != nil {
 		record.Blocks = stored.blocks
@@ -65,7 +65,7 @@ func TestPageServiceGetLoadsPageBlocks(t *testing.T) {
 
 	blocks := json.RawMessage(`[{"id":"a","type":"heading","content":[{"type":"text","text":"Hello"}],"children":[]}]`)
 	repo := &fakePageRepository{
-		artifactByID: map[string]coreservice.ArtifactResponse{
+		artifactByID: map[string]artifact.ArtifactResponse{
 			"artifact-1": {
 				ID:        "artifact-1",
 				Type:      "page",
@@ -96,7 +96,7 @@ func TestPageServiceSaveRefused(t *testing.T) {
 	// M8c seam guard: page content is collaborative, so PATCH /api/pages is
 	// refused — the editor edits via the Y.Doc, agents via the MCP bridge.
 	repo := &fakePageRepository{
-		artifactByID: map[string]coreservice.ArtifactResponse{
+		artifactByID: map[string]artifact.ArtifactResponse{
 			"artifact-1": {ID: "artifact-1", Type: "page", Title: "Memo"},
 		},
 	}
@@ -119,7 +119,7 @@ func TestPageServiceRejectsNonPageArtifacts(t *testing.T) {
 	t.Parallel()
 
 	repo := &fakePageRepository{
-		artifactByID: map[string]coreservice.ArtifactResponse{
+		artifactByID: map[string]artifact.ArtifactResponse{
 			"artifact-1": {
 				ID:        "artifact-1",
 				Type:      "link",
@@ -139,7 +139,7 @@ func TestPageServiceReadOnlyTokenCannotSave(t *testing.T) {
 	t.Parallel()
 
 	repo := &fakePageRepository{
-		artifactByID: map[string]coreservice.ArtifactResponse{
+		artifactByID: map[string]artifact.ArtifactResponse{
 			"artifact-1": {
 				ID:        "artifact-1",
 				Type:      "page",

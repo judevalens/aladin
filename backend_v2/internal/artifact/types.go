@@ -1,10 +1,10 @@
-package service
+package artifact
 
 import "encoding/json"
 
 type ArtifactResponse struct {
-	ID   string  `json:"id"`
-	Type string  `json:"type"`
+	ID       string  `json:"id"`
+	Type     string  `json:"type"`
 	FolderID *string `json:"folderId,omitempty"`
 	Title    string  `json:"title"`
 	// Content is the canonical body for non-page artifacts (link/voice/file).
@@ -76,10 +76,10 @@ type BrowserNodeCreateResponse struct {
 }
 
 type ArtifactPayload struct {
-	ID        string          `json:"id,omitempty"`
-	Type      string          `json:"type"`
-	FolderID  *string         `json:"folderId,omitempty"`
-	Title     string          `json:"title"`
+	ID       string  `json:"id,omitempty"`
+	Type     string  `json:"type"`
+	FolderID *string `json:"folderId,omitempty"`
+	Title    string  `json:"title"`
 	// Content is used for non-page artifacts; ignored for pages.
 	Content string `json:"content"`
 	// Blocks is required for type=page; ignored for other types.

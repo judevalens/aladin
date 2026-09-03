@@ -1,6 +1,7 @@
 package research
 
 import (
+	"aladin/backend_v2/internal/artifact"
 	"context"
 	"strings"
 
@@ -9,7 +10,7 @@ import (
 
 // BrowserNodeResponse remains the shared tree projection used by the browser
 // and sync surfaces; Research owns the workflow that creates it.
-type BrowserNodeResponse = coreservice.BrowserNodeResponse
+type BrowserNodeResponse = artifact.BrowserNodeResponse
 
 // research.go — the research bench's write side (design/RESEARCH_SURFACE_PRD.md §5).
 //

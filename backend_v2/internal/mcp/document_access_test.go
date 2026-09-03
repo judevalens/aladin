@@ -9,12 +9,13 @@ import (
 	"testing"
 	"time"
 
+	"aladin/backend_v2/internal/artifact"
+	artifactpostgres "aladin/backend_v2/internal/artifact/postgres"
 	"aladin/backend_v2/internal/dbtest"
 	"aladin/backend_v2/internal/document"
 	documentpostgres "aladin/backend_v2/internal/document/postgres"
 	"aladin/backend_v2/internal/file"
 	"aladin/backend_v2/internal/ingestion"
-	"aladin/backend_v2/internal/repo"
 	"aladin/backend_v2/internal/service"
 
 	"github.com/google/uuid"
@@ -98,7 +99,7 @@ func TestAgentCanReadAnIngestedPDF(t *testing.T) {
 	}
 
 	tools := workspaceToolServer{
-		artifacts: service.NewArtifactService(repo.NewArtifactsPostgres(pool),
+		artifacts: artifact.NewArtifactService(artifactpostgres.NewArtifactsPostgres(pool),
 			file.NewFilesystemArtifactStore(uploads, t.TempDir())),
 		documents: document.NewDocumentService(docRepo),
 	}

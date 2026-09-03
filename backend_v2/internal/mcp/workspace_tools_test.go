@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"aladin/backend_v2/internal/alert"
+	"aladin/backend_v2/internal/artifact"
 	"context"
 	"encoding/json"
 	"errors"
@@ -276,7 +277,7 @@ func TestGetEntityScopesToPrincipalAndCites(t *testing.T) {
 func TestGetArtifactExtractsTextAndCitesByKind(t *testing.T) {
 	t.Parallel()
 
-	artifacts := &fakeArtifactService{getResult: service.ArtifactResponse{
+	artifacts := &fakeArtifactService{getResult: artifact.ArtifactResponse{
 		ID: "app-1", Type: "app", Title: "Dashboard", Content: "shard body",
 	}}
 	tools := workspaceToolServer{artifacts: artifacts}

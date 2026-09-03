@@ -8,6 +8,7 @@ import (
 	"aladin/backend_v2/internal/repo"
 	"aladin/backend_v2/internal/research"
 	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/treesync"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -116,7 +117,7 @@ func (r *PostgresResearchRepository) CreateResearchFolder(
 
 	// One frame for the new entity — bumps seq, reads the light projection (which now
 	// includes the extension), and appends to the outbox in this same tx.
-	if err := repo.EmitNodeUpsert(ctx, tx, userID, in.ID); err != nil {
+	if err := treesync.EmitNodeUpsert(ctx, tx, userID, in.ID); err != nil {
 		return research.BrowserNodeResponse{}, err
 	}
 
@@ -185,7 +186,7 @@ func (r *PostgresResearchRepository) UpdateResearchFolder(ctx context.Context, i
 		}
 	}
 
-	if err := repo.EmitNodeUpsert(ctx, tx, userID, id); err != nil {
+	if err := treesync.EmitNodeUpsert(ctx, tx, userID, id); err != nil {
 		return research.BrowserNodeResponse{}, err
 	}
 

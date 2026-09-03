@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"aladin/backend_v2/internal/artifact"
 	"context"
 	"encoding/json"
 	"os"
@@ -18,16 +19,16 @@ import (
 )
 
 type resourceTestArtifacts struct {
-	service.ArtifactService
+	artifact.ArtifactService
 	pool *pgxpool.Pool
 }
 
-func (a resourceTestArtifacts) Get(ctx context.Context, id string) (service.ArtifactResponse, error) {
+func (a resourceTestArtifacts) Get(ctx context.Context, id string) (artifact.ArtifactResponse, error) {
 	p, err := service.RequirePrincipal(ctx)
 	if err != nil {
-		return service.ArtifactResponse{}, err
+		return artifact.ArtifactResponse{}, err
 	}
-	var result service.ArtifactResponse
+	var result artifact.ArtifactResponse
 	err = a.pool.QueryRow(ctx, `SELECT id,type FROM artifacts WHERE id=$1 AND user_id=$2::uuid`, id, p.UserID).Scan(&result.ID, &result.Type)
 	if err != nil {
 		return result, service.ErrNotFound

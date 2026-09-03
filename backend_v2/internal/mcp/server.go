@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"aladin/backend_v2/internal/alert"
+	"aladin/backend_v2/internal/artifact"
 	"aladin/backend_v2/internal/artifactref"
 	"context"
 	"log/slog"
@@ -141,7 +142,7 @@ type Server struct {
 // here so adding an API/worker-only dependency cannot silently widen MCP.
 type Dependencies interface {
 	Auth() service.AuthService
-	Artifacts() service.ArtifactService
+	Artifacts() artifact.ArtifactService
 	Insights() insights.InsightService
 	DocSurfaceStore() service.DocSurfaceStore
 	Preview() service.PreviewService

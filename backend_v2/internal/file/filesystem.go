@@ -1,6 +1,7 @@
 package file
 
 import (
+	"aladin/backend_v2/internal/artifact"
 	"fmt"
 	"io"
 	"mime"
@@ -20,26 +21,26 @@ func NewFilesystemArtifactStore(uploadDir string, audioDir string) *FilesystemAr
 	return &FilesystemArtifactStore{uploadDir: uploadDir, audioDir: audioDir}
 }
 
-func (s *FilesystemArtifactStore) SaveResource(kind string, filename string, contentType string, body io.Reader) (coreservice.StoredArtifactResource, error) {
+func (s *FilesystemArtifactStore) SaveResource(kind string, filename string, contentType string, body io.Reader) (artifact.StoredArtifactResource, error) {
 	baseDir := s.baseDir(kind)
 	if baseDir == "" {
-		return coreservice.StoredArtifactResource{}, fmt.Errorf("unsupported artifact resource kind: %s", kind)
+		return artifact.StoredArtifactResource{}, fmt.Errorf("unsupported artifact resource kind: %s", kind)
 	}
 	if err := os.MkdirAll(baseDir, 0o755); err != nil {
-		return coreservice.StoredArtifactResource{}, err
+		return artifact.StoredArtifactResource{}, err
 	}
 	ext := strings.ToLower(filepath.Ext(filepath.Base(filename)))
 	storageKey := kind + "/" + coreservice.NewID(kind+"-", ext)
 	path := filepath.Join(baseDir, filepath.Base(strings.TrimPrefix(storageKey, kind+"/")))
 	out, err := os.Create(path)
 	if err != nil {
-		return coreservice.StoredArtifactResource{}, err
+		return artifact.StoredArtifactResource{}, err
 	}
 	defer out.Close()
 	size, err := io.Copy(out, body)
 	if err != nil {
 		_ = os.Remove(path)
-		return coreservice.StoredArtifactResource{}, err
+		return artifact.StoredArtifactResource{}, err
 	}
 	// Trust the uploaded content-type (set from the browser's blob type) — the
 	// client knows the real codec. Fall back to the file extension only when the
@@ -51,7 +52,7 @@ func (s *FilesystemArtifactStore) SaveResource(kind string, filename string, con
 	if resolvedType == "" {
 		resolvedType = "application/octet-stream"
 	}
-	return coreservice.StoredArtifactResource{
+	return artifact.StoredArtifactResource{
 		StorageKey:       storageKey,
 		ResourceKind:     kind,
 		MIMEType:         resolvedType,

@@ -1,15 +1,20 @@
-package repo
+package treesync
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
 
+	"aladin/backend_v2/internal/outbox"
 	"aladin/backend_v2/internal/service"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+type scanner interface {
+	Scan(dest ...any) error
+}
 
 // sync_source.go — projecting canonical state into sync frame entities.
 //
@@ -75,6 +80,10 @@ const lightEntitySelect = `
 	  LEFT JOIN artifacts a ON a.id = n.artifact_id AND a.user_id = n.user_id
 	  LEFT JOIN research_strategies rs ON rs.node_id = n.id AND rs.user_id = n.user_id
 	 WHERE n.user_id = $1::uuid`
+
+// LightEntitySelect is the shared canonical projection used by domain adapters
+// that must return the same light tree-node representation as sync frames.
+const LightEntitySelect = lightEntitySelect
 
 // scanLightEntity maps one projected row to a FrameEntity. A tombstoned row
 // becomes an Op:delete (carrying its seq, no data); a live row an Op:upsert with
@@ -161,7 +170,7 @@ func bumpNodeSeq(ctx context.Context, tx pgx.Tx, userID, nodeID string) error {
 // single-entity upsert frame to the outbox — all in the caller's write tx, so
 // the data and the event commit together. nodeID is the tree_nodes id (== the
 // artifact id for artifacts; the entity is keyed by the node id either way).
-func emitNodeUpsert(ctx context.Context, tx pgx.Tx, userID, nodeID string) error {
+func EmitNodeUpsert(ctx context.Context, tx pgx.Tx, userID, nodeID string) error {
 	if err := bumpNodeSeq(ctx, tx, userID, nodeID); err != nil {
 		return err
 	}
@@ -169,21 +178,14 @@ func emitNodeUpsert(ctx context.Context, tx pgx.Tx, userID, nodeID string) error
 	if err != nil {
 		return err
 	}
-	return appendOutboxEvent(ctx, tx, userID, service.Frame{Entities: []service.FrameEntity{ent}})
-}
-
-// EmitNodeUpsert exposes the shared transactional tree-frame primitive to
-// domain-owned PostgreSQL adapters. The caller must hold the write transaction
-// and the per-user lock, preserving the existing commit boundary.
-func EmitNodeUpsert(ctx context.Context, tx pgx.Tx, userID, nodeID string) error {
-	return emitNodeUpsert(ctx, tx, userID, nodeID)
+	return outbox.AppendData(ctx, tx, userID, service.Frame{Entities: []service.FrameEntity{ent}})
 }
 
 // softDeleteNode tombstones one node (is_deleted=true, seq bumped, row KEPT so a
 // stale lower-seq upsert can't resurrect it) and returns its delete frame entity
 // (carrying the bumped seq). Caller appends the frame (one frame may tombstone a
 // whole subtree). entityKind is the node's kind ("folder" | "artifact").
-func softDeleteNode(ctx context.Context, tx pgx.Tx, userID, nodeID, entityKind string) (service.FrameEntity, error) {
+func SoftDeleteNode(ctx context.Context, tx pgx.Tx, userID, nodeID, entityKind string) (service.FrameEntity, error) {
 	var seq int64
 	err := tx.QueryRow(ctx, `
 		UPDATE tree_nodes

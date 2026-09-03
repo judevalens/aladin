@@ -9,11 +9,14 @@ import (
 	"testing"
 	"time"
 
+	"aladin/backend_v2/internal/artifact"
+	artifactpostgres "aladin/backend_v2/internal/artifact/postgres"
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/dbtest"
 	"aladin/backend_v2/internal/reconciliation"
 	"aladin/backend_v2/internal/repo"
 	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/treesync"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -88,14 +91,14 @@ func TestHandleSyncPull_ReturnsFramesAndAdvancesCursor(t *testing.T) {
 	// because tree_nodes.id is a GLOBAL primary key — a fixed "folder-a" collides with the same
 	// literal in internal/repo's parallel run and with rows left by earlier runs.
 	title := "Folder A"
-	if err := repo.NewArtifactsPostgres(pool).CreateTreeNode(principalCtx, coreservice.TreeNodeRecord{
+	if err := artifactpostgres.NewArtifactsPostgres(pool).CreateTreeNode(principalCtx, artifact.TreeNodeRecord{
 		ID: "folder-a-" + uuid.NewString()[:8], Kind: "folder", Title: &title, Position: 1,
 	}); err != nil {
 		t.Fatalf("create tree node: %v", err)
 	}
 
 	deps := testDependencies{
-		SyncSvc: reconciliation.New(repo.NewSyncPostgres(pool), repo.NewTreeSyncSource(pool)),
+		SyncSvc: reconciliation.New(repo.NewSyncPostgres(pool), treesync.NewTreeSyncSource(pool)),
 	}
 	s := &Server{deps: deps}
 

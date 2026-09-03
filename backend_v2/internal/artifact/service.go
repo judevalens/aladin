@@ -1,4 +1,4 @@
-package service
+package artifact
 
 import (
 	"context"
@@ -6,11 +6,38 @@ import (
 	"io"
 	"strings"
 	"time"
+
+	"aladin/backend_v2/internal/apperror"
+	"aladin/backend_v2/internal/auth"
+
+	"github.com/google/uuid"
 )
 
 // emptyBlocks is the canonical "no blocks" JSON value persisted alongside a
 // freshly-created page that the agent or user has not yet populated.
 var emptyBlocks = json.RawMessage(`[]`)
+
+func newID(prefix string) string {
+	return prefix + uuid.NewString()
+}
+
+func trimStringPtr(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
+}
+
+func firstNonEmpty(value, fallback string) string {
+	if strings.TrimSpace(value) != "" {
+		return value
+	}
+	return fallback
+}
 
 type ArtifactService interface {
 	List(context.Context, ArtifactListParams) ([]ArtifactResponse, error)
@@ -76,7 +103,7 @@ type ArtifactCommandRepository interface {
 	UpdateArtifactGraph(context.Context, string, ArtifactPatch) error
 	// SavePageBlocks is the single mutation point for page blocks. expectedRev
 	// of 0 means last-write-wins; >0 enforces optimistic concurrency and
-	// returns ErrConflict if the stored revision is >= expectedRev.
+	// returns apperror.ErrConflict if the stored revision is >= expectedRev.
 	SavePageBlocks(ctx context.Context, artifactID string, blocks json.RawMessage, searchText string, expectedRev int64) (newRev int64, err error)
 	DeleteArtifact(context.Context, string) error
 	CreateTreeNode(context.Context, TreeNodeRecord) error
@@ -114,11 +141,11 @@ func NewArtifactService(repo ArtifactRepository, files ArtifactFileStore) *Defau
 }
 
 func (s *DefaultArtifactService) List(ctx context.Context, params ArtifactListParams) ([]ArtifactResponse, error) {
-	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
+	if err := auth.RequireScope(ctx, auth.ScopeArtifactsRead); err != nil {
 		return nil, err
 	}
 	if params.FolderID != nil {
-		params.FolderID = TrimStringPtr(params.FolderID)
+		params.FolderID = trimStringPtr(params.FolderID)
 		if params.FolderID != nil {
 			if _, err := s.repo.GetContainer(ctx, *params.FolderID); err != nil {
 				return nil, err
@@ -129,12 +156,12 @@ func (s *DefaultArtifactService) List(ctx context.Context, params ArtifactListPa
 }
 
 func (s *DefaultArtifactService) SearchPages(ctx context.Context, params PageSearchParams) ([]ArtifactResponse, error) {
-	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
+	if err := auth.RequireScope(ctx, auth.ScopeArtifactsRead); err != nil {
 		return nil, err
 	}
 	params.Query = strings.TrimSpace(params.Query)
 	if params.Query == "" {
-		return nil, BadRequest("query is required")
+		return nil, apperror.BadRequest("query is required")
 	}
 	if params.Limit <= 0 {
 		params.Limit = 20
@@ -146,13 +173,13 @@ func (s *DefaultArtifactService) SearchPages(ctx context.Context, params PageSea
 }
 
 func (s *DefaultArtifactService) QueryByProperty(ctx context.Context, params PropertyQuery) ([]ArtifactResponse, error) {
-	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
+	if err := auth.RequireScope(ctx, auth.ScopeArtifactsRead); err != nil {
 		return nil, err
 	}
 	params.Key = strings.TrimSpace(params.Key)
 	params.Value = strings.TrimSpace(params.Value)
 	if params.Key == "" {
-		return nil, BadRequest("key is required")
+		return nil, apperror.BadRequest("key is required")
 	}
 	if params.Limit <= 0 {
 		params.Limit = 100
@@ -164,14 +191,14 @@ func (s *DefaultArtifactService) QueryByProperty(ctx context.Context, params Pro
 }
 
 func (s *DefaultArtifactService) PropertyFacets(ctx context.Context) ([]PropertyFacet, error) {
-	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
+	if err := auth.RequireScope(ctx, auth.ScopeArtifactsRead); err != nil {
 		return nil, err
 	}
 	return s.repo.PropertyFacets(ctx)
 }
 
 func (s *DefaultArtifactService) BrowserTree(ctx context.Context) ([]BrowserTreeNode, error) {
-	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
+	if err := auth.RequireScope(ctx, auth.ScopeArtifactsRead); err != nil {
 		return nil, err
 	}
 	nodes, err := s.repo.ListAllBrowserNodes(ctx)
@@ -216,27 +243,27 @@ func (s *DefaultArtifactService) BrowserTree(ctx context.Context) ([]BrowserTree
 }
 
 func (s *DefaultArtifactService) Get(ctx context.Context, id string) (ArtifactResponse, error) {
-	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
+	if err := auth.RequireScope(ctx, auth.ScopeArtifactsRead); err != nil {
 		return ArtifactResponse{}, err
 	}
 	if strings.TrimSpace(id) == "" {
-		return ArtifactResponse{}, ErrNotFound
+		return ArtifactResponse{}, apperror.ErrNotFound
 	}
 	return s.repo.GetArtifact(ctx, id)
 }
 
 func (s *DefaultArtifactService) Create(ctx context.Context, payload ArtifactPayload) (ArtifactCreateResponse, error) {
-	if err := RequireScope(ctx, ScopeArtifactsWrite); err != nil {
+	if err := auth.RequireScope(ctx, auth.ScopeArtifactsWrite); err != nil {
 		return ArtifactCreateResponse{}, err
 	}
 	artifactType := strings.TrimSpace(payload.Type)
 	if artifactType == "" {
-		return ArtifactCreateResponse{}, BadRequest("type is required")
+		return ArtifactCreateResponse{}, apperror.BadRequest("type is required")
 	}
 	if artifactType != "page" && artifactType != "link" && artifactType != "app" && artifactType != "board" {
-		return ArtifactCreateResponse{}, BadRequest("type must be one of: page, link, app, board")
+		return ArtifactCreateResponse{}, apperror.BadRequest("type must be one of: page, link, app, board")
 	}
-	payload.FolderID = TrimStringPtr(payload.FolderID)
+	payload.FolderID = trimStringPtr(payload.FolderID)
 	if payload.FolderID != nil {
 		if _, err := s.repo.GetContainer(ctx, *payload.FolderID); err != nil {
 			return ArtifactCreateResponse{}, err
@@ -245,7 +272,7 @@ func (s *DefaultArtifactService) Create(ctx context.Context, payload ArtifactPay
 
 	title := strings.TrimSpace(payload.Title)
 	content := strings.TrimSpace(payload.Content)
-	sourceURL := TrimStringPtr(payload.SourceURL)
+	sourceURL := trimStringPtr(payload.SourceURL)
 
 	var (
 		pageBlocks     json.RawMessage
@@ -255,7 +282,7 @@ func (s *DefaultArtifactService) Create(ctx context.Context, payload ArtifactPay
 	switch artifactType {
 	case "page":
 		if title == "" {
-			return ArtifactCreateResponse{}, BadRequest("title is required")
+			return ArtifactCreateResponse{}, apperror.BadRequest("title is required")
 		}
 		// M8c: page content is owned by the collaborative Y.Doc, not written
 		// through this API. Always create an empty document; the editor (or,
@@ -266,20 +293,20 @@ func (s *DefaultArtifactService) Create(ctx context.Context, payload ArtifactPay
 		content = "" // content is unused for pages
 	case "link":
 		if sourceURL == nil {
-			return ArtifactCreateResponse{}, BadRequest("sourceUrl is required")
+			return ArtifactCreateResponse{}, apperror.BadRequest("sourceUrl is required")
 		}
 		if title == "" {
-			return ArtifactCreateResponse{}, BadRequest("title is required")
+			return ArtifactCreateResponse{}, apperror.BadRequest("title is required")
 		}
 	case "app":
 		// Doc Surface page. Source lives on the data volume (not Postgres);
 		// this row carries only metadata + (later) the MD summary. No blocks.
 		if title == "" {
-			return ArtifactCreateResponse{}, BadRequest("title is required")
+			return ArtifactCreateResponse{}, apperror.BadRequest("title is required")
 		}
 	case "board":
 		if title == "" {
-			return ArtifactCreateResponse{}, BadRequest("title is required")
+			return ArtifactCreateResponse{}, apperror.BadRequest("title is required")
 		}
 	}
 
@@ -295,7 +322,7 @@ func (s *DefaultArtifactService) Create(ctx context.Context, payload ArtifactPay
 		Title:     title,
 		Content:   content,
 		Blocks:    pageBlocks,
-		Summary:   TrimStringPtr(payload.Summary),
+		Summary:   trimStringPtr(payload.Summary),
 		SourceURL: sourceURL,
 		Metadata:  payload.Metadata,
 		CreatedAt: now,
@@ -333,7 +360,7 @@ func (s *DefaultArtifactService) Create(ctx context.Context, payload ArtifactPay
 }
 
 func (s *DefaultArtifactService) CreateBrowserNode(ctx context.Context, input BrowserNodeCreateInput) (BrowserNodeCreateResponse, error) {
-	if err := RequireScope(ctx, ScopeArtifactsWrite); err != nil {
+	if err := auth.RequireScope(ctx, auth.ScopeArtifactsWrite); err != nil {
 		return BrowserNodeCreateResponse{}, err
 	}
 	kind := strings.TrimSpace(input.Kind)
@@ -346,7 +373,7 @@ func (s *DefaultArtifactService) CreateBrowserNode(ctx context.Context, input Br
 		return BrowserNodeCreateResponse{Node: node}, nil
 	case "artifact":
 		if input.Artifact == nil {
-			return BrowserNodeCreateResponse{}, BadRequest("artifact payload is required")
+			return BrowserNodeCreateResponse{}, apperror.BadRequest("artifact payload is required")
 		}
 		created, err := s.Create(ctx, ArtifactPayload{
 			Type:      input.Artifact.Type,
@@ -368,16 +395,16 @@ func (s *DefaultArtifactService) CreateBrowserNode(ctx context.Context, input Br
 			Artifact: &artifact,
 		}, nil
 	default:
-		return BrowserNodeCreateResponse{}, BadRequest("kind must be one of: folder, artifact")
+		return BrowserNodeCreateResponse{}, apperror.BadRequest("kind must be one of: folder, artifact")
 	}
 }
 
 func (s *DefaultArtifactService) DeleteBrowserNode(ctx context.Context, id string) (NodeDeleteResult, error) {
-	if err := RequireScope(ctx, ScopeArtifactsWrite); err != nil {
+	if err := auth.RequireScope(ctx, auth.ScopeArtifactsWrite); err != nil {
 		return NodeDeleteResult{}, err
 	}
 	if strings.TrimSpace(id) == "" {
-		return NodeDeleteResult{}, ErrNotFound
+		return NodeDeleteResult{}, apperror.ErrNotFound
 	}
 	if err := s.repo.DeleteBrowserNode(ctx, id); err != nil {
 		return NodeDeleteResult{}, err
@@ -392,11 +419,11 @@ func (s *DefaultArtifactService) DeleteBrowserNode(ctx context.Context, id strin
 }
 
 func (s *DefaultArtifactService) Update(ctx context.Context, id string, patch ArtifactPatch) (ArtifactResponse, error) {
-	if err := RequireScope(ctx, ScopeArtifactsWrite); err != nil {
+	if err := auth.RequireScope(ctx, auth.ScopeArtifactsWrite); err != nil {
 		return ArtifactResponse{}, err
 	}
 	if strings.TrimSpace(id) == "" {
-		return ArtifactResponse{}, ErrNotFound
+		return ArtifactResponse{}, apperror.ErrNotFound
 	}
 	current, err := s.repo.GetArtifact(ctx, id)
 	if err != nil {
@@ -405,24 +432,24 @@ func (s *DefaultArtifactService) Update(ctx context.Context, id string, patch Ar
 	if patch.Type != nil {
 		trimmedType := strings.TrimSpace(*patch.Type)
 		if trimmedType == "" {
-			return ArtifactResponse{}, BadRequest("type cannot be empty")
+			return ArtifactResponse{}, apperror.BadRequest("type cannot be empty")
 		}
 		if trimmedType != "page" && trimmedType != "link" && trimmedType != "voice" && trimmedType != "file" && trimmedType != "app" && trimmedType != "board" {
-			return ArtifactResponse{}, BadRequest("unsupported type")
+			return ArtifactResponse{}, apperror.BadRequest("unsupported type")
 		}
 		patch.Type = &trimmedType
 	}
 	if patch.Title != nil && strings.TrimSpace(*patch.Title) == "" {
-		return ArtifactResponse{}, BadRequest("title cannot be empty")
+		return ArtifactResponse{}, apperror.BadRequest("title cannot be empty")
 	}
 	if patch.Content != nil {
 		content := *patch.Content
 		patch.Content = &content
 	}
-	patch.Title = TrimStringPtr(patch.Title)
-	patch.Summary = TrimStringPtr(patch.Summary)
-	patch.SourceURL = TrimStringPtr(patch.SourceURL)
-	patch.FolderID = TrimStringPtr(patch.FolderID)
+	patch.Title = trimStringPtr(patch.Title)
+	patch.Summary = trimStringPtr(patch.Summary)
+	patch.SourceURL = trimStringPtr(patch.SourceURL)
+	patch.FolderID = trimStringPtr(patch.FolderID)
 	if patch.FolderID != nil {
 		if _, err := s.repo.GetContainer(ctx, *patch.FolderID); err != nil {
 			return ArtifactResponse{}, err
@@ -436,7 +463,7 @@ func (s *DefaultArtifactService) Update(ctx context.Context, id string, patch Ar
 	// app artifacts are backed by files on the data volume and boards carry editor snapshots
 	// in artifact content; converting either would orphan type-specific state. Forbid it.
 	if current.Type != nextType && (current.Type == "app" || nextType == "app" || current.Type == "board" || nextType == "board") {
-		return ArtifactResponse{}, BadRequest("this artifact's type cannot be changed")
+		return ArtifactResponse{}, apperror.BadRequest("this artifact's type cannot be changed")
 	}
 	nextTitle := current.Title
 	if patch.Title != nil {
@@ -447,28 +474,28 @@ func (s *DefaultArtifactService) Update(ctx context.Context, id string, patch Ar
 		nextSourceURL = patch.SourceURL
 	}
 	if nextType == "link" && nextSourceURL == nil {
-		return ArtifactResponse{}, BadRequest("sourceUrl is required")
+		return ArtifactResponse{}, apperror.BadRequest("sourceUrl is required")
 	}
 	if nextType == "link" && strings.TrimSpace(nextTitle) == "" {
-		return ArtifactResponse{}, BadRequest("title is required")
+		return ArtifactResponse{}, apperror.BadRequest("title is required")
 	}
 	if nextType == "page" && strings.TrimSpace(nextTitle) == "" {
-		return ArtifactResponse{}, BadRequest("title is required")
+		return ArtifactResponse{}, apperror.BadRequest("title is required")
 	}
 	if nextType == "app" && strings.TrimSpace(nextTitle) == "" {
-		return ArtifactResponse{}, BadRequest("title is required")
+		return ArtifactResponse{}, apperror.BadRequest("title is required")
 	}
 	if nextType == "board" && strings.TrimSpace(nextTitle) == "" {
-		return ArtifactResponse{}, BadRequest("title is required")
+		return ArtifactResponse{}, apperror.BadRequest("title is required")
 	}
 	if current.Type == "page" && patch.Content != nil {
-		return ArtifactResponse{}, BadRequest("page content is edited collaboratively, not via the artifact API")
+		return ArtifactResponse{}, apperror.BadRequest("page content is edited collaboratively, not via the artifact API")
 	}
 	// The board room server (blocknote sidecar) owns board content now — it projects the
 	// room's snapshot into this column itself. A client PATCH here would be a stale writer
 	// racing the room (the pre-multiplayer path); refuse it the way pages do.
 	if current.Type == "board" && patch.Content != nil {
-		return ArtifactResponse{}, BadRequest("board content is edited via the board sync room, not the artifact API")
+		return ArtifactResponse{}, apperror.BadRequest("board content is edited via the board sync room, not the artifact API")
 	}
 
 	// M8c seam guard: page blocks are owned by the collaborative Y.Doc. A
@@ -476,7 +503,7 @@ func (s *DefaultArtifactService) Update(ctx context.Context, id string, patch Ar
 	// (or be clobbered by) the Hocuspocus doc + its projection. Agents edit
 	// pages via the MCP collab bridge; the editor edits via the Y.Doc.
 	if current.Type == "page" && patch.Blocks != nil {
-		return ArtifactResponse{}, BadRequest("page blocks are edited via the collab bridge, not the artifact API")
+		return ArtifactResponse{}, apperror.BadRequest("page blocks are edited via the collab bridge, not the artifact API")
 	}
 	if err := s.repo.UpdateArtifactGraph(ctx, id, patch); err != nil {
 		return ArtifactResponse{}, err
@@ -496,13 +523,13 @@ func (s *DefaultArtifactService) Update(ctx context.Context, id string, patch Ar
 }
 
 func (s *DefaultArtifactService) MoveArtifact(ctx context.Context, id string, folderID *string) (ArtifactResponse, error) {
-	if err := RequireScope(ctx, ScopeArtifactsWrite); err != nil {
+	if err := auth.RequireScope(ctx, auth.ScopeArtifactsWrite); err != nil {
 		return ArtifactResponse{}, err
 	}
 	if strings.TrimSpace(id) == "" {
-		return ArtifactResponse{}, ErrNotFound
+		return ArtifactResponse{}, apperror.ErrNotFound
 	}
-	folderID = TrimStringPtr(folderID)
+	folderID = trimStringPtr(folderID)
 	if folderID != nil {
 		if _, err := s.repo.GetContainer(ctx, *folderID); err != nil {
 			return ArtifactResponse{}, err
@@ -524,11 +551,11 @@ func (s *DefaultArtifactService) MoveArtifact(ctx context.Context, id string, fo
 }
 
 func (s *DefaultArtifactService) Delete(ctx context.Context, id string) (NodeDeleteResult, error) {
-	if err := RequireScope(ctx, ScopeArtifactsWrite); err != nil {
+	if err := auth.RequireScope(ctx, auth.ScopeArtifactsWrite); err != nil {
 		return NodeDeleteResult{}, err
 	}
 	if strings.TrimSpace(id) == "" {
-		return NodeDeleteResult{}, ErrNotFound
+		return NodeDeleteResult{}, apperror.ErrNotFound
 	}
 	if err := s.repo.DeleteArtifact(ctx, id); err != nil {
 		return NodeDeleteResult{}, err
@@ -541,14 +568,14 @@ func (s *DefaultArtifactService) Delete(ctx context.Context, id string) (NodeDel
 }
 
 func (s *DefaultArtifactService) Upload(ctx context.Context, input ArtifactUploadInput, body io.Reader) (ArtifactResponse, error) {
-	if err := RequireScope(ctx, ScopeArtifactsWrite); err != nil {
+	if err := auth.RequireScope(ctx, auth.ScopeArtifactsWrite); err != nil {
 		return ArtifactResponse{}, err
 	}
 	artifactType := strings.TrimSpace(input.Type)
 	if artifactType != "voice" && artifactType != "file" {
-		return ArtifactResponse{}, BadRequest("type must be one of: voice, file")
+		return ArtifactResponse{}, apperror.BadRequest("type must be one of: voice, file")
 	}
-	input.FolderID = TrimStringPtr(input.FolderID)
+	input.FolderID = trimStringPtr(input.FolderID)
 	if input.FolderID != nil {
 		if _, err := s.repo.GetContainer(ctx, *input.FolderID); err != nil {
 			return ArtifactResponse{}, err
@@ -556,14 +583,14 @@ func (s *DefaultArtifactService) Upload(ctx context.Context, input ArtifactUploa
 	}
 	filename := strings.TrimSpace(input.Filename)
 	if filename == "" {
-		return ArtifactResponse{}, BadRequest("filename is required")
+		return ArtifactResponse{}, apperror.BadRequest("filename is required")
 	}
 	stored, err := s.files.SaveResource(artifactType, filename, input.ContentType, body)
 	if err != nil {
 		return ArtifactResponse{}, err
 	}
 	title := filename
-	if trimmedTitle := TrimStringPtr(input.Title); trimmedTitle != nil {
+	if trimmedTitle := trimStringPtr(input.Title); trimmedTitle != nil {
 		title = *trimmedTitle
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -580,7 +607,7 @@ func (s *DefaultArtifactService) Upload(ctx context.Context, input ArtifactUploa
 		FolderID:  input.FolderID,
 		Title:     title,
 		Content:   "",
-		Summary:   TrimStringPtr(input.Summary),
+		Summary:   trimStringPtr(input.Summary),
 		Metadata:  metadata,
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -609,11 +636,11 @@ func (s *DefaultArtifactService) Resource(ctx context.Context, id string) (Artif
 		return ArtifactResource{}, err
 	}
 	if rec.Type != "voice" && rec.Type != "file" {
-		return ArtifactResource{}, BadRequest("artifact does not have a resource")
+		return ArtifactResource{}, apperror.BadRequest("artifact does not have a resource")
 	}
 	storageKey, _ := rec.Metadata["storageKey"].(string)
 	if strings.TrimSpace(storageKey) == "" {
-		return ArtifactResource{}, ErrNotFound
+		return ArtifactResource{}, apperror.ErrNotFound
 	}
 	path, err := s.files.ResourcePath(storageKey)
 	if err != nil {
@@ -627,10 +654,10 @@ func (s *DefaultArtifactService) Resource(ctx context.Context, id string) (Artif
 }
 
 func (s *DefaultArtifactService) ListFolders(ctx context.Context, parentID *string) ([]FolderNode, error) {
-	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
+	if err := auth.RequireScope(ctx, auth.ScopeArtifactsRead); err != nil {
 		return nil, err
 	}
-	parentID = TrimStringPtr(parentID)
+	parentID = trimStringPtr(parentID)
 	if parentID != nil {
 		if _, err := s.repo.GetContainer(ctx, *parentID); err != nil {
 			return nil, err
@@ -640,7 +667,7 @@ func (s *DefaultArtifactService) ListFolders(ctx context.Context, parentID *stri
 }
 
 func (s *DefaultArtifactService) FolderTree(ctx context.Context) ([]FolderTreeNode, error) {
-	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
+	if err := auth.RequireScope(ctx, auth.ScopeArtifactsRead); err != nil {
 		return nil, err
 	}
 	folders, err := s.repo.ListAllFolders(ctx)
@@ -694,14 +721,14 @@ func (s *DefaultArtifactService) CreateFolder(ctx context.Context, title string,
 }
 
 func (s *DefaultArtifactService) createFolderNode(ctx context.Context, id string, title string, parentID *string) (BrowserNodeResponse, error) {
-	if err := RequireScope(ctx, ScopeArtifactsWrite); err != nil {
+	if err := auth.RequireScope(ctx, auth.ScopeArtifactsWrite); err != nil {
 		return BrowserNodeResponse{}, err
 	}
 	title = strings.TrimSpace(title)
 	if title == "" {
-		return BrowserNodeResponse{}, BadRequest("title is required")
+		return BrowserNodeResponse{}, apperror.BadRequest("title is required")
 	}
-	parentID = TrimStringPtr(parentID)
+	parentID = trimStringPtr(parentID)
 	if parentID != nil {
 		if _, err := s.repo.GetContainer(ctx, *parentID); err != nil {
 			return BrowserNodeResponse{}, err
@@ -731,18 +758,18 @@ func (s *DefaultArtifactService) createFolderNode(ctx context.Context, id string
 }
 
 func (s *DefaultArtifactService) UpdateFolder(ctx context.Context, id string, patch FolderPatch) (FolderNode, error) {
-	if err := RequireScope(ctx, ScopeArtifactsWrite); err != nil {
+	if err := auth.RequireScope(ctx, auth.ScopeArtifactsWrite); err != nil {
 		return FolderNode{}, err
 	}
 	if strings.TrimSpace(id) == "" {
-		return FolderNode{}, ErrNotFound
+		return FolderNode{}, apperror.ErrNotFound
 	}
 	if patch.Title == nil {
 		return s.repo.GetFolder(ctx, id)
 	}
 	title := strings.TrimSpace(*patch.Title)
 	if title == "" {
-		return FolderNode{}, BadRequest("title cannot be empty")
+		return FolderNode{}, apperror.BadRequest("title cannot be empty")
 	}
 	if err := s.repo.UpdateFolderTitle(ctx, id, title); err != nil {
 		return FolderNode{}, err
@@ -760,21 +787,21 @@ func (s *DefaultArtifactService) UpdateFolder(ctx context.Context, id string, pa
 }
 
 func (s *DefaultArtifactService) GetFolder(ctx context.Context, id string) (FolderNode, error) {
-	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
+	if err := auth.RequireScope(ctx, auth.ScopeArtifactsRead); err != nil {
 		return FolderNode{}, err
 	}
 	if strings.TrimSpace(id) == "" {
-		return FolderNode{}, ErrNotFound
+		return FolderNode{}, apperror.ErrNotFound
 	}
 	return s.repo.GetFolder(ctx, id)
 }
 
 func (s *DefaultArtifactService) FolderBreadcrumbs(ctx context.Context, id string) ([]BreadcrumbItem, error) {
-	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
+	if err := auth.RequireScope(ctx, auth.ScopeArtifactsRead); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(id) == "" {
-		return nil, ErrNotFound
+		return nil, apperror.ErrNotFound
 	}
 	if _, err := s.repo.GetFolder(ctx, id); err != nil {
 		return nil, err

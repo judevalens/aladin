@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"aladin/backend_v2/internal/artifact"
 	"aladin/backend_v2/internal/shardresource/compat"
 )
 
@@ -70,16 +71,16 @@ type ShardKVRepository interface {
 }
 
 type shardKVService struct {
-	artifacts ArtifactService
+	artifacts artifact.ArtifactService
 	repo      ShardKVRepository
 	observer  compat.V1Observer
 }
 
-func NewShardKVService(artifacts ArtifactService, repo ShardKVRepository) ShardKVService {
+func NewShardKVService(artifacts artifact.ArtifactService, repo ShardKVRepository) ShardKVService {
 	return NewShardKVServiceWithObserver(artifacts, repo, compat.NewLogV1Observer(slog.Default()))
 }
 
-func NewShardKVServiceWithObserver(artifacts ArtifactService, repo ShardKVRepository, observer compat.V1Observer) ShardKVService {
+func NewShardKVServiceWithObserver(artifacts artifact.ArtifactService, repo ShardKVRepository, observer compat.V1Observer) ShardKVService {
 	return &shardKVService{artifacts: artifacts, repo: repo, observer: observer}
 }
 

@@ -9,6 +9,8 @@ import (
 
 	"aladin/backend_v2/internal/alert"
 	alertpostgres "aladin/backend_v2/internal/alert/postgres"
+	"aladin/backend_v2/internal/artifact"
+	artifactpostgres "aladin/backend_v2/internal/artifact/postgres"
 	"aladin/backend_v2/internal/artifactref"
 	artifactrefpostgres "aladin/backend_v2/internal/artifactref/postgres"
 	"aladin/backend_v2/internal/auth"
@@ -52,7 +54,7 @@ import (
 // and mcp_components.go, so creating MCP cannot accidentally create API loops.
 type sharedComponents struct {
 	auth             auth.AuthService
-	artifacts        coreservice.ArtifactService
+	artifacts        artifact.ArtifactService
 	insights         insights.InsightService
 	docSurfaceStore  coreservice.DocSurfaceStore
 	workspaceRuntime coreservice.WorkspaceRuntime
@@ -72,8 +74,8 @@ type sharedComponents struct {
 	alerts           alert.AlertService
 
 	recordRepo     record.RecordRepository
-	artifactRepo   *repo.PostgresArtifactRepository
-	artifactFiles  coreservice.ArtifactFileStore
+	artifactRepo   *artifactpostgres.PostgresArtifactRepository
+	artifactFiles  artifact.ArtifactFileStore
 	research       research.ResearchService
 	quoteSnapshots market.QuoteSnapshotSource
 	marketInfo     market.MarketInfoService
@@ -84,7 +86,7 @@ type sharedComponents struct {
 
 func buildSharedComponents(pool *pgxpool.Pool, dataVolumePath string) sharedComponents {
 	recordRepo := recordpostgres.NewRecordPostgres(pool)
-	artifactRepo := repo.NewArtifactsPostgres(pool)
+	artifactRepo := artifactpostgres.NewArtifactsPostgres(pool)
 	artifactFiles := NewArtifactFileStore()
 	docStore := docsurface.NewStore(dataVolumePath)
 
@@ -153,7 +155,7 @@ func buildSharedComponents(pool *pgxpool.Pool, dataVolumePath string) sharedComp
 		search.NewContentSearchProvider(contentIndexSvc),
 	)
 
-	artifactsSvc := coreservice.NewArtifactService(artifactRepo, artifactFiles)
+	artifactsSvc := artifact.NewArtifactService(artifactRepo, artifactFiles)
 	watchlistSvc := watchlist.NewService(watchlistpostgres.New(pool))
 	alertRepo := alertpostgres.NewAlertsPostgres(pool)
 	alertsSvc := alert.NewAlertService(alertRepo, instrumentsSvc, snapshotSource)

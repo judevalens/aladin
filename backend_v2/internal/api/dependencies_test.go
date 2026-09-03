@@ -2,6 +2,7 @@ package api
 
 import (
 	"aladin/backend_v2/internal/alert"
+	"aladin/backend_v2/internal/artifact"
 	"aladin/backend_v2/internal/artifactref"
 	"aladin/backend_v2/internal/auth"
 	"aladin/backend_v2/internal/copilot"
@@ -37,7 +38,7 @@ type testDependencies struct {
 	SystemSvc              system.SystemService
 	SourcesSvc             source.SourceService
 	RecordsSvc             record.RecordService
-	ArtifactsSvc           coreservice.ArtifactService
+	ArtifactsSvc           artifact.ArtifactService
 	PagesSvc               page.Service
 	FilesSvc               file.FileService
 	FeedSvc                feed.FeedService
@@ -75,15 +76,15 @@ type testDependencies struct {
 	CopilotSvc             copilot.CopilotService
 }
 
-func (d testDependencies) Auth() auth.AuthService                 { return d.AuthSvc }
-func (d testDependencies) System() system.SystemService           { return d.SystemSvc }
-func (d testDependencies) Sources() source.SourceService          { return d.SourcesSvc }
-func (d testDependencies) Records() record.RecordService          { return d.RecordsSvc }
-func (d testDependencies) Artifacts() coreservice.ArtifactService { return d.ArtifactsSvc }
-func (d testDependencies) Pages() page.Service                    { return d.PagesSvc }
-func (d testDependencies) Files() file.FileService                { return d.FilesSvc }
-func (d testDependencies) Feed() feed.FeedService                 { return d.FeedSvc }
-func (d testDependencies) Insights() insights.InsightService      { return d.InsightsSvc }
+func (d testDependencies) Auth() auth.AuthService              { return d.AuthSvc }
+func (d testDependencies) System() system.SystemService        { return d.SystemSvc }
+func (d testDependencies) Sources() source.SourceService       { return d.SourcesSvc }
+func (d testDependencies) Records() record.RecordService       { return d.RecordsSvc }
+func (d testDependencies) Artifacts() artifact.ArtifactService { return d.ArtifactsSvc }
+func (d testDependencies) Pages() page.Service                 { return d.PagesSvc }
+func (d testDependencies) Files() file.FileService             { return d.FilesSvc }
+func (d testDependencies) Feed() feed.FeedService              { return d.FeedSvc }
+func (d testDependencies) Insights() insights.InsightService   { return d.InsightsSvc }
 func (d testDependencies) ProviderConnections() providerconnection.ProviderConnectionService {
 	return d.ProviderConnectionsSvc
 }

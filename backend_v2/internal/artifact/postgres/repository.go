@@ -1,4 +1,4 @@
-package repo
+package postgres
 
 import (
 	"context"
@@ -9,12 +9,20 @@ import (
 	"time"
 
 	"aladin/backend_v2/internal/apperror"
+	"aladin/backend_v2/internal/artifact"
+	"aladin/backend_v2/internal/auth"
+	"aladin/backend_v2/internal/outbox"
 	"aladin/backend_v2/internal/page"
-	artifactservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/treesync"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+type scanner interface {
+	Scan(dest ...any) error
+}
 
 type PostgresArtifactRepository struct {
 	pool *pgxpool.Pool
@@ -37,7 +45,7 @@ func (r *PostgresArtifactRepository) withUserTx(ctx context.Context, fn func(tx 
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if err := LockUser(ctx, tx, userID); err != nil {
+	if err := outbox.LockUser(ctx, tx, userID); err != nil {
 		return err
 	}
 	if err := fn(tx, userID); err != nil {
@@ -46,7 +54,7 @@ func (r *PostgresArtifactRepository) withUserTx(ctx context.Context, fn func(tx 
 	return tx.Commit(ctx)
 }
 
-func (r *PostgresArtifactRepository) ListArtifacts(ctx context.Context, params artifactservice.ArtifactListParams) ([]artifactservice.ArtifactResponse, error) {
+func (r *PostgresArtifactRepository) ListArtifacts(ctx context.Context, params artifact.ArtifactListParams) ([]artifact.ArtifactResponse, error) {
 	userID, err := r.userID(ctx)
 	if err != nil {
 		return nil, err
@@ -78,7 +86,7 @@ func (r *PostgresArtifactRepository) ListArtifacts(ctx context.Context, params a
 	}
 	defer rows.Close()
 
-	out := make([]artifactservice.ArtifactResponse, 0)
+	out := make([]artifact.ArtifactResponse, 0)
 	for rows.Next() {
 		rec, err := scanArtifactResponse(rows)
 		if err != nil {
@@ -89,7 +97,7 @@ func (r *PostgresArtifactRepository) ListArtifacts(ctx context.Context, params a
 	return out, rows.Err()
 }
 
-func (r *PostgresArtifactRepository) SearchPageArtifacts(ctx context.Context, params artifactservice.PageSearchParams) ([]artifactservice.ArtifactResponse, error) {
+func (r *PostgresArtifactRepository) SearchPageArtifacts(ctx context.Context, params artifact.PageSearchParams) ([]artifact.ArtifactResponse, error) {
 	userID, err := r.userID(ctx)
 	if err != nil {
 		return nil, err
@@ -120,7 +128,7 @@ func (r *PostgresArtifactRepository) SearchPageArtifacts(ctx context.Context, pa
 	}
 	defer rows.Close()
 
-	out := make([]artifactservice.ArtifactResponse, 0)
+	out := make([]artifact.ArtifactResponse, 0)
 	for rows.Next() {
 		rec, err := scanArtifactResponse(rows)
 		if err != nil {
@@ -131,10 +139,10 @@ func (r *PostgresArtifactRepository) SearchPageArtifacts(ctx context.Context, pa
 	return out, rows.Err()
 }
 
-func (r *PostgresArtifactRepository) GetArtifact(ctx context.Context, id string) (artifactservice.ArtifactResponse, error) {
+func (r *PostgresArtifactRepository) GetArtifact(ctx context.Context, id string) (artifact.ArtifactResponse, error) {
 	userID, err := r.userID(ctx)
 	if err != nil {
-		return artifactservice.ArtifactResponse{}, err
+		return artifact.ArtifactResponse{}, err
 	}
 	row := r.pool.QueryRow(ctx, `
 		SELECT a.id, n.parent_id, a.type, a.title,
@@ -155,10 +163,10 @@ func (r *PostgresArtifactRepository) GetArtifact(ctx context.Context, id string)
 // INCLUDING tombstones, with its seq — the model a write returns so the client can
 // apply the result under the same seq guard the WS frame uses. No Frame type leaks
 // into the REST layer; this is a plain resource representation + its version.
-func (r *PostgresArtifactRepository) LightNode(ctx context.Context, id string) (artifactservice.BrowserNodeResponse, error) {
+func (r *PostgresArtifactRepository) LightNode(ctx context.Context, id string) (artifact.BrowserNodeResponse, error) {
 	userID, err := r.userID(ctx)
 	if err != nil {
-		return artifactservice.BrowserNodeResponse{}, err
+		return artifact.BrowserNodeResponse{}, err
 	}
 	var (
 		nodeID, kind string
@@ -179,7 +187,7 @@ func (r *PostgresArtifactRepository) LightNode(ctx context.Context, id string) (
 	// run_state, exec_mode, source_kind, seq, is_deleted); scan them ALL. Dropping any
 	// is a pgx "number of field descriptions must equal number of destinations" panic at
 	// runtime, not a compile error — TestLightNodeScansAllColumns is the guard.
-	err = r.pool.QueryRow(ctx, lightEntitySelect+` AND n.id = $2`, userID, id).
+	err = r.pool.QueryRow(ctx, treesync.LightEntitySelect+` AND n.id = $2`, userID, id).
 		Scan(&nodeID, &kind, &parentID, &position, &title, &aType, &sourceURL, &summary, &metadata,
 			&runState, &execMode, &sourceKind, &seq, &isDeleted)
 	_ = summary
@@ -189,9 +197,9 @@ func (r *PostgresArtifactRepository) LightNode(ctx context.Context, id string) (
 	_ = sourceKind
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return artifactservice.BrowserNodeResponse{}, artifactservice.ErrNotFound
+			return artifact.BrowserNodeResponse{}, apperror.ErrNotFound
 		}
-		return artifactservice.BrowserNodeResponse{}, fmt.Errorf("light node %s: %w", id, err)
+		return artifact.BrowserNodeResponse{}, fmt.Errorf("light node %s: %w", id, err)
 	}
 	t := ""
 	if title != nil {
@@ -201,7 +209,7 @@ func (r *PostgresArtifactRepository) LightNode(ctx context.Context, id string) (
 	if kind == "artifact" {
 		artifactID = &nodeID
 	}
-	return artifactservice.BrowserNodeResponse{
+	return artifact.BrowserNodeResponse{
 		ID:         nodeID,
 		ParentID:   parentID,
 		Kind:       kind,
@@ -212,7 +220,7 @@ func (r *PostgresArtifactRepository) LightNode(ctx context.Context, id string) (
 	}, nil
 }
 
-func (r *PostgresArtifactRepository) CreateArtifactGraph(ctx context.Context, rec artifactservice.ArtifactResponse, node artifactservice.TreeNodeRecord, pageBlocks json.RawMessage, pageSearchText string) error {
+func (r *PostgresArtifactRepository) CreateArtifactGraph(ctx context.Context, rec artifact.ArtifactResponse, node artifact.TreeNodeRecord, pageBlocks json.RawMessage, pageSearchText string) error {
 	userID, err := r.userID(ctx)
 	if err != nil {
 		return err
@@ -235,7 +243,7 @@ func (r *PostgresArtifactRepository) CreateArtifactGraph(ctx context.Context, re
 		_ = tx.Rollback(ctx)
 	}()
 
-	if err := LockUser(ctx, tx, userID); err != nil {
+	if err := outbox.LockUser(ctx, tx, userID); err != nil {
 		return err
 	}
 
@@ -268,14 +276,14 @@ func (r *PostgresArtifactRepository) CreateArtifactGraph(ctx context.Context, re
 
 	// Bump the entity version + append one frame describing the new entity, in
 	// the same commit as the canonical write (transactional outbox).
-	if err := emitNodeUpsert(ctx, tx, userID, node.ID); err != nil {
+	if err := treesync.EmitNodeUpsert(ctx, tx, userID, node.ID); err != nil {
 		return err
 	}
 
 	return tx.Commit(ctx)
 }
 
-func (r *PostgresArtifactRepository) UpdateArtifactGraph(ctx context.Context, id string, patch artifactservice.ArtifactPatch) error {
+func (r *PostgresArtifactRepository) UpdateArtifactGraph(ctx context.Context, id string, patch artifact.ArtifactPatch) error {
 	metadataJSON := any(nil)
 	if patch.Metadata != nil {
 		raw, err := json.Marshal(*patch.Metadata)
@@ -305,9 +313,9 @@ func (r *PostgresArtifactRepository) UpdateArtifactGraph(ctx context.Context, id
 				return err
 			}
 			if tag.RowsAffected() == 0 {
-				return artifactservice.ErrNotFound
+				return apperror.ErrNotFound
 			}
-			if err := emitNodeUpsert(ctx, tx, userID, id); err != nil {
+			if err := treesync.EmitNodeUpsert(ctx, tx, userID, id); err != nil {
 				return err
 			}
 		}
@@ -329,11 +337,11 @@ func (r *PostgresArtifactRepository) UpdateArtifactGraph(ctx context.Context, id
 			return err
 		}
 		if tag.RowsAffected() == 0 {
-			return artifactservice.ErrNotFound
+			return apperror.ErrNotFound
 		}
 		// One frame for the updated entity (light fields; the seq guard makes the
 		// client apply it iff newer).
-		return emitNodeUpsert(ctx, tx, userID, id)
+		return treesync.EmitNodeUpsert(ctx, tx, userID, id)
 	})
 }
 
@@ -482,9 +490,9 @@ func (r *PostgresArtifactRepository) SavePageBlocks(ctx context.Context, artifac
 					return 0, err
 				}
 				if !exists {
-					return 0, artifactservice.ErrNotFound
+					return 0, apperror.ErrNotFound
 				}
-				return 0, artifactservice.ErrConflict
+				return 0, apperror.ErrConflict
 			}
 			return 0, err
 		}
@@ -500,7 +508,7 @@ func (r *PostgresArtifactRepository) SavePageBlocks(ctx context.Context, artifac
 		`, artifactID, string(blocks), searchText).Scan(&newRev)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				return 0, artifactservice.ErrNotFound
+				return 0, apperror.ErrNotFound
 			}
 			return 0, err
 		}
@@ -517,7 +525,7 @@ func (r *PostgresArtifactRepository) SavePageBlocks(ctx context.Context, artifac
 		return 0, err
 	}
 	if tag.RowsAffected() == 0 {
-		return 0, artifactservice.ErrNotFound
+		return 0, apperror.ErrNotFound
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -545,7 +553,7 @@ func (r *PostgresArtifactRepository) GetPageBlocks(ctx context.Context, artifact
 	`, artifactID, userID).Scan(&blocks, &revision)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, 0, artifactservice.ErrNotFound
+			return nil, 0, apperror.ErrNotFound
 		}
 		return nil, 0, err
 	}
@@ -616,7 +624,7 @@ func (r *PostgresArtifactRepository) GetPageIngestSnapshot(ctx context.Context, 
 	`, artifactID).Scan(&s.OwnerID, &s.Revision, &s.LastIngested, &s.UpdatedAt, &s.Text)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return PageIngestSnapshot{}, artifactservice.ErrNotFound
+			return PageIngestSnapshot{}, apperror.ErrNotFound
 		}
 		return PageIngestSnapshot{}, fmt.Errorf("get page ingest snapshot: %w", err)
 	}
@@ -644,18 +652,18 @@ func (r *PostgresArtifactRepository) DeleteArtifact(ctx context.Context, id stri
 		// an artifact tree_nodes.id == artifact id). The artifacts row is KEPT
 		// (body retained); reads hide it via the tree_nodes join. The tombstone +
 		// bumped seq block resurrection by a stale upsert.
-		ent, err := softDeleteNode(ctx, tx, userID, id, "artifact")
+		ent, err := treesync.SoftDeleteNode(ctx, tx, userID, id, "artifact")
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				return artifactservice.ErrNotFound
+				return apperror.ErrNotFound
 			}
 			return err
 		}
-		return appendOutboxEvent(ctx, tx, userID, artifactservice.Frame{Entities: []artifactservice.FrameEntity{ent}})
+		return outbox.AppendData(ctx, tx, userID, service.Frame{Entities: []service.FrameEntity{ent}})
 	})
 }
 
-func (r *PostgresArtifactRepository) ListFolders(ctx context.Context, parentID *string) ([]artifactservice.FolderNode, error) {
+func (r *PostgresArtifactRepository) ListFolders(ctx context.Context, parentID *string) ([]artifact.FolderNode, error) {
 	userID, err := r.userID(ctx)
 	if err != nil {
 		return nil, err
@@ -681,9 +689,9 @@ func (r *PostgresArtifactRepository) ListFolders(ctx context.Context, parentID *
 	}
 	defer rows.Close()
 
-	out := make([]artifactservice.FolderNode, 0)
+	out := make([]artifact.FolderNode, 0)
 	for rows.Next() {
-		var node artifactservice.FolderNode
+		var node artifact.FolderNode
 		if err := rows.Scan(&node.ID, &node.ParentID, &node.Title); err != nil {
 			return nil, err
 		}
@@ -692,7 +700,7 @@ func (r *PostgresArtifactRepository) ListFolders(ctx context.Context, parentID *
 	return out, rows.Err()
 }
 
-func (r *PostgresArtifactRepository) ListAllFolders(ctx context.Context) ([]artifactservice.FolderNode, error) {
+func (r *PostgresArtifactRepository) ListAllFolders(ctx context.Context) ([]artifact.FolderNode, error) {
 	userID, err := r.userID(ctx)
 	if err != nil {
 		return nil, err
@@ -710,9 +718,9 @@ func (r *PostgresArtifactRepository) ListAllFolders(ctx context.Context) ([]arti
 	}
 	defer rows.Close()
 
-	out := make([]artifactservice.FolderNode, 0)
+	out := make([]artifact.FolderNode, 0)
 	for rows.Next() {
-		var node artifactservice.FolderNode
+		var node artifact.FolderNode
 		if err := rows.Scan(&node.ID, &node.ParentID, &node.Title); err != nil {
 			return nil, err
 		}
@@ -721,7 +729,7 @@ func (r *PostgresArtifactRepository) ListAllFolders(ctx context.Context) ([]arti
 	return out, rows.Err()
 }
 
-func (r *PostgresArtifactRepository) ListAllBrowserNodes(ctx context.Context) ([]artifactservice.BrowserTreeFlatNode, error) {
+func (r *PostgresArtifactRepository) ListAllBrowserNodes(ctx context.Context) ([]artifact.BrowserTreeFlatNode, error) {
 	userID, err := r.userID(ctx)
 	if err != nil {
 		return nil, err
@@ -750,9 +758,9 @@ func (r *PostgresArtifactRepository) ListAllBrowserNodes(ctx context.Context) ([
 	}
 	defer rows.Close()
 
-	out := make([]artifactservice.BrowserTreeFlatNode, 0)
+	out := make([]artifact.BrowserTreeFlatNode, 0)
 	for rows.Next() {
-		var node artifactservice.BrowserTreeFlatNode
+		var node artifact.BrowserTreeFlatNode
 		if err := rows.Scan(
 			&node.ID,
 			&node.ParentID,
@@ -786,7 +794,7 @@ func (r *PostgresArtifactRepository) NextNodePosition(ctx context.Context, paren
 	return next, err
 }
 
-func (r *PostgresArtifactRepository) CreateTreeNode(ctx context.Context, node artifactservice.TreeNodeRecord) error {
+func (r *PostgresArtifactRepository) CreateTreeNode(ctx context.Context, node artifact.TreeNodeRecord) error {
 	return r.withUserTx(ctx, func(tx pgx.Tx, userID string) error {
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO tree_nodes (id, user_id, parent_id, kind, title, artifact_id, position, created_at, updated_at)
@@ -795,7 +803,7 @@ func (r *PostgresArtifactRepository) CreateTreeNode(ctx context.Context, node ar
 			return err
 		}
 		// Folder (or bare node) create: one frame for the new entity.
-		return emitNodeUpsert(ctx, tx, userID, node.ID)
+		return treesync.EmitNodeUpsert(ctx, tx, userID, node.ID)
 	})
 }
 
@@ -812,7 +820,7 @@ func (r *PostgresArtifactRepository) DeleteBrowserNode(ctx context.Context, id s
 		_ = tx.Rollback(ctx)
 	}()
 
-	if err := LockUser(ctx, tx, userID); err != nil {
+	if err := outbox.LockUser(ctx, tx, userID); err != nil {
 		return err
 	}
 
@@ -854,7 +862,7 @@ func (r *PostgresArtifactRepository) DeleteBrowserNode(ctx context.Context, id s
 	}
 	rows.Close()
 	if len(nodes) == 0 {
-		return artifactservice.ErrNotFound
+		return apperror.ErrNotFound
 	}
 
 	// Soft delete the whole subtree: tombstone each node (is_deleted=true, seq
@@ -862,15 +870,15 @@ func (r *PostgresArtifactRepository) DeleteBrowserNode(ctx context.Context, id s
 	// emit ONE frame with a delete entity per node. Artifact rows are kept
 	// (bodies retained); reads hide them via the tree_nodes join. The entity is
 	// keyed by the node id (== artifact id for artifacts — the spine).
-	ents := make([]artifactservice.FrameEntity, 0, len(nodes))
+	ents := make([]service.FrameEntity, 0, len(nodes))
 	for _, n := range nodes {
-		ent, err := softDeleteNode(ctx, tx, userID, n.id, n.kind)
+		ent, err := treesync.SoftDeleteNode(ctx, tx, userID, n.id, n.kind)
 		if err != nil {
 			return err
 		}
 		ents = append(ents, ent)
 	}
-	if err := appendOutboxEvent(ctx, tx, userID, artifactservice.Frame{Entities: ents}); err != nil {
+	if err := outbox.AppendData(ctx, tx, userID, service.Frame{Entities: ents}); err != nil {
 		return err
 	}
 
@@ -896,10 +904,10 @@ func (r *PostgresArtifactRepository) UpdateArtifactNodeParent(ctx context.Contex
 			return err
 		}
 		if tag.RowsAffected() == 0 {
-			return artifactservice.ErrNotFound
+			return apperror.ErrNotFound
 		}
 		// A move changes placement (parentId + position): one frame for the entity.
-		return emitNodeUpsert(ctx, tx, userID, artifactID)
+		return treesync.EmitNodeUpsert(ctx, tx, userID, artifactID)
 	})
 }
 
@@ -916,7 +924,7 @@ func (r *PostgresArtifactRepository) UpdateFolderTitle(ctx context.Context, id s
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	if err := LockUser(ctx, tx, userID); err != nil {
+	if err := outbox.LockUser(ctx, tx, userID); err != nil {
 		return err
 	}
 	tag, err := tx.Exec(ctx, `
@@ -931,21 +939,21 @@ func (r *PostgresArtifactRepository) UpdateFolderTitle(ctx context.Context, id s
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return artifactservice.ErrNotFound
+		return apperror.ErrNotFound
 	}
 	// One frame for the renamed folder entity.
-	if err := emitNodeUpsert(ctx, tx, userID, id); err != nil {
+	if err := treesync.EmitNodeUpsert(ctx, tx, userID, id); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
 }
 
-func (r *PostgresArtifactRepository) GetFolder(ctx context.Context, id string) (artifactservice.FolderNode, error) {
+func (r *PostgresArtifactRepository) GetFolder(ctx context.Context, id string) (artifact.FolderNode, error) {
 	userID, err := r.userID(ctx)
 	if err != nil {
-		return artifactservice.FolderNode{}, err
+		return artifact.FolderNode{}, err
 	}
-	var node artifactservice.FolderNode
+	var node artifact.FolderNode
 	err = r.pool.QueryRow(ctx, `
 		SELECT id, parent_id, title
 		  FROM tree_nodes
@@ -954,10 +962,10 @@ func (r *PostgresArtifactRepository) GetFolder(ctx context.Context, id string) (
 		   AND is_deleted = false
 	`, id, userID).Scan(&node.ID, &node.ParentID, &node.Title)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return artifactservice.FolderNode{}, artifactservice.ErrNotFound
+		return artifact.FolderNode{}, apperror.ErrNotFound
 	}
 	if err != nil {
-		return artifactservice.FolderNode{}, err
+		return artifact.FolderNode{}, err
 	}
 	return node, nil
 }
@@ -967,12 +975,12 @@ func (r *PostgresArtifactRepository) GetFolder(ctx context.Context, id string) (
 // folder via the existing capture surface). Use this for parent/destination validation;
 // use GetFolder only where plain-folder semantics are actually required (the folder
 // read/rename API), so a research node can't be renamed through the folder endpoints.
-func (r *PostgresArtifactRepository) GetContainer(ctx context.Context, id string) (artifactservice.FolderNode, error) {
+func (r *PostgresArtifactRepository) GetContainer(ctx context.Context, id string) (artifact.FolderNode, error) {
 	userID, err := r.userID(ctx)
 	if err != nil {
-		return artifactservice.FolderNode{}, err
+		return artifact.FolderNode{}, err
 	}
-	var node artifactservice.FolderNode
+	var node artifact.FolderNode
 	err = r.pool.QueryRow(ctx, `
 		SELECT id, parent_id, title
 		  FROM tree_nodes
@@ -981,15 +989,15 @@ func (r *PostgresArtifactRepository) GetContainer(ctx context.Context, id string
 		   AND is_deleted = false
 	`, id, userID).Scan(&node.ID, &node.ParentID, &node.Title)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return artifactservice.FolderNode{}, artifactservice.ErrNotFound
+		return artifact.FolderNode{}, apperror.ErrNotFound
 	}
 	if err != nil {
-		return artifactservice.FolderNode{}, err
+		return artifact.FolderNode{}, err
 	}
 	return node, nil
 }
 
-func (r *PostgresArtifactRepository) FolderBreadcrumbs(ctx context.Context, id string) ([]artifactservice.BreadcrumbItem, error) {
+func (r *PostgresArtifactRepository) FolderBreadcrumbs(ctx context.Context, id string) ([]artifact.BreadcrumbItem, error) {
 	userID, err := r.userID(ctx)
 	if err != nil {
 		return nil, err
@@ -1014,7 +1022,7 @@ func (r *PostgresArtifactRepository) FolderBreadcrumbs(ctx context.Context, id s
 	}
 	defer rows.Close()
 
-	items := []artifactservice.BreadcrumbItem{{ID: nil, Label: "Folders"}}
+	items := []artifact.BreadcrumbItem{{ID: nil, Label: "Folders"}}
 	for rows.Next() {
 		var itemID string
 		var label string
@@ -1022,21 +1030,21 @@ func (r *PostgresArtifactRepository) FolderBreadcrumbs(ctx context.Context, id s
 			return nil, err
 		}
 		idCopy := itemID
-		items = append(items, artifactservice.BreadcrumbItem{ID: &idCopy, Label: label})
+		items = append(items, artifact.BreadcrumbItem{ID: &idCopy, Label: label})
 	}
 	return items, rows.Err()
 }
 
 func (r *PostgresArtifactRepository) userID(ctx context.Context) (string, error) {
-	principal, err := artifactservice.RequirePrincipal(ctx)
+	principal, err := auth.RequirePrincipal(ctx)
 	if err != nil {
 		return "", err
 	}
 	return principal.UserID, nil
 }
 
-func scanArtifactResponse(row scanner) (artifactservice.ArtifactResponse, error) {
-	var rec artifactservice.ArtifactResponse
+func scanArtifactResponse(row scanner) (artifact.ArtifactResponse, error) {
+	var rec artifact.ArtifactResponse
 	var metadata []byte
 	var blocks []byte
 	var createdAt time.Time
@@ -1058,7 +1066,7 @@ func scanArtifactResponse(row scanner) (artifactservice.ArtifactResponse, error)
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return rec, artifactservice.ErrNotFound
+			return rec, apperror.ErrNotFound
 		}
 		return rec, err
 	}
@@ -1088,7 +1096,7 @@ func scanArtifactResponse(row scanner) (artifactservice.ArtifactResponse, error)
 //
 // An empty Value matches any value for the key ("has a Status"). That case can't use containment
 // (there is no value to probe), so it falls back to an existence scan over the array.
-func (r *PostgresArtifactRepository) QueryArtifactsByProperty(ctx context.Context, params artifactservice.PropertyQuery) ([]artifactservice.ArtifactResponse, error) {
+func (r *PostgresArtifactRepository) QueryArtifactsByProperty(ctx context.Context, params artifact.PropertyQuery) ([]artifact.ArtifactResponse, error) {
 	userID, err := r.userID(ctx)
 	if err != nil {
 		return nil, err
@@ -1132,7 +1140,7 @@ func (r *PostgresArtifactRepository) QueryArtifactsByProperty(ctx context.Contex
 		return nil, fmt.Errorf("artifact property query: %w", err)
 	}
 	defer rows.Close()
-	out := make([]artifactservice.ArtifactResponse, 0)
+	out := make([]artifact.ArtifactResponse, 0)
 	for rows.Next() {
 		rec, err := scanArtifactResponse(rows)
 		if err != nil {
@@ -1146,7 +1154,7 @@ func (r *PostgresArtifactRepository) QueryArtifactsByProperty(ctx context.Contex
 // PropertyFacets lists the caller's property keys and the distinct values seen for each, so a
 // filter UI can offer real choices. Scans the properties arrays (the GIN index serves containment,
 // not this aggregation) — bounded by the user's own artifacts.
-func (r *PostgresArtifactRepository) PropertyFacets(ctx context.Context) ([]artifactservice.PropertyFacet, error) {
+func (r *PostgresArtifactRepository) PropertyFacets(ctx context.Context) ([]artifact.PropertyFacet, error) {
 	userID, err := r.userID(ctx)
 	if err != nil {
 		return nil, err
@@ -1168,9 +1176,9 @@ func (r *PostgresArtifactRepository) PropertyFacets(ctx context.Context) ([]arti
 		return nil, fmt.Errorf("artifact property facets: %w", err)
 	}
 	defer rows.Close()
-	out := make([]artifactservice.PropertyFacet, 0)
+	out := make([]artifact.PropertyFacet, 0)
 	for rows.Next() {
-		var f artifactservice.PropertyFacet
+		var f artifact.PropertyFacet
 		if err := rows.Scan(&f.Key, &f.Type, &f.Values); err != nil {
 			return nil, fmt.Errorf("artifact property facets scan: %w", err)
 		}

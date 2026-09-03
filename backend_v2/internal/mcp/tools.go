@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"aladin/backend_v2/internal/artifact"
 	"context"
 	"encoding/json"
 	"log/slog"
@@ -18,7 +19,7 @@ import (
 const pageArtifactType = "page"
 
 type toolServer struct {
-	artifacts service.ArtifactService
+	artifacts artifact.ArtifactService
 	// pages (M5/M6 PageDocumentService) is retained but unused: M8c routes
 	// page reads/writes through the collab bridge. Removed in M8d with the
 	// rest of the M7 page_content path.
@@ -32,7 +33,7 @@ type toolServer struct {
 	artifactRefs artifactref.ArtifactRefService
 }
 
-func registerTools(server *sdkmcp.Server, artifacts service.ArtifactService, pages page.DocumentService, converter blocknote.Converter, bridge blocknote.Bridge, entityTags entities.EntityTagService, artifactRefs artifactref.ArtifactRefService) {
+func registerTools(server *sdkmcp.Server, artifacts artifact.ArtifactService, pages page.DocumentService, converter blocknote.Converter, bridge blocknote.Bridge, entityTags entities.EntityTagService, artifactRefs artifactref.ArtifactRefService) {
 	tools := toolServer{artifacts: artifacts, pages: pages, converter: converter, bridge: bridge, entityTags: entityTags, artifactRefs: artifactRefs}
 
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
@@ -318,7 +319,7 @@ func (t toolServer) renameFolder(ctx context.Context, _ *sdkmcp.CallToolRequest,
 	if strings.TrimSpace(input.ID) == "" {
 		return nil, folderActionOutput{}, service.ErrNotFound
 	}
-	folder, err := t.artifacts.UpdateFolder(ctx, input.ID, service.FolderPatch{Title: &input.Title})
+	folder, err := t.artifacts.UpdateFolder(ctx, input.ID, artifact.FolderPatch{Title: &input.Title})
 	if err != nil {
 		return nil, folderActionOutput{}, err
 	}
@@ -355,7 +356,7 @@ func (t toolServer) createPage(ctx context.Context, _ *sdkmcp.CallToolRequest, i
 	metadata := mergePageMetadata(nil, input.Tags, input.Agent)
 	// M8c: create the artifact row with empty blocks; content (if any) is
 	// seeded into the live Y.Doc via the collab bridge once the row exists.
-	created, err := t.artifacts.Create(ctx, service.ArtifactPayload{
+	created, err := t.artifacts.Create(ctx, artifact.ArtifactPayload{
 		Type:     pageArtifactType,
 		FolderID: input.FolderID,
 		Title:    input.Title,
@@ -410,7 +411,7 @@ func (t toolServer) updatePage(ctx context.Context, _ *sdkmcp.CallToolRequest, i
 	// writes — the artifact API refuses block writes for pages now.
 	rec := current
 	if input.Title != nil || input.FolderID != nil || input.Summary != nil || input.Tags != nil || input.Agent != nil {
-		patch := service.ArtifactPatch{
+		patch := artifact.ArtifactPatch{
 			Title:    input.Title,
 			FolderID: input.FolderID,
 			Summary:  input.Summary,
@@ -570,7 +571,7 @@ func (t toolServer) deleteBlock(ctx context.Context, _ *sdkmcp.CallToolRequest, 
 	}, nil
 }
 
-func (t toolServer) renderPageDetail(ctx context.Context, rec service.ArtifactResponse, blocks json.RawMessage) (pageDetail, error) {
+func (t toolServer) renderPageDetail(ctx context.Context, rec artifact.ArtifactResponse, blocks json.RawMessage) (pageDetail, error) {
 	parsed, err := blocknote.ParseBlocks(blocks)
 	if err != nil {
 		return pageDetail{}, err
@@ -634,7 +635,7 @@ func extractBlockProps(raw json.RawMessage) map[string]any {
 
 func (t toolServer) listPages(ctx context.Context, _ *sdkmcp.CallToolRequest, input listPagesInput) (*sdkmcp.CallToolResult, pagesOutput, error) {
 	limit := clampLimit(input.Limit)
-	recs, err := t.artifacts.List(ctx, service.ArtifactListParams{FolderID: input.FolderID})
+	recs, err := t.artifacts.List(ctx, artifact.ArtifactListParams{FolderID: input.FolderID})
 	if err != nil {
 		return nil, pagesOutput{}, err
 	}
@@ -656,7 +657,7 @@ func (t toolServer) searchPages(ctx context.Context, _ *sdkmcp.CallToolRequest, 
 	if input.Query == "" {
 		return nil, pagesOutput{}, service.BadRequest("query is required")
 	}
-	recs, err := t.artifacts.SearchPages(ctx, service.PageSearchParams{
+	recs, err := t.artifacts.SearchPages(ctx, artifact.PageSearchParams{
 		Query: input.Query,
 		Limit: clampLimit(input.Limit),
 	})
@@ -674,14 +675,14 @@ func (t toolServer) searchPages(ctx context.Context, _ *sdkmcp.CallToolRequest, 
 	return nil, pagesOutput{Pages: pages, Citations: cites}, nil
 }
 
-func requirePage(rec service.ArtifactResponse) error {
+func requirePage(rec artifact.ArtifactResponse) error {
 	if rec.Type != pageArtifactType {
 		return service.BadRequest("artifact is not a page")
 	}
 	return nil
 }
 
-func toFolderOutput(folder service.FolderNode) folderOutput {
+func toFolderOutput(folder artifact.FolderNode) folderOutput {
 	return folderOutput{
 		ID:       folder.ID,
 		Title:    folder.Title,
@@ -690,10 +691,10 @@ func toFolderOutput(folder service.FolderNode) folderOutput {
 	}
 }
 
-func flattenBrowserTree(nodes []service.BrowserTreeNode) []browserTreeNodeOutput {
+func flattenBrowserTree(nodes []artifact.BrowserTreeNode) []browserTreeNodeOutput {
 	out := make([]browserTreeNodeOutput, 0)
-	var walk func([]service.BrowserTreeNode, int)
-	walk = func(children []service.BrowserTreeNode, depth int) {
+	var walk func([]artifact.BrowserTreeNode, int)
+	walk = func(children []artifact.BrowserTreeNode, depth int) {
 		for _, node := range children {
 			out = append(out, browserTreeNodeOutput{
 				ID:           node.ID,
@@ -739,7 +740,7 @@ func mergePageMetadata(base map[string]any, tags []string, agent *agentInput) ma
 	return metadata
 }
 
-func toPageSummary(rec service.ArtifactResponse) pageSummary {
+func toPageSummary(rec artifact.ArtifactResponse) pageSummary {
 	return pageSummary{
 		ID:        rec.ID,
 		Title:     rec.Title,

@@ -1,6 +1,7 @@
 package previewapp
 
 import (
+	"aladin/backend_v2/internal/artifact"
 	"context"
 
 	"aladin/backend_v2/internal/docsurface/authoring"
@@ -14,7 +15,7 @@ type PreviewCommands struct {
 	preview   service.PreviewService
 }
 
-func New(artifacts service.ArtifactService, store service.DocSurfaceStore, build service.ShardBuildService, preview service.PreviewService) *PreviewCommands {
+func New(artifacts artifact.ArtifactService, store service.DocSurfaceStore, build service.ShardBuildService, preview service.PreviewService) *PreviewCommands {
 	return &PreviewCommands{authoring: authoring.NewAuthoring(artifacts, store, build), preview: preview}
 }
 

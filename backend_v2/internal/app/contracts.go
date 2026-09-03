@@ -2,6 +2,7 @@ package app
 
 import (
 	"aladin/backend_v2/internal/alert"
+	"aladin/backend_v2/internal/artifact"
 	"aladin/backend_v2/internal/artifactref"
 	"aladin/backend_v2/internal/auth"
 	"aladin/backend_v2/internal/changefeed"
@@ -39,7 +40,7 @@ type APIComponents interface {
 	System() system.SystemService
 	Sources() source.SourceService
 	Records() record.RecordService
-	Artifacts() coreservice.ArtifactService
+	Artifacts() artifact.ArtifactService
 	Pages() page.Service
 	Files() file.FileService
 	Feed() feed.FeedService
@@ -83,7 +84,7 @@ type APIComponents interface {
 // excludes API lifecycle loops and HTTP-only services.
 type MCPComponents interface {
 	Auth() auth.AuthService
-	Artifacts() coreservice.ArtifactService
+	Artifacts() artifact.ArtifactService
 	PageDocuments() page.DocumentService
 	Insights() insights.InsightService
 	DocSurfaceStore() coreservice.DocSurfaceStore

@@ -1,14 +1,17 @@
 package repo
 
 import (
+	"aladin/backend_v2/internal/artifact"
 	"context"
 	"strconv"
 	"testing"
 	"time"
 
+	artifactpostgres "aladin/backend_v2/internal/artifact/postgres"
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/dbtest"
 	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/treesync"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -111,10 +114,10 @@ func TestOutbox_ProducerEmitsFrameOnCreate(t *testing.T) {
 	cleanupSyncTables(ctxTO, t, pool)
 	seedUser(ctxTO, t, pool, testAdminUserID)
 
-	ar := NewArtifactsPostgres(pool)
+	ar := artifactpostgres.NewArtifactsPostgres(pool)
 	title := "Folder A"
 	folderA := tid("folder-a")
-	if err := ar.CreateTreeNode(ctx, coreservice.TreeNodeRecord{
+	if err := ar.CreateTreeNode(ctx, artifact.TreeNodeRecord{
 		ID: folderA, Kind: "folder", Title: &title, Position: 1,
 	}); err != nil {
 		t.Fatalf("create tree node: %v", err)
@@ -159,11 +162,11 @@ func TestOutbox_PullSinceFromCursorIsIncremental(t *testing.T) {
 	cleanupSyncTables(ctxTO, t, pool)
 	seedUser(ctxTO, t, pool, testAdminUserID)
 
-	ar := NewArtifactsPostgres(pool)
+	ar := artifactpostgres.NewArtifactsPostgres(pool)
 	sr := NewSyncPostgres(pool)
 
 	t1 := "F1"
-	if err := ar.CreateTreeNode(ctx, coreservice.TreeNodeRecord{ID: tid("f1"), Kind: "folder", Title: &t1, Position: 1}); err != nil {
+	if err := ar.CreateTreeNode(ctx, artifact.TreeNodeRecord{ID: tid("f1"), Kind: "folder", Title: &t1, Position: 1}); err != nil {
 		t.Fatalf("create f1: %v", err)
 	}
 	_, cursor, err := sr.PullSince(ctx, testAdminUserID, 0)
@@ -185,7 +188,7 @@ func TestOutbox_PullSinceFromCursorIsIncremental(t *testing.T) {
 
 	// A second write shows up only in the next incremental pull.
 	t2 := "F2"
-	if err := ar.CreateTreeNode(ctx, coreservice.TreeNodeRecord{ID: tid("f2"), Kind: "folder", Title: &t2, Position: 2}); err != nil {
+	if err := ar.CreateTreeNode(ctx, artifact.TreeNodeRecord{ID: tid("f2"), Kind: "folder", Title: &t2, Position: 2}); err != nil {
 		t.Fatalf("create f2: %v", err)
 	}
 	frames, _, err = sr.PullSince(ctx, testAdminUserID, cursor2)
@@ -210,13 +213,13 @@ func TestTreeSyncSource_SnapshotIncludesTombstones(t *testing.T) {
 	cleanupSyncTables(ctxTO, t, pool)
 	seedUser(ctxTO, t, pool, testAdminUserID)
 
-	ar := NewArtifactsPostgres(pool)
+	ar := artifactpostgres.NewArtifactsPostgres(pool)
 	keepTitle, dropTitle := "keep", "drop"
 	keepID, dropID := tid("keep"), tid("drop")
-	if err := ar.CreateTreeNode(ctx, coreservice.TreeNodeRecord{ID: keepID, Kind: "folder", Title: &keepTitle, Position: 1}); err != nil {
+	if err := ar.CreateTreeNode(ctx, artifact.TreeNodeRecord{ID: keepID, Kind: "folder", Title: &keepTitle, Position: 1}); err != nil {
 		t.Fatalf("create keep: %v", err)
 	}
-	if err := ar.CreateTreeNode(ctx, coreservice.TreeNodeRecord{ID: dropID, Kind: "folder", Title: &dropTitle, Position: 2}); err != nil {
+	if err := ar.CreateTreeNode(ctx, artifact.TreeNodeRecord{ID: dropID, Kind: "folder", Title: &dropTitle, Position: 2}); err != nil {
 		t.Fatalf("create drop: %v", err)
 	}
 	if err := ar.DeleteBrowserNode(ctx, dropID); err != nil {
@@ -235,7 +238,7 @@ func TestTreeSyncSource_SnapshotIncludesTombstones(t *testing.T) {
 	}
 
 	// The snapshot includes BOTH, with 'drop' as a delete tombstone.
-	src := NewTreeSyncSource(pool)
+	src := treesync.NewTreeSyncSource(pool)
 	ents, err := src.Snapshot(ctx, testAdminUserID)
 	if err != nil {
 		t.Fatalf("snapshot: %v", err)

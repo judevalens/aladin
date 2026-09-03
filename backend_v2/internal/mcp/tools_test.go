@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"aladin/backend_v2/internal/artifact"
 	"context"
 	"encoding/json"
 	"errors"
@@ -101,7 +102,7 @@ func (f *fakeBridge) GetPage(_ context.Context, pageID string) (blocknote.Bridge
 	return blocknote.BridgePage{Blocks: json.RawMessage("[]")}, nil
 }
 
-func newToolServer(artifacts service.ArtifactService) toolServer {
+func newToolServer(artifacts artifact.ArtifactService) toolServer {
 	return toolServer{
 		artifacts: artifacts,
 		pages:     &fakePageDocService{},
@@ -114,7 +115,7 @@ func TestPageToolsEnforceScopes(t *testing.T) {
 	t.Parallel()
 
 	artifacts := &fakeArtifactService{
-		getResult: service.ArtifactResponse{
+		getResult: artifact.ArtifactResponse{
 			ID:       "page-1",
 			Type:     "page",
 			Title:    "Page",
@@ -192,14 +193,14 @@ func TestUpdatePage_AcceptsMarkdownAndMetadata(t *testing.T) {
 	t.Parallel()
 
 	artifacts := &fakeArtifactService{
-		getResult: service.ArtifactResponse{
+		getResult: artifact.ArtifactResponse{
 			ID:       "page-1",
 			Type:     "page",
 			Title:    "Original",
 			Blocks:   json.RawMessage(`[{"id":"a","type":"paragraph"}]`),
 			Metadata: map[string]any{"kept": true},
 		},
-		updateResult: service.ArtifactResponse{
+		updateResult: artifact.ArtifactResponse{
 			ID:        "page-1",
 			Type:      "page",
 			Title:     "Updated",
@@ -244,7 +245,7 @@ func TestUpdatePage_AcceptsMarkdownAndMetadata(t *testing.T) {
 func TestUpdatePage_RequiresAField(t *testing.T) {
 	t.Parallel()
 	tools := newToolServer(&fakeArtifactService{
-		getResult: service.ArtifactResponse{ID: "p", Type: "page", Title: "P"},
+		getResult: artifact.ArtifactResponse{ID: "p", Type: "page", Title: "P"},
 	})
 	writeCtx := contextWithScopes(service.ScopeArtifactsRead, service.ScopeArtifactsWrite)
 	_, _, err := tools.updatePage(writeCtx, nil, updatePageInput{ID: "p"})
@@ -259,7 +260,7 @@ func TestGetPage_ReturnsBlocksWithMarkdown(t *testing.T) {
 
 	blocks := json.RawMessage(`[{"id":"a","type":"heading","props":{"level":1}},{"id":"b","type":"paragraph"}]`)
 	artifacts := &fakeArtifactService{
-		getResult: service.ArtifactResponse{
+		getResult: artifact.ArtifactResponse{
 			ID:       "page-1",
 			Type:     "page",
 			Title:    "Page",
@@ -414,7 +415,7 @@ func TestPageToolsRejectNonPageArtifacts(t *testing.T) {
 	t.Parallel()
 
 	tools := newToolServer(&fakeArtifactService{
-		getResult: service.ArtifactResponse{ID: "link-1", Type: "link", Title: "Link", Metadata: map[string]any{}},
+		getResult: artifact.ArtifactResponse{ID: "link-1", Type: "link", Title: "Link", Metadata: map[string]any{}},
 	})
 	readCtx := contextWithScopes(service.ScopeArtifactsRead, service.ScopeArtifactsWrite)
 
@@ -430,7 +431,7 @@ func TestSearchPagesValidatesAndClampsLimit(t *testing.T) {
 	t.Parallel()
 
 	artifacts := &fakeArtifactService{
-		searchResults: []service.ArtifactResponse{
+		searchResults: []artifact.ArtifactResponse{
 			{ID: "page-1", Type: "page", Title: "Match", Metadata: map[string]any{}},
 			{ID: "link-1", Type: "link", Title: "Skip", Metadata: map[string]any{}},
 		},
@@ -459,9 +460,9 @@ func TestFolderToolsCreateRenameAndMoveArtifact(t *testing.T) {
 	parentID := "folder-parent"
 	targetID := "folder-target"
 	artifacts := &fakeArtifactService{
-		createFolderResult: service.FolderNode{ID: "folder-created", ParentID: &parentID, Title: "Planning", Seq: 2},
-		updateFolderResult: service.FolderNode{ID: targetID, Title: "Docs", Seq: 3},
-		moveArtifactResult: service.ArtifactResponse{
+		createFolderResult: artifact.FolderNode{ID: "folder-created", ParentID: &parentID, Title: "Planning", Seq: 2},
+		updateFolderResult: artifact.FolderNode{ID: targetID, Title: "Docs", Seq: 3},
+		moveArtifactResult: artifact.ArtifactResponse{
 			ID:        "artifact-1",
 			Type:      "app",
 			Title:     "Dashboard",
@@ -536,7 +537,7 @@ func TestMoveArtifactCanMoveToRoot(t *testing.T) {
 	t.Parallel()
 
 	artifacts := &fakeArtifactService{
-		moveArtifactResult: service.ArtifactResponse{ID: "artifact-1", Type: "page", Title: "Doc", UpdatedAt: "2026-08-27T00:00:00Z"},
+		moveArtifactResult: artifact.ArtifactResponse{ID: "artifact-1", Type: "page", Title: "Doc", UpdatedAt: "2026-08-27T00:00:00Z"},
 	}
 	tools := newToolServer(artifacts)
 	writeCtx := contextWithScopes(service.ScopeArtifactsWrite)
@@ -589,20 +590,20 @@ func stringPtr(value string) *string {
 }
 
 type fakeArtifactService struct {
-	list                 []service.ArtifactResponse
-	searchResults        []service.ArtifactResponse
-	browserTree          []service.BrowserTreeNode
-	folders              []service.FolderNode
-	getResult            service.ArtifactResponse
-	createResult         service.ArtifactCreateResponse
-	updateResult         service.ArtifactResponse
-	createFolderResult   service.FolderNode
-	updateFolderResult   service.FolderNode
-	moveArtifactResult   service.ArtifactResponse
-	createPayload        service.ArtifactPayload
-	updatePatch          service.ArtifactPatch
-	updateFolderPatch    service.FolderPatch
-	searchParams         *service.PageSearchParams
+	list                 []artifact.ArtifactResponse
+	searchResults        []artifact.ArtifactResponse
+	browserTree          []artifact.BrowserTreeNode
+	folders              []artifact.FolderNode
+	getResult            artifact.ArtifactResponse
+	createResult         artifact.ArtifactCreateResponse
+	updateResult         artifact.ArtifactResponse
+	createFolderResult   artifact.FolderNode
+	updateFolderResult   artifact.FolderNode
+	moveArtifactResult   artifact.ArtifactResponse
+	createPayload        artifact.ArtifactPayload
+	updatePatch          artifact.ArtifactPatch
+	updateFolderPatch    artifact.FolderPatch
+	searchParams         *artifact.PageSearchParams
 	createFolderTitle    string
 	createFolderParentID *string
 	updateFolderID       string
@@ -611,22 +612,22 @@ type fakeArtifactService struct {
 	err                  error
 }
 
-func (f *fakeArtifactService) QueryByProperty(context.Context, service.PropertyQuery) ([]service.ArtifactResponse, error) {
+func (f *fakeArtifactService) QueryByProperty(context.Context, artifact.PropertyQuery) ([]artifact.ArtifactResponse, error) {
 	return nil, nil
 }
 
-func (f *fakeArtifactService) PropertyFacets(context.Context) ([]service.PropertyFacet, error) {
+func (f *fakeArtifactService) PropertyFacets(context.Context) ([]artifact.PropertyFacet, error) {
 	return nil, nil
 }
 
-func (f *fakeArtifactService) List(ctx context.Context, _ service.ArtifactListParams) ([]service.ArtifactResponse, error) {
+func (f *fakeArtifactService) List(ctx context.Context, _ artifact.ArtifactListParams) ([]artifact.ArtifactResponse, error) {
 	if err := service.RequireScope(ctx, service.ScopeArtifactsRead); err != nil {
 		return nil, err
 	}
 	return f.list, f.err
 }
 
-func (f *fakeArtifactService) SearchPages(ctx context.Context, params service.PageSearchParams) ([]service.ArtifactResponse, error) {
+func (f *fakeArtifactService) SearchPages(ctx context.Context, params artifact.PageSearchParams) ([]artifact.ArtifactResponse, error) {
 	if err := service.RequireScope(ctx, service.ScopeArtifactsRead); err != nil {
 		return nil, err
 	}
@@ -635,34 +636,34 @@ func (f *fakeArtifactService) SearchPages(ctx context.Context, params service.Pa
 	return f.searchResults, f.err
 }
 
-func (f *fakeArtifactService) BrowserTree(ctx context.Context) ([]service.BrowserTreeNode, error) {
+func (f *fakeArtifactService) BrowserTree(ctx context.Context) ([]artifact.BrowserTreeNode, error) {
 	if err := service.RequireScope(ctx, service.ScopeArtifactsRead); err != nil {
 		return nil, err
 	}
 	return f.browserTree, f.err
 }
 
-func (f *fakeArtifactService) DeleteBrowserNode(context.Context, string) (service.NodeDeleteResult, error) {
-	return service.NodeDeleteResult{}, nil
+func (f *fakeArtifactService) DeleteBrowserNode(context.Context, string) (artifact.NodeDeleteResult, error) {
+	return artifact.NodeDeleteResult{}, nil
 }
 
-func (f *fakeArtifactService) Get(ctx context.Context, _ string) (service.ArtifactResponse, error) {
+func (f *fakeArtifactService) Get(ctx context.Context, _ string) (artifact.ArtifactResponse, error) {
 	if err := service.RequireScope(ctx, service.ScopeArtifactsRead); err != nil {
-		return service.ArtifactResponse{}, err
+		return artifact.ArtifactResponse{}, err
 	}
 	return f.getResult, f.err
 }
 
-func (f *fakeArtifactService) Create(ctx context.Context, payload service.ArtifactPayload) (service.ArtifactCreateResponse, error) {
+func (f *fakeArtifactService) Create(ctx context.Context, payload artifact.ArtifactPayload) (artifact.ArtifactCreateResponse, error) {
 	if err := service.RequireScope(ctx, service.ScopeArtifactsWrite); err != nil {
-		return service.ArtifactCreateResponse{}, err
+		return artifact.ArtifactCreateResponse{}, err
 	}
 	f.createPayload = payload
 	if f.createResult.Artifact.ID != "" {
 		return f.createResult, f.err
 	}
-	return service.ArtifactCreateResponse{
-		Artifact: service.ArtifactResponse{
+	return artifact.ArtifactCreateResponse{
+		Artifact: artifact.ArtifactResponse{
 			ID:       "page-created",
 			Type:     payload.Type,
 			Title:    payload.Title,
@@ -673,9 +674,9 @@ func (f *fakeArtifactService) Create(ctx context.Context, payload service.Artifa
 	}, f.err
 }
 
-func (f *fakeArtifactService) Update(ctx context.Context, _ string, patch service.ArtifactPatch) (service.ArtifactResponse, error) {
+func (f *fakeArtifactService) Update(ctx context.Context, _ string, patch artifact.ArtifactPatch) (artifact.ArtifactResponse, error) {
 	if err := service.RequireScope(ctx, service.ScopeArtifactsWrite); err != nil {
-		return service.ArtifactResponse{}, err
+		return artifact.ArtifactResponse{}, err
 	}
 	f.updatePatch = patch
 	if f.updateResult.ID != "" {
@@ -684,9 +685,9 @@ func (f *fakeArtifactService) Update(ctx context.Context, _ string, patch servic
 	return f.getResult, f.err
 }
 
-func (f *fakeArtifactService) MoveArtifact(ctx context.Context, id string, folderID *string) (service.ArtifactResponse, error) {
+func (f *fakeArtifactService) MoveArtifact(ctx context.Context, id string, folderID *string) (artifact.ArtifactResponse, error) {
 	if err := service.RequireScope(ctx, service.ScopeArtifactsWrite); err != nil {
-		return service.ArtifactResponse{}, err
+		return artifact.ArtifactResponse{}, err
 	}
 	f.moveArtifactID = id
 	f.moveArtifactFolderID = folderID
@@ -698,44 +699,44 @@ func (f *fakeArtifactService) MoveArtifact(ctx context.Context, id string, folde
 	return rec, f.err
 }
 
-func (f *fakeArtifactService) Delete(context.Context, string) (service.NodeDeleteResult, error) {
-	return service.NodeDeleteResult{}, service.ErrForbidden
+func (f *fakeArtifactService) Delete(context.Context, string) (artifact.NodeDeleteResult, error) {
+	return artifact.NodeDeleteResult{}, service.ErrForbidden
 }
 
-func (f *fakeArtifactService) Upload(context.Context, service.ArtifactUploadInput, io.Reader) (service.ArtifactResponse, error) {
-	return service.ArtifactResponse{}, service.ErrForbidden
+func (f *fakeArtifactService) Upload(context.Context, artifact.ArtifactUploadInput, io.Reader) (artifact.ArtifactResponse, error) {
+	return artifact.ArtifactResponse{}, service.ErrForbidden
 }
 
-func (f *fakeArtifactService) Resource(context.Context, string) (service.ArtifactResource, error) {
-	return service.ArtifactResource{}, service.ErrForbidden
+func (f *fakeArtifactService) Resource(context.Context, string) (artifact.ArtifactResource, error) {
+	return artifact.ArtifactResource{}, service.ErrForbidden
 }
 
-func (f *fakeArtifactService) ListFolders(ctx context.Context, _ *string) ([]service.FolderNode, error) {
+func (f *fakeArtifactService) ListFolders(ctx context.Context, _ *string) ([]artifact.FolderNode, error) {
 	if err := service.RequireScope(ctx, service.ScopeArtifactsRead); err != nil {
 		return nil, err
 	}
 	return f.folders, f.err
 }
 
-func (f *fakeArtifactService) FolderTree(context.Context) ([]service.FolderTreeNode, error) {
+func (f *fakeArtifactService) FolderTree(context.Context) ([]artifact.FolderTreeNode, error) {
 	return nil, nil
 }
 
-func (f *fakeArtifactService) CreateFolder(ctx context.Context, title string, parentID *string) (service.FolderNode, error) {
+func (f *fakeArtifactService) CreateFolder(ctx context.Context, title string, parentID *string) (artifact.FolderNode, error) {
 	if err := service.RequireScope(ctx, service.ScopeArtifactsWrite); err != nil {
-		return service.FolderNode{}, err
+		return artifact.FolderNode{}, err
 	}
 	f.createFolderTitle = title
 	f.createFolderParentID = parentID
 	if f.createFolderResult.ID != "" {
 		return f.createFolderResult, f.err
 	}
-	return service.FolderNode{ID: "folder-created", ParentID: parentID, Title: title, Seq: 1}, f.err
+	return artifact.FolderNode{ID: "folder-created", ParentID: parentID, Title: title, Seq: 1}, f.err
 }
 
-func (f *fakeArtifactService) UpdateFolder(ctx context.Context, id string, patch service.FolderPatch) (service.FolderNode, error) {
+func (f *fakeArtifactService) UpdateFolder(ctx context.Context, id string, patch artifact.FolderPatch) (artifact.FolderNode, error) {
 	if err := service.RequireScope(ctx, service.ScopeArtifactsWrite); err != nil {
-		return service.FolderNode{}, err
+		return artifact.FolderNode{}, err
 	}
 	f.updateFolderID = id
 	f.updateFolderPatch = patch
@@ -746,17 +747,17 @@ func (f *fakeArtifactService) UpdateFolder(ctx context.Context, id string, patch
 	if patch.Title != nil {
 		title = *patch.Title
 	}
-	return service.FolderNode{ID: id, Title: title, Seq: 1}, f.err
+	return artifact.FolderNode{ID: id, Title: title, Seq: 1}, f.err
 }
 
-func (f *fakeArtifactService) GetFolder(context.Context, string) (service.FolderNode, error) {
-	return service.FolderNode{}, service.ErrNotFound
+func (f *fakeArtifactService) GetFolder(context.Context, string) (artifact.FolderNode, error) {
+	return artifact.FolderNode{}, service.ErrNotFound
 }
 
-func (f *fakeArtifactService) FolderBreadcrumbs(context.Context, string) ([]service.BreadcrumbItem, error) {
+func (f *fakeArtifactService) FolderBreadcrumbs(context.Context, string) ([]artifact.BreadcrumbItem, error) {
 	return nil, nil
 }
 
-func (f *fakeArtifactService) CreateBrowserNode(context.Context, service.BrowserNodeCreateInput) (service.BrowserNodeCreateResponse, error) {
-	return service.BrowserNodeCreateResponse{}, service.ErrForbidden
+func (f *fakeArtifactService) CreateBrowserNode(context.Context, artifact.BrowserNodeCreateInput) (artifact.BrowserNodeCreateResponse, error) {
+	return artifact.BrowserNodeCreateResponse{}, service.ErrForbidden
 }

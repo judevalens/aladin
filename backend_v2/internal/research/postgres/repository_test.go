@@ -1,6 +1,8 @@
 package postgres_test
 
 import (
+	"aladin/backend_v2/internal/artifact"
+	artifactpostgres "aladin/backend_v2/internal/artifact/postgres"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,7 +13,6 @@ import (
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/dbtest"
 	"aladin/backend_v2/internal/file"
-	"aladin/backend_v2/internal/repo"
 	"aladin/backend_v2/internal/research"
 	researchpostgres "aladin/backend_v2/internal/research/postgres"
 	artifactservice "aladin/backend_v2/internal/service"
@@ -225,11 +226,11 @@ func TestResearchFolder_NestingRules(t *testing.T) {
 		_, _ = pool.Exec(bg, `DELETE FROM users WHERE id = $1::uuid`, userID)
 	})
 
-	artifacts := repo.NewArtifactsPostgres(pool)
+	artifacts := artifactpostgres.NewArtifactsPostgres(pool)
 	researchService := research.NewResearchService(researchpostgres.NewResearchPostgres(pool))
 
 	// A plain folder to nest into.
-	if err := artifacts.CreateTreeNode(ctx, artifactservice.TreeNodeRecord{
+	if err := artifacts.CreateTreeNode(ctx, artifact.TreeNodeRecord{
 		ID: folderID, Kind: "folder", Title: strPtr("Ideas " + tag), Position: 1,
 	}); err != nil {
 		t.Fatalf("seed folder: %v", err)
@@ -310,13 +311,13 @@ func TestResearchFolder_HoldsFoldersAndArtifacts(t *testing.T) {
 		t.Fatalf("create research: %v", err)
 	}
 
-	artifactSvc := artifactservice.NewArtifactService(
-		repo.NewArtifactsPostgres(pool),
+	artifactSvc := artifact.NewArtifactService(
+		artifactpostgres.NewArtifactsPostgres(pool),
 		file.NewFilesystemArtifactStore(t.TempDir(), t.TempDir()),
 	)
 
 	// "New folder here" inside a research folder.
-	folderRes, err := artifactSvc.CreateBrowserNode(ctx, artifactservice.BrowserNodeCreateInput{
+	folderRes, err := artifactSvc.CreateBrowserNode(ctx, artifact.BrowserNodeCreateInput{
 		Kind: "folder", Title: "Data " + tag, ParentID: &researchID,
 	})
 	if err != nil {
@@ -327,11 +328,11 @@ func TestResearchFolder_HoldsFoldersAndArtifacts(t *testing.T) {
 	}
 
 	// "New note here" inside a research folder.
-	noteRes, err := artifactSvc.CreateBrowserNode(ctx, artifactservice.BrowserNodeCreateInput{
+	noteRes, err := artifactSvc.CreateBrowserNode(ctx, artifact.BrowserNodeCreateInput{
 		Kind:     "artifact",
 		Title:    "Notes " + tag,
 		ParentID: &researchID,
-		Artifact: &artifactservice.BrowserArtifactPayload{Type: "page"},
+		Artifact: &artifact.BrowserArtifactPayload{Type: "page"},
 	})
 	if err != nil {
 		t.Fatalf("create note inside research: %v", err)
@@ -436,7 +437,7 @@ func TestResearchFolder_Update(t *testing.T) {
 	}
 
 	// A plain folder must NOT be renameable through the research endpoint.
-	if err := repo.NewArtifactsPostgres(pool).CreateTreeNode(ctx, artifactservice.TreeNodeRecord{
+	if err := artifactpostgres.NewArtifactsPostgres(pool).CreateTreeNode(ctx, artifact.TreeNodeRecord{
 		ID: folderID, Kind: "folder", Title: strPtr("Plain " + tag), Position: 2,
 	}); err != nil {
 		t.Fatalf("seed folder: %v", err)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 
+	"aladin/backend_v2/internal/artifact"
 	"aladin/backend_v2/internal/record"
 	"aladin/backend_v2/internal/watchlist"
 )
@@ -15,9 +16,9 @@ import (
 
 // --- artifact ----------------------------------------------------------------
 
-type artifactEntityService struct{ artifacts ArtifactService }
+type artifactEntityService struct{ artifacts artifact.ArtifactService }
 
-func NewArtifactEntityService(artifacts ArtifactService) EntityService {
+func NewArtifactEntityService(artifacts artifact.ArtifactService) EntityService {
 	return artifactEntityService{artifacts: artifacts}
 }
 

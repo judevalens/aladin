@@ -1,11 +1,11 @@
-package repo
+package postgres
 
 import (
 	"context"
 	"testing"
 	"time"
 
-	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/artifact"
 )
 
 // TestArtifactPropertyQuery covers the H1c read: artifacts filtered by a typed property
@@ -33,12 +33,12 @@ func TestArtifactPropertyQuery(t *testing.T) {
 			anyProps = append(anyProps, p)
 		}
 		now := time.Now().UTC().Format(time.RFC3339)
-		rec := coreservice.ArtifactResponse{
+		rec := artifact.ArtifactResponse{
 			ID: id, Type: "note", Title: title,
 			Metadata:  map[string]any{"properties": anyProps},
 			CreatedAt: now, UpdatedAt: now,
 		}
-		node := coreservice.TreeNodeRecord{ID: id, Kind: "artifact", ArtifactID: &id, Position: pos}
+		node := artifact.TreeNodeRecord{ID: id, Kind: "artifact", ArtifactID: &id, Position: pos}
 		if err := r.CreateArtifactGraph(ctx, rec, node, nil, ""); err != nil {
 			t.Fatalf("create %s: %v", id, err)
 		}
@@ -50,7 +50,7 @@ func TestArtifactPropertyQuery(t *testing.T) {
 	mk(draft, "Draft note", []map[string]string{{"key": "Status", "type": "select", "value": "Draft"}})
 	mk(other, "Other note", []map[string]string{{"key": "Ticker", "type": "text", "value": "NVDA"}})
 
-	ids := func(recs []coreservice.ArtifactResponse) map[string]bool {
+	ids := func(recs []artifact.ArtifactResponse) map[string]bool {
 		out := map[string]bool{}
 		for _, a := range recs {
 			out[a.ID] = true
@@ -59,7 +59,7 @@ func TestArtifactPropertyQuery(t *testing.T) {
 	}
 
 	// key+value → containment match, exactly one hit.
-	got, err := r.QueryArtifactsByProperty(ctx, coreservice.PropertyQuery{Key: "Status", Value: "Live", Limit: 50})
+	got, err := r.QueryArtifactsByProperty(ctx, artifact.PropertyQuery{Key: "Status", Value: "Live", Limit: 50})
 	if err != nil {
 		t.Fatalf("query Status=Live: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestArtifactPropertyQuery(t *testing.T) {
 	}
 
 	// key-only → every artifact carrying the key, regardless of value.
-	got, err = r.QueryArtifactsByProperty(ctx, coreservice.PropertyQuery{Key: "Status", Limit: 50})
+	got, err = r.QueryArtifactsByProperty(ctx, artifact.PropertyQuery{Key: "Status", Limit: 50})
 	if err != nil {
 		t.Fatalf("query Status(any): %v", err)
 	}
@@ -82,7 +82,7 @@ func TestArtifactPropertyQuery(t *testing.T) {
 	}
 
 	// A value that nobody has.
-	got, err = r.QueryArtifactsByProperty(ctx, coreservice.PropertyQuery{Key: "Status", Value: "Archived", Limit: 50})
+	got, err = r.QueryArtifactsByProperty(ctx, artifact.PropertyQuery{Key: "Status", Value: "Archived", Limit: 50})
 	if err != nil {
 		t.Fatalf("query Status=Archived: %v", err)
 	}

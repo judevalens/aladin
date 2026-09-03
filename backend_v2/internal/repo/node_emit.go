@@ -3,13 +3,15 @@ package repo
 import (
 	"context"
 
+	"aladin/backend_v2/internal/treesync"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // NodeEmitter appends a node-change frame to a user's outbox out of band (its own
 // tx), for producers that don't already hold a write tx — chiefly the async worker
 // (pool-based claim writes, no principal in ctx). HTTP writes that already run in a
-// tx call emitNodeUpsert inline instead.
+// tx call treesync.EmitNodeUpsert inline instead.
 type NodeEmitter struct{ pool *pgxpool.Pool }
 
 func NewNodeEmitter(pool *pgxpool.Pool) *NodeEmitter { return &NodeEmitter{pool: pool} }
@@ -29,7 +31,7 @@ func (e *NodeEmitter) EmitNodeChange(ctx context.Context, userID, artifactID str
 	if err := LockUser(ctx, tx, userID); err != nil {
 		return err
 	}
-	if err := emitNodeUpsert(ctx, tx, userID, artifactID); err != nil {
+	if err := treesync.EmitNodeUpsert(ctx, tx, userID, artifactID); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

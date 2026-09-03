@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"aladin/backend_v2/internal/alert"
+	"aladin/backend_v2/internal/artifact"
 	"context"
 	"fmt"
 	"strings"
@@ -46,7 +47,7 @@ type workspaceToolServer struct {
 	search      search.SearchService
 	entities    entities.EntityContextService
 	insights    insights.InsightService
-	artifacts   service.ArtifactService
+	artifacts   artifact.ArtifactService
 	watchlist   watchlist.Service
 	bars        market.BarService
 	snapshots   market.QuoteSnapshotSource
@@ -404,7 +405,7 @@ func (t workspaceToolServer) getInsights(ctx context.Context, _ *sdkmcp.CallTool
 }
 
 func (t workspaceToolServer) listArtifacts(ctx context.Context, _ *sdkmcp.CallToolRequest, in listArtifactsInput) (*sdkmcp.CallToolResult, listArtifactsOutput, error) {
-	items, err := t.artifacts.List(ctx, service.ArtifactListParams{})
+	items, err := t.artifacts.List(ctx, artifact.ArtifactListParams{})
 	if err != nil {
 		return nil, listArtifactsOutput{}, err
 	}

@@ -1,13 +1,13 @@
 package page
 
 import (
+	"aladin/backend_v2/internal/artifact"
 	"context"
 	"encoding/json"
 	"strings"
 
 	"aladin/backend_v2/internal/apperror"
 	"aladin/backend_v2/internal/auth"
-	coreservice "aladin/backend_v2/internal/service"
 )
 
 type Service interface {
@@ -24,7 +24,7 @@ type Service interface {
 }
 
 type Repository interface {
-	GetArtifact(context.Context, string) (coreservice.ArtifactResponse, error)
+	GetArtifact(context.Context, string) (artifact.ArtifactResponse, error)
 	// SavePageBlocks persists the page's blocks + derived searchText with
 	// optimistic concurrency. expectedRev=0 disables the check.
 	SavePageBlocks(ctx context.Context, artifactID string, blocks json.RawMessage, searchText string, expectedRev int64) (newRev int64, err error)
@@ -132,21 +132,21 @@ func (s *DefaultService) Save(ctx context.Context, id string, _ PageSaveInput) (
 	return PageDocument{}, apperror.BadRequest("page blocks are edited collaboratively, not via PATCH /api/pages")
 }
 
-func (s *DefaultService) pageArtifact(ctx context.Context, id string) (coreservice.ArtifactResponse, error) {
+func (s *DefaultService) pageArtifact(ctx context.Context, id string) (artifact.ArtifactResponse, error) {
 	if strings.TrimSpace(id) == "" {
-		return coreservice.ArtifactResponse{}, apperror.ErrNotFound
+		return artifact.ArtifactResponse{}, apperror.ErrNotFound
 	}
 	rec, err := s.repo.GetArtifact(ctx, id)
 	if err != nil {
-		return coreservice.ArtifactResponse{}, err
+		return artifact.ArtifactResponse{}, err
 	}
 	if rec.Type != "page" {
-		return coreservice.ArtifactResponse{}, apperror.ErrNotFound
+		return artifact.ArtifactResponse{}, apperror.ErrNotFound
 	}
 	return rec, nil
 }
 
-func toPageDocument(rec coreservice.ArtifactResponse) PageDocument {
+func toPageDocument(rec artifact.ArtifactResponse) PageDocument {
 	return PageDocument{
 		ID:        rec.ID,
 		Title:     rec.Title,

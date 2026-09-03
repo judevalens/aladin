@@ -1,12 +1,12 @@
 package mcpserver
 
 import (
+	"aladin/backend_v2/internal/artifact"
 	"context"
 	"strings"
 	"testing"
 
 	"aladin/backend_v2/internal/document"
-	"aladin/backend_v2/internal/service"
 )
 
 // These cover the gap that made ingestion useless to the copilot: get_artifact on a file
@@ -50,11 +50,11 @@ func (f fakeDocumentService) Search(_ context.Context, _, query string, _ int) (
 // Only Get is exercised here; embedding the interface leaves every other method nil so
 // an accidental call fails loudly rather than silently returning a zero value.
 type fakeArtifactGetter struct {
-	service.ArtifactService
-	art service.ArtifactResponse
+	artifact.ArtifactService
+	art artifact.ArtifactResponse
 }
 
-func (f fakeArtifactGetter) Get(_ context.Context, _ string) (service.ArtifactResponse, error) {
+func (f fakeArtifactGetter) Get(_ context.Context, _ string) (artifact.ArtifactResponse, error) {
 	return f.art, nil
 }
 
@@ -99,7 +99,7 @@ func TestJoinPages_BudgetTruncates(t *testing.T) {
 
 func TestGetArtifact_ReturnsOutlineButNeverText(t *testing.T) {
 	tools := workspaceToolServer{
-		artifacts: fakeArtifactGetter{art: service.ArtifactResponse{ID: "a1", Title: "PEAD paper", Type: "file"}},
+		artifacts: fakeArtifactGetter{art: artifact.ArtifactResponse{ID: "a1", Title: "PEAD paper", Type: "file"}},
 		documents: fakeDocumentService{doc: readyDoc()},
 	}
 
@@ -130,7 +130,7 @@ func TestGetArtifact_ReturnsOutlineButNeverText(t *testing.T) {
 // agent that treats that as "nothing to say" will answer confidently about nothing.
 func TestGetArtifact_ScanTellsTheAgentItCannotRead(t *testing.T) {
 	tools := workspaceToolServer{
-		artifacts: fakeArtifactGetter{art: service.ArtifactResponse{ID: "a2", Title: "Scanned book", Type: "file"}},
+		artifacts: fakeArtifactGetter{art: artifact.ArtifactResponse{ID: "a2", Title: "Scanned book", Type: "file"}},
 		documents: fakeDocumentService{doc: document.Document{
 			Status:    "unsupported",
 			Error:     "no extractable text layer (likely a scan — needs OCR first)",
@@ -153,7 +153,7 @@ func TestGetArtifact_ScanTellsTheAgentItCannotRead(t *testing.T) {
 func TestGetArtifact_StillWorksWithoutDocuments(t *testing.T) {
 	// A note or a link has no document, and the whole path must stay inert for them.
 	tools := workspaceToolServer{
-		artifacts: fakeArtifactGetter{art: service.ArtifactResponse{ID: "a3", Title: "A note", Type: "page", Content: "plain body"}},
+		artifacts: fakeArtifactGetter{art: artifact.ArtifactResponse{ID: "a3", Title: "A note", Type: "page", Content: "plain body"}},
 	}
 	_, out, err := tools.getArtifact(context.Background(), nil, getArtifactInput{ArtifactID: "a3"})
 	if err != nil {
@@ -166,7 +166,7 @@ func TestGetArtifact_StillWorksWithoutDocuments(t *testing.T) {
 
 func TestReadDocument_ReadsARange(t *testing.T) {
 	tools := workspaceToolServer{
-		artifacts: fakeArtifactGetter{art: service.ArtifactResponse{ID: "a1", Title: "PEAD paper", Type: "file"}},
+		artifacts: fakeArtifactGetter{art: artifact.ArtifactResponse{ID: "a1", Title: "PEAD paper", Type: "file"}},
 		documents: fakeDocumentService{doc: readyDoc()},
 	}
 
@@ -190,7 +190,7 @@ func TestReadDocument_ReadsARange(t *testing.T) {
 
 func TestReadDocument_RefusesAnUnreadableDocument(t *testing.T) {
 	tools := workspaceToolServer{
-		artifacts: fakeArtifactGetter{art: service.ArtifactResponse{ID: "a2", Title: "Scan", Type: "file"}},
+		artifacts: fakeArtifactGetter{art: artifact.ArtifactResponse{ID: "a2", Title: "Scan", Type: "file"}},
 		documents: fakeDocumentService{doc: document.Document{Status: "unsupported", Error: "needs OCR first"}},
 	}
 	if _, _, err := tools.readDocument(context.Background(), nil, readDocumentInput{ArtifactID: "a2"}); err == nil {
@@ -232,7 +232,7 @@ func TestCapOutline_KeepsTheTopAndSaysWhenItTrims(t *testing.T) {
 
 func TestSearchDocument_ReturnsSnippetsNotTheDocument(t *testing.T) {
 	tools := workspaceToolServer{
-		artifacts: fakeArtifactGetter{art: service.ArtifactResponse{ID: "a1", Title: "PEAD paper", Type: "file"}},
+		artifacts: fakeArtifactGetter{art: artifact.ArtifactResponse{ID: "a1", Title: "PEAD paper", Type: "file"}},
 		documents: fakeDocumentService{doc: readyDoc()},
 	}
 
@@ -254,7 +254,7 @@ func TestSearchDocument_ReturnsSnippetsNotTheDocument(t *testing.T) {
 
 func TestSearchDocument_EmptyResultSaysWhy(t *testing.T) {
 	tools := workspaceToolServer{
-		artifacts: fakeArtifactGetter{art: service.ArtifactResponse{ID: "a1", Title: "PEAD paper", Type: "file"}},
+		artifacts: fakeArtifactGetter{art: artifact.ArtifactResponse{ID: "a1", Title: "PEAD paper", Type: "file"}},
 		documents: fakeDocumentService{doc: readyDoc()},
 	}
 	_, out, err := tools.searchDocument(context.Background(), nil, searchDocumentInput{ArtifactID: "a1", Query: "cryptocurrency"})
@@ -279,7 +279,7 @@ func TestReadDocument_CapsTheSpan(t *testing.T) {
 		doc.Pages = append(doc.Pages, document.DocumentPage{Page: page, Text: "filler"})
 	}
 	tools := workspaceToolServer{
-		artifacts: fakeArtifactGetter{art: service.ArtifactResponse{ID: "a1", Title: "Book", Type: "file"}},
+		artifacts: fakeArtifactGetter{art: artifact.ArtifactResponse{ID: "a1", Title: "Book", Type: "file"}},
 		documents: fakeDocumentService{doc: doc},
 	}
 

@@ -1,11 +1,11 @@
-package repo
+package postgres
 
 import (
 	"context"
 	"testing"
 	"time"
 
-	artifactservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/artifact"
 
 	"github.com/google/uuid"
 )
@@ -34,7 +34,7 @@ func TestUpdateArtifactGraphCommitsMoveFieldsAndOutboxTogether(t *testing.T) {
 	}
 
 	title := "After"
-	if err := NewArtifactsPostgres(pool).UpdateArtifactGraph(adminContext(userID), artifactID, artifactservice.ArtifactPatch{Title: &title, FolderID: &folderID}); err != nil {
+	if err := NewArtifactsPostgres(pool).UpdateArtifactGraph(adminContext(userID), artifactID, artifact.ArtifactPatch{Title: &title, FolderID: &folderID}); err != nil {
 		t.Fatalf("UpdateArtifactGraph: %v", err)
 	}
 

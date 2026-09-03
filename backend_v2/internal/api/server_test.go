@@ -1,6 +1,7 @@
 package api
 
 import (
+	"aladin/backend_v2/internal/artifact"
 	"context"
 	"encoding/json"
 	"io"
@@ -74,12 +75,12 @@ func TestBrowserTreeRoute(t *testing.T) {
 	updatedAt := "2026-04-27T00:00:00Z"
 	server := NewWithDependencies(":0", testDependencies{
 		ArtifactsSvc: &fakeArtifactService{
-			browserTree: []artifactservice.BrowserTreeNode{
+			browserTree: []artifact.BrowserTreeNode{
 				{
 					ID:       "folder-root",
 					Kind:     "folder",
 					Title:    "Root",
-					Children: []artifactservice.BrowserTreeNode{{ID: artifactID, ParentID: stringPtr("folder-root"), Kind: "artifact", Title: "Memo", ArtifactID: &artifactID, ArtifactType: &artifactType, UpdatedAt: &updatedAt, Children: []artifactservice.BrowserTreeNode{}}},
+					Children: []artifact.BrowserTreeNode{{ID: artifactID, ParentID: stringPtr("folder-root"), Kind: "artifact", Title: "Memo", ArtifactID: &artifactID, ArtifactType: &artifactType, UpdatedAt: &updatedAt, Children: []artifact.BrowserTreeNode{}}},
 				},
 			},
 		},
@@ -103,7 +104,7 @@ func TestArtifactsListByFolder(t *testing.T) {
 	folderID := "folder-1"
 	server := NewWithDependencies(":0", testDependencies{
 		ArtifactsSvc: &fakeArtifactService{
-			list: []artifactservice.ArtifactResponse{{ID: "artifact-1", FolderID: &folderID, Title: "Memo"}},
+			list: []artifact.ArtifactResponse{{ID: "artifact-1", FolderID: &folderID, Title: "Memo"}},
 		},
 	})
 	req := httptest.NewRequest(http.MethodGet, "/api/artifacts/?folderId=folder-1", nil)
@@ -143,12 +144,12 @@ func TestFoldersTreeRoute(t *testing.T) {
 
 	server := NewWithDependencies(":0", testDependencies{
 		ArtifactsSvc: &fakeArtifactService{
-			folderTree: []artifactservice.FolderTreeNode{
+			folderTree: []artifact.FolderTreeNode{
 				{
 					ID:    "folder-root",
 					Title: "Root",
-					Children: []artifactservice.FolderTreeNode{
-						{ID: "folder-child", ParentID: stringPtr("folder-root"), Title: "Child", Children: []artifactservice.FolderTreeNode{}},
+					Children: []artifact.FolderTreeNode{
+						{ID: "folder-child", ParentID: stringPtr("folder-root"), Title: "Child", Children: []artifact.FolderTreeNode{}},
 					},
 				},
 			},
@@ -217,7 +218,7 @@ func TestArtifactsResourceRoute(t *testing.T) {
 	}
 
 	service := &fakeArtifactService{
-		resource: artifactservice.ArtifactResource{
+		resource: artifact.ArtifactResource{
 			Path:        tmp.Name(),
 			ContentType: "text/plain",
 		},
@@ -737,13 +738,13 @@ func TestProviderConnectionsNangoWebhookIsPublic(t *testing.T) {
 }
 
 type fakeArtifactService struct {
-	list               []artifactservice.ArtifactResponse
-	listParams         *artifactservice.ArtifactListParams
-	browserTree        []artifactservice.BrowserTreeNode
-	folderTree         []artifactservice.FolderTreeNode
-	created            []artifactservice.ArtifactPayload
-	uploadInput        *artifactservice.ArtifactUploadInput
-	resource           artifactservice.ArtifactResource
+	list               []artifact.ArtifactResponse
+	listParams         *artifact.ArtifactListParams
+	browserTree        []artifact.BrowserTreeNode
+	folderTree         []artifact.FolderTreeNode
+	created            []artifact.ArtifactPayload
+	uploadInput        *artifact.ArtifactUploadInput
+	resource           artifact.ArtifactResource
 	createdFolderTitle string
 	err                error
 }
@@ -1045,7 +1046,7 @@ func (f *fakeFileService) Resource(context.Context, string) (filedomain.FileReso
 	return f.resource, nil
 }
 
-func (f *fakeArtifactService) List(_ context.Context, params artifactservice.ArtifactListParams) ([]artifactservice.ArtifactResponse, error) {
+func (f *fakeArtifactService) List(_ context.Context, params artifact.ArtifactListParams) ([]artifact.ArtifactResponse, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -1054,37 +1055,37 @@ func (f *fakeArtifactService) List(_ context.Context, params artifactservice.Art
 	return f.list, nil
 }
 
-func (f *fakeArtifactService) QueryByProperty(context.Context, artifactservice.PropertyQuery) ([]artifactservice.ArtifactResponse, error) {
+func (f *fakeArtifactService) QueryByProperty(context.Context, artifact.PropertyQuery) ([]artifact.ArtifactResponse, error) {
 	return nil, nil
 }
 
-func (f *fakeArtifactService) PropertyFacets(context.Context) ([]artifactservice.PropertyFacet, error) {
+func (f *fakeArtifactService) PropertyFacets(context.Context) ([]artifact.PropertyFacet, error) {
 	return nil, nil
 }
 
-func (f *fakeArtifactService) SearchPages(context.Context, artifactservice.PageSearchParams) ([]artifactservice.ArtifactResponse, error) {
+func (f *fakeArtifactService) SearchPages(context.Context, artifact.PageSearchParams) ([]artifact.ArtifactResponse, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
 	return f.list, nil
 }
 
-func (f *fakeArtifactService) BrowserTree(context.Context) ([]artifactservice.BrowserTreeNode, error) {
+func (f *fakeArtifactService) BrowserTree(context.Context) ([]artifact.BrowserTreeNode, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
 	return f.browserTree, nil
 }
 
-func (f *fakeArtifactService) CreateBrowserNode(_ context.Context, input artifactservice.BrowserNodeCreateInput) (artifactservice.BrowserNodeCreateResponse, error) {
+func (f *fakeArtifactService) CreateBrowserNode(_ context.Context, input artifact.BrowserNodeCreateInput) (artifact.BrowserNodeCreateResponse, error) {
 	if f.err != nil {
-		return artifactservice.BrowserNodeCreateResponse{}, f.err
+		return artifact.BrowserNodeCreateResponse{}, f.err
 	}
 	nodeID := "node-created"
 	if input.Kind == "artifact" {
 		artifactID := "artifact-created"
-		return artifactservice.BrowserNodeCreateResponse{
-			Node: artifactservice.BrowserNodeResponse{
+		return artifact.BrowserNodeCreateResponse{
+			Node: artifact.BrowserNodeResponse{
 				ID:         nodeID,
 				ParentID:   input.ParentID,
 				Kind:       "artifact",
@@ -1092,7 +1093,7 @@ func (f *fakeArtifactService) CreateBrowserNode(_ context.Context, input artifac
 				ArtifactID: &artifactID,
 				Position:   1,
 			},
-			Artifact: &artifactservice.ArtifactResponse{
+			Artifact: &artifact.ArtifactResponse{
 				ID:       artifactID,
 				Type:     input.Artifact.Type,
 				FolderID: input.ParentID,
@@ -1102,8 +1103,8 @@ func (f *fakeArtifactService) CreateBrowserNode(_ context.Context, input artifac
 			},
 		}, nil
 	}
-	return artifactservice.BrowserNodeCreateResponse{
-		Node: artifactservice.BrowserNodeResponse{
+	return artifact.BrowserNodeCreateResponse{
+		Node: artifact.BrowserNodeResponse{
 			ID:       nodeID,
 			ParentID: input.ParentID,
 			Kind:     "folder",
@@ -1113,26 +1114,26 @@ func (f *fakeArtifactService) CreateBrowserNode(_ context.Context, input artifac
 	}, nil
 }
 
-func (f *fakeArtifactService) DeleteBrowserNode(context.Context, string) (artifactservice.NodeDeleteResult, error) {
-	return artifactservice.NodeDeleteResult{}, nil
+func (f *fakeArtifactService) DeleteBrowserNode(context.Context, string) (artifact.NodeDeleteResult, error) {
+	return artifact.NodeDeleteResult{}, nil
 }
 
-func (f *fakeArtifactService) Get(context.Context, string) (artifactservice.ArtifactResponse, error) {
+func (f *fakeArtifactService) Get(context.Context, string) (artifact.ArtifactResponse, error) {
 	if f.err != nil {
-		return artifactservice.ArtifactResponse{}, f.err
+		return artifact.ArtifactResponse{}, f.err
 	}
-	return artifactservice.ArtifactResponse{}, artifactservice.ErrNotFound
+	return artifact.ArtifactResponse{}, artifactservice.ErrNotFound
 }
 
-func (f *fakeArtifactService) Create(_ context.Context, payload artifactservice.ArtifactPayload) (artifactservice.ArtifactCreateResponse, error) {
+func (f *fakeArtifactService) Create(_ context.Context, payload artifact.ArtifactPayload) (artifact.ArtifactCreateResponse, error) {
 	if f.err != nil {
-		return artifactservice.ArtifactCreateResponse{}, f.err
+		return artifact.ArtifactCreateResponse{}, f.err
 	}
 	f.created = append(f.created, payload)
 	artifactID := "artifact-created"
-	return artifactservice.ArtifactCreateResponse{
-		Artifact: artifactservice.ArtifactResponse{ID: artifactID, Type: payload.Type, FolderID: payload.FolderID, Title: payload.Title, Content: payload.Content, Metadata: map[string]any{}},
-		Node: artifactservice.BrowserNodeResponse{
+	return artifact.ArtifactCreateResponse{
+		Artifact: artifact.ArtifactResponse{ID: artifactID, Type: payload.Type, FolderID: payload.FolderID, Title: payload.Title, Content: payload.Content, Metadata: map[string]any{}},
+		Node: artifact.BrowserNodeResponse{
 			ID:         artifactID,
 			ParentID:   payload.FolderID,
 			Kind:       "artifact",
@@ -1143,81 +1144,81 @@ func (f *fakeArtifactService) Create(_ context.Context, payload artifactservice.
 	}, nil
 }
 
-func (f *fakeArtifactService) Update(context.Context, string, artifactservice.ArtifactPatch) (artifactservice.ArtifactResponse, error) {
+func (f *fakeArtifactService) Update(context.Context, string, artifact.ArtifactPatch) (artifact.ArtifactResponse, error) {
 	if f.err != nil {
-		return artifactservice.ArtifactResponse{}, f.err
+		return artifact.ArtifactResponse{}, f.err
 	}
-	return artifactservice.ArtifactResponse{}, artifactservice.ErrNotFound
+	return artifact.ArtifactResponse{}, artifactservice.ErrNotFound
 }
 
-func (f *fakeArtifactService) MoveArtifact(context.Context, string, *string) (artifactservice.ArtifactResponse, error) {
+func (f *fakeArtifactService) MoveArtifact(context.Context, string, *string) (artifact.ArtifactResponse, error) {
 	if f.err != nil {
-		return artifactservice.ArtifactResponse{}, f.err
+		return artifact.ArtifactResponse{}, f.err
 	}
-	return artifactservice.ArtifactResponse{}, artifactservice.ErrNotFound
+	return artifact.ArtifactResponse{}, artifactservice.ErrNotFound
 }
 
-func (f *fakeArtifactService) Delete(context.Context, string) (artifactservice.NodeDeleteResult, error) {
+func (f *fakeArtifactService) Delete(context.Context, string) (artifact.NodeDeleteResult, error) {
 	if f.err != nil {
-		return artifactservice.NodeDeleteResult{}, f.err
+		return artifact.NodeDeleteResult{}, f.err
 	}
-	return artifactservice.NodeDeleteResult{}, artifactservice.ErrNotFound
+	return artifact.NodeDeleteResult{}, artifactservice.ErrNotFound
 }
 
-func (f *fakeArtifactService) Upload(_ context.Context, input artifactservice.ArtifactUploadInput, body io.Reader) (artifactservice.ArtifactResponse, error) {
+func (f *fakeArtifactService) Upload(_ context.Context, input artifact.ArtifactUploadInput, body io.Reader) (artifact.ArtifactResponse, error) {
 	if f.err != nil {
-		return artifactservice.ArtifactResponse{}, f.err
+		return artifact.ArtifactResponse{}, f.err
 	}
 	_, _ = io.ReadAll(body)
 	copyInput := input
 	f.uploadInput = &copyInput
-	return artifactservice.ArtifactResponse{ID: "artifact-uploaded", Type: input.Type, FolderID: input.FolderID, Title: "Memo", Metadata: map[string]any{}}, nil
+	return artifact.ArtifactResponse{ID: "artifact-uploaded", Type: input.Type, FolderID: input.FolderID, Title: "Memo", Metadata: map[string]any{}}, nil
 }
 
-func (f *fakeArtifactService) Resource(context.Context, string) (artifactservice.ArtifactResource, error) {
+func (f *fakeArtifactService) Resource(context.Context, string) (artifact.ArtifactResource, error) {
 	if f.err != nil {
-		return artifactservice.ArtifactResource{}, f.err
+		return artifact.ArtifactResource{}, f.err
 	}
 	return f.resource, nil
 }
 
-func (f *fakeArtifactService) ListFolders(context.Context, *string) ([]artifactservice.FolderNode, error) {
+func (f *fakeArtifactService) ListFolders(context.Context, *string) ([]artifact.FolderNode, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
 	return nil, nil
 }
 
-func (f *fakeArtifactService) FolderTree(context.Context) ([]artifactservice.FolderTreeNode, error) {
+func (f *fakeArtifactService) FolderTree(context.Context) ([]artifact.FolderTreeNode, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
 	return f.folderTree, nil
 }
 
-func (f *fakeArtifactService) CreateFolder(_ context.Context, title string, parentID *string) (artifactservice.FolderNode, error) {
+func (f *fakeArtifactService) CreateFolder(_ context.Context, title string, parentID *string) (artifact.FolderNode, error) {
 	if f.err != nil {
-		return artifactservice.FolderNode{}, f.err
+		return artifact.FolderNode{}, f.err
 	}
 	f.createdFolderTitle = title
-	return artifactservice.FolderNode{ID: "folder-1", ParentID: parentID, Title: title}, nil
+	return artifact.FolderNode{ID: "folder-1", ParentID: parentID, Title: title}, nil
 }
 
-func (f *fakeArtifactService) UpdateFolder(context.Context, string, artifactservice.FolderPatch) (artifactservice.FolderNode, error) {
+func (f *fakeArtifactService) UpdateFolder(context.Context, string, artifact.FolderPatch) (artifact.FolderNode, error) {
 	if f.err != nil {
-		return artifactservice.FolderNode{}, f.err
+		return artifact.FolderNode{}, f.err
 	}
-	return artifactservice.FolderNode{}, artifactservice.ErrNotFound
+	return artifact.FolderNode{}, artifactservice.ErrNotFound
 }
 
-func (f *fakeArtifactService) GetFolder(context.Context, string) (artifactservice.FolderNode, error) {
+func (f *fakeArtifactService) GetFolder(context.Context, string) (artifact.FolderNode, error) {
 	if f.err != nil {
-		return artifactservice.FolderNode{}, f.err
+		return artifact.FolderNode{}, f.err
 	}
-	return artifactservice.FolderNode{}, artifactservice.ErrNotFound
+	return artifact.FolderNode{}, artifactservice.ErrNotFound
 }
 
-func (f *fakeArtifactService) FolderBreadcrumbs(context.Context, string) ([]artifactservice.BreadcrumbItem, error) {
+func (f *fakeArtifactService) FolderBreadcrumbs(context.Context, string) ([]artifact.BreadcrumbItem, error) {
 	if f.err != nil {
 		return nil, f.err
 	}

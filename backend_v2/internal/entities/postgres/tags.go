@@ -8,7 +8,7 @@ import (
 	"aladin/backend_v2/internal/auth"
 	entitydomain "aladin/backend_v2/internal/entities"
 	"aladin/backend_v2/internal/outbox"
-	"aladin/backend_v2/internal/repo"
+	"aladin/backend_v2/internal/treesync"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -176,7 +176,7 @@ func (r *PostgresEntityTagRepository) AttachTag(ctx context.Context, artifactID,
 	`, artifactID, entityID, added); err != nil {
 		return fmt.Errorf("entity tag attach: %w", err)
 	}
-	if err := repo.EmitNodeUpsert(ctx, tx, userID, artifactID); err != nil {
+	if err := treesync.EmitNodeUpsert(ctx, tx, userID, artifactID); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -204,7 +204,7 @@ func (r *PostgresEntityTagRepository) DetachTag(ctx context.Context, artifactID,
 	`, artifactID, entityID); err != nil {
 		return fmt.Errorf("entity tag detach: %w", err)
 	}
-	if err := repo.EmitNodeUpsert(ctx, tx, userID, artifactID); err != nil {
+	if err := treesync.EmitNodeUpsert(ctx, tx, userID, artifactID); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -262,7 +262,7 @@ func (r *PostgresEntityTagRepository) ReplaceMentions(ctx context.Context, artif
 		}
 	}
 	// The page's entity set changed → emit a node frame so reactive views (graph pane) refetch.
-	if err := repo.EmitNodeUpsert(ctx, tx, userID, artifactID); err != nil {
+	if err := treesync.EmitNodeUpsert(ctx, tx, userID, artifactID); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

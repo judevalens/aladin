@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"aladin/backend_v2/internal/artifact"
 	"context"
 	"strings"
 	"testing"
@@ -15,14 +16,14 @@ const appArtifactType = "app"
 // fakeArtifacts embeds the interface; Get reports an "app" so requireApp passes,
 // Update is a no-op. Other methods would panic if called.
 type fakeArtifacts struct {
-	service.ArtifactService
+	artifact.ArtifactService
 }
 
-func (fakeArtifacts) Get(_ context.Context, id string) (service.ArtifactResponse, error) {
-	return service.ArtifactResponse{ID: id, Type: appArtifactType}, nil
+func (fakeArtifacts) Get(_ context.Context, id string) (artifact.ArtifactResponse, error) {
+	return artifact.ArtifactResponse{ID: id, Type: appArtifactType}, nil
 }
-func (fakeArtifacts) Update(_ context.Context, id string, _ service.ArtifactPatch) (service.ArtifactResponse, error) {
-	return service.ArtifactResponse{ID: id, Type: appArtifactType}, nil
+func (fakeArtifacts) Update(_ context.Context, id string, _ artifact.ArtifactPatch) (artifact.ArtifactResponse, error) {
+	return artifact.ArtifactResponse{ID: id, Type: appArtifactType}, nil
 }
 
 // fakeBuild embeds the interface and records which channels Build was called for.

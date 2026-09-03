@@ -1,6 +1,7 @@
 package file
 
 import (
+	"aladin/backend_v2/internal/artifact"
 	"context"
 	"errors"
 	"fmt"
@@ -24,7 +25,7 @@ type FileRepository interface {
 // FileStore is the same byte-store port used by artifact resources. Keeping one
 // contract prevents the legacy file endpoint and artifact upload path from
 // acquiring different compensation behavior.
-type FileStore = coreservice.ArtifactFileStore
+type FileStore = artifact.ArtifactFileStore
 
 type FileUploadInput struct {
 	Filename    string

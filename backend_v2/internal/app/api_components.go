@@ -6,6 +6,7 @@ import (
 
 	"aladin/backend_v2/internal/alert"
 	alertpostgres "aladin/backend_v2/internal/alert/postgres"
+	"aladin/backend_v2/internal/artifact"
 	"aladin/backend_v2/internal/artifactref"
 	"aladin/backend_v2/internal/auth"
 	"aladin/backend_v2/internal/changefeed"
@@ -45,6 +46,7 @@ import (
 	sourcepostgres "aladin/backend_v2/internal/source/postgres"
 	"aladin/backend_v2/internal/system"
 	systempostgres "aladin/backend_v2/internal/system/postgres"
+	"aladin/backend_v2/internal/treesync"
 	"aladin/backend_v2/internal/unfurl"
 	"aladin/backend_v2/internal/watchlist"
 	watchlistpostgres "aladin/backend_v2/internal/watchlist/postgres"
@@ -86,7 +88,7 @@ func NewAPIComponentsWithProviderConnections(pool *pgxpool.Pool, providerConfig 
 	shared := buildSharedComponents(pool, dataVolumePath)
 
 	syncRepo := repo.NewSyncPostgres(pool)
-	syncSvc := reconciliation.New(syncRepo, repo.NewTreeSyncSource(pool), watchlistpostgres.NewSyncSource(pool), repo.NewShardKVSyncSource(pool), readingpositionpostgres.NewSyncSource(pool))
+	syncSvc := reconciliation.New(syncRepo, treesync.NewTreeSyncSource(pool), watchlistpostgres.NewSyncSource(pool), repo.NewShardKVSyncSource(pool), readingpositionpostgres.NewSyncSource(pool))
 	realtimeKeys := realtime.NewSubscriptionKeyResolver(
 		func(ctx context.Context) (string, error) {
 			principal, err := coreservice.RequirePrincipal(ctx)
@@ -180,15 +182,15 @@ func NewAPIComponentsWithProviderConnections(pool *pgxpool.Pool, providerConfig 
 	}
 }
 
-func (c *APIProcess) Auth() auth.AuthService                 { return c.auth }
-func (c *APIProcess) System() system.SystemService           { return c.system }
-func (c *APIProcess) Sources() source.SourceService          { return c.sources }
-func (c *APIProcess) Records() record.RecordService          { return c.records }
-func (c *APIProcess) Artifacts() coreservice.ArtifactService { return c.artifacts }
-func (c *APIProcess) Pages() page.Service                    { return c.pages }
-func (c *APIProcess) Files() file.FileService                { return c.files }
-func (c *APIProcess) Feed() feed.FeedService                 { return c.feed }
-func (c *APIProcess) Insights() insights.InsightService      { return c.insights }
+func (c *APIProcess) Auth() auth.AuthService              { return c.auth }
+func (c *APIProcess) System() system.SystemService        { return c.system }
+func (c *APIProcess) Sources() source.SourceService       { return c.sources }
+func (c *APIProcess) Records() record.RecordService       { return c.records }
+func (c *APIProcess) Artifacts() artifact.ArtifactService { return c.artifacts }
+func (c *APIProcess) Pages() page.Service                 { return c.pages }
+func (c *APIProcess) Files() file.FileService             { return c.files }
+func (c *APIProcess) Feed() feed.FeedService              { return c.feed }
+func (c *APIProcess) Insights() insights.InsightService   { return c.insights }
 func (c *APIProcess) ProviderConnections() providerconnection.ProviderConnectionService {
 	return c.providerConnections
 }
