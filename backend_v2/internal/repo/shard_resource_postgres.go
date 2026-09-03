@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/shardresource"
+	shardrelease "aladin/backend_v2/internal/shardresource/release"
 	"aladin/backend_v2/internal/shardv2"
 
 	"github.com/google/uuid"
@@ -64,7 +66,7 @@ func normalizeShardResourceLimits(limits ShardResourceLimits) ShardResourceLimit
 func (*ShardResourcePostgres) Profile() shardv2.ProviderProfile {
 	return shardv2.ProviderProfile{Version: 1, Owned: true, Operations: []string{"snapshot", "query", "insert", "update", "delete"}, Observation: "refresh-snapshots", ParamsSchema: shardv2.Schema{"type": "object", "additionalProperties": false}}
 }
-func (*ShardResourcePostgres) Authorize(ctx context.Context, view service.ResourceView) error {
+func (*ShardResourcePostgres) Authorize(ctx context.Context, view shardresource.View) error {
 	principal, err := service.RequirePrincipal(ctx)
 	if err != nil {
 		return err
@@ -80,7 +82,7 @@ func pgResourceHash(value any) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func lockResourceNamespace(ctx context.Context, tx pgx.Tx, ns service.ResourceNamespace) error {
+func lockResourceNamespace(ctx context.Context, tx pgx.Tx, ns shardresource.Namespace) error {
 	// Distinct from the global sync outbox lock. Every activation and v2 write
 	// takes this first; scope is one owner's shard/environment, not all users.
 	_, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 57291))`, ns.UserID+"/"+ns.ShardID+"/"+string(ns.Environment))
@@ -94,7 +96,7 @@ func lockResourceNamespace(ctx context.Context, tx pgx.Tx, ns service.ResourceNa
 	}
 	return err
 }
-func checkResourceRelease(ctx context.Context, tx pgx.Tx, ns service.ResourceNamespace) error {
+func checkResourceRelease(ctx context.Context, tx pgx.Tx, ns shardresource.Namespace) error {
 	var hash, generation string
 	err := tx.QueryRow(ctx, `SELECT r.contract_hash,r.generation FROM shard_resource_active a JOIN shard_resource_releases r USING(user_id,shard_id,environment,build_id) WHERE a.user_id=$1::uuid AND a.shard_id=$2 AND a.environment=$3 FOR SHARE OF a`, ns.UserID, ns.ShardID, string(ns.Environment)).Scan(&hash, &generation)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -104,12 +106,12 @@ func checkResourceRelease(ctx context.Context, tx pgx.Tx, ns service.ResourceNam
 		return err
 	}
 	if hash != ns.ContractHash || generation != ns.Generation {
-		return service.ResourceFailure("contract-changed", "Resource release changed")
+		return shardresource.Failure("contract-changed", "Resource release changed")
 	}
 	return nil
 }
-func (r *ShardResourcePostgres) ActiveResourceRelease(ctx context.Context, userID, shardID string, environment service.BuildChannel) (service.ResourceRelease, error) {
-	var release service.ResourceRelease
+func (r *ShardResourcePostgres) ActiveResourceRelease(ctx context.Context, userID, shardID string, environment shardresource.Environment) (shardresource.ResourceRelease, error) {
+	var release shardresource.ResourceRelease
 	err := r.pool.QueryRow(ctx, `SELECT r.contract_source,r.contract_hash,r.build_id,r.generation FROM shard_resource_active a JOIN shard_resource_releases r USING(user_id,shard_id,environment,build_id) JOIN artifacts owner ON owner.id=a.shard_id AND owner.user_id=a.user_id AND owner.type='app' WHERE a.user_id=$1::uuid AND a.shard_id=$2 AND a.environment=$3`, userID, shardID, string(environment)).Scan(&release.Source, &release.Hash, &release.BuildID, &release.Generation)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return release, service.ErrNotFound
@@ -121,18 +123,18 @@ func (r *ShardResourcePostgres) ActiveResourceRelease(ctx context.Context, userI
 // hooks, intentionally absent from HTTP/MCP. The production builder uses
 // StageResourceBuild to bind code to the contract; contract-only staging is for
 // provider conformance and cannot serve an application.
-func (r *ShardResourcePostgres) StageResourceRelease(ctx context.Context, shardID string, environment service.BuildChannel, buildID, generation string, compiled *shardv2.Compiled) error {
+func (r *ShardResourcePostgres) StageResourceRelease(ctx context.Context, shardID string, environment shardresource.Environment, buildID, generation string, compiled *shardv2.Compiled) error {
 	return r.stageResourceBuild(ctx, shardID, environment, buildID, generation, compiled, nil)
 }
-func (r *ShardResourcePostgres) StageResourceBuild(ctx context.Context, shardID string, environment service.BuildChannel, buildID, generation string, compiled *shardv2.Compiled, files map[string][]byte) error {
+func (r *ShardResourcePostgres) StageResourceBuild(ctx context.Context, shardID string, environment shardresource.Environment, buildID, generation string, compiled *shardv2.Compiled, files map[string][]byte) error {
 	return r.stageResourceBuild(ctx, shardID, environment, buildID, generation, compiled, files)
 }
-func (r *ShardResourcePostgres) ActiveResourceBuild(ctx context.Context, shardID string, environment service.BuildChannel) (service.ShardRelease, error) {
+func (r *ShardResourcePostgres) ActiveResourceBuild(ctx context.Context, shardID string, environment shardresource.Environment) (shardrelease.Build, error) {
 	p, err := service.RequirePrincipal(ctx)
 	if err != nil {
-		return service.ShardRelease{}, err
+		return shardrelease.Build{}, err
 	}
-	var release service.ShardRelease
+	var release shardrelease.Build
 	var files []byte
 	err = r.pool.QueryRow(ctx, `SELECT r.contract_source,r.contract_hash,r.build_id,r.generation,b.files FROM shard_resource_active a JOIN shard_resource_releases r USING(user_id,shard_id,environment,build_id) LEFT JOIN shard_resource_builds b USING(user_id,shard_id,environment,build_id) JOIN artifacts owner ON owner.id=a.shard_id AND owner.user_id=a.user_id AND owner.type='app' WHERE a.user_id=$1::uuid AND a.shard_id=$2 AND a.environment=$3`, p.UserID, shardID, string(environment)).Scan(&release.Source, &release.Hash, &release.BuildID, &release.Generation, &files)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -142,12 +144,12 @@ func (r *ShardResourcePostgres) ActiveResourceBuild(ctx context.Context, shardID
 		return release, err
 	}
 	if len(files) == 0 {
-		return release, service.ResourceFailure("source-unavailable", "Active release has no verified code")
+		return release, shardresource.Failure("source-unavailable", "Active release has no verified code")
 	}
 	err = json.Unmarshal(files, &release.Files)
 	return release, err
 }
-func (r *ShardResourcePostgres) stageResourceBuild(ctx context.Context, shardID string, environment service.BuildChannel, buildID, generation string, compiled *shardv2.Compiled, files map[string][]byte) error {
+func (r *ShardResourcePostgres) stageResourceBuild(ctx context.Context, shardID string, environment shardresource.Environment, buildID, generation string, compiled *shardv2.Compiled, files map[string][]byte) error {
 	p, err := service.RequirePrincipal(ctx)
 	if err != nil {
 		return err
@@ -156,18 +158,18 @@ func (r *ShardResourcePostgres) stageResourceBuild(ctx context.Context, shardID 
 		return err
 	}
 	if compiled == nil || buildID == "" || generation == "" || len(buildID) > 256 || len(generation) > 256 {
-		return service.ResourceFailure("bad-request", "Invalid staged release")
+		return shardresource.Failure("bad-request", "Invalid staged release")
 	}
 	sourceHash := sha256.Sum256(compiled.Source)
 	if hex.EncodeToString(sourceHash[:]) != compiled.Hash {
-		return service.ResourceFailure("invalid-schema", "Compiled source hash does not match")
+		return shardresource.Failure("invalid-schema", "Compiled source hash does not match")
 	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
-	ns := service.ResourceNamespace{UserID: p.UserID, ShardID: shardID, Environment: environment}
+	ns := shardresource.Namespace{UserID: p.UserID, ShardID: shardID, Environment: environment}
 	if err := lockResourceNamespace(ctx, tx, ns); err != nil {
 		return err
 	}
@@ -180,11 +182,11 @@ func (r *ShardResourcePostgres) stageResourceBuild(ctx context.Context, shardID 
 		return err
 	}
 	if hash != compiled.Hash || storedGeneration != generation {
-		return service.ResourceFailure("conflict", "A staged build is immutable")
+		return shardresource.Failure("conflict", "A staged build is immutable")
 	}
 	if files != nil {
-		if buildID != service.ShardBuildIdentity(compiled.Source, files) {
-			return service.ResourceFailure("conflict", "Build identity mismatch")
+		if buildID != shardrelease.BuildIdentity(compiled.Source, files) {
+			return shardresource.Failure("conflict", "Build identity mismatch")
 		}
 		raw, err := json.Marshal(files)
 		if err != nil {
@@ -202,11 +204,11 @@ func (r *ShardResourcePostgres) stageResourceBuild(ctx context.Context, shardID 
 		return err
 	}
 	if buildCount > r.limits.Builds || buildBytes > r.limits.BuildBytes {
-		return service.ResourceFailure("quota", "Retained build budget exceeded; review inactive build retention")
+		return shardresource.Failure("quota", "Retained build budget exceeded; review inactive build retention")
 	}
 	return tx.Commit(ctx)
 }
-func (r *ShardResourcePostgres) ActivateResourceRelease(ctx context.Context, shardID string, environment service.BuildChannel, buildID string, profiles shardv2.Registry) error {
+func (r *ShardResourcePostgres) ActivateResourceRelease(ctx context.Context, shardID string, environment shardresource.Environment, buildID string, profiles shardv2.Registry) error {
 	p, err := service.RequirePrincipal(ctx)
 	if err != nil {
 		return err
@@ -219,7 +221,7 @@ func (r *ShardResourcePostgres) ActivateResourceRelease(ctx context.Context, sha
 		return err
 	}
 	defer tx.Rollback(ctx)
-	ns := service.ResourceNamespace{UserID: p.UserID, ShardID: shardID, Environment: environment}
+	ns := shardresource.Namespace{UserID: p.UserID, ShardID: shardID, Environment: environment}
 	if err := lockResourceNamespace(ctx, tx, ns); err != nil {
 		return err
 	}
@@ -246,12 +248,12 @@ func (r *ShardResourcePostgres) ActivateResourceRelease(ctx context.Context, sha
 		// Conservative activation: no implicit data/schema migration. A separate
 		// freeze/export/transform flow must handle incompatible shape changes.
 		if previousGeneration != generation {
-			return service.ResourceFailure("conflict", "Storage generation changes require migration")
+			return shardresource.Failure("conflict", "Storage generation changes require migration")
 		}
 		for _, next := range compiled.Contract.Resources {
 			for _, old := range previous.Resources {
 				if old.Source.Dataset != "" && old.Source.Dataset == next.Source.Dataset && (old.SchemaVersion != next.SchemaVersion || pgResourceHash(old.Schema) != pgResourceHash(next.Schema) || old.Kind != next.Kind) {
-					return service.ResourceFailure("conflict", "Schema changes require an explicit migration")
+					return shardresource.Failure("conflict", "Schema changes require an explicit migration")
 				}
 			}
 		}
@@ -277,7 +279,7 @@ func (r *ShardResourcePostgres) ActivateResourceRelease(ctx context.Context, sha
 			value, err := shardv2.DecodeJSON(data)
 			if err != nil || version != definition.SchemaVersion || (definition.Kind == "singleton" && id != "value") || shardv2.ValidateData(definition.Schema, value) != nil {
 				rows.Close()
-				return service.ResourceFailure("invalid-schema", "Stored data is incompatible with the staged release")
+				return shardresource.Failure("invalid-schema", "Stored data is incompatible with the staged release")
 			}
 		}
 		err = rows.Err()
@@ -290,7 +292,7 @@ func (r *ShardResourcePostgres) ActivateResourceRelease(ctx context.Context, sha
 	if err != nil {
 		return err
 	}
-	if environment == service.ChannelPublished {
+	if environment == shardresource.EnvironmentPublished {
 		// A successful build is only staged. Notify viewers in the activation
 		// transaction, so they switch code AND data only after publication commits.
 		payload, err := json.Marshal(map[string]any{"page_id": shardID, "protocol": "bridge/2", "buildId": buildID, "contractHash": compiled.Hash})
@@ -305,27 +307,27 @@ func (r *ShardResourcePostgres) ActivateResourceRelease(ctx context.Context, sha
 }
 
 type resourceReceipt struct {
-	Result  service.ResourceMutationResult `json:"result"`
-	Failure *service.ResourceError         `json:"error,omitempty"`
+	Result  shardresource.MutationResult `json:"result"`
+	Failure *shardresource.Error         `json:"error,omitempty"`
 }
 
-func (r *ShardResourcePostgres) Mutate(ctx context.Context, view service.ResourceView, command shardv2.Command) (service.ResourceMutationResult, error) {
-	empty := service.ResourceMutationResult{}
+func (r *ShardResourcePostgres) Mutate(ctx context.Context, view shardresource.View, command shardv2.Command) (shardresource.MutationResult, error) {
+	empty := shardresource.MutationResult{}
 	if err := r.Authorize(ctx, view); err != nil {
 		return empty, err
 	}
 	raw, _ := json.Marshal(command)
 	v, err := shardv2.DecodeJSON(raw)
 	if err != nil || shardv2.ValidateProtocol("command", v) != nil {
-		return empty, service.ResourceFailure("bad-request", "Invalid storage command")
+		return empty, shardresource.Failure("bad-request", "Invalid storage command")
 	}
 	if command.ContractHash != view.Namespace.ContractHash {
-		return empty, service.ResourceFailure("contract-changed", "Command contract mismatch")
+		return empty, shardresource.Failure("contract-changed", "Command contract mismatch")
 	}
 	if command.Op != "delete" {
 		value, err := shardv2.DecodeJSON(command.Data)
 		if err != nil || len(command.Data) > shardv2.MaxRecordBytes || shardv2.ValidateData(view.Definition.Schema, value) != nil {
-			return empty, service.ResourceFailure("invalid-schema", "Invalid stored record")
+			return empty, shardresource.Failure("invalid-schema", "Invalid stored record")
 		}
 		command.Data, _ = json.Marshal(value)
 	}
@@ -334,7 +336,7 @@ func (r *ShardResourcePostgres) Mutate(ctx context.Context, view service.Resourc
 			command.ID = "value"
 		}
 		if command.ID != "value" {
-			return empty, service.ResourceFailure("bad-request", "Singleton ID must be value")
+			return empty, shardresource.Failure("bad-request", "Singleton ID must be value")
 		}
 	}
 	ns := view.Namespace
@@ -358,7 +360,7 @@ func (r *ShardResourcePostgres) Mutate(ctx context.Context, view service.Resourc
 	err = tx.QueryRow(ctx, `SELECT payload_hash,outcome FROM shard_resource_receipts WHERE user_id=$1::uuid AND actor_key=$2 AND shard_id=$3 AND environment=$4 AND request_id=$5 AND expires_at>now()`, ns.UserID, ns.ActorKey, ns.ShardID, string(ns.Environment), command.RequestID).Scan(&storedHash, &stored)
 	if err == nil {
 		if storedHash != payloadHash {
-			return empty, service.ResourceFailure("conflict", "requestId was used for a different command")
+			return empty, shardresource.Failure("conflict", "requestId was used for a different command")
 		}
 		var receipt resourceReceipt
 		if err := json.Unmarshal(stored, &receipt); err != nil {
@@ -383,7 +385,7 @@ func (r *ShardResourcePostgres) Mutate(ctx context.Context, view service.Resourc
 	}
 	// Reserve the largest possible response before touching canonical data.
 	if receiptCount >= r.limits.Receipts || receiptBytes+shardv2.MaxRecordBytes+2048 > r.limits.ReceiptBytes {
-		return empty, service.ResourceFailure("quota", "Command receipt quota exceeded")
+		return empty, shardresource.Failure("quota", "Command receipt quota exceeded")
 	}
 	if command.ID == "" {
 		command.ID = uuid.NewString()
@@ -420,11 +422,11 @@ func (r *ShardResourcePostgres) Mutate(ctx context.Context, view service.Resourc
 	}
 	return result, nil
 }
-func (r *ShardResourcePostgres) applyResourceCommand(ctx context.Context, tx pgx.Tx, view service.ResourceView, command shardv2.Command) (service.ResourceMutationResult, *service.ResourceError, error) {
-	result := service.ResourceMutationResult{RequestID: command.RequestID}
+func (r *ShardResourcePostgres) applyResourceCommand(ctx context.Context, tx pgx.Tx, view shardresource.View, command shardv2.Command) (shardresource.MutationResult, *shardresource.Error, error) {
+	result := shardresource.MutationResult{RequestID: command.RequestID}
 	ns := view.Namespace
-	fail := func(code, message string) (service.ResourceMutationResult, *service.ResourceError, error) {
-		return result, &service.ResourceError{Code: code, Message: message}, nil
+	fail := func(code, message string) (shardresource.MutationResult, *shardresource.Error, error) {
+		return result, &shardresource.Error{Code: code, Message: message}, nil
 	}
 	var revision, oldBytes int64
 	var deleted *time.Time
@@ -446,7 +448,7 @@ func (r *ShardResourcePostgres) applyResourceCommand(ctx context.Context, tx pgx
 	}
 	if command.Op == "delete" {
 		_, err := tx.Exec(ctx, `UPDATE shard_resource_records SET revision=revision+1,deleted_at=now(),updated_at=now(),updated_by=$7 WHERE user_id=$1::uuid AND shard_id=$2 AND environment=$3 AND generation=$4 AND dataset_id=$5 AND id=$6`, ns.UserID, ns.ShardID, string(ns.Environment), ns.Generation, ns.DatasetID, command.ID, ns.ActorKey)
-		result.Tombstone = &service.ResourceTombstone{ID: command.ID, Revision: strconv.FormatInt(revision+1, 10)}
+		result.Tombstone = &shardresource.Tombstone{ID: command.ID, Revision: strconv.FormatInt(revision+1, 10)}
 		return result, nil, err
 	}
 	var activeBytes int64
@@ -467,5 +469,5 @@ func (r *ShardResourcePostgres) applyResourceCommand(ctx context.Context, tx pgx
 	return result, nil, err
 }
 
-var _ service.ResourceProvider = (*ShardResourcePostgres)(nil)
-var _ service.ResourceReleaseReader = (*ShardResourcePostgres)(nil)
+var _ shardresource.Provider = (*ShardResourcePostgres)(nil)
+var _ shardresource.ReleaseReader = (*ShardResourcePostgres)(nil)

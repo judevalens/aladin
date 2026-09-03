@@ -1,6 +1,10 @@
 package service
 
-import "context"
+import (
+	"context"
+
+	"aladin/backend_v2/internal/shardresource"
+)
 
 // Doc Surface ("app" artifacts) — agent-authored multi-file React pages built
 // server-side with esbuild and rendered in a sandboxed iframe. Source lives as
@@ -45,11 +49,11 @@ type BuildResult struct {
 // auto-built on every write) written to dist/draft/; published is the promoted
 // artifact publish_app gates on, written to dist/ (minified). They differ only
 // in minification, source maps, and output dir.
-type BuildChannel string
+type BuildChannel = shardresource.Environment
 
 const (
-	ChannelPublished BuildChannel = "published"
-	ChannelDraft     BuildChannel = "draft"
+	ChannelPublished = shardresource.EnvironmentPublished
+	ChannelDraft     = shardresource.EnvironmentDraft
 )
 
 // DocSurfaceStore is per-user, per-page file IO over the data volume. The userID

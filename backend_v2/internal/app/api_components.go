@@ -11,6 +11,7 @@ import (
 	"aladin/backend_v2/internal/reconciliation"
 	"aladin/backend_v2/internal/repo"
 	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/shardresource"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -153,7 +154,7 @@ func (c *APIProcess) OutboxDrainer() *changefeed.Drainer                       {
 func (c *APIProcess) DocSurfaceStore() coreservice.DocSurfaceStore             { return c.docSurfaceStore }
 func (c *APIProcess) WorkspaceRuntime() coreservice.WorkspaceRuntime           { return c.workspaceRuntime }
 func (c *APIProcess) ShardBuild() coreservice.ShardBuildService                { return c.shardBuild }
-func (c *APIProcess) ShardResources() coreservice.ShardResourceService         { return c.shardResources }
+func (c *APIProcess) ShardResources() shardresource.Service                    { return c.shardResources }
 func (c *APIProcess) ShardGraphQL() coreservice.ShardGraphQLService            { return c.shardGraphQL }
 func (c *APIProcess) ShardReleases() coreservice.ShardReleaseService           { return c.shardReleases }
 func (c *APIProcess) ShardKV() coreservice.ShardKVService                      { return c.shardKV }

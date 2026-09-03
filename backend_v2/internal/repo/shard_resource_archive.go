@@ -12,16 +12,17 @@ import (
 	"time"
 
 	"aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/shardresource"
 	"aladin/backend_v2/internal/shardv2"
 )
 
 type resourceArchiveHeader struct {
-	Format       string               `json:"format"`
-	UserID       string               `json:"userId"`
-	ShardID      string               `json:"shardId"`
-	Environment  service.BuildChannel `json:"environment"`
-	Generation   string               `json:"generation"`
-	ContractHash string               `json:"contractHash"`
+	Format       string                    `json:"format"`
+	UserID       string                    `json:"userId"`
+	ShardID      string                    `json:"shardId"`
+	Environment  shardresource.Environment `json:"environment"`
+	Generation   string                    `json:"generation"`
+	ContractHash string                    `json:"contractHash"`
 }
 type resourceArchiveRecord struct {
 	Dataset   string         `json:"dataset"`
@@ -41,8 +42,8 @@ type resourceArchiveReceipt struct {
 	ExpiresAt   time.Time       `json:"expiresAt"`
 }
 
-func (r *ShardResourcePostgres) ExportResourceData(ctx context.Context, id string, environment service.BuildChannel, writer io.Writer) (service.ResourceArchiveManifest, error) {
-	var manifest service.ResourceArchiveManifest
+func (r *ShardResourcePostgres) ExportResourceData(ctx context.Context, id string, environment shardresource.Environment, writer io.Writer) (shardresource.ArchiveManifest, error) {
+	var manifest shardresource.ArchiveManifest
 	if err := service.RequireScope(ctx, service.ScopeArtifactsRead); err != nil {
 		return manifest, err
 	}
@@ -58,7 +59,7 @@ func (r *ShardResourcePostgres) ExportResourceData(ctx context.Context, id strin
 		return manifest, err
 	}
 	defer tx.Rollback(ctx)
-	ns := service.ResourceNamespace{UserID: p.UserID, ShardID: id, Environment: environment}
+	ns := shardresource.Namespace{UserID: p.UserID, ShardID: id, Environment: environment}
 	if err := lockResourceNamespace(ctx, tx, ns); err != nil {
 		return manifest, err
 	}
@@ -134,10 +135,10 @@ func (r *ShardResourcePostgres) ExportResourceData(ctx context.Context, id strin
 	return manifest, tx.Commit(ctx)
 }
 
-func (r *ShardResourcePostgres) RestoreResourceData(ctx context.Context, id string, environment service.BuildChannel, reader io.Reader, profiles shardv2.Registry) (service.ResourceArchiveManifest, error) {
-	var manifest service.ResourceArchiveManifest
-	bad := func(message string) (service.ResourceArchiveManifest, error) {
-		return manifest, service.ResourceFailure("bad-request", message)
+func (r *ShardResourcePostgres) RestoreResourceData(ctx context.Context, id string, environment shardresource.Environment, reader io.Reader, profiles shardv2.Registry) (shardresource.ArchiveManifest, error) {
+	var manifest shardresource.ArchiveManifest
+	bad := func(message string) (shardresource.ArchiveManifest, error) {
+		return manifest, shardresource.Failure("bad-request", message)
 	}
 	if err := service.RequireScope(ctx, service.ScopeArtifactsWrite); err != nil {
 		return manifest, err
@@ -154,7 +155,7 @@ func (r *ShardResourcePostgres) RestoreResourceData(ctx context.Context, id stri
 		return manifest, err
 	}
 	defer tx.Rollback(ctx)
-	ns := service.ResourceNamespace{UserID: p.UserID, ShardID: id, Environment: environment}
+	ns := shardresource.Namespace{UserID: p.UserID, ShardID: id, Environment: environment}
 	if err := lockResourceNamespace(ctx, tx, ns); err != nil {
 		return manifest, err
 	}
@@ -177,7 +178,7 @@ func (r *ShardResourcePostgres) RestoreResourceData(ctx context.Context, id stri
 		return manifest, err
 	}
 	if occupied {
-		return manifest, service.ResourceFailure("conflict", "Restore requires an empty namespace; never roll back over accepted writes")
+		return manifest, shardresource.Failure("conflict", "Restore requires an empty namespace; never roll back over accepted writes")
 	}
 	// Streaming input: one bounded line in memory, with total storage caps below.
 	limited := &io.LimitedReader{R: reader, N: (768 << 20) + 1}
@@ -232,7 +233,7 @@ func (r *ShardResourcePostgres) RestoreResourceData(ctx context.Context, id stri
 			}
 			manifest.Records++
 			if activeBytes > r.limits.ActiveBytes || manifest.Records > r.limits.Records {
-				return manifest, service.ResourceFailure("quota", "Archive exceeds record quota")
+				return manifest, shardresource.Failure("quota", "Archive exceeds record quota")
 			}
 			_, err = tx.Exec(ctx, `INSERT INTO shard_resource_records(user_id,shard_id,environment,generation,dataset_id,id,schema_version,revision,data,data_bytes,created_by,updated_by,created_at,updated_at,deleted_at) VALUES($1::uuid,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`, p.UserID, id, string(environment), ns.Generation, row.Dataset, row.Record.ID, row.Record.SchemaVersion, revision, row.Record.Data, len(row.Record.Data), row.CreatedBy, row.UpdatedBy, row.CreatedAt, row.UpdatedAt, row.DeletedAt)
 			if err != nil {
@@ -249,14 +250,14 @@ func (r *ShardResourcePostgres) RestoreResourceData(ctx context.Context, id stri
 			manifest.Receipts++
 			receiptBytes += int64(len(row.Outcome))
 			if manifest.Receipts > r.limits.Receipts || receiptBytes > r.limits.ReceiptBytes {
-				return manifest, service.ResourceFailure("quota", "Archive exceeds receipt quota")
+				return manifest, shardresource.Failure("quota", "Archive exceeds receipt quota")
 			}
 			_, err = tx.Exec(ctx, `INSERT INTO shard_resource_receipts(user_id,actor_key,shard_id,environment,request_id,payload_hash,outcome,outcome_bytes,created_at,expires_at) VALUES($1::uuid,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, p.UserID, row.Actor, id, string(environment), row.RequestID, row.PayloadHash, row.Outcome, len(row.Outcome), row.CreatedAt, row.ExpiresAt)
 			if err != nil {
 				return manifest, err
 			}
 		case "manifest":
-			var expected service.ResourceArchiveManifest
+			var expected shardresource.ArchiveManifest
 			manifest.SHA256 = hex.EncodeToString(digest.Sum(nil))
 			if json.Unmarshal(item.Value, &expected) != nil || expected != manifest {
 				return bad("Archive checksum/count mismatch")

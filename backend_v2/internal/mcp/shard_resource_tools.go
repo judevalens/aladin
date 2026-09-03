@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/shardresource"
 	"aladin/backend_v2/internal/shardv2"
 	"context"
 	"encoding/json"
@@ -12,7 +13,7 @@ import (
 )
 
 type shardResourceTools struct {
-	resources service.ShardResourceService
+	resources shardresource.Service
 	catalog   service.ShardCatalogService
 	graphql   service.ShardGraphQLService
 }
@@ -83,7 +84,7 @@ type executeShardOperationInput struct {
 	Variables    map[string]any `json:"variables,omitempty"`
 }
 
-func registerShardResourceTools(server *sdkmcp.Server, resources service.ShardResourceService, catalog service.ShardCatalogService, graphql service.ShardGraphQLService) {
+func registerShardResourceTools(server *sdkmcp.Server, resources shardresource.Service, catalog service.ShardCatalogService, graphql service.ShardGraphQLService) {
 	if resources == nil || catalog == nil {
 		return
 	}

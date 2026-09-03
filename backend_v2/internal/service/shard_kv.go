@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
+
+	"aladin/backend_v2/internal/shardresource/compat"
 )
 
 // Shard local state (design/SHARD_LOCAL_STATE.md): a per-shard key/value document
@@ -69,10 +72,21 @@ type ShardKVRepository interface {
 type shardKVService struct {
 	artifacts ArtifactService
 	repo      ShardKVRepository
+	observer  compat.V1Observer
 }
 
 func NewShardKVService(artifacts ArtifactService, repo ShardKVRepository) ShardKVService {
-	return &shardKVService{artifacts: artifacts, repo: repo}
+	return NewShardKVServiceWithObserver(artifacts, repo, compat.NewLogV1Observer(slog.Default()))
+}
+
+func NewShardKVServiceWithObserver(artifacts ArtifactService, repo ShardKVRepository, observer compat.V1Observer) ShardKVService {
+	return &shardKVService{artifacts: artifacts, repo: repo, observer: observer}
+}
+
+func (s *shardKVService) observe(operation string, channel BuildChannel) {
+	if s.observer != nil {
+		s.observer.Used(operation, channel)
+	}
 }
 
 // shardKVKeyRe: path segments of word chars/dot/dash, "/"-separated — stable,
@@ -117,6 +131,7 @@ func (s *shardKVService) requireOwnedShard(ctx context.Context, shardID string) 
 }
 
 func (s *shardKVService) Get(ctx context.Context, shardID string, channel BuildChannel, key string) (ShardKVEntry, bool, error) {
+	s.observe("get", channel)
 	if _, err := s.requireOwnedShard(ctx, shardID); err != nil {
 		return ShardKVEntry{}, false, err
 	}
@@ -130,6 +145,7 @@ func (s *shardKVService) Get(ctx context.Context, shardID string, channel BuildC
 }
 
 func (s *shardKVService) List(ctx context.Context, shardID string, channel BuildChannel, prefix string) ([]ShardKVEntry, error) {
+	s.observe("list", channel)
 	if _, err := s.requireOwnedShard(ctx, shardID); err != nil {
 		return nil, err
 	}
@@ -146,6 +162,7 @@ func (s *shardKVService) List(ctx context.Context, shardID string, channel Build
 }
 
 func (s *shardKVService) Set(ctx context.Context, shardID string, channel BuildChannel, key string, value json.RawMessage, baseRevision int64) (ShardKVEntry, error) {
+	s.observe("set", channel)
 	userID, err := s.requireOwnedShard(ctx, shardID)
 	if err != nil {
 		return ShardKVEntry{}, err
@@ -178,6 +195,7 @@ func (s *shardKVService) Set(ctx context.Context, shardID string, channel BuildC
 }
 
 func (s *shardKVService) Delete(ctx context.Context, shardID string, channel BuildChannel, key string, baseRevision int64) error {
+	s.observe("delete", channel)
 	userID, err := s.requireOwnedShard(ctx, shardID)
 	if err != nil {
 		return err

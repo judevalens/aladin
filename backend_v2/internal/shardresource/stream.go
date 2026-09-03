@@ -1,4 +1,4 @@
-package service
+package shardresource
 
 import (
 	"context"
@@ -95,8 +95,9 @@ func (s *shardResourceService) Subscribe(ctx context.Context, target ResourceTar
 			case <-events:
 			default:
 			}
+			code := s.errorCode(err)
 			select {
-			case events <- ResourceStreamMessage{Error: &ResourceError{Code: ResourceErrorCode(err), Message: resourcePublicMessage(err)}}:
+			case events <- ResourceStreamMessage{Error: &ResourceError{Code: code, Message: resourcePublicMessage(err, code)}}:
 			case <-streamCtx.Done():
 			}
 		}
@@ -153,8 +154,8 @@ func (s *shardResourceService) Subscribe(ctx context.Context, target ResourceTar
 	return ResourceSubscription{Identity: identity, Events: events, Close: closeSubscription}, nil
 }
 
-func resourcePublicMessage(err error) string {
-	switch ResourceErrorCode(err) {
+func resourcePublicMessage(err error, code string) string {
+	switch code {
 	case "forbidden":
 		return "Resource access is no longer permitted"
 	case "not-found":

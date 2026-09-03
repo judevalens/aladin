@@ -3,6 +3,7 @@ package app
 import (
 	"aladin/backend_v2/internal/changefeed"
 	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/shardresource"
 )
 
 // APIComponents is the process-owned graph consumed by cmd/api. The HTTP
@@ -26,7 +27,7 @@ type APIComponents interface {
 	DocSurfaceStore() coreservice.DocSurfaceStore
 	WorkspaceRuntime() coreservice.WorkspaceRuntime
 	ShardBuild() coreservice.ShardBuildService
-	ShardResources() coreservice.ShardResourceService
+	ShardResources() shardresource.Service
 	ShardGraphQL() coreservice.ShardGraphQLService
 	ShardReleases() coreservice.ShardReleaseService
 	ShardKV() coreservice.ShardKVService
@@ -63,7 +64,7 @@ type MCPComponents interface {
 	DocSurfaceStore() coreservice.DocSurfaceStore
 	Preview() coreservice.PreviewService
 	ShardBuild() coreservice.ShardBuildService
-	ShardResources() coreservice.ShardResourceService
+	ShardResources() shardresource.Service
 	ShardGraphQL() coreservice.ShardGraphQLService
 	ShardReleases() coreservice.ShardReleaseService
 	ShardCatalog() coreservice.ShardCatalogService

@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/shardresource"
+	shardrelease "aladin/backend_v2/internal/shardresource/release"
 	"aladin/backend_v2/internal/shardv2"
 
 	"github.com/google/uuid"
@@ -103,7 +105,7 @@ func (*ShardResourceMongo) Profile() shardv2.ProviderProfile {
 	}
 }
 
-func (r *ShardResourceMongo) ObserveChanges(ctx context.Context, view service.ResourceView) (<-chan error, error) {
+func (r *ShardResourceMongo) ObserveChanges(ctx context.Context, view shardresource.View) (<-chan error, error) {
 	if err := r.Authorize(ctx, view); err != nil {
 		return nil, err
 	}
@@ -144,13 +146,13 @@ func (r *ShardResourceMongo) ValidateResourceStage(_ context.Context, definition
 	}
 	for _, pointer := range append(append([]string{}, definition.Query.FilterFields...), definition.Query.SortFields...) {
 		if _, err := mongoDataPath(pointer); err != nil {
-			return service.ResourceFailure("unsupported-capability", err.Error())
+			return shardresource.Failure("unsupported-capability", err.Error())
 		}
 	}
 	return nil
 }
 
-func (r *ShardResourceMongo) Authorize(ctx context.Context, view service.ResourceView) error {
+func (r *ShardResourceMongo) Authorize(ctx context.Context, view shardresource.View) error {
 	principal, err := service.RequirePrincipal(ctx)
 	if err != nil {
 		return err
@@ -161,17 +163,17 @@ func (r *ShardResourceMongo) Authorize(ctx context.Context, view service.Resourc
 	return shardv2.ValidateQuery(view.Definition, view.Query)
 }
 
-func mongoNamespaceHash(ns service.ResourceNamespace) string {
+func mongoNamespaceHash(ns shardresource.Namespace) string {
 	raw, _ := json.Marshal([]string{ns.UserID, ns.ShardID, string(ns.Environment)})
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:16])
 }
 
-func (r *ShardResourceMongo) collections(ns service.ResourceNamespace) (records, receipts, cursors, events *mongo.Collection) {
+func (r *ShardResourceMongo) collections(ns shardresource.Namespace) (records, receipts, cursors, events *mongo.Collection) {
 	prefix := mongoNamespaceHash(ns)
 	return r.db.Collection("records_" + prefix), r.db.Collection("receipts_" + prefix), r.db.Collection("cursors_" + prefix), r.db.Collection("events_" + prefix)
 }
-func (r *ShardResourceMongo) stateCollection(ns service.ResourceNamespace) *mongo.Collection {
+func (r *ShardResourceMongo) stateCollection(ns shardresource.Namespace) *mongo.Collection {
 	return r.db.Collection("state_" + mongoNamespaceHash(ns))
 }
 
@@ -193,7 +195,7 @@ func mongoIndexName(prefix, value string) string {
 	return prefix + "_" + hex.EncodeToString(sum[:6])
 }
 
-func (r *ShardResourceMongo) ensureIndexes(ctx context.Context, view service.ResourceView) error {
+func (r *ShardResourceMongo) ensureIndexes(ctx context.Context, view shardresource.View) error {
 	key := mongoNamespaceHash(view.Namespace) + ":" + view.Namespace.ContractHash
 	candidate := &mongoIndexState{done: make(chan struct{})}
 	actual, loaded := r.indexed.LoadOrStore(key, candidate)
@@ -214,7 +216,7 @@ func (r *ShardResourceMongo) ensureIndexes(ctx context.Context, view service.Res
 	return candidate.err
 }
 
-func (r *ShardResourceMongo) createIndexes(ctx context.Context, view service.ResourceView) error {
+func (r *ShardResourceMongo) createIndexes(ctx context.Context, view shardresource.View) error {
 	records, receipts, cursors, events := r.collections(view.Namespace)
 	models := []mongo.IndexModel{
 		{Keys: bson.D{{Key: "datasetId", Value: 1}, {Key: "generation", Value: 1}, {Key: "id", Value: 1}}, Options: options.Index().SetName("dataset_record").SetUnique(true)},
@@ -225,7 +227,7 @@ func (r *ShardResourceMongo) createIndexes(ctx context.Context, view service.Res
 	for _, pointer := range fields {
 		path, err := mongoDataPath(pointer)
 		if err != nil {
-			return service.ResourceFailure("unsupported-capability", err.Error())
+			return shardresource.Failure("unsupported-capability", err.Error())
 		}
 		if seen[path] {
 			continue
@@ -314,7 +316,7 @@ func mongoPredicate(p shardv2.Predicate) (bson.M, error) {
 	return bson.M{field: bson.M{operator: p.Value}}, nil
 }
 
-func mongoFilter(view service.ResourceView) (bson.M, error) {
+func mongoFilter(view shardresource.View) (bson.M, error) {
 	filter := bson.M{"datasetId": view.Namespace.DatasetID, "generation": view.Namespace.Generation, "deletedAt": bson.M{"$exists": false}}
 	if view.ID != "" {
 		filter["id"] = view.ID
@@ -337,14 +339,14 @@ func mongoRecordEnvelope(record mongoRecord) (shardv2.Record, error) {
 	return shardv2.Record{ID: record.ID, Revision: strconv.FormatInt(record.Revision, 10), SchemaVersion: record.SchemaVersion, Data: raw}, nil
 }
 
-func (r *ShardResourceMongo) Snapshot(ctx context.Context, view service.ResourceView) (service.ResourcePage, error) {
-	empty := service.ResourcePage{}
+func (r *ShardResourceMongo) Snapshot(ctx context.Context, view shardresource.View) (shardresource.Page, error) {
+	empty := shardresource.Page{}
 	if err := r.Authorize(ctx, view); err != nil {
 		return empty, err
 	}
 	normalized, err := shardv2.NormalizeQuery(view.Query)
 	if err != nil {
-		return empty, service.ResourceFailure("bad-request", "Invalid resource query")
+		return empty, shardresource.Failure("bad-request", "Invalid resource query")
 	}
 	view.Query = normalized
 	if err := r.ensureIndexes(ctx, view); err != nil {
@@ -356,7 +358,7 @@ func (r *ShardResourceMongo) Snapshot(ctx context.Context, view service.Resource
 		var cursor mongoCursor
 		err := cursors.FindOne(ctx, bson.M{"token": *view.Query.Cursor, "actorKey": view.Namespace.ActorKey, "viewHash": view.ViewHash, "expiresAt": bson.M{"$gt": time.Now()}}).Decode(&cursor)
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return empty, service.ResourceFailure("stale-cursor", "Resource cursor expired or belongs to another view")
+			return empty, shardresource.Failure("stale-cursor", "Resource cursor expired or belongs to another view")
 		}
 		if err != nil {
 			return empty, err
@@ -365,7 +367,7 @@ func (r *ShardResourceMongo) Snapshot(ctx context.Context, view service.Resource
 	}
 	filter, err := mongoFilter(view)
 	if err != nil {
-		return empty, service.ResourceFailure("unsupported-capability", err.Error())
+		return empty, shardresource.Failure("unsupported-capability", err.Error())
 	}
 	pipeline := mongo.Pipeline{{{Key: "$match", Value: filter}}}
 	sortDoc := bson.D{}
@@ -373,7 +375,7 @@ func (r *ShardResourceMongo) Snapshot(ctx context.Context, view service.Resource
 	for index, order := range view.Query.OrderBy {
 		path, err := mongoDataPath(order.Field)
 		if err != nil {
-			return empty, service.ResourceFailure("unsupported-capability", err.Error())
+			return empty, shardresource.Failure("unsupported-capability", err.Error())
 		}
 		missingKey := fmt.Sprintf("__aladinSortMissing%d", index)
 		fieldRef := "$" + path
@@ -399,7 +401,7 @@ func (r *ShardResourceMongo) Snapshot(ctx context.Context, view service.Resource
 		return empty, err
 	}
 	defer stream.Close(ctx)
-	page := service.ResourcePage{Records: []shardv2.Record{}}
+	page := shardresource.Page{Records: []shardv2.Record{}}
 	for stream.Next(ctx) {
 		var stored mongoRecord
 		if err := stream.Decode(&stored); err != nil {
@@ -433,7 +435,7 @@ func (r *ShardResourceMongo) Snapshot(ctx context.Context, view service.Resource
 		return empty, err
 	}
 	if count >= int64(r.limits.Cursors) {
-		return empty, service.ResourceFailure("quota", "Resource cursor quota exceeded")
+		return empty, shardresource.Failure("quota", "Resource cursor quota exceeded")
 	}
 	page.NextCursor = uuid.NewString()
 	_, err = cursors.InsertOne(ctx, mongoCursor{Token: page.NextCursor, ActorKey: view.Namespace.ActorKey, ViewHash: view.ViewHash, Offset: nextOffset, ExpiresAt: time.Now().Add(15 * time.Minute)})
@@ -446,10 +448,10 @@ func mongoPayloadHash(value any) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func decodeMongoReceipt(stored mongoReceipt) (service.ResourceMutationResult, error) {
+func decodeMongoReceipt(stored mongoReceipt) (shardresource.MutationResult, error) {
 	var receipt resourceReceipt
 	if err := json.Unmarshal(stored.Outcome, &receipt); err != nil {
-		return service.ResourceMutationResult{}, err
+		return shardresource.MutationResult{}, err
 	}
 	if receipt.Failure != nil {
 		return receipt.Result, receipt.Failure
@@ -457,8 +459,8 @@ func decodeMongoReceipt(stored mongoReceipt) (service.ResourceMutationResult, er
 	return receipt.Result, nil
 }
 
-func (r *ShardResourceMongo) Mutate(ctx context.Context, view service.ResourceView, command shardv2.Command) (service.ResourceMutationResult, error) {
-	empty := service.ResourceMutationResult{}
+func (r *ShardResourceMongo) Mutate(ctx context.Context, view shardresource.View, command shardv2.Command) (shardresource.MutationResult, error) {
+	empty := shardresource.MutationResult{}
 	if err := r.Authorize(ctx, view); err != nil {
 		return empty, err
 	}
@@ -468,16 +470,16 @@ func (r *ShardResourceMongo) Mutate(ctx context.Context, view service.ResourceVi
 	raw, _ := json.Marshal(command)
 	value, err := shardv2.DecodeJSON(raw)
 	if err != nil || shardv2.ValidateProtocol("command", value) != nil {
-		return empty, service.ResourceFailure("bad-request", "Invalid storage command")
+		return empty, shardresource.Failure("bad-request", "Invalid storage command")
 	}
 	if command.ContractHash != view.Namespace.ContractHash {
-		return empty, service.ResourceFailure("contract-changed", "Command contract mismatch")
+		return empty, shardresource.Failure("contract-changed", "Command contract mismatch")
 	}
 	var document map[string]any
 	if command.Op != "delete" {
 		decoded, err := shardv2.DecodeJSON(command.Data)
 		if err != nil || len(command.Data) > shardv2.MaxRecordBytes || shardv2.ValidateData(view.Definition.Schema, decoded) != nil {
-			return empty, service.ResourceFailure("invalid-schema", "Invalid stored record")
+			return empty, shardresource.Failure("invalid-schema", "Invalid stored record")
 		}
 		document = decoded.(map[string]any)
 		command.Data, _ = json.Marshal(decoded)
@@ -487,7 +489,7 @@ func (r *ShardResourceMongo) Mutate(ctx context.Context, view service.ResourceVi
 			command.ID = "value"
 		}
 		if command.ID != "value" {
-			return empty, service.ResourceFailure("bad-request", "Singleton ID must be value")
+			return empty, shardresource.Failure("bad-request", "Singleton ID must be value")
 		}
 	}
 	if command.ID == "" {
@@ -513,13 +515,13 @@ func (r *ShardResourceMongo) Mutate(ctx context.Context, view service.ResourceVi
 			return nil, err
 		}
 		if control.Frozen {
-			return nil, service.ResourceFailure("conflict", "Resource namespace is frozen for migration")
+			return nil, shardresource.Failure("conflict", "Resource namespace is frozen for migration")
 		}
 		var stored mongoReceipt
 		err := receipts.FindOne(txCtx, bson.M{"actorKey": view.Namespace.ActorKey, "requestId": command.RequestID, "expiresAt": bson.M{"$gt": time.Now()}}).Decode(&stored)
 		if err == nil {
 			if stored.PayloadHash != payloadHash {
-				return nil, service.ResourceFailure("conflict", "requestId was used for a different command")
+				return nil, shardresource.Failure("conflict", "requestId was used for a different command")
 			}
 			if err := json.Unmarshal(stored.Outcome, &finalReceipt); err != nil {
 				return nil, err
@@ -539,7 +541,7 @@ func (r *ShardResourceMongo) Mutate(ctx context.Context, view service.ResourceVi
 			return nil, err
 		}
 		if receiptCount >= int64(r.limits.Receipts) {
-			return nil, service.ResourceFailure("quota", "Command receipt quota exceeded")
+			return nil, shardresource.Failure("quota", "Command receipt quota exceeded")
 		}
 		receiptBytes := int64(0)
 		usage, err := receipts.Aggregate(txCtx, mongo.Pipeline{
@@ -571,7 +573,7 @@ func (r *ShardResourceMongo) Mutate(ctx context.Context, view service.ResourceVi
 		finalReceipt = resourceReceipt{Result: result, Failure: failure}
 		encoded, _ := json.Marshal(finalReceipt)
 		if receiptBytes+int64(len(encoded)) > r.limits.ReceiptBytes {
-			return nil, service.ResourceFailure("quota", "Command receipt quota exceeded")
+			return nil, shardresource.Failure("quota", "Command receipt quota exceeded")
 		}
 		_, err = receipts.InsertOne(txCtx, mongoReceipt{ActorKey: view.Namespace.ActorKey, RequestID: command.RequestID, PayloadHash: payloadHash, Outcome: encoded, OutcomeBytes: int64(len(encoded)), ExpiresAt: time.Now().Add(24 * time.Hour)})
 		if err != nil {
@@ -605,10 +607,10 @@ func (r *ShardResourceMongo) Mutate(ctx context.Context, view service.ResourceVi
 	return finalReceipt.Result, nil
 }
 
-func (r *ShardResourceMongo) applyMongoCommand(ctx context.Context, records *mongo.Collection, view service.ResourceView, command shardv2.Command, data map[string]any) (service.ResourceMutationResult, *service.ResourceError, error) {
-	result := service.ResourceMutationResult{RequestID: command.RequestID}
-	fail := func(code, message string) (service.ResourceMutationResult, *service.ResourceError, error) {
-		return result, &service.ResourceError{Code: code, Message: message}, nil
+func (r *ShardResourceMongo) applyMongoCommand(ctx context.Context, records *mongo.Collection, view shardresource.View, command shardv2.Command, data map[string]any) (shardresource.MutationResult, *shardresource.Error, error) {
+	result := shardresource.MutationResult{RequestID: command.RequestID}
+	fail := func(code, message string) (shardresource.MutationResult, *shardresource.Error, error) {
+		return result, &shardresource.Error{Code: code, Message: message}, nil
 	}
 	base := bson.M{"datasetId": view.Namespace.DatasetID, "generation": view.Namespace.Generation, "id": command.ID}
 	var existing mongoRecord
@@ -639,7 +641,7 @@ func (r *ShardResourceMongo) applyMongoCommand(ctx context.Context, records *mon
 		if outcome.ModifiedCount != 1 {
 			return fail("conflict", "Record revision changed")
 		}
-		result.Tombstone = &service.ResourceTombstone{ID: command.ID, Revision: strconv.FormatInt(existing.Revision+1, 10)}
+		result.Tombstone = &shardresource.Tombstone{ID: command.ID, Revision: strconv.FormatInt(existing.Revision+1, 10)}
 		return result, nil, nil
 	}
 	activePipeline := mongo.Pipeline{{{Key: "$match", Value: bson.M{"deletedAt": bson.M{"$exists": false}}}}, {{Key: "$group", Value: bson.M{"_id": nil, "bytes": bson.M{"$sum": "$dataBytes"}}}}}
@@ -692,10 +694,10 @@ func (r *ShardResourceMongo) applyMongoCommand(ctx context.Context, records *mon
 	return result, nil, nil
 }
 
-var _ service.ResourceProvider = (*ShardResourceMongo)(nil)
-var _ service.ResourceStageValidator = (*ShardResourceMongo)(nil)
-var _ service.ResourceChangeObserver = (*ShardResourceMongo)(nil)
-var _ service.ResourceActivationFence = (*ShardResourceMongo)(nil)
+var _ shardresource.Provider = (*ShardResourceMongo)(nil)
+var _ shardrelease.StageValidator = (*ShardResourceMongo)(nil)
+var _ shardresource.ChangeObserver = (*ShardResourceMongo)(nil)
+var _ shardrelease.ActivationFence = (*ShardResourceMongo)(nil)
 
 type mongoResourceArchive struct {
 	Format     int                  `json:"format"`
@@ -707,7 +709,7 @@ type mongoResourceArchive struct {
 // FreezeNamespace is an internal migration fence. Mutations touch the same
 // control document in their transaction, so a successful freeze drains older
 // writers through MongoDB write-conflict retry and rejects newer writers.
-func (r *ShardResourceMongo) FreezeNamespace(ctx context.Context, ns service.ResourceNamespace, frozen bool) error {
+func (r *ShardResourceMongo) FreezeNamespace(ctx context.Context, ns shardresource.Namespace, frozen bool) error {
 	principal, err := service.RequirePrincipal(ctx)
 	if err != nil || principal.UserID != ns.UserID {
 		return service.ErrForbidden
@@ -719,7 +721,7 @@ func (r *ShardResourceMongo) FreezeNamespace(ctx context.Context, ns service.Res
 // ExportNamespace returns a portable, versioned archive of durable records and
 // audit events. Receipts and cursors are intentionally omitted because they are
 // expiring transport state, not shard data.
-func (r *ShardResourceMongo) ExportNamespace(ctx context.Context, ns service.ResourceNamespace) ([]byte, error) {
+func (r *ShardResourceMongo) ExportNamespace(ctx context.Context, ns shardresource.Namespace) ([]byte, error) {
 	principal, err := service.RequirePrincipal(ctx)
 	if err != nil || principal.UserID != ns.UserID {
 		return nil, service.ErrForbidden
@@ -757,7 +759,7 @@ func (r *ShardResourceMongo) ExportNamespace(ctx context.Context, ns service.Res
 	return json.Marshal(archive)
 }
 
-func (r *ShardResourceMongo) requireFrozen(ctx context.Context, ns service.ResourceNamespace) error {
+func (r *ShardResourceMongo) requireFrozen(ctx context.Context, ns shardresource.Namespace) error {
 	state := r.stateCollection(ns)
 	if _, err := state.UpdateOne(ctx, bson.M{"_id": "namespace"}, bson.M{"$inc": bson.M{"fence": 1}}); err != nil {
 		return err
@@ -766,25 +768,25 @@ func (r *ShardResourceMongo) requireFrozen(ctx context.Context, ns service.Resou
 		Frozen bool `bson:"frozen"`
 	}
 	if err := state.FindOne(ctx, bson.M{"_id": "namespace"}).Decode(&control); err != nil || !control.Frozen {
-		return service.ResourceFailure("conflict", "Freeze namespace before archive operations")
+		return shardresource.Failure("conflict", "Freeze namespace before archive operations")
 	}
 	return nil
 }
 
 // RestoreNamespace imports into an empty generation. Activation remains a
 // separate Postgres control-plane action after schema validation.
-func (r *ShardResourceMongo) RestoreNamespace(ctx context.Context, ns service.ResourceNamespace, raw []byte) error {
+func (r *ShardResourceMongo) RestoreNamespace(ctx context.Context, ns shardresource.Namespace, raw []byte) error {
 	principal, err := service.RequirePrincipal(ctx)
 	if err != nil || principal.UserID != ns.UserID {
 		return service.ErrForbidden
 	}
 	var archive mongoResourceArchive
 	if err := json.Unmarshal(raw, &archive); err != nil || archive.Format != 1 {
-		return service.ResourceFailure("bad-request", "Unsupported shard archive")
+		return shardresource.Failure("bad-request", "Unsupported shard archive")
 	}
 	records, _, _, events := r.collections(ns)
 	if len(archive.Records) > r.limits.Records {
-		return service.ResourceFailure("quota", "Archive exceeds record quota")
+		return shardresource.Failure("quota", "Archive exceeds record quota")
 	}
 	var bytes int64
 	for index := range archive.Records {
@@ -795,7 +797,7 @@ func (r *ShardResourceMongo) RestoreNamespace(ctx context.Context, ns service.Re
 		bytes += record.DataBytes
 	}
 	if bytes > r.limits.ActiveBytes {
-		return service.ResourceFailure("quota", "Archive exceeds storage quota")
+		return shardresource.Failure("quota", "Archive exceeds storage quota")
 	}
 	for index := range archive.Events {
 		archive.Events[index].Generation = ns.Generation
@@ -814,7 +816,7 @@ func (r *ShardResourceMongo) RestoreNamespace(ctx context.Context, ns service.Re
 			return nil, err
 		}
 		if count != 0 {
-			return nil, service.ResourceFailure("conflict", "Restore generation is not empty")
+			return nil, shardresource.Failure("conflict", "Restore generation is not empty")
 		}
 		if len(archive.Records) > 0 {
 			documents := make([]any, len(archive.Records))

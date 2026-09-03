@@ -14,6 +14,7 @@ import (
 	"aladin/backend_v2/internal/market/alpaca"
 	"aladin/backend_v2/internal/repo"
 	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/shardresource"
 	"aladin/backend_v2/internal/shardv2"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -31,7 +32,7 @@ type sharedComponents struct {
 	docSurfaceStore  coreservice.DocSurfaceStore
 	workspaceRuntime coreservice.WorkspaceRuntime
 	shardBuild       coreservice.ShardBuildService
-	shardResources   coreservice.ShardResourceService
+	shardResources   shardresource.Service
 	shardGraphQL     coreservice.ShardGraphQLService
 	shardReleases    coreservice.ShardReleaseService
 	shardBridge      coreservice.ShardBridgeService
@@ -64,7 +65,7 @@ func buildSharedComponents(pool *pgxpool.Pool, dataVolumePath string) sharedComp
 
 	storage := repo.NewShardResourcePostgres(pool, repo.ShardResourceLimits{})
 	var profiles shardv2.Registry
-	var ownedStorage coreservice.ResourceProvider = storage
+	var ownedStorage shardresource.Provider = storage
 	releaseSvc := coreservice.NewShardReleaseService(storage, nil)
 	if os.Getenv("SHARD_V2_ENABLED") == "1" {
 		engine := strings.ToLower(strings.TrimSpace(os.Getenv("SHARD_DATASTORE")))
@@ -136,7 +137,7 @@ func buildSharedComponents(pool *pgxpool.Pool, dataVolumePath string) sharedComp
 		db.NewEntityRepository(pool),
 	)
 
-	var resourceSvc coreservice.ShardResourceService
+	var resourceSvc shardresource.Service
 	if os.Getenv("SHARD_V2_ENABLED") == "1" {
 		workspace := coreservice.NewWorkspaceResourceProvider(coreservice.NewEntityRegistry(
 			coreservice.NewArtifactEntityService(artifactsSvc),
@@ -149,7 +150,7 @@ func buildSharedComponents(pool *pgxpool.Pool, dataVolumePath string) sharedComp
 			validators = append(validators, validator)
 		}
 		releaseSvc = coreservice.NewShardReleaseService(storage, profiles, validators...)
-		resourceSvc = coreservice.NewShardResourceService(artifactsSvc, storage, map[string]coreservice.ResourceProvider{
+		resourceSvc = coreservice.NewShardResourceService(artifactsSvc, storage, map[string]shardresource.Provider{
 			"shard.documents": ownedStorage,
 			"workspace.nodes": workspace,
 		}, coreservice.ResourceServiceOptions{})

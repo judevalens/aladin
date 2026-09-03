@@ -4,6 +4,7 @@ import (
 	"aladin/backend_v2/internal/app"
 	"aladin/backend_v2/internal/docsurface"
 	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/shardresource"
 	"context"
 	"encoding/json"
 	"errors"
@@ -43,7 +44,7 @@ type Dependencies interface {
 	DocSurfaceStore() coreservice.DocSurfaceStore
 	WorkspaceRuntime() coreservice.WorkspaceRuntime
 	ShardBuild() coreservice.ShardBuildService
-	ShardResources() coreservice.ShardResourceService
+	ShardResources() shardresource.Service
 	ShardGraphQL() coreservice.ShardGraphQLService
 	ShardReleases() coreservice.ShardReleaseService
 	ShardKV() coreservice.ShardKVService

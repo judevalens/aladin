@@ -8,6 +8,7 @@ import (
 
 	"aladin/backend_v2/internal/blocknote"
 	"aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/shardresource"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -135,7 +136,7 @@ type Dependencies interface {
 	DocSurfaceStore() service.DocSurfaceStore
 	Preview() service.PreviewService
 	ShardBuild() service.ShardBuildService
-	ShardResources() service.ShardResourceService
+	ShardResources() shardresource.Service
 	ShardGraphQL() service.ShardGraphQLService
 	ShardReleases() service.ShardReleaseService
 	ShardCatalog() service.ShardCatalogService

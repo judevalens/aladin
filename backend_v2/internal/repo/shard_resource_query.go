@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/shardresource"
 	"aladin/backend_v2/internal/shardv2"
 
 	"github.com/google/uuid"
@@ -80,7 +80,7 @@ func scalarSortKind(schema shardv2.Schema) (string, error) {
 			typ = "number"
 		}
 		if kind != "" && kind != typ {
-			return "", service.ResourceFailure("unsupported-capability", "Mixed scalar types cannot be sorted")
+			return "", shardresource.Failure("unsupported-capability", "Mixed scalar types cannot be sorted")
 		}
 		kind = typ
 	}
@@ -89,7 +89,7 @@ func scalarSortKind(schema shardv2.Schema) (string, error) {
 	}
 	return kind, nil
 }
-func resourceQuerySQL(view service.ResourceView, offset int) (string, []any, error) {
+func resourceQuerySQL(view shardresource.View, offset int) (string, []any, error) {
 	// Normalize Go typed predicates before the SQL compiler reads their JSON values.
 	raw, err := json.Marshal(view.Query)
 	if err != nil {
@@ -142,8 +142,8 @@ func resourceQuerySQL(view service.ResourceView, offset int) (string, []any, err
 	return query, q.args, nil
 }
 
-func (r *ShardResourcePostgres) Snapshot(ctx context.Context, view service.ResourceView) (service.ResourcePage, error) {
-	empty := service.ResourcePage{}
+func (r *ShardResourcePostgres) Snapshot(ctx context.Context, view shardresource.View) (shardresource.Page, error) {
+	empty := shardresource.Page{}
 	if err := r.Authorize(ctx, view); err != nil {
 		return empty, err
 	}
@@ -163,11 +163,11 @@ func (r *ShardResourcePostgres) Snapshot(ctx context.Context, view service.Resou
 	if view.Query.Cursor != nil && *view.Query.Cursor != "" {
 		token, err := uuid.Parse(*view.Query.Cursor)
 		if err != nil {
-			return empty, service.ResourceFailure("stale-cursor", "Invalid resource cursor")
+			return empty, shardresource.Failure("stale-cursor", "Invalid resource cursor")
 		}
 		err = tx.QueryRow(ctx, `SELECT page_offset FROM shard_resource_cursors WHERE token=$1::uuid AND user_id=$2::uuid AND actor_key=$3 AND shard_id=$4 AND environment=$5 AND view_hash=$6 AND expires_at>now()`, token.String(), ns.UserID, ns.ActorKey, ns.ShardID, string(ns.Environment), view.ViewHash).Scan(&offset)
 		if errors.Is(err, pgx.ErrNoRows) {
-			return empty, service.ResourceFailure("stale-cursor", "Resource cursor expired or belongs to another view")
+			return empty, shardresource.Failure("stale-cursor", "Resource cursor expired or belongs to another view")
 		}
 		if err != nil {
 			return empty, err
@@ -181,7 +181,7 @@ func (r *ShardResourcePostgres) Snapshot(ctx context.Context, view service.Resou
 	if err != nil {
 		return empty, err
 	}
-	page := service.ResourcePage{Records: []shardv2.Record{}}
+	page := shardresource.Page{Records: []shardv2.Record{}}
 	for rows.Next() {
 		var record shardv2.Record
 		if err := rows.Scan(&record.ID, &record.Revision, &record.SchemaVersion, &record.Data); err != nil {
@@ -209,7 +209,7 @@ func (r *ShardResourcePostgres) Snapshot(ctx context.Context, view service.Resou
 				return empty, err
 			}
 			if count >= r.limits.Cursors {
-				return empty, service.ResourceFailure("quota", "Resource cursor quota exceeded")
+				return empty, shardresource.Failure("quota", "Resource cursor quota exceeded")
 			}
 			page.NextCursor = uuid.NewString()
 			if _, err := tx.Exec(ctx, `INSERT INTO shard_resource_cursors(token,user_id,actor_key,shard_id,environment,view_hash,page_offset,expires_at) VALUES($1::uuid,$2::uuid,$3,$4,$5,$6,$7,now()+interval '15 minutes')`, page.NextCursor, ns.UserID, ns.ActorKey, ns.ShardID, string(ns.Environment), view.ViewHash, offset+len(page.Records)); err != nil {

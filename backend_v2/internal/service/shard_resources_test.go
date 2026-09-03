@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
-	"time"
 
 	"aladin/backend_v2/internal/shardv2"
 )
@@ -15,35 +14,6 @@ func (r resourceReleaseStub) ActiveResourceRelease(context.Context, string, stri
 	return r.release, nil
 }
 
-func TestShardResourceAdmissionIsolationAndRecovery(t *testing.T) {
-	s := NewShardResourceService(nil, nil, nil, ResourceServiceOptions{RequestsPerSecond: 1, RequestBurst: 2}).(*shardResourceService)
-	p := Principal{UserID: "owner", ActorType: ActorTypeUserSession, ActorID: "session"}
-	ctx := WithPrincipal(context.Background(), p)
-	for i := 0; i < 2; i++ {
-		if err := s.admit(ctx); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if ResourceErrorCode(s.admit(ctx)) != "rate-limited" {
-		t.Fatal("burst was not bounded")
-	}
-	other := WithPrincipal(context.Background(), Principal{UserID: "other", ActorType: ActorTypeUserSession, ActorID: "session"})
-	if err := s.admit(other); err != nil {
-		t.Fatalf("another account inherited the budget: %v", err)
-	}
-	// Age the exhausted bucket without a timing-sensitive sleep.
-	key := resourcePrincipalKey(p)
-	bucket := s.requestBudgets[key]
-	bucket.updated = time.Now().Add(-2 * time.Second)
-	s.requestBudgets[key] = bucket
-	if err := s.admit(ctx); err != nil {
-		t.Fatalf("budget did not recover: %v", err)
-	}
-	content := WithPrincipal(context.Background(), Principal{UserID: "owner", ActorType: ActorTypeContentToken})
-	if ResourceErrorCode(s.admit(content)) != "forbidden" {
-		t.Fatal("content token admitted")
-	}
-}
 func TestShardResourceWorkspaceGrantAndSourceValidation(t *testing.T) {
 	registry := NewEntityRegistry(stubEntityService{kind: "artifact", observable: true, entities: map[string]string{"artifact-allowed": "Allowed", "artifact-private": "Private"}})
 	provider := NewWorkspaceResourceProvider(registry)

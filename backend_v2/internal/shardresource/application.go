@@ -1,4 +1,4 @@
-package service
+package shardresource
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 )
 
 type shardResourceService struct {
-	artifacts      ArtifactService
+	access         Access
 	releases       ResourceReleaseReader
 	providers      map[string]ResourceProvider
 	profiles       shardv2.Registry
@@ -28,7 +28,7 @@ type resourceRequestBudget struct {
 	updated time.Time
 }
 
-func NewShardResourceService(artifacts ArtifactService, releases ResourceReleaseReader, providers map[string]ResourceProvider, options ResourceServiceOptions) ShardResourceService {
+func NewService(access Access, releases ResourceReleaseReader, providers map[string]ResourceProvider, options ResourceServiceOptions) ShardResourceService {
 	if options.RefreshInterval <= 0 {
 		options.RefreshInterval = time.Second
 	}
@@ -41,7 +41,7 @@ func NewShardResourceService(artifacts ArtifactService, releases ResourceRelease
 	if options.RequestBurst <= 0 {
 		options.RequestBurst = 256
 	}
-	s := &shardResourceService{artifacts: artifacts, releases: releases, providers: map[string]ResourceProvider{}, profiles: shardv2.Registry{}, options: options, subscriptions: map[string]int{}}
+	s := &shardResourceService{access: access, releases: releases, providers: map[string]ResourceProvider{}, profiles: shardv2.Registry{}, options: options, subscriptions: map[string]int{}}
 	s.requestBudgets = map[string]resourceRequestBudget{}
 	for name, provider := range providers {
 		s.providers[name] = provider
@@ -51,12 +51,12 @@ func NewShardResourceService(artifacts ArtifactService, releases ResourceRelease
 }
 
 func (s *shardResourceService) admit(ctx context.Context) error {
-	p, err := RequirePrincipal(ctx)
+	p, err := s.access.Principal(ctx)
 	if err != nil {
 		return err
 	}
-	if p.ActorType == ActorTypeContentToken {
-		return ErrForbidden
+	if p.ActorType == "content_token" {
+		return s.access.Forbidden()
 	}
 	now, key := time.Now(), resourcePrincipalKey(p)
 	s.mu.Lock()
@@ -95,26 +95,29 @@ func resourcePrincipalKey(p Principal) string {
 	return resourceHash([]string{p.UserID, p.ActorType, p.ActorID})
 }
 
+func (s *shardResourceService) errorCode(err error) string {
+	if code := ErrorCode(err, ""); code != "" {
+		return code
+	}
+	return s.access.ErrorCode(err)
+}
+
 func (s *shardResourceService) resolveRelease(ctx context.Context, target ResourceTarget, requireHash bool) (Principal, ResourceRelease, *shardv2.Compiled, error) {
-	principal, err := RequirePrincipal(ctx)
+	principal, err := s.access.Principal(ctx)
 	if err != nil {
 		return Principal{}, ResourceRelease{}, nil, err
 	}
-	if principal.ActorType == ActorTypeContentToken || (target.Audience != "app" && target.Audience != "agent") {
-		return principal, ResourceRelease{}, nil, ErrForbidden
+	if principal.ActorType == "content_token" || (target.Audience != "app" && target.Audience != "agent") {
+		return principal, ResourceRelease{}, nil, s.access.Forbidden()
 	}
-	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
+	if err := s.access.RequireRead(ctx); err != nil {
 		return principal, ResourceRelease{}, nil, err
 	}
 	if target.Environment != ChannelDraft && target.Environment != ChannelPublished {
 		return principal, ResourceRelease{}, nil, ResourceFailure("bad-request", "Invalid resource environment")
 	}
-	rec, err := s.artifacts.Get(ctx, target.ShardID)
-	if err != nil {
+	if err := s.access.RequireApp(ctx, target.ShardID); err != nil {
 		return principal, ResourceRelease{}, nil, err
-	}
-	if rec.Type != "app" {
-		return principal, ResourceRelease{}, nil, ErrNotFound
 	}
 	release, err := s.releases.ActiveResourceRelease(ctx, principal.UserID, target.ShardID, target.Environment)
 	if err != nil {
@@ -177,7 +180,7 @@ func (s *shardResourceService) resolveView(ctx context.Context, target ResourceT
 	}
 	provider = s.providers[definition.Source.Provider]
 	allowed := []string{"snapshot", "query", "observe"}
-	if HasScope(ctx, ScopeArtifactsWrite) && (target.Environment != ChannelDraft || provider.Profile().Owned) {
+	if s.access.CanWrite(ctx) && (target.Environment != ChannelDraft || provider.Profile().Owned) {
 		allowed = append(allowed, "insert", "update", "delete")
 	}
 	caps := shardv2.EffectiveCapabilities(definition, target.Audience, allowed)
@@ -463,12 +466,8 @@ func (s *shardResourceService) projectMutation(_ context.Context, view ResourceV
 // Long source reads must not return sensitive data after release/ownership
 // revocation that occurred while the provider was fetching it.
 func (s *shardResourceService) checkCurrentView(ctx context.Context, view ResourceView) error {
-	rec, err := s.artifacts.Get(ctx, view.Namespace.ShardID)
-	if err != nil {
+	if err := s.access.RequireApp(ctx, view.Namespace.ShardID); err != nil {
 		return err
-	}
-	if rec.Type != "app" {
-		return ErrNotFound
 	}
 	current, err := s.releases.ActiveResourceRelease(ctx, view.Namespace.UserID, view.Namespace.ShardID, view.Namespace.Environment)
 	if err != nil {
@@ -479,3 +478,5 @@ func (s *shardResourceService) checkCurrentView(ctx context.Context, view Resour
 	}
 	return nil
 }
+
+var _ Service = (*shardResourceService)(nil)

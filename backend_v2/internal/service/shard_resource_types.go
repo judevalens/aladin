@@ -1,76 +1,39 @@
 package service
 
 import (
-	"context"
-	"encoding/json"
 	"errors"
-	"time"
 
-	"aladin/backend_v2/internal/shardv2"
+	"aladin/backend_v2/internal/shardresource"
 )
 
-// ResourceTarget is assembled by an authenticated transport, never decoded from
-// a shard's contract. Audience is selected by the entry point (app or agent).
-type ResourceTarget struct {
-	ShardID      string
-	Environment  BuildChannel
-	Audience     string
-	ContractHash string
-}
+// Compatibility aliases preserve the established service API while the
+// authoritative contracts live in internal/shardresource.
+type ResourceTarget = shardresource.Target
+type ResourceRequest = shardresource.ResourceRequest
+type ResourceDescriptor = shardresource.Descriptor
+type ResourceSnapshot = shardresource.Snapshot
+type ResourceMutation = shardresource.Mutation
+type ResourceTombstone = shardresource.Tombstone
+type ResourceMutationResult = shardresource.MutationResult
+type ResourceError = shardresource.Error
+type ResourceRelease = shardresource.ResourceRelease
+type ResourceReleaseReader = shardresource.ReleaseReader
+type ResourceNamespace = shardresource.Namespace
+type ResourceView = shardresource.View
+type ResourcePage = shardresource.Page
+type ResourceProvider = shardresource.Provider
+type ResourceChangeObserver = shardresource.ChangeObserver
+type ResourceSubscriptionIdentity = shardresource.SubscriptionIdentity
+type ResourceStreamMessage = shardresource.StreamMessage
+type ResourceSubscription = shardresource.Subscription
+type ShardResourceService = shardresource.Service
+type ResourceServiceOptions = shardresource.Options
 
-type ResourceRequest struct {
-	Binding  string         `json:"binding,omitempty"`
-	Resource string         `json:"resource,omitempty"`
-	Inputs   map[string]any `json:"inputs,omitempty"`
-	Query    *shardv2.Query `json:"query,omitempty"`
-	ID       string         `json:"id,omitempty"`
-}
+func ResourceFailure(code, message string) error { return shardresource.Failure(code, message) }
 
-type ResourceDescriptor struct {
-	Kind          string         `json:"kind"`
-	SchemaVersion int64          `json:"schemaVersion"`
-	Schema        shardv2.Schema `json:"schema"`
-	Capabilities  []string       `json:"capabilities"`
-	Observation   string         `json:"observation,omitempty"`
-	Delivery      string         `json:"delivery"`
-	Limit         int            `json:"limit"`
-}
-
-type ResourceSnapshot struct {
-	Resource        string           `json:"resource"`
-	Records         []shardv2.Record `json:"records"`
-	Complete        bool             `json:"complete"`
-	NextCursor      string           `json:"nextCursor,omitempty"`
-	SourceUpdatedAt string           `json:"sourceUpdatedAt,omitempty"`
-}
-
-type ResourceMutation struct {
-	ResourceRequest
-	Op           string          `json:"op"`
-	Data         json.RawMessage `json:"data,omitempty"`
-	BaseRevision string          `json:"baseRevision,omitempty"`
-	RequestID    string          `json:"requestId"`
-}
-type ResourceTombstone struct {
-	ID       string `json:"id"`
-	Revision string `json:"revision"`
-}
-type ResourceMutationResult struct {
-	RequestID string             `json:"requestId"`
-	Record    *shardv2.Record    `json:"record,omitempty"`
-	Tombstone *ResourceTombstone `json:"tombstone,omitempty"`
-}
-type ResourceError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-}
-
-func (e *ResourceError) Error() string           { return e.Message }
-func ResourceFailure(code, message string) error { return &ResourceError{Code: code, Message: message} }
 func ResourceErrorCode(err error) string {
-	var failure *ResourceError
-	if errors.As(err, &failure) {
-		return failure.Code
+	if code := shardresource.ErrorCode(err, ""); code != "" {
+		return code
 	}
 	if errors.Is(err, ErrUnauthenticated) || errors.Is(err, ErrForbidden) {
 		return "forbidden"
@@ -79,90 +42,4 @@ func ResourceErrorCode(err error) string {
 		return "not-found"
 	}
 	return "source-unavailable"
-}
-
-// Protected metadata is separate from author-writable artifact metadata/files.
-// The build/publish pipeline installs these through protected stage/activation.
-type ResourceRelease struct {
-	Source     json.RawMessage
-	Hash       string
-	BuildID    string
-	Generation string
-}
-type ResourceReleaseReader interface {
-	ActiveResourceRelease(context.Context, string, string, BuildChannel) (ResourceRelease, error)
-}
-
-// These values come from authorization and protected release resolution. They
-// are internal adapter arguments and must never be decoded from an HTTP body.
-type ResourceNamespace struct {
-	UserID       string
-	ActorKey     string
-	ShardID      string
-	Environment  BuildChannel
-	DatasetID    string
-	Generation   string
-	ContractHash string
-}
-type ResourceView struct {
-	Namespace    ResourceNamespace
-	Definition   shardv2.Resource
-	Params       map[string]any
-	Query        shardv2.Query
-	ID           string
-	URI          string
-	ViewHash     string
-	Select       []string
-	OutputSchema shardv2.Schema
-}
-type ResourcePage struct {
-	Records         []shardv2.Record
-	NextCursor      string
-	SourceUpdatedAt string
-}
-
-type ResourceProvider interface {
-	Profile() shardv2.ProviderProfile
-	// Authorize must reject parameter escapes and unsupported declarations. It
-	// runs for every read/write/refresh, not just subscription setup.
-	Authorize(context.Context, ResourceView) error
-	Snapshot(context.Context, ResourceView) (ResourcePage, error)
-	Mutate(context.Context, ResourceView, shardv2.Command) (ResourceMutationResult, error)
-}
-
-// ResourceChangeObserver is optional. Providers with a durable ordered event
-// source use it to trigger reconciled snapshots without leaking datastore
-// resume tokens into the public shard protocol.
-type ResourceChangeObserver interface {
-	ObserveChanges(context.Context, ResourceView) (<-chan error, error)
-}
-
-type ResourceSubscriptionIdentity struct {
-	SubscriptionID string `json:"subscriptionId"`
-	Resource       string `json:"resource"`
-	Epoch          string `json:"epoch"`
-}
-type ResourceStreamMessage struct {
-	Event *shardv2.Event
-	Error *ResourceError
-}
-type ResourceSubscription struct {
-	Identity ResourceSubscriptionIdentity
-	Events   <-chan ResourceStreamMessage
-	Close    func()
-}
-
-type ShardResourceService interface {
-	Hello(context.Context, ResourceTarget) (map[string]any, error)
-	Describe(context.Context, ResourceTarget, ResourceRequest) (ResourceDescriptor, error)
-	Read(context.Context, ResourceTarget, ResourceRequest) (ResourceSnapshot, error)
-	Mutate(context.Context, ResourceTarget, ResourceMutation) (ResourceMutationResult, error)
-	Subscribe(context.Context, ResourceTarget, ResourceRequest) (ResourceSubscription, error)
-}
-
-type ResourceServiceOptions struct {
-	RefreshInterval              time.Duration
-	MaxSubscriptionsPerPrincipal int
-	RequestsPerSecond            int
-	RequestBurst                 int
 }

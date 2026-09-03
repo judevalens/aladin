@@ -10,6 +10,7 @@ import (
 
 	"aladin/backend_v2/internal/safego"
 	"aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/shardresource"
 	"aladin/backend_v2/internal/shardv2"
 	cdpruntime "github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
@@ -101,7 +102,7 @@ func (m *PreviewSessions) configureResourcePreview(caller context.Context, sessi
 			if json.Unmarshal([]byte(raw), &envelope) != nil || envelope.Generation != nonce {
 				continue
 			}
-			request, err := service.ParseResourceBridge(envelope.Request)
+			request, err := shardresource.ParseBridge(envelope.Request)
 			if err != nil {
 				reply(request.ID, nil, err)
 				continue
@@ -186,7 +187,7 @@ func (m *PreviewSessions) configureResourcePreview(caller context.Context, sessi
 				reply(request.ID, value, err)
 			default:
 				op, stop := context.WithTimeout(ctx, 10*time.Second)
-				value, err := service.DispatchResource(op, m.resources, target, request)
+				value, err := shardresource.Dispatch(op, m.resources, target, request)
 				stop()
 				reply(request.ID, value, err)
 			}

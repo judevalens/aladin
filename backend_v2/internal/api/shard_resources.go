@@ -13,6 +13,7 @@ import (
 
 	"aladin/backend_v2/internal/safego"
 	"aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/shardresource"
 	"aladin/backend_v2/internal/shardv2"
 	"github.com/coder/websocket"
 )
@@ -21,11 +22,7 @@ import (
 // request. Reuse bridge/2 envelopes on HTTP and WS; no second command protocol.
 const shardContractHeader = "X-Shard-Contract"
 
-type resourceBridgeRequest struct {
-	ID     int64           `json:"id"`
-	Method string          `json:"method"`
-	Params json.RawMessage `json:"params"`
-}
+type resourceBridgeRequest = shardresource.BridgeCommand
 type resourceBridgeResponse struct {
 	Aladin string `json:"aladin"`
 	Type   string `json:"type"`
@@ -52,13 +49,7 @@ func resourceResponse(id int64, data any, err error) resourceBridgeResponse {
 	return response
 }
 func decodeResourceBridge(raw []byte) (resourceBridgeRequest, error) {
-	var request resourceBridgeRequest
-	value, err := shardv2.DecodeJSON(raw)
-	if err != nil || shardv2.ValidateProtocol("bridge-request", value) != nil {
-		return request, service.ResourceFailure("bad-request", "Invalid bridge/2 request")
-	}
-	err = json.Unmarshal(raw, &request)
-	return request, err
+	return shardresource.ParseBridge(raw)
 }
 func resourceTarget(r *http.Request) service.ResourceTarget {
 	audience := "app"
@@ -87,24 +78,10 @@ func (s *Server) handleShardResourceRequest(w http.ResponseWriter, r *http.Reque
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 	var result any
-	var params service.ResourceRequest
-	if err = json.Unmarshal(request.Params, &params); err == nil {
-		switch request.Method {
-		case "hello":
-			result, err = s.deps.ShardResources().Hello(ctx, target)
-		case "resource.describe":
-			result, err = s.deps.ShardResources().Describe(ctx, target, params)
-		case "resource.read", "resource.query":
-			result, err = s.deps.ShardResources().Read(ctx, target, params)
-		case "resource.insert", "resource.update", "resource.delete":
-			var mutation service.ResourceMutation
-			if err = json.Unmarshal(request.Params, &mutation); err == nil {
-				mutation.Op = strings.TrimPrefix(request.Method, "resource.")
-				result, err = s.deps.ShardResources().Mutate(ctx, target, mutation)
-			}
-		default:
-			err = service.ResourceFailure("unsupported-capability", "Use the resource socket for subscriptions; theme is host-local")
-		}
+	if !shardresource.IsDispatchable(request.Method) {
+		err = service.ResourceFailure("unsupported-capability", "Use the resource socket for subscriptions; theme is host-local")
+	} else {
+		result, err = shardresource.Dispatch(ctx, s.deps.ShardResources(), target, request)
 	}
 	status := http.StatusOK
 	if err != nil {
