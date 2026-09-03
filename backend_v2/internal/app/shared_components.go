@@ -17,6 +17,7 @@ import (
 	"aladin/backend_v2/internal/shardresource"
 	"aladin/backend_v2/internal/shardv2"
 	"aladin/backend_v2/internal/watchlist"
+	watchlistpostgres "aladin/backend_v2/internal/watchlist/postgres"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -130,7 +131,7 @@ func buildSharedComponents(pool *pgxpool.Pool, dataVolumePath string) sharedComp
 	)
 
 	artifactsSvc := coreservice.NewArtifactService(artifactRepo, artifactFiles)
-	watchlistSvc := watchlist.NewService(repo.NewWatchlistPostgres(pool))
+	watchlistSvc := watchlist.NewService(watchlistpostgres.New(pool))
 	alertRepo := repo.NewAlertsPostgres(pool)
 	alertsSvc := coreservice.NewAlertService(alertRepo, instrumentsSvc, snapshotSource)
 	entityContextSvc := coreservice.NewEntityContextService(

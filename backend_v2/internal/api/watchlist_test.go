@@ -11,6 +11,7 @@ import (
 
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/watchlist"
+	watchlisthttp "aladin/backend_v2/internal/watchlist/httptransport"
 )
 
 type watchlistCall struct {
@@ -44,7 +45,7 @@ func (apiOnlyWatchlistSvc) RemoveItem(context.Context, string, string, string) e
 	return nil
 }
 
-var _ watchlistService = apiOnlyWatchlistSvc{}
+var _ watchlisthttp.Service = apiOnlyWatchlistSvc{}
 
 type fakeWatchlistSvc struct {
 	created *watchlist.Watchlist
@@ -273,10 +274,11 @@ func TestWatchlistErrorContract(t *testing.T) {
 func TestWatchlistCreateHandler(t *testing.T) {
 	t.Parallel()
 	svc := &fakeWatchlistSvc{}
-	routes := newWatchlistRoutes(svc)
+	mux := http.NewServeMux()
+	watchlisthttp.Register(mux, svc)
 
 	rec := httptest.NewRecorder()
-	routes.handleWatchlistsCreate(rec, authedReq(http.MethodPost, "/api/watchlists", `{"name":"Shorts"}`))
+	mux.ServeHTTP(rec, authedReq(http.MethodPost, "/api/watchlists", `{"name":"Shorts"}`))
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201: %s", rec.Code, rec.Body.String())
@@ -289,12 +291,12 @@ func TestWatchlistCreateHandler(t *testing.T) {
 func TestWatchlistRenameNotFoundMaps404(t *testing.T) {
 	t.Parallel()
 	svc := &fakeWatchlistSvc{err: watchlist.ErrNotFound}
-	routes := newWatchlistRoutes(svc)
+	mux := http.NewServeMux()
+	watchlisthttp.Register(mux, svc)
 
 	rec := httptest.NewRecorder()
 	req := authedReq(http.MethodPatch, "/api/watchlists/nope", `{"name":"X"}`)
-	req.SetPathValue("id", "nope")
-	routes.handleWatchlistRename(rec, req)
+	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404: %s", rec.Code, rec.Body.String())

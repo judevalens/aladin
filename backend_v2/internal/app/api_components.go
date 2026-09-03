@@ -13,6 +13,7 @@ import (
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/shardresource"
 	"aladin/backend_v2/internal/watchlist"
+	watchlistpostgres "aladin/backend_v2/internal/watchlist/postgres"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -51,7 +52,7 @@ func NewAPIComponentsWithProviderConnections(pool *pgxpool.Pool, providerConfig 
 	shared := buildSharedComponents(pool, dataVolumePath)
 
 	syncRepo := repo.NewSyncPostgres(pool)
-	syncSvc := reconciliation.New(syncRepo, repo.NewTreeSyncSource(pool), repo.NewWatchlistSyncSource(pool), repo.NewShardKVSyncSource(pool), repo.NewReadingPositionSyncSource(pool))
+	syncSvc := reconciliation.New(syncRepo, repo.NewTreeSyncSource(pool), watchlistpostgres.NewSyncSource(pool), repo.NewShardKVSyncSource(pool), repo.NewReadingPositionSyncSource(pool))
 	realtimeKeys := coreservice.NewSubscriptionKeyResolver()
 	realtime := realtime.NewService(realtimeKeys)
 	outboxDrainer := changefeed.NewDrainer(syncRepo, realtime, changefeed.DefaultDrainInterval)

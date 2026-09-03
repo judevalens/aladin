@@ -1,4 +1,5 @@
-package repo
+// Package postgres implements Watchlist persistence and its sync projection.
+package postgres
 
 import (
 	"context"
@@ -6,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 
+	"aladin/backend_v2/internal/outbox"
 	"aladin/backend_v2/internal/watchlist"
 
 	"github.com/jackc/pgx/v5"
@@ -15,13 +17,13 @@ import (
 // PostgresWatchlistRepository backs named watchlists (universes): a `watchlists` parent + its
 // members (watchlist_items), joined to instruments for display. Ownership is enforced in every
 // WHERE (user_id) plus a WHERE EXISTS guard on adds so a forged listID can't cross tenants.
-type PostgresWatchlistRepository struct{ pool *pgxpool.Pool }
+type Repository struct{ pool *pgxpool.Pool }
 
-func NewWatchlistPostgres(pool *pgxpool.Pool) *PostgresWatchlistRepository {
-	return &PostgresWatchlistRepository{pool: pool}
+func New(pool *pgxpool.Pool) *Repository {
+	return &Repository{pool: pool}
 }
 
-func (r *PostgresWatchlistRepository) ListWatchlists(ctx context.Context, userID string) ([]watchlist.Watchlist, error) {
+func (r *Repository) ListWatchlists(ctx context.Context, userID string) ([]watchlist.Watchlist, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT wl.id::text, wl.name, wl.kind, wl.definition, wl.position,
 		       COUNT(wi.instrument_id) AS item_count,
@@ -53,7 +55,7 @@ func (r *PostgresWatchlistRepository) ListWatchlists(ctx context.Context, userID
 
 // CreateWatchlist inserts the list and emits its first upsert frame in one tx (LockUser →
 // insert → emit → commit), so the durable data and the sync event commit together.
-func (r *PostgresWatchlistRepository) CreateWatchlist(ctx context.Context, w watchlist.Watchlist, userID string) (watchlist.Watchlist, error) {
+func (r *Repository) CreateWatchlist(ctx context.Context, w watchlist.Watchlist, userID string) (watchlist.Watchlist, error) {
 	def := w.Definition
 	if len(def) == 0 {
 		def = json.RawMessage(`{}`)
@@ -67,7 +69,7 @@ func (r *PostgresWatchlistRepository) CreateWatchlist(ctx context.Context, w wat
 		return watchlist.Watchlist{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if err := LockUser(ctx, tx, userID); err != nil {
+	if err := outbox.LockUser(ctx, tx, userID); err != nil {
 		return watchlist.Watchlist{}, err
 	}
 	if err := tx.QueryRow(ctx, `
@@ -88,13 +90,13 @@ func (r *PostgresWatchlistRepository) CreateWatchlist(ctx context.Context, w wat
 	return w, nil
 }
 
-func (r *PostgresWatchlistRepository) RenameWatchlist(ctx context.Context, userID, id, name string) error {
+func (r *Repository) RenameWatchlist(ctx context.Context, userID, id, name string) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if err := LockUser(ctx, tx, userID); err != nil {
+	if err := outbox.LockUser(ctx, tx, userID); err != nil {
 		return err
 	}
 	tag, err := tx.Exec(ctx, `
@@ -115,13 +117,13 @@ func (r *PostgresWatchlistRepository) RenameWatchlist(ctx context.Context, userI
 
 // DeleteWatchlist tombstones the list (soft delete → sync delete frame) and hard-removes its items
 // (they are not independently synced; the list's Op:delete drops them client-side).
-func (r *PostgresWatchlistRepository) DeleteWatchlist(ctx context.Context, userID, id string) error {
+func (r *Repository) DeleteWatchlist(ctx context.Context, userID, id string) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if err := LockUser(ctx, tx, userID); err != nil {
+	if err := outbox.LockUser(ctx, tx, userID); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `
@@ -139,7 +141,7 @@ func (r *PostgresWatchlistRepository) DeleteWatchlist(ctx context.Context, userI
 	return tx.Commit(ctx)
 }
 
-func (r *PostgresWatchlistRepository) GetWatchlist(ctx context.Context, userID, id string) (watchlist.Watchlist, bool, error) {
+func (r *Repository) GetWatchlist(ctx context.Context, userID, id string) (watchlist.Watchlist, bool, error) {
 	var w watchlist.Watchlist
 	var def []byte
 	err := r.pool.QueryRow(ctx, `
@@ -159,7 +161,7 @@ func (r *PostgresWatchlistRepository) GetWatchlist(ctx context.Context, userID, 
 	return w, true, nil
 }
 
-func (r *PostgresWatchlistRepository) DefaultWatchlistID(ctx context.Context, userID string) (string, bool, error) {
+func (r *Repository) DefaultWatchlistID(ctx context.Context, userID string) (string, bool, error) {
 	var id string
 	err := r.pool.QueryRow(ctx, `
 		SELECT id::text FROM watchlists
@@ -175,7 +177,7 @@ func (r *PostgresWatchlistRepository) DefaultWatchlistID(ctx context.Context, us
 	return id, true, nil
 }
 
-func (r *PostgresWatchlistRepository) ListItems(ctx context.Context, userID, listID string) ([]watchlist.WatchlistItem, error) {
+func (r *Repository) ListItems(ctx context.Context, userID, listID string) ([]watchlist.WatchlistItem, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT i.instrument_id::text, i.symbol, i.name, i.exchange,
 		       to_char(w.added_at, 'YYYY-MM-DD') AS added_at
@@ -203,13 +205,13 @@ func (r *PostgresWatchlistRepository) ListItems(ctx context.Context, userID, lis
 // listID from the API/MCP layer cannot add to another tenant's or a deleted list. Idempotent. A
 // genuine insert re-emits the parent list's frame (its membership changed); an already-present add
 // or a rejected forged listID changes nothing, so it emits nothing.
-func (r *PostgresWatchlistRepository) AddItem(ctx context.Context, userID, listID, instrumentID string) error {
+func (r *Repository) AddItem(ctx context.Context, userID, listID, instrumentID string) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if err := LockUser(ctx, tx, userID); err != nil {
+	if err := outbox.LockUser(ctx, tx, userID); err != nil {
 		return err
 	}
 	tag, err := tx.Exec(ctx, `
@@ -229,13 +231,13 @@ func (r *PostgresWatchlistRepository) AddItem(ctx context.Context, userID, listI
 	return tx.Commit(ctx)
 }
 
-func (r *PostgresWatchlistRepository) RemoveItem(ctx context.Context, userID, listID, instrumentID string) error {
+func (r *Repository) RemoveItem(ctx context.Context, userID, listID, instrumentID string) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if err := LockUser(ctx, tx, userID); err != nil {
+	if err := outbox.LockUser(ctx, tx, userID); err != nil {
 		return err
 	}
 	tag, err := tx.Exec(ctx, `

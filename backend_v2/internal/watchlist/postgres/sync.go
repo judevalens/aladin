@@ -1,4 +1,4 @@
-package repo
+package postgres
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"aladin/backend_v2/internal/outbox"
 	"aladin/backend_v2/internal/service"
 
 	"github.com/jackc/pgx/v5"
@@ -21,6 +22,12 @@ import (
 // tombstone the list (is_deleted, row kept) so a stale lower-seq upsert can't resurrect it.
 
 const watchlistEntityKind = "watchlist"
+
+type scanner interface{ Scan(dest ...any) error }
+
+type rowQuerier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
 
 type lightWatchlistItem struct {
 	InstrumentID string `json:"instrumentId"`
@@ -117,7 +124,7 @@ func emitWatchlistUpsert(ctx context.Context, tx pgx.Tx, userID, listID string) 
 	if err != nil {
 		return err
 	}
-	return appendOutboxEvent(ctx, tx, userID, service.Frame{Entities: []service.FrameEntity{ent}})
+	return outbox.AppendData(ctx, tx, userID, service.Frame{Entities: []service.FrameEntity{ent}})
 }
 
 // emitWatchlistDelete tombstones one list (is_deleted=true, seq bumped, row KEPT) and appends its
@@ -141,7 +148,7 @@ func emitWatchlistDelete(ctx context.Context, tx pgx.Tx, userID, listID string) 
 		Seq:        uint64(seq),
 		Op:         service.OpDelete,
 	}
-	if err := appendOutboxEvent(ctx, tx, userID, service.Frame{Entities: []service.FrameEntity{ent}}); err != nil {
+	if err := outbox.AppendData(ctx, tx, userID, service.Frame{Entities: []service.FrameEntity{ent}}); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -149,15 +156,15 @@ func emitWatchlistDelete(ctx context.Context, tx pgx.Tx, userID, listID string) 
 
 // WatchlistSyncSource is the cold-start snapshot provider for watchlists (per-user, tombstones
 // included). Implements service.SyncSource.
-type WatchlistSyncSource struct{ pool *pgxpool.Pool }
+type SyncSource struct{ pool *pgxpool.Pool }
 
-func NewWatchlistSyncSource(pool *pgxpool.Pool) *WatchlistSyncSource {
-	return &WatchlistSyncSource{pool: pool}
+func NewSyncSource(pool *pgxpool.Pool) *SyncSource {
+	return &SyncSource{pool: pool}
 }
 
-func (s *WatchlistSyncSource) EntityKind() string { return watchlistEntityKind }
+func (s *SyncSource) EntityKind() string { return watchlistEntityKind }
 
-func (s *WatchlistSyncSource) Snapshot(ctx context.Context, userID string) ([]service.FrameEntity, error) {
+func (s *SyncSource) Snapshot(ctx context.Context, userID string) ([]service.FrameEntity, error) {
 	rows, err := s.pool.Query(ctx, lightWatchlistSelect+` ORDER BY w.position, w.created_at ASC`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("sync: watchlist snapshot query: %w", err)

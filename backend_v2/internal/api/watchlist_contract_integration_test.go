@@ -11,8 +11,8 @@ import (
 
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/dbtest"
-	"aladin/backend_v2/internal/repo"
 	"aladin/backend_v2/internal/watchlist"
+	watchlistpostgres "aladin/backend_v2/internal/watchlist/postgres"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -50,7 +50,7 @@ func TestWatchlistHTTPServiceRepositoryContract(t *testing.T) {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1::uuid`, userID)
 	})
 
-	watchlists := watchlist.NewService(repo.NewWatchlistPostgres(pool))
+	watchlists := watchlist.NewService(watchlistpostgres.New(pool))
 	server := NewWithDependencies(":0", testDependencies{
 		AuthSvc:      &resourceAPIAuth{userID: userID},
 		WatchlistSvc: watchlists,

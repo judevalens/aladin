@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"aladin/backend_v2/internal/httpapi"
 	coreservice "aladin/backend_v2/internal/service"
 )
 
@@ -18,10 +19,7 @@ func (s *Server) registerEntityTagRoutes(mux *http.ServeMux) {
 }
 
 func principalUserID(r *http.Request) string {
-	if p, ok := coreservice.PrincipalFromContext(r.Context()); ok {
-		return p.UserID
-	}
-	return ""
+	return httpapi.PrincipalUserID(r)
 }
 
 // GET /api/entities/search?q=…&limit=… — typeahead for the tag / @entity picker.

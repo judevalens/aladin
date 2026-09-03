@@ -1,4 +1,4 @@
-package repo_test
+package postgres_test
 
 import (
 	"context"
@@ -7,9 +7,9 @@ import (
 	"testing"
 
 	"aladin/backend_v2/internal/db"
-	"aladin/backend_v2/internal/repo"
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/watchlist"
+	watchlistpostgres "aladin/backend_v2/internal/watchlist/postgres"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -62,8 +62,8 @@ func TestWatchlistSyncFrames(t *testing.T) {
 		_, _ = pool.Exec(ctx, `DELETE FROM users WHERE id = $1::uuid`, userID)
 	})
 
-	r := repo.NewWatchlistPostgres(pool)
-	src := repo.NewWatchlistSyncSource(pool)
+	r := watchlistpostgres.New(pool)
+	src := watchlistpostgres.NewSyncSource(pool)
 
 	list, err := r.CreateWatchlist(ctx, watchlist.Watchlist{ID: uuid.NewString(), Name: "Semis"}, userID)
 	if err != nil {

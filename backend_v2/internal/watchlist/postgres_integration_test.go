@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"aladin/backend_v2/internal/db"
-	"aladin/backend_v2/internal/repo"
 	"aladin/backend_v2/internal/watchlist"
+	watchlistpostgres "aladin/backend_v2/internal/watchlist/postgres"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -50,7 +50,7 @@ func TestWatchlistsRoundTrip(t *testing.T) {
 		_, _ = pool.Exec(ctx, `DELETE FROM users WHERE id = ANY($1::uuid[])`, []string{userID, otherUser})
 	})
 
-	svc := watchlist.NewService(repo.NewWatchlistPostgres(pool))
+	svc := watchlist.NewService(watchlistpostgres.New(pool))
 
 	// Two named lists.
 	tech, err := svc.CreateWatchlist(ctx, userID, "Tech")
@@ -147,7 +147,7 @@ func TestWatchlistsRoundTrip(t *testing.T) {
 
 	// A screener-kind list reserves the dynamic path.
 	scr := watchlist.Watchlist{ID: uuid.NewString(), Name: "Momo", Kind: watchlist.Screener}
-	if _, err := repo.NewWatchlistPostgres(pool).CreateWatchlist(ctx, scr, userID); err != nil {
+	if _, err := watchlistpostgres.New(pool).CreateWatchlist(ctx, scr, userID); err != nil {
 		t.Fatalf("create screener: %v", err)
 	}
 	if _, err := svc.ResolveInstruments(ctx, userID, scr.ID); err != watchlist.ErrScreenerNotImplemented {

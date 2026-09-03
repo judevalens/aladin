@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"aladin/backend_v2/internal/outbox"
 	"aladin/backend_v2/internal/service"
 
 	"github.com/jackc/pgx/v5"
@@ -30,20 +31,7 @@ const outboxBatchLimit = 2000
 // the event commits atomically with the data (transactional outbox). A frame
 // with no entities is a no-op.
 func appendOutboxEvent(ctx context.Context, tx pgx.Tx, userID string, frame service.Frame) error {
-	if len(frame.Entities) == 0 {
-		return nil
-	}
-	payload, err := json.Marshal(frame)
-	if err != nil {
-		return fmt.Errorf("sync: marshal frame: %w", err)
-	}
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO outbox_events (user_id, type, payload)
-		VALUES ($1::uuid, 'data_event', $2::jsonb)
-	`, userID, payload); err != nil {
-		return fmt.Errorf("sync: append outbox event: %w", err)
-	}
-	return nil
+	return outbox.AppendData(ctx, tx, userID, frame)
 }
 
 // appendAppEvent appends ONE 'app_event' row carrying a non-data realtime event
@@ -52,17 +40,7 @@ func appendOutboxEvent(ctx context.Context, tx pgx.Tx, userID string, frame serv
 // (PullSince/MinXid) filters 'app_event' out, so it never reaches a client's
 // offline data store. Use for ephemeral, cross-process UI events (build-status).
 func appendAppEvent(ctx context.Context, tx pgx.Tx, userID string, ev service.OutboxAppEvent) error {
-	payload, err := json.Marshal(ev)
-	if err != nil {
-		return fmt.Errorf("sync: marshal app event: %w", err)
-	}
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO outbox_events (user_id, type, payload)
-		VALUES ($1::uuid, 'app_event', $2::jsonb)
-	`, userID, payload); err != nil {
-		return fmt.Errorf("sync: append app event: %w", err)
-	}
-	return nil
+	return outbox.AppendApp(ctx, tx, userID, ev)
 }
 
 // marketQuoteUserID is the sentinel owner for broadcast 'market' rows: outbox_events.user_id

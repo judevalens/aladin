@@ -2,7 +2,8 @@ package repo
 
 import (
 	"context"
-	"fmt"
+
+	"aladin/backend_v2/internal/outbox"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -32,8 +33,5 @@ func NewSyncPostgres(pool *pgxpool.Pool) *SyncRepo {
 // write transaction for that user, before the canonical write + appendOutboxEvent.
 // Released automatically at txn end (advisory_xact_lock).
 func LockUser(ctx context.Context, tx pgx.Tx, userID string) error {
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, userID); err != nil {
-		return fmt.Errorf("sync: lock user: %w", err)
-	}
-	return nil
+	return outbox.LockUser(ctx, tx, userID)
 }

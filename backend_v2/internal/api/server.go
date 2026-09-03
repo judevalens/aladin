@@ -3,11 +3,12 @@ package api
 import (
 	"aladin/backend_v2/internal/app"
 	"aladin/backend_v2/internal/docsurface"
+	"aladin/backend_v2/internal/httpapi"
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/shardresource"
 	"aladin/backend_v2/internal/watchlist"
+	watchlisthttp "aladin/backend_v2/internal/watchlist/httptransport"
 	"context"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"math/rand"
@@ -71,13 +72,10 @@ type Dependencies interface {
 	Copilot() coreservice.CopilotService
 }
 
-type contextKey string
-
 type errorCategory string
 
 const (
-	requestIDHeader            = "X-Request-Id"
-	requestIDKey    contextKey = "request_id"
+	requestIDHeader = "X-Request-Id"
 
 	categoryDecodeError  errorCategory = "decode_error"
 	categoryBadRequest   errorCategory = "bad_request"
@@ -122,7 +120,7 @@ func NewWithDependencies(addr string, deps Dependencies) *Server {
 	s.registerInstrumentRoutes(mux)
 	s.registerSearchRoutes(mux)
 	s.registerMarketRoutes(mux)
-	newWatchlistRoutes(deps.Watchlist()).register(mux)
+	watchlisthttp.Register(mux, deps.Watchlist())
 	s.registerReadingPositionRoutes(mux)
 	s.registerAlertRoutes(mux)
 	s.registerCopilotRoutes(mux)
@@ -202,7 +200,7 @@ func traceRequests(next http.Handler) http.Handler {
 		if requestID == "" {
 			requestID = uuid.NewString()
 		}
-		ctx := context.WithValue(r.Context(), requestIDKey, requestID)
+		ctx := httpapi.WithRequestID(r.Context(), requestID)
 		w.Header().Set(requestIDHeader, requestID)
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		start := time.Now()
@@ -377,41 +375,19 @@ func contentTokenAllowed(principal coreservice.Principal, r *http.Request) bool 
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
+	httpapi.WriteJSON(w, status, body)
 }
 
 func readJSON(r *http.Request, dst any) error {
-	if r.Body == nil {
-		return errors.New("missing request body")
-	}
-	return json.NewDecoder(r.Body).Decode(dst)
+	return httpapi.ReadJSON(r, dst)
 }
 
 func requestIDFromContext(ctx context.Context) string {
-	if value, ok := ctx.Value(requestIDKey).(string); ok {
-		return value
-	}
-	return ""
+	return httpapi.RequestID(ctx)
 }
 
 func writeAPIError(w http.ResponseWriter, r *http.Request, status int, category errorCategory, publicMessage string, err error) {
-	attrs := []any{
-		"component", "api",
-		"request_id", requestIDFromContext(r.Context()),
-		"method", r.Method,
-		"path", r.URL.Path,
-		"status", status,
-		"category", string(category),
-	}
-	if err != nil {
-		attrs = append(attrs, "err", err)
-	} else {
-		attrs = append(attrs, "message", publicMessage)
-	}
-	slog.Error("api: request failed", attrs...)
-	writeJSON(w, status, map[string]string{"error": publicMessage})
+	httpapi.WriteError(w, r, status, string(category), publicMessage, err)
 }
 
 func writeAccessError(w http.ResponseWriter, r *http.Request, err error) bool {
@@ -428,18 +404,7 @@ func writeAccessError(w http.ResponseWriter, r *http.Request, err error) bool {
 }
 
 func writeDecodeError(w http.ResponseWriter, r *http.Request, err error) {
-	slog.Error(
-		"api: request decode failed",
-		"component", "api",
-		"request_id", requestIDFromContext(r.Context()),
-		"method", r.Method,
-		"path", r.URL.Path,
-		"status", http.StatusBadRequest,
-		"category", string(categoryDecodeError),
-		"content_type", r.Header.Get("Content-Type"),
-		"err", err,
-	)
-	writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+	httpapi.WriteDecodeError(w, r, err)
 }
 
 func intQuery(r *http.Request, key string, fallback int) int {
