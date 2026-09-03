@@ -6,10 +6,15 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"sync"
 	"time"
 
 	"aladin/backend_v2/internal/blocknote"
+	copilotapproval "aladin/backend_v2/internal/copilot/approval"
+	"aladin/backend_v2/internal/copilot/conversation"
+	copilotprovider "aladin/backend_v2/internal/copilot/provider"
+	copilotsession "aladin/backend_v2/internal/copilot/session"
+	copilotstream "aladin/backend_v2/internal/copilot/stream"
+	"aladin/backend_v2/internal/copilot/turnstate"
 	"aladin/backend_v2/internal/copilotagent"
 	"aladin/backend_v2/internal/safego"
 
@@ -105,89 +110,15 @@ type CopilotSendResult struct {
 }
 
 // Citation is one grounding source the assistant used, rendered as a clickable chip.
-type Citation struct {
-	Kind  string `json:"kind"` // ticker | company | person | entity | page | shard
-	ID    string `json:"id"`
-	Title string `json:"title"`
-	// Page anchors a document citation; the client opens the source at it. 0 = none.
-	// Dedup is by kind|id, so a turn that read several spans keeps the last one's page.
-	Page int `json:"page,omitempty"`
-}
-
-type CopilotThread struct {
-	ID        string `json:"id"`
-	Title     string `json:"title"`
-	UpdatedAt string `json:"updatedAt"`
-	Pinned    bool   `json:"pinned"`
-	// SDKSessionID is the Claude Agent SDK session resumed on each turn (empty for
-	// fresh/legacy threads). Server-internal — never serialized to the client.
-	SDKSessionID string `json:"-"`
-}
-
-// CopilotActivityItem is one tool invocation in a turn's compact activity digest.
-type CopilotActivityItem struct {
-	Name string `json:"name"`
-	OK   bool   `json:"ok"`
-}
-
-// CopilotMessageMeta is per-assistant-turn metadata: what the turn did and cost.
-type CopilotMessageMeta struct {
-	NumTurns     int                   `json:"numTurns,omitempty"`
-	InputTokens  int                   `json:"inputTokens,omitempty"`
-	OutputTokens int                   `json:"outputTokens,omitempty"`
-	CostUSD      float64               `json:"costUsd,omitempty"`
-	Activity     []CopilotActivityItem `json:"activity,omitempty"`
-}
-
-type CopilotMessage struct {
-	ID        string              `json:"id"`
-	Role      string              `json:"role"` // user | assistant
-	Content   string              `json:"content"`
-	Citations []Citation          `json:"citations"`
-	Meta      *CopilotMessageMeta `json:"meta,omitempty"`
-	CreatedAt string              `json:"createdAt"`
-}
-
-type CopilotThreadDetail struct {
-	Thread   CopilotThread    `json:"thread"`
-	Messages []CopilotMessage `json:"messages"`
-}
-
-// StoredCopilotMessage is one durable turn (the write shape for the store).
-type StoredCopilotMessage struct {
-	ID        string
-	ThreadID  string
-	Role      string
-	Content   string
-	Citations []Citation
-	Meta      *CopilotMessageMeta
-}
-
-// CopilotStore persists threads + the visible conversation. Ownership is enforced by
-// passing userID on the scoped reads.
-type CopilotStore interface {
-	CreateThread(ctx context.Context, id, userID, title string) error
-	TouchThread(ctx context.Context, threadID string) error
-	ListThreads(ctx context.Context, userID string) ([]CopilotThread, error)
-	// GetThread returns the thread iff it belongs to userID (found=false otherwise).
-	GetThread(ctx context.Context, userID, threadID string) (CopilotThread, bool, error)
-	RenameThread(ctx context.Context, userID, threadID, title string) (CopilotThread, bool, error)
-	ArchiveThread(ctx context.Context, userID, threadID string) (bool, error)
-	SetThreadPinned(ctx context.Context, userID, threadID string, pinned bool) (CopilotThread, bool, error)
-	// SetThreadSDKSession stamps the Claude Agent SDK session id to resume next turn.
-	SetThreadSDKSession(ctx context.Context, threadID, sessionID string) error
-	AppendMessage(ctx context.Context, m StoredCopilotMessage) error
-	ListMessages(ctx context.Context, threadID string) ([]CopilotMessage, error)
-}
-
-// CopilotAgent is the sidecar client surface the service consumes (satisfied by
-// *copilotagent.Client; an interface so tests can fake the stream).
-type CopilotAgent interface {
-	StartTurn(ctx context.Context, req copilotagent.TurnRequest) (<-chan copilotagent.Event, error)
-	Cancel(ctx context.Context, turnID string) error
-	ResolveApproval(ctx context.Context, turnID, approvalID string, approved bool) error
-	Healthz(ctx context.Context) (copilotagent.Health, error)
-}
+type Citation = conversation.Citation
+type CopilotThread = conversation.Thread
+type CopilotActivityItem = conversation.ActivityItem
+type CopilotMessageMeta = conversation.MessageMeta
+type CopilotMessage = conversation.Message
+type CopilotThreadDetail = conversation.ThreadDetail
+type StoredCopilotMessage = conversation.StoredMessage
+type CopilotStore = conversation.Store
+type CopilotAgent = copilotprovider.Client
 
 // CopilotDeps are the collaborators the orchestrator needs: the sidecar client, the
 // realtime hub for streaming, the store for persistence, and the few read services that
@@ -209,7 +140,7 @@ type CopilotDeps struct {
 }
 
 const (
-	copilotResourceKind  = "copilot"
+	copilotResourceKind  = copilotstream.ResourceKind
 	defaultCopilotModel  = "claude:claude-opus-5"
 	defaultCopilotEffort = "high"
 	// Authoring a shard/page is multi-step (create → write → build → fix → build → preview),
@@ -324,23 +255,6 @@ var copilotEffortCatalog = []CopilotEffortOption{
 	{ID: "max", Label: "Max", Description: "Maximum effort for the hardest long-running tasks."},
 }
 
-// runningTurn is a live agent turn's cancel handle, kept so the owner can stop it and
-// so SendMessage can refuse a second concurrent turn on the same thread.
-type runningTurn struct {
-	userID   string
-	threadID string
-	cancel   context.CancelFunc
-}
-
-// pendingAction is a gated tool call held open in the sidecar, awaiting approve/reject.
-type pendingAction struct {
-	userID   string
-	threadID string
-	turnID   string
-	tool     string
-	created  time.Time
-}
-
 // pendingActionTTL prunes stale pending-approval entries. Slightly above the sidecar's
 // 10-minute approval hold (APPROVAL_TIMEOUT_MS) — after that the hold has already been
 // denied as timed out, so anything older is garbage.
@@ -348,16 +262,17 @@ const pendingActionTTL = 11 * time.Minute
 
 type defaultCopilotService struct {
 	CopilotDeps
-	mu      sync.Mutex
-	running map[string]runningTurn   // sessionID → cancel handle
-	pending map[string]pendingAction // actionID (sidecar approvalId) → held action
+	sessions *copilotsession.Registry
+	tools    *copilotapproval.Gateway
+	stream   *copilotstream.Projector
 }
 
 func NewCopilotService(deps CopilotDeps) CopilotService {
 	return &defaultCopilotService{
 		CopilotDeps: deps,
-		running:     map[string]runningTurn{},
-		pending:     map[string]pendingAction{},
+		sessions:    copilotsession.NewRegistry(),
+		tools:       copilotapproval.NewGateway(deps.Agent, pendingActionTTL),
+		stream:      copilotstream.NewProjector(deps.Realtime),
 	}
 }
 
@@ -570,16 +485,12 @@ func copilotCatalogFromHealth(catalog copilotagent.Catalog) ([]CopilotModelOptio
 // Cancel stops the in-flight turn for sessionID if it belongs to userID. Idempotent:
 // cancelling an already-finished (or unknown) session is a no-op.
 func (s *defaultCopilotService) Cancel(_ context.Context, userID, sessionID string) error {
-	s.mu.Lock()
-	rt, ok := s.running[sessionID]
-	s.mu.Unlock()
-	if !ok {
+	switch s.sessions.Cancel(userID, sessionID) {
+	case copilotsession.CancelMissing:
 		return nil
-	}
-	if rt.userID != userID {
+	case copilotsession.CancelForbidden:
 		return ErrNotFound
 	}
-	rt.cancel()
 	// Best-effort: tell the sidecar too, so the SDK query aborts promptly instead of
 	// discovering the dropped stream.
 	go func() {
@@ -593,44 +504,26 @@ func (s *defaultCopilotService) Cancel(_ context.Context, userID, sessionID stri
 // registerPending records a held gated action under the sidecar's approvalId, pruning
 // stale entries.
 func (s *defaultCopilotService) registerPending(actionID, userID, threadID, turnID, tool string) {
-	s.mu.Lock()
-	for id, pa := range s.pending {
-		if time.Since(pa.created) > pendingActionTTL {
-			delete(s.pending, id)
-		}
-	}
-	s.pending[actionID] = pendingAction{userID: userID, threadID: threadID, turnID: turnID, tool: tool, created: time.Now()}
-	s.mu.Unlock()
-}
-
-func (s *defaultCopilotService) takePending(userID, actionID string) (pendingAction, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	pa, ok := s.pending[actionID]
-	if !ok || pa.userID != userID {
-		return pendingAction{}, false
-	}
-	delete(s.pending, actionID)
-	return pa, true
+	s.tools.Register(actionID, copilotapproval.Action{
+		UserID: userID, ThreadID: threadID, TurnID: turnID, Tool: tool,
+	})
 }
 
 func (s *defaultCopilotService) dropPending(actionID string) {
-	s.mu.Lock()
-	delete(s.pending, actionID)
-	s.mu.Unlock()
+	s.tools.Drop(actionID)
 }
 
 // ApproveAction releases a gated tool call held open in the sidecar (owner-scoped). The
 // tool then runs inside the same turn; its result streams back as an action_result event.
 func (s *defaultCopilotService) ApproveAction(ctx context.Context, userID, actionID string) error {
-	pa, ok := s.takePending(userID, actionID)
+	pa, ok, err := s.tools.Resolve(ctx, userID, actionID, true)
 	if !ok {
 		return ErrNotFound
 	}
-	if err := s.Agent.ResolveApproval(ctx, pa.turnID, actionID, true); err != nil {
+	if err != nil {
 		// The hold is gone (turn ended, approval timed out) — resolve the dock card.
-		s.publish(userID, pa.threadID, "action_result", copilotActionResultPayload{
-			ThreadID: pa.threadID, ActionID: actionID, OK: false,
+		s.publish(userID, pa.ThreadID, "action_result", copilotActionResultPayload{
+			ThreadID: pa.ThreadID, ActionID: actionID, OK: false,
 			Message: "That approval expired — ask the copilot to try again.",
 		})
 		return nil
@@ -640,14 +533,14 @@ func (s *defaultCopilotService) ApproveAction(ctx context.Context, userID, actio
 
 // RejectAction denies a held gated tool call. Idempotent.
 func (s *defaultCopilotService) RejectAction(ctx context.Context, userID, actionID string) error {
-	pa, ok := s.takePending(userID, actionID)
+	pa, ok, err := s.tools.Resolve(ctx, userID, actionID, false)
 	if !ok {
 		return nil
 	}
-	if err := s.Agent.ResolveApproval(ctx, pa.turnID, actionID, false); err != nil {
+	if err != nil {
 		// Hold already gone — still resolve the dock card.
-		s.publish(userID, pa.threadID, "action_result", copilotActionResultPayload{
-			ThreadID: pa.threadID, ActionID: actionID, OK: false, Message: "Dismissed.",
+		s.publish(userID, pa.ThreadID, "action_result", copilotActionResultPayload{
+			ThreadID: pa.ThreadID, ActionID: actionID, OK: false, Message: "Dismissed.",
 		})
 	}
 	return nil
@@ -699,20 +592,12 @@ func (s *defaultCopilotService) SendMessage(ctx context.Context, in CopilotSendI
 	// rejected send leaves no orphan turn in the transcript.
 	sessionID := uuid.NewString()
 	turnCtx, cancel := context.WithTimeout(WithPrincipal(context.Background(), in.Principal), copilotTurnTimeout)
-	s.mu.Lock()
-	for _, rt := range s.running {
-		if rt.threadID == threadID {
-			s.mu.Unlock()
-			cancel()
-			return CopilotSendResult{}, ErrConflict
-		}
+	if !s.sessions.Reserve(sessionID, copilotsession.Turn{UserID: userID, ThreadID: threadID, Cancel: cancel}) {
+		cancel()
+		return CopilotSendResult{}, ErrConflict
 	}
-	s.running[sessionID] = runningTurn{userID: userID, threadID: threadID, cancel: cancel}
-	s.mu.Unlock()
 	release := func() {
-		s.mu.Lock()
-		delete(s.running, sessionID)
-		s.mu.Unlock()
+		s.sessions.Release(sessionID)
 		cancel()
 	}
 
@@ -811,14 +696,22 @@ func (s *defaultCopilotService) SetThreadPinned(ctx context.Context, userID, thr
 func (s *defaultCopilotService) runAgent(ctx context.Context, release func(), principal Principal, bearer, threadID, sessionID, model, effort string, surface CopilotSurface) {
 	defer release()
 	userID := principal.UserID
+	state := turnstate.New()
+	transition := func(event turnstate.Event) {
+		if err := state.Transition(event); err != nil {
+			slog.Warn("copilot: illegal turn transition", "component", "copilot", "thread", threadID, "session", sessionID, "state", state.State(), "event", event, "err", err)
+		}
+	}
 
 	thread, ok, err := s.Store.GetThread(ctx, userID, threadID)
 	if err != nil || !ok {
+		transition(turnstate.Fail)
 		s.fail(userID, threadID, sessionID, "failed to load conversation")
 		return
 	}
 	history, err := s.Store.ListMessages(ctx, threadID)
 	if err != nil {
+		transition(turnstate.Fail)
 		s.fail(userID, threadID, sessionID, "failed to load conversation")
 		return
 	}
@@ -830,6 +723,7 @@ func (s *defaultCopilotService) runAgent(ctx context.Context, release func(), pr
 		history = history[:n-1]
 	}
 	if strings.TrimSpace(prompt) == "" {
+		transition(turnstate.Fail)
 		s.fail(userID, threadID, sessionID, "failed to load conversation")
 		return
 	}
@@ -856,10 +750,12 @@ func (s *defaultCopilotService) runAgent(ctx context.Context, release func(), pr
 		MaxTurns:        maxCopilotTurns,
 	})
 	if err != nil {
+		transition(turnstate.Fail)
 		slog.Error("copilot: start turn failed", "component", "copilot", "err", err)
 		s.fail(userID, threadID, sessionID, "the assistant is unavailable right now")
 		return
 	}
+	transition(turnstate.StreamStarted)
 
 	citations := map[string]Citation{}
 	meta := CopilotMessageMeta{}
@@ -903,12 +799,14 @@ func (s *defaultCopilotService) runAgent(ctx context.Context, release func(), pr
 				s.dropPending(ev.ApprovalID)
 			}
 		case "proposed_action":
+			transition(turnstate.ActionProposed)
 			s.registerPending(ev.ApprovalID, userID, threadID, sessionID, ev.Tool)
 			s.publish(userID, threadID, "proposed_action", copilotProposedPayload{
 				SessionID: sessionID, ThreadID: threadID, ActionID: ev.ApprovalID,
 				Tool: ev.Tool, Summary: proposalSummary(ev.Tool, ev.Input),
 			})
 		case "approval_resolved":
+			transition(turnstate.ActionResolved)
 			// Approved holds settle later via their tool_result; denials settle here.
 			if !ev.Approved {
 				message := "Dismissed."
@@ -927,6 +825,7 @@ func (s *defaultCopilotService) runAgent(ctx context.Context, release func(), pr
 				SessionID: sessionID, ThreadID: threadID, Message: ev.Message, Code: ev.Code,
 			})
 		case "done":
+			transition(turnstate.ProviderDone)
 			sawDone = true
 			meta.NumTurns = ev.NumTurns
 			meta.InputTokens = ev.Usage.InputTokens
@@ -964,8 +863,12 @@ func (s *defaultCopilotService) runAgent(ctx context.Context, release func(), pr
 	// A cancelled/timed-out turn is a clean stop (the user hit stop), not an error; a
 	// stream that broke without its `done` (sidecar died mid-turn) is.
 	if !sawDone && ctx.Err() == nil {
+		transition(turnstate.Fail)
 		s.fail(userID, threadID, sessionID, "the assistant connection was interrupted")
 		return
+	}
+	if !sawDone {
+		transition(turnstate.Cancel)
 	}
 	s.publish(userID, threadID, "done", copilotDonePayload{sessionID, threadID})
 }
@@ -976,16 +879,7 @@ func (s *defaultCopilotService) fail(userID, threadID, sessionID, msg string) {
 }
 
 func (s *defaultCopilotService) publish(userID, threadID, op string, payload any) {
-	if s.Realtime == nil {
-		return
-	}
-	_ = s.Realtime.Publish(context.Background(), PublishTarget{
-		TenantID:     userID,
-		Stream:       WorkspaceStream,
-		ResourceKind: copilotResourceKind,
-		ResourceID:   threadID,
-		Operation:    op,
-	}, payload)
+	s.stream.Publish(userID, threadID, op, payload)
 }
 
 // --- streaming payloads -------------------------------------------------------

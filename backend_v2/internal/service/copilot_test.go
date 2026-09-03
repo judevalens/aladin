@@ -21,13 +21,13 @@ func (fakeSnapshot) FetchSnapshot(_ context.Context, sym string) (Quote, bool, e
 // TestCopilotSurfaceContext — ambient context: a ticker surface preloads the live snapshot,
 // and a surface with no data source yields an empty (skipped) block.
 func TestCopilotSurfaceContext(t *testing.T) {
-	withSnap := &defaultCopilotService{CopilotDeps: CopilotDeps{Snapshots: fakeSnapshot{}}, running: map[string]runningTurn{}}
+	withSnap := &defaultCopilotService{CopilotDeps: CopilotDeps{Snapshots: fakeSnapshot{}}}
 	block := withSnap.surfaceContext(context.Background(), "u1", CopilotSurface{Kind: "ticker", Symbol: "nvda"})
 	if !strings.Contains(block, "NVDA") || !strings.Contains(block, "184.50") {
 		t.Fatalf("expected NVDA snapshot in context, got %q", block)
 	}
 
-	noSnap := &defaultCopilotService{CopilotDeps: CopilotDeps{}, running: map[string]runningTurn{}}
+	noSnap := &defaultCopilotService{CopilotDeps: CopilotDeps{}}
 	if got := noSnap.surfaceContext(context.Background(), "u1", CopilotSurface{Kind: "ticker", Symbol: "NVDA"}); got != "" {
 		t.Fatalf("expected empty context with no snapshot source, got %q", got)
 	}
@@ -744,9 +744,7 @@ drain:
 	}
 
 	impl := svc.(*defaultCopilotService)
-	impl.mu.Lock()
-	n := len(impl.pending)
-	impl.mu.Unlock()
+	n := impl.tools.PendingCount()
 	if n != 1 {
 		t.Fatalf("expected 1 pending action, got %d", n)
 	}
@@ -757,9 +755,7 @@ drain:
 	if err := svc.RejectAction(context.Background(), userID, actionID); err != nil {
 		t.Fatalf("reject: %v", err)
 	}
-	impl.mu.Lock()
-	n = len(impl.pending)
-	impl.mu.Unlock()
+	n = impl.tools.PendingCount()
 	if n != 0 {
 		t.Fatalf("expected pending cleared after reject, got %d", n)
 	}
@@ -902,7 +898,6 @@ func TestCopilotSurfaceContextFileIsNotEditableAsAPage(t *testing.T) {
 		CopilotDeps: CopilotDeps{Artifacts: stubArtifacts{art: ArtifactResponse{
 			Type: "file", Title: "Hamilton ch. 19",
 		}}},
-		running: map[string]runningTurn{},
 	}
 	got := svc.surfaceContext(context.Background(), "u1", CopilotSurface{Kind: "artifact", ID: "artifact-1"})
 
@@ -929,7 +924,6 @@ func TestCopilotSurfaceContextFileIsNotEditableAsAPage(t *testing.T) {
 func TestCopilotSurfaceContextShardAndPageStillEditable(t *testing.T) {
 	shard := &defaultCopilotService{
 		CopilotDeps: CopilotDeps{Artifacts: stubArtifacts{art: ArtifactResponse{Type: "app", Title: "Collar payoff"}}},
-		running:     map[string]runningTurn{},
 	}
 	if got := shard.surfaceContext(context.Background(), "u1", CopilotSurface{Kind: "artifact", ID: "a1"}); !strings.Contains(got, "EDIT THIS shard") {
 		t.Fatalf("shard should still be editable as a shard, got %q", got)
@@ -937,7 +931,6 @@ func TestCopilotSurfaceContextShardAndPageStillEditable(t *testing.T) {
 
 	page := &defaultCopilotService{
 		CopilotDeps: CopilotDeps{Artifacts: stubArtifacts{art: ArtifactResponse{Type: "page", Title: "Notes"}}},
-		running:     map[string]runningTurn{},
 	}
 	if got := page.surfaceContext(context.Background(), "u1", CopilotSurface{Kind: "artifact", ID: "a2"}); !strings.Contains(got, "EDIT THIS page") {
 		t.Fatalf("page should still be editable as a page, got %q", got)
