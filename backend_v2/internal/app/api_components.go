@@ -21,6 +21,8 @@ import (
 	"aladin/backend_v2/internal/search"
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/shardresource"
+	"aladin/backend_v2/internal/source"
+	sourcepostgres "aladin/backend_v2/internal/source/postgres"
 	"aladin/backend_v2/internal/watchlist"
 	watchlistpostgres "aladin/backend_v2/internal/watchlist/postgres"
 
@@ -30,7 +32,7 @@ import (
 type APIProcess struct {
 	sharedComponents
 	system              coreservice.SystemService
-	sources             coreservice.SourceService
+	sources             source.SourceService
 	records             coreservice.RecordService
 	pages               coreservice.PageService
 	files               coreservice.FileService
@@ -122,7 +124,7 @@ func NewAPIComponentsWithProviderConnections(pool *pgxpool.Pool, providerConfig 
 	return &APIProcess{
 		sharedComponents:    shared,
 		system:              coreservice.NewSystemService(repo.NewSystemPostgres(pool)),
-		sources:             coreservice.NewSourceService(repo.NewSourcePostgres(pool)),
+		sources:             source.NewSourceService(sourcepostgres.NewSourcePostgres(pool)),
 		records:             coreservice.NewRecordService(shared.recordRepo),
 		pages:               coreservice.NewPageService(shared.artifactRepo),
 		files:               coreservice.NewFileService(shared.artifactRepo, shared.artifactFiles),
@@ -148,7 +150,7 @@ func NewAPIComponentsWithProviderConnections(pool *pgxpool.Pool, providerConfig 
 
 func (c *APIProcess) Auth() coreservice.AuthService          { return c.auth }
 func (c *APIProcess) System() coreservice.SystemService      { return c.system }
-func (c *APIProcess) Sources() coreservice.SourceService     { return c.sources }
+func (c *APIProcess) Sources() source.SourceService          { return c.sources }
 func (c *APIProcess) Records() coreservice.RecordService     { return c.records }
 func (c *APIProcess) Artifacts() coreservice.ArtifactService { return c.artifacts }
 func (c *APIProcess) Pages() coreservice.PageService         { return c.pages }

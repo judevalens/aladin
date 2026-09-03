@@ -24,3 +24,10 @@ func TrimStringPtr(v *string) *string {
 	}
 	return &trimmed
 }
+
+func firstNonEmpty(value, fallback string) string {
+	if strings.TrimSpace(value) != "" {
+		return value
+	}
+	return fallback
+}

@@ -1,4 +1,4 @@
-package repo
+package postgres
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"time"
 
 	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/source"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -62,7 +63,7 @@ func (r *PostgresSourceRepository) EnsureUserAndGraph(ctx context.Context, userI
 	return kgID, nil
 }
 
-func (r *PostgresSourceRepository) List(ctx context.Context, userID string) ([]coreservice.SourceRecord, error) {
+func (r *PostgresSourceRepository) List(ctx context.Context, userID string) ([]source.SourceRecord, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT ss.id::text, ss.name, ps.provider, ps.sync_mode, ss.status, ps.config,
 		       0.85::float, 0.60::float, ss.created_at, ps.last_refresh_at
@@ -76,9 +77,9 @@ func (r *PostgresSourceRepository) List(ctx context.Context, userID string) ([]c
 	}
 	defer rows.Close()
 
-	out := make([]coreservice.SourceRecord, 0)
+	out := make([]source.SourceRecord, 0)
 	for rows.Next() {
-		var rec coreservice.SourceRecord
+		var rec source.SourceRecord
 		var configJSON []byte
 		var createdAt time.Time
 		var lastSynced *time.Time
@@ -99,7 +100,7 @@ func (r *PostgresSourceRepository) List(ctx context.Context, userID string) ([]c
 	return out, rows.Err()
 }
 
-func (r *PostgresSourceRepository) Create(ctx context.Context, sourceID string, userID string, kgID string, payload *coreservice.SourcePayload) (coreservice.SourceRecord, error) {
+func (r *PostgresSourceRepository) Create(ctx context.Context, sourceID string, userID string, kgID string, payload *source.SourcePayload) (source.SourceRecord, error) {
 	configJSON, _ := json.Marshal(payload.Config)
 	policyJSON, _ := json.Marshal(payload.Policy)
 	if payload.StreamKind == "" {
@@ -133,7 +134,7 @@ func (r *PostgresSourceRepository) Create(ctx context.Context, sourceID string, 
 	`, payload.Type, payload.StreamKind, payload.StreamKey, payload.Name, payload.SyncMode, string(configJSON),
 		sourceID, userID, kgID, string(policyJSON))
 	if err != nil {
-		return coreservice.SourceRecord{}, err
+		return source.SourceRecord{}, err
 	}
 
 	row := r.pool.QueryRow(ctx, `
@@ -143,7 +144,7 @@ func (r *PostgresSourceRepository) Create(ctx context.Context, sourceID string, 
 		  JOIN provider_streams ps ON ps.id = ss.provider_stream_id
 		 WHERE ss.id = $1::uuid
 	`, sourceID)
-	var rec coreservice.SourceRecord
+	var rec source.SourceRecord
 	var configOut []byte
 	var createdAt time.Time
 	var lastSynced *time.Time
@@ -151,7 +152,7 @@ func (r *PostgresSourceRepository) Create(ctx context.Context, sourceID string, 
 		&rec.ID, &rec.Name, &rec.Type, &rec.SyncMode, &rec.SyncState, &configOut,
 		&rec.AutoPromoteThreshold, &rec.SuggestThreshold, &createdAt, &lastSynced,
 	); err != nil {
-		return coreservice.SourceRecord{}, err
+		return source.SourceRecord{}, err
 	}
 	_ = json.Unmarshal(configOut, &rec.Config)
 	rec.CreatedAt = createdAt.Format(time.RFC3339)

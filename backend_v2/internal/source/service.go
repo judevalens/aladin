@@ -1,8 +1,12 @@
-package service
+package source
 
 import (
 	"context"
 	"strings"
+
+	coreservice "aladin/backend_v2/internal/service"
+
+	"github.com/google/uuid"
 )
 
 type SourceService interface {
@@ -65,9 +69,9 @@ func NewSourceService(repo SourceRepository) *DefaultSourceService {
 }
 
 func (s *DefaultSourceService) List(ctx context.Context) ([]SourceRecord, error) {
-	principal, err := RequirePrincipal(ctx)
+	principal, err := coreservice.RequirePrincipal(ctx)
 	if err != nil {
-		return nil, ErrUnauthenticated
+		return nil, coreservice.ErrUnauthenticated
 	}
 	if _, err := s.repo.EnsureUserAndGraph(ctx, principal.UserID); err != nil {
 		return nil, err
@@ -76,9 +80,9 @@ func (s *DefaultSourceService) List(ctx context.Context) ([]SourceRecord, error)
 }
 
 func (s *DefaultSourceService) Create(ctx context.Context, input SourceCreateInput) (SourceRecord, error) {
-	principal, err := RequirePrincipal(ctx)
+	principal, err := coreservice.RequirePrincipal(ctx)
 	if err != nil {
-		return SourceRecord{}, ErrUnauthenticated
+		return SourceRecord{}, coreservice.ErrUnauthenticated
 	}
 	payload, err := buildSourcePayload(input)
 	if err != nil {
@@ -88,13 +92,13 @@ func (s *DefaultSourceService) Create(ctx context.Context, input SourceCreateInp
 	if err != nil {
 		return SourceRecord{}, err
 	}
-	return s.repo.Create(ctx, newID(""), principal.UserID, kgID, payload)
+	return s.repo.Create(ctx, uuid.NewString(), principal.UserID, kgID, payload)
 }
 
 func (s *DefaultSourceService) Delete(ctx context.Context, id string) error {
-	principal, err := RequirePrincipal(ctx)
+	principal, err := coreservice.RequirePrincipal(ctx)
 	if err != nil {
-		return ErrUnauthenticated
+		return coreservice.ErrUnauthenticated
 	}
 	return s.repo.Delete(ctx, id, principal.UserID)
 }
@@ -102,7 +106,7 @@ func (s *DefaultSourceService) Delete(ctx context.Context, id string) error {
 func buildSourcePayload(input SourceCreateInput) (*SourcePayload, error) {
 	kind := strings.TrimSpace(input.Kind)
 	if kind == "" {
-		return nil, BadRequest("kind is required")
+		return nil, coreservice.BadRequest("kind is required")
 	}
 	name := strings.TrimSpace(input.Name)
 
@@ -115,7 +119,7 @@ func buildSourcePayload(input SourceCreateInput) (*SourcePayload, error) {
 		switch feed {
 		case "topstories", "newstories", "beststories", "askstories", "showstories", "jobstories":
 		default:
-			return nil, BadRequest("feed must be one of: topstories, newstories, beststories, askstories, showstories, jobstories")
+			return nil, coreservice.BadRequest("feed must be one of: topstories, newstories, beststories, askstories, showstories, jobstories")
 		}
 		return &SourcePayload{
 			Name:       firstNonEmpty(name, "Hacker News: "+feed),
@@ -136,7 +140,7 @@ func buildSourcePayload(input SourceCreateInput) (*SourcePayload, error) {
 	case "reddit_subreddit":
 		subreddit := strings.TrimSpace(input.Subreddit)
 		if subreddit == "" {
-			return nil, BadRequest("subreddit is required")
+			return nil, coreservice.BadRequest("subreddit is required")
 		}
 		subreddit = strings.Trim(strings.TrimPrefix(subreddit, "r/"), "/")
 		sort := strings.ToLower(strings.TrimSpace(input.Sort))
@@ -144,7 +148,7 @@ func buildSourcePayload(input SourceCreateInput) (*SourcePayload, error) {
 			sort = "new"
 		}
 		if sort != "new" && sort != "hot" && sort != "top" {
-			return nil, BadRequest("sort must be one of: new, hot, top")
+			return nil, coreservice.BadRequest("sort must be one of: new, hot, top")
 		}
 		return &SourcePayload{
 			Name:       firstNonEmpty(name, "r/"+subreddit),
@@ -166,7 +170,7 @@ func buildSourcePayload(input SourceCreateInput) (*SourcePayload, error) {
 	case "bluesky_search":
 		query := normalizeSpace(input.Query)
 		if query == "" {
-			return nil, BadRequest("query is required")
+			return nil, coreservice.BadRequest("query is required")
 		}
 		limit := clampInt(intOrDefault(input.Limit, 50), 1, 50)
 		interval := maxInt(intOrDefault(input.SyncIntervalSeconds, 300), 60)
@@ -189,11 +193,11 @@ func buildSourcePayload(input SourceCreateInput) (*SourcePayload, error) {
 			},
 		}, nil
 	case "bluesky_account":
-		return nil, BadRequest("bluesky_account is not supported yet")
+		return nil, coreservice.BadRequest("bluesky_account is not supported yet")
 	case "twitter_search":
 		query := strings.TrimSpace(input.Query)
 		if query == "" {
-			return nil, BadRequest("query is required")
+			return nil, coreservice.BadRequest("query is required")
 		}
 		return &SourcePayload{
 			Name:       firstNonEmpty(name, "X: "+truncate(query, 48)),
@@ -211,7 +215,7 @@ func buildSourcePayload(input SourceCreateInput) (*SourcePayload, error) {
 			},
 		}, nil
 	default:
-		return nil, BadRequest("unsupported source kind '" + kind + "'")
+		return nil, coreservice.BadRequest("unsupported source kind '" + kind + "'")
 	}
 }
 

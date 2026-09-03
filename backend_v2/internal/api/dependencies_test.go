@@ -7,6 +7,7 @@ import (
 	"aladin/backend_v2/internal/readingposition"
 	"aladin/backend_v2/internal/search"
 	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/source"
 	"aladin/backend_v2/internal/watchlist"
 )
 
@@ -16,7 +17,7 @@ import (
 type testDependencies struct {
 	AuthSvc                coreservice.AuthService
 	SystemSvc              coreservice.SystemService
-	SourcesSvc             coreservice.SourceService
+	SourcesSvc             source.SourceService
 	RecordsSvc             coreservice.RecordService
 	ArtifactsSvc           coreservice.ArtifactService
 	PagesSvc               coreservice.PageService
@@ -58,7 +59,7 @@ type testDependencies struct {
 
 func (d testDependencies) Auth() coreservice.AuthService          { return d.AuthSvc }
 func (d testDependencies) System() coreservice.SystemService      { return d.SystemSvc }
-func (d testDependencies) Sources() coreservice.SourceService     { return d.SourcesSvc }
+func (d testDependencies) Sources() source.SourceService          { return d.SourcesSvc }
 func (d testDependencies) Records() coreservice.RecordService     { return d.RecordsSvc }
 func (d testDependencies) Artifacts() coreservice.ArtifactService { return d.ArtifactsSvc }
 func (d testDependencies) Pages() coreservice.PageService         { return d.PagesSvc }

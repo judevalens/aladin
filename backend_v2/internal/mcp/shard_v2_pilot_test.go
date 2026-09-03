@@ -25,6 +25,7 @@ import (
 	"aladin/backend_v2/internal/service"
 	shardstorage "aladin/backend_v2/internal/shardresource/storage"
 	"aladin/backend_v2/internal/shardv2"
+	"aladin/backend_v2/internal/source"
 	"aladin/backend_v2/internal/watchlist"
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
@@ -333,7 +334,7 @@ type emptyAPIDependencies struct{}
 
 func (emptyAPIDependencies) Auth() service.AuthService          { return nil }
 func (emptyAPIDependencies) System() service.SystemService      { return nil }
-func (emptyAPIDependencies) Sources() service.SourceService     { return nil }
+func (emptyAPIDependencies) Sources() source.SourceService      { return nil }
 func (emptyAPIDependencies) Records() service.RecordService     { return nil }
 func (emptyAPIDependencies) Artifacts() service.ArtifactService { return nil }
 func (emptyAPIDependencies) Pages() service.PageService         { return nil }

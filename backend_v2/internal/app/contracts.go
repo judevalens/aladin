@@ -9,6 +9,7 @@ import (
 	"aladin/backend_v2/internal/search"
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/shardresource"
+	"aladin/backend_v2/internal/source"
 	"aladin/backend_v2/internal/watchlist"
 )
 
@@ -18,7 +19,7 @@ import (
 type APIComponents interface {
 	Auth() coreservice.AuthService
 	System() coreservice.SystemService
-	Sources() coreservice.SourceService
+	Sources() source.SourceService
 	Records() coreservice.RecordService
 	Artifacts() coreservice.ArtifactService
 	Pages() coreservice.PageService

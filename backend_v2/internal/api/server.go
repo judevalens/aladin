@@ -16,6 +16,8 @@ import (
 	searchhttp "aladin/backend_v2/internal/search/httptransport"
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/shardresource"
+	"aladin/backend_v2/internal/source"
+	sourcehttp "aladin/backend_v2/internal/source/httptransport"
 	"aladin/backend_v2/internal/watchlist"
 	watchlisthttp "aladin/backend_v2/internal/watchlist/httptransport"
 	"context"
@@ -42,7 +44,7 @@ type Server struct {
 type Dependencies interface {
 	Auth() coreservice.AuthService
 	System() coreservice.SystemService
-	Sources() coreservice.SourceService
+	Sources() source.SourceService
 	Records() coreservice.RecordService
 	Artifacts() coreservice.ArtifactService
 	Pages() coreservice.PageService
@@ -140,9 +142,7 @@ func NewWithDependencies(addr string, deps Dependencies) *Server {
 	providerconnectionhttp.Register(mux, deps.ProviderConnections())
 	s.registerSyncRoutes(mux)
 
-	mux.HandleFunc("GET /api/sources/", s.handleSourcesList)
-	mux.HandleFunc("POST /api/sources/", s.handleSourcesCreate)
-	mux.HandleFunc("DELETE /api/sources/{id}", s.handleSourcesDelete)
+	sourcehttp.Register(mux, deps.Sources())
 
 	mux.HandleFunc("GET /api/records/", s.handleRecordsList)
 	mux.HandleFunc("POST /api/records/", s.handleRecordsCreate)
