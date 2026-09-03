@@ -9,6 +9,8 @@ import (
 	"aladin/backend_v2/internal/service"
 )
 
+const appArtifactType = "app"
+
 // fakeArtifacts embeds the interface; Get reports an "app" so requireApp passes,
 // Update is a no-op. Other methods would panic if called.
 type fakeArtifacts struct {
@@ -133,8 +135,8 @@ func TestVerifyApp(t *testing.T) {
 			store:   fakeStore{files: map[string]string{"anchors.json": twoRouteManifest}},
 			preview: healthyPreview(),
 		}
-		report, err := ts.verifyApp(ctx, "p1", service.ChannelPublished, false)
-		if err != nil || !report.OK || verifyFailure(report) != "" {
+		report, err := docsurface.NewVerification(ts.store, ts.preview).Verify(ctx, "p1", service.ChannelPublished, false, nil)
+		if err != nil || !report.OK || docsurface.FailureSummary(report) != "" {
 			t.Fatalf("want ok report, got %+v err=%v", report, err)
 		}
 		if len(report.Routes) != 3 {
@@ -146,11 +148,11 @@ func TestVerifyApp(t *testing.T) {
 		p := healthyPreview()
 		p.states["#/a"] = notMounted()
 		ts := docToolServer{store: fakeStore{files: map[string]string{"anchors.json": twoRouteManifest}}, preview: p}
-		report, err := ts.verifyApp(ctx, "p1", service.ChannelPublished, false)
+		report, err := docsurface.NewVerification(ts.store, ts.preview).Verify(ctx, "p1", service.ChannelPublished, false, nil)
 		if err != nil {
 			t.Fatalf("verifyApp: %v", err)
 		}
-		if msg := verifyFailure(report); !strings.Contains(msg, "#/a") || !strings.Contains(msg, "did not mount") {
+		if msg := docsurface.FailureSummary(report); !strings.Contains(msg, "#/a") || !strings.Contains(msg, "did not mount") {
 			t.Fatalf("want failure naming #/a, got %q", msg)
 		}
 	})
@@ -159,8 +161,8 @@ func TestVerifyApp(t *testing.T) {
 		p := healthyPreview()
 		p.states["#/b"] = service.PreviewState{Mounted: true, Exceptions: []string{"TypeError: boom\n  at x"}}
 		ts := docToolServer{store: fakeStore{files: map[string]string{"anchors.json": twoRouteManifest}}, preview: p}
-		report, _ := ts.verifyApp(ctx, "p1", service.ChannelPublished, false)
-		if msg := verifyFailure(report); !strings.Contains(msg, "#/b") || !strings.Contains(msg, "TypeError: boom") {
+		report, _ := docsurface.NewVerification(ts.store, ts.preview).Verify(ctx, "p1", service.ChannelPublished, false, nil)
+		if msg := docsurface.FailureSummary(report); !strings.Contains(msg, "#/b") || !strings.Contains(msg, "TypeError: boom") {
 			t.Fatalf("want failure naming #/b's exception, got %q", msg)
 		}
 	})
@@ -173,11 +175,11 @@ func TestVerifyApp(t *testing.T) {
 		p := healthyPreview()
 		p.escapingLinks = map[string][]string{"#/a": {"/returns", "sections/quiz"}}
 		ts := docToolServer{store: fakeStore{files: map[string]string{"anchors.json": twoRouteManifest}}, preview: p}
-		report, _ := ts.verifyApp(ctx, "p1", service.ChannelPublished, false)
+		report, _ := docsurface.NewVerification(ts.store, ts.preview).Verify(ctx, "p1", service.ChannelPublished, false, nil)
 		if report.OK {
 			t.Fatalf("an escaping link should fail the pass: %+v", report)
 		}
-		msg := verifyFailure(report)
+		msg := docsurface.FailureSummary(report)
 		if !strings.Contains(msg, "#/a") || !strings.Contains(msg, "/returns") || !strings.Contains(msg, "401") {
 			t.Fatalf("want failure naming #/a's escaping link, got %q", msg)
 		}
@@ -188,11 +190,11 @@ func TestVerifyApp(t *testing.T) {
 		p := healthyPreview()
 		p.anchors["#/a"] = []string{"a"} // "a2" declared but never rendered
 		ts := docToolServer{store: fakeStore{files: map[string]string{"anchors.json": twoRouteManifest}}, preview: p}
-		report, _ := ts.verifyApp(ctx, "p1", service.ChannelPublished, false)
+		report, _ := docsurface.NewVerification(ts.store, ts.preview).Verify(ctx, "p1", service.ChannelPublished, false, nil)
 		if report.OK {
 			t.Fatalf("missing anchor should fail the pass")
 		}
-		if msg := verifyFailure(report); !strings.Contains(msg, "a2") {
+		if msg := docsurface.FailureSummary(report); !strings.Contains(msg, "a2") {
 			t.Fatalf("want failure naming the missing anchor, got %q", msg)
 		}
 	})
@@ -202,7 +204,7 @@ func TestVerifyApp(t *testing.T) {
 		p.consoleErrors = map[string][]string{"#/b": {"error: deprecation warning from a vendored lib"}}
 		ts := docToolServer{store: fakeStore{files: map[string]string{"anchors.json": twoRouteManifest}}, preview: p}
 
-		lenient, _ := ts.verifyApp(ctx, "p1", service.ChannelPublished, false)
+		lenient, _ := docsurface.NewVerification(ts.store, ts.preview).Verify(ctx, "p1", service.ChannelPublished, false, nil)
 		if !lenient.OK {
 			t.Fatalf("console errors must not fail the default pass: %+v", lenient)
 		}
@@ -216,8 +218,8 @@ func TestVerifyApp(t *testing.T) {
 			t.Fatalf("console errors should still be REPORTED")
 		}
 
-		strict, _ := ts.verifyApp(ctx, "p1", service.ChannelPublished, true)
-		if strict.OK || !strings.Contains(verifyFailure(strict), "console error") {
+		strict, _ := docsurface.NewVerification(ts.store, ts.preview).Verify(ctx, "p1", service.ChannelPublished, true, nil)
+		if strict.OK || !strings.Contains(docsurface.FailureSummary(strict), "console error") {
 			t.Fatalf("strict_console should fail on console errors: %+v", strict)
 		}
 	})
@@ -228,7 +230,7 @@ func TestVerifyApp(t *testing.T) {
 			store:   fakeStore{files: map[string]string{"anchors.json": `{"version":2,"anchors":[{"route":"#/"}]}`}},
 			preview: healthyPreview(),
 		}
-		report, err := ts.verifyApp(ctx, "p1", service.ChannelPublished, false)
+		report, err := docsurface.NewVerification(ts.store, ts.preview).Verify(ctx, "p1", service.ChannelPublished, false, nil)
 		if err != nil {
 			t.Fatalf("verifyApp: %v", err)
 		}
@@ -242,11 +244,11 @@ func TestVerifyApp(t *testing.T) {
 			store:   fakeStore{files: map[string]string{"anchors.json": twoRouteManifest}},
 			preview: &fakePreview{openErr: service.BadRequest("renderer unavailable: no chrome")},
 		}
-		report, err := ts.verifyApp(ctx, "p1", service.ChannelPublished, false)
+		report, err := docsurface.NewVerification(ts.store, ts.preview).Verify(ctx, "p1", service.ChannelPublished, false, nil)
 		if err != nil || report.RendererAvailable || report.Warning == "" {
 			t.Fatalf("want soft warn, got %+v err=%v", report, err)
 		}
-		if verifyFailure(report) != "" {
+		if docsurface.FailureSummary(report) != "" {
 			t.Fatalf("unverifiable must not read as failed")
 		}
 	})
@@ -256,7 +258,7 @@ func TestVerifyApp(t *testing.T) {
 			store:   fakeStore{files: map[string]string{"anchors.json": twoRouteManifest}},
 			preview: &fakePreview{openErr: service.BadRequest("build failed: syntax error")},
 		}
-		if _, err := ts.verifyApp(ctx, "p1", service.ChannelPublished, false); err == nil ||
+		if _, err := docsurface.NewVerification(ts.store, ts.preview).Verify(ctx, "p1", service.ChannelPublished, false, nil); err == nil ||
 			!strings.Contains(err.Error(), "build failed") {
 			t.Fatalf("want build error propagated, got %v", err)
 		}
@@ -267,7 +269,7 @@ func TestVerifyApp(t *testing.T) {
 			store:   fakeStore{files: map[string]string{}}, // ReadFile → ErrNotFound
 			preview: &fakePreview{states: map[string]service.PreviewState{"#/": mounted()}},
 		}
-		report, err := ts.verifyApp(ctx, "p1", service.ChannelPublished, false)
+		report, err := docsurface.NewVerification(ts.store, ts.preview).Verify(ctx, "p1", service.ChannelPublished, false, nil)
 		if err != nil || !report.OK || len(report.Routes) != 1 {
 			t.Fatalf("want root-only verification, got %+v err=%v", report, err)
 		}
@@ -357,7 +359,7 @@ func TestPublishGate(t *testing.T) {
 
 func TestManifestAnchorsByRouteDedup(t *testing.T) {
 	ts := docToolServer{store: fakeStore{files: map[string]string{"anchors.json": twoRouteManifest}}}
-	byRoute, routes := ts.manifestAnchorsByRoute(context.Background(), "p1")
+	byRoute, routes := docsurface.NewVerification(ts.store, ts.preview).ManifestAnchorsByRoute(context.Background(), "p1")
 	if want := "#/,#/a,#/b"; strings.Join(routes, ",") != want {
 		t.Fatalf("routes = %v, want %s (distinct, in order)", routes, want)
 	}

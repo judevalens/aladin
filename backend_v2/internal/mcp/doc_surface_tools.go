@@ -11,17 +11,6 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// appArtifactType is the artifact type string for Doc Surface pages (distinct
-// from "page", which is a BlockNote note).
-const appArtifactType = "app"
-
-// Compatibility aliases for the MCP-level behavior tests. History ownership
-// now lives behind the Doc Surface authoring application boundary.
-const (
-	historyDir  = docsurface.HistoryDir
-	historyKeep = docsurface.HistoryKeep
-)
-
 // starterIndexTSX is intentionally plain React. Aladin injects theme tokens and
 // Tailwind utilities, while authors own their markup and visual language.
 const starterIndexTSX = `import { createRoot } from "react-dom/client";
@@ -293,8 +282,6 @@ type publishAppOutput struct {
 }
 
 type verifyReport = docsurface.VerificationReport
-type verifyRoute = docsurface.VerificationRoute
-type refsSummary = docsurface.ReferenceSummary
 
 type authoringGuideInput struct {
 	// PageID is optional: with it the guide comes back alongside the shard's
@@ -435,19 +422,6 @@ func (t docToolServer) editFile(ctx context.Context, _ *sdkmcp.CallToolRequest, 
 	return nil, editFileOutput{OK: result.OK, Path: result.Path, Replacements: result.Replacements, Build: result.Build}, nil
 }
 
-var (
-	errEditNotFound  = docsurface.ErrEditNotFound
-	errEditAmbiguous = docsurface.ErrEditAmbiguous
-)
-
-// applyStringEdit performs an exact-string replacement. old_string must occur
-// exactly once unless replaceAll is set; absent → errEditNotFound, multiple
-// without replaceAll → errEditAmbiguous (with the match count). Returns the new
-// content and the number of replacements.
-func applyStringEdit(content, oldStr, newStr string, replaceAll bool) (string, int, error) {
-	return docsurface.ApplyStringEdit(content, oldStr, newStr, replaceAll)
-}
-
 func (t docToolServer) installLib(ctx context.Context, _ *sdkmcp.CallToolRequest, in installLibInput) (*sdkmcp.CallToolResult, installLibOutput, error) {
 	libs, err := t.authoring().InstallLib(ctx, in.PageID, in.Name, in.URL)
 	if err != nil {
@@ -517,24 +491,6 @@ func (t docToolServer) publishApp(ctx context.Context, _ *sdkmcp.CallToolRequest
 		OK: result.OK, ServedURL: result.ServedURL, Verified: result.Verified, Warning: result.Warning,
 		Citations: []citationOut{{Kind: "shard", ID: in.PageID}},
 	}, nil
-}
-
-// Compatibility wrappers keep focused MCP behavior tests readable while the
-// implementation and report types belong to the Doc Surface verification owner.
-func (t docToolServer) verifyApp(ctx context.Context, pageID string, channel service.BuildChannel, strictConsole bool, builds ...*service.BuildResult) (verifyReport, error) {
-	var built *service.BuildResult
-	if len(builds) > 0 {
-		built = builds[0]
-	}
-	return docsurface.NewVerification(t.store, t.preview).Verify(ctx, pageID, channel, strictConsole, built)
-}
-
-func verifyFailure(report verifyReport) string {
-	return docsurface.FailureSummary(report)
-}
-
-func (t docToolServer) manifestAnchorsByRoute(ctx context.Context, pageID string, snapshots ...[]byte) (map[string][]string, []string) {
-	return docsurface.NewVerification(t.store, t.preview).ManifestAnchorsByRoute(ctx, pageID, snapshots...)
 }
 
 // --- preview handlers ------------------------------------------------------
