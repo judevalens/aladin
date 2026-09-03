@@ -18,6 +18,7 @@ import (
 	"aladin/backend_v2/internal/search"
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/source"
+	"aladin/backend_v2/internal/system"
 	"aladin/backend_v2/internal/unfurl"
 	"aladin/backend_v2/internal/watchlist"
 )
@@ -27,7 +28,7 @@ import (
 // becoming a shared service locator just to make handler tests convenient.
 type testDependencies struct {
 	AuthSvc                coreservice.AuthService
-	SystemSvc              coreservice.SystemService
+	SystemSvc              system.SystemService
 	SourcesSvc             source.SourceService
 	RecordsSvc             record.RecordService
 	ArtifactsSvc           coreservice.ArtifactService
@@ -69,7 +70,7 @@ type testDependencies struct {
 }
 
 func (d testDependencies) Auth() coreservice.AuthService          { return d.AuthSvc }
-func (d testDependencies) System() coreservice.SystemService      { return d.SystemSvc }
+func (d testDependencies) System() system.SystemService           { return d.SystemSvc }
 func (d testDependencies) Sources() source.SourceService          { return d.SourcesSvc }
 func (d testDependencies) Records() record.RecordService          { return d.RecordsSvc }
 func (d testDependencies) Artifacts() coreservice.ArtifactService { return d.ArtifactsSvc }

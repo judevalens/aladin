@@ -38,6 +38,8 @@ import (
 	"aladin/backend_v2/internal/shardresource"
 	"aladin/backend_v2/internal/source"
 	sourcehttp "aladin/backend_v2/internal/source/httptransport"
+	"aladin/backend_v2/internal/system"
+	systemhttp "aladin/backend_v2/internal/system/httptransport"
 	"aladin/backend_v2/internal/unfurl"
 	unfurlhttp "aladin/backend_v2/internal/unfurl/httptransport"
 	"aladin/backend_v2/internal/watchlist"
@@ -65,7 +67,7 @@ type Server struct {
 // app.APIComponents.
 type Dependencies interface {
 	Auth() coreservice.AuthService
-	System() coreservice.SystemService
+	System() system.SystemService
 	Sources() source.SourceService
 	Records() record.RecordService
 	Artifacts() coreservice.ArtifactService
@@ -137,8 +139,7 @@ func NewWithDependencies(addr string, deps Dependencies) *Server {
 	mux.HandleFunc("GET /api/graph-explore/full", s.handleEmptyGraph)
 	s.registerGraphRoutes(mux)
 
-	mux.HandleFunc("GET /api/worker/status", s.handleWorkerStatus)
-	mux.HandleFunc("GET /api/pipeline/stats", s.handlePipelineStats)
+	systemhttp.Register(mux, deps.System())
 
 	s.registerArtifactRoutes(mux)
 	s.registerPageRoutes(mux)

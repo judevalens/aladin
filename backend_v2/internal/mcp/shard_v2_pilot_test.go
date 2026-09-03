@@ -36,6 +36,7 @@ import (
 	shardstorage "aladin/backend_v2/internal/shardresource/storage"
 	"aladin/backend_v2/internal/shardv2"
 	"aladin/backend_v2/internal/source"
+	"aladin/backend_v2/internal/system"
 	"aladin/backend_v2/internal/unfurl"
 	"aladin/backend_v2/internal/watchlist"
 	"github.com/coder/websocket"
@@ -344,7 +345,7 @@ type pilotAPIDependencies struct {
 type emptyAPIDependencies struct{}
 
 func (emptyAPIDependencies) Auth() service.AuthService          { return nil }
-func (emptyAPIDependencies) System() service.SystemService      { return nil }
+func (emptyAPIDependencies) System() system.SystemService       { return nil }
 func (emptyAPIDependencies) Sources() source.SourceService      { return nil }
 func (emptyAPIDependencies) Records() record.RecordService      { return nil }
 func (emptyAPIDependencies) Artifacts() service.ArtifactService { return nil }

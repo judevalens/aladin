@@ -1,4 +1,4 @@
-package repo_test
+package postgres_test
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"aladin/backend_v2/internal/db"
-	"aladin/backend_v2/internal/repo"
+	systempostgres "aladin/backend_v2/internal/system/postgres"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -34,7 +34,7 @@ func TestWorkerStatus_HeartbeatFreshness(t *testing.T) {
 			`UPDATE worker_heartbeat SET updated_at = now() - interval '1 hour', stats = '{}'::jsonb WHERE id = 1`)
 	})
 
-	sys := repo.NewSystemPostgres(pool)
+	sys := systempostgres.NewSystemPostgres(pool)
 
 	// Fresh heartbeat with real counts.
 	if _, err := pool.Exec(ctx, `UPDATE worker_heartbeat SET updated_at = now(), stats = '{"failed":3,"active":2}'::jsonb WHERE id = 1`); err != nil {

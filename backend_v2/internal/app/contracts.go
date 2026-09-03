@@ -20,6 +20,7 @@ import (
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/shardresource"
 	"aladin/backend_v2/internal/source"
+	"aladin/backend_v2/internal/system"
 	"aladin/backend_v2/internal/unfurl"
 	"aladin/backend_v2/internal/watchlist"
 )
@@ -29,7 +30,7 @@ import (
 // exposes the singleton loops whose lifecycle belongs to the API process.
 type APIComponents interface {
 	Auth() coreservice.AuthService
-	System() coreservice.SystemService
+	System() system.SystemService
 	Sources() source.SourceService
 	Records() record.RecordService
 	Artifacts() coreservice.ArtifactService
