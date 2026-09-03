@@ -1,0 +1,1306 @@
+[
+  {
+    "name": "build_app",
+    "description": "Build a Doc Surface page (bundles index.tsx with esbuild). Returns ok + a build log; on failure, read the log, fix the files, and build again.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "page_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "build_id": {
+          "type": "string"
+        },
+        "log": {
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "served_url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "create_app",
+    "description": "Create a Doc Surface page (an interactive React app rendered in a sandboxed iframe). Seeds index.tsx and the data configuration enabled on this backend. Follow its returned authoring_guide; no runtime-version choice is needed. Then write_file to author, build_app to compile, publish_app to make it live. NOTE: distinct from create_page (which makes a BlockNote document).",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "type": [
+            "null",
+            "object"
+          ]
+        },
+        "folder_id": {
+          "type": [
+            "null",
+            "string"
+          ]
+        },
+        "summary": {
+          "type": [
+            "null",
+            "string"
+          ]
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "authoring_guide": {
+          "type": "string"
+        },
+        "citations": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "page": {
+                "type": "integer"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ],
+            "type": "object"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "contract_json": {
+          "type": "string"
+        },
+        "current_index_tsx": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "authoring_guide",
+        "current_index_tsx"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "delete_file",
+    "description": "Delete a file from a Doc Surface page directory. Like write_file, a draft build runs afterwards and its diagnostics come back in `build`.",
+    "annotations": {
+      "destructiveHint": true,
+      "openWorldHint": false,
+      "title": "Delete file"
+    },
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "build": {
+          "type": [
+            "null",
+            "boolean"
+          ]
+        },
+        "page_id": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id",
+        "path"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "build": {
+          "additionalProperties": false,
+          "properties": {
+            "build_id": {
+              "type": "string"
+            },
+            "log": {
+              "type": "string"
+            },
+            "ok": {
+              "type": "boolean"
+            },
+            "served_url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "ok"
+          ],
+          "type": [
+            "null",
+            "object"
+          ]
+        },
+        "deleted": {
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok",
+        "deleted"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "edit_file",
+    "description": "Edit a file by exact string replacement: old_string must appear EXACTLY once (include surrounding context to disambiguate) unless replace_all=true. Errors if old_string is absent or ambiguous. Like write_file, it triggers a draft build and returns diagnostics in `build`. Prefer this over write_file for surgical changes.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "build": {
+          "type": [
+            "null",
+            "boolean"
+          ]
+        },
+        "new_string": {
+          "type": "string"
+        },
+        "old_string": {
+          "type": "string"
+        },
+        "page_id": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "replace_all": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "page_id",
+        "path",
+        "old_string",
+        "new_string"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "build": {
+          "additionalProperties": false,
+          "properties": {
+            "build_id": {
+              "type": "string"
+            },
+            "log": {
+              "type": "string"
+            },
+            "ok": {
+              "type": "boolean"
+            },
+            "served_url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "ok"
+          ],
+          "type": [
+            "null",
+            "object"
+          ]
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "path": {
+          "type": "string"
+        },
+        "replacements": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "ok",
+        "path",
+        "replacements"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "get_authoring_guide",
+    "description": "Read the currently available shard building capabilities, Tailwind theme tokens and nonvisual @aladin/shard API reference. Call this before answering capability questions or editing a shard. Without page_id it describes new shards on this backend. With page_id it selects the supported APIs for that existing shard and returns its files, anchors, contract when present, and current index.tsx. Use the returned capabilities directly; no runtime-version choice is needed.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "page_id": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "anchors_json": {
+          "type": "string"
+        },
+        "authoring_guide": {
+          "type": "string"
+        },
+        "contract_json": {
+          "type": "string"
+        },
+        "current_index_tsx": {
+          "type": "string"
+        },
+        "files": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        }
+      },
+      "required": [
+        "authoring_guide"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "install_lib",
+    "description": "Add an npm dependency to a Doc Surface page. Provide name (optionally name@version); the lib is bundled from esm.sh at build time. import it normally in your code.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "page_id": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "libs": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "url"
+            ],
+            "type": "object"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        }
+      },
+      "required": [
+        "libs"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "list_dir",
+    "description": "List files/dirs in a Doc Surface page directory (relative path optional, defaults to the page root).",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "page_id": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "entries": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "is_dir": {
+                "type": "boolean"
+              },
+              "name": {
+                "type": "string"
+              },
+              "size": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "name",
+              "is_dir"
+            ],
+            "type": "object"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        }
+      },
+      "required": [
+        "entries"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "preview_click",
+    "description": "Click the first element matching a CSS selector in the open preview, then return the resulting state. Use to exercise flows (open a menu, submit, follow an in-app link).",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "page_id": {
+          "type": "string"
+        },
+        "selector": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id",
+        "selector"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "console": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "eval_result": {
+          "type": "string"
+        },
+        "exceptions": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "mounted": {
+          "type": "boolean"
+        },
+        "outline": {
+          "type": "string"
+        },
+        "page_id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id",
+        "url",
+        "mounted"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "preview_close",
+    "description": "Close the live preview tab for a page and free its resources. Optional — idle tabs are reaped automatically.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "page_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "preview_console",
+    "description": "Return the console log lines and uncaught exceptions accumulated in the open preview since it was opened.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "page_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "console": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "eval_result": {
+          "type": "string"
+        },
+        "exceptions": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "mounted": {
+          "type": "boolean"
+        },
+        "outline": {
+          "type": "string"
+        },
+        "page_id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id",
+        "url",
+        "mounted"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "preview_eval",
+    "description": "Evaluate a JavaScript expression in the open preview and return its JSON value. Use to inspect app state or the DOM (e.g. document.querySelectorAll('button').length).",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "expr": {
+          "type": "string"
+        },
+        "page_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id",
+        "expr"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "console": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "eval_result": {
+          "type": "string"
+        },
+        "exceptions": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "mounted": {
+          "type": "boolean"
+        },
+        "outline": {
+          "type": "string"
+        },
+        "page_id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id",
+        "url",
+        "mounted"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "preview_navigate",
+    "description": "Navigate the open preview to an in-app hash route (e.g. \"#/section/sub\" or \"section\"). Docs are ONE app with client-side hash routing; this walks to a sub-page in-place. Returns the post-navigation state.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "page_id": {
+          "type": "string"
+        },
+        "route": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id",
+        "route"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "console": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "eval_result": {
+          "type": "string"
+        },
+        "exceptions": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "mounted": {
+          "type": "boolean"
+        },
+        "outline": {
+          "type": "string"
+        },
+        "page_id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id",
+        "url",
+        "mounted"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "preview_open",
+    "description": "Build the app (draft channel by default; pass channel=\"published\" for the published build) and open it in a live headless browser tab kept alive across calls. Returns whether React mounted (#root has content), the current URL, and any console/exceptions. ALWAYS preview before publish; re-run after edits to reload the latest build. If a route doesn't mount or exceptions are non-empty, fix and preview_open again.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "channel": {
+          "type": "string"
+        },
+        "page_id": {
+          "type": "string"
+        },
+        "theme": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "console": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "eval_result": {
+          "type": "string"
+        },
+        "exceptions": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "mounted": {
+          "type": "boolean"
+        },
+        "outline": {
+          "type": "string"
+        },
+        "page_id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id",
+        "url",
+        "mounted"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "preview_restart",
+    "description": "Force-restart the headless preview renderer: tears down the shared browser and ALL preview tabs. Use to recover if preview_open/navigate/eval start failing with 'context canceled' or the renderer seems wedged — the next preview_open rebuilds it. Auto-recovery normally handles a crash, so this is an explicit escape hatch.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "page_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "preview_screenshot",
+    "description": "Capture a PNG screenshot of the current preview viewport (returned as an image you can look at) plus the current state.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "page_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "console": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "eval_result": {
+          "type": "string"
+        },
+        "exceptions": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "mounted": {
+          "type": "boolean"
+        },
+        "outline": {
+          "type": "string"
+        },
+        "page_id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id",
+        "url",
+        "mounted"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "preview_snapshot",
+    "description": "Return the current preview view's text plus a compact DOM outline (tag#id.class with text). Use to verify what actually rendered on a route.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "page_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "console": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "eval_result": {
+          "type": "string"
+        },
+        "exceptions": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "mounted": {
+          "type": "boolean"
+        },
+        "outline": {
+          "type": "string"
+        },
+        "page_id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id",
+        "url",
+        "mounted"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "publish_app",
+    "description": "Publish a shard: builds the published channel, verifies declared routes, anchors and data sources, records the markdown summary, and marks the page live. Publication is refused when required verification fails — run verify_app for the detail, fix, and retry. Follow get_authoring_guide(page_id) for this shard's renderer and data requirements; do not assume renderer verification can be skipped.",
+    "annotations": {
+      "destructiveHint": true,
+      "openWorldHint": false,
+      "title": "Publish app"
+    },
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "page_id": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id",
+        "summary"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "citations": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "page": {
+                "type": "integer"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ],
+            "type": "object"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "served_url": {
+          "type": "string"
+        },
+        "verified": {
+          "type": "boolean"
+        },
+        "warning": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "served_url",
+        "verified"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "read_file",
+    "description": "Read a file from a Doc Surface page directory.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "page_id": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id",
+        "path"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "verify_app",
+    "description": "Verify a shard WITHOUT publishing: validates its manifest and data declarations, then drives each declared route through the live preview and reports per route whether it mounted, which declared anchors are actually in the DOM, uncaught exceptions (unhandled promise rejections included), and console errors. Defaults to the draft channel; pass strict_console=true to treat console errors as failures. Run this before publish_app — this shows you the report while you can still fix it. Follow get_authoring_guide(page_id) for this shard's data and renderer requirements.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "channel": {
+          "type": "string"
+        },
+        "page_id": {
+          "type": "string"
+        },
+        "strict_console": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "page_id"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "channel": {
+          "type": "string"
+        },
+        "manifest_problems": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "refs": {
+          "additionalProperties": false,
+          "properties": {
+            "missing": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "null",
+                "array"
+              ]
+            },
+            "ok": {
+              "type": "boolean"
+            },
+            "total": {
+              "type": "integer"
+            },
+            "unknown_kind": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "null",
+                "array"
+              ]
+            },
+            "unobservable": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "null",
+                "array"
+              ]
+            }
+          },
+          "required": [
+            "ok",
+            "total"
+          ],
+          "type": [
+            "null",
+            "object"
+          ]
+        },
+        "renderer_available": {
+          "type": "boolean"
+        },
+        "routes": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "anchors_found": {
+                "additionalProperties": {
+                  "type": "integer"
+                },
+                "type": "object"
+              },
+              "anchors_missing": {
+                "items": {
+                  "type": "string"
+                },
+                "type": [
+                  "null",
+                  "array"
+                ]
+              },
+              "console_errors": {
+                "items": {
+                  "type": "string"
+                },
+                "type": [
+                  "null",
+                  "array"
+                ]
+              },
+              "escaping_links": {
+                "items": {
+                  "type": "string"
+                },
+                "type": [
+                  "null",
+                  "array"
+                ]
+              },
+              "exceptions": {
+                "items": {
+                  "type": "string"
+                },
+                "type": [
+                  "null",
+                  "array"
+                ]
+              },
+              "mounted": {
+                "type": "boolean"
+              },
+              "navigate_error": {
+                "type": "string"
+              },
+              "ok": {
+                "type": "boolean"
+              },
+              "route": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "route",
+              "ok",
+              "mounted"
+            ],
+            "type": "object"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "warning": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "channel",
+        "renderer_available"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "write_file",
+    "description": "Write (create or overwrite) a file in a Doc Surface page directory (index.tsx, components, css). After the write a DRAFT build runs automatically and its diagnostics come back in `build` — read them to confirm the change compiles; the user sees the draft update live. Pass build=false for bulk multi-file writes, then build once at the end.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "build": {
+          "type": [
+            "null",
+            "boolean"
+          ]
+        },
+        "content": {
+          "type": "string"
+        },
+        "overwrite": {
+          "type": "boolean"
+        },
+        "page_id": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id",
+        "path",
+        "content"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "build": {
+          "additionalProperties": false,
+          "properties": {
+            "build_id": {
+              "type": "string"
+            },
+            "log": {
+              "type": "string"
+            },
+            "ok": {
+              "type": "boolean"
+            },
+            "served_url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "ok"
+          ],
+          "type": [
+            "null",
+            "object"
+          ]
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "path"
+      ],
+      "type": "object"
+    }
+  }
+]

@@ -1,13 +1,5 @@
 package mcpserver
 
-import (
-	"context"
-	"errors"
-	"os"
-
-	"aladin/backend_v2/internal/service"
-)
-
 // The shared UI reference contains no storage API assumptions. Exactly one
 // data guide is selected using runtime configuration and the target's files.
 const shardSurfaceGuide = `This guide describes the capabilities available for this authoring target. Use them directly; do not ask the user to choose a runtime version.
@@ -169,33 +161,3 @@ func shardAuthoringGuide(resources, graphql bool) string {
 }
 
 const unavailableShardGuide = `This shard's data runtime is unavailable on this backend. Do not build or publish it, remove its contract, or rewrite its saved data to use another API. Ask for the configured runtime to be restored. Existing saved data must be preserved.`
-
-// Global discovery follows backend configuration. Editing follows the actual
-// shard as well: enabling resources never silently migrates an existing app.
-func (t docToolServer) existingShardAuthoringGuide(ctx context.Context, id string) (string, string, error) {
-	contract, err := t.store.ReadFile(ctx, id, "contract.json")
-	hasContract := err == nil
-	if err != nil && !errors.Is(err, service.ErrNotFound) && !os.IsNotExist(err) {
-		return "", "", err
-	}
-	if !hasContract && t.releases != nil {
-		// A missing authoring file cannot turn an active resource shard into a
-		// key/value app. Recover its authoring context from protected metadata.
-		for _, channel := range []service.BuildChannel{service.ChannelDraft, service.ChannelPublished} {
-			release, err := t.releases.Active(ctx, id, channel)
-			if err == nil {
-				return shardAuthoringGuide(true, t.runtimeAuthoringEnabled()) + "\nThe authoring contract file is missing. Restore contract.json from the returned protected contract before building; do not change this shard's storage API.\n", string(release.Source), nil
-			}
-			if service.ResourceErrorCode(err) == "unsupported-capability" {
-				return unavailableShardGuide, "", nil
-			}
-			if !errors.Is(err, service.ErrNotFound) {
-				return "", "", err
-			}
-		}
-	}
-	if hasContract && !t.resourceAuthoringEnabled() {
-		return unavailableShardGuide, string(contract), nil
-	}
-	return shardAuthoringGuide(hasContract, t.runtimeAuthoringEnabled()), string(contract), nil
-}

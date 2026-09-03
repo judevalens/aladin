@@ -2,11 +2,8 @@ package mcpserver
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"sort"
 	"strings"
-	"time"
 
 	"aladin/backend_v2/internal/docsurface"
 	"aladin/backend_v2/internal/service"
@@ -17,6 +14,13 @@ import (
 // appArtifactType is the artifact type string for Doc Surface pages (distinct
 // from "page", which is a BlockNote note).
 const appArtifactType = "app"
+
+// Compatibility aliases for the MCP-level behavior tests. History ownership
+// now lives behind the Doc Surface authoring application boundary.
+const (
+	historyDir  = docsurface.HistoryDir
+	historyKeep = docsurface.HistoryKeep
+)
 
 // starterIndexTSX is intentionally plain React. Aladin injects theme tokens and
 // Tailwind utilities, while authors own their markup and visual language.
@@ -74,6 +78,18 @@ type docToolServer struct {
 	bridge   service.ShardBridgeService
 	releases service.ShardReleaseService
 	graphql  service.ShardGraphQLService
+}
+
+func (t docToolServer) authoring() *docsurface.Authoring {
+	return docsurface.NewAuthoring(t.artifacts, t.store, t.build)
+}
+
+func (t docToolServer) publication() *docsurface.Publication {
+	return docsurface.NewPublication(t.artifacts, t.store, t.build, t.preview, t.bridge, t.releases)
+}
+
+func (t docToolServer) previewCommands() *docsurface.PreviewCommands {
+	return docsurface.NewPreviewCommands(t.artifacts, t.store, t.build, t.preview)
 }
 
 func registerDocSurfaceTools(server *sdkmcp.Server, artifacts service.ArtifactService, store service.DocSurfaceStore, build service.ShardBuildService, preview service.PreviewService, bridge service.ShardBridgeService, releases service.ShardReleaseService, graphql ...service.ShardGraphQLService) {
@@ -276,40 +292,9 @@ type publishAppOutput struct {
 	Citations []citationOut `json:"citations,omitempty"`
 }
 
-// verifyReport is the structured result of a verification pass — the same shape
-// verify_app returns and publish_app gates on.
-type verifyReport struct {
-	OK                bool          `json:"ok"`
-	Channel           string        `json:"channel"`
-	RendererAvailable bool          `json:"renderer_available"`
-	Warning           string        `json:"warning,omitempty"`
-	ManifestProblems  []string      `json:"manifest_problems,omitempty"`
-	Refs              *refsSummary  `json:"refs,omitempty"`
-	Routes            []verifyRoute `json:"routes,omitempty"`
-}
-
-type verifyRoute struct {
-	Route          string         `json:"route"`
-	OK             bool           `json:"ok"`
-	Mounted        bool           `json:"mounted"`
-	AnchorsFound   map[string]int `json:"anchors_found,omitempty"`
-	AnchorsMissing []string       `json:"anchors_missing,omitempty"`
-	Exceptions     []string       `json:"exceptions,omitempty"`
-	ConsoleErrors  []string       `json:"console_errors,omitempty"`
-	// EscapingLinks are hrefs on this route that are not fragment links — they
-	// navigate the frame off the shard's authenticated URL and break it when
-	// clicked, even though the route itself renders fine. Always a failure.
-	EscapingLinks []string `json:"escaping_links,omitempty"`
-	NavigateError string   `json:"navigate_error,omitempty"`
-}
-
-type refsSummary struct {
-	OK           bool     `json:"ok"`
-	Total        int      `json:"total"`
-	Missing      []string `json:"missing,omitempty"`
-	UnknownKind  []string `json:"unknown_kind,omitempty"`
-	Unobservable []string `json:"unobservable,omitempty"`
-}
+type verifyReport = docsurface.VerificationReport
+type verifyRoute = docsurface.VerificationRoute
+type refsSummary = docsurface.ReferenceSummary
 
 type authoringGuideInput struct {
 	// PageID is optional: with it the guide comes back alongside the shard's
@@ -372,88 +357,49 @@ type previewRestartOutput struct {
 
 // --- handlers --------------------------------------------------------------
 
-func (t docToolServer) requireApp(ctx context.Context, pageID string) error {
-	if strings.TrimSpace(pageID) == "" {
-		return service.BadRequest("page_id is required")
-	}
-	rec, err := t.artifacts.Get(ctx, pageID)
-	if err != nil {
-		return err
-	}
-	if rec.Type != appArtifactType {
-		return service.BadRequest("artifact is not a Doc Surface page")
-	}
-	return nil
-}
-
 func (t docToolServer) createApp(ctx context.Context, _ *sdkmcp.CallToolRequest, in createAppInput) (*sdkmcp.CallToolResult, createAppOutput, error) {
-	if strings.TrimSpace(in.Title) == "" {
-		return nil, createAppOutput{}, service.BadRequest("title is required")
+	resources := t.resourceAuthoringEnabled()
+	contract := ""
+	files := map[string][]byte{
+		"index.tsx":                 []byte(starterIndexTSX),
+		docsurface.ManifestFileName: []byte(starterAnchorsJSON),
 	}
-	created, err := t.artifacts.Create(ctx, service.ArtifactPayload{
-		Type:     appArtifactType,
-		FolderID: in.FolderID,
-		Title:    in.Title,
-		Summary:  in.Summary,
-		Metadata: mergePageMetadata(nil, nil, in.Agent),
+	if resources {
+		contract = starterResourceContractJSON
+		files["contract.json"] = []byte(contract)
+	}
+	created, err := t.authoring().Create(ctx, docsurface.CreateCommand{
+		Artifact: service.ArtifactPayload{
+			FolderID: in.FolderID,
+			Title:    in.Title,
+			Summary:  in.Summary,
+			Metadata: mergePageMetadata(nil, nil, in.Agent),
+		},
+		Files: files,
 	})
 	if err != nil {
 		return nil, createAppOutput{}, err
 	}
-	id := created.Artifact.ID
-	if _, err := t.store.EnsurePageDir(ctx, id); err != nil {
-		// Roll back the orphaned row if the dir can't be created.
-		_, _ = t.artifacts.Delete(ctx, id)
-		return nil, createAppOutput{}, err
-	}
-	if err := t.store.WriteFile(ctx, id, "index.tsx", []byte(starterIndexTSX)); err != nil {
-		_, _ = t.artifacts.Delete(ctx, id)
-		return nil, createAppOutput{}, err
-	}
-	if err := t.store.WriteFile(ctx, id, docsurface.ManifestFileName, []byte(starterAnchorsJSON)); err != nil {
-		_, _ = t.artifacts.Delete(ctx, id)
-		return nil, createAppOutput{}, err
-	}
-	resources := t.resourceAuthoringEnabled()
-	contract := ""
-	if resources {
-		contract = starterResourceContractJSON
-		if err := t.store.WriteFile(ctx, id, "contract.json", []byte(contract)); err != nil {
-			_, _ = t.artifacts.Delete(ctx, id)
-			return nil, createAppOutput{}, err
-		}
-	}
 	return nil, createAppOutput{
 		ContractJSON:    contract,
-		ID:              id,
-		Title:           created.Artifact.Title,
+		ID:              created.ID,
+		Title:           created.Title,
 		AuthoringGuide:  shardAuthoringGuide(resources, t.runtimeAuthoringEnabled()),
 		CurrentIndexTSX: starterIndexTSX,
-		Citations:       []citationOut{{Kind: "shard", ID: id, Title: created.Artifact.Title}},
+		Citations:       []citationOut{{Kind: "shard", ID: created.ID, Title: created.Title}},
 	}, nil
 }
 
 func (t docToolServer) deleteFile(ctx context.Context, _ *sdkmcp.CallToolRequest, in deleteFileInput) (*sdkmcp.CallToolResult, deleteFileOutput, error) {
-	if err := t.requireApp(ctx, in.PageID); err != nil {
+	result, err := t.authoring().DeleteFile(ctx, docsurface.DeleteCommand{PageID: in.PageID, Path: in.Path, Build: in.Build})
+	if err != nil {
 		return nil, deleteFileOutput{}, err
 	}
-	if strings.TrimSpace(in.Path) == "" {
-		return nil, deleteFileOutput{}, service.BadRequest("path is required")
-	}
-	if existing, rerr := t.store.ReadFile(ctx, in.PageID, in.Path); rerr == nil {
-		t.snapshotFile(ctx, in.PageID, in.Path, existing, "delete")
-	}
-	if err := t.store.DeleteFile(ctx, in.PageID, in.Path); err != nil {
-		return nil, deleteFileOutput{}, err
-	}
-	return nil, deleteFileOutput{OK: true, Deleted: in.Path, Build: t.maybeAutoBuild(ctx, in.PageID, in.Build)}, nil
+	return nil, deleteFileOutput{OK: result.OK, Deleted: result.Deleted, Build: result.Build}, nil
 }
 
 func (t docToolServer) listDir(ctx context.Context, _ *sdkmcp.CallToolRequest, in listDirInput) (*sdkmcp.CallToolResult, listDirOutput, error) {
-	if err := t.requireApp(ctx, in.PageID); err != nil {
-		return nil, listDirOutput{}, err
-	}
-	entries, err := t.store.ListDir(ctx, in.PageID, in.Path)
+	entries, err := t.authoring().ListDir(ctx, in.PageID, in.Path)
 	if err != nil {
 		return nil, listDirOutput{}, err
 	}
@@ -461,13 +407,7 @@ func (t docToolServer) listDir(ctx context.Context, _ *sdkmcp.CallToolRequest, i
 }
 
 func (t docToolServer) readFile(ctx context.Context, _ *sdkmcp.CallToolRequest, in readFileInput) (*sdkmcp.CallToolResult, readFileOutput, error) {
-	if err := t.requireApp(ctx, in.PageID); err != nil {
-		return nil, readFileOutput{}, err
-	}
-	if strings.TrimSpace(in.Path) == "" {
-		return nil, readFileOutput{}, service.BadRequest("path is required")
-	}
-	data, err := t.store.ReadFile(ctx, in.PageID, in.Path)
+	data, err := t.authoring().ReadFile(ctx, in.PageID, in.Path)
 	if err != nil {
 		return nil, readFileOutput{}, err
 	}
@@ -475,108 +415,29 @@ func (t docToolServer) readFile(ctx context.Context, _ *sdkmcp.CallToolRequest, 
 }
 
 func (t docToolServer) writeFile(ctx context.Context, _ *sdkmcp.CallToolRequest, in writeFileInput) (*sdkmcp.CallToolResult, writeFileOutput, error) {
-	if err := t.requireApp(ctx, in.PageID); err != nil {
+	result, err := t.authoring().WriteFile(ctx, docsurface.WriteCommand{
+		PageID: in.PageID, Path: in.Path, Content: in.Content, Build: in.Build, Overwrite: in.Overwrite,
+	})
+	if err != nil {
 		return nil, writeFileOutput{}, err
 	}
-	if strings.TrimSpace(in.Path) == "" {
-		return nil, writeFileOutput{}, service.BadRequest("path is required")
-	}
-	if existing, rerr := t.store.ReadFile(ctx, in.PageID, in.Path); rerr == nil {
-		if !in.Overwrite {
-			return nil, writeFileOutput{}, service.BadRequest(fmt.Sprintf(
-				"%s already exists (%d bytes) — read it first, then use edit_file for a targeted change, or pass overwrite:true to replace it wholesale.",
-				in.Path, len(existing)))
-		}
-		t.snapshotFile(ctx, in.PageID, in.Path, existing, "write")
-	}
-	if err := t.store.WriteFile(ctx, in.PageID, in.Path, []byte(in.Content)); err != nil {
-		return nil, writeFileOutput{}, err
-	}
-	return nil, writeFileOutput{OK: true, Path: in.Path, Build: t.maybeAutoBuild(ctx, in.PageID, in.Build)}, nil
-}
-
-// historyDir holds pre-change snapshots. Deliberately minimal: a copy of the
-// previous bytes under a sortable timestamp, inspectable and restorable with
-// the tools that already exist (list_dir / read_file / write_file), pruned to a
-// small cap. Not version control — just enough that an overwrite or delete is
-// recoverable. It lives outside the build graph (only imports are bundled).
-const historyDir = ".history"
-
-const historyKeep = 20
-
-// snapshotFile copies a file's current bytes into .history before it is
-// replaced or removed. Each snapshot is ONE flat file —
-// ".history/<stamp>-<op>-<path with / as __>" — so pruning is a plain file
-// delete (removing a directory tree is not something the store can do).
-// Best-effort by design: losing a snapshot must never fail the write the agent
-// actually asked for.
-func (t docToolServer) snapshotFile(ctx context.Context, pageID, path string, content []byte, op string) {
-	stamp := time.Now().UTC().Format("20060102T150405.000000000Z")
-	dest := fmt.Sprintf("%s/%s-%s-%s", historyDir, stamp, op, strings.ReplaceAll(path, "/", "__"))
-	if err := t.store.WriteFile(ctx, pageID, dest, content); err != nil {
-		return
-	}
-	t.pruneHistory(ctx, pageID)
-}
-
-// pruneHistory keeps the newest historyKeep snapshots. Names begin with a
-// fixed-width UTC timestamp, so lexical order is chronological.
-func (t docToolServer) pruneHistory(ctx context.Context, pageID string) {
-	entries, err := t.store.ListDir(ctx, pageID, historyDir)
-	if err != nil || len(entries) <= historyKeep {
-		return
-	}
-	names := make([]string, 0, len(entries))
-	for _, e := range entries {
-		if !e.IsDir {
-			names = append(names, e.Name)
-		}
-	}
-	if len(names) <= historyKeep {
-		return
-	}
-	sort.Strings(names)
-	for _, name := range names[:len(names)-historyKeep] {
-		_ = t.store.DeleteFile(ctx, pageID, historyDir+"/"+name)
-	}
+	return nil, writeFileOutput{OK: result.OK, Path: result.Path, Build: result.Build}, nil
 }
 
 func (t docToolServer) editFile(ctx context.Context, _ *sdkmcp.CallToolRequest, in editFileInput) (*sdkmcp.CallToolResult, editFileOutput, error) {
-	if err := t.requireApp(ctx, in.PageID); err != nil {
-		return nil, editFileOutput{}, err
-	}
-	if strings.TrimSpace(in.Path) == "" {
-		return nil, editFileOutput{}, service.BadRequest("path is required")
-	}
-	if in.OldString == "" {
-		return nil, editFileOutput{}, service.BadRequest("old_string is required")
-	}
-	if in.OldString == in.NewString {
-		return nil, editFileOutput{}, service.BadRequest("old_string and new_string are identical")
-	}
-	data, err := t.store.ReadFile(ctx, in.PageID, in.Path)
+	result, err := t.authoring().EditFile(ctx, docsurface.EditCommand{
+		PageID: in.PageID, Path: in.Path, OldString: in.OldString, NewString: in.NewString,
+		ReplaceAll: in.ReplaceAll, Build: in.Build,
+	})
 	if err != nil {
 		return nil, editFileOutput{}, err
 	}
-	updated, count, err := applyStringEdit(string(data), in.OldString, in.NewString, in.ReplaceAll)
-	switch {
-	case errors.Is(err, errEditNotFound):
-		return nil, editFileOutput{}, service.BadRequest("old_string not found in " + in.Path)
-	case errors.Is(err, errEditAmbiguous):
-		return nil, editFileOutput{}, service.BadRequest(fmt.Sprintf(
-			"old_string matches %d times in %s; add surrounding context to make it unique, or set replace_all", count, in.Path))
-	case err != nil:
-		return nil, editFileOutput{}, err
-	}
-	if err := t.store.WriteFile(ctx, in.PageID, in.Path, []byte(updated)); err != nil {
-		return nil, editFileOutput{}, err
-	}
-	return nil, editFileOutput{OK: true, Path: in.Path, Replacements: count, Build: t.maybeAutoBuild(ctx, in.PageID, in.Build)}, nil
+	return nil, editFileOutput{OK: result.OK, Path: result.Path, Replacements: result.Replacements, Build: result.Build}, nil
 }
 
 var (
-	errEditNotFound  = errors.New("old_string not found")
-	errEditAmbiguous = errors.New("old_string ambiguous")
+	errEditNotFound  = docsurface.ErrEditNotFound
+	errEditAmbiguous = docsurface.ErrEditAmbiguous
 )
 
 // applyStringEdit performs an exact-string replacement. old_string must occur
@@ -584,55 +445,11 @@ var (
 // without replaceAll → errEditAmbiguous (with the match count). Returns the new
 // content and the number of replacements.
 func applyStringEdit(content, oldStr, newStr string, replaceAll bool) (string, int, error) {
-	count := strings.Count(content, oldStr)
-	switch {
-	case count == 0:
-		return "", 0, errEditNotFound
-	case count > 1 && !replaceAll:
-		return "", count, errEditAmbiguous
-	case replaceAll:
-		return strings.ReplaceAll(content, oldStr, newStr), count, nil
-	default:
-		return strings.Replace(content, oldStr, newStr, 1), 1, nil
-	}
-}
-
-// maybeAutoBuild runs a synchronous DRAFT build after a write (unless build is
-// explicitly false), returning the result so diagnostics ride back inline. A Go
-// error from the build is folded into a failed BuildResult rather than failing
-// the write — the file IS written; the agent reads the log and iterates.
-func (t docToolServer) maybeAutoBuild(ctx context.Context, pageID string, build *bool) *service.BuildResult {
-	if build != nil && !*build {
-		return nil
-	}
-	res, err := t.build.Build(ctx, pageID, service.ChannelDraft)
-	if err != nil {
-		return &service.BuildResult{OK: false, Log: err.Error()}
-	}
-	return &res
+	return docsurface.ApplyStringEdit(content, oldStr, newStr, replaceAll)
 }
 
 func (t docToolServer) installLib(ctx context.Context, _ *sdkmcp.CallToolRequest, in installLibInput) (*sdkmcp.CallToolResult, installLibOutput, error) {
-	if err := t.requireApp(ctx, in.PageID); err != nil {
-		return nil, installLibOutput{}, err
-	}
-	name := strings.TrimSpace(in.Name)
-	if name == "" {
-		return nil, installLibOutput{}, service.BadRequest("name is required")
-	}
-	url := strings.TrimSpace(in.URL)
-	if url == "" {
-		url = "https://esm.sh/" + name
-	} else if !strings.HasPrefix(url, "https://esm.sh/") {
-		// Build-time SSRF guard: deps may only come from esm.sh.
-		return nil, installLibOutput{}, service.BadRequest("url must be an https://esm.sh/ URL")
-	}
-	// The manifest is keyed by the bare package name; strip any @version for the key.
-	key := name
-	if at := strings.LastIndex(name, "@"); at > 0 {
-		key = name[:at]
-	}
-	libs, err := t.store.InstallLib(ctx, in.PageID, service.LibEntry{Name: key, URL: url})
+	libs, err := t.authoring().InstallLib(ctx, in.PageID, in.Name, in.URL)
 	if err != nil {
 		return nil, installLibOutput{}, err
 	}
@@ -640,10 +457,7 @@ func (t docToolServer) installLib(ctx context.Context, _ *sdkmcp.CallToolRequest
 }
 
 func (t docToolServer) buildApp(ctx context.Context, _ *sdkmcp.CallToolRequest, in buildAppInput) (*sdkmcp.CallToolResult, service.BuildResult, error) {
-	if err := t.requireApp(ctx, in.PageID); err != nil {
-		return nil, service.BuildResult{}, err
-	}
-	res, err := t.build.Build(ctx, in.PageID, service.ChannelPublished)
+	res, err := t.authoring().Build(ctx, in.PageID, service.ChannelPublished)
 	if err != nil {
 		return nil, service.BuildResult{}, err
 	}
@@ -659,33 +473,22 @@ func (t docToolServer) getAuthoringGuide(ctx context.Context, _ *sdkmcp.CallTool
 	if strings.TrimSpace(in.PageID) == "" {
 		return nil, out, nil
 	}
-	if err := t.requireApp(ctx, in.PageID); err != nil {
-		return nil, authoringGuideOutput{}, err
-	}
-	guide, contract, err := t.existingShardAuthoringGuide(ctx, in.PageID)
+	context, err := t.publication().AuthoringContext(ctx, in.PageID)
 	if err != nil {
 		return nil, authoringGuideOutput{}, err
 	}
-	out.AuthoringGuide, out.ContractJSON = guide, contract
-	if entries, err := t.store.ListDir(ctx, in.PageID, ""); err == nil {
-		for _, e := range entries {
-			if e.Name == historyDir || e.Name == "dist" {
-				continue // build output + snapshots aren't authoring context
-			}
-			name := e.Name
-			if e.IsDir {
-				name += "/"
-			}
-			out.Files = append(out.Files, name)
+	switch context.Mode {
+	case docsurface.AuthoringUnavailable:
+		out.AuthoringGuide = unavailableShardGuide
+	case docsurface.AuthoringResources:
+		out.AuthoringGuide = shardAuthoringGuide(true, t.runtimeAuthoringEnabled())
+		if context.ContractMissing {
+			out.AuthoringGuide += "\nThe authoring contract file is missing. Restore contract.json from the returned protected contract before building; do not change this shard's storage API.\n"
 		}
-		sort.Strings(out.Files)
+	default:
+		out.AuthoringGuide = shardAuthoringGuide(false, t.runtimeAuthoringEnabled())
 	}
-	if data, err := t.store.ReadFile(ctx, in.PageID, docsurface.ManifestFileName); err == nil {
-		out.Anchors = string(data)
-	}
-	if data, err := t.store.ReadFile(ctx, in.PageID, "index.tsx"); err == nil {
-		out.IndexTSX = string(data)
-	}
+	out.ContractJSON, out.Files, out.Anchors, out.IndexTSX = context.Contract, context.Files, context.Anchors, context.IndexTSX
 	return nil, out, nil
 }
 
@@ -694,343 +497,44 @@ func (t docToolServer) getAuthoringGuide(ctx context.Context, _ *sdkmcp.CallTool
 // publishing. Previewed code may mutate draft resources. Run it before publish_app,
 // but this one tells you exactly what is wrong while you can still fix it.
 func (t docToolServer) verifyAppTool(ctx context.Context, _ *sdkmcp.CallToolRequest, in verifyAppInput) (*sdkmcp.CallToolResult, verifyReport, error) {
-	if err := t.requireApp(ctx, in.PageID); err != nil {
-		return nil, verifyReport{}, err
-	}
 	channel := service.ChannelDraft
 	if in.Channel == string(service.ChannelPublished) {
 		channel = service.ChannelPublished
 	}
-	report, err := t.verifyApp(ctx, in.PageID, channel, in.StrictConsole)
+	report, err := t.publication().Verify(ctx, in.PageID, channel, in.StrictConsole)
 	if err != nil {
 		return nil, verifyReport{}, err
-	}
-	if t.bridge != nil {
-		refs, rerr := t.bridge.CheckRefs(ctx, in.PageID)
-		if rerr != nil {
-			return nil, verifyReport{}, rerr
-		}
-		report.Refs = &refsSummary{
-			OK:           refs.OK,
-			Total:        refs.Total,
-			Missing:      refs.Missing,
-			UnknownKind:  refs.UnknownKind,
-			Unobservable: refs.Unobservable,
-		}
-		if !refs.OK {
-			report.OK = false
-		}
 	}
 	return nil, report, nil
 }
 
 func (t docToolServer) publishApp(ctx context.Context, _ *sdkmcp.CallToolRequest, in publishAppInput) (*sdkmcp.CallToolResult, publishAppOutput, error) {
-	if err := t.requireApp(ctx, in.PageID); err != nil {
-		return nil, publishAppOutput{}, err
-	}
-	// Build the PUBLISHED channel here rather than trusting a marker file. The
-	// old flow gated on dist/.build-meta.json merely EXISTING, while every
-	// write auto-builds the DRAFT channel — so a shard edited after its last
-	// build_app could publish stale bytes that no check ever saw. Building now
-	// makes "what was verified" and "what goes live" the same artifact.
-	var staged *service.BuildResult
-	if t.build != nil {
-		res, berr := t.build.Build(ctx, in.PageID, service.ChannelPublished)
-		if berr != nil {
-			return nil, publishAppOutput{}, berr
-		}
-		if !res.OK {
-			return nil, publishAppOutput{}, service.BadRequest("publish blocked — the published build failed:\n" + res.Log)
-		}
-		staged = &res
-	} else if _, err := t.store.ReadFile(ctx, in.PageID, docsurface.BuildMetaPath); err != nil {
-		return nil, publishAppOutput{}, service.BadRequest("no successful build found — run build_app first")
-	}
-	// Gate on the full verification pass against what was just built: mounts,
-	// no uncaught exceptions/rejections, and every declared anchor present.
-	// Hard-fails when the renderer is available; soft-warns (publishes
-	// UNVERIFIED) only when there's no renderer to verify with.
-	report, err := t.verifyApp(ctx, in.PageID, service.ChannelPublished, false, staged)
+	result, err := t.publication().Publish(ctx, in.PageID, in.Summary)
 	if err != nil {
 		return nil, publishAppOutput{}, err
 	}
-	if problems := verifyFailure(report); problems != "" {
-		return nil, publishAppOutput{}, service.BadRequest("publish blocked — verification failed:\n  - " + problems +
-			"\nRun verify_app for the full report, fix, then publish_app again.")
-	}
-	if staged != nil && len(staged.Contract) > 0 && !report.RendererAvailable {
-		return nil, publishAppOutput{}, service.BadRequest("Resource-backed publication requires renderer verification; previous release remains active")
-	}
-	verified, warning := report.RendererAvailable, report.Warning
-	// Gate on the manifest's REFS too: a shard that declares data it can't read
-	// renders an empty region for the user with no error anywhere. A missing or
-	// unknown-kind ref is a hard refusal; a ref whose kind emits no sync frames
-	// publishes with a warning (renderable, but the region can never go live).
-	if t.bridge != nil && (staged == nil || len(staged.Contract) == 0) {
-		refs, rerr := t.bridge.CheckRefs(ctx, in.PageID)
-		if rerr != nil {
-			return nil, publishAppOutput{}, rerr
-		}
-		if !refs.OK {
-			var problems []string
-			if len(refs.Missing) > 0 {
-				problems = append(problems, "not found: "+strings.Join(refs.Missing, ", "))
-			}
-			if len(refs.UnknownKind) > 0 {
-				problems = append(problems, "unknown kind: "+strings.Join(refs.UnknownKind, ", "))
-			}
-			return nil, publishAppOutput{}, service.BadRequest(
-				"publish blocked — anchors.json refs don't resolve (" + strings.Join(problems, "; ") +
-					"). Fix the ids or drop them from refs.")
-		}
-		if len(refs.Unobservable) > 0 {
-			unobservable := "these refs can be read but never update live (their kind emits no change events): " +
-				strings.Join(refs.Unobservable, ", ")
-			if warning == "" {
-				warning = unobservable
-			} else {
-				warning += "; " + unobservable
-			}
-		}
-	}
-	if staged != nil && len(staged.Contract) > 0 {
-		if t.releases == nil {
-			return nil, publishAppOutput{}, service.BadRequest("Resource release activation unavailable")
-		}
-		if err := t.releases.Activate(ctx, in.PageID, service.ChannelPublished, staged.BuildID); err != nil {
-			return nil, publishAppOutput{}, err
-		}
-	}
-	summary := strings.TrimSpace(in.Summary)
-	if summary != "" {
-		if _, err := t.artifacts.Update(ctx, in.PageID, service.ArtifactPatch{Summary: &summary}); err != nil {
-			return nil, publishAppOutput{}, err
-		}
-	}
-	// Reconcile the DRAFT build-state. A successful publish proves the current
-	// source builds; without this, a stale 'failed' left in the draft channel
-	// from mid-authoring (fixed before publish but never rebuilt on draft) keeps
-	// the work pane showing "build failed" for a shard that is in fact live. This
-	// rebuilds draft through the state-recording path. Best-effort: a published
-	// shard stays published even if the refresh hiccups.
-	if t.build != nil {
-		_, _ = t.build.Build(ctx, in.PageID, service.ChannelDraft)
-	}
 	return nil, publishAppOutput{
-		OK:        true,
-		ServedURL: "/content/" + in.PageID + "/",
-		Verified:  verified,
-		Warning:   warning,
+		OK: result.OK, ServedURL: result.ServedURL, Verified: result.Verified, Warning: result.Warning,
 		Citations: []citationOut{{Kind: "shard", ID: in.PageID}},
 	}, nil
 }
 
-// verifyApp drives the live preview across the page's declared routes and
-// checks, per route: it mounts, it threw no uncaught exceptions (unhandled
-// promise rejections included — the preview captures those as console.error),
-// and every anchor the manifest declares for that route actually exists in the
-// DOM. console.error lines are always REPORTED; they only fail the pass when
-// strictConsole is set, because vendored libraries legitimately log errors.
-//
-// The report is the shared truth: verify_app returns it as-is, and publish
-// turns it into a refusal.
+// Compatibility wrappers keep focused MCP behavior tests readable while the
+// implementation and report types belong to the Doc Surface verification owner.
 func (t docToolServer) verifyApp(ctx context.Context, pageID string, channel service.BuildChannel, strictConsole bool, builds ...*service.BuildResult) (verifyReport, error) {
-	report := verifyReport{Channel: string(channel)}
 	var built *service.BuildResult
 	if len(builds) > 0 {
 		built = builds[0]
 	}
-	data, readErr := t.store.ReadFile(ctx, pageID, docsurface.ManifestFileName)
-	if built != nil && len(built.Contract) > 0 {
-		data, readErr = built.Files["anchors.json"], nil
-	}
-
-	// Structure first: a manifest that doesn't parse can't be checked against,
-	// and must never silently degrade to "just check the root".
-	if readErr == nil {
-		report.ManifestProblems = docsurface.ValidateManifestBytes(data)
-		if len(report.ManifestProblems) > 0 {
-			return report, nil // no point driving a browser against a broken manifest
-		}
-	}
-	byRoute, routes := t.manifestAnchorsByRoute(ctx, pageID, data)
-
-	first, err := t.preview.Open(ctx, pageID, channel, service.PreviewOpenOptions{Build: built})
-	if err != nil {
-		if docsurface.IsRendererUnavailable(err) {
-			report.RendererAvailable = false
-			report.Warning = "renderer unavailable — nothing was verified; preview the routes manually before relying on this build."
-			return report, nil
-		}
-		return report, err
-	}
-	report.RendererAvailable = true
-
-	check := func(route string, st service.PreviewState) verifyRoute {
-		vr := verifyRoute{
-			Route:      route,
-			Mounted:    st.Mounted,
-			Exceptions: st.Exceptions,
-		}
-		if errs, cerr := t.preview.ConsoleErrors(ctx, pageID); cerr == nil {
-			vr.ConsoleErrors = errs
-		}
-		// A route can render perfectly and still be unreachable in practice: a
-		// non-fragment href navigates the served frame away from the URL that
-		// carries its credential. The renderer previews from about:blank, so this
-		// only ever shows up in the served app — hence the check here.
-		if links, lerr := t.preview.EscapingLinks(ctx, pageID); lerr == nil {
-			vr.EscapingLinks = links
-		}
-		declared := byRoute[route]
-		if len(declared) > 0 {
-			counts, aerr := t.preview.CheckAnchors(ctx, pageID, declared)
-			if aerr == nil {
-				vr.AnchorsFound = counts
-				for _, id := range declared {
-					if counts[id] == 0 {
-						vr.AnchorsMissing = append(vr.AnchorsMissing, id)
-					}
-				}
-			}
-		}
-		vr.OK = vr.Mounted && len(vr.Exceptions) == 0 && len(vr.AnchorsMissing) == 0 &&
-			len(vr.EscapingLinks) == 0 &&
-			(!strictConsole || len(vr.ConsoleErrors) == 0)
-		return vr
-	}
-
-	// Open landed on the app's default route ("#/"); check it, then walk the rest.
-	firstRoute := firstNonEmpty(routeOf(first.URL), "#/")
-	report.Routes = append(report.Routes, check(firstRoute, first))
-	for _, r := range routes {
-		if r == firstRoute {
-			continue // already covered by the initial Open
-		}
-		st, nerr := t.preview.Navigate(ctx, pageID, r)
-		if nerr != nil {
-			if docsurface.IsRendererUnavailable(nerr) {
-				report.RendererAvailable = false
-				report.Warning = "renderer unavailable mid-verification — the remaining routes were not checked."
-				return report, nil
-			}
-			report.Routes = append(report.Routes, verifyRoute{Route: r, NavigateError: firstLine(nerr.Error())})
-			continue
-		}
-		report.Routes = append(report.Routes, check(r, st))
-	}
-
-	report.OK = len(report.ManifestProblems) == 0
-	for _, r := range report.Routes {
-		if !r.OK {
-			report.OK = false
-		}
-	}
-	return report, nil
+	return docsurface.NewVerification(t.store, t.preview).Verify(ctx, pageID, channel, strictConsole, built)
 }
 
-// verifyFailure renders a report's problems as the message a publish refusal
-// carries; "" when nothing is wrong.
 func verifyFailure(report verifyReport) string {
-	if report.OK || !report.RendererAvailable {
-		return ""
-	}
-	var lines []string
-	for _, p := range report.ManifestProblems {
-		lines = append(lines, "anchors.json: "+p)
-	}
-	for _, r := range report.Routes {
-		if r.OK {
-			continue
-		}
-		switch {
-		case r.NavigateError != "":
-			lines = append(lines, r.Route+" (navigate error: "+r.NavigateError+")")
-		case !r.Mounted:
-			lines = append(lines, r.Route+" (did not mount)")
-		case len(r.Exceptions) > 0:
-			lines = append(lines, fmt.Sprintf("%s (%d uncaught exception(s): %s)", r.Route, len(r.Exceptions), firstLine(r.Exceptions[0])))
-		case len(r.EscapingLinks) > 0:
-			lines = append(lines, fmt.Sprintf(
-				"%s (link(s) navigate off the shard and will 401 when clicked: %s — use hash routes such as href=\"#/section\")",
-				r.Route, strings.Join(r.EscapingLinks, ", ")))
-		case len(r.AnchorsMissing) > 0:
-			lines = append(lines, fmt.Sprintf("%s (declared anchors not in the DOM: %s)", r.Route, strings.Join(r.AnchorsMissing, ", ")))
-		case len(r.ConsoleErrors) > 0:
-			lines = append(lines, fmt.Sprintf("%s (%d console error(s): %s)", r.Route, len(r.ConsoleErrors), firstLine(r.ConsoleErrors[0])))
-		}
-	}
-	if len(lines) == 0 {
-		return ""
-	}
-	return strings.Join(lines, "\n  - ")
+	return docsurface.FailureSummary(report)
 }
 
-// routeOf extracts the hash route from a preview URL ("about:blank#/x" → "#/x").
-func routeOf(url string) string {
-	if i := strings.IndexByte(url, '#'); i >= 0 {
-		return url[i:]
-	}
-	return ""
-}
-
-// manifestAnchorsByRoute groups declared anchor ids by their route, and returns
-// the distinct routes in declaration order. Falls back to just "#/" when there
-// is no manifest — the root must at least mount.
 func (t docToolServer) manifestAnchorsByRoute(ctx context.Context, pageID string, snapshots ...[]byte) (map[string][]string, []string) {
-	data, err := t.store.ReadFile(ctx, pageID, docsurface.ManifestFileName)
-	if len(snapshots) > 0 {
-		data, err = snapshots[0], nil
-	}
-	if err != nil {
-		return nil, []string{"#/"}
-	}
-	m, err := docsurface.ParseManifest(data)
-	if err != nil {
-		return nil, []string{"#/"}
-	}
-	byRoute := map[string][]string{}
-	seen := map[string]bool{}
-	var routes []string
-	for _, a := range m.Anchors {
-		r := strings.TrimSpace(a.Route)
-		if r == "" {
-			continue
-		}
-		if !seen[r] {
-			seen[r] = true
-			routes = append(routes, r)
-		}
-		if id := strings.TrimSpace(a.ID); id != "" {
-			byRoute[r] = append(byRoute[r], id)
-		}
-	}
-	if len(routes) == 0 {
-		return byRoute, []string{"#/"}
-	}
-	return byRoute, routes
-}
-
-// firstLine returns s up to its first newline, trimmed and length-capped, for a
-// compact one-line failure note.
-func firstLine(s string) string {
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		s = s[:i]
-	}
-	s = strings.TrimSpace(s)
-	if len(s) > 160 {
-		s = s[:160] + "…"
-	}
-	return s
-}
-
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if strings.TrimSpace(v) != "" {
-			return v
-		}
-	}
-	return ""
+	return docsurface.NewVerification(t.store, t.preview).ManifestAnchorsByRoute(ctx, pageID, snapshots...)
 }
 
 // --- preview handlers ------------------------------------------------------
@@ -1042,14 +546,11 @@ func previewSummary(st service.PreviewState) string {
 }
 
 func (t docToolServer) previewOpen(ctx context.Context, _ *sdkmcp.CallToolRequest, in previewOpenInput) (*sdkmcp.CallToolResult, service.PreviewState, error) {
-	if err := t.requireApp(ctx, in.PageID); err != nil {
-		return nil, service.PreviewState{}, err
-	}
 	channel := service.ChannelDraft
 	if in.Channel == string(service.ChannelPublished) {
 		channel = service.ChannelPublished
 	}
-	st, err := t.preview.Open(ctx, in.PageID, channel, service.PreviewOpenOptions{Theme: in.Theme})
+	st, err := t.previewCommands().Open(ctx, in.PageID, channel, in.Theme)
 	if err != nil {
 		return nil, service.PreviewState{}, err
 	}
@@ -1057,10 +558,7 @@ func (t docToolServer) previewOpen(ctx context.Context, _ *sdkmcp.CallToolReques
 }
 
 func (t docToolServer) previewNavigate(ctx context.Context, _ *sdkmcp.CallToolRequest, in previewNavigateInput) (*sdkmcp.CallToolResult, service.PreviewState, error) {
-	if err := t.requireApp(ctx, in.PageID); err != nil {
-		return nil, service.PreviewState{}, err
-	}
-	st, err := t.preview.Navigate(ctx, in.PageID, in.Route)
+	st, err := t.previewCommands().Navigate(ctx, in.PageID, in.Route)
 	if err != nil {
 		return nil, service.PreviewState{}, err
 	}
@@ -1068,10 +566,7 @@ func (t docToolServer) previewNavigate(ctx context.Context, _ *sdkmcp.CallToolRe
 }
 
 func (t docToolServer) previewSnapshot(ctx context.Context, _ *sdkmcp.CallToolRequest, in previewSnapshotInput) (*sdkmcp.CallToolResult, service.PreviewState, error) {
-	if err := t.requireApp(ctx, in.PageID); err != nil {
-		return nil, service.PreviewState{}, err
-	}
-	st, err := t.preview.Snapshot(ctx, in.PageID)
+	st, err := t.previewCommands().Snapshot(ctx, in.PageID)
 	if err != nil {
 		return nil, service.PreviewState{}, err
 	}
@@ -1079,10 +574,7 @@ func (t docToolServer) previewSnapshot(ctx context.Context, _ *sdkmcp.CallToolRe
 }
 
 func (t docToolServer) previewScreenshot(ctx context.Context, _ *sdkmcp.CallToolRequest, in previewScreenshotInput) (*sdkmcp.CallToolResult, service.PreviewState, error) {
-	if err := t.requireApp(ctx, in.PageID); err != nil {
-		return nil, service.PreviewState{}, err
-	}
-	png, st, err := t.preview.Screenshot(ctx, in.PageID)
+	png, st, err := t.previewCommands().Screenshot(ctx, in.PageID)
 	if err != nil {
 		return nil, service.PreviewState{}, err
 	}
@@ -1097,10 +589,7 @@ func (t docToolServer) previewScreenshot(ctx context.Context, _ *sdkmcp.CallTool
 }
 
 func (t docToolServer) previewEval(ctx context.Context, _ *sdkmcp.CallToolRequest, in previewEvalInput) (*sdkmcp.CallToolResult, service.PreviewState, error) {
-	if err := t.requireApp(ctx, in.PageID); err != nil {
-		return nil, service.PreviewState{}, err
-	}
-	st, err := t.preview.Eval(ctx, in.PageID, in.Expr)
+	st, err := t.previewCommands().Eval(ctx, in.PageID, in.Expr)
 	if err != nil {
 		return nil, service.PreviewState{}, err
 	}
@@ -1108,10 +597,7 @@ func (t docToolServer) previewEval(ctx context.Context, _ *sdkmcp.CallToolReques
 }
 
 func (t docToolServer) previewClick(ctx context.Context, _ *sdkmcp.CallToolRequest, in previewClickInput) (*sdkmcp.CallToolResult, service.PreviewState, error) {
-	if err := t.requireApp(ctx, in.PageID); err != nil {
-		return nil, service.PreviewState{}, err
-	}
-	st, err := t.preview.Click(ctx, in.PageID, in.Selector)
+	st, err := t.previewCommands().Click(ctx, in.PageID, in.Selector)
 	if err != nil {
 		return nil, service.PreviewState{}, err
 	}
@@ -1119,10 +605,7 @@ func (t docToolServer) previewClick(ctx context.Context, _ *sdkmcp.CallToolReque
 }
 
 func (t docToolServer) previewConsole(ctx context.Context, _ *sdkmcp.CallToolRequest, in previewConsoleInput) (*sdkmcp.CallToolResult, service.PreviewState, error) {
-	if err := t.requireApp(ctx, in.PageID); err != nil {
-		return nil, service.PreviewState{}, err
-	}
-	st, err := t.preview.Console(ctx, in.PageID)
+	st, err := t.previewCommands().Console(ctx, in.PageID)
 	if err != nil {
 		return nil, service.PreviewState{}, err
 	}
@@ -1130,20 +613,14 @@ func (t docToolServer) previewConsole(ctx context.Context, _ *sdkmcp.CallToolReq
 }
 
 func (t docToolServer) previewClose(ctx context.Context, _ *sdkmcp.CallToolRequest, in previewCloseInput) (*sdkmcp.CallToolResult, previewCloseOutput, error) {
-	if err := t.requireApp(ctx, in.PageID); err != nil {
-		return nil, previewCloseOutput{}, err
-	}
-	if err := t.preview.Close(ctx, in.PageID); err != nil {
+	if err := t.previewCommands().Close(ctx, in.PageID); err != nil {
 		return nil, previewCloseOutput{}, err
 	}
 	return nil, previewCloseOutput{OK: true}, nil
 }
 
 func (t docToolServer) previewRestart(ctx context.Context, _ *sdkmcp.CallToolRequest, in previewRestartInput) (*sdkmcp.CallToolResult, previewRestartOutput, error) {
-	if err := t.requireApp(ctx, in.PageID); err != nil {
-		return nil, previewRestartOutput{}, err
-	}
-	if err := t.preview.Reset(ctx); err != nil {
+	if err := t.previewCommands().Restart(ctx, in.PageID); err != nil {
 		return nil, previewRestartOutput{}, err
 	}
 	return nil, previewRestartOutput{OK: true}, nil
