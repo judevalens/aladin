@@ -18,6 +18,7 @@ import (
 	copilotstream "aladin/backend_v2/internal/copilot/stream"
 	"aladin/backend_v2/internal/copilot/turnstate"
 	"aladin/backend_v2/internal/copilotagent"
+	"aladin/backend_v2/internal/realtime"
 	"aladin/backend_v2/internal/safego"
 	"aladin/backend_v2/internal/watchlist"
 
@@ -130,7 +131,7 @@ type CopilotAgent = copilotprovider.Client
 type CopilotDeps struct {
 	Store    CopilotStore
 	Agent    CopilotAgent
-	Realtime RealtimeEventService
+	Realtime realtime.EventService
 	// Model pins the sidecar's model per turn ("" ⇒ the sidecar's own default).
 	Model string
 	// Effort guides adaptive thinking depth per turn ("" ⇒ high, matching Claude Code default).

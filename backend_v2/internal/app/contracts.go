@@ -12,6 +12,7 @@ import (
 	"aladin/backend_v2/internal/market"
 	"aladin/backend_v2/internal/providerconnection"
 	"aladin/backend_v2/internal/readingposition"
+	"aladin/backend_v2/internal/realtime"
 	"aladin/backend_v2/internal/relationship"
 	"aladin/backend_v2/internal/research"
 	"aladin/backend_v2/internal/search"
@@ -36,8 +37,8 @@ type APIComponents interface {
 	Feed() feed.FeedService
 	Insights() insights.InsightService
 	ProviderConnections() providerconnection.ProviderConnectionService
-	Realtime() coreservice.RealtimeEventService
-	RealtimeKeyResolver() coreservice.SubscriptionKeyResolver
+	Realtime() realtime.EventService
+	RealtimeKeyResolver() realtime.KeyResolver
 	Sync() coreservice.SyncService
 	OutboxDrainer() *changefeed.Drainer
 	DocSurfaceStore() coreservice.DocSurfaceStore

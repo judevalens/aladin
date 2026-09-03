@@ -15,6 +15,17 @@ import (
 	"github.com/coder/websocket/wsjson"
 )
 
+type realtimeClientWireMessage struct {
+	Type          string                                  `json:"type"`
+	Subscriptions []artifactservice.PublicSubscriptionKey `json:"subscriptions"`
+}
+
+type realtimeServerWireMessage struct {
+	Type    string                    `json:"type"`
+	Event   *artifactservice.AppEvent `json:"event,omitempty"`
+	Message string                    `json:"message,omitempty"`
+}
+
 func TestRealtimeWebSocketResubscribeSwapsActiveSubscriptionSet(t *testing.T) {
 	t.Parallel()
 
@@ -63,7 +74,7 @@ func TestRealtimeWebSocketResubscribeSwapsActiveSubscriptionSet(t *testing.T) {
 
 func writeRealtimeSubscribe(t *testing.T, ctx context.Context, conn *websocket.Conn, subscriptions []artifactservice.PublicSubscriptionKey) {
 	t.Helper()
-	if err := wsjson.Write(ctx, conn, realtimeClientMessage{
+	if err := wsjson.Write(ctx, conn, realtimeClientWireMessage{
 		Type:          "subscribe",
 		Subscriptions: subscriptions,
 	}); err != nil {
@@ -71,9 +82,9 @@ func writeRealtimeSubscribe(t *testing.T, ctx context.Context, conn *websocket.C
 	}
 }
 
-func expectRealtimeServerMessage(t *testing.T, ctx context.Context, conn *websocket.Conn, messageType string, eventType string) realtimeServerMessage {
+func expectRealtimeServerMessage(t *testing.T, ctx context.Context, conn *websocket.Conn, messageType string, eventType string) realtimeServerWireMessage {
 	t.Helper()
-	var msg realtimeServerMessage
+	var msg realtimeServerWireMessage
 	if err := wsjson.Read(ctx, conn, &msg); err != nil {
 		t.Fatalf("read realtime message: %v", err)
 	}

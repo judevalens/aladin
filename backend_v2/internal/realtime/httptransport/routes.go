@@ -1,4 +1,4 @@
-package api
+package httptransport
 
 import (
 	"context"
@@ -7,28 +7,34 @@ import (
 	"net/http"
 	"time"
 
+	"aladin/backend_v2/internal/realtime"
 	"aladin/backend_v2/internal/safego"
-	coreservice "aladin/backend_v2/internal/service"
 
 	"github.com/coder/websocket"
 )
 
-func (s *Server) registerRealtimeRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/events/ws", s.handleRealtimeWebSocket)
+type routes struct {
+	events   realtime.EventService
+	resolver realtime.KeyResolver
+}
+
+func Register(mux *http.ServeMux, events realtime.EventService, resolver realtime.KeyResolver) {
+	r := routes{events: events, resolver: resolver}
+	mux.HandleFunc("GET /api/events/ws", r.handleRealtimeWebSocket)
 }
 
 type realtimeClientMessage struct {
-	Type          string                              `json:"type"`
-	Subscriptions []coreservice.PublicSubscriptionKey `json:"subscriptions"`
+	Type          string                           `json:"type"`
+	Subscriptions []realtime.PublicSubscriptionKey `json:"subscriptions"`
 }
 
 type realtimeServerMessage struct {
-	Type    string                `json:"type"`
-	Event   *coreservice.AppEvent `json:"event,omitempty"`
-	Message string                `json:"message,omitempty"`
+	Type    string             `json:"type"`
+	Event   *realtime.AppEvent `json:"event,omitempty"`
+	Message string             `json:"message,omitempty"`
 }
 
-func (s *Server) handleRealtimeWebSocket(w http.ResponseWriter, r *http.Request) {
+func (h routes) handleRealtimeWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 	if err != nil {
 		return
@@ -42,7 +48,7 @@ func (s *Server) handleRealtimeWebSocket(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	keys, err := s.deps.RealtimeKeyResolver().ResolveSubscribeKeys(ctx, coreservice.SubscriptionOptions{
+	keys, err := h.resolver.ResolveSubscribeKeys(ctx, realtime.SubscriptionOptions{
 		Subscriptions: msg.Subscriptions,
 	})
 	if err != nil {
@@ -51,7 +57,7 @@ func (s *Server) handleRealtimeWebSocket(w http.ResponseWriter, r *http.Request)
 	}
 
 	lastEventID := r.Header.Get("Last-Event-ID")
-	events, unsubscribe, err := s.deps.Realtime().Subscribe(ctx, keys, lastEventID)
+	events, unsubscribe, err := h.events.Subscribe(ctx, keys, lastEventID)
 	if err != nil {
 		_ = writeRealtimeError(ctx, conn, err.Error())
 		return
@@ -84,14 +90,14 @@ func (s *Server) handleRealtimeWebSocket(w http.ResponseWriter, r *http.Request)
 				_ = writeRealtimeError(ctx, conn, "expected subscribe message")
 				return
 			}
-			nextKeys, err := s.deps.RealtimeKeyResolver().ResolveSubscribeKeys(ctx, coreservice.SubscriptionOptions{
+			nextKeys, err := h.resolver.ResolveSubscribeKeys(ctx, realtime.SubscriptionOptions{
 				Subscriptions: msg.Subscriptions,
 			})
 			if err != nil {
 				_ = writeRealtimeError(ctx, conn, err.Error())
 				return
 			}
-			nextEvents, nextUnsubscribe, err := s.deps.Realtime().Subscribe(ctx, nextKeys, lastEventID)
+			nextEvents, nextUnsubscribe, err := h.events.Subscribe(ctx, nextKeys, lastEventID)
 			if err != nil {
 				_ = writeRealtimeError(ctx, conn, err.Error())
 				return

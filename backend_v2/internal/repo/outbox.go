@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"aladin/backend_v2/internal/outbox"
+	"aladin/backend_v2/internal/realtime"
 	"aladin/backend_v2/internal/service"
 
 	"github.com/jackc/pgx/v5"
@@ -51,7 +52,7 @@ const marketQuoteUserID = "00000000-0000-0000-0000-000000000000"
 // the instrument's distinct id. Own tx — the market-data hub holds no request tx.
 func (r *SyncRepo) AppendMarketQuote(ctx context.Context, instrumentID string, payload []byte) error {
 	ev := service.OutboxAppEvent{
-		Stream:       service.MarketStream,
+		Stream:       realtime.MarketStream,
 		ResourceKind: "quote",
 		ResourceID:   instrumentID,
 		Operation:    "update",

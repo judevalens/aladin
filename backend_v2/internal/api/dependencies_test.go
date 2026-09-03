@@ -11,6 +11,7 @@ import (
 	"aladin/backend_v2/internal/market"
 	"aladin/backend_v2/internal/providerconnection"
 	"aladin/backend_v2/internal/readingposition"
+	"aladin/backend_v2/internal/realtime"
 	"aladin/backend_v2/internal/relationship"
 	"aladin/backend_v2/internal/research"
 	"aladin/backend_v2/internal/search"
@@ -34,8 +35,8 @@ type testDependencies struct {
 	FeedSvc                feed.FeedService
 	InsightsSvc            insights.InsightService
 	ProviderConnectionsSvc providerconnection.ProviderConnectionService
-	RealtimeSvc            coreservice.RealtimeEventService
-	RealtimeKeys           coreservice.SubscriptionKeyResolver
+	RealtimeSvc            realtime.EventService
+	RealtimeKeys           realtime.KeyResolver
 	SyncSvc                coreservice.SyncService
 	DocSurfaceStoreSvc     coreservice.DocSurfaceStore
 	WorkspaceRuntimeSvc    coreservice.WorkspaceRuntime
@@ -78,8 +79,8 @@ func (d testDependencies) Insights() insights.InsightService      { return d.Ins
 func (d testDependencies) ProviderConnections() providerconnection.ProviderConnectionService {
 	return d.ProviderConnectionsSvc
 }
-func (d testDependencies) Realtime() coreservice.RealtimeEventService { return d.RealtimeSvc }
-func (d testDependencies) RealtimeKeyResolver() coreservice.SubscriptionKeyResolver {
+func (d testDependencies) Realtime() realtime.EventService { return d.RealtimeSvc }
+func (d testDependencies) RealtimeKeyResolver() realtime.KeyResolver {
 	return d.RealtimeKeys
 }
 func (d testDependencies) Sync() coreservice.SyncService                { return d.SyncSvc }

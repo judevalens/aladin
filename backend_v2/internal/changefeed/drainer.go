@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	"aladin/backend_v2/internal/realtime"
 	"aladin/backend_v2/internal/safego"
 	coreservice "aladin/backend_v2/internal/service"
 )
@@ -14,11 +15,11 @@ const DefaultDrainInterval = 50 * time.Millisecond
 
 type Drainer struct {
 	reader   coreservice.OutboxDrainReader
-	realtime coreservice.RealtimeEventService
+	realtime realtime.EventService
 	interval time.Duration
 }
 
-func NewDrainer(reader coreservice.OutboxDrainReader, realtime coreservice.RealtimeEventService, interval time.Duration) *Drainer {
+func NewDrainer(reader coreservice.OutboxDrainReader, realtime realtime.EventService, interval time.Duration) *Drainer {
 	if interval <= 0 {
 		interval = DefaultDrainInterval
 	}
@@ -82,18 +83,18 @@ func (d *Drainer) publishOne(ctx context.Context, event coreservice.DrainedEvent
 	if event.AppEvent != nil {
 		stream := event.AppEvent.Stream
 		tenantID := event.UserID
-		if stream == coreservice.MarketStream {
+		if stream == realtime.MarketStream {
 			tenantID = ""
 		} else {
-			stream = coreservice.WorkspaceStream
+			stream = realtime.WorkspaceStream
 		}
-		return d.realtime.Publish(ctx, coreservice.PublishTarget{
+		return d.realtime.Publish(ctx, realtime.PublishTarget{
 			Stream: stream, ResourceKind: event.AppEvent.ResourceKind, ResourceID: event.AppEvent.ResourceID,
 			Operation: event.AppEvent.Operation, TenantID: tenantID,
 		}, event.AppEvent.Payload)
 	}
-	return d.realtime.Publish(ctx, coreservice.PublishTarget{
-		Stream: coreservice.WorkspaceStream, ResourceKind: coreservice.AnyResource,
-		ResourceID: coreservice.AnyResource, Operation: coreservice.FrameOperation, TenantID: event.UserID,
+	return d.realtime.Publish(ctx, realtime.PublishTarget{
+		Stream: realtime.WorkspaceStream, ResourceKind: realtime.AnyResource,
+		ResourceID: realtime.AnyResource, Operation: realtime.FrameOperation, TenantID: event.UserID,
 	}, event.Frame)
 }

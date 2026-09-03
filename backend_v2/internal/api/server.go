@@ -24,6 +24,8 @@ import (
 	providerconnectionhttp "aladin/backend_v2/internal/providerconnection/httptransport"
 	"aladin/backend_v2/internal/readingposition"
 	readingpositionhttp "aladin/backend_v2/internal/readingposition/httptransport"
+	"aladin/backend_v2/internal/realtime"
+	realtimehttp "aladin/backend_v2/internal/realtime/httptransport"
 	"aladin/backend_v2/internal/relationship"
 	relationshiphttp "aladin/backend_v2/internal/relationship/httptransport"
 	"aladin/backend_v2/internal/research"
@@ -70,8 +72,8 @@ type Dependencies interface {
 	Feed() feed.FeedService
 	Insights() insights.InsightService
 	ProviderConnections() providerconnection.ProviderConnectionService
-	Realtime() coreservice.RealtimeEventService
-	RealtimeKeyResolver() coreservice.SubscriptionKeyResolver
+	Realtime() realtime.EventService
+	RealtimeKeyResolver() realtime.KeyResolver
 	Sync() coreservice.SyncService
 	DocSurfaceStore() coreservice.DocSurfaceStore
 	WorkspaceRuntime() coreservice.WorkspaceRuntime
@@ -156,7 +158,7 @@ func NewWithDependencies(addr string, deps Dependencies) *Server {
 	s.registerCopilotRoutes(mux)
 	s.registerEntityContextRoutes(mux)
 	artifactrefhttp.Register(mux, deps.ArtifactRefs())
-	s.registerRealtimeRoutes(mux)
+	realtimehttp.Register(mux, deps.Realtime(), deps.RealtimeKeyResolver())
 	providerconnectionhttp.Register(mux, deps.ProviderConnections())
 	s.registerSyncRoutes(mux)
 

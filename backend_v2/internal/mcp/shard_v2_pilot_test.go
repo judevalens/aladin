@@ -26,6 +26,7 @@ import (
 	"aladin/backend_v2/internal/market"
 	"aladin/backend_v2/internal/providerconnection"
 	"aladin/backend_v2/internal/readingposition"
+	"aladin/backend_v2/internal/realtime"
 	"aladin/backend_v2/internal/relationship"
 	"aladin/backend_v2/internal/repo"
 	"aladin/backend_v2/internal/research"
@@ -353,36 +354,36 @@ func (emptyAPIDependencies) Insights() insights.InsightService  { return nil }
 func (emptyAPIDependencies) ProviderConnections() providerconnection.ProviderConnectionService {
 	return nil
 }
-func (emptyAPIDependencies) Realtime() service.RealtimeEventService               { return nil }
-func (emptyAPIDependencies) RealtimeKeyResolver() service.SubscriptionKeyResolver { return nil }
-func (emptyAPIDependencies) Sync() service.SyncService                            { return nil }
-func (emptyAPIDependencies) DocSurfaceStore() service.DocSurfaceStore             { return nil }
-func (emptyAPIDependencies) WorkspaceRuntime() service.WorkspaceRuntime           { return nil }
-func (emptyAPIDependencies) ShardBuild() service.ShardBuildService                { return nil }
-func (emptyAPIDependencies) ShardResources() service.ShardResourceService         { return nil }
-func (emptyAPIDependencies) ShardGraphQL() service.ShardGraphQLService            { return nil }
-func (emptyAPIDependencies) ShardReleases() service.ShardReleaseService           { return nil }
-func (emptyAPIDependencies) ShardKV() service.ShardKVService                      { return nil }
-func (emptyAPIDependencies) ShardBridge() service.ShardBridgeService              { return nil }
-func (emptyAPIDependencies) Relationships() relationship.RelationshipService      { return nil }
-func (emptyAPIDependencies) Research() research.ResearchService                   { return nil }
-func (emptyAPIDependencies) Documents() document.DocumentService                  { return nil }
-func (emptyAPIDependencies) GraphPane() graphpane.GraphPaneService                { return nil }
-func (emptyAPIDependencies) EntityTags() service.EntityTagService                 { return nil }
-func (emptyAPIDependencies) ArtifactRefs() artifactref.ArtifactRefService         { return nil }
-func (emptyAPIDependencies) EntityContext() service.EntityContextService          { return nil }
-func (emptyAPIDependencies) EntityList() service.EntityListService                { return nil }
-func (emptyAPIDependencies) Instruments() instrument.InstrumentService            { return nil }
-func (emptyAPIDependencies) Watchlist() watchlist.Service                         { return nil }
-func (emptyAPIDependencies) ReadingPositions() readingposition.Service            { return nil }
-func (emptyAPIDependencies) Search() searchdomain.SearchService                   { return nil }
-func (emptyAPIDependencies) Unfurl() unfurl.UnfurlService                         { return nil }
-func (emptyAPIDependencies) Bars() market.BarService                              { return nil }
-func (emptyAPIDependencies) Alerts() alert.AlertService                           { return nil }
-func (emptyAPIDependencies) Notifications() alert.NotificationService             { return nil }
-func (emptyAPIDependencies) MarketData() market.MarketDataService                 { return nil }
-func (emptyAPIDependencies) GraphReader() service.GraphReader                     { return nil }
-func (emptyAPIDependencies) Copilot() service.CopilotService                      { return nil }
+func (emptyAPIDependencies) Realtime() realtime.EventService                 { return nil }
+func (emptyAPIDependencies) RealtimeKeyResolver() realtime.KeyResolver       { return nil }
+func (emptyAPIDependencies) Sync() service.SyncService                       { return nil }
+func (emptyAPIDependencies) DocSurfaceStore() service.DocSurfaceStore        { return nil }
+func (emptyAPIDependencies) WorkspaceRuntime() service.WorkspaceRuntime      { return nil }
+func (emptyAPIDependencies) ShardBuild() service.ShardBuildService           { return nil }
+func (emptyAPIDependencies) ShardResources() service.ShardResourceService    { return nil }
+func (emptyAPIDependencies) ShardGraphQL() service.ShardGraphQLService       { return nil }
+func (emptyAPIDependencies) ShardReleases() service.ShardReleaseService      { return nil }
+func (emptyAPIDependencies) ShardKV() service.ShardKVService                 { return nil }
+func (emptyAPIDependencies) ShardBridge() service.ShardBridgeService         { return nil }
+func (emptyAPIDependencies) Relationships() relationship.RelationshipService { return nil }
+func (emptyAPIDependencies) Research() research.ResearchService              { return nil }
+func (emptyAPIDependencies) Documents() document.DocumentService             { return nil }
+func (emptyAPIDependencies) GraphPane() graphpane.GraphPaneService           { return nil }
+func (emptyAPIDependencies) EntityTags() service.EntityTagService            { return nil }
+func (emptyAPIDependencies) ArtifactRefs() artifactref.ArtifactRefService    { return nil }
+func (emptyAPIDependencies) EntityContext() service.EntityContextService     { return nil }
+func (emptyAPIDependencies) EntityList() service.EntityListService           { return nil }
+func (emptyAPIDependencies) Instruments() instrument.InstrumentService       { return nil }
+func (emptyAPIDependencies) Watchlist() watchlist.Service                    { return nil }
+func (emptyAPIDependencies) ReadingPositions() readingposition.Service       { return nil }
+func (emptyAPIDependencies) Search() searchdomain.SearchService              { return nil }
+func (emptyAPIDependencies) Unfurl() unfurl.UnfurlService                    { return nil }
+func (emptyAPIDependencies) Bars() market.BarService                         { return nil }
+func (emptyAPIDependencies) Alerts() alert.AlertService                      { return nil }
+func (emptyAPIDependencies) Notifications() alert.NotificationService        { return nil }
+func (emptyAPIDependencies) MarketData() market.MarketDataService            { return nil }
+func (emptyAPIDependencies) GraphReader() service.GraphReader                { return nil }
+func (emptyAPIDependencies) Copilot() service.CopilotService                 { return nil }
 
 func (d pilotAPIDependencies) Auth() service.AuthService                { return d.AuthSvc }
 func (d pilotAPIDependencies) Artifacts() service.ArtifactService       { return d.ArtifactsSvc }
