@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"aladin/backend_v2/internal/artifactref"
 	"aladin/backend_v2/internal/blocknote"
 	"aladin/backend_v2/internal/service"
 
@@ -26,10 +27,10 @@ type toolServer struct {
 	// knowledge layer after an MCP write (the editor does this client-side; agents don't
 	// have an editor). Nil-safe: projection is skipped when unset.
 	entityTags   service.EntityTagService
-	artifactRefs service.ArtifactRefService
+	artifactRefs artifactref.ArtifactRefService
 }
 
-func registerTools(server *sdkmcp.Server, artifacts service.ArtifactService, pages service.PageDocumentService, converter blocknote.Converter, bridge blocknote.Bridge, entityTags service.EntityTagService, artifactRefs service.ArtifactRefService) {
+func registerTools(server *sdkmcp.Server, artifacts service.ArtifactService, pages service.PageDocumentService, converter blocknote.Converter, bridge blocknote.Bridge, entityTags service.EntityTagService, artifactRefs artifactref.ArtifactRefService) {
 	tools := toolServer{artifacts: artifacts, pages: pages, converter: converter, bridge: bridge, entityTags: entityTags, artifactRefs: artifactRefs}
 
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
@@ -792,9 +793,9 @@ func (t toolServer) projectPage(ctx context.Context, pageID string) {
 		return
 	}
 	if t.artifactRefs != nil {
-		out := make([]service.ArtifactRef, len(refs))
+		out := make([]artifactref.ArtifactRef, len(refs))
 		for i, r := range refs {
-			out[i] = service.ArtifactRef{Kind: r.Kind, TargetID: r.TargetID, BlockID: r.BlockID, Surface: r.Surface}
+			out[i] = artifactref.ArtifactRef{Kind: r.Kind, TargetID: r.TargetID, BlockID: r.BlockID, Surface: r.Surface}
 		}
 		if err := t.artifactRefs.SyncRefs(ctx, pageID, out); err != nil {
 			slog.Warn("mcp: project page: sync refs failed", "component", "mcp", "page", pageID, "err", err)

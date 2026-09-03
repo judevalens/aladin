@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"aladin/backend_v2/internal/alert"
+	"aladin/backend_v2/internal/artifactref"
 	"context"
 	"log/slog"
 	"net/http"
@@ -149,7 +150,7 @@ type Dependencies interface {
 	ShardBridge() service.ShardBridgeService
 	Documents() service.DocumentService
 	EntityTags() service.EntityTagService
-	ArtifactRefs() service.ArtifactRefService
+	ArtifactRefs() artifactref.ArtifactRefService
 	EntityContext() service.EntityContextService
 	Instruments() instrument.InstrumentService
 	Watchlist() watchlist.Service

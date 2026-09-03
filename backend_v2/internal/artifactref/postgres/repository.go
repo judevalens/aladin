@@ -1,10 +1,12 @@
-package repo
+package postgres
 
 import (
 	"context"
 	"fmt"
 	"strings"
 
+	"aladin/backend_v2/internal/artifactref"
+	"aladin/backend_v2/internal/repo"
 	coreservice "aladin/backend_v2/internal/service"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -22,9 +24,9 @@ func NewArtifactRefPostgres(pool *pgxpool.Pool) *PostgresArtifactRefRepository {
 // SearchArtifacts matches the `#` typeahead against the user's pages + shards by title.
 // artifacts.type 'page' → kind 'page', 'app' → kind 'shard'. ownerUserID "" → no matches
 // (artifacts are user-scoped).
-func (r *PostgresArtifactRefRepository) SearchArtifacts(ctx context.Context, ownerUserID, query string, limit int) ([]coreservice.RefHit, error) {
+func (r *PostgresArtifactRefRepository) SearchArtifacts(ctx context.Context, ownerUserID, query string, limit int) ([]artifactref.RefHit, error) {
 	if strings.TrimSpace(ownerUserID) == "" {
-		return []coreservice.RefHit{}, nil
+		return []artifactref.RefHit{}, nil
 	}
 	like := "%" + strings.TrimSpace(query) + "%"
 
@@ -44,17 +46,17 @@ func (r *PostgresArtifactRefRepository) SearchArtifacts(ctx context.Context, own
 	}
 	defer rows.Close()
 
-	out := []coreservice.RefHit{}
+	out := []artifactref.RefHit{}
 	for rows.Next() {
 		var id, typ, title string
 		if err := rows.Scan(&id, &typ, &title); err != nil {
 			return nil, fmt.Errorf("artifact ref search artifacts scan: %w", err)
 		}
-		kind := coreservice.RefKindPage
+		kind := artifactref.RefKindPage
 		if typ == "app" {
-			kind = coreservice.RefKindShard
+			kind = artifactref.RefKindShard
 		}
-		out = append(out, coreservice.RefHit{Kind: kind, ID: id, Label: title})
+		out = append(out, artifactref.RefHit{Kind: kind, ID: id, Label: title})
 	}
 	return out, rows.Err()
 }
@@ -62,7 +64,7 @@ func (r *PostgresArtifactRefRepository) SearchArtifacts(ctx context.Context, own
 // ReplaceRefs reconciles the projected `#` refs for an artifact: in one transaction it drops
 // all existing origin='reference' rows for the page and inserts the given set. The set is the
 // source of truth, derived from the page's ydoc on save.
-func (r *PostgresArtifactRefRepository) ReplaceRefs(ctx context.Context, artifactID string, refs []coreservice.ArtifactRef) error {
+func (r *PostgresArtifactRefRepository) ReplaceRefs(ctx context.Context, artifactID string, refs []artifactref.ArtifactRef) error {
 	principal, err := coreservice.RequirePrincipal(ctx)
 	if err != nil {
 		return err
@@ -75,7 +77,7 @@ func (r *PostgresArtifactRefRepository) ReplaceRefs(ctx context.Context, artifac
 	}
 	defer tx.Rollback(ctx)
 
-	if err := LockUser(ctx, tx, userID); err != nil {
+	if err := repo.LockUser(ctx, tx, userID); err != nil {
 		return err
 	}
 
@@ -104,7 +106,7 @@ func (r *PostgresArtifactRefRepository) ReplaceRefs(ctx context.Context, artifac
 		}
 	}
 	// The page's # links changed → emit a node frame so reactive views (graph pane) refetch.
-	if err := emitNodeUpsert(ctx, tx, userID, artifactID); err != nil {
+	if err := repo.EmitNodeUpsert(ctx, tx, userID, artifactID); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -112,7 +114,7 @@ func (r *PostgresArtifactRefRepository) ReplaceRefs(ctx context.Context, artifac
 
 // ListForArtifact returns a page's outgoing refs, resolved to current target titles,
 // falling back to the stored surface if the target is gone.
-func (r *PostgresArtifactRefRepository) ListForArtifact(ctx context.Context, artifactID string) ([]coreservice.AttachedRef, error) {
+func (r *PostgresArtifactRefRepository) ListForArtifact(ctx context.Context, artifactID string) ([]artifactref.AttachedRef, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT ar.target_kind, ar.target_id,
 		       COALESCE(a.title, ar.surface, '') AS label,
@@ -127,9 +129,9 @@ func (r *PostgresArtifactRefRepository) ListForArtifact(ctx context.Context, art
 	}
 	defer rows.Close()
 
-	out := []coreservice.AttachedRef{}
+	out := []artifactref.AttachedRef{}
 	for rows.Next() {
-		var a coreservice.AttachedRef
+		var a artifactref.AttachedRef
 		if err := rows.Scan(&a.Kind, &a.TargetID, &a.Label, &a.BlockID); err != nil {
 			return nil, fmt.Errorf("artifact ref list scan: %w", err)
 		}

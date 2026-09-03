@@ -2,6 +2,7 @@ package app
 
 import (
 	"aladin/backend_v2/internal/alert"
+	"aladin/backend_v2/internal/artifactref"
 	"aladin/backend_v2/internal/config"
 	"aladin/backend_v2/internal/docsurface"
 	"aladin/backend_v2/internal/insights"
@@ -64,7 +65,7 @@ func (c *MCPProcess) ShardCatalog() coreservice.ShardCatalogService   { return c
 func (c *MCPProcess) ShardBridge() coreservice.ShardBridgeService     { return c.shardBridge }
 func (c *MCPProcess) Documents() coreservice.DocumentService          { return c.documents }
 func (c *MCPProcess) EntityTags() coreservice.EntityTagService        { return c.entityTags }
-func (c *MCPProcess) ArtifactRefs() coreservice.ArtifactRefService    { return c.artifactRefs }
+func (c *MCPProcess) ArtifactRefs() artifactref.ArtifactRefService    { return c.artifactRefs }
 func (c *MCPProcess) EntityContext() coreservice.EntityContextService { return c.entityContext }
 func (c *MCPProcess) Instruments() instrument.InstrumentService       { return c.instruments }
 func (c *MCPProcess) Watchlist() watchlist.Service                    { return c.watchlist }

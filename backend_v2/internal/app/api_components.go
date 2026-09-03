@@ -5,6 +5,7 @@ import (
 
 	"aladin/backend_v2/internal/alert"
 	alertpostgres "aladin/backend_v2/internal/alert/postgres"
+	"aladin/backend_v2/internal/artifactref"
 	"aladin/backend_v2/internal/changefeed"
 	"aladin/backend_v2/internal/config"
 	"aladin/backend_v2/internal/copilotagent"
@@ -186,7 +187,7 @@ func (c *APIProcess) Research() research.ResearchService                       {
 func (c *APIProcess) Documents() coreservice.DocumentService                   { return c.documents }
 func (c *APIProcess) GraphPane() graphpane.GraphPaneService                    { return c.graphPane }
 func (c *APIProcess) EntityTags() coreservice.EntityTagService                 { return c.entityTags }
-func (c *APIProcess) ArtifactRefs() coreservice.ArtifactRefService             { return c.artifactRefs }
+func (c *APIProcess) ArtifactRefs() artifactref.ArtifactRefService             { return c.artifactRefs }
 func (c *APIProcess) EntityContext() coreservice.EntityContextService          { return c.entityContext }
 func (c *APIProcess) EntityList() coreservice.EntityListService                { return c.entityList }
 func (c *APIProcess) Instruments() instrument.InstrumentService                { return c.instruments }

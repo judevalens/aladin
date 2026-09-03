@@ -9,6 +9,8 @@ import (
 
 	"aladin/backend_v2/internal/alert"
 	alertpostgres "aladin/backend_v2/internal/alert/postgres"
+	"aladin/backend_v2/internal/artifactref"
+	artifactrefpostgres "aladin/backend_v2/internal/artifactref/postgres"
 	"aladin/backend_v2/internal/config"
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/docsurface"
@@ -52,7 +54,7 @@ type sharedComponents struct {
 	shardBridge      coreservice.ShardBridgeService
 	documents        coreservice.DocumentService
 	entityTags       coreservice.EntityTagService
-	artifactRefs     coreservice.ArtifactRefService
+	artifactRefs     artifactref.ArtifactRefService
 	entityContext    coreservice.EntityContextService
 	instruments      instrument.InstrumentService
 	watchlist        watchlist.Service
@@ -110,7 +112,7 @@ func buildSharedComponents(pool *pgxpool.Pool, dataVolumePath string) sharedComp
 	researchSvc := research.NewResearchService(researchpostgres.NewResearchPostgres(pool))
 	insightsSvc := insights.NewInsightService(insightspostgres.NewInsightPostgres(pool))
 	entityTagsSvc := coreservice.NewEntityTagService(repo.NewEntityTagPostgres(pool), entities.Normalize)
-	artifactRefsSvc := coreservice.NewArtifactRefService(repo.NewArtifactRefPostgres(pool))
+	artifactRefsSvc := artifactref.NewArtifactRefService(artifactrefpostgres.NewArtifactRefPostgres(pool))
 	contentIndexSvc := coreservice.NewContentIndexService(repo.NewContentIndexPostgres(pool))
 
 	alpacaCfg := config.LoadAlpaca()

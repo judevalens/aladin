@@ -2,6 +2,7 @@ package api
 
 import (
 	"aladin/backend_v2/internal/alert"
+	"aladin/backend_v2/internal/artifactref"
 	"aladin/backend_v2/internal/feed"
 	"aladin/backend_v2/internal/graphpane"
 	"aladin/backend_v2/internal/insights"
@@ -48,7 +49,7 @@ type testDependencies struct {
 	DocumentsSvc           coreservice.DocumentService
 	GraphPaneSvc           graphpane.GraphPaneService
 	EntityTagsSvc          coreservice.EntityTagService
-	ArtifactRefsSvc        coreservice.ArtifactRefService
+	ArtifactRefsSvc        artifactref.ArtifactRefService
 	EntityContextSvc       coreservice.EntityContextService
 	EntityListSvc          coreservice.EntityListService
 	InstrumentsSvc         instrument.InstrumentService
@@ -98,7 +99,7 @@ func (d testDependencies) Research() research.ResearchService              { ret
 func (d testDependencies) Documents() coreservice.DocumentService          { return d.DocumentsSvc }
 func (d testDependencies) GraphPane() graphpane.GraphPaneService           { return d.GraphPaneSvc }
 func (d testDependencies) EntityTags() coreservice.EntityTagService        { return d.EntityTagsSvc }
-func (d testDependencies) ArtifactRefs() coreservice.ArtifactRefService    { return d.ArtifactRefsSvc }
+func (d testDependencies) ArtifactRefs() artifactref.ArtifactRefService    { return d.ArtifactRefsSvc }
 func (d testDependencies) EntityContext() coreservice.EntityContextService { return d.EntityContextSvc }
 func (d testDependencies) EntityList() coreservice.EntityListService       { return d.EntityListSvc }
 func (d testDependencies) Instruments() instrument.InstrumentService       { return d.InstrumentsSvc }

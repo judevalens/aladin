@@ -1,14 +1,44 @@
-package repo
+package postgres_test
 
 import (
 	"context"
 	"testing"
 	"time"
 
+	"aladin/backend_v2/internal/artifactref"
+	artifactrefpostgres "aladin/backend_v2/internal/artifactref/postgres"
+	"aladin/backend_v2/internal/db"
+	"aladin/backend_v2/internal/dbtest"
 	coreservice "aladin/backend_v2/internal/service"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+func mustTestPool(ctx context.Context, t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	dsn := dbtest.RequireTestDSN(t)
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Skipf("no test database: %v", err)
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		t.Skipf("test database unreachable: %v", err)
+	}
+	if err := db.Migrate(ctx, pool); err != nil {
+		pool.Close()
+		t.Fatalf("migrate: %v", err)
+	}
+	return pool
+}
+
+func adminContext(userID string) context.Context {
+	return coreservice.WithPrincipal(context.Background(), coreservice.Principal{
+		UserID: userID, ActorType: coreservice.ActorTypeUserSession, ActorID: userID,
+		Scopes: []string{coreservice.ScopeArtifactsRead, coreservice.ScopeArtifactsWrite},
+	})
+}
 
 // TestArtifactRef_SearchAndReconcile covers the Y2 `#` cross-reference path: search across
 // artifacts (pages/shards), then the reconcile of a page's projected refs (set replaces
@@ -53,7 +83,7 @@ func TestArtifactRef_SearchAndReconcile(t *testing.T) {
 		_, _ = pool.Exec(bg, `DELETE FROM users WHERE id = $1::uuid`, userID)
 	})
 
-	refRepo := NewArtifactRefPostgres(pool)
+	refRepo := artifactrefpostgres.NewArtifactRefPostgres(pool)
 
 	// Search surfaces the page/shard as kind 'page'/'shard'.
 	artHits, err := refRepo.SearchArtifacts(ctx, userID, "Reftarget", 8)
@@ -64,7 +94,7 @@ func TestArtifactRef_SearchAndReconcile(t *testing.T) {
 	for _, h := range artHits {
 		gotKind[h.ID] = h.Kind
 	}
-	if gotKind[targetPage] != coreservice.RefKindPage || gotKind[targetShard] != coreservice.RefKindShard {
+	if gotKind[targetPage] != artifactref.RefKindPage || gotKind[targetShard] != artifactref.RefKindShard {
 		t.Fatalf("artifact hits kinds = %+v (%+v)", gotKind, artHits)
 	}
 
@@ -78,9 +108,9 @@ func TestArtifactRef_SearchAndReconcile(t *testing.T) {
 	}
 
 	// First projection: reference the target page + shard.
-	if err := refRepo.ReplaceRefs(ctx, pageID, []coreservice.ArtifactRef{
-		{Kind: coreservice.RefKindPage, TargetID: targetPage, BlockID: "b2", Surface: "note"},
-		{Kind: coreservice.RefKindShard, TargetID: targetShard, BlockID: "b1", Surface: "shard"},
+	if err := refRepo.ReplaceRefs(ctx, pageID, []artifactref.ArtifactRef{
+		{Kind: artifactref.RefKindPage, TargetID: targetPage, BlockID: "b2", Surface: "note"},
+		{Kind: artifactref.RefKindShard, TargetID: targetShard, BlockID: "b1", Surface: "shard"},
 	}); err != nil {
 		t.Fatalf("replace refs: %v", err)
 	}
@@ -91,26 +121,26 @@ func TestArtifactRef_SearchAndReconcile(t *testing.T) {
 	if len(refs) != 2 {
 		t.Fatalf("expected 2 refs, got %+v", refs)
 	}
-	byKind := map[string]coreservice.AttachedRef{}
+	byKind := map[string]artifactref.AttachedRef{}
 	for _, r := range refs {
 		byKind[r.Kind] = r
 	}
 	// Labels resolve from the live target, not the stored surface.
-	if got := byKind[coreservice.RefKindPage].Label; got != "Reftarget note "+tag {
+	if got := byKind[artifactref.RefKindPage].Label; got != "Reftarget note "+tag {
 		t.Fatalf("page ref label = %q", got)
 	}
-	if got := byKind[coreservice.RefKindShard].Label; got != "Reftarget shard "+tag {
+	if got := byKind[artifactref.RefKindShard].Label; got != "Reftarget shard "+tag {
 		t.Fatalf("shard ref label = %q", got)
 	}
 
 	// Re-sync with only the shard ref: prior refs drop, the shard is added.
-	if err := refRepo.ReplaceRefs(ctx, pageID, []coreservice.ArtifactRef{
-		{Kind: coreservice.RefKindShard, TargetID: targetShard, BlockID: "b3", Surface: "shard"},
+	if err := refRepo.ReplaceRefs(ctx, pageID, []artifactref.ArtifactRef{
+		{Kind: artifactref.RefKindShard, TargetID: targetShard, BlockID: "b3", Surface: "shard"},
 	}); err != nil {
 		t.Fatalf("replace refs 2: %v", err)
 	}
 	refs, _ = refRepo.ListForArtifact(ctx, pageID)
-	if len(refs) != 1 || refs[0].Kind != coreservice.RefKindShard || refs[0].TargetID != targetShard {
+	if len(refs) != 1 || refs[0].Kind != artifactref.RefKindShard || refs[0].TargetID != targetShard {
 		t.Fatalf("after re-sync refs = %+v", refs)
 	}
 

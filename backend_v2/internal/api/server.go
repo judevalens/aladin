@@ -4,6 +4,8 @@ import (
 	"aladin/backend_v2/internal/alert"
 	alerthttp "aladin/backend_v2/internal/alert/httptransport"
 	"aladin/backend_v2/internal/app"
+	"aladin/backend_v2/internal/artifactref"
+	artifactrefhttp "aladin/backend_v2/internal/artifactref/httptransport"
 	"aladin/backend_v2/internal/docsurface"
 	"aladin/backend_v2/internal/feed"
 	feedhttp "aladin/backend_v2/internal/feed/httptransport"
@@ -82,7 +84,7 @@ type Dependencies interface {
 	Documents() coreservice.DocumentService
 	GraphPane() graphpane.GraphPaneService
 	EntityTags() coreservice.EntityTagService
-	ArtifactRefs() coreservice.ArtifactRefService
+	ArtifactRefs() artifactref.ArtifactRefService
 	EntityContext() coreservice.EntityContextService
 	EntityList() coreservice.EntityListService
 	Instruments() instrument.InstrumentService
@@ -151,7 +153,7 @@ func NewWithDependencies(addr string, deps Dependencies) *Server {
 	alerthttp.Register(mux, deps.Alerts(), deps.Notifications())
 	s.registerCopilotRoutes(mux)
 	s.registerEntityContextRoutes(mux)
-	s.registerArtifactRefRoutes(mux)
+	artifactrefhttp.Register(mux, deps.ArtifactRefs())
 	s.registerRealtimeRoutes(mux)
 	providerconnectionhttp.Register(mux, deps.ProviderConnections())
 	s.registerSyncRoutes(mux)

@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"aladin/backend_v2/internal/alert"
+	"aladin/backend_v2/internal/artifactref"
 	"context"
 	"encoding/json"
 	"io"
@@ -367,7 +368,7 @@ func (emptyAPIDependencies) Research() research.ResearchService                 
 func (emptyAPIDependencies) Documents() service.DocumentService                   { return nil }
 func (emptyAPIDependencies) GraphPane() graphpane.GraphPaneService                { return nil }
 func (emptyAPIDependencies) EntityTags() service.EntityTagService                 { return nil }
-func (emptyAPIDependencies) ArtifactRefs() service.ArtifactRefService             { return nil }
+func (emptyAPIDependencies) ArtifactRefs() artifactref.ArtifactRefService         { return nil }
 func (emptyAPIDependencies) EntityContext() service.EntityContextService          { return nil }
 func (emptyAPIDependencies) EntityList() service.EntityListService                { return nil }
 func (emptyAPIDependencies) Instruments() instrument.InstrumentService            { return nil }

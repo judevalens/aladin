@@ -6,10 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"aladin/backend_v2/internal/artifactref"
+	artifactrefpostgres "aladin/backend_v2/internal/artifactref/postgres"
 	"aladin/backend_v2/internal/blocknote"
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/dbtest"
-	"aladin/backend_v2/internal/repo"
 	"aladin/backend_v2/internal/service"
 
 	"github.com/google/uuid"
@@ -79,7 +80,7 @@ func TestProjectPage_SyncsRefs(t *testing.T) {
 		return blocknote.BridgePage{Blocks: blocks}, nil
 	}}
 
-	refSvc := service.NewArtifactRefService(repo.NewArtifactRefPostgres(pool))
+	refSvc := artifactref.NewArtifactRefService(artifactrefpostgres.NewArtifactRefPostgres(pool))
 	tools := toolServer{bridge: bridge, artifactRefs: refSvc}
 
 	// projectPage → SyncRefs → ReplaceRefs needs the owning principal (user scope + LockUser), just
@@ -91,7 +92,7 @@ func TestProjectPage_SyncsRefs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list refs: %v", err)
 	}
-	if len(got) != 1 || got[0].Kind != service.RefKindPage || got[0].TargetID != targetID {
+	if len(got) != 1 || got[0].Kind != artifactref.RefKindPage || got[0].TargetID != targetID {
 		t.Fatalf("expected one page ref to %s, got %+v", targetID, got)
 	}
 	if got[0].Label != "Target note" {

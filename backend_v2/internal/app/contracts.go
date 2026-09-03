@@ -2,6 +2,7 @@ package app
 
 import (
 	"aladin/backend_v2/internal/alert"
+	"aladin/backend_v2/internal/artifactref"
 	"aladin/backend_v2/internal/changefeed"
 	"aladin/backend_v2/internal/feed"
 	"aladin/backend_v2/internal/graphpane"
@@ -51,7 +52,7 @@ type APIComponents interface {
 	Documents() coreservice.DocumentService
 	GraphPane() graphpane.GraphPaneService
 	EntityTags() coreservice.EntityTagService
-	ArtifactRefs() coreservice.ArtifactRefService
+	ArtifactRefs() artifactref.ArtifactRefService
 	EntityContext() coreservice.EntityContextService
 	EntityList() coreservice.EntityListService
 	Instruments() instrument.InstrumentService
@@ -85,7 +86,7 @@ type MCPComponents interface {
 	ShardBridge() coreservice.ShardBridgeService
 	Documents() coreservice.DocumentService
 	EntityTags() coreservice.EntityTagService
-	ArtifactRefs() coreservice.ArtifactRefService
+	ArtifactRefs() artifactref.ArtifactRefService
 	EntityContext() coreservice.EntityContextService
 	Instruments() instrument.InstrumentService
 	Watchlist() watchlist.Service

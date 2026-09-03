@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"aladin/backend_v2/internal/artifactref"
 	"aladin/backend_v2/internal/instrument"
 	coreservice "aladin/backend_v2/internal/service"
 )
@@ -216,10 +217,10 @@ func (p ContentSearchProvider) Search(ctx context.Context, userID, query string,
 // (ArtifactRefService is the `#`-picker's source of truth and stays scoped to pages +
 // shards; body hits across all kinds come from ContentSearchProvider above).
 type ArtifactSearchProvider struct {
-	svc coreservice.ArtifactRefService
+	svc artifactref.ArtifactRefService
 }
 
-func NewArtifactSearchProvider(svc coreservice.ArtifactRefService) ArtifactSearchProvider {
+func NewArtifactSearchProvider(svc artifactref.ArtifactRefService) ArtifactSearchProvider {
 	return ArtifactSearchProvider{svc: svc}
 }
 func (p ArtifactSearchProvider) Section() string { return SearchSectionArtifact }
