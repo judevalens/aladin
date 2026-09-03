@@ -5,6 +5,7 @@ import (
 	"aladin/backend_v2/internal/feed"
 	"aladin/backend_v2/internal/graphpane"
 	"aladin/backend_v2/internal/insights"
+	"aladin/backend_v2/internal/instrument"
 	"aladin/backend_v2/internal/providerconnection"
 	"aladin/backend_v2/internal/readingposition"
 	"aladin/backend_v2/internal/relationship"
@@ -47,7 +48,7 @@ type testDependencies struct {
 	ArtifactRefsSvc        coreservice.ArtifactRefService
 	EntityContextSvc       coreservice.EntityContextService
 	EntityListSvc          coreservice.EntityListService
-	InstrumentsSvc         coreservice.InstrumentService
+	InstrumentsSvc         instrument.InstrumentService
 	WatchlistSvc           watchlist.Service
 	ReadingPositionsSvc    readingposition.Service
 	SearchSvc              search.SearchService
@@ -97,7 +98,7 @@ func (d testDependencies) EntityTags() coreservice.EntityTagService        { ret
 func (d testDependencies) ArtifactRefs() coreservice.ArtifactRefService    { return d.ArtifactRefsSvc }
 func (d testDependencies) EntityContext() coreservice.EntityContextService { return d.EntityContextSvc }
 func (d testDependencies) EntityList() coreservice.EntityListService       { return d.EntityListSvc }
-func (d testDependencies) Instruments() coreservice.InstrumentService      { return d.InstrumentsSvc }
+func (d testDependencies) Instruments() instrument.InstrumentService       { return d.InstrumentsSvc }
 func (d testDependencies) Watchlist() watchlist.Service                    { return d.WatchlistSvc }
 func (d testDependencies) ReadingPositions() readingposition.Service {
 	return d.ReadingPositionsSvc

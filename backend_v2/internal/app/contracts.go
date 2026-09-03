@@ -6,6 +6,7 @@ import (
 	"aladin/backend_v2/internal/feed"
 	"aladin/backend_v2/internal/graphpane"
 	"aladin/backend_v2/internal/insights"
+	"aladin/backend_v2/internal/instrument"
 	"aladin/backend_v2/internal/providerconnection"
 	"aladin/backend_v2/internal/readingposition"
 	"aladin/backend_v2/internal/relationship"
@@ -50,7 +51,7 @@ type APIComponents interface {
 	ArtifactRefs() coreservice.ArtifactRefService
 	EntityContext() coreservice.EntityContextService
 	EntityList() coreservice.EntityListService
-	Instruments() coreservice.InstrumentService
+	Instruments() instrument.InstrumentService
 	Watchlist() watchlist.Service
 	ReadingPositions() readingposition.Service
 	Search() search.SearchService
@@ -83,7 +84,7 @@ type MCPComponents interface {
 	EntityTags() coreservice.EntityTagService
 	ArtifactRefs() coreservice.ArtifactRefService
 	EntityContext() coreservice.EntityContextService
-	Instruments() coreservice.InstrumentService
+	Instruments() instrument.InstrumentService
 	Watchlist() watchlist.Service
 	Search() search.SearchService
 	Bars() coreservice.BarService

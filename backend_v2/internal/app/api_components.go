@@ -14,6 +14,7 @@ import (
 	"aladin/backend_v2/internal/graphpane"
 	graphpanepostgres "aladin/backend_v2/internal/graphpane/postgres"
 	"aladin/backend_v2/internal/insights"
+	"aladin/backend_v2/internal/instrument"
 	"aladin/backend_v2/internal/providerconnection"
 	providerconnectionpostgres "aladin/backend_v2/internal/providerconnection/postgres"
 	"aladin/backend_v2/internal/readingposition"
@@ -185,7 +186,7 @@ func (c *APIProcess) EntityTags() coreservice.EntityTagService                 {
 func (c *APIProcess) ArtifactRefs() coreservice.ArtifactRefService             { return c.artifactRefs }
 func (c *APIProcess) EntityContext() coreservice.EntityContextService          { return c.entityContext }
 func (c *APIProcess) EntityList() coreservice.EntityListService                { return c.entityList }
-func (c *APIProcess) Instruments() coreservice.InstrumentService               { return c.instruments }
+func (c *APIProcess) Instruments() instrument.InstrumentService                { return c.instruments }
 func (c *APIProcess) Watchlist() watchlist.Service                             { return c.watchlist }
 func (c *APIProcess) ReadingPositions() readingposition.Service                { return c.readingPositions }
 func (c *APIProcess) Search() search.SearchService                             { return c.search }

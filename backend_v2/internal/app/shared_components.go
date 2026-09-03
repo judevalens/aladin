@@ -15,6 +15,8 @@ import (
 	"aladin/backend_v2/internal/entities"
 	"aladin/backend_v2/internal/insights"
 	insightspostgres "aladin/backend_v2/internal/insights/postgres"
+	"aladin/backend_v2/internal/instrument"
+	instrumentpostgres "aladin/backend_v2/internal/instrument/postgres"
 	"aladin/backend_v2/internal/market/alpaca"
 	"aladin/backend_v2/internal/repo"
 	"aladin/backend_v2/internal/search"
@@ -48,7 +50,7 @@ type sharedComponents struct {
 	entityTags       coreservice.EntityTagService
 	artifactRefs     coreservice.ArtifactRefService
 	entityContext    coreservice.EntityContextService
-	instruments      coreservice.InstrumentService
+	instruments      instrument.InstrumentService
 	watchlist        watchlist.Service
 	search           search.SearchService
 	bars             coreservice.BarService
@@ -109,7 +111,7 @@ func buildSharedComponents(pool *pgxpool.Pool, dataVolumePath string) sharedComp
 
 	alpacaCfg := config.LoadAlpaca()
 	var barSource coreservice.BarSource
-	var assetLookup coreservice.AssetLookup
+	var assetLookup instrument.AssetLookup
 	var snapshotSource coreservice.QuoteSnapshotSource
 	var marketInfo coreservice.MarketInfoService
 	if alpacaCfg.Configured() {
@@ -120,7 +122,7 @@ func buildSharedComponents(pool *pgxpool.Pool, dataVolumePath string) sharedComp
 		marketInfo = alpacaMarketInfo{c: restClient, paper: strings.Contains(alpacaCfg.TradingBaseURL, "paper")}
 	}
 
-	instrumentsSvc := coreservice.NewInstrumentService(repo.NewInstrumentPostgres(pool))
+	instrumentsSvc := instrument.NewInstrumentService(instrumentpostgres.NewInstrumentPostgres(pool))
 	if assetLookup != nil {
 		instrumentsSvc = instrumentsSvc.WithAssetLookup(assetLookup)
 	}

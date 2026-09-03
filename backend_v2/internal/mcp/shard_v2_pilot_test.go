@@ -20,6 +20,7 @@ import (
 	"aladin/backend_v2/internal/feed"
 	"aladin/backend_v2/internal/graphpane"
 	"aladin/backend_v2/internal/insights"
+	"aladin/backend_v2/internal/instrument"
 	"aladin/backend_v2/internal/providerconnection"
 	"aladin/backend_v2/internal/readingposition"
 	"aladin/backend_v2/internal/relationship"
@@ -366,7 +367,7 @@ func (emptyAPIDependencies) EntityTags() service.EntityTagService               
 func (emptyAPIDependencies) ArtifactRefs() service.ArtifactRefService             { return nil }
 func (emptyAPIDependencies) EntityContext() service.EntityContextService          { return nil }
 func (emptyAPIDependencies) EntityList() service.EntityListService                { return nil }
-func (emptyAPIDependencies) Instruments() service.InstrumentService               { return nil }
+func (emptyAPIDependencies) Instruments() instrument.InstrumentService            { return nil }
 func (emptyAPIDependencies) Watchlist() watchlist.Service                         { return nil }
 func (emptyAPIDependencies) ReadingPositions() readingposition.Service            { return nil }
 func (emptyAPIDependencies) Search() searchdomain.SearchService                   { return nil }

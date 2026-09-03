@@ -1,4 +1,4 @@
-package repo
+package postgres
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/instrument"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -22,7 +22,7 @@ func NewInstrumentPostgres(pool *pgxpool.Pool) *PostgresInstrumentRepository {
 // SearchInstruments ranks matches for the command-box typeahead: an exact symbol beats a
 // symbol prefix, which beats a name substring, which beats a trigram-fuzzy symbol/name.
 // Active listings sort ahead of delisted ones so recycled tickers surface the live row.
-func (r *PostgresInstrumentRepository) SearchInstruments(ctx context.Context, query string, limit int) ([]coreservice.InstrumentHit, error) {
+func (r *PostgresInstrumentRepository) SearchInstruments(ctx context.Context, query string, limit int) ([]instrument.InstrumentHit, error) {
 	q := strings.TrimSpace(query)
 	lower := strings.ToLower(q)
 	prefix := lower + "%"
@@ -47,9 +47,9 @@ func (r *PostgresInstrumentRepository) SearchInstruments(ctx context.Context, qu
 	}
 	defer rows.Close()
 
-	hits := make([]coreservice.InstrumentHit, 0, limit)
+	hits := make([]instrument.InstrumentHit, 0, limit)
 	for rows.Next() {
-		var h coreservice.InstrumentHit
+		var h instrument.InstrumentHit
 		var tier int
 		var sim float64
 		if err := rows.Scan(&h.ID, &h.Symbol, &h.Name, &h.Exchange, &h.AssetClass, &h.IsActive, &tier, &sim); err != nil {
@@ -82,7 +82,7 @@ func (r *PostgresInstrumentRepository) ResolveInstrumentID(ctx context.Context, 
 // index (instruments_active_symbol_uq). Re-running is a no-op on unchanged rows. Batched so
 // a full ~11k-symbol universe lands in one round trip. `name`/`exchange` from the vendor win;
 // `cusip`/`cik`/`entity_id` are preserved (COALESCE) since the Assets API doesn't carry them.
-func (r *PostgresInstrumentRepository) UpsertInstruments(ctx context.Context, rows []coreservice.InstrumentUpsert) (int, error) {
+func (r *PostgresInstrumentRepository) UpsertInstruments(ctx context.Context, rows []instrument.InstrumentUpsert) (int, error) {
 	if len(rows) == 0 {
 		return 0, nil
 	}

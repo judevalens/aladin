@@ -12,6 +12,8 @@ import (
 	"aladin/backend_v2/internal/httpapi"
 	"aladin/backend_v2/internal/insights"
 	insightshttp "aladin/backend_v2/internal/insights/httptransport"
+	"aladin/backend_v2/internal/instrument"
+	instrumenthttp "aladin/backend_v2/internal/instrument/httptransport"
 	"aladin/backend_v2/internal/providerconnection"
 	providerconnectionhttp "aladin/backend_v2/internal/providerconnection/httptransport"
 	"aladin/backend_v2/internal/readingposition"
@@ -77,7 +79,7 @@ type Dependencies interface {
 	ArtifactRefs() coreservice.ArtifactRefService
 	EntityContext() coreservice.EntityContextService
 	EntityList() coreservice.EntityListService
-	Instruments() coreservice.InstrumentService
+	Instruments() instrument.InstrumentService
 	Watchlist() watchlist.Service
 	ReadingPositions() readingposition.Service
 	Search() search.SearchService
@@ -135,7 +137,7 @@ func NewWithDependencies(addr string, deps Dependencies) *Server {
 	s.registerResearchRoutes(mux)
 	s.registerDocumentRoutes(mux)
 	s.registerEntityTagRoutes(mux)
-	s.registerInstrumentRoutes(mux)
+	instrumenthttp.Register(mux, deps.Instruments(), deps.Bars())
 	searchhttp.Register(mux, deps.Search())
 	s.registerMarketRoutes(mux)
 	watchlisthttp.Register(mux, deps.Watchlist())

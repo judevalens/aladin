@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"aladin/backend_v2/internal/instrument"
 	searchdomain "aladin/backend_v2/internal/search"
 	"aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/watchlist"
@@ -147,10 +148,10 @@ type fakeInstrumentService struct {
 	err       error
 }
 
-func (f *fakeInstrumentService) Search(context.Context, string, int) ([]service.InstrumentHit, error) {
+func (f *fakeInstrumentService) Search(context.Context, string, int) ([]instrument.InstrumentHit, error) {
 	return nil, nil
 }
-func (f *fakeInstrumentService) SyncAssets(context.Context, service.AssetSource) (int, error) {
+func (f *fakeInstrumentService) SyncAssets(context.Context, instrument.AssetSource) (int, error) {
 	return 0, nil
 }
 func (f *fakeInstrumentService) ResolveInstrumentID(context.Context, string) (string, bool, error) {

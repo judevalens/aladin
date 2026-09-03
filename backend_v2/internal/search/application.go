@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"aladin/backend_v2/internal/instrument"
 	coreservice "aladin/backend_v2/internal/service"
 )
 
@@ -138,9 +139,9 @@ func scoreAt(index int) float64 { return 1.0 - float64(index)*0.001 }
 // ── providers: each wraps an existing search service (one source of truth) ──
 
 // InstrumentSearchProvider federates ticker search into the Entities section.
-type InstrumentSearchProvider struct{ svc coreservice.InstrumentService }
+type InstrumentSearchProvider struct{ svc instrument.InstrumentService }
 
-func NewInstrumentSearchProvider(svc coreservice.InstrumentService) InstrumentSearchProvider {
+func NewInstrumentSearchProvider(svc instrument.InstrumentService) InstrumentSearchProvider {
 	return InstrumentSearchProvider{svc: svc}
 }
 func (p InstrumentSearchProvider) Section() string { return SearchSectionEntity }

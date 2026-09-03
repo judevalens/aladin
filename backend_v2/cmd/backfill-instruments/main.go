@@ -13,9 +13,9 @@ import (
 
 	"aladin/backend_v2/internal/config"
 	"aladin/backend_v2/internal/db"
+	"aladin/backend_v2/internal/instrument"
+	instrumentpostgres "aladin/backend_v2/internal/instrument/postgres"
 	"aladin/backend_v2/internal/market/alpaca"
-	"aladin/backend_v2/internal/repo"
-	coreservice "aladin/backend_v2/internal/service"
 )
 
 // alpacaAssetSource adapts the vendor client to the service's AssetSource port, mapping
@@ -23,18 +23,18 @@ import (
 // package) so the vendor client stays free of any service dependency.
 type alpacaAssetSource struct{ client *alpaca.Client }
 
-func (a alpacaAssetSource) FetchInstruments(ctx context.Context) ([]coreservice.InstrumentUpsert, error) {
+func (a alpacaAssetSource) FetchInstruments(ctx context.Context) ([]instrument.InstrumentUpsert, error) {
 	// Active US equities only for now; delisted/survivorship handling is a later refinement.
 	assets, err := a.client.ListAssets(ctx, "us_equity", "active")
 	if err != nil {
 		return nil, err
 	}
-	out := make([]coreservice.InstrumentUpsert, 0, len(assets))
+	out := make([]instrument.InstrumentUpsert, 0, len(assets))
 	for _, as := range assets {
 		if !as.Tradable {
 			continue
 		}
-		out = append(out, coreservice.InstrumentUpsert{
+		out = append(out, instrument.InstrumentUpsert{
 			Symbol:     as.Symbol,
 			Name:       as.Name,
 			Exchange:   as.Exchange,
@@ -73,7 +73,7 @@ func main() {
 	}
 
 	client := alpaca.NewClient(alpacaCfg.APIKey, alpacaCfg.APISecret, alpacaCfg.TradingBaseURL, alpacaCfg.DataBaseURL)
-	svc := coreservice.NewInstrumentService(repo.NewInstrumentPostgres(pool))
+	svc := instrument.NewInstrumentService(instrumentpostgres.NewInstrumentPostgres(pool))
 
 	slog.Info("backfill-instruments: fetching Alpaca assets", "base", alpacaCfg.TradingBaseURL)
 	n, err := svc.SyncAssets(ctx, alpacaAssetSource{client: client})

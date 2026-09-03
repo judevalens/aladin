@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 
+	"aladin/backend_v2/internal/instrument"
 	"aladin/backend_v2/internal/market/alpaca"
 	coreservice "aladin/backend_v2/internal/service"
 )
@@ -134,15 +135,15 @@ func (a alpacaSnapshotSource) FetchSnapshot(ctx context.Context, symbol string) 
 
 type alpacaAssetLookup struct{ c *alpaca.Client }
 
-func (a alpacaAssetLookup) FetchInstrument(ctx context.Context, symbol string) (coreservice.InstrumentUpsert, bool, error) {
+func (a alpacaAssetLookup) FetchInstrument(ctx context.Context, symbol string) (instrument.InstrumentUpsert, bool, error) {
 	as, err := a.c.GetAsset(ctx, symbol)
 	if err != nil {
-		return coreservice.InstrumentUpsert{}, false, err
+		return instrument.InstrumentUpsert{}, false, err
 	}
 	if as == nil || !as.Tradable {
-		return coreservice.InstrumentUpsert{}, false, nil
+		return instrument.InstrumentUpsert{}, false, nil
 	}
-	return coreservice.InstrumentUpsert{
+	return instrument.InstrumentUpsert{
 		Symbol:     as.Symbol,
 		Name:       as.Name,
 		Exchange:   as.Exchange,

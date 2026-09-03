@@ -8,6 +8,7 @@ import (
 
 	"aladin/backend_v2/internal/blocknote"
 	"aladin/backend_v2/internal/insights"
+	"aladin/backend_v2/internal/instrument"
 	"aladin/backend_v2/internal/search"
 	"aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/watchlist"
@@ -47,7 +48,7 @@ type workspaceToolServer struct {
 	snapshots   service.QuoteSnapshotSource
 	marketInfo  service.MarketInfoService
 	alerts      alert.AlertService
-	instruments service.InstrumentService
+	instruments instrument.InstrumentService
 	documents   service.DocumentService
 }
 

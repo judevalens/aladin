@@ -1,4 +1,4 @@
-package repo_test
+package postgres_test
 
 import (
 	"context"
@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"aladin/backend_v2/internal/db"
-	"aladin/backend_v2/internal/repo"
-	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/instrument"
+	instrumentpostgres "aladin/backend_v2/internal/instrument/postgres"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -26,7 +26,7 @@ func TestInstrumentSearchSmoke(t *testing.T) {
 	if err := db.Migrate(ctx, pool); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	r := repo.NewInstrumentPostgres(pool)
+	r := instrumentpostgres.NewInstrumentPostgres(pool)
 	for _, q := range []string{"NVDA", "nvid", "GOOG", "apple"} {
 		hits, err := r.SearchInstruments(ctx, q, 10)
 		if err != nil {
@@ -40,10 +40,10 @@ func TestInstrumentSearchSmoke(t *testing.T) {
 }
 
 type fakeAssetSource struct {
-	rows []coreservice.InstrumentUpsert
+	rows []instrument.InstrumentUpsert
 }
 
-func (f fakeAssetSource) FetchInstruments(context.Context) ([]coreservice.InstrumentUpsert, error) {
+func (f fakeAssetSource) FetchInstruments(context.Context) ([]instrument.InstrumentUpsert, error) {
 	return f.rows, nil
 }
 
@@ -61,8 +61,8 @@ func TestInstrumentSyncAssetsUpsertsAndIsSearchable(t *testing.T) {
 	if err := db.Migrate(ctx, pool); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	svc := coreservice.NewInstrumentService(repo.NewInstrumentPostgres(pool))
-	src := fakeAssetSource{rows: []coreservice.InstrumentUpsert{
+	svc := instrument.NewInstrumentService(instrumentpostgres.NewInstrumentPostgres(pool))
+	src := fakeAssetSource{rows: []instrument.InstrumentUpsert{
 		{Symbol: "ZTST", Name: "Zeta Test Corp", Exchange: "NYSE", AssetClass: "us_equity", IsActive: true},
 	}}
 	// Idempotent: two runs both succeed; second is an upsert no-op on the row.

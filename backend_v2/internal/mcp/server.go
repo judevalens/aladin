@@ -9,6 +9,7 @@ import (
 
 	"aladin/backend_v2/internal/blocknote"
 	"aladin/backend_v2/internal/insights"
+	"aladin/backend_v2/internal/instrument"
 	"aladin/backend_v2/internal/search"
 	"aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/shardresource"
@@ -149,7 +150,7 @@ type Dependencies interface {
 	EntityTags() service.EntityTagService
 	ArtifactRefs() service.ArtifactRefService
 	EntityContext() service.EntityContextService
-	Instruments() service.InstrumentService
+	Instruments() instrument.InstrumentService
 	Watchlist() watchlist.Service
 	Search() search.SearchService
 	Bars() service.BarService
