@@ -1,4 +1,4 @@
-package repo
+package storage
 
 import (
 	"context"
@@ -8,6 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"aladin/backend_v2/internal/db"
+	"aladin/backend_v2/internal/dbtest"
+	"aladin/backend_v2/internal/repo"
 	"aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/shardv2"
 	"github.com/google/uuid"
@@ -42,6 +45,39 @@ type resourceHarness struct {
 	profiles shardv2.Registry
 }
 
+var testAdminUserID = uuid.NewString()
+
+func mustTestPool(ctx context.Context, t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	pool, err := pgxpool.New(ctx, dbtest.RequireTestDSN(t))
+	if err != nil {
+		t.Skipf("no test database: %v", err)
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		t.Skipf("test database unreachable: %v", err)
+	}
+	if err := db.Migrate(ctx, pool); err != nil {
+		pool.Close()
+		t.Fatalf("migrate: %v", err)
+	}
+	return pool
+}
+
+func seedUser(ctx context.Context, t *testing.T, pool *pgxpool.Pool, userID string) {
+	t.Helper()
+	if _, err := pool.Exec(ctx, `INSERT INTO users (id,email,created_at,updated_at) VALUES ($1::uuid,$2,now(),now()) ON CONFLICT (id) DO NOTHING`, userID, userID+"@shard-resource.test"); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+}
+
+func seedShardArtifact(ctx context.Context, t *testing.T, pool *pgxpool.Pool, id string) {
+	t.Helper()
+	if _, err := pool.Exec(ctx, `INSERT INTO artifacts (id,user_id,type,title,content,created_at,updated_at) VALUES ($1,$2::uuid,'app','resource test shard','',now(),now()) ON CONFLICT (id) DO NOTHING`, id, testAdminUserID); err != nil {
+		t.Fatalf("seed artifact: %v", err)
+	}
+}
+
 func setupResourceHarness(t *testing.T, limits ShardResourceLimits) *resourceHarness {
 	t.Helper()
 	ctx := service.WithPrincipal(context.Background(), service.Principal{UserID: testAdminUserID, ActorType: service.ActorTypeUserSession, ActorID: testAdminUserID})
@@ -49,7 +85,7 @@ func setupResourceHarness(t *testing.T, limits ShardResourceLimits) *resourceHar
 	t.Cleanup(pool.Close)
 	seedUser(ctx, t, pool, testAdminUserID)
 	shard := "artifact-" + uuid.NewString()
-	seedShardArtifact(ctx, t, NewShardKVPostgres(pool), shard)
+	seedShardArtifact(ctx, t, pool, shard)
 	r := NewShardResourcePostgres(pool, limits)
 	profiles := shardv2.Registry{"shard.documents": r.Profile()}
 	source, err := os.ReadFile("../../../shared/shard-v2/fixtures/backend-contract.json")
@@ -115,7 +151,7 @@ func TestShardResourcePersistenceAndIsolation(t *testing.T) {
 		t.Fatalf("draft leak: %+v %v", page, err)
 	}
 	// Neither v1 REST list nor local replica can see v2 data.
-	legacy, err := NewShardKVPostgres(h.pool).List(h.ctx, h.target.ShardID, service.ChannelPublished, "")
+	legacy, err := repo.NewShardKVPostgres(h.pool).List(h.ctx, h.target.ShardID, service.ChannelPublished, "")
 	if err != nil || len(legacy) != 0 {
 		t.Fatalf("v1 namespace leak: %v %v", legacy, err)
 	}

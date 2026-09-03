@@ -18,6 +18,7 @@ import (
 	"aladin/backend_v2/internal/docsurface"
 	"aladin/backend_v2/internal/repo"
 	"aladin/backend_v2/internal/service"
+	shardstorage "aladin/backend_v2/internal/shardresource/storage"
 	"aladin/backend_v2/internal/shardv2"
 	"aladin/backend_v2/internal/watchlist"
 	"github.com/coder/websocket"
@@ -97,7 +98,7 @@ func TestShardV2Pilot(t *testing.T) {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM artifacts WHERE id=$1`, id)
 	}()
 	artifacts := service.NewArtifactService(repo.NewArtifactsPostgres(pool), nil)
-	storage := repo.NewShardResourcePostgres(pool, repo.ShardResourceLimits{})
+	storage := shardstorage.NewShardResourcePostgres(pool, shardstorage.ShardResourceLimits{})
 	workspace := service.NewWorkspaceResourceProvider(service.NewEntityRegistry(service.NewArtifactEntityService(artifacts)))
 	profiles := shardv2.Registry{"shard.documents": storage.Profile(), "workspace.nodes": workspace.Profile()}
 	resources := service.NewShardResourceService(artifacts, storage, map[string]service.ResourceProvider{"shard.documents": storage, "workspace.nodes": workspace}, service.ResourceServiceOptions{RefreshInterval: 25 * time.Millisecond})

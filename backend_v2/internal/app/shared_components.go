@@ -15,6 +15,7 @@ import (
 	"aladin/backend_v2/internal/repo"
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/shardresource"
+	shardstorage "aladin/backend_v2/internal/shardresource/storage"
 	"aladin/backend_v2/internal/shardv2"
 	"aladin/backend_v2/internal/watchlist"
 	watchlistpostgres "aladin/backend_v2/internal/watchlist/postgres"
@@ -56,7 +57,7 @@ type sharedComponents struct {
 	marketInfo     coreservice.MarketInfoService
 	alertRepo      coreservice.AlertRepository
 	alpacaConfig   config.AlpacaConfig
-	shardStorage   *repo.ShardResourcePostgres
+	shardStorage   *shardstorage.ShardResourcePostgres
 }
 
 func buildSharedComponents(pool *pgxpool.Pool, dataVolumePath string) sharedComponents {
@@ -65,7 +66,7 @@ func buildSharedComponents(pool *pgxpool.Pool, dataVolumePath string) sharedComp
 	artifactFiles := NewArtifactFileStore()
 	docStore := docsurface.NewStore(dataVolumePath)
 
-	storage := repo.NewShardResourcePostgres(pool, repo.ShardResourceLimits{})
+	storage := shardstorage.NewShardResourcePostgres(pool, shardstorage.ShardResourceLimits{})
 	var profiles shardv2.Registry
 	var ownedStorage shardresource.Provider = storage
 	releaseSvc := coreservice.NewShardReleaseService(storage, nil)
@@ -83,7 +84,7 @@ func buildSharedComponents(pool *pgxpool.Pool, dataVolumePath string) sharedComp
 			if err != nil {
 				panic(fmt.Sprintf("configure shard MongoDB: %v", err))
 			}
-			ownedStorage = repo.NewShardResourceMongo(client, os.Getenv("SHARD_MONGODB_DATABASE"), repo.ShardResourceLimits{})
+			ownedStorage = shardstorage.NewShardResourceMongo(client, os.Getenv("SHARD_MONGODB_DATABASE"), shardstorage.ShardResourceLimits{})
 			slog.Info("shard v2: configured owned datastore", "engine", "mongo")
 		} else if engine != "postgres" {
 			panic("SHARD_DATASTORE must be mongo or postgres")

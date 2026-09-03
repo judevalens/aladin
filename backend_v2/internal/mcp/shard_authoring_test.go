@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"aladin/backend_v2/internal/docsurface"
-	"aladin/backend_v2/internal/repo"
 	"aladin/backend_v2/internal/service"
+	shardstorage "aladin/backend_v2/internal/shardresource/storage"
 	"aladin/backend_v2/internal/shardv2"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -77,7 +77,7 @@ func TestShardAuthoringEnabledCapabilitiesAndCreation(t *testing.T) {
 			artifacts := &fakeArtifactService{getResult: service.ArtifactResponse{ID: "page-created", Type: "app"}}
 			profiles := shardv2.Registry(nil)
 			if enabled {
-				profiles = shardv2.Registry{"shard.documents": repo.NewShardResourcePostgres(nil, repo.ShardResourceLimits{}).Profile(), "workspace.nodes": service.NewWorkspaceResourceProvider(nil).Profile()}
+				profiles = shardv2.Registry{"shard.documents": shardstorage.NewShardResourcePostgres(nil, shardstorage.ShardResourceLimits{}).Profile(), "workspace.nodes": service.NewWorkspaceResourceProvider(nil).Profile()}
 			}
 			releases := authoringReleaseStub{enabled: service.NewShardReleaseService(nil, profiles).Enabled()}
 			server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "authoring", Version: "test"}, nil)

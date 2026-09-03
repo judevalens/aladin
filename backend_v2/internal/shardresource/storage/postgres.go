@@ -1,4 +1,4 @@
-package repo
+package storage
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"aladin/backend_v2/internal/outbox"
 	"aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/shardresource"
 	shardrelease "aladin/backend_v2/internal/shardresource/release"
@@ -299,7 +300,7 @@ func (r *ShardResourcePostgres) ActivateResourceRelease(ctx context.Context, sha
 		if err != nil {
 			return err
 		}
-		if err := appendAppEvent(ctx, tx, p.UserID, service.OutboxAppEvent{ResourceKind: "artifact", ResourceID: shardID, Operation: "published", Payload: payload}); err != nil {
+		if err := outbox.AppendApp(ctx, tx, p.UserID, service.OutboxAppEvent{ResourceKind: "artifact", ResourceID: shardID, Operation: "published", Payload: payload}); err != nil {
 			return err
 		}
 	}
@@ -346,7 +347,7 @@ func (r *ShardResourcePostgres) Mutate(ctx context.Context, view shardresource.V
 		return empty, err
 	}
 	defer tx.Rollback(ctx)
-	if err := LockUser(ctx, tx, ns.UserID); err != nil {
+	if err := outbox.LockUser(ctx, tx, ns.UserID); err != nil {
 		return empty, err
 	}
 	if err := lockResourceNamespace(ctx, tx, ns); err != nil {
@@ -410,7 +411,7 @@ func (r *ShardResourcePostgres) Mutate(ctx context.Context, view shardresource.V
 			afterRevision = result.Tombstone.Revision
 		}
 		payload, _ := json.Marshal(map[string]any{"shardId": ns.ShardID, "environment": ns.Environment, "generation": ns.Generation, "resource": command.Resource, "id": command.ID, "requestId": command.RequestID, "actor": ns.ActorKey, "operation": command.Op, "beforeRevision": command.BaseRevision, "afterRevision": afterRevision, "result": "committed", "timestamp": time.Now().UTC().Format(time.RFC3339Nano)})
-		if err := appendAppEvent(ctx, tx, ns.UserID, service.OutboxAppEvent{ResourceKind: "shard", ResourceID: ns.ShardID, Operation: "resource-changed", Payload: payload}); err != nil {
+		if err := outbox.AppendApp(ctx, tx, ns.UserID, service.OutboxAppEvent{ResourceKind: "shard", ResourceID: ns.ShardID, Operation: "resource-changed", Payload: payload}); err != nil {
 			return empty, err
 		}
 	}

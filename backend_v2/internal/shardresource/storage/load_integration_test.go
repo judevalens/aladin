@@ -1,4 +1,4 @@
-package repo
+package storage
 
 import (
 	"aladin/backend_v2/internal/service"

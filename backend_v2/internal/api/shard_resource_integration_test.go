@@ -12,8 +12,8 @@ import (
 
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/dbtest"
-	"aladin/backend_v2/internal/repo"
 	"aladin/backend_v2/internal/service"
+	shardstorage "aladin/backend_v2/internal/shardresource/storage"
 	"aladin/backend_v2/internal/shardv2"
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
@@ -82,7 +82,7 @@ func TestShardResourceHTTPAndWebSocketWithPostgres(t *testing.T) {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM artifacts WHERE id=$1`, shardID)
 	}()
 	principal := service.WithPrincipal(ctx, service.Principal{UserID: userID, ActorType: service.ActorTypeUserSession, ActorID: userID})
-	storage := repo.NewShardResourcePostgres(pool, repo.ShardResourceLimits{})
+	storage := shardstorage.NewShardResourcePostgres(pool, shardstorage.ShardResourceLimits{})
 	profiles := shardv2.Registry{"shard.documents": storage.Profile()}
 	source, err := os.ReadFile("../../../shared/shard-v2/fixtures/backend-contract.json")
 	if err != nil {
