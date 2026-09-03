@@ -4,6 +4,7 @@ import (
 	"aladin/backend_v2/internal/changefeed"
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/shardresource"
+	"aladin/backend_v2/internal/watchlist"
 )
 
 // APIComponents is the process-owned graph consumed by cmd/api. The HTTP
@@ -41,7 +42,7 @@ type APIComponents interface {
 	EntityContext() coreservice.EntityContextService
 	EntityList() coreservice.EntityListService
 	Instruments() coreservice.InstrumentService
-	Watchlist() coreservice.WatchlistService
+	Watchlist() watchlist.Service
 	ReadingPositions() coreservice.ReadingPositionService
 	Search() coreservice.SearchService
 	Unfurl() coreservice.UnfurlService
@@ -74,7 +75,7 @@ type MCPComponents interface {
 	ArtifactRefs() coreservice.ArtifactRefService
 	EntityContext() coreservice.EntityContextService
 	Instruments() coreservice.InstrumentService
-	Watchlist() coreservice.WatchlistService
+	Watchlist() watchlist.Service
 	Search() coreservice.SearchService
 	Bars() coreservice.BarService
 	QuoteSnapshots() coreservice.QuoteSnapshotSource

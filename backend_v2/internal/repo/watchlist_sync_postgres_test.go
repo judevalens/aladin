@@ -9,6 +9,7 @@ import (
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/repo"
 	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/watchlist"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -64,7 +65,7 @@ func TestWatchlistSyncFrames(t *testing.T) {
 	r := repo.NewWatchlistPostgres(pool)
 	src := repo.NewWatchlistSyncSource(pool)
 
-	list, err := r.CreateWatchlist(ctx, coreservice.Watchlist{ID: uuid.NewString(), Name: "Semis"}, userID)
+	list, err := r.CreateWatchlist(ctx, watchlist.Watchlist{ID: uuid.NewString(), Name: "Semis"}, userID)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}

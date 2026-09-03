@@ -1,4 +1,6 @@
-package service
+// Package watchlist owns the watchlist domain model, application service, and
+// persistence port. Transport and storage adapters depend on this package.
+package watchlist
 
 import (
 	"context"
@@ -20,9 +22,9 @@ type WatchlistItem struct {
 
 // Watchlist kinds — how the universe's membership resolves.
 const (
-	WatchlistManual   = "manual"   // explicit member rows
-	WatchlistScreener = "screener" // a stored rule (definition), resolved at read time (v2)
-	WatchlistHybrid   = "hybrid"   // manual picks ∪ rule (v2)
+	Manual   = "manual"   // explicit member rows
+	Screener = "screener" // a stored rule (definition), resolved at read time (v2)
+	Hybrid   = "hybrid"   // manual picks ∪ rule (v2)
 )
 
 // Watchlist is a named instrument set — a UNIVERSE the trading engine consumes/produces. Kind
@@ -39,15 +41,15 @@ type Watchlist struct {
 
 var (
 	// ErrInvalidWatchlistInput is returned for an empty user / instrument id / name.
-	ErrInvalidWatchlistInput = errors.New("watchlist: user, instrument id, or name is required")
+	ErrInvalidInput = errors.New("watchlist: user, instrument id, or name is required")
 	// ErrWatchlistNotFound is returned when a list isn't found for the user (rename/delete).
-	ErrWatchlistNotFound = errors.New("watchlist: list not found")
+	ErrNotFound = errors.New("watchlist: list not found")
 	// ErrScreenerNotImplemented marks the reserved dynamic-resolution path (v2/T3).
 	ErrScreenerNotImplemented = errors.New("watchlist: screener resolution is not implemented yet")
 )
 
 // WatchlistRepository is the persistence port. List-scoped; ownership is enforced in the WHERE.
-type WatchlistRepository interface {
+type Repository interface {
 	ListWatchlists(ctx context.Context, userID string) ([]Watchlist, error)
 	CreateWatchlist(ctx context.Context, w Watchlist, userID string) (Watchlist, error)
 	RenameWatchlist(ctx context.Context, userID, id, name string) error
@@ -61,7 +63,7 @@ type WatchlistRepository interface {
 }
 
 // WatchlistService backs the Markets surface AND is the universe primitive for the trading engine.
-type WatchlistService interface {
+type Service interface {
 	ListWatchlists(ctx context.Context, userID string) ([]Watchlist, error)
 	CreateWatchlist(ctx context.Context, userID, name string) (Watchlist, error)
 	RenameWatchlist(ctx context.Context, userID, id, name string) error
@@ -83,16 +85,16 @@ type WatchlistService interface {
 }
 
 type defaultWatchlistService struct {
-	repo WatchlistRepository
+	repo Repository
 }
 
-func NewWatchlistService(repo WatchlistRepository) WatchlistService {
+func NewService(repo Repository) Service {
 	return &defaultWatchlistService{repo: repo}
 }
 
 func (s *defaultWatchlistService) ListWatchlists(ctx context.Context, userID string) ([]Watchlist, error) {
 	if strings.TrimSpace(userID) == "" {
-		return nil, ErrInvalidWatchlistInput
+		return nil, ErrInvalidInput
 	}
 	lists, err := s.repo.ListWatchlists(ctx, userID)
 	if err != nil {
@@ -108,7 +110,7 @@ func (s *defaultWatchlistService) CreateWatchlist(ctx context.Context, userID, n
 	userID = strings.TrimSpace(userID)
 	name = strings.TrimSpace(name)
 	if userID == "" || name == "" {
-		return Watchlist{}, ErrInvalidWatchlistInput
+		return Watchlist{}, ErrInvalidInput
 	}
 	// Next position = current list count (append at the end).
 	existing, err := s.repo.ListWatchlists(ctx, userID)
@@ -118,7 +120,7 @@ func (s *defaultWatchlistService) CreateWatchlist(ctx context.Context, userID, n
 	w := Watchlist{
 		ID:       uuid.NewString(),
 		Name:     name,
-		Kind:     WatchlistManual,
+		Kind:     Manual,
 		Position: int64(len(existing)),
 	}
 	return s.repo.CreateWatchlist(ctx, w, userID)
@@ -126,14 +128,14 @@ func (s *defaultWatchlistService) CreateWatchlist(ctx context.Context, userID, n
 
 func (s *defaultWatchlistService) RenameWatchlist(ctx context.Context, userID, id, name string) error {
 	if strings.TrimSpace(userID) == "" || strings.TrimSpace(id) == "" || strings.TrimSpace(name) == "" {
-		return ErrInvalidWatchlistInput
+		return ErrInvalidInput
 	}
 	return s.repo.RenameWatchlist(ctx, userID, id, strings.TrimSpace(name))
 }
 
 func (s *defaultWatchlistService) DeleteWatchlist(ctx context.Context, userID, id string) error {
 	if strings.TrimSpace(userID) == "" || strings.TrimSpace(id) == "" {
-		return ErrInvalidWatchlistInput
+		return ErrInvalidInput
 	}
 	// Deleting the last list is allowed — the default is lazily recreated on the next resolve.
 	return s.repo.DeleteWatchlist(ctx, userID, id)
@@ -141,7 +143,7 @@ func (s *defaultWatchlistService) DeleteWatchlist(ctx context.Context, userID, i
 
 func (s *defaultWatchlistService) ListItems(ctx context.Context, userID, listID string) ([]WatchlistItem, error) {
 	if strings.TrimSpace(userID) == "" {
-		return nil, ErrInvalidWatchlistInput
+		return nil, ErrInvalidInput
 	}
 	id, err := s.resolveListID(ctx, userID, listID)
 	if err != nil {
@@ -159,7 +161,7 @@ func (s *defaultWatchlistService) ListItems(ctx context.Context, userID, listID 
 
 func (s *defaultWatchlistService) AddItem(ctx context.Context, userID, listID, instrumentID string) error {
 	if strings.TrimSpace(userID) == "" || strings.TrimSpace(instrumentID) == "" {
-		return ErrInvalidWatchlistInput
+		return ErrInvalidInput
 	}
 	id, err := s.resolveListID(ctx, userID, listID)
 	if err != nil {
@@ -170,7 +172,7 @@ func (s *defaultWatchlistService) AddItem(ctx context.Context, userID, listID, i
 
 func (s *defaultWatchlistService) RemoveItem(ctx context.Context, userID, listID, instrumentID string) error {
 	if strings.TrimSpace(userID) == "" || strings.TrimSpace(instrumentID) == "" {
-		return ErrInvalidWatchlistInput
+		return ErrInvalidInput
 	}
 	id, err := s.resolveListID(ctx, userID, listID)
 	if err != nil {
@@ -182,7 +184,7 @@ func (s *defaultWatchlistService) RemoveItem(ctx context.Context, userID, listID
 // ResolveInstruments — the universe port. Dispatches on kind.
 func (s *defaultWatchlistService) ResolveInstruments(ctx context.Context, userID, listID string) ([]WatchlistItem, error) {
 	if strings.TrimSpace(userID) == "" {
-		return nil, ErrInvalidWatchlistInput
+		return nil, ErrInvalidInput
 	}
 	id, err := s.resolveListID(ctx, userID, listID)
 	if err != nil {
@@ -193,12 +195,12 @@ func (s *defaultWatchlistService) ResolveInstruments(ctx context.Context, userID
 		return nil, err
 	}
 	if !ok {
-		return nil, ErrWatchlistNotFound
+		return nil, ErrNotFound
 	}
 	switch w.Kind {
-	case WatchlistManual:
+	case Manual:
 		return s.repo.ListItems(ctx, userID, id)
-	case WatchlistScreener, WatchlistHybrid:
+	case Screener, Hybrid:
 		// Reserved: a screener resolves w.Definition against instruments+bars (v2/T3). The seam
 		// exists so strategies/scans can already reference any watchlist as a universe.
 		return nil, ErrScreenerNotImplemented

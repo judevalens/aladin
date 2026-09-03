@@ -5,6 +5,7 @@ import (
 	"aladin/backend_v2/internal/docsurface"
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/shardresource"
+	"aladin/backend_v2/internal/watchlist"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -61,7 +62,7 @@ func (c *MCPProcess) EntityTags() coreservice.EntityTagService        { return c
 func (c *MCPProcess) ArtifactRefs() coreservice.ArtifactRefService    { return c.artifactRefs }
 func (c *MCPProcess) EntityContext() coreservice.EntityContextService { return c.entityContext }
 func (c *MCPProcess) Instruments() coreservice.InstrumentService      { return c.instruments }
-func (c *MCPProcess) Watchlist() coreservice.WatchlistService         { return c.watchlist }
+func (c *MCPProcess) Watchlist() watchlist.Service                    { return c.watchlist }
 func (c *MCPProcess) Search() coreservice.SearchService               { return c.search }
 func (c *MCPProcess) Bars() coreservice.BarService                    { return c.bars }
 func (c *MCPProcess) QuoteSnapshots() coreservice.QuoteSnapshotSource { return c.quoteSnapshots }

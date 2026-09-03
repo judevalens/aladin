@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/watchlist"
 )
 
 type watchlistCall struct {
@@ -25,17 +26,17 @@ type watchlistCall struct {
 // silently growing back to the broader service surface.
 type apiOnlyWatchlistSvc struct{}
 
-func (apiOnlyWatchlistSvc) ListWatchlists(context.Context, string) ([]coreservice.Watchlist, error) {
+func (apiOnlyWatchlistSvc) ListWatchlists(context.Context, string) ([]watchlist.Watchlist, error) {
 	return nil, nil
 }
-func (apiOnlyWatchlistSvc) CreateWatchlist(context.Context, string, string) (coreservice.Watchlist, error) {
-	return coreservice.Watchlist{}, nil
+func (apiOnlyWatchlistSvc) CreateWatchlist(context.Context, string, string) (watchlist.Watchlist, error) {
+	return watchlist.Watchlist{}, nil
 }
 func (apiOnlyWatchlistSvc) RenameWatchlist(context.Context, string, string, string) error {
 	return nil
 }
 func (apiOnlyWatchlistSvc) DeleteWatchlist(context.Context, string, string) error { return nil }
-func (apiOnlyWatchlistSvc) ListItems(context.Context, string, string) ([]coreservice.WatchlistItem, error) {
+func (apiOnlyWatchlistSvc) ListItems(context.Context, string, string) ([]watchlist.WatchlistItem, error) {
 	return nil, nil
 }
 func (apiOnlyWatchlistSvc) AddItem(context.Context, string, string, string) error { return nil }
@@ -46,22 +47,22 @@ func (apiOnlyWatchlistSvc) RemoveItem(context.Context, string, string, string) e
 var _ watchlistService = apiOnlyWatchlistSvc{}
 
 type fakeWatchlistSvc struct {
-	created *coreservice.Watchlist
-	lists   []coreservice.Watchlist
-	items   []coreservice.WatchlistItem
+	created *watchlist.Watchlist
+	lists   []watchlist.Watchlist
+	items   []watchlist.WatchlistItem
 	err     error
 	calls   []watchlistCall
 }
 
 func (f *fakeWatchlistSvc) record(call watchlistCall) { f.calls = append(f.calls, call) }
 
-func (f *fakeWatchlistSvc) ListWatchlists(_ context.Context, userID string) ([]coreservice.Watchlist, error) {
+func (f *fakeWatchlistSvc) ListWatchlists(_ context.Context, userID string) ([]watchlist.Watchlist, error) {
 	f.record(watchlistCall{op: "list-watchlists", userID: userID})
 	return f.lists, f.err
 }
-func (f *fakeWatchlistSvc) CreateWatchlist(_ context.Context, userID, name string) (coreservice.Watchlist, error) {
+func (f *fakeWatchlistSvc) CreateWatchlist(_ context.Context, userID, name string) (watchlist.Watchlist, error) {
 	f.record(watchlistCall{op: "create-watchlist", userID: userID, name: name})
-	w := coreservice.Watchlist{ID: "new", Name: name, Kind: coreservice.WatchlistManual}
+	w := watchlist.Watchlist{ID: "new", Name: name, Kind: watchlist.Manual}
 	f.created = &w
 	return w, f.err
 }
@@ -73,7 +74,7 @@ func (f *fakeWatchlistSvc) DeleteWatchlist(_ context.Context, userID, id string)
 	f.record(watchlistCall{op: "delete-watchlist", userID: userID, listID: id})
 	return f.err
 }
-func (f *fakeWatchlistSvc) ListItems(_ context.Context, userID, listID string) ([]coreservice.WatchlistItem, error) {
+func (f *fakeWatchlistSvc) ListItems(_ context.Context, userID, listID string) ([]watchlist.WatchlistItem, error) {
 	f.record(watchlistCall{op: "list-items", userID: userID, listID: listID})
 	return f.items, f.err
 }
@@ -88,10 +89,10 @@ func (f *fakeWatchlistSvc) RemoveItem(_ context.Context, userID, listID, instrum
 func (f *fakeWatchlistSvc) ResolveOrCreateByName(context.Context, string, string) (string, error) {
 	return "l1", f.err
 }
-func (f *fakeWatchlistSvc) ResolveInstruments(context.Context, string, string) ([]coreservice.WatchlistItem, error) {
+func (f *fakeWatchlistSvc) ResolveInstruments(context.Context, string, string) ([]watchlist.WatchlistItem, error) {
 	return f.items, f.err
 }
-func (f *fakeWatchlistSvc) List(context.Context, string) ([]coreservice.WatchlistItem, error) {
+func (f *fakeWatchlistSvc) List(context.Context, string) ([]watchlist.WatchlistItem, error) {
 	return f.items, f.err
 }
 func (f *fakeWatchlistSvc) Add(context.Context, string, string) error    { return f.err }
@@ -166,7 +167,7 @@ func TestWatchlistRouteContracts(t *testing.T) {
 						t.Fatalf("body = %#v, missing %q", body, key)
 					}
 				}
-				if body["id"] != "new" || body["name"] != "Shorts" || body["kind"] != coreservice.WatchlistManual {
+				if body["id"] != "new" || body["name"] != "Shorts" || body["kind"] != watchlist.Manual {
 					t.Fatalf("body = %#v, want created watchlist", body)
 				}
 			},
@@ -210,8 +211,8 @@ func TestWatchlistRouteContracts(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			svc := &fakeWatchlistSvc{
-				lists: []coreservice.Watchlist{{ID: "l1", Name: "Tech", Kind: coreservice.WatchlistManual, ItemCount: 1}},
-				items: []coreservice.WatchlistItem{{InstrumentID: "inst-1", Symbol: "NVDA", Name: "NVIDIA", Exchange: "NASDAQ", AddedAt: "2026-09-02"}},
+				lists: []watchlist.Watchlist{{ID: "l1", Name: "Tech", Kind: watchlist.Manual, ItemCount: 1}},
+				items: []watchlist.WatchlistItem{{InstrumentID: "inst-1", Symbol: "NVDA", Name: "NVIDIA", Exchange: "NASDAQ", AddedAt: "2026-09-02"}},
 			}
 			rec := serveWatchlistRequest(t, svc, tt.method, tt.path, tt.body)
 			if rec.Code != tt.wantStatus {
@@ -251,8 +252,8 @@ func TestWatchlistErrorContract(t *testing.T) {
 		wantStatus int
 		wantError  string
 	}{
-		{name: "invalid input", err: coreservice.ErrInvalidWatchlistInput, wantStatus: http.StatusBadRequest, wantError: coreservice.ErrInvalidWatchlistInput.Error()},
-		{name: "not found", err: coreservice.ErrWatchlistNotFound, wantStatus: http.StatusNotFound, wantError: "Watchlist not found"},
+		{name: "invalid input", err: watchlist.ErrInvalidInput, wantStatus: http.StatusBadRequest, wantError: watchlist.ErrInvalidInput.Error()},
+		{name: "not found", err: watchlist.ErrNotFound, wantStatus: http.StatusNotFound, wantError: "Watchlist not found"},
 		{name: "service failure", err: errors.New("database unavailable"), wantStatus: http.StatusInternalServerError, wantError: "database unavailable"},
 	}
 	for _, tt := range tests {
@@ -287,7 +288,7 @@ func TestWatchlistCreateHandler(t *testing.T) {
 
 func TestWatchlistRenameNotFoundMaps404(t *testing.T) {
 	t.Parallel()
-	svc := &fakeWatchlistSvc{err: coreservice.ErrWatchlistNotFound}
+	svc := &fakeWatchlistSvc{err: watchlist.ErrNotFound}
 	routes := newWatchlistRoutes(svc)
 
 	rec := httptest.NewRecorder()

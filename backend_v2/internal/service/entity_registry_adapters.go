@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+
+	"aladin/backend_v2/internal/watchlist"
 )
 
 // The launch adapters for the entity registry. Each wraps an existing SERVICE so
@@ -133,9 +135,9 @@ func (s recordEntityService) NodeView(ctx context.Context, id string) (NodeView,
 
 // watchlistEntityService reads a list + its members. Watchlists are user-scoped
 // by argument (not ctx), so the adapter resolves the principal itself.
-type watchlistEntityService struct{ watchlists WatchlistService }
+type watchlistEntityService struct{ watchlists watchlist.Service }
 
-func NewWatchlistEntityService(watchlists WatchlistService) EntityService {
+func NewWatchlistEntityService(watchlists watchlist.Service) EntityService {
 	return watchlistEntityService{watchlists: watchlists}
 }
 
@@ -170,7 +172,7 @@ func (s watchlistEntityService) NodeView(ctx context.Context, id string) (NodeVi
 	if err != nil {
 		return NodeView{}, err
 	}
-	var found *Watchlist
+	var found *watchlist.Watchlist
 	for i := range lists {
 		if lists[i].ID == id {
 			found = &lists[i]

@@ -12,7 +12,7 @@ import (
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/dbtest"
 	"aladin/backend_v2/internal/repo"
-	"aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/watchlist"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -50,7 +50,7 @@ func TestWatchlistHTTPServiceRepositoryContract(t *testing.T) {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1::uuid`, userID)
 	})
 
-	watchlists := service.NewWatchlistService(repo.NewWatchlistPostgres(pool))
+	watchlists := watchlist.NewService(repo.NewWatchlistPostgres(pool))
 	server := NewWithDependencies(":0", testDependencies{
 		AuthSvc:      &resourceAPIAuth{userID: userID},
 		WatchlistSvc: watchlists,
@@ -91,23 +91,23 @@ func TestWatchlistHTTPServiceRepositoryContract(t *testing.T) {
 		}
 	}
 
-	var created service.Watchlist
+	var created watchlist.Watchlist
 	call(http.MethodPost, "/api/watchlists", `{"name":"Semis"}`, http.StatusCreated, &created)
-	if created.ID == "" || created.Name != "Semis" || created.Kind != service.WatchlistManual {
+	if created.ID == "" || created.Name != "Semis" || created.Kind != watchlist.Manual {
 		t.Fatalf("created = %#v", created)
 	}
 
 	call(http.MethodPost, "/api/watchlists/"+created.ID+"/items", `{"instrumentId":"`+instrumentID+`"}`, http.StatusCreated, &map[string]bool{})
 
 	var listed struct {
-		Watchlists []service.Watchlist `json:"watchlists"`
+		Watchlists []watchlist.Watchlist `json:"watchlists"`
 	}
 	call(http.MethodGet, "/api/watchlists", "", http.StatusOK, &listed)
 	if len(listed.Watchlists) != 1 || listed.Watchlists[0].ID != created.ID || listed.Watchlists[0].ItemCount != 1 {
 		t.Fatalf("listed = %#v", listed.Watchlists)
 	}
 
-	var items []service.WatchlistItem
+	var items []watchlist.WatchlistItem
 	call(http.MethodGet, "/api/watchlists/"+created.ID+"/items", "", http.StatusOK, &items)
 	if len(items) != 1 || items[0].InstrumentID != instrumentID || items[0].Symbol != symbol {
 		t.Fatalf("items = %#v", items)

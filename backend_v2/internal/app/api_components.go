@@ -12,6 +12,7 @@ import (
 	"aladin/backend_v2/internal/repo"
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/shardresource"
+	"aladin/backend_v2/internal/watchlist"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -168,7 +169,7 @@ func (c *APIProcess) ArtifactRefs() coreservice.ArtifactRefService             {
 func (c *APIProcess) EntityContext() coreservice.EntityContextService          { return c.entityContext }
 func (c *APIProcess) EntityList() coreservice.EntityListService                { return c.entityList }
 func (c *APIProcess) Instruments() coreservice.InstrumentService               { return c.instruments }
-func (c *APIProcess) Watchlist() coreservice.WatchlistService                  { return c.watchlist }
+func (c *APIProcess) Watchlist() watchlist.Service                             { return c.watchlist }
 func (c *APIProcess) ReadingPositions() coreservice.ReadingPositionService     { return c.readingPositions }
 func (c *APIProcess) Search() coreservice.SearchService                        { return c.search }
 func (c *APIProcess) Unfurl() coreservice.UnfurlService                        { return c.unfurl }

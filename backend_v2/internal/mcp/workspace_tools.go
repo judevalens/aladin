@@ -7,6 +7,7 @@ import (
 
 	"aladin/backend_v2/internal/blocknote"
 	"aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/watchlist"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"sort"
@@ -38,7 +39,7 @@ type workspaceToolServer struct {
 	entities    service.EntityContextService
 	insights    service.InsightService
 	artifacts   service.ArtifactService
-	watchlist   service.WatchlistService
+	watchlist   watchlist.Service
 	bars        service.BarService
 	snapshots   service.QuoteSnapshotSource
 	marketInfo  service.MarketInfoService
@@ -255,11 +256,11 @@ type getWatchlistInput struct {
 	List string `json:"list,omitempty"` // optional list name; empty = default
 }
 type getWatchlistOutput struct {
-	Items []service.WatchlistItem `json:"items"`
+	Items []watchlist.WatchlistItem `json:"items"`
 }
 
 type listWatchlistsOutput struct {
-	Watchlists []service.Watchlist `json:"watchlists"`
+	Watchlists []watchlist.Watchlist `json:"watchlists"`
 }
 type createWatchlistInput struct {
 	Name string `json:"name"`

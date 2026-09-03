@@ -9,6 +9,7 @@ import (
 	"aladin/backend_v2/internal/blocknote"
 	"aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/shardresource"
+	"aladin/backend_v2/internal/watchlist"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -146,7 +147,7 @@ type Dependencies interface {
 	ArtifactRefs() service.ArtifactRefService
 	EntityContext() service.EntityContextService
 	Instruments() service.InstrumentService
-	Watchlist() service.WatchlistService
+	Watchlist() watchlist.Service
 	Search() service.SearchService
 	Bars() service.BarService
 	QuoteSnapshots() service.QuoteSnapshotSource

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/watchlist"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -52,8 +53,8 @@ func (f *fakeEntityContextService) AcceptMerge(context.Context, string) error { 
 func (f *fakeEntityContextService) RejectMerge(context.Context, string) error { return nil }
 
 type fakeWatchlistService struct {
-	items       []service.WatchlistItem
-	lists       []service.Watchlist
+	items       []watchlist.WatchlistItem
+	lists       []watchlist.Watchlist
 	listUser    string
 	listID      string
 	listsUser   string
@@ -67,20 +68,20 @@ type fakeWatchlistService struct {
 	err         error
 }
 
-func (f *fakeWatchlistService) ListWatchlists(_ context.Context, userID string) ([]service.Watchlist, error) {
+func (f *fakeWatchlistService) ListWatchlists(_ context.Context, userID string) ([]watchlist.Watchlist, error) {
 	f.listsUser = userID
 	return f.lists, f.err
 }
-func (f *fakeWatchlistService) CreateWatchlist(_ context.Context, userID, name string) (service.Watchlist, error) {
+func (f *fakeWatchlistService) CreateWatchlist(_ context.Context, userID, name string) (watchlist.Watchlist, error) {
 	f.createUser = userID
 	f.createdWith = name
-	return service.Watchlist{ID: "new-list", Name: name, Kind: "manual"}, f.err
+	return watchlist.Watchlist{ID: "new-list", Name: name, Kind: "manual"}, f.err
 }
 func (f *fakeWatchlistService) RenameWatchlist(context.Context, string, string, string) error {
 	return nil
 }
 func (f *fakeWatchlistService) DeleteWatchlist(context.Context, string, string) error { return nil }
-func (f *fakeWatchlistService) ListItems(_ context.Context, userID, listID string) ([]service.WatchlistItem, error) {
+func (f *fakeWatchlistService) ListItems(_ context.Context, userID, listID string) ([]watchlist.WatchlistItem, error) {
 	f.listUser, f.listID = userID, listID
 	return f.items, f.err
 }
@@ -97,10 +98,10 @@ func (f *fakeWatchlistService) ResolveOrCreateByName(_ context.Context, userID, 
 	}
 	return "resolved-" + name, f.err
 }
-func (f *fakeWatchlistService) ResolveInstruments(context.Context, string, string) ([]service.WatchlistItem, error) {
+func (f *fakeWatchlistService) ResolveInstruments(context.Context, string, string) ([]watchlist.WatchlistItem, error) {
 	return f.items, f.err
 }
-func (f *fakeWatchlistService) List(context.Context, string) ([]service.WatchlistItem, error) {
+func (f *fakeWatchlistService) List(context.Context, string) ([]watchlist.WatchlistItem, error) {
 	return f.items, f.err
 }
 func (f *fakeWatchlistService) Add(context.Context, string, string) error    { return f.err }
@@ -347,7 +348,7 @@ func TestGetWatchlistScopesDefaultAndNamedListsToPrincipal(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			watchlist := &fakeWatchlistService{items: []service.WatchlistItem{{InstrumentID: "inst-1", Symbol: "NVDA"}}}
+			watchlist := &fakeWatchlistService{items: []watchlist.WatchlistItem{{InstrumentID: "inst-1", Symbol: "NVDA"}}}
 			tools := workspaceToolServer{watchlist: watchlist}
 			_, out, err := tools.getWatchlist(contextWithScopes(), nil, tt.input)
 			if err != nil {
@@ -365,7 +366,7 @@ func TestGetWatchlistScopesDefaultAndNamedListsToPrincipal(t *testing.T) {
 
 func TestListWatchlistsScopesToPrincipal(t *testing.T) {
 	t.Parallel()
-	watchlist := &fakeWatchlistService{lists: []service.Watchlist{{ID: "l1", Name: "Tech", ItemCount: 3}}}
+	watchlist := &fakeWatchlistService{lists: []watchlist.Watchlist{{ID: "l1", Name: "Tech", ItemCount: 3}}}
 	tools := workspaceToolServer{watchlist: watchlist}
 	_, out, err := tools.listWatchlists(contextWithScopes(), nil, emptyInput{})
 	if err != nil {

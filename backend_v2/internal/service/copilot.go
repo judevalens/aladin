@@ -17,6 +17,7 @@ import (
 	"aladin/backend_v2/internal/copilot/turnstate"
 	"aladin/backend_v2/internal/copilotagent"
 	"aladin/backend_v2/internal/safego"
+	"aladin/backend_v2/internal/watchlist"
 
 	"github.com/google/uuid"
 )
@@ -136,7 +137,7 @@ type CopilotDeps struct {
 	Snapshots QuoteSnapshotSource
 	Artifacts ArtifactService
 	Entities  EntityContextService
-	Watchlist WatchlistService
+	Watchlist watchlist.Service
 }
 
 const (

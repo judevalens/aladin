@@ -1,4 +1,4 @@
-package service_test
+package watchlist_test
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/repo"
-	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/watchlist"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -50,7 +50,7 @@ func TestWatchlistsRoundTrip(t *testing.T) {
 		_, _ = pool.Exec(ctx, `DELETE FROM users WHERE id = ANY($1::uuid[])`, []string{userID, otherUser})
 	})
 
-	svc := coreservice.NewWatchlistService(repo.NewWatchlistPostgres(pool))
+	svc := watchlist.NewService(repo.NewWatchlistPostgres(pool))
 
 	// Two named lists.
 	tech, err := svc.CreateWatchlist(ctx, userID, "Tech")
@@ -106,7 +106,7 @@ func TestWatchlistsRoundTrip(t *testing.T) {
 	}
 
 	// Ownership: another user cannot rename/delete/see this user's list.
-	if err := svc.RenameWatchlist(ctx, otherUser, tech.ID, "Hijack"); err != coreservice.ErrWatchlistNotFound {
+	if err := svc.RenameWatchlist(ctx, otherUser, tech.ID, "Hijack"); err != watchlist.ErrNotFound {
 		t.Fatalf("cross-tenant rename = %v, want ErrWatchlistNotFound", err)
 	}
 	if err := svc.AddItem(ctx, otherUser, tech.ID, instB); err != nil {
@@ -124,7 +124,7 @@ func TestWatchlistsRoundTrip(t *testing.T) {
 	if got, _ := svc.ListItems(ctx, userID, tech.ID); len(got) != 2 {
 		t.Fatalf("cross-tenant remove changed the list: now %d items", len(got))
 	}
-	if err := svc.DeleteWatchlist(ctx, otherUser, tech.ID); err != coreservice.ErrWatchlistNotFound {
+	if err := svc.DeleteWatchlist(ctx, otherUser, tech.ID); err != watchlist.ErrNotFound {
 		t.Fatalf("cross-tenant delete = %v, want ErrWatchlistNotFound", err)
 	}
 
@@ -146,11 +146,11 @@ func TestWatchlistsRoundTrip(t *testing.T) {
 	}
 
 	// A screener-kind list reserves the dynamic path.
-	scr := coreservice.Watchlist{ID: uuid.NewString(), Name: "Momo", Kind: coreservice.WatchlistScreener}
+	scr := watchlist.Watchlist{ID: uuid.NewString(), Name: "Momo", Kind: watchlist.Screener}
 	if _, err := repo.NewWatchlistPostgres(pool).CreateWatchlist(ctx, scr, userID); err != nil {
 		t.Fatalf("create screener: %v", err)
 	}
-	if _, err := svc.ResolveInstruments(ctx, userID, scr.ID); err != coreservice.ErrScreenerNotImplemented {
+	if _, err := svc.ResolveInstruments(ctx, userID, scr.ID); err != watchlist.ErrScreenerNotImplemented {
 		t.Fatalf("screener resolve = %v, want ErrScreenerNotImplemented", err)
 	}
 }

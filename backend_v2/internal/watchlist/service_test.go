@@ -1,4 +1,4 @@
-package service
+package watchlist
 
 import (
 	"context"
@@ -69,7 +69,7 @@ func (f *fakeWatchlistRepository) RemoveItem(_ context.Context, userID, listID, 
 func TestWatchlistServiceRejectsInvalidInputBeforeRepository(t *testing.T) {
 	t.Parallel()
 	repo := &fakeWatchlistRepository{}
-	svc := NewWatchlistService(repo)
+	svc := NewService(repo)
 	ctx := context.Background()
 	tests := []struct {
 		name string
@@ -88,8 +88,8 @@ func TestWatchlistServiceRejectsInvalidInputBeforeRepository(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := tt.call(); !errors.Is(err, ErrInvalidWatchlistInput) {
-				t.Fatalf("error = %v, want ErrInvalidWatchlistInput", err)
+			if err := tt.call(); !errors.Is(err, ErrInvalidInput) {
+				t.Fatalf("error = %v, want ErrInvalidInput", err)
 			}
 		})
 	}
@@ -101,7 +101,7 @@ func TestWatchlistServiceRejectsInvalidInputBeforeRepository(t *testing.T) {
 func TestWatchlistServiceNormalizesNilCollections(t *testing.T) {
 	t.Parallel()
 	repo := &fakeWatchlistRepository{}
-	svc := NewWatchlistService(repo)
+	svc := NewService(repo)
 	lists, err := svc.ListWatchlists(context.Background(), "u1")
 	if err != nil || lists == nil || len(lists) != 0 {
 		t.Fatalf("lists = %#v, err = %v; want non-nil empty slice", lists, err)
@@ -115,7 +115,7 @@ func TestWatchlistServiceNormalizesNilCollections(t *testing.T) {
 func TestWatchlistServicePreservesRepositoryCancellation(t *testing.T) {
 	t.Parallel()
 	repo := &fakeWatchlistRepository{err: context.Canceled}
-	svc := NewWatchlistService(repo)
+	svc := NewService(repo)
 	_, err := svc.ListWatchlists(context.Background(), "u1")
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want context.Canceled identity", err)
@@ -125,11 +125,11 @@ func TestWatchlistServicePreservesRepositoryCancellation(t *testing.T) {
 func TestWatchlistServiceLazilyCreatesDefaultList(t *testing.T) {
 	t.Parallel()
 	repo := &fakeWatchlistRepository{}
-	svc := NewWatchlistService(repo)
+	svc := NewService(repo)
 	if _, err := svc.ListItems(context.Background(), "u1", ""); err != nil {
 		t.Fatal(err)
 	}
-	if repo.created == nil || repo.created.Name != "Watchlist" || repo.created.Kind != WatchlistManual || repo.created.Position != 0 {
+	if repo.created == nil || repo.created.Name != "Watchlist" || repo.created.Kind != Manual || repo.created.Position != 0 {
 		t.Fatalf("created = %#v, want default manual Watchlist at position zero", repo.created)
 	}
 	last := repo.calls[len(repo.calls)-1]
@@ -141,7 +141,7 @@ func TestWatchlistServiceLazilyCreatesDefaultList(t *testing.T) {
 func TestWatchlistServiceResolvesNameCaseInsensitivelyOrCreates(t *testing.T) {
 	t.Parallel()
 	repo := &fakeWatchlistRepository{lists: []Watchlist{{ID: "semis", Name: "Semiconductors"}}}
-	svc := NewWatchlistService(repo)
+	svc := NewService(repo)
 	id, err := svc.ResolveOrCreateByName(context.Background(), "u1", " sEmIcOnDuCtOrS ")
 	if err != nil || id != "semis" || repo.created != nil {
 		t.Fatalf("id = %q, created = %#v, err = %v", id, repo.created, err)
@@ -157,7 +157,7 @@ func TestWatchlistServiceResolvesNameCaseInsensitivelyOrCreates(t *testing.T) {
 func TestWatchlistCompatibilityShimsResolveDefaultList(t *testing.T) {
 	t.Parallel()
 	repo := &fakeWatchlistRepository{defaultID: "default", defaultOK: true}
-	svc := NewWatchlistService(repo)
+	svc := NewService(repo)
 	ctx := context.Background()
 	if _, err := svc.List(ctx, "u1"); err != nil {
 		t.Fatal(err)
@@ -189,9 +189,9 @@ func TestWatchlistResolveInstrumentsDispatchesByKind(t *testing.T) {
 		wantErr error
 		wantLen int
 	}{
-		{name: "manual", kind: WatchlistManual, wantLen: 1},
-		{name: "screener reserved", kind: WatchlistScreener, wantErr: ErrScreenerNotImplemented},
-		{name: "hybrid reserved", kind: WatchlistHybrid, wantErr: ErrScreenerNotImplemented},
+		{name: "manual", kind: Manual, wantLen: 1},
+		{name: "screener reserved", kind: Screener, wantErr: ErrScreenerNotImplemented},
+		{name: "hybrid reserved", kind: Hybrid, wantErr: ErrScreenerNotImplemented},
 		{name: "unknown falls back to members", kind: "future", wantLen: 1},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -200,7 +200,7 @@ func TestWatchlistResolveInstrumentsDispatchesByKind(t *testing.T) {
 				watchlist: Watchlist{ID: "l1", Kind: tt.kind}, found: true,
 				items: []WatchlistItem{{InstrumentID: "inst-1"}},
 			}
-			svc := NewWatchlistService(repo)
+			svc := NewService(repo)
 			items, err := svc.ResolveInstruments(context.Background(), "u1", "l1")
 			if !errors.Is(err, tt.wantErr) || len(items) != tt.wantLen {
 				t.Fatalf("items = %#v, err = %v; want len %d, err %v", items, err, tt.wantLen, tt.wantErr)

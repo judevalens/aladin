@@ -5,18 +5,18 @@ import (
 	"errors"
 	"net/http"
 
-	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/watchlist"
 )
 
 // watchlistService is owned by the HTTP consumer. It deliberately contains only
 // the operations used by these routes, leaving MCP/default-list compatibility
 // methods outside the API boundary.
 type watchlistService interface {
-	ListWatchlists(context.Context, string) ([]coreservice.Watchlist, error)
-	CreateWatchlist(context.Context, string, string) (coreservice.Watchlist, error)
+	ListWatchlists(context.Context, string) ([]watchlist.Watchlist, error)
+	CreateWatchlist(context.Context, string, string) (watchlist.Watchlist, error)
 	RenameWatchlist(context.Context, string, string, string) error
 	DeleteWatchlist(context.Context, string, string) error
-	ListItems(context.Context, string, string) ([]coreservice.WatchlistItem, error)
+	ListItems(context.Context, string, string) ([]watchlist.WatchlistItem, error)
 	AddItem(context.Context, string, string, string) error
 	RemoveItem(context.Context, string, string, string) error
 }
@@ -130,9 +130,9 @@ func (routes watchlistRoutes) handleWatchlistItemRemove(w http.ResponseWriter, r
 
 func writeWatchlistError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
-	case errors.Is(err, coreservice.ErrInvalidWatchlistInput):
+	case errors.Is(err, watchlist.ErrInvalidInput):
 		writeAPIError(w, r, http.StatusBadRequest, categoryBadRequest, err.Error(), err)
-	case errors.Is(err, coreservice.ErrWatchlistNotFound):
+	case errors.Is(err, watchlist.ErrNotFound):
 		writeAPIError(w, r, http.StatusNotFound, categoryNotFound, "Watchlist not found", err)
 	default:
 		writeAPIError(w, r, http.StatusInternalServerError, categoryServiceError, err.Error(), err)

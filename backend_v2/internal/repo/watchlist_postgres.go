@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/watchlist"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -21,7 +21,7 @@ func NewWatchlistPostgres(pool *pgxpool.Pool) *PostgresWatchlistRepository {
 	return &PostgresWatchlistRepository{pool: pool}
 }
 
-func (r *PostgresWatchlistRepository) ListWatchlists(ctx context.Context, userID string) ([]coreservice.Watchlist, error) {
+func (r *PostgresWatchlistRepository) ListWatchlists(ctx context.Context, userID string) ([]watchlist.Watchlist, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT wl.id::text, wl.name, wl.kind, wl.definition, wl.position,
 		       COUNT(wi.instrument_id) AS item_count,
@@ -36,9 +36,9 @@ func (r *PostgresWatchlistRepository) ListWatchlists(ctx context.Context, userID
 		return nil, fmt.Errorf("watchlist list lists: %w", err)
 	}
 	defer rows.Close()
-	out := make([]coreservice.Watchlist, 0)
+	out := make([]watchlist.Watchlist, 0)
 	for rows.Next() {
-		var w coreservice.Watchlist
+		var w watchlist.Watchlist
 		var def []byte
 		if err := rows.Scan(&w.ID, &w.Name, &w.Kind, &def, &w.Position, &w.ItemCount, &w.CreatedAt); err != nil {
 			return nil, fmt.Errorf("watchlist scan: %w", err)
@@ -53,35 +53,35 @@ func (r *PostgresWatchlistRepository) ListWatchlists(ctx context.Context, userID
 
 // CreateWatchlist inserts the list and emits its first upsert frame in one tx (LockUser →
 // insert → emit → commit), so the durable data and the sync event commit together.
-func (r *PostgresWatchlistRepository) CreateWatchlist(ctx context.Context, w coreservice.Watchlist, userID string) (coreservice.Watchlist, error) {
+func (r *PostgresWatchlistRepository) CreateWatchlist(ctx context.Context, w watchlist.Watchlist, userID string) (watchlist.Watchlist, error) {
 	def := w.Definition
 	if len(def) == 0 {
 		def = json.RawMessage(`{}`)
 	}
 	kind := w.Kind
 	if kind == "" {
-		kind = coreservice.WatchlistManual
+		kind = watchlist.Manual
 	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return coreservice.Watchlist{}, err
+		return watchlist.Watchlist{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	if err := LockUser(ctx, tx, userID); err != nil {
-		return coreservice.Watchlist{}, err
+		return watchlist.Watchlist{}, err
 	}
 	if err := tx.QueryRow(ctx, `
 		INSERT INTO watchlists (id, user_id, name, kind, definition, position)
 		VALUES ($1::uuid, $2::uuid, $3, $4, $5::jsonb, $6)
 		RETURNING to_char(created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
 	`, w.ID, userID, w.Name, kind, string(def), w.Position).Scan(&w.CreatedAt); err != nil {
-		return coreservice.Watchlist{}, fmt.Errorf("watchlist create: %w", err)
+		return watchlist.Watchlist{}, fmt.Errorf("watchlist create: %w", err)
 	}
 	if err := emitWatchlistUpsert(ctx, tx, userID, w.ID); err != nil {
-		return coreservice.Watchlist{}, err
+		return watchlist.Watchlist{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return coreservice.Watchlist{}, fmt.Errorf("watchlist create commit: %w", err)
+		return watchlist.Watchlist{}, fmt.Errorf("watchlist create commit: %w", err)
 	}
 	w.Kind = kind
 	w.Definition = def
@@ -105,7 +105,7 @@ func (r *PostgresWatchlistRepository) RenameWatchlist(ctx context.Context, userI
 		return fmt.Errorf("watchlist rename: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
-		return coreservice.ErrWatchlistNotFound
+		return watchlist.ErrNotFound
 	}
 	if err := emitWatchlistUpsert(ctx, tx, userID, id); err != nil {
 		return err
@@ -134,13 +134,13 @@ func (r *PostgresWatchlistRepository) DeleteWatchlist(ctx context.Context, userI
 		return err
 	}
 	if !ok {
-		return coreservice.ErrWatchlistNotFound
+		return watchlist.ErrNotFound
 	}
 	return tx.Commit(ctx)
 }
 
-func (r *PostgresWatchlistRepository) GetWatchlist(ctx context.Context, userID, id string) (coreservice.Watchlist, bool, error) {
-	var w coreservice.Watchlist
+func (r *PostgresWatchlistRepository) GetWatchlist(ctx context.Context, userID, id string) (watchlist.Watchlist, bool, error) {
+	var w watchlist.Watchlist
 	var def []byte
 	err := r.pool.QueryRow(ctx, `
 		SELECT id::text, name, kind, definition, position,
@@ -149,9 +149,9 @@ func (r *PostgresWatchlistRepository) GetWatchlist(ctx context.Context, userID, 
 	`, id, userID).Scan(&w.ID, &w.Name, &w.Kind, &def, &w.Position, &w.CreatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return coreservice.Watchlist{}, false, nil
+			return watchlist.Watchlist{}, false, nil
 		}
-		return coreservice.Watchlist{}, false, fmt.Errorf("watchlist get: %w", err)
+		return watchlist.Watchlist{}, false, fmt.Errorf("watchlist get: %w", err)
 	}
 	if len(def) > 0 {
 		w.Definition = json.RawMessage(def)
@@ -175,7 +175,7 @@ func (r *PostgresWatchlistRepository) DefaultWatchlistID(ctx context.Context, us
 	return id, true, nil
 }
 
-func (r *PostgresWatchlistRepository) ListItems(ctx context.Context, userID, listID string) ([]coreservice.WatchlistItem, error) {
+func (r *PostgresWatchlistRepository) ListItems(ctx context.Context, userID, listID string) ([]watchlist.WatchlistItem, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT i.instrument_id::text, i.symbol, i.name, i.exchange,
 		       to_char(w.added_at, 'YYYY-MM-DD') AS added_at
@@ -188,9 +188,9 @@ func (r *PostgresWatchlistRepository) ListItems(ctx context.Context, userID, lis
 		return nil, fmt.Errorf("watchlist list items: %w", err)
 	}
 	defer rows.Close()
-	var out []coreservice.WatchlistItem
+	var out []watchlist.WatchlistItem
 	for rows.Next() {
-		var it coreservice.WatchlistItem
+		var it watchlist.WatchlistItem
 		if err := rows.Scan(&it.InstrumentID, &it.Symbol, &it.Name, &it.Exchange, &it.AddedAt); err != nil {
 			return nil, fmt.Errorf("watchlist item scan: %w", err)
 		}

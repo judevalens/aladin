@@ -2,6 +2,7 @@ package api
 
 import (
 	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/watchlist"
 )
 
 // testDependencies is the API package's test-only implementation of its own
@@ -38,7 +39,7 @@ type testDependencies struct {
 	EntityContextSvc       coreservice.EntityContextService
 	EntityListSvc          coreservice.EntityListService
 	InstrumentsSvc         coreservice.InstrumentService
-	WatchlistSvc           coreservice.WatchlistService
+	WatchlistSvc           watchlist.Service
 	ReadingPositionsSvc    coreservice.ReadingPositionService
 	SearchSvc              coreservice.SearchService
 	UnfurlSvc              coreservice.UnfurlService
@@ -88,7 +89,7 @@ func (d testDependencies) ArtifactRefs() coreservice.ArtifactRefService    { ret
 func (d testDependencies) EntityContext() coreservice.EntityContextService { return d.EntityContextSvc }
 func (d testDependencies) EntityList() coreservice.EntityListService       { return d.EntityListSvc }
 func (d testDependencies) Instruments() coreservice.InstrumentService      { return d.InstrumentsSvc }
-func (d testDependencies) Watchlist() coreservice.WatchlistService         { return d.WatchlistSvc }
+func (d testDependencies) Watchlist() watchlist.Service                    { return d.WatchlistSvc }
 func (d testDependencies) ReadingPositions() coreservice.ReadingPositionService {
 	return d.ReadingPositionsSvc
 }

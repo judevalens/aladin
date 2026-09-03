@@ -19,6 +19,7 @@ import (
 	"aladin/backend_v2/internal/repo"
 	"aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/shardv2"
+	"aladin/backend_v2/internal/watchlist"
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 	"github.com/google/uuid"
@@ -354,7 +355,7 @@ func (emptyAPIDependencies) ArtifactRefs() service.ArtifactRefService           
 func (emptyAPIDependencies) EntityContext() service.EntityContextService            { return nil }
 func (emptyAPIDependencies) EntityList() service.EntityListService                  { return nil }
 func (emptyAPIDependencies) Instruments() service.InstrumentService                 { return nil }
-func (emptyAPIDependencies) Watchlist() service.WatchlistService                    { return nil }
+func (emptyAPIDependencies) Watchlist() watchlist.Service                           { return nil }
 func (emptyAPIDependencies) ReadingPositions() service.ReadingPositionService       { return nil }
 func (emptyAPIDependencies) Search() service.SearchService                          { return nil }
 func (emptyAPIDependencies) Unfurl() service.UnfurlService                          { return nil }
