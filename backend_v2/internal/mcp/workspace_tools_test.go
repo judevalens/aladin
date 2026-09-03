@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"aladin/backend_v2/internal/alert"
 	"context"
 	"encoding/json"
 	"errors"
@@ -183,22 +184,22 @@ func (f *fakeMarketInfo) Positions(context.Context) ([]service.PositionView, err
 }
 
 type fakeAlertService struct {
-	created   *service.Alert
+	created   *alert.Alert
 	warning   string
 	createErr error
-	list      []service.Alert
+	list      []alert.Alert
 	deleted   string
 }
 
-func (f *fakeAlertService) Create(_ context.Context, userID, symbol, direction string, threshold float64) (service.CreateAlertResult, error) {
+func (f *fakeAlertService) Create(_ context.Context, userID, symbol, direction string, threshold float64) (alert.CreateAlertResult, error) {
 	if f.createErr != nil {
-		return service.CreateAlertResult{}, f.createErr
+		return alert.CreateAlertResult{}, f.createErr
 	}
-	a := service.Alert{ID: "al1", UserID: userID, Symbol: strings.ToUpper(symbol), Direction: direction, Threshold: threshold, Armed: true, Status: "active"}
+	a := alert.Alert{ID: "al1", UserID: userID, Symbol: strings.ToUpper(symbol), Direction: direction, Threshold: threshold, Armed: true, Status: "active"}
 	f.created = &a
-	return service.CreateAlertResult{Alert: a, Warning: f.warning}, nil
+	return alert.CreateAlertResult{Alert: a, Warning: f.warning}, nil
 }
-func (f *fakeAlertService) List(context.Context, string) ([]service.Alert, error) {
+func (f *fakeAlertService) List(context.Context, string) ([]alert.Alert, error) {
 	return f.list, nil
 }
 func (f *fakeAlertService) Delete(_ context.Context, _, id string) error {

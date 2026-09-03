@@ -1,6 +1,7 @@
 package app
 
 import (
+	"aladin/backend_v2/internal/alert"
 	"aladin/backend_v2/internal/config"
 	"aladin/backend_v2/internal/docsurface"
 	coreservice "aladin/backend_v2/internal/service"
@@ -67,4 +68,4 @@ func (c *MCPProcess) Search() coreservice.SearchService               { return c
 func (c *MCPProcess) Bars() coreservice.BarService                    { return c.bars }
 func (c *MCPProcess) QuoteSnapshots() coreservice.QuoteSnapshotSource { return c.quoteSnapshots }
 func (c *MCPProcess) MarketInfo() coreservice.MarketInfoService       { return c.marketInfo }
-func (c *MCPProcess) Alerts() coreservice.AlertService                { return c.alerts }
+func (c *MCPProcess) Alerts() alert.AlertService                      { return c.alerts }

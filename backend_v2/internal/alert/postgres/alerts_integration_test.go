@@ -1,4 +1,4 @@
-package repo_test
+package postgres_test
 
 import (
 	"context"
@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"aladin/backend_v2/internal/alert"
+	alertpostgres "aladin/backend_v2/internal/alert/postgres"
 	"aladin/backend_v2/internal/db"
-	"aladin/backend_v2/internal/repo"
-	coreservice "aladin/backend_v2/internal/service"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -54,11 +54,11 @@ func TestAlertsAndNotificationsRoundTrip(t *testing.T) {
 		_, _ = pool.Exec(ctx, `DELETE FROM users WHERE id = $1::uuid`, userID)
 	})
 
-	alerts := repo.NewAlertsPostgres(pool)
-	notes := repo.NewNotificationsPostgres(pool)
+	alerts := alertpostgres.NewAlertsPostgres(pool)
+	notes := alertpostgres.NewNotificationsPostgres(pool)
 
 	alertID := uuid.NewString()
-	a := coreservice.Alert{
+	a := alert.Alert{
 		ID: alertID, UserID: userID, InstrumentID: instrumentID, Symbol: symbol,
 		Direction: "above", Threshold: 200, Armed: true, Status: "active",
 	}
@@ -82,7 +82,7 @@ func TestAlertsAndNotificationsRoundTrip(t *testing.T) {
 	// Fire: transactional disarm + notification + outbox event.
 	beforeOutbox := countOutbox(t, ctx, pool, userID)
 	data, _ := json.Marshal(map[string]any{"alertId": alertID, "symbol": "TSTALERT", "price": 200.14})
-	n := coreservice.Notification{
+	n := alert.Notification{
 		UserID: userID, Kind: "price_alert", Title: "TSTALERT crossed above 200.00",
 		Body: "Last 200.14", Data: data,
 	}
@@ -133,7 +133,7 @@ func TestAlertsAndNotificationsRoundTrip(t *testing.T) {
 	}
 }
 
-func containsAlert(as []coreservice.Alert, id string) bool {
+func containsAlert(as []alert.Alert, id string) bool {
 	for _, a := range as {
 		if a.ID == id {
 			return true

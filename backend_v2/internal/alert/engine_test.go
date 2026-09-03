@@ -1,10 +1,12 @@
-package service
+package alert
 
 import (
 	"context"
 	"sync"
 	"testing"
 	"time"
+
+	coreservice "aladin/backend_v2/internal/service"
 )
 
 type fakeAlertRepo struct {
@@ -58,7 +60,7 @@ func (r *fakeAlertRepo) fires() []firedRec {
 }
 
 type fakeDemand struct {
-	mu        sync.Mutex
+	mu         sync.Mutex
 	subscribed map[string]bool
 }
 
@@ -89,11 +91,11 @@ func (d *fakeDemand) has(sym string) bool {
 
 type fakeSnap map[string]float64
 
-func (f fakeSnap) FetchSnapshot(_ context.Context, sym string) (Quote, bool, error) {
+func (f fakeSnap) FetchSnapshot(_ context.Context, sym string) (coreservice.Quote, bool, error) {
 	if p, ok := f[sym]; ok {
-		return Quote{Symbol: sym, Last: p}, true, nil
+		return coreservice.Quote{Symbol: sym, Last: p}, true, nil
 	}
-	return Quote{}, false, nil
+	return coreservice.Quote{}, false, nil
 }
 
 func waitFor(t *testing.T, cond func() bool) {

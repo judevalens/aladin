@@ -1,14 +1,13 @@
-package repo
+package postgres
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
 
-	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/alert"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -23,7 +22,7 @@ func NewNotificationsPostgres(pool *pgxpool.Pool) *PostgresNotificationRepositor
 	return &PostgresNotificationRepository{pool: pool}
 }
 
-func (r *PostgresNotificationRepository) Create(ctx context.Context, n coreservice.Notification) (coreservice.Notification, error) {
+func (r *PostgresNotificationRepository) Create(ctx context.Context, n alert.Notification) (alert.Notification, error) {
 	if n.ID == "" {
 		n.ID = uuid.NewString()
 	}
@@ -33,7 +32,7 @@ func (r *PostgresNotificationRepository) Create(ctx context.Context, n coreservi
 	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return coreservice.Notification{}, fmt.Errorf("notification begin: %w", err)
+		return alert.Notification{}, fmt.Errorf("notification begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -43,21 +42,21 @@ func (r *PostgresNotificationRepository) Create(ctx context.Context, n coreservi
 		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::jsonb)
 		RETURNING to_char(created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
 	`, n.ID, n.UserID, n.Kind, n.Title, n.Body, string(data)).Scan(&createdAt); err != nil {
-		return coreservice.Notification{}, fmt.Errorf("notification insert: %w", err)
+		return alert.Notification{}, fmt.Errorf("notification insert: %w", err)
 	}
 
 	// Live transport: a tenant-scoped workspace app_event the drainer routes to this user.
-	payload, err := json.Marshal(coreservice.NotificationCreatedPayload{
+	payload, err := json.Marshal(alert.NotificationCreatedPayload{
 		ID: n.ID, Kind: n.Kind, Title: n.Title, Body: n.Body, Data: data, CreatedAt: createdAt,
 	})
 	if err != nil {
-		return coreservice.Notification{}, fmt.Errorf("notification marshal payload: %w", err)
+		return alert.Notification{}, fmt.Errorf("notification marshal payload: %w", err)
 	}
 	if err := appendNotificationEvent(ctx, tx, n.UserID, n.ID, payload); err != nil {
-		return coreservice.Notification{}, err
+		return alert.Notification{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return coreservice.Notification{}, fmt.Errorf("notification commit: %w", err)
+		return alert.Notification{}, fmt.Errorf("notification commit: %w", err)
 	}
 
 	n.Data = data
@@ -65,19 +64,7 @@ func (r *PostgresNotificationRepository) Create(ctx context.Context, n coreservi
 	return n, nil
 }
 
-// appendNotificationEvent appends the workspace-scoped app_event for a created notification.
-// Package-private so alert firing (alerts_postgres.go) can reuse it inside the same fire tx.
-func appendNotificationEvent(ctx context.Context, tx pgx.Tx, userID, notificationID string, payload []byte) error {
-	return appendAppEvent(ctx, tx, userID, coreservice.OutboxAppEvent{
-		// Empty Stream ⇒ tenant-scoped workspace (routed to this user's subscribers).
-		ResourceKind: "notification",
-		ResourceID:   notificationID,
-		Operation:    "created",
-		Payload:      payload,
-	})
-}
-
-func (r *PostgresNotificationRepository) List(ctx context.Context, userID string, limit int) ([]coreservice.Notification, error) {
+func (r *PostgresNotificationRepository) List(ctx context.Context, userID string, limit int) ([]alert.Notification, error) {
 	return r.query(ctx, `
 		SELECT id::text, kind, title, body, data,
 		       COALESCE(to_char(read_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), '') AS read_at,
@@ -89,7 +76,7 @@ func (r *PostgresNotificationRepository) List(ctx context.Context, userID string
 	`, userID, limit)
 }
 
-func (r *PostgresNotificationRepository) ListUnread(ctx context.Context, userID string) ([]coreservice.Notification, error) {
+func (r *PostgresNotificationRepository) ListUnread(ctx context.Context, userID string) ([]alert.Notification, error) {
 	return r.query(ctx, `
 		SELECT id::text, kind, title, body, data, '' AS read_at,
 		       to_char(created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
@@ -99,15 +86,15 @@ func (r *PostgresNotificationRepository) ListUnread(ctx context.Context, userID 
 	`, userID)
 }
 
-func (r *PostgresNotificationRepository) query(ctx context.Context, sql string, args ...any) ([]coreservice.Notification, error) {
+func (r *PostgresNotificationRepository) query(ctx context.Context, sql string, args ...any) ([]alert.Notification, error) {
 	rows, err := r.pool.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, fmt.Errorf("notification list: %w", err)
 	}
 	defer rows.Close()
-	out := make([]coreservice.Notification, 0)
+	out := make([]alert.Notification, 0)
 	for rows.Next() {
-		var n coreservice.Notification
+		var n alert.Notification
 		var data []byte
 		if err := rows.Scan(&n.ID, &n.Kind, &n.Title, &n.Body, &data, &n.ReadAt, &n.CreatedAt); err != nil {
 			return nil, fmt.Errorf("notification scan: %w", err)

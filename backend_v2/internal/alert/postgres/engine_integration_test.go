@@ -1,4 +1,4 @@
-package repo_test
+package postgres_test
 
 import (
 	"context"
@@ -6,8 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"aladin/backend_v2/internal/alert"
+	alertpostgres "aladin/backend_v2/internal/alert/postgres"
 	"aladin/backend_v2/internal/db"
-	"aladin/backend_v2/internal/repo"
 	coreservice "aladin/backend_v2/internal/service"
 
 	"github.com/google/uuid"
@@ -60,16 +61,16 @@ func TestAlertEngineIntegration(t *testing.T) {
 		_, _ = pool.Exec(ctx, `DELETE FROM users WHERE id=$1::uuid`, userID)
 	})
 
-	alertRepo := repo.NewAlertsPostgres(pool)
+	alertRepo := alertpostgres.NewAlertsPostgres(pool)
 	// Armed alert (below threshold at the seed price) — will fire on the live up-cross.
-	if err := alertRepo.Insert(ctx, coreservice.Alert{
+	if err := alertRepo.Insert(ctx, alert.Alert{
 		ID: uuid.NewString(), UserID: userID, InstrumentID: instrumentID, Symbol: symbol,
-		Direction: coreservice.AlertAbove, Threshold: 200, Armed: true, Status: "active",
+		Direction: alert.AlertAbove, Threshold: 200, Armed: true, Status: "active",
 	}); err != nil {
 		t.Fatalf("insert alert: %v", err)
 	}
 
-	eng := coreservice.NewAlertEngine(alertRepo, engineFakeDemand{}, engineFakeSnap{symbol: 195})
+	eng := alert.NewAlertEngine(alertRepo, engineFakeDemand{}, engineFakeSnap{symbol: 195})
 	ectx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	eng.Start(ectx)
@@ -82,9 +83,9 @@ func TestAlertEngineIntegration(t *testing.T) {
 	}
 
 	// The fire lands a durable notification + an outbox app_event.
-	notes := repo.NewNotificationsPostgres(pool)
+	notes := alertpostgres.NewNotificationsPostgres(pool)
 	deadline := time.Now().Add(3 * time.Second)
-	var unread []coreservice.Notification
+	var unread []alert.Notification
 	for time.Now().Before(deadline) {
 		unread, _ = notes.ListUnread(ctx, userID)
 		if len(unread) == 1 {

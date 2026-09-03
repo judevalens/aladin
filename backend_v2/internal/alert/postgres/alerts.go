@@ -1,4 +1,4 @@
-package repo
+package postgres
 
 import (
 	"context"
@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"time"
 
+	"aladin/backend_v2/internal/alert"
+	"aladin/backend_v2/internal/outbox"
 	coreservice "aladin/backend_v2/internal/service"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -21,7 +24,7 @@ func NewAlertsPostgres(pool *pgxpool.Pool) *PostgresAlertRepository {
 	return &PostgresAlertRepository{pool: pool}
 }
 
-func (r *PostgresAlertRepository) Insert(ctx context.Context, a coreservice.Alert) error {
+func (r *PostgresAlertRepository) Insert(ctx context.Context, a alert.Alert) error {
 	if a.ID == "" {
 		a.ID = uuid.NewString()
 	}
@@ -35,7 +38,7 @@ func (r *PostgresAlertRepository) Insert(ctx context.Context, a coreservice.Aler
 	return nil
 }
 
-func (r *PostgresAlertRepository) ListByUser(ctx context.Context, userID string) ([]coreservice.Alert, error) {
+func (r *PostgresAlertRepository) ListByUser(ctx context.Context, userID string) ([]alert.Alert, error) {
 	return r.query(ctx, `
 		WHERE user_id = $1::uuid
 		 ORDER BY created_at DESC
@@ -43,11 +46,11 @@ func (r *PostgresAlertRepository) ListByUser(ctx context.Context, userID string)
 }
 
 // ListActive returns every active alert across all users — the engine's reconcile load.
-func (r *PostgresAlertRepository) ListActive(ctx context.Context) ([]coreservice.Alert, error) {
+func (r *PostgresAlertRepository) ListActive(ctx context.Context) ([]alert.Alert, error) {
 	return r.query(ctx, `WHERE status = 'active'`)
 }
 
-func (r *PostgresAlertRepository) query(ctx context.Context, where string, args ...any) ([]coreservice.Alert, error) {
+func (r *PostgresAlertRepository) query(ctx context.Context, where string, args ...any) ([]alert.Alert, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, user_id::text, instrument_id::text, symbol, direction, threshold, armed, status,
 		       COALESCE(to_char(last_fired_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), '') AS last_fired_at,
@@ -59,9 +62,9 @@ func (r *PostgresAlertRepository) query(ctx context.Context, where string, args 
 		return nil, fmt.Errorf("alert list: %w", err)
 	}
 	defer rows.Close()
-	out := make([]coreservice.Alert, 0)
+	out := make([]alert.Alert, 0)
 	for rows.Next() {
-		var a coreservice.Alert
+		var a alert.Alert
 		if err := rows.Scan(&a.ID, &a.UserID, &a.InstrumentID, &a.Symbol, &a.Direction, &a.Threshold,
 			&a.Armed, &a.Status, &a.LastFiredAt, &a.LastFiredPrice, &a.CreatedAt); err != nil {
 			return nil, fmt.Errorf("alert scan: %w", err)
@@ -73,7 +76,7 @@ func (r *PostgresAlertRepository) query(ctx context.Context, where string, args 
 
 // Fire disarms the alert, records the trigger, inserts the notification, and appends the outbox
 // event — atomically. If any step fails the whole fire rolls back (no partial state).
-func (r *PostgresAlertRepository) Fire(ctx context.Context, alertID string, price float64, at time.Time, n coreservice.Notification) error {
+func (r *PostgresAlertRepository) Fire(ctx context.Context, alertID string, price float64, at time.Time, n alert.Notification) error {
 	if n.ID == "" {
 		n.ID = uuid.NewString()
 	}
@@ -109,7 +112,7 @@ func (r *PostgresAlertRepository) Fire(ctx context.Context, alertID string, pric
 		return fmt.Errorf("alert fire notification: %w", err)
 	}
 
-	payload, err := json.Marshal(coreservice.NotificationCreatedPayload{
+	payload, err := json.Marshal(alert.NotificationCreatedPayload{
 		ID: n.ID, Kind: n.Kind, Title: n.Title, Body: n.Body, Data: data, CreatedAt: createdAt,
 	})
 	if err != nil {
@@ -122,6 +125,17 @@ func (r *PostgresAlertRepository) Fire(ctx context.Context, alertID string, pric
 		return fmt.Errorf("alert fire commit: %w", err)
 	}
 	return nil
+}
+
+// appendNotificationEvent appends the tenant-scoped workspace event in the
+// same transaction as the notification row and alert state change.
+func appendNotificationEvent(ctx context.Context, tx pgx.Tx, userID, notificationID string, payload []byte) error {
+	return outbox.AppendApp(ctx, tx, userID, coreservice.OutboxAppEvent{
+		ResourceKind: "notification",
+		ResourceID:   notificationID,
+		Operation:    "created",
+		Payload:      payload,
+	})
 }
 
 func (r *PostgresAlertRepository) Delete(ctx context.Context, userID, id string) error {

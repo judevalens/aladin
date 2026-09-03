@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"aladin/backend_v2/internal/alert"
 	"context"
 	"log/slog"
 	"net/http"
@@ -152,7 +153,7 @@ type Dependencies interface {
 	Bars() service.BarService
 	QuoteSnapshots() service.QuoteSnapshotSource
 	MarketInfo() service.MarketInfoService
-	Alerts() service.AlertService
+	Alerts() alert.AlertService
 }
 
 func New(addr string, deps Dependencies, pages service.PageDocumentService, converter blocknote.Converter, bridge blocknote.Bridge) *Server {

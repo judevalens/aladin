@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"aladin/backend_v2/internal/alert"
+	alertpostgres "aladin/backend_v2/internal/alert/postgres"
 	"aladin/backend_v2/internal/config"
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/docsurface"
@@ -47,7 +49,7 @@ type sharedComponents struct {
 	watchlist        watchlist.Service
 	search           coreservice.SearchService
 	bars             coreservice.BarService
-	alerts           coreservice.AlertService
+	alerts           alert.AlertService
 
 	recordRepo     coreservice.RecordRepository
 	artifactRepo   *repo.PostgresArtifactRepository
@@ -55,7 +57,7 @@ type sharedComponents struct {
 	research       coreservice.ResearchService
 	quoteSnapshots coreservice.QuoteSnapshotSource
 	marketInfo     coreservice.MarketInfoService
-	alertRepo      coreservice.AlertRepository
+	alertRepo      alert.AlertRepository
 	alpacaConfig   config.AlpacaConfig
 	shardStorage   *shardstorage.ShardResourcePostgres
 }
@@ -133,8 +135,8 @@ func buildSharedComponents(pool *pgxpool.Pool, dataVolumePath string) sharedComp
 
 	artifactsSvc := coreservice.NewArtifactService(artifactRepo, artifactFiles)
 	watchlistSvc := watchlist.NewService(watchlistpostgres.New(pool))
-	alertRepo := repo.NewAlertsPostgres(pool)
-	alertsSvc := coreservice.NewAlertService(alertRepo, instrumentsSvc, snapshotSource)
+	alertRepo := alertpostgres.NewAlertsPostgres(pool)
+	alertsSvc := alert.NewAlertService(alertRepo, instrumentsSvc, snapshotSource)
 	entityContextSvc := coreservice.NewEntityContextService(
 		repo.NewEntityContextPostgres(pool),
 		db.NewEntityRepository(pool),

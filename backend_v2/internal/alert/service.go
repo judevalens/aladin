@@ -1,4 +1,4 @@
-package service
+package alert
 
 import (
 	"context"
@@ -6,6 +6,8 @@ import (
 	"math"
 	"strings"
 	"time"
+
+	coreservice "aladin/backend_v2/internal/service"
 
 	"github.com/google/uuid"
 )
@@ -180,35 +182,35 @@ type AlertService interface {
 
 type defaultAlertService struct {
 	repo        AlertRepository
-	instruments InstrumentResolver
-	snapshots   QuoteSnapshotSource // optional — seeds armed from the last-known price
+	instruments coreservice.InstrumentResolver
+	snapshots   coreservice.QuoteSnapshotSource // optional — seeds armed from the last-known price
 }
 
-func NewAlertService(repo AlertRepository, instruments InstrumentResolver, snapshots QuoteSnapshotSource) AlertService {
+func NewAlertService(repo AlertRepository, instruments coreservice.InstrumentResolver, snapshots coreservice.QuoteSnapshotSource) AlertService {
 	return &defaultAlertService{repo: repo, instruments: instruments, snapshots: snapshots}
 }
 
 func (s *defaultAlertService) Create(ctx context.Context, userID, symbol, direction string, threshold float64) (CreateAlertResult, error) {
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
-		return CreateAlertResult{}, ErrUnauthenticated
+		return CreateAlertResult{}, coreservice.ErrUnauthenticated
 	}
 	sym := strings.ToUpper(strings.TrimSpace(symbol))
 	if sym == "" {
-		return CreateAlertResult{}, BadRequest("symbol is required")
+		return CreateAlertResult{}, coreservice.BadRequest("symbol is required")
 	}
 	if direction != AlertAbove && direction != AlertBelow {
-		return CreateAlertResult{}, BadRequest(`direction must be "above" or "below"`)
+		return CreateAlertResult{}, coreservice.BadRequest(`direction must be "above" or "below"`)
 	}
 	if threshold <= 0 {
-		return CreateAlertResult{}, BadRequest("threshold must be positive")
+		return CreateAlertResult{}, coreservice.BadRequest("threshold must be positive")
 	}
 	id, ok, err := s.instruments.ResolveInstrumentID(ctx, sym)
 	if err != nil {
 		return CreateAlertResult{}, err
 	}
 	if !ok {
-		return CreateAlertResult{}, BadRequest("unknown symbol " + sym)
+		return CreateAlertResult{}, coreservice.BadRequest("unknown symbol " + sym)
 	}
 
 	// Seed the armed state from the last-known price so an already-satisfied alert is created
@@ -243,7 +245,7 @@ func (s *defaultAlertService) Create(ctx context.Context, userID, symbol, direct
 
 func (s *defaultAlertService) List(ctx context.Context, userID string) ([]Alert, error) {
 	if strings.TrimSpace(userID) == "" {
-		return nil, ErrUnauthenticated
+		return nil, coreservice.ErrUnauthenticated
 	}
 	items, err := s.repo.ListByUser(ctx, userID)
 	if err != nil {
@@ -257,20 +259,20 @@ func (s *defaultAlertService) List(ctx context.Context, userID string) ([]Alert,
 
 func (s *defaultAlertService) Delete(ctx context.Context, userID, id string) error {
 	if strings.TrimSpace(userID) == "" {
-		return ErrUnauthenticated
+		return coreservice.ErrUnauthenticated
 	}
 	if strings.TrimSpace(id) == "" {
-		return BadRequest("alert id is required")
+		return coreservice.BadRequest("alert id is required")
 	}
 	return s.repo.Delete(ctx, userID, id)
 }
 
 func (s *defaultAlertService) Pause(ctx context.Context, userID, id string) error {
 	if strings.TrimSpace(userID) == "" {
-		return ErrUnauthenticated
+		return coreservice.ErrUnauthenticated
 	}
 	if strings.TrimSpace(id) == "" {
-		return BadRequest("alert id is required")
+		return coreservice.BadRequest("alert id is required")
 	}
 	return s.repo.SetStatus(ctx, userID, id, "paused")
 }

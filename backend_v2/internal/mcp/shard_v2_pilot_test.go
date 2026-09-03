@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"aladin/backend_v2/internal/alert"
 	"context"
 	"encoding/json"
 	"io"
@@ -362,8 +363,8 @@ func (emptyAPIDependencies) ReadingPositions() readingposition.Service          
 func (emptyAPIDependencies) Search() service.SearchService                          { return nil }
 func (emptyAPIDependencies) Unfurl() service.UnfurlService                          { return nil }
 func (emptyAPIDependencies) Bars() service.BarService                               { return nil }
-func (emptyAPIDependencies) Alerts() service.AlertService                           { return nil }
-func (emptyAPIDependencies) Notifications() service.NotificationService             { return nil }
+func (emptyAPIDependencies) Alerts() alert.AlertService                             { return nil }
+func (emptyAPIDependencies) Notifications() alert.NotificationService               { return nil }
 func (emptyAPIDependencies) MarketData() service.MarketDataService                  { return nil }
 func (emptyAPIDependencies) GraphReader() service.GraphReader                       { return nil }
 func (emptyAPIDependencies) Copilot() service.CopilotService                        { return nil }

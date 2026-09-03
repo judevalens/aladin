@@ -1,6 +1,8 @@
 package api
 
 import (
+	"aladin/backend_v2/internal/alert"
+	alerthttp "aladin/backend_v2/internal/alert/httptransport"
 	"aladin/backend_v2/internal/app"
 	"aladin/backend_v2/internal/docsurface"
 	"aladin/backend_v2/internal/httpapi"
@@ -67,8 +69,8 @@ type Dependencies interface {
 	Search() coreservice.SearchService
 	Unfurl() coreservice.UnfurlService
 	Bars() coreservice.BarService
-	Alerts() coreservice.AlertService
-	Notifications() coreservice.NotificationService
+	Alerts() alert.AlertService
+	Notifications() alert.NotificationService
 	MarketData() coreservice.MarketDataService
 	GraphReader() coreservice.GraphReader
 	Copilot() coreservice.CopilotService
@@ -124,7 +126,7 @@ func NewWithDependencies(addr string, deps Dependencies) *Server {
 	s.registerMarketRoutes(mux)
 	watchlisthttp.Register(mux, deps.Watchlist())
 	readingpositionhttp.Register(mux, deps.ReadingPositions())
-	s.registerAlertRoutes(mux)
+	alerthttp.Register(mux, deps.Alerts(), deps.Notifications())
 	s.registerCopilotRoutes(mux)
 	s.registerEntityContextRoutes(mux)
 	s.registerArtifactRefRoutes(mux)

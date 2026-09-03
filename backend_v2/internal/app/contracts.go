@@ -1,6 +1,7 @@
 package app
 
 import (
+	"aladin/backend_v2/internal/alert"
 	"aladin/backend_v2/internal/changefeed"
 	"aladin/backend_v2/internal/readingposition"
 	coreservice "aladin/backend_v2/internal/service"
@@ -48,9 +49,9 @@ type APIComponents interface {
 	Search() coreservice.SearchService
 	Unfurl() coreservice.UnfurlService
 	Bars() coreservice.BarService
-	Alerts() coreservice.AlertService
-	Notifications() coreservice.NotificationService
-	AlertEngine() *coreservice.AlertEngine
+	Alerts() alert.AlertService
+	Notifications() alert.NotificationService
+	AlertEngine() *alert.AlertEngine
 	MarketData() coreservice.MarketDataService
 	GraphReader() coreservice.GraphReader
 	Copilot() coreservice.CopilotService
@@ -81,5 +82,5 @@ type MCPComponents interface {
 	Bars() coreservice.BarService
 	QuoteSnapshots() coreservice.QuoteSnapshotSource
 	MarketInfo() coreservice.MarketInfoService
-	Alerts() coreservice.AlertService
+	Alerts() alert.AlertService
 }

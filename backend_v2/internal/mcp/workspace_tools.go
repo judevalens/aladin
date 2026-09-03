@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"aladin/backend_v2/internal/alert"
 	"context"
 	"fmt"
 	"strings"
@@ -43,7 +44,7 @@ type workspaceToolServer struct {
 	bars        service.BarService
 	snapshots   service.QuoteSnapshotSource
 	marketInfo  service.MarketInfoService
-	alerts      service.AlertService
+	alerts      alert.AlertService
 	instruments service.InstrumentService
 	documents   service.DocumentService
 }
@@ -868,12 +869,12 @@ type createAlertInput struct {
 	Threshold float64 `json:"threshold"`
 }
 type createAlertOutput struct {
-	Alert     service.Alert `json:"alert"`
+	Alert     alert.Alert   `json:"alert"`
 	Warning   string        `json:"warning,omitempty"`
 	Citations []citationOut `json:"citations,omitempty"`
 }
 type listAlertsOutput struct {
-	Alerts []service.Alert `json:"alerts"`
+	Alerts []alert.Alert `json:"alerts"`
 }
 type deleteAlertInput struct {
 	ID string `json:"id"`

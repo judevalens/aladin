@@ -1,9 +1,11 @@
-package service
+package alert
 
 import (
 	"context"
 	"encoding/json"
 	"strings"
+
+	coreservice "aladin/backend_v2/internal/service"
 )
 
 // Notification is one durable per-user inbox item. It is a reusable primitive: alerts are the
@@ -49,17 +51,17 @@ func NewNotificationService(repo NotificationRepository) NotificationService {
 
 func (s *defaultNotificationService) Create(ctx context.Context, n Notification) (Notification, error) {
 	if strings.TrimSpace(n.UserID) == "" {
-		return Notification{}, BadRequest("notification requires a user id")
+		return Notification{}, coreservice.BadRequest("notification requires a user id")
 	}
 	if strings.TrimSpace(n.Kind) == "" || strings.TrimSpace(n.Title) == "" {
-		return Notification{}, BadRequest("notification requires a kind and title")
+		return Notification{}, coreservice.BadRequest("notification requires a kind and title")
 	}
 	return s.repo.Create(ctx, n)
 }
 
 func (s *defaultNotificationService) List(ctx context.Context, userID string, limit int) ([]Notification, error) {
 	if strings.TrimSpace(userID) == "" {
-		return nil, ErrUnauthenticated
+		return nil, coreservice.ErrUnauthenticated
 	}
 	if limit <= 0 || limit > 200 {
 		limit = notificationDefaultLimit
@@ -76,7 +78,7 @@ func (s *defaultNotificationService) List(ctx context.Context, userID string, li
 
 func (s *defaultNotificationService) ListUnread(ctx context.Context, userID string) ([]Notification, error) {
 	if strings.TrimSpace(userID) == "" {
-		return nil, ErrUnauthenticated
+		return nil, coreservice.ErrUnauthenticated
 	}
 	items, err := s.repo.ListUnread(ctx, userID)
 	if err != nil {
@@ -90,10 +92,10 @@ func (s *defaultNotificationService) ListUnread(ctx context.Context, userID stri
 
 func (s *defaultNotificationService) MarkRead(ctx context.Context, userID, id string) error {
 	if strings.TrimSpace(userID) == "" {
-		return ErrUnauthenticated
+		return coreservice.ErrUnauthenticated
 	}
 	if strings.TrimSpace(id) == "" {
-		return BadRequest("notification id is required")
+		return coreservice.BadRequest("notification id is required")
 	}
 	return s.repo.MarkRead(ctx, userID, id)
 }

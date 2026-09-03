@@ -1,6 +1,7 @@
 package api
 
 import (
+	"aladin/backend_v2/internal/alert"
 	"aladin/backend_v2/internal/readingposition"
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/watchlist"
@@ -45,8 +46,8 @@ type testDependencies struct {
 	SearchSvc              coreservice.SearchService
 	UnfurlSvc              coreservice.UnfurlService
 	BarsSvc                coreservice.BarService
-	AlertsSvc              coreservice.AlertService
-	NotificationsSvc       coreservice.NotificationService
+	AlertsSvc              alert.AlertService
+	NotificationsSvc       alert.NotificationService
 	MarketDataSvc          coreservice.MarketDataService
 	GraphReaderSvc         coreservice.GraphReader
 	CopilotSvc             coreservice.CopilotService
@@ -94,13 +95,13 @@ func (d testDependencies) Watchlist() watchlist.Service                    { ret
 func (d testDependencies) ReadingPositions() readingposition.Service {
 	return d.ReadingPositionsSvc
 }
-func (d testDependencies) Search() coreservice.SearchService              { return d.SearchSvc }
-func (d testDependencies) Unfurl() coreservice.UnfurlService              { return d.UnfurlSvc }
-func (d testDependencies) Bars() coreservice.BarService                   { return d.BarsSvc }
-func (d testDependencies) Alerts() coreservice.AlertService               { return d.AlertsSvc }
-func (d testDependencies) Notifications() coreservice.NotificationService { return d.NotificationsSvc }
-func (d testDependencies) MarketData() coreservice.MarketDataService      { return d.MarketDataSvc }
-func (d testDependencies) GraphReader() coreservice.GraphReader           { return d.GraphReaderSvc }
-func (d testDependencies) Copilot() coreservice.CopilotService            { return d.CopilotSvc }
+func (d testDependencies) Search() coreservice.SearchService         { return d.SearchSvc }
+func (d testDependencies) Unfurl() coreservice.UnfurlService         { return d.UnfurlSvc }
+func (d testDependencies) Bars() coreservice.BarService              { return d.BarsSvc }
+func (d testDependencies) Alerts() alert.AlertService                { return d.AlertsSvc }
+func (d testDependencies) Notifications() alert.NotificationService  { return d.NotificationsSvc }
+func (d testDependencies) MarketData() coreservice.MarketDataService { return d.MarketDataSvc }
+func (d testDependencies) GraphReader() coreservice.GraphReader      { return d.GraphReaderSvc }
+func (d testDependencies) Copilot() coreservice.CopilotService       { return d.CopilotSvc }
 
 var _ Dependencies = testDependencies{}
