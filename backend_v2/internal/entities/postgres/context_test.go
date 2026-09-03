@@ -1,4 +1,4 @@
-package repo
+package postgres
 
 import (
 	"context"
@@ -7,8 +7,7 @@ import (
 	"time"
 
 	"aladin/backend_v2/internal/db"
-	"aladin/backend_v2/internal/entities"
-	coreservice "aladin/backend_v2/internal/service"
+	entitydomain "aladin/backend_v2/internal/entities"
 
 	"github.com/google/uuid"
 )
@@ -70,7 +69,7 @@ func TestEntityContext_ReadPath(t *testing.T) {
 			INSERT INTO entities (scope, kind, canonical_name, normalized_key, trust_tier, gist)
 			VALUES ('shared', 'concept', $1, $2, 'believed', 'A one-line gist.')
 			RETURNING id::text
-		`, e.name, entities.Normalize(e.name)).Scan(e.into); err != nil {
+		`, e.name, entitydomain.Normalize(e.name)).Scan(e.into); err != nil {
 			t.Fatalf("seed entity %s: %v", e.name, err)
 		}
 	}
@@ -96,27 +95,27 @@ func TestEntityContext_ReadPath(t *testing.T) {
 	ecRepo := NewEntityContextPostgres(pool)
 
 	// The page @mentions it, carrying the block's text → your note.
-	if err := tagRepo.ReplaceMentions(ctx, artID, []coreservice.MentionRef{
+	if err := tagRepo.ReplaceMentions(ctx, artID, []entitydomain.MentionRef{
 		{EntityID: focusID, BlockID: "b1", Surface: focusName, Snippet: noteBody},
 	}); err != nil {
 		t.Fatalf("replace mentions: %v", err)
 	}
 
 	// Edges: focus --enables--> target (outbound), inbound --part_of--> focus.
-	if err := ecRepo.InsertEdge(ctx, coreservice.DrawEdgeInput{
+	if err := ecRepo.InsertEdge(ctx, entitydomain.DrawEdgeInput{
 		OwnerUserID: userID, FromID: focusID, ToID: targetID,
-		Rel: coreservice.RelEnables, Why: "the lock-in IS the moat",
+		Rel: entitydomain.RelEnables, Why: "the lock-in IS the moat",
 	}); err != nil {
 		t.Fatalf("insert outbound edge: %v", err)
 	}
-	if err := ecRepo.InsertEdge(ctx, coreservice.DrawEdgeInput{
+	if err := ecRepo.InsertEdge(ctx, entitydomain.DrawEdgeInput{
 		OwnerUserID: userID, FromID: inboundID, ToID: focusID,
-		Rel: coreservice.RelPartOf, Why: "a special case",
+		Rel: entitydomain.RelPartOf, Why: "a special case",
 	}); err != nil {
 		t.Fatalf("insert inbound edge: %v", err)
 	}
 
-	svc := coreservice.NewEntityContextService(ecRepo, db.NewEntityRepository(pool))
+	svc := entitydomain.NewEntityContextService(ecRepo, db.NewEntityRepository(pool))
 	out, err := svc.Get(ctx, userID, focusID)
 	if err != nil {
 		t.Fatalf("get context: %v", err)
@@ -135,15 +134,15 @@ func TestEntityContext_ReadPath(t *testing.T) {
 	if len(out.Edges) != 2 {
 		t.Fatalf("expected 2 edges, got %+v", out.Edges)
 	}
-	byTarget := map[string]coreservice.EntityEdge{}
+	byTarget := map[string]entitydomain.EntityEdge{}
 	for _, e := range out.Edges {
 		byTarget[e.To] = e
 	}
-	if e := byTarget[targetName]; e.Rel != coreservice.RelEnables || e.ToID != targetID ||
+	if e := byTarget[targetName]; e.Rel != entitydomain.RelEnables || e.ToID != targetID ||
 		e.Why != "the lock-in IS the moat" || e.Origin != "you" {
 		t.Fatalf("outbound edge = %+v", e)
 	}
-	if e := byTarget[inboundName]; e.Rel != coreservice.RelInstance {
+	if e := byTarget[inboundName]; e.Rel != entitydomain.RelInstance {
 		t.Fatalf("inbound part_of should read as instance from this end, got %+v", e)
 	}
 
@@ -151,7 +150,7 @@ func TestEntityContext_ReadPath(t *testing.T) {
 	if len(out.Context) != 2 {
 		t.Fatalf("expected 2 context items, got %+v", out.Context)
 	}
-	var quote, note *coreservice.EntityContextItem
+	var quote, note *entitydomain.EntityContextItem
 	for i := range out.Context {
 		switch out.Context[i].Type {
 		case "quote":
@@ -191,13 +190,13 @@ func TestEntityContext_MergedIdResolvesToRoot(t *testing.T) {
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO entities (scope, kind, canonical_name, normalized_key, trust_tier)
 		VALUES ('shared', 'org', $1, $2, 'believed') RETURNING id::text
-	`, rootName, entities.Normalize(rootName)).Scan(&rootID); err != nil {
+	`, rootName, entitydomain.Normalize(rootName)).Scan(&rootID); err != nil {
 		t.Fatalf("seed root: %v", err)
 	}
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO entities (scope, kind, canonical_name, normalized_key, canonical_root_id, trust_tier)
 		VALUES ('shared', 'org', $1, $2, $3::uuid, 'placeholder') RETURNING id::text
-	`, mergedName, entities.Normalize(mergedName), rootID).Scan(&mergedID); err != nil {
+	`, mergedName, entitydomain.Normalize(mergedName), rootID).Scan(&mergedID); err != nil {
 		t.Fatalf("seed merged: %v", err)
 	}
 	t.Cleanup(func() {
@@ -205,7 +204,7 @@ func TestEntityContext_MergedIdResolvesToRoot(t *testing.T) {
 		_, _ = pool.Exec(bg, `DELETE FROM entities WHERE id IN ($1::uuid, $2::uuid)`, mergedID, rootID)
 	})
 
-	svc := coreservice.NewEntityContextService(NewEntityContextPostgres(pool), db.NewEntityRepository(pool))
+	svc := entitydomain.NewEntityContextService(NewEntityContextPostgres(pool), db.NewEntityRepository(pool))
 	out, err := svc.Get(ctx, uuid.NewString(), mergedID)
 	if err != nil {
 		t.Fatalf("get by merged id: %v", err)
@@ -244,7 +243,7 @@ func TestEntityContext_DrawEdgeGuards(t *testing.T) {
 		if err := pool.QueryRow(ctx, `
 			INSERT INTO entities (scope, kind, canonical_name, normalized_key, trust_tier)
 			VALUES ('shared', 'concept', $1, $2, 'believed') RETURNING id::text
-		`, e.name, entities.Normalize(e.name)).Scan(e.into); err != nil {
+		`, e.name, entitydomain.Normalize(e.name)).Scan(e.into); err != nil {
 			t.Fatalf("seed entity: %v", err)
 		}
 	}
@@ -255,31 +254,31 @@ func TestEntityContext_DrawEdgeGuards(t *testing.T) {
 		_, _ = pool.Exec(bg, `DELETE FROM entities WHERE id IN ($1::uuid, $2::uuid)`, aID, bID)
 	})
 
-	svc := coreservice.NewEntityContextService(NewEntityContextPostgres(pool), db.NewEntityRepository(pool))
+	svc := entitydomain.NewEntityContextService(NewEntityContextPostgres(pool), db.NewEntityRepository(pool))
 
 	// Rejected: unknown relation type (a rel outside the surface's vocabulary).
-	if err := svc.DrawEdge(ctx, coreservice.DrawEdgeInput{
+	if err := svc.DrawEdge(ctx, entitydomain.DrawEdgeInput{
 		OwnerUserID: userID, FromID: aID, ToID: bID, Rel: "vibes_with",
 	}); err == nil {
 		t.Fatal("expected unknown rel type rejected")
 	}
 	// Rejected: self-edge.
-	if err := svc.DrawEdge(ctx, coreservice.DrawEdgeInput{
-		OwnerUserID: userID, FromID: aID, ToID: aID, Rel: coreservice.RelEnables,
+	if err := svc.DrawEdge(ctx, entitydomain.DrawEdgeInput{
+		OwnerUserID: userID, FromID: aID, ToID: aID, Rel: entitydomain.RelEnables,
 	}); err == nil {
 		t.Fatal("expected self-edge rejected")
 	}
 	// Rejected: target that doesn't exist (the missing-FK guard).
-	if err := svc.DrawEdge(ctx, coreservice.DrawEdgeInput{
-		OwnerUserID: userID, FromID: aID, ToID: uuid.NewString(), Rel: coreservice.RelEnables,
+	if err := svc.DrawEdge(ctx, entitydomain.DrawEdgeInput{
+		OwnerUserID: userID, FromID: aID, ToID: uuid.NewString(), Rel: entitydomain.RelEnables,
 	}); err == nil {
 		t.Fatal("expected nonexistent target rejected")
 	}
 
 	// Accepted, then redrawn with a new why → one edge, updated.
 	for _, why := range []string{"first reason", "sharper reason"} {
-		if err := svc.DrawEdge(ctx, coreservice.DrawEdgeInput{
-			OwnerUserID: userID, FromID: aID, ToID: bID, Rel: coreservice.RelEnables, Why: why,
+		if err := svc.DrawEdge(ctx, entitydomain.DrawEdgeInput{
+			OwnerUserID: userID, FromID: aID, ToID: bID, Rel: entitydomain.RelEnables, Why: why,
 		}); err != nil {
 			t.Fatalf("draw edge (%s): %v", why, err)
 		}
@@ -322,7 +321,7 @@ func TestEntityContext_MergeReview(t *testing.T) {
 		if err := pool.QueryRow(ctx, `
 			INSERT INTO entities (scope, kind, canonical_name, normalized_key, trust_tier)
 			VALUES ('shared', 'org', $1, $2, 'believed') RETURNING id::text
-		`, e.name, entities.Normalize(e.name)).Scan(e.into); err != nil {
+		`, e.name, entitydomain.Normalize(e.name)).Scan(e.into); err != nil {
 			t.Fatalf("seed entity: %v", err)
 		}
 	}
@@ -348,7 +347,7 @@ func TestEntityContext_MergeReview(t *testing.T) {
 		_, _ = pool.Exec(bg, `DELETE FROM entities WHERE id IN ($1::uuid,$2::uuid,$3::uuid)`, aID, bID, cID)
 	})
 
-	svc := coreservice.NewEntityContextService(NewEntityContextPostgres(pool), db.NewEntityRepository(pool))
+	svc := entitydomain.NewEntityContextService(NewEntityContextPostgres(pool), db.NewEntityRepository(pool))
 
 	out, err := svc.Get(ctx, userID, aID)
 	if err != nil {
@@ -357,20 +356,20 @@ func TestEntityContext_MergeReview(t *testing.T) {
 	if len(out.Merges) != 2 {
 		t.Fatalf("expected both proposals (from- AND into-side), got %+v", out.Merges)
 	}
-	byOther := map[string]coreservice.PendingMerge{}
+	byOther := map[string]entitydomain.PendingMerge{}
 	for _, m := range out.Merges {
 		byOther[m.OtherName] = m
 	}
 	// The judged one reads as a synonym suggestion, with its reasoning and evidence.
 	same := byOther[bName]
-	if same.Suggestion != coreservice.MergeSuggestSynonym {
+	if same.Suggestion != entitydomain.MergeSuggestSynonym {
 		t.Fatalf("judge said same → expected synonym, got %q", same.Suggestion)
 	}
 	if same.Reason == "" || same.Why != "name overlap 78% · from an unresolved @mention" {
 		t.Fatalf("expected the evidence rendered, got why=%q reason=%q", same.Why, same.Reason)
 	}
 	// The un-judged one is honestly "unsure" — never a guess.
-	if byOther[cName].Suggestion != coreservice.MergeSuggestUnsure {
+	if byOther[cName].Suggestion != entitydomain.MergeSuggestUnsure {
 		t.Fatalf("un-judged pair must read unsure, got %q", byOther[cName].Suggestion)
 	}
 
@@ -379,7 +378,7 @@ func TestEntityContext_MergeReview(t *testing.T) {
 		t.Fatalf("reject: %v", err)
 	}
 	// Rejecting again is a conflict, not a silent success or a 500.
-	if err := svc.RejectMerge(ctx, byOther[cName].MergeID); !errors.Is(err, coreservice.ErrMergeNotPending) {
+	if err := svc.RejectMerge(ctx, byOther[cName].MergeID); !errors.Is(err, entitydomain.ErrMergeNotPending) {
 		t.Fatalf("expected ErrMergeNotPending on re-decide, got %v", err)
 	}
 
@@ -387,7 +386,7 @@ func TestEntityContext_MergeReview(t *testing.T) {
 	if err := svc.AcceptMerge(ctx, same.MergeID); err != nil {
 		t.Fatalf("accept: %v", err)
 	}
-	if err := svc.AcceptMerge(ctx, same.MergeID); !errors.Is(err, coreservice.ErrMergeNotPending) {
+	if err := svc.AcceptMerge(ctx, same.MergeID); !errors.Is(err, entitydomain.ErrMergeNotPending) {
 		t.Fatalf("expected ErrMergeNotPending on double-accept, got %v", err)
 	}
 
@@ -422,7 +421,7 @@ func TestEntityContext_MergeQueue(t *testing.T) {
 		if err := pool.QueryRow(ctx, `
 			INSERT INTO entities (scope, kind, canonical_name, normalized_key, trust_tier)
 			VALUES ('shared', 'org', $1, $2, 'believed') RETURNING id::text
-		`, n, entities.Normalize(n)).Scan(&id); err != nil {
+		`, n, entitydomain.Normalize(n)).Scan(&id); err != nil {
 			t.Fatalf("seed %s: %v", n, err)
 		}
 		ids[n] = id
@@ -441,8 +440,8 @@ func TestEntityContext_MergeQueue(t *testing.T) {
 			t.Fatalf("seed merge: %v", err)
 		}
 	}
-	mk(live1, live2, "same")       // a live, judged proposal
-	mk(staleFrom, root, "same")    // touches a merged-away entity → excluded
+	mk(live1, live2, "same")    // a live, judged proposal
+	mk(staleFrom, root, "same") // touches a merged-away entity → excluded
 	t.Cleanup(func() {
 		bg := context.Background()
 		for _, id := range ids {
@@ -453,12 +452,12 @@ func TestEntityContext_MergeQueue(t *testing.T) {
 		}
 	})
 
-	svc := coreservice.NewEntityContextService(NewEntityContextPostgres(pool), db.NewEntityRepository(pool))
+	svc := entitydomain.NewEntityContextService(NewEntityContextPostgres(pool), db.NewEntityRepository(pool))
 	q, err := svc.MergeQueue(ctx, 200)
 	if err != nil {
 		t.Fatalf("merge queue: %v", err)
 	}
-	var mine *coreservice.MergeQueueItem
+	var mine *entitydomain.MergeQueueItem
 	for i := range q {
 		if q[i].FromID == ids[live1] {
 			mine = &q[i]
@@ -470,7 +469,7 @@ func TestEntityContext_MergeQueue(t *testing.T) {
 	if mine == nil {
 		t.Fatalf("expected the live proposal in the queue, got %+v", q)
 	}
-	if mine.IntoName != live2 || mine.Suggestion != coreservice.MergeSuggestSynonym {
+	if mine.IntoName != live2 || mine.Suggestion != entitydomain.MergeSuggestSynonym {
 		t.Fatalf("queue item = %+v", *mine)
 	}
 }

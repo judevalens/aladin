@@ -1,12 +1,11 @@
-package repo
+package postgres
 
 import (
 	"context"
 	"fmt"
 	"strings"
 
-	"aladin/backend_v2/internal/entities"
-	coreservice "aladin/backend_v2/internal/service"
+	entitydomain "aladin/backend_v2/internal/entities"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -32,8 +31,8 @@ func NewEntityListPostgres(pool *pgxpool.Pool) *PostgresEntityListRepository {
 //     picker); an index must browse. The alias CTE is gated so it short-circuits.
 //
 // Counts come from LEFT JOIN LATERAL per row rather than N+1 round-trips.
-func (r *PostgresEntityListRepository) List(ctx context.Context, q coreservice.EntityListQuery) ([]coreservice.EntityListItem, error) {
-	key := entities.Normalize(q.Query)
+func (r *PostgresEntityListRepository) List(ctx context.Context, q entitydomain.EntityListQuery) ([]entitydomain.EntityListItem, error) {
+	key := entitydomain.Normalize(q.Query)
 	like := "%" + strings.ToLower(q.Query) + "%"
 	prefix := key + "%"
 
@@ -126,9 +125,9 @@ func (r *PostgresEntityListRepository) List(ctx context.Context, q coreservice.E
 	}
 	defer rows.Close()
 
-	out := []coreservice.EntityListItem{}
+	out := []entitydomain.EntityListItem{}
 	for rows.Next() {
-		var it coreservice.EntityListItem
+		var it entitydomain.EntityListItem
 		if err := rows.Scan(&it.ID, &it.Name, &it.Kind, &it.Gist, &it.TrustTier, &it.UpdatedAt,
 			&it.Links, &it.Sources, &it.Attention, &it.Aliases); err != nil {
 			return nil, fmt.Errorf("entity list scan: %w", err)
@@ -140,12 +139,12 @@ func (r *PostgresEntityListRepository) List(ctx context.Context, q coreservice.E
 
 // Summary describes the whole visible registry (never the filtered subset — a search
 // shouldn't make the layer look smaller than it is).
-func (r *PostgresEntityListRepository) Summary(ctx context.Context, ownerUserID string) (coreservice.EntitySummary, error) {
+func (r *PostgresEntityListRepository) Summary(ctx context.Context, ownerUserID string) (entitydomain.EntitySummary, error) {
 	var owner any
 	if strings.TrimSpace(ownerUserID) != "" {
 		owner = ownerUserID
 	}
-	out := coreservice.EntitySummary{Tiers: map[string]int{}}
+	out := entitydomain.EntitySummary{Tiers: map[string]int{}}
 
 	rows, err := r.pool.Query(ctx, `
 		SELECT trust_tier, count(*)

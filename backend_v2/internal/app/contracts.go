@@ -7,6 +7,7 @@ import (
 	"aladin/backend_v2/internal/changefeed"
 	"aladin/backend_v2/internal/copilot"
 	"aladin/backend_v2/internal/document"
+	"aladin/backend_v2/internal/entities"
 	"aladin/backend_v2/internal/feed"
 	"aladin/backend_v2/internal/file"
 	"aladin/backend_v2/internal/graph"
@@ -60,10 +61,10 @@ type APIComponents interface {
 	Research() research.ResearchService
 	Documents() document.DocumentService
 	GraphPane() graphpane.GraphPaneService
-	EntityTags() coreservice.EntityTagService
+	EntityTags() entities.EntityTagService
 	ArtifactRefs() artifactref.ArtifactRefService
-	EntityContext() coreservice.EntityContextService
-	EntityList() coreservice.EntityListService
+	EntityContext() entities.EntityContextService
+	EntityList() entities.EntityListService
 	Instruments() instrument.InstrumentService
 	Watchlist() watchlist.Service
 	ReadingPositions() readingposition.Service
@@ -94,9 +95,9 @@ type MCPComponents interface {
 	ShardCatalog() coreservice.ShardCatalogService
 	ShardBridge() coreservice.ShardBridgeService
 	Documents() document.DocumentService
-	EntityTags() coreservice.EntityTagService
+	EntityTags() entities.EntityTagService
 	ArtifactRefs() artifactref.ArtifactRefService
-	EntityContext() coreservice.EntityContextService
+	EntityContext() entities.EntityContextService
 	Instruments() instrument.InstrumentService
 	Watchlist() watchlist.Service
 	Search() search.SearchService

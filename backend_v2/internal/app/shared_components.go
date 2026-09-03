@@ -19,6 +19,7 @@ import (
 	"aladin/backend_v2/internal/document"
 	documentpostgres "aladin/backend_v2/internal/document/postgres"
 	"aladin/backend_v2/internal/entities"
+	entitypostgres "aladin/backend_v2/internal/entities/postgres"
 	"aladin/backend_v2/internal/file"
 	"aladin/backend_v2/internal/insights"
 	insightspostgres "aladin/backend_v2/internal/insights/postgres"
@@ -61,9 +62,9 @@ type sharedComponents struct {
 	shardReleases    coreservice.ShardReleaseService
 	shardBridge      coreservice.ShardBridgeService
 	documents        document.DocumentService
-	entityTags       coreservice.EntityTagService
+	entityTags       entities.EntityTagService
 	artifactRefs     artifactref.ArtifactRefService
-	entityContext    coreservice.EntityContextService
+	entityContext    entities.EntityContextService
 	instruments      instrument.InstrumentService
 	watchlist        watchlist.Service
 	search           search.SearchService
@@ -119,7 +120,7 @@ func buildSharedComponents(pool *pgxpool.Pool, dataVolumePath string) sharedComp
 	docRuntime := docsurface.NewBuilder(docStore, filepath.Join(dataVolumePath, "cache", "esm"), profiles)
 	researchSvc := research.NewResearchService(researchpostgres.NewResearchPostgres(pool))
 	insightsSvc := insights.NewInsightService(insightspostgres.NewInsightPostgres(pool))
-	entityTagsSvc := coreservice.NewEntityTagService(repo.NewEntityTagPostgres(pool), entities.Normalize)
+	entityTagsSvc := entities.NewEntityTagService(entitypostgres.NewEntityTagPostgres(pool), entities.Normalize)
 	artifactRefsSvc := artifactref.NewArtifactRefService(artifactrefpostgres.NewArtifactRefPostgres(pool))
 	contentIndexSvc := search.NewContentIndexService(searchpostgres.NewContentIndexPostgres(pool))
 
@@ -156,8 +157,8 @@ func buildSharedComponents(pool *pgxpool.Pool, dataVolumePath string) sharedComp
 	watchlistSvc := watchlist.NewService(watchlistpostgres.New(pool))
 	alertRepo := alertpostgres.NewAlertsPostgres(pool)
 	alertsSvc := alert.NewAlertService(alertRepo, instrumentsSvc, snapshotSource)
-	entityContextSvc := coreservice.NewEntityContextService(
-		repo.NewEntityContextPostgres(pool),
+	entityContextSvc := entities.NewEntityContextService(
+		entitypostgres.NewEntityContextPostgres(pool),
 		db.NewEntityRepository(pool),
 	)
 

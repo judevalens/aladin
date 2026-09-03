@@ -9,6 +9,7 @@ import (
 	"aladin/backend_v2/internal/blocknote"
 	"aladin/backend_v2/internal/board"
 	"aladin/backend_v2/internal/document"
+	"aladin/backend_v2/internal/entities"
 	"aladin/backend_v2/internal/insights"
 	"aladin/backend_v2/internal/instrument"
 	"aladin/backend_v2/internal/market"
@@ -43,7 +44,7 @@ type citationOut struct {
 // a clear "not configured" error.
 type workspaceToolServer struct {
 	search      search.SearchService
-	entities    service.EntityContextService
+	entities    entities.EntityContextService
 	insights    insights.InsightService
 	artifacts   service.ArtifactService
 	watchlist   watchlist.Service
@@ -167,8 +168,8 @@ type getEntityInput struct {
 	EntityID string `json:"entity_id"`
 }
 type getEntityOutput struct {
-	Entity    service.EntityContext `json:"entity"`
-	Citations []citationOut         `json:"citations,omitempty"`
+	Entity    entities.EntityContext `json:"entity"`
+	Citations []citationOut          `json:"citations,omitempty"`
 }
 
 type getInsightsInput struct {
@@ -787,7 +788,7 @@ func (t workspaceToolServer) drawEdge(ctx context.Context, _ *sdkmcp.CallToolReq
 	if strings.TrimSpace(in.FromID) == "" || strings.TrimSpace(in.ToID) == "" || strings.TrimSpace(in.Rel) == "" {
 		return nil, drawEdgeOutput{}, service.BadRequest("from_id, to_id, and rel are required")
 	}
-	if err := t.entities.DrawEdge(ctx, service.DrawEdgeInput{
+	if err := t.entities.DrawEdge(ctx, entities.DrawEdgeInput{
 		OwnerUserID: principal.UserID,
 		FromID:      in.FromID,
 		ToID:        in.ToID,

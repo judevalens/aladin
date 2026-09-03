@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"aladin/backend_v2/internal/entities"
 	"aladin/backend_v2/internal/instrument"
 	"aladin/backend_v2/internal/market"
 	searchdomain "aladin/backend_v2/internal/search"
@@ -36,21 +37,21 @@ func (f *fakeSearchService) Search(_ context.Context, userID, query string, limi
 type fakeEntityContextService struct {
 	getUserID string
 	getID     string
-	ec        service.EntityContext
-	drawn     *service.DrawEdgeInput
+	ec        entities.EntityContext
+	drawn     *entities.DrawEdgeInput
 	err       error
 }
 
-func (f *fakeEntityContextService) Get(_ context.Context, ownerUserID, entityID string) (service.EntityContext, error) {
+func (f *fakeEntityContextService) Get(_ context.Context, ownerUserID, entityID string) (entities.EntityContext, error) {
 	f.getUserID, f.getID = ownerUserID, entityID
 	return f.ec, f.err
 }
-func (f *fakeEntityContextService) DrawEdge(_ context.Context, in service.DrawEdgeInput) error {
+func (f *fakeEntityContextService) DrawEdge(_ context.Context, in entities.DrawEdgeInput) error {
 	copyIn := in
 	f.drawn = &copyIn
 	return f.err
 }
-func (f *fakeEntityContextService) MergeQueue(context.Context, int) ([]service.MergeQueueItem, error) {
+func (f *fakeEntityContextService) MergeQueue(context.Context, int) ([]entities.MergeQueueItem, error) {
 	return nil, nil
 }
 func (f *fakeEntityContextService) AcceptMerge(context.Context, string) error { return nil }
@@ -255,8 +256,8 @@ func TestSearchWorkspaceRequiresPrincipalAndQuery(t *testing.T) {
 func TestGetEntityScopesToPrincipalAndCites(t *testing.T) {
 	t.Parallel()
 
-	entities := &fakeEntityContextService{ec: service.EntityContext{
-		Entity: service.EntityIdentity{ID: "ent-1", Name: "NVIDIA", Kind: "company"},
+	entities := &fakeEntityContextService{ec: entities.EntityContext{
+		Entity: entities.EntityIdentity{ID: "ent-1", Name: "NVIDIA", Kind: "company"},
 	}}
 	tools := workspaceToolServer{entities: entities}
 

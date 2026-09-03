@@ -1,12 +1,14 @@
-package repo
+package postgres
 
 import (
 	"context"
 	"fmt"
 	"strings"
 
-	"aladin/backend_v2/internal/entities"
-	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/auth"
+	entitydomain "aladin/backend_v2/internal/entities"
+	"aladin/backend_v2/internal/outbox"
+	"aladin/backend_v2/internal/repo"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -25,8 +27,8 @@ func NewEntityTagPostgres(pool *pgxpool.Pool) *PostgresEntityTagRepository {
 // Every match is resolved through the merge overlay to its canonical root and deduped —
 // a query hitting a merged-away synonym returns one row, the root. Each hit carries its
 // alias list for synonym display. ownerUserID "" → shared only.
-func (r *PostgresEntityTagRepository) SearchEntities(ctx context.Context, ownerUserID, query string, limit int) ([]coreservice.EntityHit, error) {
-	key := entities.Normalize(query)
+func (r *PostgresEntityTagRepository) SearchEntities(ctx context.Context, ownerUserID, query string, limit int) ([]entitydomain.EntityHit, error) {
+	key := entitydomain.Normalize(query)
 	like := "%" + strings.ToLower(strings.TrimSpace(query)) + "%"
 	prefix := key + "%"
 
@@ -79,9 +81,9 @@ func (r *PostgresEntityTagRepository) SearchEntities(ctx context.Context, ownerU
 	}
 	defer rows.Close()
 
-	out := []coreservice.EntityHit{}
+	out := []entitydomain.EntityHit{}
 	for rows.Next() {
-		var h coreservice.EntityHit
+		var h entitydomain.EntityHit
 		var tier int
 		var sim float64
 		if err := rows.Scan(&h.ID, &h.Name, &h.Kind, &h.Scope, &h.TrustTier, &tier, &sim, &h.Aliases); err != nil {
@@ -102,8 +104,8 @@ func (r *PostgresEntityTagRepository) SearchEntities(ctx context.Context, ownerU
 // into an existing entity, or promote in place). Dedup ignores kind (dedup-by-key), and
 // is best-effort: no unique constraint exists (sense-splitting precludes one), so two
 // truly-concurrent creates of a brand-new key can still race — acceptable here.
-func (r *PostgresEntityTagRepository) CreateEntity(ctx context.Context, kind, canonicalName, normalizedKey string) (coreservice.EntityHit, error) {
-	var h coreservice.EntityHit
+func (r *PostgresEntityTagRepository) CreateEntity(ctx context.Context, kind, canonicalName, normalizedKey string) (entitydomain.EntityHit, error) {
+	var h entitydomain.EntityHit
 	err := r.pool.QueryRow(ctx, `
 		WITH matched AS (
 			SELECT e.id, e.canonical_root_id
@@ -139,7 +141,7 @@ func (r *PostgresEntityTagRepository) CreateEntity(ctx context.Context, kind, ca
 		LIMIT 1
 	`, kind, canonicalName, normalizedKey).Scan(&h.ID, &h.Name, &h.Kind, &h.Scope, &h.TrustTier)
 	if err != nil {
-		return coreservice.EntityHit{}, fmt.Errorf("entity tag create: %w", err)
+		return entitydomain.EntityHit{}, fmt.Errorf("entity tag create: %w", err)
 	}
 	// Keep the wire contract uniform with search: aliases is always an array, never null.
 	h.Aliases = []string{}
@@ -148,7 +150,7 @@ func (r *PostgresEntityTagRepository) CreateEntity(ctx context.Context, kind, ca
 
 // AttachTag links an entity to an artifact as a page-level tag (idempotent).
 func (r *PostgresEntityTagRepository) AttachTag(ctx context.Context, artifactID, entityID, addedBy string) error {
-	principal, err := coreservice.RequirePrincipal(ctx)
+	principal, err := auth.RequirePrincipal(ctx)
 	if err != nil {
 		return err
 	}
@@ -163,7 +165,7 @@ func (r *PostgresEntityTagRepository) AttachTag(ctx context.Context, artifactID,
 		return fmt.Errorf("entity tag attach begin: %w", err)
 	}
 	defer tx.Rollback(ctx)
-	if err := LockUser(ctx, tx, userID); err != nil {
+	if err := outbox.LockUser(ctx, tx, userID); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `
@@ -174,7 +176,7 @@ func (r *PostgresEntityTagRepository) AttachTag(ctx context.Context, artifactID,
 	`, artifactID, entityID, added); err != nil {
 		return fmt.Errorf("entity tag attach: %w", err)
 	}
-	if err := emitNodeUpsert(ctx, tx, userID, artifactID); err != nil {
+	if err := repo.EmitNodeUpsert(ctx, tx, userID, artifactID); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -182,7 +184,7 @@ func (r *PostgresEntityTagRepository) AttachTag(ctx context.Context, artifactID,
 
 // DetachTag removes a page-level tag (does not touch projected @mention rows).
 func (r *PostgresEntityTagRepository) DetachTag(ctx context.Context, artifactID, entityID string) error {
-	principal, err := coreservice.RequirePrincipal(ctx)
+	principal, err := auth.RequirePrincipal(ctx)
 	if err != nil {
 		return err
 	}
@@ -193,7 +195,7 @@ func (r *PostgresEntityTagRepository) DetachTag(ctx context.Context, artifactID,
 		return fmt.Errorf("entity tag detach begin: %w", err)
 	}
 	defer tx.Rollback(ctx)
-	if err := LockUser(ctx, tx, userID); err != nil {
+	if err := outbox.LockUser(ctx, tx, userID); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `
@@ -202,7 +204,7 @@ func (r *PostgresEntityTagRepository) DetachTag(ctx context.Context, artifactID,
 	`, artifactID, entityID); err != nil {
 		return fmt.Errorf("entity tag detach: %w", err)
 	}
-	if err := emitNodeUpsert(ctx, tx, userID, artifactID); err != nil {
+	if err := repo.EmitNodeUpsert(ctx, tx, userID, artifactID); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -212,8 +214,8 @@ func (r *PostgresEntityTagRepository) DetachTag(ctx context.Context, artifactID,
 // transaction it drops all existing origin='mention' rows for the page and inserts the
 // given set (tags, origin='tag', are untouched). The set is the source of truth, derived
 // from the page's ydoc on save.
-func (r *PostgresEntityTagRepository) ReplaceMentions(ctx context.Context, artifactID string, mentions []coreservice.MentionRef) error {
-	principal, err := coreservice.RequirePrincipal(ctx)
+func (r *PostgresEntityTagRepository) ReplaceMentions(ctx context.Context, artifactID string, mentions []entitydomain.MentionRef) error {
+	principal, err := auth.RequirePrincipal(ctx)
 	if err != nil {
 		return err
 	}
@@ -225,7 +227,7 @@ func (r *PostgresEntityTagRepository) ReplaceMentions(ctx context.Context, artif
 	}
 	defer tx.Rollback(ctx)
 
-	if err := LockUser(ctx, tx, userID); err != nil {
+	if err := outbox.LockUser(ctx, tx, userID); err != nil {
 		return err
 	}
 
@@ -260,7 +262,7 @@ func (r *PostgresEntityTagRepository) ReplaceMentions(ctx context.Context, artif
 		}
 	}
 	// The page's entity set changed → emit a node frame so reactive views (graph pane) refetch.
-	if err := emitNodeUpsert(ctx, tx, userID, artifactID); err != nil {
+	if err := repo.EmitNodeUpsert(ctx, tx, userID, artifactID); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -268,7 +270,7 @@ func (r *PostgresEntityTagRepository) ReplaceMentions(ctx context.Context, artif
 
 // ListForArtifact returns the entities linked to an artifact (tags + projected mentions),
 // one row per (entity, origin), name/kind resolved from the entity registry.
-func (r *PostgresEntityTagRepository) ListForArtifact(ctx context.Context, artifactID string) ([]coreservice.AttachedEntity, error) {
+func (r *PostgresEntityTagRepository) ListForArtifact(ctx context.Context, artifactID string) ([]entitydomain.AttachedEntity, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT DISTINCT e.id::text, e.canonical_name, e.kind, ae.origin, COALESCE(ae.block_id, '')
 		  FROM artifact_entities ae
@@ -281,9 +283,9 @@ func (r *PostgresEntityTagRepository) ListForArtifact(ctx context.Context, artif
 	}
 	defer rows.Close()
 
-	out := []coreservice.AttachedEntity{}
+	out := []entitydomain.AttachedEntity{}
 	for rows.Next() {
-		var a coreservice.AttachedEntity
+		var a entitydomain.AttachedEntity
 		if err := rows.Scan(&a.ID, &a.Name, &a.Kind, &a.Origin, &a.BlockID); err != nil {
 			return nil, fmt.Errorf("entity tag list scan: %w", err)
 		}

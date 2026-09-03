@@ -1,4 +1,4 @@
-package repo_test
+package postgres_test
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"aladin/backend_v2/internal/db"
-	"aladin/backend_v2/internal/repo"
+	entitypostgres "aladin/backend_v2/internal/entities/postgres"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -25,7 +25,7 @@ func TestEntityCompanyReadPath(t *testing.T) {
 	if err := db.Migrate(ctx, pool); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	r := repo.NewEntityContextPostgres(pool)
+	r := entitypostgres.NewEntityContextPostgres(pool)
 	apple := "c0000000-0000-4000-a000-0000000000a1"
 	cook := "c0000000-0000-4000-a000-0000000000b1"
 

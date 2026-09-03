@@ -13,6 +13,8 @@ import (
 	"aladin/backend_v2/internal/docsurface"
 	"aladin/backend_v2/internal/document"
 	documenthttp "aladin/backend_v2/internal/document/httptransport"
+	"aladin/backend_v2/internal/entities"
+	entityhttp "aladin/backend_v2/internal/entities/httptransport"
 	"aladin/backend_v2/internal/feed"
 	feedhttp "aladin/backend_v2/internal/feed/httptransport"
 	"aladin/backend_v2/internal/file"
@@ -101,10 +103,10 @@ type Dependencies interface {
 	Research() research.ResearchService
 	Documents() document.DocumentService
 	GraphPane() graphpane.GraphPaneService
-	EntityTags() coreservice.EntityTagService
+	EntityTags() entities.EntityTagService
 	ArtifactRefs() artifactref.ArtifactRefService
-	EntityContext() coreservice.EntityContextService
-	EntityList() coreservice.EntityListService
+	EntityContext() entities.EntityContextService
+	EntityList() entities.EntityListService
 	Instruments() instrument.InstrumentService
 	Watchlist() watchlist.Service
 	ReadingPositions() readingposition.Service
@@ -161,7 +163,7 @@ func NewWithDependencies(addr string, deps Dependencies) *Server {
 	graphpanehttp.Register(mux, deps.GraphPane())
 	researchhttp.Register(mux, deps.Research())
 	documenthttp.Register(mux, deps.Documents())
-	s.registerEntityTagRoutes(mux)
+	entityhttp.Register(mux, deps.EntityTags(), deps.EntityContext(), deps.EntityList())
 	instrumenthttp.Register(mux, deps.Instruments(), deps.Bars())
 	searchhttp.Register(mux, deps.Search())
 	markethttp.Register(mux, deps.MarketData())
@@ -169,7 +171,6 @@ func NewWithDependencies(addr string, deps Dependencies) *Server {
 	readingpositionhttp.Register(mux, deps.ReadingPositions())
 	alerthttp.Register(mux, deps.Alerts(), deps.Notifications())
 	copilothttp.Register(mux, deps.Copilot())
-	s.registerEntityContextRoutes(mux)
 	artifactrefhttp.Register(mux, deps.ArtifactRefs())
 	realtimehttp.Register(mux, deps.Realtime(), deps.RealtimeKeyResolver())
 	providerconnectionhttp.Register(mux, deps.ProviderConnections())

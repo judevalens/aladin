@@ -8,6 +8,7 @@ import (
 
 	"aladin/backend_v2/internal/artifactref"
 	"aladin/backend_v2/internal/blocknote"
+	"aladin/backend_v2/internal/entities"
 	"aladin/backend_v2/internal/page"
 	"aladin/backend_v2/internal/service"
 
@@ -27,11 +28,11 @@ type toolServer struct {
 	// entityTags + artifactRefs project a page's @entity mentions / `#` refs into the
 	// knowledge layer after an MCP write (the editor does this client-side; agents don't
 	// have an editor). Nil-safe: projection is skipped when unset.
-	entityTags   service.EntityTagService
+	entityTags   entities.EntityTagService
 	artifactRefs artifactref.ArtifactRefService
 }
 
-func registerTools(server *sdkmcp.Server, artifacts service.ArtifactService, pages page.DocumentService, converter blocknote.Converter, bridge blocknote.Bridge, entityTags service.EntityTagService, artifactRefs artifactref.ArtifactRefService) {
+func registerTools(server *sdkmcp.Server, artifacts service.ArtifactService, pages page.DocumentService, converter blocknote.Converter, bridge blocknote.Bridge, entityTags entities.EntityTagService, artifactRefs artifactref.ArtifactRefService) {
 	tools := toolServer{artifacts: artifacts, pages: pages, converter: converter, bridge: bridge, entityTags: entityTags, artifactRefs: artifactRefs}
 
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
@@ -803,9 +804,9 @@ func (t toolServer) projectPage(ctx context.Context, pageID string) {
 		}
 	}
 	if t.entityTags != nil {
-		out := make([]service.MentionRef, len(mentions))
+		out := make([]entities.MentionRef, len(mentions))
 		for i, m := range mentions {
-			out[i] = service.MentionRef{EntityID: m.EntityID, BlockID: m.BlockID, Surface: m.Surface}
+			out[i] = entities.MentionRef{EntityID: m.EntityID, BlockID: m.BlockID, Surface: m.Surface}
 		}
 		if err := t.entityTags.SyncMentions(ctx, pageID, out); err != nil {
 			slog.Warn("mcp: project page: sync mentions failed (unknown entity id?)", "component", "mcp", "page", pageID, "err", err)

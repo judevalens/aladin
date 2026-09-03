@@ -14,6 +14,8 @@ import (
 	copilotpostgres "aladin/backend_v2/internal/copilot/postgres"
 	"aladin/backend_v2/internal/copilotagent"
 	"aladin/backend_v2/internal/document"
+	"aladin/backend_v2/internal/entities"
+	entitypostgres "aladin/backend_v2/internal/entities/postgres"
 	"aladin/backend_v2/internal/feed"
 	feedpostgres "aladin/backend_v2/internal/feed/postgres"
 	"aladin/backend_v2/internal/file"
@@ -66,7 +68,7 @@ type APIProcess struct {
 	shardKV             coreservice.ShardKVService
 	relationships       relationship.RelationshipService
 	graphPane           graphpane.GraphPaneService
-	entityList          coreservice.EntityListService
+	entityList          entities.EntityListService
 	graphReader         graph.GraphReader
 	readingPositions    readingposition.Service
 	unfurl              unfurl.UnfurlService
@@ -167,7 +169,7 @@ func NewAPIComponentsWithProviderConnections(pool *pgxpool.Pool, providerConfig 
 		shardKV:             coreservice.NewShardKVService(shared.artifacts, repo.NewShardKVPostgres(pool)),
 		relationships:       relationship.NewRelationshipService(relationshippostgres.NewRelationshipPostgres(pool)),
 		graphPane:           graphpane.NewGraphPaneService(graphpanepostgres.NewGraphPanePostgres(pool)),
-		entityList:          coreservice.NewEntityListService(repo.NewEntityListPostgres(pool)),
+		entityList:          entities.NewEntityListService(entitypostgres.NewEntityListPostgres(pool)),
 		graphReader:         graphReader,
 		readingPositions:    readingposition.NewService(readingpositionpostgres.New(pool)),
 		unfurl:              unfurl.NewUnfurlService(),
@@ -206,10 +208,10 @@ func (c *APIProcess) Relationships() relationship.RelationshipService { return c
 func (c *APIProcess) Research() research.ResearchService              { return c.research }
 func (c *APIProcess) Documents() document.DocumentService             { return c.documents }
 func (c *APIProcess) GraphPane() graphpane.GraphPaneService           { return c.graphPane }
-func (c *APIProcess) EntityTags() coreservice.EntityTagService        { return c.entityTags }
+func (c *APIProcess) EntityTags() entities.EntityTagService           { return c.entityTags }
 func (c *APIProcess) ArtifactRefs() artifactref.ArtifactRefService    { return c.artifactRefs }
-func (c *APIProcess) EntityContext() coreservice.EntityContextService { return c.entityContext }
-func (c *APIProcess) EntityList() coreservice.EntityListService       { return c.entityList }
+func (c *APIProcess) EntityContext() entities.EntityContextService    { return c.entityContext }
+func (c *APIProcess) EntityList() entities.EntityListService          { return c.entityList }
 func (c *APIProcess) Instruments() instrument.InstrumentService       { return c.instruments }
 func (c *APIProcess) Watchlist() watchlist.Service                    { return c.watchlist }
 func (c *APIProcess) ReadingPositions() readingposition.Service       { return c.readingPositions }

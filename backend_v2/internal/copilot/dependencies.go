@@ -3,6 +3,7 @@ package copilot
 import (
 	"context"
 
+	"aladin/backend_v2/internal/entities"
 	coreservice "aladin/backend_v2/internal/service"
 )
 
@@ -12,7 +13,7 @@ import (
 type Principal = coreservice.Principal
 type ArtifactService = coreservice.ArtifactService
 type ArtifactResponse = coreservice.ArtifactResponse
-type EntityContextService = coreservice.EntityContextService
+type EntityContextService = entities.EntityContextService
 type BadRequest = coreservice.BadRequest
 
 var (

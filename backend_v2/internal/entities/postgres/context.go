@@ -1,4 +1,4 @@
-package repo
+package postgres
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	coreservice "aladin/backend_v2/internal/service"
+	entitydomain "aladin/backend_v2/internal/entities"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -63,13 +63,13 @@ func (r *PostgresEntityContextRepository) Exists(ctx context.Context, entityID s
 
 // DataPointsFor returns the entity's typed data-point map ({name,type,value|id}),
 // decoded from the entities.data_points jsonb array. Unknown/malformed entries are skipped.
-func (r *PostgresEntityContextRepository) DataPointsFor(ctx context.Context, entityID string) ([]coreservice.EntityDataPoint, error) {
+func (r *PostgresEntityContextRepository) DataPointsFor(ctx context.Context, entityID string) ([]entitydomain.EntityDataPoint, error) {
 	var raw []byte
 	if err := r.pool.QueryRow(ctx,
 		`SELECT COALESCE(data_points, '[]'::jsonb) FROM entities WHERE id = $1::uuid`, entityID).Scan(&raw); err != nil {
 		return nil, fmt.Errorf("entity data points: %w", err)
 	}
-	var points []coreservice.EntityDataPoint
+	var points []entitydomain.EntityDataPoint
 	if len(raw) > 0 {
 		if err := json.Unmarshal(raw, &points); err != nil {
 			return nil, fmt.Errorf("entity data points decode: %w", err)
@@ -79,7 +79,7 @@ func (r *PostgresEntityContextRepository) DataPointsFor(ctx context.Context, ent
 }
 
 // ExternalIdsFor returns the entity's hard cross-system identity keys, system then value.
-func (r *PostgresEntityContextRepository) ExternalIdsFor(ctx context.Context, entityID string) ([]coreservice.EntityExternalID, error) {
+func (r *PostgresEntityContextRepository) ExternalIdsFor(ctx context.Context, entityID string) ([]entitydomain.EntityExternalID, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT system, value FROM entity_external_ids
 		 WHERE entity_id = $1::uuid ORDER BY system, value
@@ -88,9 +88,9 @@ func (r *PostgresEntityContextRepository) ExternalIdsFor(ctx context.Context, en
 		return nil, fmt.Errorf("entity external ids: %w", err)
 	}
 	defer rows.Close()
-	var out []coreservice.EntityExternalID
+	var out []entitydomain.EntityExternalID
 	for rows.Next() {
-		var e coreservice.EntityExternalID
+		var e entitydomain.EntityExternalID
 		if err := rows.Scan(&e.System, &e.Value); err != nil {
 			return nil, fmt.Errorf("entity external ids scan: %w", err)
 		}
@@ -100,8 +100,8 @@ func (r *PostgresEntityContextRepository) ExternalIdsFor(ctx context.Context, en
 }
 
 // CompanyFor returns the kind='company' extension row, or nil when the entity has none.
-func (r *PostgresEntityContextRepository) CompanyFor(ctx context.Context, entityID string) (*coreservice.CompanyFacts, error) {
-	var c coreservice.CompanyFacts
+func (r *PostgresEntityContextRepository) CompanyFor(ctx context.Context, entityID string) (*entitydomain.CompanyFacts, error) {
+	var c entitydomain.CompanyFacts
 	var employees, foundedYear *int
 	err := r.pool.QueryRow(ctx, `
 		SELECT sector, industry, description, website, country, employees, founded_year
@@ -125,8 +125,8 @@ func (r *PostgresEntityContextRepository) CompanyFor(ctx context.Context, entity
 // Identity returns the focused node. `Since` carries only the AGE phrase here (e.g.
 // "3 weeks"); the service composes the full provenance line once it knows the context
 // count.
-func (r *PostgresEntityContextRepository) Identity(ctx context.Context, entityID string) (coreservice.EntityIdentity, error) {
-	var out coreservice.EntityIdentity
+func (r *PostgresEntityContextRepository) Identity(ctx context.Context, entityID string) (entitydomain.EntityIdentity, error) {
+	var out entitydomain.EntityIdentity
 	var gist *string
 	var trustTier string
 	err := r.pool.QueryRow(ctx, `
@@ -142,7 +142,7 @@ func (r *PostgresEntityContextRepository) Identity(ctx context.Context, entityID
 		  FROM entities WHERE id = $1::uuid
 	`, entityID).Scan(&out.ID, &out.Name, &out.Kind, &gist, &trustTier, &out.Since)
 	if err != nil {
-		return coreservice.EntityIdentity{}, fmt.Errorf("entity context identity: %w", err)
+		return entitydomain.EntityIdentity{}, fmt.Errorf("entity context identity: %w", err)
 	}
 	if gist != nil {
 		out.Gist = *gist
@@ -156,7 +156,7 @@ func (r *PostgresEntityContextRepository) Identity(ctx context.Context, entityID
 // focused entity: an inbound `A enables B` is read from B as `B enabled_by A`, so the
 // page always says how the *focused* entity relates. Only inverses with a named opposite
 // flip; symmetric relations (competes) and ones without an inverse are shown as-is.
-func (r *PostgresEntityContextRepository) EdgesFor(ctx context.Context, ownerUserID, entityID string) ([]coreservice.EntityEdge, error) {
+func (r *PostgresEntityContextRepository) EdgesFor(ctx context.Context, ownerUserID, entityID string) ([]entitydomain.EntityEdge, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT rel.rel_type, other.id::text, other.canonical_name, other.kind,
 		       COALESCE(rel.metadata->>'why', ''), COALESCE(rel.metadata->>'origin', 'you'),
@@ -174,9 +174,9 @@ func (r *PostgresEntityContextRepository) EdgesFor(ctx context.Context, ownerUse
 	}
 	defer rows.Close()
 
-	out := []coreservice.EntityEdge{}
+	out := []entitydomain.EntityEdge{}
 	for rows.Next() {
-		var e coreservice.EntityEdge
+		var e entitydomain.EntityEdge
 		var outbound bool
 		if err := rows.Scan(&e.Rel, &e.ToID, &e.To, &e.Kind, &e.Why, &e.Origin, &outbound); err != nil {
 			return nil, fmt.Errorf("entity context edges scan: %w", err)
@@ -194,14 +194,14 @@ func (r *PostgresEntityContextRepository) EdgesFor(ctx context.Context, ownerUse
 // returned unchanged.
 func inverseRel(rel string) string {
 	switch rel {
-	case coreservice.RelEnables:
-		return coreservice.RelEnabledBy
-	case coreservice.RelEnabledBy:
-		return coreservice.RelEnables
-	case coreservice.RelPartOf:
-		return coreservice.RelInstance
-	case coreservice.RelInstance:
-		return coreservice.RelPartOf
+	case entitydomain.RelEnables:
+		return entitydomain.RelEnabledBy
+	case entitydomain.RelEnabledBy:
+		return entitydomain.RelEnables
+	case entitydomain.RelPartOf:
+		return entitydomain.RelInstance
+	case entitydomain.RelInstance:
+		return entitydomain.RelPartOf
 	default:
 		return rel
 	}
@@ -216,7 +216,7 @@ func inverseRel(rel string) string {
 //
 // Both arms select stored text unchanged (the verbatim guarantee). Questions have no
 // store yet (Phase C).
-func (r *PostgresEntityContextRepository) ContextFor(ctx context.Context, ownerUserID, entityID string) ([]coreservice.EntityContextItem, error) {
+func (r *PostgresEntityContextRepository) ContextFor(ctx context.Context, ownerUserID, entityID string) ([]entitydomain.EntityContextItem, error) {
 	var owner any
 	if strings.TrimSpace(ownerUserID) != "" {
 		owner = ownerUserID
@@ -273,9 +273,9 @@ func (r *PostgresEntityContextRepository) ContextFor(ctx context.Context, ownerU
 	}
 	defer rows.Close()
 
-	out := []coreservice.EntityContextItem{}
+	out := []entitydomain.EntityContextItem{}
 	for rows.Next() {
-		var it coreservice.EntityContextItem
+		var it entitydomain.EntityContextItem
 		var provider string
 		if err := rows.Scan(&it.Type, &it.Body, &it.Who, &provider, &it.SourceID, &it.Time); err != nil {
 			return nil, fmt.Errorf("entity context items scan: %w", err)
@@ -293,7 +293,7 @@ func (r *PostgresEntityContextRepository) ContextFor(ctx context.Context, ownerU
 // A dedicated query rather than db.ListProposedMerges, which is global (no entity filter)
 // and drops `evidence` — and evidence is the whole point here: it carries the judge's
 // verdict and reasoning.
-func (r *PostgresEntityContextRepository) PendingMergesFor(ctx context.Context, entityID string) ([]coreservice.PendingMerge, error) {
+func (r *PostgresEntityContextRepository) PendingMergesFor(ctx context.Context, entityID string) ([]entitydomain.PendingMerge, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT m.id::text,
 		       other.id::text, other.canonical_name, other.kind,
@@ -314,9 +314,9 @@ func (r *PostgresEntityContextRepository) PendingMergesFor(ctx context.Context, 
 	}
 	defer rows.Close()
 
-	out := []coreservice.PendingMerge{}
+	out := []entitydomain.PendingMerge{}
 	for rows.Next() {
-		var p coreservice.PendingMerge
+		var p entitydomain.PendingMerge
 		var verdict, method string
 		if err := rows.Scan(&p.MergeID, &p.OtherID, &p.OtherName, &p.OtherKind,
 			&p.Confidence, &verdict, &p.Reason, &method); err != nil {
@@ -332,7 +332,7 @@ func (r *PostgresEntityContextRepository) PendingMergesFor(ctx context.Context, 
 // MergeQueue is the global inbox: every proposed merge, both sides named, newest-confident
 // first. Excludes pairs where either side was already merged away (canonical_root_id set),
 // since those are stale questions the overlay already answered.
-func (r *PostgresEntityContextRepository) MergeQueue(ctx context.Context, limit int) ([]coreservice.MergeQueueItem, error) {
+func (r *PostgresEntityContextRepository) MergeQueue(ctx context.Context, limit int) ([]entitydomain.MergeQueueItem, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT m.id::text,
 		       ef.id::text, ef.canonical_name, ef.kind,
@@ -354,9 +354,9 @@ func (r *PostgresEntityContextRepository) MergeQueue(ctx context.Context, limit 
 	}
 	defer rows.Close()
 
-	out := []coreservice.MergeQueueItem{}
+	out := []entitydomain.MergeQueueItem{}
 	for rows.Next() {
-		var it coreservice.MergeQueueItem
+		var it entitydomain.MergeQueueItem
 		var verdict, method string
 		if err := rows.Scan(&it.MergeID, &it.FromID, &it.FromName, &it.FromKind,
 			&it.IntoID, &it.IntoName, &it.IntoKind, &it.Confidence, &verdict, &method); err != nil {
@@ -374,11 +374,11 @@ func (r *PostgresEntityContextRepository) MergeQueue(ctx context.Context, limit 
 func mergeSuggestion(verdict string) string {
 	switch verdict {
 	case "same":
-		return coreservice.MergeSuggestSynonym
+		return entitydomain.MergeSuggestSynonym
 	case "different":
-		return coreservice.MergeSuggestDistinct
+		return entitydomain.MergeSuggestDistinct
 	default:
-		return coreservice.MergeSuggestUnsure
+		return entitydomain.MergeSuggestUnsure
 	}
 }
 
@@ -400,10 +400,10 @@ func mergeWhy(confidence float64, method string) string {
 // InsertEdge writes a typed, provenance-carrying edge. Idempotent on
 // (user, src, dst, rel_type) via uq_relationships_edge — redrawing the same edge updates
 // its why rather than duplicating it.
-func (r *PostgresEntityContextRepository) InsertEdge(ctx context.Context, in coreservice.DrawEdgeInput) error {
+func (r *PostgresEntityContextRepository) InsertEdge(ctx context.Context, in entitydomain.DrawEdgeInput) error {
 	metadata, err := json.Marshal(map[string]string{
 		"why":    in.Why,
-		"origin": coreservice.EdgeOriginYou,
+		"origin": entitydomain.EdgeOriginYou,
 	})
 	if err != nil {
 		return fmt.Errorf("entity context insert edge marshal: %w", err)

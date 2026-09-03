@@ -10,6 +10,7 @@ import (
 
 	"aladin/backend_v2/internal/blocknote"
 	"aladin/backend_v2/internal/document"
+	"aladin/backend_v2/internal/entities"
 	"aladin/backend_v2/internal/insights"
 	"aladin/backend_v2/internal/instrument"
 	"aladin/backend_v2/internal/market"
@@ -151,9 +152,9 @@ type Dependencies interface {
 	ShardCatalog() service.ShardCatalogService
 	ShardBridge() service.ShardBridgeService
 	Documents() document.DocumentService
-	EntityTags() service.EntityTagService
+	EntityTags() entities.EntityTagService
 	ArtifactRefs() artifactref.ArtifactRefService
-	EntityContext() service.EntityContextService
+	EntityContext() entities.EntityContextService
 	Instruments() instrument.InstrumentService
 	Watchlist() watchlist.Service
 	Search() search.SearchService

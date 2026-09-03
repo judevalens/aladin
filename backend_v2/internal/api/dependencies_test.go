@@ -6,6 +6,7 @@ import (
 	"aladin/backend_v2/internal/auth"
 	"aladin/backend_v2/internal/copilot"
 	"aladin/backend_v2/internal/document"
+	"aladin/backend_v2/internal/entities"
 	"aladin/backend_v2/internal/feed"
 	"aladin/backend_v2/internal/file"
 	"aladin/backend_v2/internal/graph"
@@ -57,10 +58,10 @@ type testDependencies struct {
 	ResearchSvc            research.ResearchService
 	DocumentsSvc           document.DocumentService
 	GraphPaneSvc           graphpane.GraphPaneService
-	EntityTagsSvc          coreservice.EntityTagService
+	EntityTagsSvc          entities.EntityTagService
 	ArtifactRefsSvc        artifactref.ArtifactRefService
-	EntityContextSvc       coreservice.EntityContextService
-	EntityListSvc          coreservice.EntityListService
+	EntityContextSvc       entities.EntityContextService
+	EntityListSvc          entities.EntityListService
 	InstrumentsSvc         instrument.InstrumentService
 	WatchlistSvc           watchlist.Service
 	ReadingPositionsSvc    readingposition.Service
@@ -107,10 +108,10 @@ func (d testDependencies) Relationships() relationship.RelationshipService { ret
 func (d testDependencies) Research() research.ResearchService              { return d.ResearchSvc }
 func (d testDependencies) Documents() document.DocumentService             { return d.DocumentsSvc }
 func (d testDependencies) GraphPane() graphpane.GraphPaneService           { return d.GraphPaneSvc }
-func (d testDependencies) EntityTags() coreservice.EntityTagService        { return d.EntityTagsSvc }
+func (d testDependencies) EntityTags() entities.EntityTagService           { return d.EntityTagsSvc }
 func (d testDependencies) ArtifactRefs() artifactref.ArtifactRefService    { return d.ArtifactRefsSvc }
-func (d testDependencies) EntityContext() coreservice.EntityContextService { return d.EntityContextSvc }
-func (d testDependencies) EntityList() coreservice.EntityListService       { return d.EntityListSvc }
+func (d testDependencies) EntityContext() entities.EntityContextService    { return d.EntityContextSvc }
+func (d testDependencies) EntityList() entities.EntityListService          { return d.EntityListSvc }
 func (d testDependencies) Instruments() instrument.InstrumentService       { return d.InstrumentsSvc }
 func (d testDependencies) Watchlist() watchlist.Service                    { return d.WatchlistSvc }
 func (d testDependencies) ReadingPositions() readingposition.Service {

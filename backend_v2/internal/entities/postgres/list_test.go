@@ -1,12 +1,11 @@
-package repo
+package postgres
 
 import (
 	"context"
 	"testing"
 	"time"
 
-	"aladin/backend_v2/internal/entities"
-	coreservice "aladin/backend_v2/internal/service"
+	entitydomain "aladin/backend_v2/internal/entities"
 
 	"github.com/google/uuid"
 )
@@ -46,32 +45,32 @@ func TestEntityList_Invariants(t *testing.T) {
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO entities (scope, kind, canonical_name, normalized_key, trust_tier, gist)
 		VALUES ('shared', 'concept', $1, $2, 'believed', 'a gist') RETURNING id::text
-	`, sharedName, entities.Normalize(sharedName)).Scan(&sharedID); err != nil {
+	`, sharedName, entitydomain.Normalize(sharedName)).Scan(&sharedID); err != nil {
 		t.Fatalf("seed shared: %v", err)
 	}
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO entities (scope, owner_user_id, kind, canonical_name, normalized_key, trust_tier)
 		VALUES ('tenant', $1::uuid, 'org', $2, $3, 'placeholder') RETURNING id::text
-	`, me, mineName, entities.Normalize(mineName)).Scan(&mineID); err != nil {
+	`, me, mineName, entitydomain.Normalize(mineName)).Scan(&mineID); err != nil {
 		t.Fatalf("seed mine: %v", err)
 	}
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO entities (scope, owner_user_id, kind, canonical_name, normalized_key, trust_tier)
 		VALUES ('tenant', $1::uuid, 'org', $2, $3, 'believed') RETURNING id::text
-	`, other, theirsName, entities.Normalize(theirsName)).Scan(&theirsID); err != nil {
+	`, other, theirsName, entitydomain.Normalize(theirsName)).Scan(&theirsID); err != nil {
 		t.Fatalf("seed theirs: %v", err)
 	}
 	// A merged-away entity pointing at the shared root.
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO entities (scope, kind, canonical_name, normalized_key, canonical_root_id, trust_tier)
 		VALUES ('shared', 'concept', $1, $2, $3::uuid, 'placeholder') RETURNING id::text
-	`, mergedName, entities.Normalize(mergedName), sharedID).Scan(&mergedID); err != nil {
+	`, mergedName, entitydomain.Normalize(mergedName), sharedID).Scan(&mergedID); err != nil {
 		t.Fatalf("seed merged: %v", err)
 	}
 	// A synonym on the shared entity.
 	if _, err := pool.Exec(ctx, `
 		INSERT INTO entity_aliases (entity_id, surface, normalized) VALUES ($1::uuid, $2, $3)
-	`, sharedID, aliasSurface, entities.Normalize(aliasSurface)); err != nil {
+	`, sharedID, aliasSurface, entitydomain.Normalize(aliasSurface)); err != nil {
 		t.Fatalf("seed alias: %v", err)
 	}
 	// A pending proposal: shared → mine. It's a question about BOTH.
@@ -91,10 +90,10 @@ func TestEntityList_Invariants(t *testing.T) {
 	})
 
 	r := NewEntityListPostgres(pool)
-	svc := coreservice.NewEntityListService(r)
+	svc := entitydomain.NewEntityListService(r)
 
-	byID := func(items []coreservice.EntityListItem) map[string]coreservice.EntityListItem {
-		m := map[string]coreservice.EntityListItem{}
+	byID := func(items []entitydomain.EntityListItem) map[string]entitydomain.EntityListItem {
+		m := map[string]entitydomain.EntityListItem{}
 		for _, it := range items {
 			m[it.ID] = it
 		}
@@ -102,7 +101,7 @@ func TestEntityList_Invariants(t *testing.T) {
 	}
 
 	// 1. Empty query lists all of MY visible registry — and nobody else's.
-	out, err := svc.List(ctx, coreservice.EntityListQuery{OwnerUserID: me})
+	out, err := svc.List(ctx, entitydomain.EntityListQuery{OwnerUserID: me})
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -134,7 +133,7 @@ func TestEntityList_Invariants(t *testing.T) {
 	}
 
 	// 4. Searching a SYNONYM finds the entity (alias-aware, like the picker).
-	out, err = svc.List(ctx, coreservice.EntityListQuery{OwnerUserID: me, Query: aliasSurface})
+	out, err = svc.List(ctx, entitydomain.EntityListQuery{OwnerUserID: me, Query: aliasSurface})
 	if err != nil {
 		t.Fatalf("alias query: %v", err)
 	}
@@ -143,7 +142,7 @@ func TestEntityList_Invariants(t *testing.T) {
 	}
 
 	// 5. Kind filter.
-	out, err = svc.List(ctx, coreservice.EntityListQuery{OwnerUserID: me, Kind: "org"})
+	out, err = svc.List(ctx, entitydomain.EntityListQuery{OwnerUserID: me, Kind: "org"})
 	if err != nil {
 		t.Fatalf("kind filter: %v", err)
 	}
@@ -166,7 +165,7 @@ func TestEntityList_Invariants(t *testing.T) {
 
 	// 7. Status filters (the header pills). "pending" → only entities with an open merge;
 	// shared (attention 1) and mine (into-side, attention 1) both qualify; theirs doesn't.
-	out, err = svc.List(ctx, coreservice.EntityListQuery{OwnerUserID: me, Filter: coreservice.EntityFilterPending})
+	out, err = svc.List(ctx, entitydomain.EntityListQuery{OwnerUserID: me, Filter: entitydomain.EntityFilterPending})
 	if err != nil {
 		t.Fatalf("pending filter: %v", err)
 	}
@@ -181,7 +180,7 @@ func TestEntityList_Invariants(t *testing.T) {
 	}
 
 	// "unresolved" → only placeholder-tier entities (mine is placeholder; shared is believed).
-	out, err = svc.List(ctx, coreservice.EntityListQuery{OwnerUserID: me, Filter: coreservice.EntityFilterUnresolved})
+	out, err = svc.List(ctx, entitydomain.EntityListQuery{OwnerUserID: me, Filter: entitydomain.EntityFilterUnresolved})
 	if err != nil {
 		t.Fatalf("unresolved filter: %v", err)
 	}

@@ -1,4 +1,4 @@
-package repo
+package postgres
 
 import (
 	"context"
@@ -6,9 +6,8 @@ import (
 	"time"
 
 	"aladin/backend_v2/internal/db"
-	"aladin/backend_v2/internal/entities"
+	entitydomain "aladin/backend_v2/internal/entities"
 	graphpanepostgres "aladin/backend_v2/internal/graphpane/postgres"
-	coreservice "aladin/backend_v2/internal/service"
 
 	"github.com/google/uuid"
 )
@@ -55,7 +54,7 @@ func TestEntityTag_SearchAttachDetach(t *testing.T) {
 	tagRepo := NewEntityTagPostgres(pool)
 
 	// Create new entity via the "create new" path.
-	hit, err := tagRepo.CreateEntity(ctx, "org", name, entities.Normalize(name))
+	hit, err := tagRepo.CreateEntity(ctx, "org", name, entitydomain.Normalize(name))
 	if err != nil {
 		t.Fatalf("create entity: %v", err)
 	}
@@ -157,8 +156,8 @@ func TestEntityTag_ReplaceMentions(t *testing.T) {
 	}
 
 	tagRepo := NewEntityTagPostgres(pool)
-	e1, _ := tagRepo.CreateEntity(ctx, "org", "Mco"+tag, entities.Normalize("Mco"+tag))
-	e2, _ := tagRepo.CreateEntity(ctx, "person", "Pco"+tag, entities.Normalize("Pco"+tag))
+	e1, _ := tagRepo.CreateEntity(ctx, "org", "Mco"+tag, entitydomain.Normalize("Mco"+tag))
+	e2, _ := tagRepo.CreateEntity(ctx, "person", "Pco"+tag, entitydomain.Normalize("Pco"+tag))
 
 	t.Cleanup(func() {
 		bg := context.Background()
@@ -173,7 +172,7 @@ func TestEntityTag_ReplaceMentions(t *testing.T) {
 	}
 
 	// First projection: e1 mentioned in block b1, e2 in b2.
-	if err := tagRepo.ReplaceMentions(ctx, artID, []coreservice.MentionRef{
+	if err := tagRepo.ReplaceMentions(ctx, artID, []entitydomain.MentionRef{
 		{EntityID: e1.ID, BlockID: "b1", Surface: "Mco"},
 		{EntityID: e2.ID, BlockID: "b2", Surface: "Pco"},
 	}); err != nil {
@@ -195,7 +194,7 @@ func TestEntityTag_ReplaceMentions(t *testing.T) {
 	}
 
 	// Re-sync with only e1: e2's mention drops, e1's tag stays.
-	if err := tagRepo.ReplaceMentions(ctx, artID, []coreservice.MentionRef{
+	if err := tagRepo.ReplaceMentions(ctx, artID, []entitydomain.MentionRef{
 		{EntityID: e1.ID, BlockID: "b1", Surface: "Mco"},
 	}); err != nil {
 		t.Fatalf("replace mentions 2: %v", err)
@@ -237,7 +236,7 @@ func TestEntityTag_CreateEntityDedup(t *testing.T) {
 
 	tag := uuid.NewString()[:8]
 	name := "Dedupco" + tag
-	key := entities.Normalize(name)
+	key := entitydomain.Normalize(name)
 
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM entities WHERE normalized_key = $1`, key)
@@ -299,18 +298,18 @@ func TestEntityTag_AliasAwareSearch(t *testing.T) {
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO entities (scope, kind, canonical_name, normalized_key)
 		VALUES ('shared', 'org', $1, $2) RETURNING id::text
-	`, rootName, entities.Normalize(rootName)).Scan(&rootID); err != nil {
+	`, rootName, entitydomain.Normalize(rootName)).Scan(&rootID); err != nil {
 		t.Fatalf("seed root entity: %v", err)
 	}
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO entities (scope, kind, canonical_name, normalized_key, canonical_root_id)
 		VALUES ('shared', 'org', $1, $2, $3::uuid) RETURNING id::text
-	`, mergedName, entities.Normalize(mergedName), rootID).Scan(&mergedID); err != nil {
+	`, mergedName, entitydomain.Normalize(mergedName), rootID).Scan(&mergedID); err != nil {
 		t.Fatalf("seed merged entity: %v", err)
 	}
 	if _, err := pool.Exec(ctx, `
 		INSERT INTO entity_aliases (entity_id, surface, normalized) VALUES ($1::uuid, $2, $3)
-	`, rootID, aliasSurface, entities.Normalize(aliasSurface)); err != nil {
+	`, rootID, aliasSurface, entitydomain.Normalize(aliasSurface)); err != nil {
 		t.Fatalf("seed alias: %v", err)
 	}
 	t.Cleanup(func() {
@@ -390,7 +389,7 @@ func TestEntityTag_PlaceholderCreate(t *testing.T) {
 	})
 
 	// 1. Miss → placeholder minted, canonical alias seeded.
-	first, err := tagRepo.CreateEntity(ctx, "other", freshName, entities.Normalize(freshName))
+	first, err := tagRepo.CreateEntity(ctx, "other", freshName, entitydomain.Normalize(freshName))
 	if err != nil {
 		t.Fatalf("create placeholder: %v", err)
 	}
@@ -400,7 +399,7 @@ func TestEntityTag_PlaceholderCreate(t *testing.T) {
 	var aliasCount int
 	if err := pool.QueryRow(ctx,
 		`SELECT count(*) FROM entity_aliases WHERE entity_id = $1::uuid AND normalized = $2`,
-		first.ID, entities.Normalize(freshName)).Scan(&aliasCount); err != nil {
+		first.ID, entitydomain.Normalize(freshName)).Scan(&aliasCount); err != nil {
 		t.Fatalf("alias count: %v", err)
 	}
 	if aliasCount != 1 {
@@ -408,7 +407,7 @@ func TestEntityTag_PlaceholderCreate(t *testing.T) {
 	}
 
 	// 2. Repeat create reuses the placeholder (no dupe one level up).
-	again, err := tagRepo.CreateEntity(ctx, "other", freshName, entities.Normalize(freshName))
+	again, err := tagRepo.CreateEntity(ctx, "other", freshName, entitydomain.Normalize(freshName))
 	if err != nil {
 		t.Fatalf("repeat create: %v", err)
 	}
@@ -421,15 +420,15 @@ func TestEntityTag_PlaceholderCreate(t *testing.T) {
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO entities (scope, kind, canonical_name, normalized_key, trust_tier)
 		VALUES ('shared', 'org', $1, $2, 'believed') RETURNING id::text
-	`, aliasedName, entities.Normalize(aliasedName)).Scan(&aliasedID); err != nil {
+	`, aliasedName, entitydomain.Normalize(aliasedName)).Scan(&aliasedID); err != nil {
 		t.Fatalf("seed aliased entity: %v", err)
 	}
 	if _, err := pool.Exec(ctx, `
 		INSERT INTO entity_aliases (entity_id, surface, normalized) VALUES ($1::uuid, $2, $3)
-	`, aliasedID, aliasSurface, entities.Normalize(aliasSurface)); err != nil {
+	`, aliasedID, aliasSurface, entitydomain.Normalize(aliasSurface)); err != nil {
 		t.Fatalf("seed alias: %v", err)
 	}
-	viaAlias, err := tagRepo.CreateEntity(ctx, "other", aliasSurface, entities.Normalize(aliasSurface))
+	viaAlias, err := tagRepo.CreateEntity(ctx, "other", aliasSurface, entitydomain.Normalize(aliasSurface))
 	if err != nil {
 		t.Fatalf("create via alias: %v", err)
 	}
@@ -442,16 +441,16 @@ func TestEntityTag_PlaceholderCreate(t *testing.T) {
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO entities (scope, kind, canonical_name, normalized_key, trust_tier)
 		VALUES ('shared', 'org', $1, $2, 'believed') RETURNING id::text
-	`, rootName, entities.Normalize(rootName)).Scan(&rootID); err != nil {
+	`, rootName, entitydomain.Normalize(rootName)).Scan(&rootID); err != nil {
 		t.Fatalf("seed root: %v", err)
 	}
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO entities (scope, kind, canonical_name, normalized_key, canonical_root_id)
 		VALUES ('shared', 'org', $1, $2, $3::uuid) RETURNING id::text
-	`, mergedName, entities.Normalize(mergedName), rootID).Scan(&mergedID); err != nil {
+	`, mergedName, entitydomain.Normalize(mergedName), rootID).Scan(&mergedID); err != nil {
 		t.Fatalf("seed merged: %v", err)
 	}
-	viaMerged, err := tagRepo.CreateEntity(ctx, "other", mergedName, entities.Normalize(mergedName))
+	viaMerged, err := tagRepo.CreateEntity(ctx, "other", mergedName, entitydomain.Normalize(mergedName))
 	if err != nil {
 		t.Fatalf("create via merged name: %v", err)
 	}

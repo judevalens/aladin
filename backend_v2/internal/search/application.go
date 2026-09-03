@@ -7,8 +7,8 @@ import (
 	"sync"
 
 	"aladin/backend_v2/internal/artifactref"
+	"aladin/backend_v2/internal/entities"
 	"aladin/backend_v2/internal/instrument"
-	coreservice "aladin/backend_v2/internal/service"
 )
 
 // Global search — one federating endpoint behind the ⌘K command box. Federation, section
@@ -160,9 +160,9 @@ func (p InstrumentSearchProvider) Search(ctx context.Context, _ /*userID*/, quer
 
 // EntitySearchProvider federates entity search into the Entities section; company/person keep
 // their kind, everything else collapses to a generic "entity".
-type EntitySearchProvider struct{ svc coreservice.EntityTagService }
+type EntitySearchProvider struct{ svc entities.EntityTagService }
 
-func NewEntitySearchProvider(svc coreservice.EntityTagService) EntitySearchProvider {
+func NewEntitySearchProvider(svc entities.EntityTagService) EntitySearchProvider {
 	return EntitySearchProvider{svc: svc}
 }
 func (p EntitySearchProvider) Section() string { return SearchSectionEntity }

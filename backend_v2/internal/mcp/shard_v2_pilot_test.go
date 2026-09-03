@@ -20,6 +20,7 @@ import (
 	"aladin/backend_v2/internal/dbtest"
 	"aladin/backend_v2/internal/docsurface"
 	"aladin/backend_v2/internal/document"
+	"aladin/backend_v2/internal/entities"
 	"aladin/backend_v2/internal/feed"
 	"aladin/backend_v2/internal/file"
 	"aladin/backend_v2/internal/graph"
@@ -375,10 +376,10 @@ func (emptyAPIDependencies) Relationships() relationship.RelationshipService { r
 func (emptyAPIDependencies) Research() research.ResearchService              { return nil }
 func (emptyAPIDependencies) Documents() document.DocumentService             { return nil }
 func (emptyAPIDependencies) GraphPane() graphpane.GraphPaneService           { return nil }
-func (emptyAPIDependencies) EntityTags() service.EntityTagService            { return nil }
+func (emptyAPIDependencies) EntityTags() entities.EntityTagService           { return nil }
 func (emptyAPIDependencies) ArtifactRefs() artifactref.ArtifactRefService    { return nil }
-func (emptyAPIDependencies) EntityContext() service.EntityContextService     { return nil }
-func (emptyAPIDependencies) EntityList() service.EntityListService           { return nil }
+func (emptyAPIDependencies) EntityContext() entities.EntityContextService    { return nil }
+func (emptyAPIDependencies) EntityList() entities.EntityListService          { return nil }
 func (emptyAPIDependencies) Instruments() instrument.InstrumentService       { return nil }
 func (emptyAPIDependencies) Watchlist() watchlist.Service                    { return nil }
 func (emptyAPIDependencies) ReadingPositions() readingposition.Service       { return nil }
