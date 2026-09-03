@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
-	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/document"
 )
 
 // sweeper.go — what drives extraction.
@@ -24,8 +24,8 @@ import (
 
 // Store is the persistence the sweeper needs (satisfied by *repo.PostgresDocumentRepository).
 type Store interface {
-	ClaimPending(ctx context.Context, limit int) ([]coreservice.PendingDocument, error)
-	SaveResult(ctx context.Context, artifactID, userID string, result coreservice.DocumentResult) error
+	ClaimPending(ctx context.Context, limit int) ([]document.PendingDocument, error)
+	SaveResult(ctx context.Context, artifactID, userID string, result document.DocumentResult) error
 }
 
 // Sweeper claims un-ingested documents and extracts them.
@@ -90,9 +90,9 @@ func (s *Sweeper) Sweep(ctx context.Context) (int, error) {
 // two extractors would mean resolving a region's box against text from a different
 // coordinate model, turning an exact page anchor into an inference — and §13d spends the
 // entire error budget on boundaries, none on anchors.
-func (s *Sweeper) extract(ctx context.Context, item coreservice.PendingDocument) coreservice.DocumentResult {
+func (s *Sweeper) extract(ctx context.Context, item document.PendingDocument) document.DocumentResult {
 	if !isPDF(item) {
-		return coreservice.DocumentResult{
+		return document.DocumentResult{
 			Status: string(StatusUnsupported),
 			Error:  fmt.Sprintf("no extractor for %q", item.MIMEType),
 		}
@@ -103,22 +103,22 @@ func (s *Sweeper) extract(ctx context.Context, item coreservice.PendingDocument)
 		// A missing venv, a crashed script, a timeout, unreadable output — each already
 		// carries a message a human can act on, so surface it verbatim rather than
 		// flattening it to "ingestion failed".
-		return coreservice.DocumentResult{Status: string(StatusFailed), Error: err.Error()}
+		return document.DocumentResult{Status: string(StatusFailed), Error: err.Error()}
 	}
 	doc := layout.ToDocument()
 
-	sections := make([]coreservice.DocumentSection, 0, len(doc.Sections))
+	sections := make([]document.DocumentSection, 0, len(doc.Sections))
 	for _, section := range doc.Sections {
-		sections = append(sections, coreservice.DocumentSection(section))
+		sections = append(sections, document.DocumentSection(section))
 	}
-	pages := make([]coreservice.DocumentPage, 0, len(doc.Pages))
+	pages := make([]document.DocumentPage, 0, len(doc.Pages))
 	for _, page := range doc.Pages {
-		pages = append(pages, coreservice.DocumentPage(page))
+		pages = append(pages, document.DocumentPage(page))
 	}
-	regions := make([]coreservice.DocumentRegion, 0)
+	regions := make([]document.DocumentRegion, 0)
 	for _, page := range layout.Pages {
 		for ordinal, region := range page.Regions {
-			regions = append(regions, coreservice.DocumentRegion{
+			regions = append(regions, document.DocumentRegion{
 				Page:       page.Page,
 				Ordinal:    ordinal,
 				Class:      region.Class,
@@ -132,9 +132,9 @@ func (s *Sweeper) extract(ctx context.Context, item coreservice.PendingDocument)
 	// Regions become a navigable tree (§11). Flattened depth-first, with ParentID
 	// carrying the parent's INDEX in this slice — the repo swaps each index for the row
 	// id it just inserted, which works precisely because parents come first.
-	chunks := make([]coreservice.DocumentChunk, 0)
+	chunks := make([]document.DocumentChunk, 0)
 	FlattenChunks(BuildChunks(regions), func(chunk Chunk, parentIndex int) int {
-		entry := coreservice.DocumentChunk{
+		entry := document.DocumentChunk{
 			Ordinal: chunk.Ordinal, Depth: chunk.Depth, Kind: string(chunk.Kind),
 			Title: chunk.Title, PageFrom: chunk.PageFrom, PageTo: chunk.PageTo, Text: chunk.Text,
 		}
@@ -146,7 +146,7 @@ func (s *Sweeper) extract(ctx context.Context, item coreservice.PendingDocument)
 		return len(chunks) - 1
 	})
 
-	return coreservice.DocumentResult{
+	return document.DocumentResult{
 		Status:    string(doc.Status),
 		Error:     doc.Error,
 		PageCount: doc.PageCount,
@@ -158,7 +158,7 @@ func (s *Sweeper) extract(ctx context.Context, item coreservice.PendingDocument)
 	}
 }
 
-func isPDF(item coreservice.PendingDocument) bool {
+func isPDF(item document.PendingDocument) bool {
 	if strings.EqualFold(item.MIMEType, "application/pdf") {
 		return true
 	}

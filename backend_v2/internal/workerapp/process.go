@@ -18,6 +18,7 @@ import (
 	"aladin/backend_v2/internal/app"
 	"aladin/backend_v2/internal/config"
 	"aladin/backend_v2/internal/db"
+	documentpostgres "aladin/backend_v2/internal/document/postgres"
 	"aladin/backend_v2/internal/entities"
 	"aladin/backend_v2/internal/graph"
 	"aladin/backend_v2/internal/ingestion"
@@ -135,7 +136,7 @@ func Run() {
 		slog.Warn("ingestion: layout tool unavailable", "component", "ingestion", "err", err)
 	}
 	docSweeper := ingestion.NewSweeper(
-		repo.NewDocumentPostgres(pool, app.NewArtifactFileStore()), docSegmenter, slog.Default())
+		documentpostgres.NewDocumentPostgres(pool, app.NewArtifactFileStore()), docSegmenter, slog.Default())
 	lifecycle.Add("worker.ingestion", func(ctx context.Context) {
 		ticker := time.NewTicker(15 * time.Second)
 		defer ticker.Stop()

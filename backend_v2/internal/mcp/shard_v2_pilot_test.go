@@ -18,6 +18,7 @@ import (
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/dbtest"
 	"aladin/backend_v2/internal/docsurface"
+	"aladin/backend_v2/internal/document"
 	"aladin/backend_v2/internal/feed"
 	"aladin/backend_v2/internal/graphpane"
 	"aladin/backend_v2/internal/insights"
@@ -365,7 +366,7 @@ func (emptyAPIDependencies) ShardKV() service.ShardKVService                    
 func (emptyAPIDependencies) ShardBridge() service.ShardBridgeService              { return nil }
 func (emptyAPIDependencies) Relationships() relationship.RelationshipService      { return nil }
 func (emptyAPIDependencies) Research() research.ResearchService                   { return nil }
-func (emptyAPIDependencies) Documents() service.DocumentService                   { return nil }
+func (emptyAPIDependencies) Documents() document.DocumentService                  { return nil }
 func (emptyAPIDependencies) GraphPane() graphpane.GraphPaneService                { return nil }
 func (emptyAPIDependencies) EntityTags() service.EntityTagService                 { return nil }
 func (emptyAPIDependencies) ArtifactRefs() artifactref.ArtifactRefService         { return nil }

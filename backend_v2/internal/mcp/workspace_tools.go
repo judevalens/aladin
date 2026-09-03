@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"aladin/backend_v2/internal/blocknote"
+	"aladin/backend_v2/internal/document"
 	"aladin/backend_v2/internal/insights"
 	"aladin/backend_v2/internal/instrument"
 	"aladin/backend_v2/internal/market"
@@ -50,7 +51,7 @@ type workspaceToolServer struct {
 	marketInfo  market.MarketInfoService
 	alerts      alert.AlertService
 	instruments instrument.InstrumentService
-	documents   service.DocumentService
+	documents   document.DocumentService
 }
 
 func registerWorkspaceTools(server *sdkmcp.Server, t workspaceToolServer) {
@@ -492,11 +493,11 @@ func (t workspaceToolServer) getArtifact(ctx context.Context, _ *sdkmcp.CallTool
 
 // flattenChunkTitles walks the recovered tree into the same levelled sequence an
 // embedded outline would produce, so both sources render identically to the model.
-func flattenChunkTitles(chunks []service.DocumentChunk, depth int) []service.DocumentSection {
-	out := []service.DocumentSection{}
+func flattenChunkTitles(chunks []document.DocumentChunk, depth int) []document.DocumentSection {
+	out := []document.DocumentSection{}
 	for _, chunk := range chunks {
 		if chunk.Kind == "section" && strings.TrimSpace(chunk.Title) != "" {
-			out = append(out, service.DocumentSection{Title: chunk.Title, Level: depth, Page: chunk.PageFrom})
+			out = append(out, document.DocumentSection{Title: chunk.Title, Level: depth, Page: chunk.PageFrom})
 		}
 		// Blocks are leaves with no heading; descend past them for nested sections.
 		next := depth
@@ -516,7 +517,7 @@ const maxOutlineEntries = 60
 // capOutline keeps the top of the tree, which is the part you navigate by, and says so
 // when it drops the rest rather than silently presenting a partial contents page as
 // complete.
-func capOutline(sections []service.DocumentSection) ([]documentTOCOut, string) {
+func capOutline(sections []document.DocumentSection) ([]documentTOCOut, string) {
 	if len(sections) <= maxOutlineEntries {
 		out := make([]documentTOCOut, 0, len(sections))
 		for _, section := range sections {
@@ -556,7 +557,7 @@ const maxReadPages = 25
 
 // joinPages renders pages as text with [pN] markers, up to a character budget. The
 // markers are what let a model cite "p. 42" instead of gesturing at the document.
-func joinPages(pages []service.DocumentPage, budget int) (string, bool) {
+func joinPages(pages []document.DocumentPage, budget int) (string, bool) {
 	var builder strings.Builder
 	truncated := false
 	for _, page := range pages {

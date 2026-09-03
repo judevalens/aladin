@@ -7,6 +7,8 @@ import (
 	"aladin/backend_v2/internal/artifactref"
 	artifactrefhttp "aladin/backend_v2/internal/artifactref/httptransport"
 	"aladin/backend_v2/internal/docsurface"
+	"aladin/backend_v2/internal/document"
+	documenthttp "aladin/backend_v2/internal/document/httptransport"
 	"aladin/backend_v2/internal/feed"
 	feedhttp "aladin/backend_v2/internal/feed/httptransport"
 	"aladin/backend_v2/internal/graphpane"
@@ -81,7 +83,7 @@ type Dependencies interface {
 	ShardBridge() coreservice.ShardBridgeService
 	Relationships() relationship.RelationshipService
 	Research() research.ResearchService
-	Documents() coreservice.DocumentService
+	Documents() document.DocumentService
 	GraphPane() graphpane.GraphPaneService
 	EntityTags() coreservice.EntityTagService
 	ArtifactRefs() artifactref.ArtifactRefService
@@ -143,7 +145,7 @@ func NewWithDependencies(addr string, deps Dependencies) *Server {
 	relationshiphttp.Register(mux, deps.Relationships())
 	graphpanehttp.Register(mux, deps.GraphPane())
 	researchhttp.Register(mux, deps.Research())
-	s.registerDocumentRoutes(mux)
+	documenthttp.Register(mux, deps.Documents())
 	s.registerEntityTagRoutes(mux)
 	instrumenthttp.Register(mux, deps.Instruments(), deps.Bars())
 	searchhttp.Register(mux, deps.Search())

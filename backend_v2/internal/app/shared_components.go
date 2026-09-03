@@ -14,6 +14,8 @@ import (
 	"aladin/backend_v2/internal/config"
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/docsurface"
+	"aladin/backend_v2/internal/document"
+	documentpostgres "aladin/backend_v2/internal/document/postgres"
 	"aladin/backend_v2/internal/entities"
 	"aladin/backend_v2/internal/insights"
 	insightspostgres "aladin/backend_v2/internal/insights/postgres"
@@ -52,7 +54,7 @@ type sharedComponents struct {
 	shardGraphQL     coreservice.ShardGraphQLService
 	shardReleases    coreservice.ShardReleaseService
 	shardBridge      coreservice.ShardBridgeService
-	documents        coreservice.DocumentService
+	documents        document.DocumentService
 	entityTags       coreservice.EntityTagService
 	artifactRefs     artifactref.ArtifactRefService
 	entityContext    coreservice.EntityContextService
@@ -200,7 +202,7 @@ func buildSharedComponents(pool *pgxpool.Pool, dataVolumePath string) sharedComp
 		shardGraphQL:     graphQLSvc,
 		shardReleases:    releaseSvc,
 		shardBridge:      shardBridge,
-		documents:        coreservice.NewDocumentService(repo.NewDocumentPostgres(pool, artifactFiles)),
+		documents:        document.NewDocumentService(documentpostgres.NewDocumentPostgres(pool, artifactFiles)),
 		entityTags:       entityTagsSvc,
 		artifactRefs:     artifactRefsSvc,
 		entityContext:    entityContextSvc,

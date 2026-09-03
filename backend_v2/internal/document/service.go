@@ -1,8 +1,10 @@
-package service
+package document
 
 import (
 	"context"
 	"strings"
+
+	coreservice "aladin/backend_v2/internal/service"
 )
 
 // documents.go — the read/write contract for ingested documents (design/INGESTION_PRD.md).
@@ -134,41 +136,41 @@ func NewDocumentService(repo DocumentRepository) DocumentService {
 }
 
 func (s *documentService) Get(ctx context.Context, artifactID string, withPages bool) (Document, error) {
-	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
+	if err := coreservice.RequireScope(ctx, coreservice.ScopeArtifactsRead); err != nil {
 		return Document{}, err
 	}
 	if strings.TrimSpace(artifactID) == "" {
-		return Document{}, ErrNotFound
+		return Document{}, coreservice.ErrNotFound
 	}
 	return s.repo.GetDocument(ctx, artifactID, withPages)
 }
 
 func (s *documentService) Pages(ctx context.Context, artifactID string, from, to int) ([]DocumentPage, error) {
-	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
+	if err := coreservice.RequireScope(ctx, coreservice.ScopeArtifactsRead); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(artifactID) == "" {
-		return nil, ErrNotFound
+		return nil, coreservice.ErrNotFound
 	}
 	return s.repo.GetPages(ctx, artifactID, from, to)
 }
 
 func (s *documentService) Regions(ctx context.Context, artifactID, class string) ([]DocumentRegion, error) {
-	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
+	if err := coreservice.RequireScope(ctx, coreservice.ScopeArtifactsRead); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(artifactID) == "" {
-		return nil, ErrNotFound
+		return nil, coreservice.ErrNotFound
 	}
 	return s.repo.GetRegions(ctx, artifactID, strings.TrimSpace(class))
 }
 
 func (s *documentService) Outline(ctx context.Context, artifactID string) ([]DocumentChunk, error) {
-	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
+	if err := coreservice.RequireScope(ctx, coreservice.ScopeArtifactsRead); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(artifactID) == "" {
-		return nil, ErrNotFound
+		return nil, coreservice.ErrNotFound
 	}
 	// Text omitted: an outline is for navigating, and carrying every chunk's body would
 	// make "show me the structure" as expensive as reading the document.
@@ -176,14 +178,14 @@ func (s *documentService) Outline(ctx context.Context, artifactID string) ([]Doc
 }
 
 func (s *documentService) Search(ctx context.Context, artifactID, query string, limit int) ([]DocumentHit, error) {
-	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
+	if err := coreservice.RequireScope(ctx, coreservice.ScopeArtifactsRead); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(artifactID) == "" {
-		return nil, ErrNotFound
+		return nil, coreservice.ErrNotFound
 	}
 	if strings.TrimSpace(query) == "" {
-		return nil, BadRequest("query is required")
+		return nil, coreservice.BadRequest("query is required")
 	}
 	if limit <= 0 || limit > 25 {
 		limit = 8

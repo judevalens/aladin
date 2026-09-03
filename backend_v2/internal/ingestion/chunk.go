@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/document"
 )
 
 // chunk.go — regions become a navigable tree (design/INGESTION_PRD.md §11).
@@ -90,10 +90,10 @@ func headingDepth(title string) int {
 // Regions must arrive in reading order (page asc, then ordinal), which is how they are
 // stored. Anything without text contributes its page span but no words — a figure is part
 // of the section it sits in even though it has nothing to quote.
-func BuildChunks(regions []coreservice.DocumentRegion) []Chunk {
+func BuildChunks(regions []document.DocumentRegion) []Chunk {
 	root := &Chunk{Kind: ChunkSection, Depth: -1}
 	stack := []*Chunk{root}
-	var body []coreservice.DocumentRegion
+	var body []document.DocumentRegion
 
 	// flush turns the accumulated body regions into leaves under the open section,
 	// splitting on region boundaries once a leaf would exceed the target.
@@ -102,7 +102,7 @@ func BuildChunks(regions []coreservice.DocumentRegion) []Chunk {
 			return
 		}
 		parent := stack[len(stack)-1]
-		var current []coreservice.DocumentRegion
+		var current []document.DocumentRegion
 		size := 0
 		emit := func() {
 			if len(current) == 0 {
@@ -164,7 +164,7 @@ func BuildChunks(regions []coreservice.DocumentRegion) []Chunk {
 
 // leafFrom builds a block from contiguous regions. Its span is the min/max page of what
 // went into it — measured, not computed.
-func leafFrom(regions []coreservice.DocumentRegion, depth, ordinal int) Chunk {
+func leafFrom(regions []document.DocumentRegion, depth, ordinal int) Chunk {
 	chunk := Chunk{Ordinal: ordinal, Depth: depth, Kind: ChunkBlock, PageFrom: regions[0].Page, PageTo: regions[0].Page}
 	var parts []string
 	for _, region := range regions {

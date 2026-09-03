@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"aladin/backend_v2/internal/document"
 	"aladin/backend_v2/internal/service"
 )
 
@@ -12,14 +13,14 @@ import (
 // returned a filename, so an agent concluded the document was empty. RESEARCH_SURFACE_PRD
 // §3 #9 wants captured material to be something agents can run over.
 
-type fakeDocumentService struct{ doc service.Document }
+type fakeDocumentService struct{ doc document.Document }
 
-func (f fakeDocumentService) Get(_ context.Context, _ string, _ bool) (service.Document, error) {
+func (f fakeDocumentService) Get(_ context.Context, _ string, _ bool) (document.Document, error) {
 	return f.doc, nil
 }
 
-func (f fakeDocumentService) Pages(_ context.Context, _ string, from, to int) ([]service.DocumentPage, error) {
-	out := []service.DocumentPage{}
+func (f fakeDocumentService) Pages(_ context.Context, _ string, from, to int) ([]document.DocumentPage, error) {
+	out := []document.DocumentPage{}
 	for _, page := range f.doc.Pages {
 		if (from == 0 || page.Page >= from) && (to == 0 || page.Page <= to) {
 			out = append(out, page)
@@ -28,19 +29,19 @@ func (f fakeDocumentService) Pages(_ context.Context, _ string, from, to int) ([
 	return out, nil
 }
 
-func (f fakeDocumentService) Regions(_ context.Context, _, _ string) ([]service.DocumentRegion, error) {
+func (f fakeDocumentService) Regions(_ context.Context, _, _ string) ([]document.DocumentRegion, error) {
 	return nil, nil
 }
 
-func (f fakeDocumentService) Outline(_ context.Context, _ string) ([]service.DocumentChunk, error) {
+func (f fakeDocumentService) Outline(_ context.Context, _ string) ([]document.DocumentChunk, error) {
 	return nil, nil
 }
 
-func (f fakeDocumentService) Search(_ context.Context, _, query string, _ int) ([]service.DocumentHit, error) {
-	out := []service.DocumentHit{}
+func (f fakeDocumentService) Search(_ context.Context, _, query string, _ int) ([]document.DocumentHit, error) {
+	out := []document.DocumentHit{}
 	for _, page := range f.doc.Pages {
 		if strings.Contains(strings.ToLower(page.Text), strings.ToLower(query)) {
-			out = append(out, service.DocumentHit{Page: page.Page, Snippet: page.Text, Score: 1})
+			out = append(out, document.DocumentHit{Page: page.Page, Snippet: page.Text, Score: 1})
 		}
 	}
 	return out, nil
@@ -57,15 +58,15 @@ func (f fakeArtifactGetter) Get(_ context.Context, _ string) (service.ArtifactRe
 	return f.art, nil
 }
 
-func readyDoc() service.Document {
-	return service.Document{
+func readyDoc() document.Document {
+	return document.Document{
 		Status:    "ready",
 		PageCount: 3,
-		Sections: []service.DocumentSection{
+		Sections: []document.DocumentSection{
 			{Title: "Introduction", Level: 0, Page: 1},
 			{Title: "Method", Level: 1, Page: 2},
 		},
-		Pages: []service.DocumentPage{
+		Pages: []document.DocumentPage{
 			{Page: 1, Text: "Post-earnings drift persists in semiconductors."},
 			{Page: 2, Text: "We sort by surprise decile and hold sixty days."},
 			{Page: 3, Text: "Results are robust to transaction costs."},
@@ -130,7 +131,7 @@ func TestGetArtifact_ReturnsOutlineButNeverText(t *testing.T) {
 func TestGetArtifact_ScanTellsTheAgentItCannotRead(t *testing.T) {
 	tools := workspaceToolServer{
 		artifacts: fakeArtifactGetter{art: service.ArtifactResponse{ID: "a2", Title: "Scanned book", Type: "file"}},
-		documents: fakeDocumentService{doc: service.Document{
+		documents: fakeDocumentService{doc: document.Document{
 			Status:    "unsupported",
 			Error:     "no extractable text layer (likely a scan — needs OCR first)",
 			PageCount: 400,
@@ -190,7 +191,7 @@ func TestReadDocument_ReadsARange(t *testing.T) {
 func TestReadDocument_RefusesAnUnreadableDocument(t *testing.T) {
 	tools := workspaceToolServer{
 		artifacts: fakeArtifactGetter{art: service.ArtifactResponse{ID: "a2", Title: "Scan", Type: "file"}},
-		documents: fakeDocumentService{doc: service.Document{Status: "unsupported", Error: "needs OCR first"}},
+		documents: fakeDocumentService{doc: document.Document{Status: "unsupported", Error: "needs OCR first"}},
 	}
 	if _, _, err := tools.readDocument(context.Background(), nil, readDocumentInput{ArtifactID: "a2"}); err == nil {
 		t.Fatal("reading an unreadable document must error, not return empty text")
@@ -200,18 +201,18 @@ func TestReadDocument_RefusesAnUnreadableDocument(t *testing.T) {
 // The outline is bounded too. A 400-page book can carry hundreds of bookmarks, and an
 // outline that fills the context is the same mistake as text that does — just quieter.
 func TestCapOutline_KeepsTheTopAndSaysWhenItTrims(t *testing.T) {
-	small := []service.DocumentSection{{Title: "One", Page: 1}, {Title: "Two", Page: 9}}
+	small := []document.DocumentSection{{Title: "One", Page: 1}, {Title: "Two", Page: 9}}
 	got, note := capOutline(small)
 	if len(got) != 2 || note != "" {
 		t.Fatalf("a small outline must pass through untouched: %d entries, note %q", len(got), note)
 	}
 
 	// 20 chapters, each with 20 subsections: 420 entries, far past the cap.
-	var big []service.DocumentSection
+	var big []document.DocumentSection
 	for chapter := 1; chapter <= 20; chapter++ {
-		big = append(big, service.DocumentSection{Title: "Chapter", Level: 0, Page: chapter * 10})
+		big = append(big, document.DocumentSection{Title: "Chapter", Level: 0, Page: chapter * 10})
 		for sub := 0; sub < 20; sub++ {
-			big = append(big, service.DocumentSection{Title: "Section", Level: 1, Page: chapter*10 + sub})
+			big = append(big, document.DocumentSection{Title: "Section", Level: 1, Page: chapter*10 + sub})
 		}
 	}
 	got, note = capOutline(big)
@@ -275,7 +276,7 @@ func TestReadDocument_CapsTheSpan(t *testing.T) {
 	doc := readyDoc()
 	doc.PageCount = 500
 	for page := 4; page <= 500; page++ {
-		doc.Pages = append(doc.Pages, service.DocumentPage{Page: page, Text: "filler"})
+		doc.Pages = append(doc.Pages, document.DocumentPage{Page: page, Text: "filler"})
 	}
 	tools := workspaceToolServer{
 		artifacts: fakeArtifactGetter{art: service.ArtifactResponse{ID: "a1", Title: "Book", Type: "file"}},

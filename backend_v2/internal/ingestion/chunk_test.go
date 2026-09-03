@@ -4,11 +4,11 @@ import (
 	"strings"
 	"testing"
 
-	coreservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/document"
 )
 
-func region(page, ordinal int, class, text string) coreservice.DocumentRegion {
-	return coreservice.DocumentRegion{
+func region(page, ordinal int, class, text string) document.DocumentRegion {
+	return document.DocumentRegion{
 		Page: page, Ordinal: ordinal, Class: class, Text: text,
 		Bbox: []float64{0, 0, 100, 20}, Confidence: 0.9,
 	}
@@ -36,7 +36,7 @@ func TestHeadingDepth(t *testing.T) {
 }
 
 func TestBuildChunks_NestsByHeadingNumber(t *testing.T) {
-	chunks := BuildChunks([]coreservice.DocumentRegion{
+	chunks := BuildChunks([]document.DocumentRegion{
 		region(1, 0, "title", "1 Introduction"),
 		region(1, 1, "plain text", "Drift is persistent."),
 		region(2, 0, "title", "1.1 Prior work"),
@@ -73,7 +73,7 @@ func TestBuildChunks_NestsByHeadingNumber(t *testing.T) {
 // The anchor guarantee. §13d spends the whole error budget on boundaries and none here:
 // a section that claims the wrong pages produces a confident false citation.
 func TestBuildChunks_PageSpansAreObservedNotComputed(t *testing.T) {
-	chunks := BuildChunks([]coreservice.DocumentRegion{
+	chunks := BuildChunks([]document.DocumentRegion{
 		region(47, 0, "title", "3.2 Trend-Based Regression"),
 		region(47, 1, "plain text", "Setup."),
 		region(48, 0, "plain text", "Continued."),
@@ -114,7 +114,7 @@ func TestBuildChunks_PageSpansAreObservedNotComputed(t *testing.T) {
 // `abandon` earns its keep here: running heads and library stamps must not end up in text
 // an agent will later quote.
 func TestBuildChunks_DropsPageFurniture(t *testing.T) {
-	chunks := BuildChunks([]coreservice.DocumentRegion{
+	chunks := BuildChunks([]document.DocumentRegion{
 		region(1, 0, "abandon", "MASSACHUSETTS NS E OF TECHNOLOGY JUN 252008 LIBRARIES"),
 		region(1, 1, "title", "1 Introduction"),
 		region(1, 2, "plain text", "The real content."),
@@ -133,7 +133,7 @@ func TestBuildChunks_DropsPageFurniture(t *testing.T) {
 // A document with no headings must still chunk — most PDFs have no outline, and a flat
 // tree is navigable where a failure is not.
 func TestBuildChunks_HeadinglessDocumentStillChunks(t *testing.T) {
-	var regions []coreservice.DocumentRegion
+	var regions []document.DocumentRegion
 	for page := 1; page <= 6; page++ {
 		regions = append(regions, region(page, 0, "plain text", strings.Repeat("prose ", 300)))
 	}
@@ -155,7 +155,7 @@ func TestBuildChunks_HeadinglessDocumentStillChunks(t *testing.T) {
 
 func TestBuildChunks_SplitsOnRegionBoundaries(t *testing.T) {
 	// Each region is well under the target, but together they exceed it.
-	var regions []coreservice.DocumentRegion
+	var regions []document.DocumentRegion
 	for i := 0; i < 8; i++ {
 		regions = append(regions, region(1, i, "plain text", strings.Repeat("x", 800)))
 	}
@@ -174,7 +174,7 @@ func TestBuildChunks_SplitsOnRegionBoundaries(t *testing.T) {
 
 // Figures have no text but are part of the section they sit in.
 func TestBuildChunks_FigureContributesItsPageNotItsWords(t *testing.T) {
-	chunks := BuildChunks([]coreservice.DocumentRegion{
+	chunks := BuildChunks([]document.DocumentRegion{
 		region(10, 0, "title", "5 Results"),
 		region(10, 1, "plain text", "See the chart."),
 		region(11, 0, "figure", ""),
@@ -195,7 +195,7 @@ func TestBuildChunks_FigureContributesItsPageNotItsWords(t *testing.T) {
 
 // Persistence writes parents before children so the self-referencing key resolves.
 func TestFlattenChunks_ParentsComeFirst(t *testing.T) {
-	chunks := BuildChunks([]coreservice.DocumentRegion{
+	chunks := BuildChunks([]document.DocumentRegion{
 		region(1, 0, "title", "1 One"),
 		region(1, 1, "plain text", "body"),
 		region(2, 0, "title", "1.1 Nested"),

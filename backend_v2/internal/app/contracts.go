@@ -4,6 +4,7 @@ import (
 	"aladin/backend_v2/internal/alert"
 	"aladin/backend_v2/internal/artifactref"
 	"aladin/backend_v2/internal/changefeed"
+	"aladin/backend_v2/internal/document"
 	"aladin/backend_v2/internal/feed"
 	"aladin/backend_v2/internal/graphpane"
 	"aladin/backend_v2/internal/insights"
@@ -49,7 +50,7 @@ type APIComponents interface {
 	ShardBridge() coreservice.ShardBridgeService
 	Relationships() relationship.RelationshipService
 	Research() research.ResearchService
-	Documents() coreservice.DocumentService
+	Documents() document.DocumentService
 	GraphPane() graphpane.GraphPaneService
 	EntityTags() coreservice.EntityTagService
 	ArtifactRefs() artifactref.ArtifactRefService
@@ -84,7 +85,7 @@ type MCPComponents interface {
 	ShardReleases() coreservice.ShardReleaseService
 	ShardCatalog() coreservice.ShardCatalogService
 	ShardBridge() coreservice.ShardBridgeService
-	Documents() coreservice.DocumentService
+	Documents() document.DocumentService
 	EntityTags() coreservice.EntityTagService
 	ArtifactRefs() artifactref.ArtifactRefService
 	EntityContext() coreservice.EntityContextService

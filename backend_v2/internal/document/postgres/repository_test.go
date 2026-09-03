@@ -1,4 +1,4 @@
-package repo
+package postgres_test
 
 import (
 	"context"
@@ -9,13 +9,45 @@ import (
 	"testing"
 	"time"
 
+	"aladin/backend_v2/internal/db"
+	"aladin/backend_v2/internal/dbtest"
+	"aladin/backend_v2/internal/document"
+	documentpostgres "aladin/backend_v2/internal/document/postgres"
 	"aladin/backend_v2/internal/ingestion"
+	"aladin/backend_v2/internal/repo"
 	artifactservice "aladin/backend_v2/internal/service"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// realSegmenter points at the repo's tool. Tests run from internal/repo/, so the paths
+func mustTestPool(ctx context.Context, t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	dsn := dbtest.RequireTestDSN(t)
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Skipf("no test database: %v", err)
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		t.Skipf("test database unreachable: %v", err)
+	}
+	if err := db.Migrate(ctx, pool); err != nil {
+		pool.Close()
+		t.Fatalf("migrate: %v", err)
+	}
+	return pool
+}
+
+func adminContext(userID string) context.Context {
+	return artifactservice.WithPrincipal(context.Background(), artifactservice.Principal{
+		UserID: userID, ActorType: artifactservice.ActorTypeUserSession, ActorID: userID,
+		Scopes: []string{artifactservice.ScopeArtifactsRead, artifactservice.ScopeArtifactsWrite},
+	})
+}
+
+// realSegmenter points at the repository's document-layout tool. Tests run from
+// internal/document/postgres, so the paths are explicit.
 // are explicit rather than relying on the worker's relative default.
 //
 // This deliberately exercises the REAL script: the whole point of the test is that
@@ -24,7 +56,7 @@ import (
 // machine without the tool still runs the rest of the suite.
 func realSegmenter(t *testing.T) *ingestion.PythonSegmenter {
 	t.Helper()
-	root := filepath.Join("..", "..", "..", "tools", "doclayout")
+	root := filepath.Join("..", "..", "..", "..", "tools", "doclayout")
 	seg := &ingestion.PythonSegmenter{
 		Python:  filepath.Join(root, ".venv", "bin", "python"),
 		Script:  filepath.Join(root, "segment.py"),
@@ -57,9 +89,9 @@ func TestIngestion_SweepEndToEnd(t *testing.T) {
 
 	// A real store rooted at a temp dir, holding a real PDF under a real storage key.
 	uploads := t.TempDir()
-	files := NewFilesystemArtifactStore(uploads, t.TempDir())
+	files := repo.NewFilesystemArtifactStore(uploads, t.TempDir())
 	storageKey := "file/" + artifactID + ".pdf"
-	source, err := os.ReadFile(filepath.Join("..", "ingestion", "testdata", "outlined.pdf"))
+	source, err := os.ReadFile(filepath.Join("..", "..", "ingestion", "testdata", "outlined.pdf"))
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
@@ -92,7 +124,7 @@ func TestIngestion_SweepEndToEnd(t *testing.T) {
 		_, _ = pool.Exec(bg, `DELETE FROM users WHERE id = $1::uuid`, userID)
 	})
 
-	docRepo := NewDocumentPostgres(pool, files)
+	docRepo := documentpostgres.NewDocumentPostgres(pool, files)
 	sweeper := ingestion.NewSweeper(docRepo, realSegmenter(t), slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
 
 	if _, err := sweeper.Sweep(ctx); err != nil {
@@ -210,7 +242,7 @@ func TestIngestion_UnreadableFileStillLandsTerminal(t *testing.T) {
 	ctx = adminContext(userID)
 
 	uploads := t.TempDir()
-	files := NewFilesystemArtifactStore(uploads, t.TempDir())
+	files := repo.NewFilesystemArtifactStore(uploads, t.TempDir())
 	if err := os.WriteFile(filepath.Join(uploads, artifactID+".pdf"), []byte("not a pdf at all"), 0o644); err != nil {
 		t.Fatalf("stage upload: %v", err)
 	}
@@ -239,7 +271,7 @@ func TestIngestion_UnreadableFileStillLandsTerminal(t *testing.T) {
 		_, _ = pool.Exec(bg, `DELETE FROM users WHERE id = $1::uuid`, userID)
 	})
 
-	docRepo := NewDocumentPostgres(pool, files)
+	docRepo := documentpostgres.NewDocumentPostgres(pool, files)
 	sweeper := ingestion.NewSweeper(docRepo, realSegmenter(t), slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
 	if _, err := sweeper.Sweep(ctx); err != nil {
 		t.Fatalf("sweep: %v", err)
@@ -277,8 +309,8 @@ func TestIngestion_ChunkTreeRoundTrip(t *testing.T) {
 	ctx = adminContext(userID)
 
 	uploads := t.TempDir()
-	files := NewFilesystemArtifactStore(uploads, t.TempDir())
-	source, err := os.ReadFile(filepath.Join("..", "ingestion", "testdata", "outlined.pdf"))
+	files := repo.NewFilesystemArtifactStore(uploads, t.TempDir())
+	source, err := os.ReadFile(filepath.Join("..", "..", "ingestion", "testdata", "outlined.pdf"))
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
@@ -309,7 +341,7 @@ func TestIngestion_ChunkTreeRoundTrip(t *testing.T) {
 		_, _ = pool.Exec(bg, `DELETE FROM users WHERE id = $1::uuid`, userID)
 	})
 
-	docRepo := NewDocumentPostgres(pool, files)
+	docRepo := documentpostgres.NewDocumentPostgres(pool, files)
 	sweeper := ingestion.NewSweeper(docRepo, realSegmenter(t),
 		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
 	if _, err := sweeper.Sweep(ctx); err != nil {
@@ -331,9 +363,9 @@ func TestIngestion_ChunkTreeRoundTrip(t *testing.T) {
 		artifactID).Scan(&pageCount); err != nil {
 		t.Fatalf("page count: %v", err)
 	}
-	var walk func(chunk artifactservice.DocumentChunk, parent *artifactservice.DocumentChunk)
+	var walk func(chunk document.DocumentChunk, parent *document.DocumentChunk)
 	seen := 0
-	walk = func(chunk artifactservice.DocumentChunk, parent *artifactservice.DocumentChunk) {
+	walk = func(chunk document.DocumentChunk, parent *document.DocumentChunk) {
 		seen++
 		if chunk.PageFrom < 1 || chunk.PageTo > pageCount {
 			t.Fatalf("chunk %q spans %d–%d, outside 1..%d", chunk.Title, chunk.PageFrom, chunk.PageTo, pageCount)

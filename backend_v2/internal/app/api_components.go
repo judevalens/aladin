@@ -9,6 +9,7 @@ import (
 	"aladin/backend_v2/internal/changefeed"
 	"aladin/backend_v2/internal/config"
 	"aladin/backend_v2/internal/copilotagent"
+	"aladin/backend_v2/internal/document"
 	"aladin/backend_v2/internal/feed"
 	feedpostgres "aladin/backend_v2/internal/feed/postgres"
 	"aladin/backend_v2/internal/graph"
@@ -184,7 +185,7 @@ func (c *APIProcess) ShardKV() coreservice.ShardKVService                      {
 func (c *APIProcess) ShardBridge() coreservice.ShardBridgeService              { return c.shardBridge }
 func (c *APIProcess) Relationships() relationship.RelationshipService          { return c.relationships }
 func (c *APIProcess) Research() research.ResearchService                       { return c.research }
-func (c *APIProcess) Documents() coreservice.DocumentService                   { return c.documents }
+func (c *APIProcess) Documents() document.DocumentService                      { return c.documents }
 func (c *APIProcess) GraphPane() graphpane.GraphPaneService                    { return c.graphPane }
 func (c *APIProcess) EntityTags() coreservice.EntityTagService                 { return c.entityTags }
 func (c *APIProcess) ArtifactRefs() artifactref.ArtifactRefService             { return c.artifactRefs }

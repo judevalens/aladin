@@ -1,11 +1,13 @@
-package repo
+package postgres
 
 import (
 	"context"
 	"errors"
 	"fmt"
 
-	artifactservice "aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/document"
+	"aladin/backend_v2/internal/repo"
+	coreservice "aladin/backend_v2/internal/service"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -28,13 +30,13 @@ func NewDocumentPostgres(pool *pgxpool.Pool, files ResourceResolver) *PostgresDo
 	return &PostgresDocumentRepository{pool: pool, files: files}
 }
 
-func (r *PostgresDocumentRepository) GetDocument(ctx context.Context, artifactID string, withPages bool) (artifactservice.Document, error) {
-	principal, err := artifactservice.RequirePrincipal(ctx)
+func (r *PostgresDocumentRepository) GetDocument(ctx context.Context, artifactID string, withPages bool) (document.Document, error) {
+	principal, err := coreservice.RequirePrincipal(ctx)
 	if err != nil {
-		return artifactservice.Document{}, err
+		return document.Document{}, err
 	}
 
-	doc := artifactservice.Document{ArtifactID: artifactID, Sections: []artifactservice.DocumentSection{}}
+	doc := document.Document{ArtifactID: artifactID, Sections: []document.DocumentSection{}}
 	var errText *string
 	err = r.pool.QueryRow(ctx, `
 		SELECT status, error, page_count, extractor
@@ -42,10 +44,10 @@ func (r *PostgresDocumentRepository) GetDocument(ctx context.Context, artifactID
 		 WHERE artifact_id = $1 AND user_id = $2::uuid
 	`, artifactID, principal.UserID).Scan(&doc.Status, &errText, &doc.PageCount, &doc.Extractor)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return artifactservice.Document{}, artifactservice.ErrNotFound
+		return document.Document{}, coreservice.ErrNotFound
 	}
 	if err != nil {
-		return artifactservice.Document{}, fmt.Errorf("document %s: %w", artifactID, err)
+		return document.Document{}, fmt.Errorf("document %s: %w", artifactID, err)
 	}
 	if errText != nil {
 		doc.Error = *errText
@@ -53,7 +55,7 @@ func (r *PostgresDocumentRepository) GetDocument(ctx context.Context, artifactID
 
 	if withPages {
 		if doc.Pages, err = r.GetPages(ctx, artifactID, 0, 0); err != nil {
-			return artifactservice.Document{}, err
+			return document.Document{}, err
 		}
 	}
 
@@ -62,13 +64,13 @@ func (r *PostgresDocumentRepository) GetDocument(ctx context.Context, artifactID
 		 WHERE artifact_id = $1 ORDER BY position ASC
 	`, artifactID)
 	if err != nil {
-		return artifactservice.Document{}, fmt.Errorf("document %s sections: %w", artifactID, err)
+		return document.Document{}, fmt.Errorf("document %s sections: %w", artifactID, err)
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var section artifactservice.DocumentSection
+		var section document.DocumentSection
 		if err := rows.Scan(&section.Title, &section.Level, &section.Page); err != nil {
-			return artifactservice.Document{}, err
+			return document.Document{}, err
 		}
 		doc.Sections = append(doc.Sections, section)
 	}
@@ -79,7 +81,7 @@ func (r *PostgresDocumentRepository) GetDocument(ctx context.Context, artifactID
 //
 // This exists because the previous shape (one jsonb blob) meant reading page 42 of a
 // 400-page book deserialized the whole book.
-func (r *PostgresDocumentRepository) GetPages(ctx context.Context, artifactID string, from, to int) ([]artifactservice.DocumentPage, error) {
+func (r *PostgresDocumentRepository) GetPages(ctx context.Context, artifactID string, from, to int) ([]document.DocumentPage, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT page, text FROM artifact_pages
 		 WHERE artifact_id = $1
@@ -92,9 +94,9 @@ func (r *PostgresDocumentRepository) GetPages(ctx context.Context, artifactID st
 	}
 	defer rows.Close()
 
-	out := []artifactservice.DocumentPage{}
+	out := []document.DocumentPage{}
 	for rows.Next() {
-		var page artifactservice.DocumentPage
+		var page document.DocumentPage
 		if err := rows.Scan(&page.Page, &page.Text); err != nil {
 			return nil, err
 		}
@@ -110,7 +112,7 @@ func (r *PostgresDocumentRepository) GetPages(ctx context.Context, artifactID st
 // QUESTION rather than a page number — which is every reader that isn't already holding
 // the outline. ts_headline gives back a few hundred characters around the match instead
 // of the page, so the answer stays proportional to the question.
-func (r *PostgresDocumentRepository) SearchDocument(ctx context.Context, artifactID, query string, limit int) ([]artifactservice.DocumentHit, error) {
+func (r *PostgresDocumentRepository) SearchDocument(ctx context.Context, artifactID, query string, limit int) ([]document.DocumentHit, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT page,
 		       ts_headline('english', text, q,
@@ -126,9 +128,9 @@ func (r *PostgresDocumentRepository) SearchDocument(ctx context.Context, artifac
 	}
 	defer rows.Close()
 
-	out := []artifactservice.DocumentHit{}
+	out := []document.DocumentHit{}
 	for rows.Next() {
-		var hit artifactservice.DocumentHit
+		var hit document.DocumentHit
 		if err := rows.Scan(&hit.Page, &hit.Snippet, &hit.Score); err != nil {
 			return nil, err
 		}
@@ -139,7 +141,7 @@ func (r *PostgresDocumentRepository) SearchDocument(ctx context.Context, artifac
 
 // GetRegions returns the layout regions for a document in reading order, optionally
 // filtered to one class — Tutor asks for figures, the chunk builder asks for titles.
-func (r *PostgresDocumentRepository) GetRegions(ctx context.Context, artifactID, class string) ([]artifactservice.DocumentRegion, error) {
+func (r *PostgresDocumentRepository) GetRegions(ctx context.Context, artifactID, class string) ([]document.DocumentRegion, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT page, ordinal, class, confidence, x0, y0, x1, y1, text
 		  FROM artifact_regions
@@ -151,10 +153,10 @@ func (r *PostgresDocumentRepository) GetRegions(ctx context.Context, artifactID,
 	}
 	defer rows.Close()
 
-	out := []artifactservice.DocumentRegion{}
+	out := []document.DocumentRegion{}
 	for rows.Next() {
 		var (
-			region         artifactservice.DocumentRegion
+			region         document.DocumentRegion
 			x0, y0, x1, y1 float64
 		)
 		if err := rows.Scan(&region.Page, &region.Ordinal, &region.Class, &region.Confidence,
@@ -171,7 +173,7 @@ func (r *PostgresDocumentRepository) GetRegions(ctx context.Context, artifactID,
 //
 // One query, assembled in memory: the tree is small (sections, not pages) and a recursive
 // CTE would buy nothing but complexity at this size.
-func (r *PostgresDocumentRepository) GetChunkTree(ctx context.Context, artifactID string, withText bool) ([]artifactservice.DocumentChunk, error) {
+func (r *PostgresDocumentRepository) GetChunkTree(ctx context.Context, artifactID string, withText bool) ([]document.DocumentChunk, error) {
 	textCol := "''"
 	if withText {
 		textCol = "text"
@@ -187,10 +189,10 @@ func (r *PostgresDocumentRepository) GetChunkTree(ctx context.Context, artifactI
 	}
 	defer rows.Close()
 
-	byID := map[int64]*artifactservice.DocumentChunk{}
+	byID := map[int64]*document.DocumentChunk{}
 	var order []int64
 	for rows.Next() {
-		var chunk artifactservice.DocumentChunk
+		var chunk document.DocumentChunk
 		if err := rows.Scan(&chunk.ID, &chunk.ParentID, &chunk.Ordinal, &chunk.Depth,
 			&chunk.Kind, &chunk.Title, &chunk.PageFrom, &chunk.PageTo, &chunk.Text); err != nil {
 			return nil, err
@@ -202,7 +204,7 @@ func (r *PostgresDocumentRepository) GetChunkTree(ctx context.Context, artifactI
 		return nil, err
 	}
 
-	roots := []artifactservice.DocumentChunk{}
+	roots := []document.DocumentChunk{}
 	for _, id := range order {
 		chunk := byID[id]
 		if chunk.ParentID == nil {
@@ -213,8 +215,8 @@ func (r *PostgresDocumentRepository) GetChunkTree(ctx context.Context, artifactI
 		}
 	}
 	// Children were copied by value above, so rebuild top-down to pick up nested edits.
-	var build func(id int64) artifactservice.DocumentChunk
-	build = func(id int64) artifactservice.DocumentChunk {
+	var build func(id int64) document.DocumentChunk
+	build = func(id int64) document.DocumentChunk {
 		node := *byID[id]
 		node.Children = nil
 		for _, childID := range order {
@@ -241,7 +243,7 @@ func (r *PostgresDocumentRepository) GetChunkTree(ctx context.Context, artifactI
 // strand a file, and PDFs uploaded before ingestion existed get picked up on their own.
 // The INSERT is the claim: the primary key makes a double-claim impossible, so two
 // workers racing is safe.
-func (r *PostgresDocumentRepository) ClaimPending(ctx context.Context, limit int) ([]artifactservice.PendingDocument, error) {
+func (r *PostgresDocumentRepository) ClaimPending(ctx context.Context, limit int) ([]document.PendingDocument, error) {
 	rows, err := r.pool.Query(ctx, `
 		INSERT INTO artifact_documents (artifact_id, user_id, status)
 		SELECT a.id, a.user_id, 'ingesting'
@@ -264,10 +266,10 @@ func (r *PostgresDocumentRepository) ClaimPending(ctx context.Context, limit int
 	}
 	defer rows.Close()
 
-	out := []artifactservice.PendingDocument{}
+	out := []document.PendingDocument{}
 	for rows.Next() {
 		var (
-			pending    artifactservice.PendingDocument
+			pending    document.PendingDocument
 			storageKey *string
 			mime       *string
 			filename   *string
@@ -307,14 +309,14 @@ func (r *PostgresDocumentRepository) markFailed(ctx context.Context, artifactID,
 
 // SaveResult writes the extraction outcome and the outline in one tx, then emits the
 // artifact's node frame so open surfaces refresh through the syncer (never a poll).
-func (r *PostgresDocumentRepository) SaveResult(ctx context.Context, artifactID, userID string, result artifactservice.DocumentResult) error {
+func (r *PostgresDocumentRepository) SaveResult(ctx context.Context, artifactID, userID string, result document.DocumentResult) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	if err := LockUser(ctx, tx, userID); err != nil {
+	if err := repo.LockUser(ctx, tx, userID); err != nil {
 		return err
 	}
 
@@ -404,7 +406,7 @@ func (r *PostgresDocumentRepository) SaveResult(ctx context.Context, artifactID,
 
 	// The tree row shows ingestion status, so the artifact's node frame has to go out
 	// with the write — same transaction, same spine as every other change.
-	if err := emitNodeUpsert(ctx, tx, userID, artifactID); err != nil {
+	if err := repo.EmitNodeUpsert(ctx, tx, userID, artifactID); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

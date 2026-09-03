@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"aladin/backend_v2/internal/dbtest"
+	"aladin/backend_v2/internal/document"
+	documentpostgres "aladin/backend_v2/internal/document/postgres"
 	"aladin/backend_v2/internal/ingestion"
 	"aladin/backend_v2/internal/repo"
 	"aladin/backend_v2/internal/service"
@@ -87,7 +89,7 @@ func TestAgentCanReadAnIngestedPDF(t *testing.T) {
 		_, _ = pool.Exec(bg, `DELETE FROM users WHERE id = $1::uuid`, userID)
 	})
 
-	docRepo := repo.NewDocumentPostgres(pool, files)
+	docRepo := documentpostgres.NewDocumentPostgres(pool, files)
 	sweeper := ingestion.NewSweeper(docRepo, segmenter,
 		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
 	if _, err := sweeper.Sweep(ctx); err != nil {
@@ -97,7 +99,7 @@ func TestAgentCanReadAnIngestedPDF(t *testing.T) {
 	tools := workspaceToolServer{
 		artifacts: service.NewArtifactService(repo.NewArtifactsPostgres(pool),
 			repo.NewFilesystemArtifactStore(uploads, t.TempDir())),
-		documents: service.NewDocumentService(docRepo),
+		documents: document.NewDocumentService(docRepo),
 	}
 
 	// 1. get_artifact — the agent's first look. It must learn the document is readable

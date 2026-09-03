@@ -3,6 +3,7 @@ package api
 import (
 	"aladin/backend_v2/internal/alert"
 	"aladin/backend_v2/internal/artifactref"
+	"aladin/backend_v2/internal/document"
 	"aladin/backend_v2/internal/feed"
 	"aladin/backend_v2/internal/graphpane"
 	"aladin/backend_v2/internal/insights"
@@ -46,7 +47,7 @@ type testDependencies struct {
 	ShardBridgeSvc         coreservice.ShardBridgeService
 	RelationshipsSvc       relationship.RelationshipService
 	ResearchSvc            research.ResearchService
-	DocumentsSvc           coreservice.DocumentService
+	DocumentsSvc           document.DocumentService
 	GraphPaneSvc           graphpane.GraphPaneService
 	EntityTagsSvc          coreservice.EntityTagService
 	ArtifactRefsSvc        artifactref.ArtifactRefService
@@ -96,7 +97,7 @@ func (d testDependencies) ShardKV() coreservice.ShardKVService             { ret
 func (d testDependencies) ShardBridge() coreservice.ShardBridgeService     { return d.ShardBridgeSvc }
 func (d testDependencies) Relationships() relationship.RelationshipService { return d.RelationshipsSvc }
 func (d testDependencies) Research() research.ResearchService              { return d.ResearchSvc }
-func (d testDependencies) Documents() coreservice.DocumentService          { return d.DocumentsSvc }
+func (d testDependencies) Documents() document.DocumentService             { return d.DocumentsSvc }
 func (d testDependencies) GraphPane() graphpane.GraphPaneService           { return d.GraphPaneSvc }
 func (d testDependencies) EntityTags() coreservice.EntityTagService        { return d.EntityTagsSvc }
 func (d testDependencies) ArtifactRefs() artifactref.ArtifactRefService    { return d.ArtifactRefsSvc }

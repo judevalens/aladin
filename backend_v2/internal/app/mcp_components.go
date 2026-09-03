@@ -5,6 +5,7 @@ import (
 	"aladin/backend_v2/internal/artifactref"
 	"aladin/backend_v2/internal/config"
 	"aladin/backend_v2/internal/docsurface"
+	"aladin/backend_v2/internal/document"
 	"aladin/backend_v2/internal/insights"
 	"aladin/backend_v2/internal/instrument"
 	"aladin/backend_v2/internal/market"
@@ -63,7 +64,7 @@ func (c *MCPProcess) ShardGraphQL() coreservice.ShardGraphQLService   { return c
 func (c *MCPProcess) ShardReleases() coreservice.ShardReleaseService  { return c.shardReleases }
 func (c *MCPProcess) ShardCatalog() coreservice.ShardCatalogService   { return c.shardCatalog }
 func (c *MCPProcess) ShardBridge() coreservice.ShardBridgeService     { return c.shardBridge }
-func (c *MCPProcess) Documents() coreservice.DocumentService          { return c.documents }
+func (c *MCPProcess) Documents() document.DocumentService             { return c.documents }
 func (c *MCPProcess) EntityTags() coreservice.EntityTagService        { return c.entityTags }
 func (c *MCPProcess) ArtifactRefs() artifactref.ArtifactRefService    { return c.artifactRefs }
 func (c *MCPProcess) EntityContext() coreservice.EntityContextService { return c.entityContext }
