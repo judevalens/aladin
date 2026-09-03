@@ -30,7 +30,7 @@ import (
 	"aladin/backend_v2/internal/ratelimit"
 	"aladin/backend_v2/internal/repo"
 	"aladin/backend_v2/internal/search"
-	coreservice "aladin/backend_v2/internal/service"
+	searchpostgres "aladin/backend_v2/internal/search/postgres"
 	isync "aladin/backend_v2/internal/sync"
 	"aladin/backend_v2/internal/sync/syncers"
 )
@@ -159,7 +159,7 @@ func Run() {
 	// content_index. A sweep, not an event consumer, because boards and page bodies are
 	// written by the sidecar with direct SQL: no outbox frame ever fires for them, so the
 	// three source clocks in repo.StaleArtifacts are the only truthful freshness signal.
-	contentIndex := coreservice.NewContentIndexService(repo.NewContentIndexPostgres(pool))
+	contentIndex := search.NewContentIndexService(searchpostgres.NewContentIndexPostgres(pool))
 	lifecycle.Add("worker.contentindex", func(ctx context.Context) {
 		ticker := time.NewTicker(20 * time.Second)
 		defer ticker.Stop()

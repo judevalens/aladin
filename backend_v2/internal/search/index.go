@@ -1,4 +1,4 @@
-package service
+package search
 
 import (
 	"context"
@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"aladin/backend_v2/internal/service"
 )
 
 // Content index — READABLE_WORKSPACE R1: readability is a per-kind contract, like
@@ -151,7 +153,7 @@ func projectPage(ctx context.Context, repo ContentIndexRepo, artifactID string) 
 	var walk func([]pageBlock)
 	walk = func(nodes []pageBlock) {
 		for _, block := range nodes {
-			if text := flattenRichText(block.Content); text != "" && block.ID != "" {
+			if text := service.FlattenRichText(block.Content); text != "" && block.ID != "" {
 				rows = append(rows, ContentRow{Locator: "block:" + block.ID, Text: text})
 			}
 			walk(block.Children)
@@ -192,7 +194,7 @@ func projectBoard(ctx context.Context, repo ContentIndexRepo, artifactID string)
 	if err != nil {
 		return nil, err
 	}
-	parsed := ParseBoardContent(content)
+	parsed := service.ParseBoardContent(content)
 	rows := make([]ContentRow, 0, len(parsed.Lines))
 	for _, line := range parsed.Lines {
 		rows = append(rows, ContentRow{Locator: "shape:" + line.ShapeID, Text: line.Text})

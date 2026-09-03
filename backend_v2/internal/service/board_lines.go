@@ -140,7 +140,7 @@ func boardLineFor(record boardRecord) (BoardLine, bool) {
 		// Ink labels — handwriting-adjacent text the user placed as headings/margins.
 		// "Your handwriting is the legend": these name the board's regions, so a board
 		// without them reads as unstructured when it isn't.
-		label := flattenRichText(p.RichText)
+		label := FlattenRichText(p.RichText)
 		if label == "" {
 			return BoardLine{}, false
 		}
@@ -150,10 +150,10 @@ func boardLineFor(record boardRecord) (BoardLine, bool) {
 	}
 }
 
-// flattenRichText walks tldraw's tiptap document tolerantly, collecting text nodes —
+// FlattenRichText walks tldraw's tiptap document tolerantly, collecting text nodes —
 // unknown node shapes just contribute nothing (the same stance as the client's
 // flattenBlocks).
-func flattenRichText(raw json.RawMessage) string {
+func FlattenRichText(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		return ""
 	}

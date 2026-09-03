@@ -33,6 +33,7 @@ import (
 	"aladin/backend_v2/internal/research"
 	researchpostgres "aladin/backend_v2/internal/research/postgres"
 	"aladin/backend_v2/internal/search"
+	searchpostgres "aladin/backend_v2/internal/search/postgres"
 	coreservice "aladin/backend_v2/internal/service"
 	"aladin/backend_v2/internal/shardresource"
 	shardstorage "aladin/backend_v2/internal/shardresource/storage"
@@ -120,7 +121,7 @@ func buildSharedComponents(pool *pgxpool.Pool, dataVolumePath string) sharedComp
 	insightsSvc := insights.NewInsightService(insightspostgres.NewInsightPostgres(pool))
 	entityTagsSvc := coreservice.NewEntityTagService(repo.NewEntityTagPostgres(pool), entities.Normalize)
 	artifactRefsSvc := artifactref.NewArtifactRefService(artifactrefpostgres.NewArtifactRefPostgres(pool))
-	contentIndexSvc := coreservice.NewContentIndexService(repo.NewContentIndexPostgres(pool))
+	contentIndexSvc := search.NewContentIndexService(searchpostgres.NewContentIndexPostgres(pool))
 
 	alpacaCfg := config.LoadAlpaca()
 	var barSource market.BarSource

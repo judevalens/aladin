@@ -187,10 +187,10 @@ func (p EntitySearchProvider) Search(ctx context.Context, userID, query string, 
 // locator that makes it citable. Registered AFTER ArtifactSearchProvider so title
 // matches outrank body matches and dedupe keeps the title row.
 type ContentSearchProvider struct {
-	svc coreservice.ContentIndexService
+	svc ContentIndexService
 }
 
-func NewContentSearchProvider(svc coreservice.ContentIndexService) ContentSearchProvider {
+func NewContentSearchProvider(svc ContentIndexService) ContentSearchProvider {
 	return ContentSearchProvider{svc: svc}
 }
 func (p ContentSearchProvider) Section() string { return SearchSectionArtifact }

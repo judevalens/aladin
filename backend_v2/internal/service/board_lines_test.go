@@ -55,11 +55,11 @@ func TestParseBoardContentToleratesJunk(t *testing.T) {
 }
 
 func TestFlattenRichTextWalksTolerantly(t *testing.T) {
-	got := flattenRichText([]byte(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"one"},{"type":"text","text":"two"}]},{"type":"unknownNode","content":[{"type":"text","text":"three"}]}]}`))
+	got := FlattenRichText([]byte(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"one"},{"type":"text","text":"two"}]},{"type":"unknownNode","content":[{"type":"text","text":"three"}]}]}`))
 	if got != "one two three" {
 		t.Fatalf("got %q", got)
 	}
-	if flattenRichText(nil) != "" || flattenRichText([]byte("junk")) != "" {
+	if FlattenRichText(nil) != "" || FlattenRichText([]byte("junk")) != "" {
 		t.Fatal("junk rich text should flatten to empty")
 	}
 }

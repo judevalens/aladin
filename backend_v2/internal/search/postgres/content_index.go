@@ -1,4 +1,4 @@
-package repo
+package postgres
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"aladin/backend_v2/internal/service"
+	"aladin/backend_v2/internal/search"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -30,7 +30,7 @@ func NewContentIndexPostgres(pool *pgxpool.Pool) *ContentIndexPostgres {
 //   - artifacts.updated_at        title renames, board projections, link/voice edits
 //   - page_documents.updated_at   collaborative page bodies
 //   - artifact_documents.updated_at   ingestion finishing (pages/regions/chunks landing)
-func (r *ContentIndexPostgres) StaleArtifacts(ctx context.Context, limit int) ([]service.StaleArtifact, error) {
+func (r *ContentIndexPostgres) StaleArtifacts(ctx context.Context, limit int) ([]search.StaleArtifact, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT a.id, a.user_id, a.type,
 		       GREATEST(a.updated_at,
@@ -50,9 +50,9 @@ func (r *ContentIndexPostgres) StaleArtifacts(ctx context.Context, limit int) ([
 		return nil, fmt.Errorf("content index: stale scan: %w", err)
 	}
 	defer rows.Close()
-	var out []service.StaleArtifact
+	var out []search.StaleArtifact
 	for rows.Next() {
-		var s service.StaleArtifact
+		var s search.StaleArtifact
 		if err := rows.Scan(&s.ArtifactID, &s.UserID, &s.Kind, &s.SourceStamp); err != nil {
 			return nil, fmt.Errorf("content index: stale scan row: %w", err)
 		}
@@ -64,7 +64,7 @@ func (r *ContentIndexPostgres) StaleArtifacts(ctx context.Context, limit int) ([
 // ReplaceRows swaps an artifact's index rows atomically and records the source stamp that
 // was observed BEFORE projection — a write racing the projection leaves its newer stamp
 // in the source tables, so the next sweep re-projects.
-func (r *ContentIndexPostgres) ReplaceRows(ctx context.Context, target service.StaleArtifact, contentRows []service.ContentRow) error {
+func (r *ContentIndexPostgres) ReplaceRows(ctx context.Context, target search.StaleArtifact, contentRows []search.ContentRow) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("content index: begin: %w", err)
@@ -97,7 +97,7 @@ func (r *ContentIndexPostgres) ReplaceRows(ctx context.Context, target service.S
 
 // Search runs lexical FTS over the index, best row per artifact (an artifact with ten
 // matching blocks is one hit with its best locator, not ten rows crowding the section).
-func (r *ContentIndexPostgres) Search(ctx context.Context, userID, query string, limit int) ([]service.ContentHit, error) {
+func (r *ContentIndexPostgres) Search(ctx context.Context, userID, query string, limit int) ([]search.ContentHit, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT DISTINCT ON (ci.artifact_id)
 		       ci.artifact_id, ci.kind, ci.locator, a.title,
@@ -113,9 +113,9 @@ func (r *ContentIndexPostgres) Search(ctx context.Context, userID, query string,
 		return nil, fmt.Errorf("content index: search: %w", err)
 	}
 	defer rows.Close()
-	var out []service.ContentHit
+	var out []search.ContentHit
 	for rows.Next() {
-		var h service.ContentHit
+		var h search.ContentHit
 		if err := rows.Scan(&h.ArtifactID, &h.Kind, &h.Locator, &h.Title, &h.Snippet, &h.Score); err != nil {
 			return nil, fmt.Errorf("content index: search row: %w", err)
 		}
@@ -144,16 +144,16 @@ func (r *ContentIndexPostgres) PageBlocks(ctx context.Context, artifactID string
 }
 
 // FilePages reads an ingested document's per-page text in order.
-func (r *ContentIndexPostgres) FilePages(ctx context.Context, artifactID string) ([]service.NumberedPage, error) {
+func (r *ContentIndexPostgres) FilePages(ctx context.Context, artifactID string) ([]search.NumberedPage, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT page, text FROM artifact_pages WHERE artifact_id = $1 ORDER BY page`, artifactID)
 	if err != nil {
 		return nil, fmt.Errorf("content index: file pages: %w", err)
 	}
 	defer rows.Close()
-	var out []service.NumberedPage
+	var out []search.NumberedPage
 	for rows.Next() {
-		var p service.NumberedPage
+		var p search.NumberedPage
 		if err := rows.Scan(&p.Page, &p.Text); err != nil {
 			return nil, fmt.Errorf("content index: file page row: %w", err)
 		}
