@@ -13,6 +13,8 @@ import (
 	"aladin/backend_v2/internal/document"
 	"aladin/backend_v2/internal/feed"
 	feedpostgres "aladin/backend_v2/internal/feed/postgres"
+	"aladin/backend_v2/internal/file"
+	filepostgres "aladin/backend_v2/internal/file/postgres"
 	"aladin/backend_v2/internal/graph"
 	"aladin/backend_v2/internal/graphpane"
 	graphpanepostgres "aladin/backend_v2/internal/graphpane/postgres"
@@ -50,7 +52,7 @@ type APIProcess struct {
 	sources             source.SourceService
 	records             record.RecordService
 	pages               coreservice.PageService
-	files               coreservice.FileService
+	files               file.FileService
 	feed                feed.FeedService
 	providerConnections providerconnection.ProviderConnectionService
 	realtime            realtime.EventService
@@ -151,7 +153,7 @@ func NewAPIComponentsWithProviderConnections(pool *pgxpool.Pool, providerConfig 
 		sources:             source.NewSourceService(sourcepostgres.NewSourcePostgres(pool)),
 		records:             record.NewRecordService(shared.recordRepo),
 		pages:               coreservice.NewPageService(shared.artifactRepo),
-		files:               coreservice.NewFileService(shared.artifactRepo, shared.artifactFiles),
+		files:               file.NewFileService(filepostgres.New(pool), shared.artifactFiles),
 		feed:                feed.NewFeedService(feedpostgres.NewFeedPostgres(pool)),
 		providerConnections: providerConnections,
 		realtime:            realtime,
@@ -178,7 +180,7 @@ func (c *APIProcess) Sources() source.SourceService          { return c.sources 
 func (c *APIProcess) Records() record.RecordService          { return c.records }
 func (c *APIProcess) Artifacts() coreservice.ArtifactService { return c.artifacts }
 func (c *APIProcess) Pages() coreservice.PageService         { return c.pages }
-func (c *APIProcess) Files() coreservice.FileService         { return c.files }
+func (c *APIProcess) Files() file.FileService                { return c.files }
 func (c *APIProcess) Feed() feed.FeedService                 { return c.feed }
 func (c *APIProcess) Insights() insights.InsightService      { return c.insights }
 func (c *APIProcess) ProviderConnections() providerconnection.ProviderConnectionService {

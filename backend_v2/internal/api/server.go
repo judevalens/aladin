@@ -11,6 +11,8 @@ import (
 	documenthttp "aladin/backend_v2/internal/document/httptransport"
 	"aladin/backend_v2/internal/feed"
 	feedhttp "aladin/backend_v2/internal/feed/httptransport"
+	"aladin/backend_v2/internal/file"
+	filehttp "aladin/backend_v2/internal/file/httptransport"
 	"aladin/backend_v2/internal/graphpane"
 	graphpanehttp "aladin/backend_v2/internal/graphpane/httptransport"
 	"aladin/backend_v2/internal/httpapi"
@@ -72,7 +74,7 @@ type Dependencies interface {
 	Records() record.RecordService
 	Artifacts() coreservice.ArtifactService
 	Pages() coreservice.PageService
-	Files() coreservice.FileService
+	Files() file.FileService
 	Feed() feed.FeedService
 	Insights() insights.InsightService
 	ProviderConnections() providerconnection.ProviderConnectionService
@@ -143,7 +145,7 @@ func NewWithDependencies(addr string, deps Dependencies) *Server {
 
 	s.registerArtifactRoutes(mux)
 	s.registerPageRoutes(mux)
-	s.registerFileRoutes(mux)
+	filehttp.Register(mux, deps.Files())
 	unfurlhttp.Register(mux, deps.Unfurl())
 	s.registerContentRoutes(mux)
 	s.registerShardRoutes(mux)

@@ -13,8 +13,8 @@ import (
 	"aladin/backend_v2/internal/dbtest"
 	"aladin/backend_v2/internal/document"
 	documentpostgres "aladin/backend_v2/internal/document/postgres"
+	"aladin/backend_v2/internal/file"
 	"aladin/backend_v2/internal/ingestion"
-	"aladin/backend_v2/internal/repo"
 	artifactservice "aladin/backend_v2/internal/service"
 
 	"github.com/google/uuid"
@@ -89,7 +89,7 @@ func TestIngestion_SweepEndToEnd(t *testing.T) {
 
 	// A real store rooted at a temp dir, holding a real PDF under a real storage key.
 	uploads := t.TempDir()
-	files := repo.NewFilesystemArtifactStore(uploads, t.TempDir())
+	files := file.NewFilesystemArtifactStore(uploads, t.TempDir())
 	storageKey := "file/" + artifactID + ".pdf"
 	source, err := os.ReadFile(filepath.Join("..", "..", "ingestion", "testdata", "outlined.pdf"))
 	if err != nil {
@@ -242,7 +242,7 @@ func TestIngestion_UnreadableFileStillLandsTerminal(t *testing.T) {
 	ctx = adminContext(userID)
 
 	uploads := t.TempDir()
-	files := repo.NewFilesystemArtifactStore(uploads, t.TempDir())
+	files := file.NewFilesystemArtifactStore(uploads, t.TempDir())
 	if err := os.WriteFile(filepath.Join(uploads, artifactID+".pdf"), []byte("not a pdf at all"), 0o644); err != nil {
 		t.Fatalf("stage upload: %v", err)
 	}
@@ -309,7 +309,7 @@ func TestIngestion_ChunkTreeRoundTrip(t *testing.T) {
 	ctx = adminContext(userID)
 
 	uploads := t.TempDir()
-	files := repo.NewFilesystemArtifactStore(uploads, t.TempDir())
+	files := file.NewFilesystemArtifactStore(uploads, t.TempDir())
 	source, err := os.ReadFile(filepath.Join("..", "..", "ingestion", "testdata", "outlined.pdf"))
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)

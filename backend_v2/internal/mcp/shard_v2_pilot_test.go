@@ -20,6 +20,7 @@ import (
 	"aladin/backend_v2/internal/docsurface"
 	"aladin/backend_v2/internal/document"
 	"aladin/backend_v2/internal/feed"
+	"aladin/backend_v2/internal/file"
 	"aladin/backend_v2/internal/graphpane"
 	"aladin/backend_v2/internal/insights"
 	"aladin/backend_v2/internal/instrument"
@@ -350,7 +351,7 @@ func (emptyAPIDependencies) Sources() source.SourceService      { return nil }
 func (emptyAPIDependencies) Records() record.RecordService      { return nil }
 func (emptyAPIDependencies) Artifacts() service.ArtifactService { return nil }
 func (emptyAPIDependencies) Pages() service.PageService         { return nil }
-func (emptyAPIDependencies) Files() service.FileService         { return nil }
+func (emptyAPIDependencies) Files() file.FileService            { return nil }
 func (emptyAPIDependencies) Feed() feed.FeedService             { return nil }
 func (emptyAPIDependencies) Insights() insights.InsightService  { return nil }
 func (emptyAPIDependencies) ProviderConnections() providerconnection.ProviderConnectionService {

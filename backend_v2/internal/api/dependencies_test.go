@@ -5,6 +5,7 @@ import (
 	"aladin/backend_v2/internal/artifactref"
 	"aladin/backend_v2/internal/document"
 	"aladin/backend_v2/internal/feed"
+	"aladin/backend_v2/internal/file"
 	"aladin/backend_v2/internal/graphpane"
 	"aladin/backend_v2/internal/insights"
 	"aladin/backend_v2/internal/instrument"
@@ -33,7 +34,7 @@ type testDependencies struct {
 	RecordsSvc             record.RecordService
 	ArtifactsSvc           coreservice.ArtifactService
 	PagesSvc               coreservice.PageService
-	FilesSvc               coreservice.FileService
+	FilesSvc               file.FileService
 	FeedSvc                feed.FeedService
 	InsightsSvc            insights.InsightService
 	ProviderConnectionsSvc providerconnection.ProviderConnectionService
@@ -75,7 +76,7 @@ func (d testDependencies) Sources() source.SourceService          { return d.Sou
 func (d testDependencies) Records() record.RecordService          { return d.RecordsSvc }
 func (d testDependencies) Artifacts() coreservice.ArtifactService { return d.ArtifactsSvc }
 func (d testDependencies) Pages() coreservice.PageService         { return d.PagesSvc }
-func (d testDependencies) Files() coreservice.FileService         { return d.FilesSvc }
+func (d testDependencies) Files() file.FileService                { return d.FilesSvc }
 func (d testDependencies) Feed() feed.FeedService                 { return d.FeedSvc }
 func (d testDependencies) Insights() insights.InsightService      { return d.InsightsSvc }
 func (d testDependencies) ProviderConnections() providerconnection.ProviderConnectionService {

@@ -6,6 +6,7 @@ import (
 	"aladin/backend_v2/internal/changefeed"
 	"aladin/backend_v2/internal/document"
 	"aladin/backend_v2/internal/feed"
+	"aladin/backend_v2/internal/file"
 	"aladin/backend_v2/internal/graphpane"
 	"aladin/backend_v2/internal/insights"
 	"aladin/backend_v2/internal/instrument"
@@ -35,7 +36,7 @@ type APIComponents interface {
 	Records() record.RecordService
 	Artifacts() coreservice.ArtifactService
 	Pages() coreservice.PageService
-	Files() coreservice.FileService
+	Files() file.FileService
 	Feed() feed.FeedService
 	Insights() insights.InsightService
 	ProviderConnections() providerconnection.ProviderConnectionService

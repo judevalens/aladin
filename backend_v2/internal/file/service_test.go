@@ -1,4 +1,4 @@
-package service
+package file
 
 import (
 	"bytes"
@@ -6,6 +6,8 @@ import (
 	"errors"
 	"io"
 	"testing"
+
+	coreservice "aladin/backend_v2/internal/service"
 )
 
 func TestFileServiceUpload(t *testing.T) {
@@ -73,12 +75,12 @@ func TestFileServiceReadOnlyTokenCannotUpload(t *testing.T) {
 		},
 		&fakeFileStore{path: "/tmp/file-blob.txt"},
 	)
-	ctx := testIntegrationPrincipalContext(ScopeArtifactsRead)
+	ctx := testIntegrationPrincipalContext(coreservice.ScopeArtifactsRead)
 
 	if _, err := service.Resource(ctx, "file-1"); err != nil {
 		t.Fatalf("Resource read-only error = %v, want nil", err)
 	}
-	if _, err := service.Upload(ctx, FileUploadInput{Filename: "memo.txt"}, bytes.NewBufferString("hello")); !errors.Is(err, ErrForbidden) {
+	if _, err := service.Upload(ctx, FileUploadInput{Filename: "memo.txt"}, bytes.NewBufferString("hello")); !errors.Is(err, coreservice.ErrForbidden) {
 		t.Fatalf("Upload read-only error = %v, want ErrForbidden", err)
 	}
 }
@@ -100,7 +102,7 @@ func (f *fakeFileRepository) CreateFile(_ context.Context, rec FileRecord) error
 
 func (f *fakeFileRepository) GetFile(_ context.Context, _ string) (FileRecord, error) {
 	if f.record.ID == "" {
-		return FileRecord{}, ErrNotFound
+		return FileRecord{}, coreservice.ErrNotFound
 	}
 	return f.record, nil
 }
@@ -110,17 +112,30 @@ type fakeFileStore struct {
 	deleted []string
 }
 
-func (f *fakeFileStore) SaveResource(_ string, _ string, _ string, _ io.Reader) (StoredArtifactResource, error) {
-	return StoredArtifactResource{
+func (f *fakeFileStore) SaveResource(_ string, _ string, _ string, _ io.Reader) (coreservice.StoredArtifactResource, error) {
+	return coreservice.StoredArtifactResource{
 		StorageKey: "file/file-blob.txt",
 	}, nil
 }
 
 func (f *fakeFileStore) ResourcePath(_ string) (string, error) {
 	if f.path == "" {
-		return "", ErrNotFound
+		return "", coreservice.ErrNotFound
 	}
 	return f.path, nil
+}
+
+func testPrincipalContext() context.Context {
+	return testIntegrationPrincipalContext(coreservice.ScopeArtifactsRead, coreservice.ScopeArtifactsWrite)
+}
+
+func testIntegrationPrincipalContext(scopes ...string) context.Context {
+	return coreservice.WithPrincipal(context.Background(), coreservice.Principal{
+		UserID:    "user-1",
+		ActorType: coreservice.ActorTypeIntegrationToken,
+		ActorID:   "test",
+		Scopes:    scopes,
+	})
 }
 
 func (f *fakeFileStore) DeleteResource(key string) error {

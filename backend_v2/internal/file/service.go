@@ -1,4 +1,4 @@
-package service
+package file
 
 import (
 	"context"
@@ -7,6 +7,8 @@ import (
 	"io"
 	"strings"
 	"time"
+
+	coreservice "aladin/backend_v2/internal/service"
 )
 
 type FileService interface {
@@ -22,7 +24,7 @@ type FileRepository interface {
 // FileStore is the same byte-store port used by artifact resources. Keeping one
 // contract prevents the legacy file endpoint and artifact upload path from
 // acquiring different compensation behavior.
-type FileStore = ArtifactFileStore
+type FileStore = coreservice.ArtifactFileStore
 
 type FileUploadInput struct {
 	Filename    string
@@ -51,19 +53,19 @@ func NewFileService(repo FileRepository, store FileStore) *DefaultFileService {
 }
 
 func (s *DefaultFileService) Upload(ctx context.Context, input FileUploadInput, body io.Reader) (FileRecord, error) {
-	if err := RequireScope(ctx, ScopeArtifactsWrite); err != nil {
+	if err := coreservice.RequireScope(ctx, coreservice.ScopeArtifactsWrite); err != nil {
 		return FileRecord{}, err
 	}
 	filename := strings.TrimSpace(input.Filename)
 	if filename == "" {
-		return FileRecord{}, BadRequest("filename is required")
+		return FileRecord{}, coreservice.BadRequest("filename is required")
 	}
 	stored, err := s.store.SaveResource("file", filename, input.ContentType, body)
 	if err != nil {
 		return FileRecord{}, err
 	}
 	rec := FileRecord{
-		ID:         newID("file-"),
+		ID:         coreservice.NewID("file-", ""),
 		UploadedAt: time.Now().UTC().Format(time.RFC3339),
 		StorageKey: stored.StorageKey,
 	}
@@ -74,7 +76,7 @@ func (s *DefaultFileService) Upload(ctx context.Context, input FileUploadInput, 
 	return rec, nil
 }
 
-func cleanupStoredResource(store ArtifactFileStore, storageKey string, operationErr error) error {
+func cleanupStoredResource(store FileStore, storageKey string, operationErr error) error {
 	if cleanupErr := store.DeleteResource(storageKey); cleanupErr != nil {
 		return errors.Join(operationErr, fmt.Errorf("compensate stored resource %q: %w", storageKey, cleanupErr))
 	}
@@ -82,11 +84,11 @@ func cleanupStoredResource(store ArtifactFileStore, storageKey string, operation
 }
 
 func (s *DefaultFileService) Resource(ctx context.Context, id string) (FileResource, error) {
-	if err := RequireScope(ctx, ScopeArtifactsRead); err != nil {
+	if err := coreservice.RequireScope(ctx, coreservice.ScopeArtifactsRead); err != nil {
 		return FileResource{}, err
 	}
 	if strings.TrimSpace(id) == "" {
-		return FileResource{}, ErrNotFound
+		return FileResource{}, coreservice.ErrNotFound
 	}
 	rec, err := s.repo.GetFile(ctx, id)
 	if err != nil {

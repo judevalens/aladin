@@ -17,6 +17,7 @@ import (
 	"aladin/backend_v2/internal/document"
 	documentpostgres "aladin/backend_v2/internal/document/postgres"
 	"aladin/backend_v2/internal/entities"
+	"aladin/backend_v2/internal/file"
 	"aladin/backend_v2/internal/insights"
 	insightspostgres "aladin/backend_v2/internal/insights/postgres"
 	"aladin/backend_v2/internal/instrument"
@@ -227,8 +228,8 @@ func buildSharedComponents(pool *pgxpool.Pool, dataVolumePath string) sharedComp
 
 // NewArtifactFileStore is shared with worker ingestion so every process resolves
 // uploaded resources using the same directory convention.
-func NewArtifactFileStore() *repo.FilesystemArtifactStore {
-	return repo.NewFilesystemArtifactStore(uploadDir(), audioDir())
+func NewArtifactFileStore() *file.FilesystemArtifactStore {
+	return file.NewFilesystemArtifactStore(uploadDir(), audioDir())
 }
 
 func uploadDir() string { return filepath.Join(".", "uploads") }

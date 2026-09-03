@@ -12,6 +12,7 @@ import (
 	"aladin/backend_v2/internal/dbtest"
 	"aladin/backend_v2/internal/document"
 	documentpostgres "aladin/backend_v2/internal/document/postgres"
+	"aladin/backend_v2/internal/file"
 	"aladin/backend_v2/internal/ingestion"
 	"aladin/backend_v2/internal/repo"
 	"aladin/backend_v2/internal/service"
@@ -56,7 +57,7 @@ func TestAgentCanReadAnIngestedPDF(t *testing.T) {
 	})
 
 	uploads := t.TempDir()
-	files := repo.NewFilesystemArtifactStore(uploads, t.TempDir())
+	files := file.NewFilesystemArtifactStore(uploads, t.TempDir())
 	source, err := os.ReadFile(filepath.Join("..", "ingestion", "testdata", "outlined.pdf"))
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
@@ -98,7 +99,7 @@ func TestAgentCanReadAnIngestedPDF(t *testing.T) {
 
 	tools := workspaceToolServer{
 		artifacts: service.NewArtifactService(repo.NewArtifactsPostgres(pool),
-			repo.NewFilesystemArtifactStore(uploads, t.TempDir())),
+			file.NewFilesystemArtifactStore(uploads, t.TempDir())),
 		documents: document.NewDocumentService(docRepo),
 	}
 

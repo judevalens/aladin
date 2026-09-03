@@ -10,6 +10,7 @@ import (
 
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/dbtest"
+	"aladin/backend_v2/internal/file"
 	"aladin/backend_v2/internal/repo"
 	"aladin/backend_v2/internal/research"
 	researchpostgres "aladin/backend_v2/internal/research/postgres"
@@ -311,7 +312,7 @@ func TestResearchFolder_HoldsFoldersAndArtifacts(t *testing.T) {
 
 	artifactSvc := artifactservice.NewArtifactService(
 		repo.NewArtifactsPostgres(pool),
-		repo.NewFilesystemArtifactStore(t.TempDir(), t.TempDir()),
+		file.NewFilesystemArtifactStore(t.TempDir(), t.TempDir()),
 	)
 
 	// "New folder here" inside a research folder.

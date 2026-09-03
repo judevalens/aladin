@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	filedomain "aladin/backend_v2/internal/file"
 	"aladin/backend_v2/internal/providerconnection"
 	artifactservice "aladin/backend_v2/internal/service"
 
@@ -362,7 +363,7 @@ func TestFilesResourceRoute(t *testing.T) {
 
 	server := NewWithDependencies(":0", testDependencies{
 		FilesSvc: &fakeFileService{
-			resource: artifactservice.FileResource{
+			resource: filedomain.FileResource{
 				Path:        tmp.Name(),
 				ContentType: "text/plain",
 			},
@@ -753,8 +754,8 @@ type fakePageService struct {
 }
 
 type fakeFileService struct {
-	uploadInput *artifactservice.FileUploadInput
-	resource    artifactservice.FileResource
+	uploadInput *filedomain.FileUploadInput
+	resource    filedomain.FileResource
 	err         error
 }
 
@@ -1018,23 +1019,23 @@ func (f *fakePageService) Diff(_ context.Context, _ string) (artifactservice.Pag
 	return artifactservice.PageDiff{}, nil
 }
 
-func (f *fakeFileService) Upload(_ context.Context, input artifactservice.FileUploadInput, body io.Reader) (artifactservice.FileRecord, error) {
+func (f *fakeFileService) Upload(_ context.Context, input filedomain.FileUploadInput, body io.Reader) (filedomain.FileRecord, error) {
 	if f.err != nil {
-		return artifactservice.FileRecord{}, f.err
+		return filedomain.FileRecord{}, f.err
 	}
 	_, _ = io.ReadAll(body)
 	copyInput := input
 	f.uploadInput = &copyInput
-	return artifactservice.FileRecord{
+	return filedomain.FileRecord{
 		ID:         "file-uploaded",
 		URL:        "/api/files/file-uploaded/resource",
 		UploadedAt: "2026-05-01T00:00:00Z",
 	}, nil
 }
 
-func (f *fakeFileService) Resource(context.Context, string) (artifactservice.FileResource, error) {
+func (f *fakeFileService) Resource(context.Context, string) (filedomain.FileResource, error) {
 	if f.err != nil {
-		return artifactservice.FileResource{}, f.err
+		return filedomain.FileResource{}, f.err
 	}
 	return f.resource, nil
 }
