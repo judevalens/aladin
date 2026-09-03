@@ -11,6 +11,8 @@ import (
 	alertpostgres "aladin/backend_v2/internal/alert/postgres"
 	"aladin/backend_v2/internal/artifactref"
 	artifactrefpostgres "aladin/backend_v2/internal/artifactref/postgres"
+	"aladin/backend_v2/internal/auth"
+	authpostgres "aladin/backend_v2/internal/auth/postgres"
 	"aladin/backend_v2/internal/config"
 	"aladin/backend_v2/internal/db"
 	"aladin/backend_v2/internal/docsurface"
@@ -47,7 +49,7 @@ import (
 // MCP graphs. Process-specific services are constructed in api_components.go
 // and mcp_components.go, so creating MCP cannot accidentally create API loops.
 type sharedComponents struct {
-	auth             coreservice.AuthService
+	auth             auth.AuthService
 	artifacts        coreservice.ArtifactService
 	insights         insights.InsightService
 	docSurfaceStore  coreservice.DocSurfaceStore
@@ -195,7 +197,7 @@ func buildSharedComponents(pool *pgxpool.Pool, dataVolumePath string) sharedComp
 		))
 
 	return sharedComponents{
-		auth:             coreservice.NewAuthService(repo.NewAuthPostgres(pool), coreservice.NewPasswordHasher()),
+		auth:             auth.NewAuthService(authpostgres.NewAuthPostgres(pool), auth.NewPasswordHasher()),
 		artifacts:        artifactsSvc,
 		insights:         insightsSvc,
 		docSurfaceStore:  docStore,

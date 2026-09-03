@@ -1,4 +1,4 @@
-package repo
+package postgres
 
 import (
 	"context"
@@ -6,9 +6,41 @@ import (
 	"testing"
 	"time"
 
-	coreservice "aladin/backend_v2/internal/service"
+	coreservice "aladin/backend_v2/internal/auth"
+	"aladin/backend_v2/internal/db"
+	"aladin/backend_v2/internal/dbtest"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+func mustTestPool(ctx context.Context, t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	dsn := dbtest.RequireTestDSN(t)
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Skipf("no test database: %v", err)
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		t.Skipf("test database unreachable: %v", err)
+	}
+	if err := db.Migrate(ctx, pool); err != nil {
+		pool.Close()
+		t.Fatalf("migrate: %v", err)
+	}
+	return pool
+}
+
+func seedUser(ctx context.Context, t *testing.T, pool *pgxpool.Pool, userID string) {
+	t.Helper()
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO users (id, email, created_at, updated_at)
+		VALUES ($1::uuid, $2, now(), now())
+		ON CONFLICT (id) DO NOTHING
+	`, userID, userID+"@example.com"); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+}
 
 func TestSessionBoundContentTokens(t *testing.T) {
 	ctx := context.Background()

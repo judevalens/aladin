@@ -3,6 +3,7 @@ package api
 import (
 	"aladin/backend_v2/internal/alert"
 	"aladin/backend_v2/internal/artifactref"
+	"aladin/backend_v2/internal/auth"
 	"aladin/backend_v2/internal/copilot"
 	"aladin/backend_v2/internal/document"
 	"aladin/backend_v2/internal/feed"
@@ -30,7 +31,7 @@ import (
 // consumer contract. Keeping it here prevents production composition from
 // becoming a shared service locator just to make handler tests convenient.
 type testDependencies struct {
-	AuthSvc                coreservice.AuthService
+	AuthSvc                auth.AuthService
 	SystemSvc              system.SystemService
 	SourcesSvc             source.SourceService
 	RecordsSvc             record.RecordService
@@ -72,7 +73,7 @@ type testDependencies struct {
 	CopilotSvc             copilot.CopilotService
 }
 
-func (d testDependencies) Auth() coreservice.AuthService          { return d.AuthSvc }
+func (d testDependencies) Auth() auth.AuthService                 { return d.AuthSvc }
 func (d testDependencies) System() system.SystemService           { return d.SystemSvc }
 func (d testDependencies) Sources() source.SourceService          { return d.SourcesSvc }
 func (d testDependencies) Records() record.RecordService          { return d.RecordsSvc }

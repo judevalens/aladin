@@ -6,6 +6,8 @@ import (
 	"aladin/backend_v2/internal/app"
 	"aladin/backend_v2/internal/artifactref"
 	artifactrefhttp "aladin/backend_v2/internal/artifactref/httptransport"
+	"aladin/backend_v2/internal/auth"
+	authhttp "aladin/backend_v2/internal/auth/httptransport"
 	"aladin/backend_v2/internal/copilot"
 	copilothttp "aladin/backend_v2/internal/copilot/httptransport"
 	"aladin/backend_v2/internal/docsurface"
@@ -72,7 +74,7 @@ type Server struct {
 // lifecycle loops are deliberately absent; cmd/api owns and starts those from
 // app.APIComponents.
 type Dependencies interface {
-	Auth() coreservice.AuthService
+	Auth() auth.AuthService
 	System() system.SystemService
 	Sources() source.SourceService
 	Records() record.RecordService
@@ -139,7 +141,7 @@ func NewWithDependencies(addr string, deps Dependencies) *Server {
 	mux.HandleFunc("GET /readyz", s.handleReadyz)
 	mux.HandleFunc("GET /api/health/deps", s.handleDepsHealth)
 	mux.HandleFunc("GET /api/quote", s.handleQuote)
-	s.registerAuthRoutes(mux)
+	authhttp.Register(mux, deps.Auth())
 
 	mux.HandleFunc("GET /api/graph", s.handleEmptyGraph)
 	mux.HandleFunc("GET /api/graph-explore/full", s.handleEmptyGraph)
@@ -275,24 +277,24 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		cookie, err := r.Cookie(coreservice.SessionCookieName)
+		cookie, err := r.Cookie(auth.SessionCookieName)
 		if err == nil && strings.TrimSpace(cookie.Value) != "" {
 			// Preserve the session identity for content-token minting. A scoped
 			// bearer placed in a cookie must never be promoted to a full session.
 			principal, authErr := s.deps.Auth().ResolveBearerToken(r.Context(), cookie.Value)
-			if authErr == nil && principal.ActorType == coreservice.ActorTypeUserSession {
-				next.ServeHTTP(w, r.WithContext(coreservice.WithPrincipal(r.Context(), principal)))
+			if authErr == nil && principal.ActorType == auth.ActorTypeUserSession {
+				next.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), principal)))
 				return
 			}
 		}
 		if authorization := strings.TrimSpace(r.Header.Get("Authorization")); authorization != "" {
-			principal, authErr := coreservice.ResolveBearerPrincipal(r.Context(), s.deps.Auth(), authorization)
+			principal, authErr := auth.ResolveBearerPrincipal(r.Context(), s.deps.Auth(), authorization)
 			if authErr == nil {
 				if !contentTokenAllowed(principal, r) {
-					writeAPIError(w, r, http.StatusUnauthorized, categoryBadRequest, "Unauthenticated", coreservice.ErrUnauthenticated)
+					writeAPIError(w, r, http.StatusUnauthorized, categoryBadRequest, "Unauthenticated", auth.ErrUnauthenticated)
 					return
 				}
-				next.ServeHTTP(w, r.WithContext(coreservice.WithPrincipal(r.Context(), principal)))
+				next.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), principal)))
 				return
 			}
 		}
@@ -301,13 +303,13 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 		// they accept the bearer token as an ?access_token query param instead.
 		if isRealtimeWebSocketRoute(r) || isContentRoute(r) {
 			if token := strings.TrimSpace(r.URL.Query().Get("access_token")); token != "" {
-				principal, authErr := coreservice.ResolveBearerPrincipal(r.Context(), s.deps.Auth(), "Bearer "+token)
+				principal, authErr := auth.ResolveBearerPrincipal(r.Context(), s.deps.Auth(), "Bearer "+token)
 				if authErr == nil {
 					if !contentTokenAllowed(principal, r) {
-						writeAPIError(w, r, http.StatusUnauthorized, categoryBadRequest, "Unauthenticated", coreservice.ErrUnauthenticated)
+						writeAPIError(w, r, http.StatusUnauthorized, categoryBadRequest, "Unauthenticated", auth.ErrUnauthenticated)
 						return
 					}
-					next.ServeHTTP(w, r.WithContext(coreservice.WithPrincipal(r.Context(), principal)))
+					next.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), principal)))
 					return
 				}
 			}
@@ -328,7 +330,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			_, _ = w.Write([]byte(docsurface.LostCredentialHTML()))
 			return
 		}
-		writeAPIError(w, r, http.StatusUnauthorized, categoryBadRequest, "Unauthenticated", coreservice.ErrUnauthenticated)
+		writeAPIError(w, r, http.StatusUnauthorized, categoryBadRequest, "Unauthenticated", auth.ErrUnauthenticated)
 	})
 }
 
@@ -393,8 +395,8 @@ func isContentRoute(r *http.Request) bool {
 // readable by the shard's own JS (it is in the frame URL) and the shard CSP
 // permits outbound calls, so without this a shard could act as the viewer
 // against /api. Every other principal type passes through untouched.
-func contentTokenAllowed(principal coreservice.Principal, r *http.Request) bool {
-	if principal.ActorType != coreservice.ActorTypeContentToken {
+func contentTokenAllowed(principal auth.Principal, r *http.Request) bool {
+	if principal.ActorType != auth.ActorTypeContentToken {
 		return true
 	}
 	return isContentRoute(r)
@@ -418,10 +420,10 @@ func writeAPIError(w http.ResponseWriter, r *http.Request, status int, category 
 
 func writeAccessError(w http.ResponseWriter, r *http.Request, err error) bool {
 	switch {
-	case errors.Is(err, coreservice.ErrUnauthenticated):
+	case errors.Is(err, auth.ErrUnauthenticated):
 		writeAPIError(w, r, http.StatusUnauthorized, categoryBadRequest, "Unauthenticated", err)
 		return true
-	case errors.Is(err, coreservice.ErrForbidden):
+	case errors.Is(err, auth.ErrForbidden):
 		writeAPIError(w, r, http.StatusForbidden, categoryBadRequest, "Forbidden", err)
 		return true
 	default:

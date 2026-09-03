@@ -7,6 +7,7 @@ import (
 	"aladin/backend_v2/internal/alert"
 	alertpostgres "aladin/backend_v2/internal/alert/postgres"
 	"aladin/backend_v2/internal/artifactref"
+	"aladin/backend_v2/internal/auth"
 	"aladin/backend_v2/internal/changefeed"
 	"aladin/backend_v2/internal/config"
 	"aladin/backend_v2/internal/copilot"
@@ -176,7 +177,7 @@ func NewAPIComponentsWithProviderConnections(pool *pgxpool.Pool, providerConfig 
 	}
 }
 
-func (c *APIProcess) Auth() coreservice.AuthService          { return c.auth }
+func (c *APIProcess) Auth() auth.AuthService                 { return c.auth }
 func (c *APIProcess) System() system.SystemService           { return c.system }
 func (c *APIProcess) Sources() source.SourceService          { return c.sources }
 func (c *APIProcess) Records() record.RecordService          { return c.records }

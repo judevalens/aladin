@@ -1,4 +1,4 @@
-package service
+package auth
 
 import "aladin/backend_v2/internal/apperror"
 

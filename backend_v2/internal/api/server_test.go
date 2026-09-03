@@ -771,7 +771,11 @@ func TestAuthResolveReturnsPrincipalForBearerToken(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
 	}
-	var got resolvedPrincipalResponse
+	var got struct {
+		UserID    string   `json:"userId"`
+		ActorType string   `json:"actorType"`
+		Scopes    []string `json:"scopes"`
+	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode: %v", err)
 	}

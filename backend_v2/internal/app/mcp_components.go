@@ -3,6 +3,7 @@ package app
 import (
 	"aladin/backend_v2/internal/alert"
 	"aladin/backend_v2/internal/artifactref"
+	"aladin/backend_v2/internal/auth"
 	"aladin/backend_v2/internal/config"
 	"aladin/backend_v2/internal/docsurface"
 	"aladin/backend_v2/internal/document"
@@ -52,7 +53,7 @@ func NewMCPComponentsWithDataVolume(pool *pgxpool.Pool, dataVolumePath string) *
 	}
 }
 
-func (c *MCPProcess) Auth() coreservice.AuthService                   { return c.auth }
+func (c *MCPProcess) Auth() auth.AuthService                          { return c.auth }
 func (c *MCPProcess) Artifacts() coreservice.ArtifactService          { return c.artifacts }
 func (c *MCPProcess) PageDocuments() coreservice.PageDocumentService  { return c.pageDocuments }
 func (c *MCPProcess) Insights() insights.InsightService               { return c.insights }

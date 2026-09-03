@@ -3,6 +3,7 @@ package app
 import (
 	"aladin/backend_v2/internal/alert"
 	"aladin/backend_v2/internal/artifactref"
+	"aladin/backend_v2/internal/auth"
 	"aladin/backend_v2/internal/changefeed"
 	"aladin/backend_v2/internal/copilot"
 	"aladin/backend_v2/internal/document"
@@ -32,7 +33,7 @@ import (
 // package owns its narrower request-serving interface; this contract also
 // exposes the singleton loops whose lifecycle belongs to the API process.
 type APIComponents interface {
-	Auth() coreservice.AuthService
+	Auth() auth.AuthService
 	System() system.SystemService
 	Sources() source.SourceService
 	Records() record.RecordService
@@ -79,7 +80,7 @@ type APIComponents interface {
 // MCPComponents is the process-owned graph consumed by cmd/mcp. It deliberately
 // excludes API lifecycle loops and HTTP-only services.
 type MCPComponents interface {
-	Auth() coreservice.AuthService
+	Auth() auth.AuthService
 	Artifacts() coreservice.ArtifactService
 	PageDocuments() coreservice.PageDocumentService
 	Insights() insights.InsightService

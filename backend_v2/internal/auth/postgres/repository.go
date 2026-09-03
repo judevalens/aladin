@@ -1,4 +1,4 @@
-package repo
+package postgres
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	coreservice "aladin/backend_v2/internal/service"
+	coreservice "aladin/backend_v2/internal/auth"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
