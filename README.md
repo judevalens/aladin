@@ -16,6 +16,9 @@ The project explores how research can accumulate over time: connecting mentions 
 - **Collaboration and agents:** collaborative editing, an in-app Copilot, and an MCP server exposing workspace tools.
 - **Desktop persistence:** local SQLite storage with live updates and incremental synchronization.
 
+### VIDEO DEMO
+To see a video of the project: https://streamable.com/jm9hwa
+
 ## Engineering highlights
 
 ### Entity resolution across sources
