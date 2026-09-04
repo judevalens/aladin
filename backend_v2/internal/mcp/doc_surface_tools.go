@@ -102,15 +102,20 @@ func registerDocSurfaceTools(server *sdkmcp.Server, artifacts artifact.ArtifactS
 	}, t.listDir)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "read_file",
-		Description: "Read a file from a Doc Surface page directory.",
+		Description: "Read a shard source file. Optional start_line/end_line are one-based and inclusive; end_line is clamped to EOF, while a start beyond EOF is an error. Omit both for exact whole-file content. Returns content, actual line bounds (0/0 for an empty whole file), total_lines, and a SHA-256 hash of the ENTIRE file. Content preserves line endings and has no inserted line-number prefixes. Pass hash as edit_file.expected_hash to reject stale edits.",
 	}, t.readFile)
+	sdkmcp.AddTool(server, &sdkmcp.Tool{
+		Name:        "grep_files",
+		Annotations: readOnlyTool("Search shard source"),
+		Description: "Search text within ONE authorized shard's source files, not workspace documents. pattern is literal by default; regex=true uses Go regular expressions, matched per line. case_sensitive defaults true. Optional glob filters relative paths: *.tsx matches basenames at any depth, **/*.tsx also includes the root, and components/** searches a subtree. Returns one match per matching line with path, one-based line number, text, and before/after context. context_lines: 0-5 (default 0); max_matches: 1-200 (default 50). Hidden files/directories, dist, node_modules, vendor, symlinks, binary and non-UTF-8 files are excluded. Limits: 1 MiB/file, 16 MiB scanned, 1000 files, 10000 entries, 256 KiB of match JSON; long lines are clipped to 2048 bytes with a per-line truncated flag. Inspect files_skipped and truncated/truncation_reason before concluding absence; narrow the glob or pattern when incomplete. Use read_file for exact source, then edit_file for changes.",
+	}, t.grepFiles)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "write_file",
 		Description: "Write (create or overwrite) a file in a Doc Surface page directory (index.tsx, components, css). After the write a DRAFT build runs automatically and its diagnostics come back in `build` — read them to confirm the change compiles; the user sees the draft update live. Pass build=false for bulk multi-file writes, then build once at the end.",
 	}, t.writeFile)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "edit_file",
-		Description: "Edit a file by exact string replacement: old_string must appear EXACTLY once (include surrounding context to disambiguate) unless replace_all=true. Errors if old_string is absent or ambiguous. Like write_file, it triggers a draft build and returns diagnostics in `build`. Prefer this over write_file for surgical changes.",
+		Description: "Edit a file by exact string replacement: old_string must appear EXACTLY once (include surrounding context to disambiguate) unless replace_all=true. Errors if old_string is absent or ambiguous. Optional expected_hash is the entire-file SHA-256 hash returned by read_file; a mismatch or concurrent change rejects the edit without writing or building. Re-read before retrying a conflict. Returns the new hash and saves previous bytes in .history. Like write_file, it triggers a draft build and returns diagnostics in build; pass build=false for bulk edits. Prefer this over write_file for surgical changes.",
 	}, t.editFile)
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "delete_file",
@@ -206,11 +211,21 @@ type listDirOutput struct {
 }
 
 type readFileInput struct {
-	PageID string `json:"page_id"`
-	Path   string `json:"path"`
+	PageID    string `json:"page_id"`
+	Path      string `json:"path"`
+	StartLine *int   `json:"start_line,omitempty"`
+	EndLine   *int   `json:"end_line,omitempty"`
 }
-type readFileOutput struct {
-	Content string `json:"content"`
+type readFileOutput = docauthoring.ReadResult
+
+type grepFilesInput struct {
+	PageID        string `json:"page_id"`
+	Pattern       string `json:"pattern"`
+	Regex         bool   `json:"regex,omitempty"`
+	CaseSensitive *bool  `json:"case_sensitive,omitempty"`
+	Glob          string `json:"glob,omitempty"`
+	ContextLines  int    `json:"context_lines,omitempty"`
+	MaxMatches    int    `json:"max_matches,omitempty"`
 }
 
 type writeFileInput struct {
@@ -233,18 +248,20 @@ type writeFileOutput struct {
 }
 
 type editFileInput struct {
-	PageID     string `json:"page_id"`
-	Path       string `json:"path"`
-	OldString  string `json:"old_string"`
-	NewString  string `json:"new_string"`
-	ReplaceAll bool   `json:"replace_all,omitempty"`
-	Build      *bool  `json:"build,omitempty"`
+	PageID       string  `json:"page_id"`
+	Path         string  `json:"path"`
+	OldString    string  `json:"old_string"`
+	NewString    string  `json:"new_string"`
+	ReplaceAll   bool    `json:"replace_all,omitempty"`
+	Build        *bool   `json:"build,omitempty"`
+	ExpectedHash *string `json:"expected_hash,omitempty"`
 }
 type editFileOutput struct {
 	OK           bool                 `json:"ok"`
 	Path         string               `json:"path"`
 	Replacements int                  `json:"replacements"`
 	Build        *service.BuildResult `json:"build,omitempty"`
+	Hash         string               `json:"hash"`
 }
 
 type deleteFileInput struct {
@@ -399,11 +416,16 @@ func (t docToolServer) listDir(ctx context.Context, _ *sdkmcp.CallToolRequest, i
 }
 
 func (t docToolServer) readFile(ctx context.Context, _ *sdkmcp.CallToolRequest, in readFileInput) (*sdkmcp.CallToolResult, readFileOutput, error) {
-	data, err := t.authoring().ReadFile(ctx, in.PageID, in.Path)
-	if err != nil {
-		return nil, readFileOutput{}, err
-	}
-	return nil, readFileOutput{Content: string(data)}, nil
+	out, err := t.authoring().ReadRange(ctx, docauthoring.ReadCommand{PageID: in.PageID, Path: in.Path, StartLine: in.StartLine, EndLine: in.EndLine})
+	return nil, out, err
+}
+
+func (t docToolServer) grepFiles(ctx context.Context, _ *sdkmcp.CallToolRequest, in grepFilesInput) (*sdkmcp.CallToolResult, service.SourceSearchResult, error) {
+	out, err := t.authoring().GrepFiles(ctx, in.PageID, service.SourceSearchOptions{
+		Pattern: in.Pattern, Regex: in.Regex, CaseSensitive: in.CaseSensitive, Glob: in.Glob,
+		ContextLines: in.ContextLines, MaxMatches: in.MaxMatches,
+	})
+	return nil, out, err
 }
 
 func (t docToolServer) writeFile(ctx context.Context, _ *sdkmcp.CallToolRequest, in writeFileInput) (*sdkmcp.CallToolResult, writeFileOutput, error) {
@@ -419,12 +441,12 @@ func (t docToolServer) writeFile(ctx context.Context, _ *sdkmcp.CallToolRequest,
 func (t docToolServer) editFile(ctx context.Context, _ *sdkmcp.CallToolRequest, in editFileInput) (*sdkmcp.CallToolResult, editFileOutput, error) {
 	result, err := t.authoring().EditFile(ctx, docauthoring.EditCommand{
 		PageID: in.PageID, Path: in.Path, OldString: in.OldString, NewString: in.NewString,
-		ReplaceAll: in.ReplaceAll, Build: in.Build,
+		ReplaceAll: in.ReplaceAll, Build: in.Build, ExpectedHash: in.ExpectedHash,
 	})
 	if err != nil {
 		return nil, editFileOutput{}, err
 	}
-	return nil, editFileOutput{OK: result.OK, Path: result.Path, Replacements: result.Replacements, Build: result.Build}, nil
+	return nil, editFileOutput{OK: result.OK, Path: result.Path, Replacements: result.Replacements, Build: result.Build, Hash: result.Hash}, nil
 }
 
 func (t docToolServer) installLib(ctx context.Context, _ *sdkmcp.CallToolRequest, in installLibInput) (*sdkmcp.CallToolResult, installLibOutput, error) {

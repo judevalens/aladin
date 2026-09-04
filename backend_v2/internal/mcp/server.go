@@ -80,7 +80,9 @@ Authoring loop:
      Keep data-anchor attributes and their anchors.json declarations in sync.
      Entry point: index.tsx, mounting #root via createRoot from react-dom/client.
   3. write_file creates files; overwrite:true is required to replace an existing
-     file. Prefer edit_file for targeted changes. Previous bytes go to .history/.
+     file. Find code with grep_files; read_file supports line ranges and returns
+     a whole-file hash. Prefer edit_file with expected_hash for targeted changes;
+     re-read on conflict. Previous bytes go to .history/.
      Writes auto-build draft and return diagnostics; fix errors until build.ok.
      For bulk writes use build:false, then build once.
   4. install_lib(page_id,name) installs compatible dependencies through esm.sh,

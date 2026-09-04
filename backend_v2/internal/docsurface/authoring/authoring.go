@@ -85,12 +85,13 @@ type WriteResult struct {
 }
 
 type EditCommand struct {
-	PageID     string
-	Path       string
-	OldString  string
-	NewString  string
-	ReplaceAll bool
-	Build      *bool
+	PageID       string
+	Path         string
+	OldString    string
+	NewString    string
+	ReplaceAll   bool
+	Build        *bool
+	ExpectedHash *string
 }
 
 type EditResult struct {
@@ -98,6 +99,7 @@ type EditResult struct {
 	Path         string
 	Replacements int
 	Build        *service.BuildResult
+	Hash         string
 }
 
 type DeleteCommand struct {
@@ -181,6 +183,9 @@ func (a *Authoring) EditFile(ctx context.Context, cmd EditCommand) (EditResult, 
 	if err != nil {
 		return EditResult{}, err
 	}
+	if cmd.ExpectedHash != nil && *cmd.ExpectedHash != contentHash(data) {
+		return EditResult{}, fmt.Errorf("%w: %s changed since it was read; read_file again before editing", service.ErrConflict, cmd.Path)
+	}
 	updated, count, err := ApplyStringEdit(string(data), cmd.OldString, cmd.NewString, cmd.ReplaceAll)
 	switch {
 	case errors.Is(err, ErrEditNotFound):
@@ -191,10 +196,18 @@ func (a *Authoring) EditFile(ctx context.Context, cmd EditCommand) (EditResult, 
 	case err != nil:
 		return EditResult{}, err
 	}
-	if err := a.store.WriteFile(ctx, cmd.PageID, cmd.Path, []byte(updated)); err != nil {
+	if store, ok := a.store.(service.DocSurfaceFileCAS); ok {
+		err = store.CompareAndSwapFile(ctx, cmd.PageID, cmd.Path, data, []byte(updated))
+	} else if cmd.ExpectedHash != nil {
+		return EditResult{}, service.BadRequest("hash-guarded editing is unavailable on this store")
+	} else {
+		err = a.store.WriteFile(ctx, cmd.PageID, cmd.Path, []byte(updated))
+	}
+	if err != nil {
 		return EditResult{}, err
 	}
-	return EditResult{OK: true, Path: cmd.Path, Replacements: count, Build: a.autoBuild(ctx, cmd.PageID, cmd.Build)}, nil
+	a.snapshotFile(ctx, cmd.PageID, cmd.Path, data, "edit")
+	return EditResult{OK: true, Path: cmd.Path, Replacements: count, Hash: contentHash([]byte(updated)), Build: a.autoBuild(ctx, cmd.PageID, cmd.Build)}, nil
 }
 
 func (a *Authoring) DeleteFile(ctx context.Context, cmd DeleteCommand) (DeleteResult, error) {

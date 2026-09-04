@@ -151,6 +151,18 @@ func (l *localStore) ReadFile(ctx context.Context, pageID, relPath string) ([]by
 }
 
 func (l *localStore) WriteFile(ctx context.Context, pageID, relPath string, data []byte) error {
+	if _, err := l.safePath(ctx, pageID, relPath); err != nil {
+		return err
+	}
+	unlock, err := l.lockMutation(ctx, pageID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	return l.writeFile(ctx, pageID, relPath, data)
+}
+
+func (l *localStore) writeFile(ctx context.Context, pageID, relPath string, data []byte) error {
 	if len(data) > maxFileBytes {
 		return service.BadRequest("file too large")
 	}
@@ -169,6 +181,11 @@ func (l *localStore) DeleteFile(ctx context.Context, pageID, relPath string) err
 	if err != nil {
 		return err
 	}
+	unlock, err := l.lockMutation(ctx, pageID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
@@ -275,14 +292,7 @@ func (l *localStore) InstallLib(ctx context.Context, pageID string, lib service.
 	if err != nil {
 		return nil, err
 	}
-	p, err := l.safePath(ctx, pageID, installLibName)
-	if err != nil {
-		return nil, err
-	}
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-		return nil, err
-	}
-	if err := atomicWrite(p, out); err != nil {
+	if err := l.WriteFile(ctx, pageID, installLibName, out); err != nil {
 		return nil, err
 	}
 	return libs, nil
@@ -291,15 +301,23 @@ func (l *localStore) InstallLib(ctx context.Context, pageID string, lib service.
 // atomicWrite writes data to a temp file in the same dir then renames over the
 // target, so a reader never sees a partial file.
 func atomicWrite(path string, data []byte) error {
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	f, err := os.CreateTemp(filepath.Dir(path), ".write-*")
+	if err != nil {
 		return err
 	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
+	defer os.Remove(f.Name())
+	if err := f.Chmod(0o644); err != nil {
+		_ = f.Close()
 		return err
 	}
-	return nil
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(f.Name(), path)
 }
 
 // isTextLike reports whether b looks like text (no NUL in the first 8KB).
