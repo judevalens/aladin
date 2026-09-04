@@ -9,7 +9,7 @@ The project explores how research can accumulate over time: connecting mentions 
 **Status:** actively developed. The repository contains the workspace, ingestion and entity-resolution systems, market-data services, and desktop synchronization. Git-backed artifact publishing and a portable experiment ledger are the next direction and are being implemented in stages.
 
 ### VIDEO DEMO
-To see a video of the project: https://streamable.com/jm9hwa
+To see a video demo of the project: https://streamable.com/jm9hwa
 
 <img width="1431" height="894" alt="Screenshot 2026-08-31 at 8 25 52 PM" src="https://github.com/user-attachments/assets/3da2c7bd-df02-49c8-8456-92d1c80ffe98" />
 <img width="1726" height="1117" alt="Screenshot 2026-09-04 at 7 53 10 AM" src="https://github.com/user-attachments/assets/5c5970f2-47c7-443a-9de5-a70dfa48686d" />
