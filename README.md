@@ -8,6 +8,9 @@ The project explores how research can accumulate over time: connecting mentions 
 
 **Status:** actively developed. The repository contains the workspace, ingestion and entity-resolution systems, market-data services, and desktop synchronization. Git-backed artifact publishing and a portable experiment ledger are the next direction and are being implemented in stages.
 
+### VIDEO DEMO
+To see a video of the project: https://streamable.com/jm9hwa
+
 ## What is in the workspace
 
 - **Research materials:** folders, editable pages, uploaded files, and embedded interactive applications.
@@ -16,8 +19,7 @@ The project explores how research can accumulate over time: connecting mentions 
 - **Collaboration and agents:** collaborative editing, an in-app Copilot, and an MCP server exposing workspace tools.
 - **Desktop persistence:** local SQLite storage with live updates and incremental synchronization.
 
-### VIDEO DEMO
-To see a video of the project: https://streamable.com/jm9hwa
+
 
 ## Engineering highlights
 
